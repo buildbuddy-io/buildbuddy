@@ -459,7 +459,7 @@ func isTestCommand(command string) bool {
 }
 
 func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx *db.DB) ([]*tables.Target, error) {
-	q := query_builder.NewQuery(`SELECT * FROM Targets as t`)
+	q := query_builder.NewQuery(`SELECT * FROM "Targets" as t`)
 	q = q.AddWhereClause(`t.repo_url = ?`, repoURL)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
@@ -546,7 +546,7 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 			valueArgs = append(valueArgs, nowUsec)
 		}
 		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_targets"), func(tx *db.DB) error {
-			stmt := fmt.Sprintf("INSERT INTO Targets (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
+			stmt := fmt.Sprintf(`INSERT INTO "Targets" (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
 		if err != nil {
@@ -588,7 +588,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, nowUsec)
 		}
 		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_target_statuses"), func(tx *db.DB) error {
-			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
+			stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
 		if err != nil {

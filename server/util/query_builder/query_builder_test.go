@@ -16,7 +16,7 @@ func normalize(t *testing.T, query string) string {
 	// The current logic in this func blindly strips whitespace, which might
 	// change the meaning of queries containing strings. So for now, just fail
 	// the test if we see any string delimiters.
-	if strings.Contains(query, "\"") || strings.Contains(query, "'") || strings.Contains(query, "`") {
+	if strings.Contains(query, "'") || strings.Contains(query, "`") {
 		assert.FailNow(t, "normalizeSpace cannot yet handle string or backtick literals")
 	}
 
@@ -72,9 +72,9 @@ func TestOrClauses_Multiple(t *testing.T) {
 }
 
 func TestJoinClause(t *testing.T) {
-	q := query_builder.NewQuery("SELECT id, t1, t2 FROM targets AS t")
+	q := query_builder.NewQuery(`SELECT id, t1, t2 FROM "Targets" AS t`)
 
-	subQuery := query_builder.NewQuery("SELECT id, i1, i2 FROM invocations AS i")
+	subQuery := query_builder.NewQuery(`SELECT id, i1, i2 FROM "Invocations" AS i`)
 	subQuery.AddWhereClause("i3 > ?", 4)
 	subQuery.AddWhereClause("i4 > ?", 6)
 	subQuery.SetOrderBy("i.id", false)
@@ -86,10 +86,10 @@ func TestJoinClause(t *testing.T) {
 	qStr, qArgs := q.Build()
 	expectedQueryStr := `
 		SELECT id, t1, t2
-		FROM targets AS t
+		FROM "Targets" AS t
 		JOIN (
 			SELECT id, i1, i2
-			FROM invocations AS i
+			FROM "Invocations" AS i
 			WHERE (i3 > ?) AND (i4 > ?)
 			ORDER BY i.id DESC
 			LIMIT 20
@@ -102,14 +102,14 @@ func TestJoinClause(t *testing.T) {
 }
 
 func TestJoinInOriginalQuery(t *testing.T) {
-	qb := query_builder.NewQuery("SELECT ak.user_id, g.group_id FROM Groups AS g, APIKeys AS ak")
+	qb := query_builder.NewQuery(`SELECT ak.user_id, g.group_id FROM "Groups" AS g, "APIKeys" AS ak`)
 	qb.AddWhereClause(`ak.group_id = g.group_id`)
 	qb.AddWhereClause(`g.group_id = ?`, "GR1")
 	q, args := qb.Build()
 
 	expectedQueryStr := `
 		SELECT ak.user_id, g.group_id
-		FROM Groups AS g, APIKeys AS ak
+		FROM "Groups" AS g, "APIKeys" AS ak
 		WHERE (ak.group_id = g.group_id) AND (g.group_id = ?)
 	`
 

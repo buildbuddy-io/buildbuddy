@@ -160,7 +160,7 @@ func (a *GitHubApp) handleInstallationEvent(ctx context.Context, event *github.I
 		return nil
 	}
 	result := a.env.GetDBHandle().DB(ctx).Exec(`
-		DELETE FROM GitHubAppInstallations
+		DELETE FROM "GitHubAppInstallations"
 		WHERE installation_id = ?
 	`, event.GetInstallation().GetID())
 	if result.Error != nil {
@@ -193,7 +193,7 @@ func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, event any) error {
 	}{}
 	err = a.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT i.installation_id, r.*
-		FROM GitHubAppInstallations i, GitRepositories r
+		FROM "GitHubAppInstallations" i, "GitRepositories" r
 		WHERE r.repo_url = ?
 		AND i.owner = ?
 		AND i.group_id = r.group_id
@@ -217,7 +217,7 @@ func (a *GitHubApp) GetInstallationToken(ctx context.Context, owner string) (str
 	var installation tables.GitHubAppInstallation
 	err = a.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT *
-		FROM GitHubAppInstallations
+		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
 	`, u.GetGroupID(), owner).Take(&installation).Error
@@ -243,7 +243,7 @@ func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.Get
 	db := a.env.GetDBHandle().DB(ctx)
 	rows, err := db.Raw(`
 		SELECT *
-		FROM GitHubAppInstallations
+		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		ORDER BY owner ASC
 	`, u.GetGroupID()).Rows()
@@ -324,7 +324,7 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 		// first. That installation must be stale since GitHub only allows
 		// one installation per owner.
 		err := tx.Exec(`
-			DELETE FROM GitHubAppInstallations
+			DELETE FROM "GitHubAppInstallations"
 			WHERE owner = ?`,
 			in.Owner,
 		).Error
@@ -350,7 +350,7 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 		var ti tables.GitHubAppInstallation
 		err := tx.Raw(`
 			SELECT *
-			FROM GitHubAppInstallations
+			FROM "GitHubAppInstallations"
 			WHERE installation_id = ?
 			`+dbh.SelectForUpdateModifier()+`
 		`, req.GetInstallationId()).Take(&ti).Error
@@ -361,7 +361,7 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 			return err
 		}
 		return tx.Exec(`
-			DELETE FROM GitHubAppInstallations
+			DELETE FROM "GitHubAppInstallations"
 			WHERE installation_id = ?
 		`, req.GetInstallationId()).Error
 	})
@@ -378,7 +378,7 @@ func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*
 	}
 	installation := &tables.GitHubAppInstallation{}
 	err = a.env.GetDBHandle().DB(ctx).Raw(`
-		SELECT * FROM GitHubAppInstallations
+		SELECT * FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
 	`, u.GetGroupID(), owner).Take(installation).Error
@@ -399,7 +399,7 @@ func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.GetLinke
 	d := a.env.GetDBHandle().DB(ctx)
 	rows, err := d.Raw(`
 		SELECT *
-		FROM GitRepositories
+		FROM "GitRepositories"
 		WHERE group_id = ?
 		ORDER BY repo_url ASC
 	`, u.GetGroupID()).Rows()
@@ -482,7 +482,7 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 		return nil, err
 	}
 	result := a.env.GetDBHandle().DB(ctx).Exec(`
-		DELETE FROM GitRepositories
+		DELETE FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
 	`, u.GetGroupID(), req.GetRepoUrl())

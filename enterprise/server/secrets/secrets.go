@@ -76,7 +76,7 @@ func (s *SecretService) listSecretsIncludingValues(ctx context.Context) (*skpb.L
 		return nil, status.FailedPreconditionError("A database is required")
 	}
 
-	q := query_builder.NewQuery(`SELECT name, value FROM Secrets`)
+	q := query_builder.NewQuery(`SELECT name, value FROM "Secrets"`)
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	q.SetOrderBy("name", true /*ascending*/)
 	queryStr, args := q.Build()
@@ -152,7 +152,7 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 	if err != nil {
 		return nil, err
 	}
-	err = dbHandle.DB(ctx).Exec(`REPLACE INTO Secrets (user_id, group_id, name, value, perms) VALUES (?, ?, ?, ?, ?)`,
+	err = dbHandle.DB(ctx).Exec(`REPLACE INTO "Secrets" (user_id, group_id, name, value, perms) VALUES (?, ?, ?, ?, ?)`,
 		u.GetUserID(), u.GetGroupID(), req.GetSecret().GetName(), req.GetSecret().GetValue(), secretPerms.Perms).Error
 	if err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func (s *SecretService) DeleteSecret(ctx context.Context, req *skpb.DeleteSecret
 		return nil, status.InvalidArgumentError("A non-empty secret name is required")
 	}
 
-	err = dbHandle.DB(ctx).Exec(`DELETE FROM Secrets WHERE group_id = ? AND name = ?`, u.GetGroupID(), req.GetSecret().GetName()).Error
+	err = dbHandle.DB(ctx).Exec(`DELETE FROM "Secrets" WHERE group_id = ? AND name = ?`, u.GetGroupID(), req.GetSecret().GetName()).Error
 	if err != nil {
 		return nil, err
 	}

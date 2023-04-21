@@ -57,7 +57,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 
 		// Insert failed due to conflict; update the existing row instead.
 		err = tx.Raw(`
-				SELECT attempt FROM Invocations
+				SELECT attempt FROM "Invocations"
 				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
 				`+d.h.SelectForUpdateModifier(),
 			ti.InvocationID,
@@ -114,7 +114,7 @@ func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocati
 	var err error
 	for r := retry.DefaultWithContext(ctx); r.Next(); {
 		err = d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("update_invocation"), func(tx *db.DB) error {
-			result := tx.Where("`invocation_id` = ? AND `attempt` = ?", ti.InvocationID, ti.Attempt).Updates(ti)
+			result := tx.Where("invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 			updated = result.RowsAffected > 0
 			return result.Error
 		})
@@ -134,11 +134,11 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 	}
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var in tables.Invocation
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
+		if err := tx.Raw(`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err
 		}
 		var group tables.Group
-		if err := tx.Raw(`SELECT sharing_enabled FROM `+"`Groups`"+` WHERE group_id = ?`, in.GroupID).Take(&group).Error; err != nil {
+		if err := tx.Raw(`SELECT sharing_enabled FROM "Groups" WHERE group_id = ?`, in.GroupID).Take(&group).Error; err != nil {
 			return err
 		}
 		if !group.SharingEnabled {
@@ -148,10 +148,10 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 		if err := perms.AuthorizeWrite(authenticatedUser, getACL(&in)); err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
+		if err := tx.Exec(`UPDATE "Invocations" SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE Executions SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
+		if err := tx.Exec(`UPDATE "Executions" SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
 			return err
 		}
 		return nil
@@ -160,7 +160,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
-	if err := d.h.DB(ctx).Raw(`SELECT * FROM Invocations WHERE invocation_id = ?`, invocationID).Take(ti).Error; err != nil {
+	if err := d.h.DB(ctx).Raw(`SELECT * FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(ti).Error; err != nil {
 		return nil, err
 	}
 	if ti.Perms&perms.OTHERS_READ == 0 {
@@ -177,7 +177,7 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 
 func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error) {
 	ti := &tables.Group{}
-	q := query_builder.NewQuery(`SELECT * FROM ` + "`Groups`" + ` as g JOIN Invocations as i ON g.group_id = i.group_id`)
+	q := query_builder.NewQuery(`SELECT * FROM "Groups" as g JOIN "Invocations" as i ON g.group_id = i.group_id`)
 	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, d.env, q, "i"); err != nil {
 		return nil, err
@@ -193,7 +193,7 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error) {
 	in := &tables.Invocation{}
 	err := d.h.DB(ctx).Raw(
-		`SELECT group_id FROM Invocations WHERE invocation_id = ?`, invocationID,
+		`SELECT group_id FROM "Invocations" WHERE invocation_id = ?`, invocationID,
 	).Take(in).Error
 	if err != nil {
 		return "", err
@@ -203,7 +203,7 @@ func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocati
 
 func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
 	cutoffUsec := cutoffTime.UnixMicro()
-	rows, err := d.h.DB(ctx).Raw(`SELECT * FROM Invocations as i
+	rows, err := d.h.DB(ctx).Raw(`SELECT * FROM "Invocations" as i
                                       WHERE i.created_at_usec < ?
                                       LIMIT ?`, cutoffUsec, limit).Rows()
 	if err != nil {
@@ -229,7 +229,7 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 			COUNT(DISTINCT invocation_id) as invocation_count,
 			COUNT(DISTINCT host) as bazel_host_count,
 			COUNT(DISTINCT user) as bazel_user_count
-		FROM Invocations as i
+		FROM "Invocations" as i
 		WHERE 
 			i.created_at_usec >= ? AND
 			i.created_at_usec < ?`,
@@ -249,7 +249,7 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var in tables.Invocation
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
+		if err := tx.Raw(`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
@@ -261,13 +261,13 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 }
 
 func (d *InvocationDB) deleteInvocation(tx *db.DB, invocationID string) error {
-	if err := tx.Exec(`DELETE FROM Invocations WHERE invocation_id = ?`, invocationID).Error; err != nil {
+	if err := tx.Exec(`DELETE FROM "Invocations" WHERE invocation_id = ?`, invocationID).Error; err != nil {
 		return err
 	}
-	if err := tx.Exec(`DELETE FROM Executions WHERE invocation_id = ?`, invocationID).Error; err != nil {
+	if err := tx.Exec(`DELETE FROM "Executions" WHERE invocation_id = ?`, invocationID).Error; err != nil {
 		return err
 	}
-	if err := tx.Exec(`DELETE FROM InvocationExecutions WHERE invocation_id = ?`, invocationID).Error; err != nil {
+	if err := tx.Exec(`DELETE FROM "InvocationExecutions" WHERE invocation_id = ?`, invocationID).Error; err != nil {
 		return err
 	}
 	return nil
