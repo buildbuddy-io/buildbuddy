@@ -1195,7 +1195,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		} else if status.IsNotFoundError(err) {
 			http.Error(w, "File not found", http.StatusNotFound)
 		} else {
-			log.Warningf("Error looking up invocation %s for build log fetch: %s", iid, err)
+			log.Errorf("Error looking up invocation %s for build log fetch: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 		return
