@@ -624,7 +624,37 @@ func (c *Crypter) testGetCacheActiveRefreshOps() int32 {
 	return c.cache.testGetActiveRefreshOps()
 }
 
-func (c *Crypter) enableEncryption(ctx context.Context, groupKeyURI string) error {
+func buildKeyURI(kmsConfig *enpb.KMSConfig) (string, error) {
+	if lc := kmsConfig.GetLocalInsecureKmsConfig(); lc != nil {
+		if strings.TrimSpace(lc.GetKeyId()) == "" {
+			return "", status.InvalidArgumentError("Key ID is required")
+		}
+		return fmt.Sprintf("local-insecure-kms://%s", lc.GetKeyId()), nil
+	}
+	if gc := kmsConfig.GetGcpKmsConfig(); gc != nil {
+		if strings.TrimSpace(gc.GetProject()) == "" {
+			return "", status.InvalidArgumentError("Project is required")
+		}
+		if strings.TrimSpace(gc.GetLocation()) == "" {
+			return "", status.InvalidArgumentError("Location is required")
+		}
+		if strings.TrimSpace(gc.GetKeyRing()) == "" {
+			return "", status.InvalidArgumentError("Key Ring is required")
+		}
+		if strings.TrimSpace(gc.GetKey()) == "" {
+			return "", status.InvalidArgumentError("Key is required")
+		}
+		return fmt.Sprintf("gcp-kms://projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s", gc.GetProject(), gc.GetLocation(), gc.GetKeyRing(), gc.GetKey()), nil
+	}
+	return "", status.FailedPreconditionError("KMS config is empty")
+}
+
+func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfig) error {
+	groupKeyURI, err := buildKeyURI(kmsConfig)
+	if err != nil {
+		return err
+	}
+
 	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
@@ -752,7 +782,7 @@ func (c *Crypter) SetEncryptionConfig(ctx context.Context, req *enpb.SetEncrypti
 	}
 
 	if req.Enabled {
-		if err := c.enableEncryption(ctx, req.KeyUri); err != nil {
+		if err := c.enableEncryption(ctx, req.GetKmsConfig()); err != nil {
 			return nil, err
 		}
 		return &enpb.SetEncryptionConfigResponse{}, nil
@@ -774,8 +804,21 @@ func (c *Crypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncrypti
 		return nil, err
 	}
 
-	return &enpb.GetEncryptionConfigResponse{
+	rsp := &enpb.GetEncryptionConfigResponse{
 		Supported: c.env.GetCache().SupportsEncryption(ctx),
 		Enabled:   g.CacheEncryptionEnabled,
-	}, nil
+	}
+
+	for _, t := range c.env.GetKMS().SupportedTypes() {
+		switch t {
+		case interfaces.KMSTypeLocalInsecure:
+			rsp.SupportedKms = append(rsp.SupportedKms, enpb.KMS_LOCAL_INSECURE)
+		case interfaces.KMSTypeGCP:
+			rsp.SupportedKms = append(rsp.SupportedKms, enpb.KMS_GCP)
+		default:
+			log.Warningf("unknown KMS type %q", t)
+		}
+	}
+
+	return rsp, err
 }

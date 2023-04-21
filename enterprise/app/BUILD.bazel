@@ -46,6 +46,7 @@ genrule(
     name = "style",
     srcs = [
         "//enterprise/app/api_keys:api_keys.css",
+        "//enterprise/app/encryption:encryption.css",
         "//enterprise/app/history:history.css",
         "//enterprise/app/org:org.css",
         "//enterprise/app/settings:settings.css",

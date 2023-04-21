@@ -349,6 +349,10 @@ class Router {
     return Boolean(user?.canCall("listSecrets"));
   }
 
+  canAccessEncryptionPage(user?: User) {
+    return Boolean(user?.canCall("getEncryptionConfig"));
+  }
+
   /**
    * Routes the user to a new page if they don't have the ability to access the
    * current page.

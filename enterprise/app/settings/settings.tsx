@@ -16,6 +16,7 @@ import UserGitHubLink from "./user_github_link";
 import Banner from "../../../app/components/banner/banner";
 import Link from "../../../app/components/link/link";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
+import EncryptionComponent from "../encryption/encryption";
 
 export interface SettingsProps {
   user: User;
@@ -30,6 +31,7 @@ enum TabId {
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
   OrgSecrets = "org/secrets",
+  OrgCacheEncryption = "org/cache-encryption",
 
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
@@ -142,6 +144,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 {capabilities.config.secretsEnabled && router.canAccessOrgSecretsPage(this.props.user) && (
                   <SettingsTab id={TabId.OrgSecrets} activeTabId={activeTabId}>
                     Secrets
+                  </SettingsTab>
+                )}
+                {router.canAccessEncryptionPage(this.props.user) && (
+                  <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
+                    Encryption keys
                   </SettingsTab>
                 )}
               </div>
@@ -300,6 +307,15 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   )}
                   {activeTabId === TabId.ServerQuota && capabilities.config.quotaManagementEnabled && (
                     <QuotaComponent path={this.props.path} search={this.props.search} />
+                  )}
+                  {activeTabId == TabId.OrgCacheEncryption && (
+                    <>
+                      <div className="settings-option-title">Encryption keys</div>
+                      <div className="settings-option-description">
+                        Encryption keys allow control over storage encryption.
+                      </div>
+                      <EncryptionComponent />
+                    </>
                   )}
                 </>
               )}
