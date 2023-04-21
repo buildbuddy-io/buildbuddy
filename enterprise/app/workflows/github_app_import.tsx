@@ -134,8 +134,8 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
   private onChangeSearch(e: React.ChangeEvent<HTMLInputElement>) {
     const searchQuery = e.target.value;
     this.setState({ searchQuery, accessibleReposLoading: true });
-    clearTimeout(this.searchTimeout);
-    this.searchTimeout = setTimeout(() => this.search(), SEARCH_DEBOUNCE_DURATION_MS);
+    window.clearTimeout(this.searchTimeout);
+    this.searchTimeout = window.setTimeout(() => this.search(), SEARCH_DEBOUNCE_DURATION_MS);
   }
 
   private onChangeOwner(e: React.ChangeEvent<HTMLSelectElement>) {

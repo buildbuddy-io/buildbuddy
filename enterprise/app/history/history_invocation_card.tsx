@@ -39,7 +39,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
     time: Date.now(),
   };
 
-  interval: number;
+  interval?: number;
 
   componentDidMount() {
     this.updateTimeIfInProgress();
@@ -50,11 +50,11 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
       return;
     }
     this.setState({ time: Date.now() });
-    this.interval = setTimeout(() => this.updateTimeIfInProgress(), durationRefreshIntervalMillis);
+    this.interval = window.setInterval(() => this.updateTimeIfInProgress(), durationRefreshIntervalMillis);
   }
 
   componentWillUnmount() {
-    clearInterval(this.interval);
+    window.clearInterval(this.interval);
   }
 
   handleInvocationClicked() {
