@@ -635,7 +635,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string)
 		}
 		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
 	}
-	token, err := app.GetInstallationToken(ctx, repoURL.Owner)
+	token, err := app.GetRepositoryInstallationToken(ctx, gitRepository)
 	if err != nil {
 		return nil, err
 	}
