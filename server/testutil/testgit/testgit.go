@@ -134,6 +134,16 @@ func MakeTempRepoClone(t testing.TB, path string) string {
 	return copyPath
 }
 
+// CommitFiles writes the given file contents and creates a new commit with the changes.
+// Contents are specified as a map of file path to file contents.
+// Returns the sha of the new commit
+func CommitFiles(t testing.TB, repoPath string, contents map[string]string) string {
+	testfs.WriteAllFileContents(t, repoPath, contents)
+	testshell.Run(t, repoPath, `git add . && git commit -m "Initial commit"`)
+	commitSHA := strings.TrimSpace(testshell.Run(t, repoPath, `git rev-parse HEAD`))
+	return commitSHA
+}
+
 func configure(t testing.TB, repoPath string) {
 	testshell.Run(t, repoPath, `
 		git config user.name "Test"

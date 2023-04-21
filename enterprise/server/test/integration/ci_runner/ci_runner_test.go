@@ -516,15 +516,16 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 
 func TestRunAction_RespectsArgs(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
-	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
+	// TODO: Add combos of no pushed / target / commit_sha
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
 		"--action_name=Print args",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
-		"--commit_sha=" + headCommitSHA,
+		"--commit_sha=" + initialCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
 	}
@@ -536,6 +537,23 @@ func TestRunAction_RespectsArgs(t *testing.T) {
 
 	checkRunnerResult(t, result)
 
+	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+
+	// Commit changes to the print statement in the workflow config
+	modifiedWorkflowConfig := `
+actions:
+  - name: "Print args"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    bazel_commands:
+      - run //:print_args -- "Switcheroo!"
+`
+	testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
+
+	// When invoked with the initial commit sha, should not contain the modified print statement
+	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
 	assert.Contains(t, result.Output, "args: {{ Hello world }}")
 }
 
