@@ -105,7 +105,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
     this.setState({ linkedReposLoading: true });
     this.linkedReposRPC?.cancel();
     this.linkedReposRPC = rpcService.service
-      .getLinkedGitHubRepos(github.GetLinkedReposResponse.create())
+      .getLinkedGitHubRepos(github.GetLinkedReposRequest.create())
       .then((response) => this.setState({ linkedReposResponse: response }))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ linkedReposLoading: false }));
