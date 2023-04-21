@@ -14,7 +14,7 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//app/util:errors",
-        "//proto:buildbuddy_service_ts_proto",
+        "//proto:encryption_ts_proto",
         "@npm//@types/react",
         "@npm//react",
         "@npm//tslib",

@@ -148,7 +148,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 )}
                 {router.canAccessEncryptionPage(this.props.user) && (
                   <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
-                    Cache Encryption
+                    Encryption keys
                   </SettingsTab>
                 )}
               </div>
@@ -310,9 +310,9 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   )}
                   {activeTabId == TabId.OrgCacheEncryption && (
                     <>
-                      <div className="settings-option-title">Cache Encryption</div>
+                      <div className="settings-option-title">Encryption keys</div>
                       <div className="settings-option-description">
-                        Encryption allows cache artifacts to be encrypted at rest using a customer-managed key.
+                        Encryption keys allow control over storage encryption.
                       </div>
                       <EncryptionComponent />
                     </>

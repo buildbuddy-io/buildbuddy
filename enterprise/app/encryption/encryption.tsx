@@ -1,6 +1,6 @@
 import React from "react";
 import rpc_service from "../../../app/service/rpc_service";
-import { encryption } from "../../../proto/buildbuddy_service_ts_proto";
+import { encryption } from "../../../proto/encryption_ts_proto";
 import Modal from "../../../app/components/modal/modal";
 import Dialog, {
   DialogBody,
@@ -278,14 +278,13 @@ export default class EncryptionComponent extends React.Component<{}, State> {
       <>
         {!this.state.encryptionSupported && (
           <div>
-            <p>Encryption requires dedicated storage.</p>
-            {/*DO NOT SUBMIT: siggi to fill in wording here*/}
-            <p>Please reach out to XXX.</p>
+            To configure customer managed encryption keys, please reach out to us via Slack or email us at
+            support@buildbuddy.io.
           </div>
         )}
         {this.state.encryptionSupported && this.state.encryptionEnabled && (
           <div>
-            <p>Encryption is enabled.</p>
+            <p>Customer-managed encryption keys are enabled.</p>
 
             <FilledButton className="destructive" onClick={this.onClickDisable.bind(this)}>
               Disable
@@ -296,8 +295,8 @@ export default class EncryptionComponent extends React.Component<{}, State> {
                   <DialogTitle>Confirm disabling encryption</DialogTitle>
                 </DialogHeader>
                 <DialogBody>
-                  <p>Are you sure you want to disable encryption?</p>
-                  <p>Encrypted artifacts stored in the cache will no longer be accessible. </p>
+                  <p>Are you sure you want to disable encryption using the customer managed key?</p>
+                  <p>Previously encrypted artifacts stored in the cache will no longer be accessible.</p>
                   <p>This action is irreversible. </p>
                   {this.state.disablingError && (
                     <div className="error-description">{this.state.disablingError.description}</div>
@@ -325,10 +324,10 @@ export default class EncryptionComponent extends React.Component<{}, State> {
         )}
         {this.state.encryptionSupported && !this.state.encryptionEnabled && (
           <div>
-            <p>Encryption is not currently enabled.</p>
+            <p>Customer managed encryption keys are not currently enabled.</p>
             <p>
-              To enable encryption, you will need to provide a reference to an encryption key managed by a supported Key
-              Management System.
+              To enable encryption using customer managed encryption keys, you will need to provide a reference to a key
+              managed by a supported Key Management System.
             </p>
             <form className="kms-form">
               {this.state.supportedKMS.map((kms: encryption.KMS) => this.renderKMSOptions(kms))}
