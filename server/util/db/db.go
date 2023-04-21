@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -530,16 +529,18 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 		driverName, connString := parts[0], parts[1]
 		switch driverName {
 		case mysqlDriver:
-			u, err := url.Parse(datasource)
+			cfg, err := gomysql.ParseDSN(connString)
 			if err != nil {
 				return nil, fmt.Errorf("malformed mySQL connection string: %s", err)
 			}
-			u.Query().Add("sql_mode", "ANSI_QUOTES")
-			parts := strings.SplitN(u.String(), "://", 2)
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("malformed db connection string")
+			if cfg.Params == nil {
+				cfg.Params = make(map[string]string, 1)
 			}
-			connString = parts[1]
+			if cfg.Params["sql_mode"] != "" {
+				cfg.Params["sql_mode"] += ","
+			}
+			cfg.Params["sql_mode"] += "ANSI_QUOTES"
+			connString = cfg.FormatDSN()
 		}
 		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
 	}
