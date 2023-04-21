@@ -8,5 +8,6 @@ ts_library(
     strict = True,
     deps = [
         "//app/capabilities",
+        "//app/shortcuts",
     ],
 )
