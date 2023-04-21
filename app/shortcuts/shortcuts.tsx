@@ -140,6 +140,10 @@ export class Shortcuts {
         "keydown",
         function (event: KeyboardEvent) {
           if (!this.preferences.keyboardShortcutsEnabled) {
+            // TODO(iain): instead of reset-alling on keypress, do it on
+            // preference change. Note that this will require breaking the
+            // cyclical dependency between shortcuts & preferences.
+            this.resetAll();
             return;
           }
           // Don't run when typing into a text box.
