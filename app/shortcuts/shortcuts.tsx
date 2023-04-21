@@ -69,6 +69,10 @@ class Shortcut {
     this.action = action;
   }
 
+  reset() {
+    this.keyComboPosition = 0;
+  }
+
   matchKeyboardEvent(event: KeyboardEvent) {
     if (this.keyCombo[this.keyComboPosition].matches(event)) {
       this.keyComboPosition++;
@@ -138,6 +142,12 @@ export class Shortcuts {
           if (!this.preferences.keyboardShortcutsEnabled) {
             return;
           }
+          // Don't run when typing into a text box.
+          let activeElement = document.activeElement;
+          if (activeElement.tagName === "INPUT" && activeElement.type === "text") {
+            this.resetAll();
+            return;
+          }
           for (let shortcut of this.shortcuts.values()) {
             shortcut.matchKeyboardEvent(event);
           }
@@ -156,6 +166,12 @@ export class Shortcuts {
     }
     this.shortcuts.set(handle, shortcut);
     return handle;
+  }
+
+  resetAll() {
+    for (let shortcut of this.shortcuts.values()) {
+      shortcut.reset();
+    }
   }
 
   // Deregisters the keyboard shortcut with the provided handle. If the

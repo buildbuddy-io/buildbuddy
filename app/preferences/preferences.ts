@@ -1,4 +1,5 @@
 import capabilities from "../capabilities/capabilities";
+import shortcuts from "../shortcuts/shortcuts";
 
 const viewModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
@@ -41,6 +42,7 @@ export default class UserPreferences {
   toggleKeyboardShortcuts() {
     this.keyboardShortcutsEnabled = !this.keyboardShortcutsEnabled;
     window.localStorage.setItem(keyboardShortcutsKey, this.keyboardShortcutsEnabled ? keyboardShortcutsValue : "");
+    shortcuts.resetAll();
     this.handlePreferencesChanged();
   }
 }
