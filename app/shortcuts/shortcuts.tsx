@@ -144,7 +144,7 @@ export class Shortcuts {
           }
           // Don't run when typing into a text box.
           let activeElement = document.activeElement;
-          if (activeElement.tagName === "INPUT" && activeElement.type === "text") {
+          if ((activeElement.tagName === "INPUT" && activeElement.type === "text") || activeElement.tagName === "TEXTAREA") {
             this.resetAll();
             return;
           }
