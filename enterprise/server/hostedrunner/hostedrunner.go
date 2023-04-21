@@ -62,7 +62,7 @@ func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
+	q := query_builder.NewQuery(`SELECT * FROM "APIKeys"`)
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}

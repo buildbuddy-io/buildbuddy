@@ -734,17 +734,17 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 	// Initialize UserGroups.membership_status to 1 if the column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "membership_status") {
-		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int").Error; err != nil {
+		if err := db.Exec(`ALTER TABLE "UserGroups" ADD membership_status int`).Error; err != nil {
 			return nil, err
 		}
-		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
+		if err := db.Exec(`UPDATE "UserGroups" SET membership_status = ?`, int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
 			return nil, err
 		}
 	}
 	// Initialize UserGroups.role to Admin if the role column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
 		postMigrate = append(postMigrate, func() error {
-			return db.Exec("UPDATE UserGroups SET role = ?", uint32(role.Admin)).Error
+			return db.Exec(`UPDATE "UserGroups" SET role = ?`, uint32(role.Admin)).Error
 		})
 	}
 
@@ -758,7 +758,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		}
 		// Before creating a unique index, need to replace empty strings with NULL.
 		if !m.HasIndex("Groups", "url_identifier_unique_index") {
-			if err := db.Exec(`UPDATE ` + "`Groups`" + ` SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
+			if err := db.Exec(`UPDATE "Groups" SET url_identifier = NULL WHERE url_identifier = ''`).Error; err != nil {
 				return nil, err
 			}
 		}
@@ -767,7 +767,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	// Migrate Groups.APIKey to APIKey rows.
 	if m.HasTable("Groups") && m.HasColumn(&Group{}, "api_key") && !m.HasTable("APIKeys") {
 		postMigrate = append(postMigrate, func() error {
-			rows, err := db.Raw(`SELECT group_id, api_key FROM ` + "`Groups`" + ``).Rows()
+			rows, err := db.Raw(`SELECT group_id, api_key FROM "Groups"`).Rows()
 			if err != nil {
 				return err
 			}
@@ -794,7 +794,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 				}
 
 				if err := db.Exec(
-					`INSERT INTO APIKeys (api_key_id, group_id, perms, value, label) VALUES (?, ?, ?, ?, ?)`,
+					`INSERT INTO "APIKeys" (api_key_id, group_id, perms, value, label) VALUES (?, ?, ?, ?, ?)`,
 					pk, g.GroupID, apiKeyPerms, apiKey, "Default API key").Error; err != nil {
 					return err
 				}
@@ -836,7 +836,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			if err := m.DropIndex("TargetStatuses", "target_status_invocation_pk"); err != nil {
 				return err
 			}
-			if err := db.Exec("ALTER TABLE TargetStatuses ALTER invocation_pk SET DEFAULT 0").Error; err != nil {
+			if err := db.Exec(`ALTER TABLE "TargetStatuses" ALTER invocation_pk SET DEFAULT 0`).Error; err != nil {
 				return err
 			}
 			return nil
@@ -866,8 +866,8 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 		return err
 	}
 	updateTargetStatusStmt := `
-		UPDATE TargetStatuses ts SET invocation_uuid=
-			(SELECT invocation_uuid FROM Invocations i 
+		UPDATE "TargetStatuses" ts SET invocation_uuid=
+			(SELECT invocation_uuid FROM "Invocations" i 
 			WHERE i.invocation_pk=ts.invocation_pk)
 		WHERE invocation_uuid IS NULL`
 	if err := updateInBatches(db, updateTargetStatusStmt, 10000); err != nil {
@@ -878,7 +878,7 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	// a target status has a invocation_pk that's not in Invocations table. It's OK
 	// to delete these target statuses because these target statuses are not showing
 	// up in the UI right now.
-	deleteTargetStatusStmt := `DELETE FROM TargetStatuses WHERE invocation_uuid IS NULL`
+	deleteTargetStatusStmt := `DELETE FROM "TargetStatuses" WHERE invocation_uuid IS NULL`
 	if err := updateInBatches(db, deleteTargetStatusStmt, 10000); err != nil {
 		return err
 	}
@@ -898,21 +898,21 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 		return err
 	}
 
-	changePKStmt := "ALTER TABLE TargetStatuses "
+	changePKStmt := `ALTER TABLE "TargetStatuses" `
 	if primaryKeyCount > 0 {
-		// Only drop primarky keys when they exist.
-		changePKStmt += "DROP PRIMARY KEY, "
+		// Only drop primary keys when they exist.
+		changePKStmt += `DROP PRIMARY KEY, `
 	}
-	changePKStmt += "ADD PRIMARY KEY(target_id, invocation_uuid), "
+	changePKStmt += `ADD PRIMARY KEY(target_id, invocation_uuid), `
 
 	isStrictModeEnabled, err := isStrictModeEnabled(db)
 	if err != nil {
 		return err
 	}
 	if isStrictModeEnabled {
-		changePKStmt += "ALGORITHM=INPLACE, LOCK=NONE"
+		changePKStmt += `ALGORITHM=INPLACE, LOCK=NONE`
 	} else {
-		changePKStmt += "ALGORITHM=COPY"
+		changePKStmt += `ALGORITHM=COPY`
 	}
 	if err := db.Exec(changePKStmt).Error; err != nil {
 		return err
@@ -938,10 +938,10 @@ func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
 			if err != nil {
 				return err
 			}
-			if err := db.Exec(`UPDATE TargetStatusesOld SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
+			if err := db.Exec(`UPDATE "TargetStatusesOld" SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
 				return err
 			}
-			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
+			if err := db.Exec(`UPDATE "Invocations" SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
 				return err
 			}
 		}
@@ -953,14 +953,14 @@ func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
 	}
 
 	// Copy data from TargetStatusesOld to the new table
-	insertStmt := `INSERT INTO TargetStatuses
+	insertStmt := `INSERT INTO "TargetStatuses"
 			(target_id, invocation_uuid, target_type, test_size, status,
 			start_time_usec, duration_usec, created_at_usec, updated_at_usec)
 		SELECT 
 			target_id, invocation_uuid, target_type, test_size, status,
 			start_time_usec, duration_usec, created_at_usec, updated_at_usec 
 		FROM 
-			TargetStatusesOld`
+			"TargetStatusesOld"`
 
 	if err := db.Exec(insertStmt).Error; err != nil {
 		return err
@@ -980,22 +980,22 @@ func dropIndexIfExists(m gorm.Migrator, table, indexName string) {
 // Manual migration called after auto-migration.
 func PostAutoMigrate(db *gorm.DB) error {
 	invocationIndices := map[string]string{
-		"invocations_trends_query_index":      "(`group_id`, `updated_at_usec`)",
-		"invocations_trends_query_role_index": "(`group_id`, `role`, `updated_at_usec`)",
-		"invocations_stats_group_id_index":    "(`group_id`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_user_index":        "(`group_id`, `user`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_host_index":        "(`group_id`, `host`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_repo_index":        "(`group_id`, `repo_url`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_branch_index":      "(`group_id`, `branch_name`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_commit_index":      "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_role_index":        "(`group_id`, `role`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_trends_query_index":      `("group_id", "updated_at_usec")`,
+		"invocations_trends_query_role_index": `("group_id", "role", "updated_at_usec")`,
+		"invocations_stats_group_id_index":    `("group_id", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_user_index":        `("group_id", "user", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_host_index":        `("group_id", "host", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_repo_index":        `("group_id", "repo_url", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_branch_index":      `("group_id", "branch_name", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_commit_index":      `("group_id", "commit_sha", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_role_index":        `("group_id", "role", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
 	}
 	prefixIndicesByDialect := map[string]map[string]string{
 		mysqlDialect: map[string]string{
-			"invocations_test_grid_query_command_index": "(`group_id` (25), `role` (10), `repo_url`, `command` (10), `created_at_usec` DESC)",
+			"invocations_test_grid_query_command_index": `("group_id" (25), "role" (10), "repo_url", "command" (10), "created_at_usec" DESC)`,
 		},
 		sqliteDialect: map[string]string{
-			"invocations_test_grid_query_command_index": "(`group_id`, `role`, `repo_url`, `command` , `created_at_usec` DESC)",
+			"invocations_test_grid_query_command_index": `("group_id", "role", "repo_url", "command" , "created_at_usec" DESC)`,
 		},
 	}
 	prefixIndexes, ok := prefixIndicesByDialect[db.Dialector.Name()]
@@ -1006,7 +1006,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 	}
 
 	executionIndices := map[string]string{
-		"executions_created_at_usec_index": "(`created_at_usec`)",
+		"executions_created_at_usec_index": `("created_at_usec")`,
 	}
 
 	indicesByTable := map[string]map[string]string{
@@ -1021,7 +1021,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 				if m.HasIndex(tableName, indexName) {
 					continue
 				}
-				err := db.Exec(fmt.Sprintf("CREATE INDEX `%s` ON `%s`%s", indexName, tableName, cols)).Error
+				err := db.Exec(fmt.Sprintf(`CREATE INDEX "%s" ON "%s" %s`, indexName, tableName, cols)).Error
 				if err != nil {
 					log.Errorf("Error creating %s on table %q: %s", indexName, tableName, err)
 				}
@@ -1076,7 +1076,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 }
 
 func dropColumnInPlaceForMySQL(db *gorm.DB, table Table, column string) error {
-	return db.Exec("ALTER TABLE `" + table.TableName() + "` DROP COLUMN " + column + ", ALGORITHM=INPLACE, LOCK=NONE").Error
+	return db.Exec(`ALTER TABLE "` + table.TableName() + `" DROP COLUMN ` + column + `, ALGORITHM=INPLACE, LOCK=NONE`).Error
 }
 
 func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {

@@ -275,7 +275,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 		// Create a row for the corresponding usage period if one doesn't already
 		// exist.
 		res := tx.Exec(`
-			INSERT `+dbh.InsertIgnoreModifier()+` INTO Usages (
+			INSERT `+dbh.InsertIgnoreModifier()+` INTO "Usages" (
 				group_id,
 				period_start_usec,
 				region,
@@ -310,7 +310,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 		// been written (for example, if the previous flush failed to delete the
 		// data from Redis).
 		return tx.Exec(`
-			UPDATE Usages
+			UPDATE "Usages"
 			SET
 				final_before_usec = ?,
 				invocations = invocations + ?,

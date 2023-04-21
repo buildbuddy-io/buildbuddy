@@ -255,12 +255,12 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		var q *db.DB
 		if req.GetId() != "" {
 			q = tx.Raw(`
-				SELECT * FROM Workflows WHERE workflow_id = ?
+				SELECT * FROM "Workflows" WHERE workflow_id = ?
 				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, req.GetId())
 		} else {
 			q = tx.Raw(`
-				SELECT * FROM Workflows
+				SELECT * FROM "Workflows"
 				WHERE group_id = ? AND repo_url = ?
 				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, authenticatedUser.GetGroupID(), req.GetRepoUrl())
@@ -272,7 +272,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, wf.WorkflowID).Error
+		return tx.Exec(`DELETE FROM "Workflows" WHERE workflow_id = ?`, wf.WorkflowID).Error
 	})
 	if err != nil {
 		return nil, err
@@ -297,7 +297,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 
 func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error) {
 	q, args := query_builder.
-		NewQuery("SELECT workflow_id FROM Workflows").
+		NewQuery(`SELECT workflow_id FROM "Workflows"`).
 		AddWhereClause("access_token = ?", accessToken).
 		Build()
 	rows, err := ws.env.GetDBHandle().DB(ctx).Raw(q, args...).Rows()
@@ -334,7 +334,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 
 	rsp := &wfpb.GetWorkflowsResponse{}
-	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
+	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM "Workflows"`)
 	// Respect selected group ID.
 	q.AddWhereClause(`group_id = ?`, groupID)
 	// Adds user / permissions check.
@@ -418,7 +418,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	} else {
 		wf = &tables.Workflow{}
 		err = ws.env.GetDBHandle().DB(ctx).Raw(
-			`SELECT * FROM Workflows WHERE workflow_id = ?`,
+			`SELECT * FROM "Workflows" WHERE workflow_id = ?`,
 			req.GetWorkflowId(),
 		).Take(wf).Error
 		if err != nil {
@@ -447,14 +447,14 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		wf.InstanceNameSuffix = suffix
 		if gitRepository != nil {
 			err = ws.env.GetDBHandle().DB(ctx).Exec(`
-				UPDATE GitRepositories
+				UPDATE "GitRepositories"
 				SET instance_name_suffix = ?
 				WHERE group_id = ? AND repo_url = ?`,
 				wf.InstanceNameSuffix, gitRepository.GroupID, gitRepository.RepoURL,
 			).Error
 		} else {
 			err = ws.env.GetDBHandle().DB(ctx).Exec(`
-				UPDATE Workflows
+				UPDATE "Workflows"
 				SET instance_name_suffix = ?
 				WHERE workflow_id = ?`,
 				wf.InstanceNameSuffix, wf.WorkflowID,
@@ -625,7 +625,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string)
 	gitRepository := &tables.GitRepository{}
 	err = ws.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT *
-		FROM GitRepositories
+		FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
 	`, groupID, repoURL.String()).Take(gitRepository).Error

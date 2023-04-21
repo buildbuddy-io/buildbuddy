@@ -56,7 +56,7 @@ func TestParseDataSource(t *testing.T) {
 	require.Equal(t, "mysql", ds.DriverName())
 	dsn, err = ds.DSN()
 	require.NoError(t, err)
-	require.Equal(t, "user:pass@tcp(host:port)/db", dsn)
+	require.Equal(t, "user:pass@tcp(host:port)/db?sql_mode=ANSI_QUOTES", dsn)
 
 	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
 		Driver:   "mysql",
@@ -70,5 +70,5 @@ func TestParseDataSource(t *testing.T) {
 	require.Equal(t, "mysql", ds.DriverName())
 	dsn, err = ds.DSN()
 	require.NoError(t, err)
-	require.Equal(t, "user:pass@tcp(host:port)/db?foo=bar", dsn)
+	require.Equal(t, "user:pass@tcp(host:port)/db?foo=bar&sql_mode=ANSI_QUOTES", dsn)
 }
