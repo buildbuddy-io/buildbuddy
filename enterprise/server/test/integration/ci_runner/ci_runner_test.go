@@ -514,29 +514,27 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	run()
 }
 
-func TestRunAction_RespectsArgs(t *testing.T) {
+func TestRunAction_RespectsCommitSha(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
 	// TODO: Add combos of no pushed / target / commit_sha
-	runnerFlags := []string{
+	baselineRunnerFlags := []string{
 		"--workflow_id=test-workflow",
 		"--action_name=Print args",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
-		"--commit_sha=" + initialCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
-	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+	runnerFlagsCommit1 := append(baselineRunnerFlags, "--commit_sha="+initialCommitSHA)
 
-	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-
+	result := invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
 	checkRunnerResult(t, result)
-
 	assert.Contains(t, result.Output, "args: {{ Hello world }}")
 
 	// Commit changes to the print statement in the workflow config
@@ -549,12 +547,69 @@ actions:
     bazel_commands:
       - run //:print_args -- "Switcheroo!"
 `
-	testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
+	newCommitSha := testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
 
 	// When invoked with the initial commit sha, should not contain the modified print statement
-	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
+	result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
 	checkRunnerResult(t, result)
 	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+
+	// When invoked with the new commit sha, should contain the modified print statement
+	runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha)
+	result = invokeRunner(t, runnerFlagsCommit2, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
+}
+
+func TestRunAction_ValidRepoConfigs(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	testCases := []struct {
+		name      string
+		repoFlags []string
+	}{
+		{
+			name: "Target repo at a specific commit",
+			repoFlags: []string{
+				"--target_repo_url=file://" + repoPath,
+				"--commit_sha=" + initialCommitSHA,
+			},
+		},
+		{
+			name: "Target repo at a specific branch",
+			repoFlags: []string{
+				"--target_repo_url=file://" + repoPath,
+				"--target_branch=master",
+			},
+		},
+		{
+			name: "Matching pushed repo to target repo",
+			repoFlags: []string{
+				"--target_repo_url=file://" + repoPath,
+				"--target_branch=master",
+				"--pushed_repo_url=file://" + repoPath,
+				"--pushed_branch=master",
+			},
+		},
+		// Different pushed repo from target repo
+		// Tested in TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning
+	}
+	baselineRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+
+	for _, tc := range testCases {
+		runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		checkRunnerResult(t, result)
+		assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
+	}
 }
 
 func TestEnvExpansion(t *testing.T) {

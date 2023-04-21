@@ -1397,8 +1397,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		checkoutLocalBranchName = *targetBranch
 	} else {
-		// If no branch is passed in, stay on the default branch
-		checkoutRef = ""
+		// If no branch is passed in, stay on the default branch. Don't set checkoutRef
 		checkoutLocalBranchName = "local"
 	}
 
@@ -1425,8 +1424,10 @@ func (ws *workspace) sync(ctx context.Context) error {
 	}
 
 	// Checkout the git branch
-	if err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
-		return err
+	if checkoutRef != "" {
+		if err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
+			return err
+		}
 	}
 
 	// Checkout a specific commit on the branch and create the local branch if it doesn't already exist
