@@ -84,7 +84,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		return nil, status.InvalidArgumentErrorf("InvocationSelector must contain a valid invocation_id or commit_sha")
 	}
 
-	q := query_builder.NewQuery(`SELECT * FROM Invocations`)
+	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
 	q = q.AddWhereClause(`group_id = ?`, user.GetGroupID())
 	if req.GetSelector().GetInvocationId() != "" {
 		q = q.AddWhereClause(`invocation_id = ?`, req.GetSelector().GetInvocationId())

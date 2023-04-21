@@ -129,7 +129,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		return nil, err
 	}
 
-	q := query_builder.NewQuery(`SELECT * FROM Executions`)
+	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
 
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())

@@ -50,7 +50,7 @@ func fetchAllQuotaBuckets(t *testing.T, env *testenv.TestEnv, ctx context.Contex
 func fetchQuotaBuckets(t *testing.T, env *testenv.TestEnv, ctx context.Context, namespace string) []*tables.QuotaBucket {
 	res := []*tables.QuotaBucket{}
 	dbh := env.GetDBHandle()
-	q := query_builder.NewQuery(`SELECT * FROM QuotaBuckets`)
+	q := query_builder.NewQuery(`SELECT * FROM "QuotaBuckets"`)
 	if namespace != "" {
 		q.AddWhereClause("namespace = ?", namespace)
 	}
@@ -72,7 +72,7 @@ func fetchQuotaBuckets(t *testing.T, env *testenv.TestEnv, ctx context.Context, 
 func fetchAllQuotaGroups(t *testing.T, env *testenv.TestEnv, ctx context.Context) []*tables.QuotaGroup {
 	res := []*tables.QuotaGroup{}
 	dbh := env.GetDBHandle()
-	rows, err := dbh.DB(ctx).Raw(`SELECT * FROM QuotaGroups`).Rows()
+	rows, err := dbh.DB(ctx).Raw(`SELECT * FROM "QuotaGroups"`).Rows()
 	require.NoError(t, err)
 
 	for rows.Next() {
@@ -537,7 +537,7 @@ func TestModifyNamespace_RemoveBucket(t *testing.T) {
 			assert.Empty(t, cmp.Diff(tc.wantBuckets, got, protocmp.Transform(), sortProtos))
 			row := &struct{ Count int }{}
 			result := db.Raw(
-				`SELECT COUNT(*) as count FROM QuotaGroups WHERE namespace = ? AND bucket_name = ?`,
+				`SELECT COUNT(*) as count FROM "QuotaGroups" WHERE namespace = ? AND bucket_name = ?`,
 				tc.req.GetNamespace(), tc.req.GetRemoveBucket(),
 			).Scan(row)
 			require.NoError(t, result.Error)
@@ -801,7 +801,7 @@ func TestQuotaManagerApplyBucket(t *testing.T) {
 				assert.NoError(t, err)
 				row := &struct{ BucketName string }{}
 				result := db.Raw(
-					`SELECT bucket_name FROM QuotaGroups WHERE namespace = ? AND quota_key = ?`,
+					`SELECT bucket_name FROM "QuotaGroups" WHERE namespace = ? AND quota_key = ?`,
 					tc.req.GetNamespace(), tc.wantQuotaKey,
 				).Scan(row)
 				require.NoError(t, result.Error)

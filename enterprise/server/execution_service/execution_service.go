@@ -67,9 +67,9 @@ func (es *ExecutionService) queryExecutions(ctx context.Context, baseQuery *quer
 
 func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
 	q := query_builder.NewQuery(`
-		SELECT e.* FROM InvocationExecutions ie
-		JOIN Executions e ON e.execution_id = ie.execution_id
-		JOIN Invocations i ON i.invocation_id = e.invocation_id
+		SELECT e.* FROM "InvocationExecutions" ie
+		JOIN "Executions" e ON e.execution_id = ie.execution_id
+		JOIN "Invocations" i ON i.invocation_id = e.invocation_id
 	`)
 	q.AddWhereClause(`ie.invocation_id = ?`, invocationID)
 	return es.queryExecutions(ctx, q)

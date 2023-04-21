@@ -69,7 +69,7 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	ctx := context.Background()
 	dbh := te.GetDBHandle()
 	rows, err := dbh.DB(ctx).Raw(`
-		SELECT * From Usages
+		SELECT * From "Usages"
 		ORDER BY group_id, period_start_usec, region ASC;
 	`).Rows()
 	require.NoError(t, err)

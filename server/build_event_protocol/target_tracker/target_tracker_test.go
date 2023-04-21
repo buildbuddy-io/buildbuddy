@@ -442,7 +442,7 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 
 func assertTargetsAndTargetStatusesMatch(t *testing.T, te *testenv.TestEnv, expected []Row) {
 	var got []Row
-	query := "SELECT rule_type, label, repo_url, test_size, status, target_type FROM Targets t JOIN TargetStatuses ts ON t.target_id = ts.target_id"
+	query := `SELECT rule_type, label, repo_url, test_size, status, target_type FROM "Targets" t JOIN "TargetStatuses" ts ON t.target_id = ts.target_id`
 	err := te.GetDBHandle().DB(context.Background()).Raw(query).Scan(&got).Error
 	require.NoError(t, err)
 	assert.ElementsMatch(t, got, expected)
