@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -26,7 +25,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -497,21 +495,10 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 		return nil, err
 	}
 
-	githubClient := github.NewGithubClient(s.env, wf.AccessToken)
-	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(req.GetRepoUrl())
-	if err != nil {
-		return nil, err
-	}
-	sha, err := githubClient.GetCommitSha(ctx, ownerRepo, req.GetRef())
-	if err != nil {
-		return nil, err
-	}
-
 	r := &workflow.ExecuteWorkflowRequest{
 		RequestContext: requestCtx,
 		WorkflowId:     wf.WorkflowID,
 		ActionNames:    req.GetActionNames(),
-		CommitSha:      sha,
 		PushedRepoUrl:  req.GetRepoUrl(),
 		PushedBranch:   req.GetRef(),
 		TargetRepoUrl:  req.GetRepoUrl(),

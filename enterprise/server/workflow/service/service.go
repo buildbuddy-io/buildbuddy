@@ -382,9 +382,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetWorkflowId() == "" {
 		return nil, status.InvalidArgumentError("Missing workflow_id")
 	}
-	if req.GetCommitSha() == "" {
-		return nil, status.InvalidArgumentError("Missing commit_sha")
-	}
 	if req.GetPushedRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("Missing pushed_repo_url")
 	}
