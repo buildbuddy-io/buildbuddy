@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -484,10 +483,6 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 			return nil, status.FailedPreconditionError("endpoint is required")
 		}
 
-		if ac.Driver == mysqlDriver {
-			dsn.AddParam("sql_mode", "ANSI_QUOTES")
-		}
-
 		if ac.UseAWSIAM {
 			if ac.Region == "" {
 				return nil, status.FailedPreconditionError("region is required to enable AWS IAM")
@@ -528,19 +523,6 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 			return nil, fmt.Errorf("malformed db connection string")
 		}
 		driverName, connString := parts[0], parts[1]
-		switch driverName {
-		case mysqlDriver:
-			u, err := url.Parse(datasource)
-			if err != nil {
-				return nil, fmt.Errorf("malformed mySQL connection string: %s", err)
-			}
-			u.Query().Add("sql_mode", "ANSI_QUOTES")
-			parts := strings.SplitN(u.String(), "://", 2)
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("malformed db connection string")
-			}
-			connString = parts[1]
-		}
 		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
 	}
 
