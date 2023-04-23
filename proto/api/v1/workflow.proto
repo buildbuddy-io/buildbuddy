@@ -8,8 +8,8 @@ message ExecuteWorkflowRequest {
   // URL of the repo the workflow is running for
   // Ex. "https://github.com/some-user/acme"
   string repo_url = 1;
-  // Reference for where the workflow should be run (currently only branch names are supported)
-  // Ex. "cool-feature"
+  // Reference for where the workflow should be run (currently only branch names
+  // are supported) Ex. "cool-feature"
   string ref = 2;
 
   // OPTIONAL FIELDS

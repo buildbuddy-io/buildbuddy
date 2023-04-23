@@ -598,26 +598,11 @@ func (ws *workflowService) GetWorkflowByGroupAndRepo(ctx context.Context, groupI
 	}
 
 	rwf, err := ws.getRepositoryWorkflow(ctx, groupID, parsedRepoURL)
-	if err == nil {
-		return rwf.Workflow, nil
-	}
-
-	// If the workflow isn't found in the GitRepositories table, look in the legacy Workflows table
-	wf := &tables.Workflow{}
-	err = ws.env.GetDBHandle().DB(ctx).Raw(`
-		SELECT *
-		FROM Workflows
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, groupID, repoURL).Take(wf).Error
 	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.NotFoundErrorf("repo %q not found", repoURL)
-		}
-		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
+		return nil, err
 	}
 
-	return wf, nil
+	return rwf.Workflow, nil
 }
 
 // To run workflow in a clean container, update the instance name suffix
@@ -660,7 +645,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 		FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
-	`, groupID, repoURL).Take(gitRepository).Error
+	`, groupID, repoURL.String()).Take(gitRepository).Error
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundErrorf("repo %q not found", repoURL)

@@ -53,5 +53,7 @@ service ApiService {
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
 
   // Execute a workflow for the given URL and branch.
+  // Github App authentication is required. The API does not support running
+  // legacy workflows.
   rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 }
