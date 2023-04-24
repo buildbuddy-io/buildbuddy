@@ -1363,6 +1363,10 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
+	if *pushedBranch == "" && *targetBranch == "" {
+		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `target_branch` to be set")
+	}
+
 	// Fetch the pushed and target branches from their respective remotes.
 	// "base" here is referring to the repo on which the workflow is configured.
 	// "fork" is referring to the forked repo, if the runner was triggered by a
@@ -1394,13 +1398,9 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if *pushedRepoURL != "" {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 		checkoutLocalBranchName = *pushedBranch
-	} else if *targetBranch != "" {
+	} else {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		checkoutLocalBranchName = *targetBranch
-	} else {
-		// If no branch is passed in, stay on the default branch
-		checkoutRef = "HEAD"
-		checkoutLocalBranchName = "local"
 	}
 
 	// TODO(Maggie): If commit sha is not set, pull the actual sha so that it can be used in reporting
