@@ -39,7 +39,7 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 	}
 }
 
-func Test_Filecache(t *testing.T) {
+func TestFilecache(t *testing.T) {
 	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
 	fc, err := filecache.NewFileCache(fcDir, 100000)
@@ -104,22 +104,57 @@ func TestFileCacheOverwrite(t *testing.T) {
 			fc.WaitForDirectoryScanToComplete()
 			tempDir := fc.TempDir()
 
-			const content = "test-file-content"
-			const name = "file1"
-			writeFileContent(t, tempDir, name, content, test.Executable)
-			node := nodeFromString(content, test.Executable)
+			writeFileContent(t, tempDir, "file1", "file1-content", test.Executable)
+			node := nodeFromString("file1-content", test.Executable)
 			{
 				// Add node for the first time
 				fc.AddFile(node, filepath.Join(tempDir, "file1"))
-				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "link1"))
+				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file1-link1"))
 				require.True(t, linked, "expected cache hit after writing file")
+				// Verify all file contents
+				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
+				file1Link1Content := testfs.ReadFileAsString(t, tempDir, "file1-link1")
+				require.Equal(t, "file1-content", file1Content)
+				require.Equal(t, "file1-content", file1Link1Content)
 			}
 			{
 				// Overwrite existing node entry
 				fc.AddFile(node, filepath.Join(tempDir, "file1"))
-				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "link2"))
+				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file1-link2"))
 				require.True(t, linked, "expected cache hit after overwriting file")
+				// Verify all file contents
+				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
+				file1Link1Content := testfs.ReadFileAsString(t, tempDir, "file1-link1")
+				file1Link2Content := testfs.ReadFileAsString(t, tempDir, "file1-link2")
+				require.Equal(t, "file1-content", file1Content)
+				require.Equal(t, "file1-content", file1Link1Content)
+				require.Equal(t, "file1-content", file1Link2Content)
 			}
+			{
+				// Overwrite again, this time the contents don't match the
+				// digest (filecache supports this, similar to AC).
+				writeFileContent(t, tempDir, "file2", "file2-content", test.Executable)
+				fc.AddFile(node, filepath.Join(tempDir, "file2"))
+				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file2-link1"))
+				require.True(t, linked, "expected cache hit after overwriting file with different digest")
+				// Verify all file contents
+				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
+				file1Link1Content := testfs.ReadFileAsString(t, tempDir, "file1-link1")
+				file1Link2Content := testfs.ReadFileAsString(t, tempDir, "file1-link2")
+				file2Content := testfs.ReadFileAsString(t, tempDir, "file2")
+				file2Link1Content := testfs.ReadFileAsString(t, tempDir, "file2-link1")
+				require.Equal(t, "file1-content", file1Content)
+				require.Equal(t, "file1-content", file1Link1Content)
+				require.Equal(t, "file1-content", file1Link2Content)
+				require.Equal(t, "file2-content", file2Content)
+				require.Equal(t, "file2-content", file2Link1Content)
+			}
+
+			// No evictions should have occurred.
+			// TODO(bduffany): this assertion fails currently. Fix!
+
+			// lastEvictionAge := testmetrics.GaugeValue(t, metrics.FileCacheLastEvictionAgeUsec)
+			// require.Equal(t, float64(0), lastEvictionAge, "last eviction age should still be 0")
 		})
 	}
 }
