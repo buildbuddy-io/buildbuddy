@@ -26,12 +26,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -40,10 +44,12 @@ var (
 	// then look at the output of
 	//     find /sys/fs/cgroup | grep libpod-$(podman container inspect sleepy | jq -r '.[0].Id')
 
-	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
-	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
-	// TODO(iain): switch to boolean flag once image streaming supports all container images.
-	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of images that can be streamed by podman.")
+	memUsagePathTemplate  = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
+	cpuUsagePathTemplate  = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
+	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "Whether container image streaming is enabled by default")
+
+	// TODO(iain): delete this flag.
+	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of images that can be streamed by podman. Note that if executor.podman.enable_image_streaming is set then all images are streamed and the value of this flag is ignored.")
 	pullTimeout      = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
@@ -75,6 +81,12 @@ const (
 	// argument to podman to enable the use of the soci store for streaming
 	enableStreamingStoreArg = "--storage-opt=additionallayerstore=/var/lib/soci-store/store:ref"
 
+	// The directory where soci artifact blobs are stored
+	sociBlobDirectory = "/var/lib/soci-snapshotter-grpc/content/blobs/sha256/"
+
+	// The directory whre soci indexes are stored
+	sociIndexDirectory = "/var/lib/soci-snapshotter-grpc/indexes/"
+
 	sociStorePath = "/var/lib/soci-store/store"
 )
 
@@ -84,10 +96,11 @@ type pullStatus struct {
 }
 
 type Provider struct {
-	env              environment.Env
-	imageCacheAuth   *container.ImageCacheAuthenticator
-	buildRoot        string
-	streamableImages []string
+	env                   environment.Env
+	imageCacheAuth        *container.ImageCacheAuthenticator
+	buildRoot             string
+	imageStreamingEnabled bool
+	streamableImages      []string
 }
 
 func runSociStore(ctx context.Context) {
@@ -114,13 +127,13 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
-[storage]
-driver = "overlay"
-runroot = "/run/containers/storage"
-graphroot = "/var/lib/containers/storage"
-[storage.options]
-additionallayerstores=["/var/lib/soci-store/store:ref"]
-`
+		[storage]
+		driver = "overlay"
+		runroot = "/run/containers/storage"
+		graphroot = "/var/lib/containers/storage"
+		[storage.options]
+		additionallayerstores=["/var/lib/soci-store/store:ref"]
+		`
 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
 		}
@@ -146,10 +159,11 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 	}
 
 	return &Provider{
-		env:              env,
-		imageCacheAuth:   imageCacheAuthenticator,
-		streamableImages: *streamableImages,
-		buildRoot:        buildRoot,
+		env:                   env,
+		imageCacheAuth:        imageCacheAuthenticator,
+		imageStreamingEnabled: *imageStreamingEnabled,
+		streamableImages:      *streamableImages,
+		buildRoot:             buildRoot,
 	}, nil
 }
 
@@ -170,7 +184,7 @@ func (p *Provider) NewContainer(ctx context.Context, image string, options *Podm
 		env:                   p.env,
 		imageCacheAuth:        p.imageCacheAuth,
 		image:                 image,
-		imageStreamingEnabled: imageIsStreamable,
+		imageStreamingEnabled: *imageStreamingEnabled || imageIsStreamable,
 		buildRoot:             p.buildRoot,
 		options:               options,
 	}, nil
@@ -472,11 +486,78 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+	if *imageStreamingEnabled {
+		if err := c.prepareToStreamImage(ctx); err != nil {
+			return err
+		}
+	}
 	if err := c.pullImage(ctx, creds); err != nil {
 		return err
 	}
 	ps.pulled = true
 	return nil
+}
+
+func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
+	if err != nil {
+		return err
+	}
+	resp, err := c.env.GetSociArtifactStoreClient().GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: c.image})
+	if err != nil {
+		return err
+	}
+	blobReq := repb.BatchReadBlobsRequest{
+		InstanceName:   "soci",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	for _, artifact := range resp.Artifacts {
+		if artifact.Type == socipb.Type_UNKNOWN_TYPE {
+			return status.InternalErrorf("SociArtifactStore returned unknown artifact with hash %s" + artifact.Digest.Hash)
+		} else if artifact.Type == socipb.Type_SOCI_INDEX {
+			// Write the index file, this is what the snapshotter uses to
+			// associate the requested image with its soci index.
+			if err = os.WriteFile(sociIndex(resp.ImageId), []byte(artifact.Digest.Hash), 0644); err != nil {
+				return err
+			}
+		}
+		blobReq.Digests = append(blobReq.Digests, artifact.Digest)
+	}
+	blobResp, err := c.env.GetContentAddressableStorageClient().BatchReadBlobs(ctx, &blobReq)
+	if err != nil {
+		return err
+	}
+	for _, blob := range blobResp.Responses {
+		err := gstatus.ErrorProto(blob.Status)
+		if err != nil {
+			return err
+		}
+		// Write the artifact to the local filesystem so the snapshotter can
+		// read it.
+		os.WriteFile(sociBlob(blob.Digest.Hash), blob.Data, 0644)
+
+		// TODO(iain): remove log statement, just for checking in dev!
+		log.Info("Wrote soci artifact " + sociBlob(blob.Digest.Hash))
+	}
+	return nil
+}
+
+func sociIndex(digest string) string {
+	return sociIndexDirectory + digest
+}
+
+func sociBlob(digest string) string {
+	return sociBlobDirectory + digest
+}
+
+func resourceName(digest *repb.Digest) *rspb.ResourceName {
+	return &rspb.ResourceName{
+		Digest:         digest,
+		InstanceName:   "soci",
+		Compressor:     repb.Compressor_IDENTITY,
+		CacheType:      rspb.CacheType_CAS,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
 }
 
 // cidFilePath returns the path to the container's cidfile. Podman will write

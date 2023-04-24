@@ -26,6 +26,7 @@ go_library(
         "//enterprise/server/tasksize",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
+        "//proto:soci_go_proto",
         "//server/config",
         "//server/environment",
         "//server/interfaces",
