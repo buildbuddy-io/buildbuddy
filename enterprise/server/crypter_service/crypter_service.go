@@ -595,6 +595,14 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 	}, nil
 }
 
+func (c *Crypter) ActiveKey(ctx context.Context) (*rfpb.EncryptionMetadata, error) {
+	loadedKey, err := c.cache.encryptionKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return loadedKey.metadata, nil
+}
+
 func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
 	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {

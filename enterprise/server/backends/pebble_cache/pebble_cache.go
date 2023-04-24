@@ -217,6 +217,14 @@ func (m *v1ToV2Migrator) FromVersion() filestore.PebbleKeyVersion {
 func (m *v1ToV2Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version2 }
 func (m *v1ToV2Migrator) Migrate(val []byte) []byte             { return val }
 
+type v2ToV3Migrator struct{}
+
+func (m *v2ToV3Migrator) FromVersion() filestore.PebbleKeyVersion {
+	return filestore.Version2
+}
+func (m *v2ToV3Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version3 }
+func (m *v2ToV3Migrator) Migrate(val []byte) []byte             { return val }
+
 // Register creates a new PebbleCache from the configured flags and sets it in
 // the provided env.
 func Register(env environment.Env) error {
@@ -418,6 +426,10 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		if pc.activeDatabaseVersion() >= filestore.Version2 {
 			// Migrate keys from 1->2.
 			pc.migrators = append(pc.migrators, &v1ToV2Migrator{})
+		}
+		if pc.activeDatabaseVersion() >= filestore.Version3 {
+			// Migrate keys from 2->3.
+			pc.migrators = append(pc.migrators, &v2ToV3Migrator{})
 		}
 	}
 
@@ -1206,6 +1218,20 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 
 	groupID, partID := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 
+	encryptionEnabled, err := p.encryptionEnabled(ctx, partID)
+	if err != nil {
+		return nil, err
+	}
+
+	var encryption *rfpb.Encryption
+	if encryptionEnabled {
+		ak, err := p.env.GetCrypter().ActiveKey(ctx)
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not obtain encryption key: %s", err)
+		}
+		encryption = &rfpb.Encryption{KeyId: ak.GetEncryptionKeyId()}
+	}
+
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
 			CacheType:          r.GetCacheType(),
@@ -1215,6 +1241,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		},
 		Digest:     r.GetDigest(),
 		Compressor: r.GetCompressor(),
+		Encryption: encryption,
 	}, nil
 }
 
@@ -1792,7 +1819,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, r.GetDigest(), wc)
 		if err != nil {
 			_ = wc.Close()
-			return nil, err
+			return nil, status.FailedPreconditionErrorf("encryptor not available: %s", err)
 		}
 		encryptionMetadata = ewc.Metadata()
 		wc = ewc
@@ -2245,38 +2272,66 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 		if !valid {
 			continue
 		}
+
 		var key filestore.PebbleKey
 		if _, err := key.FromBytes(iter.Key()); err != nil {
 			return nil, err
 		}
 
-		fileMetadata := &rfpb.FileMetadata{}
-		unlockFn := e.locker.RLock(key.LockID())
-		err = proto.Unmarshal(iter.Value(), fileMetadata)
-		unlockFn()
-		if err != nil {
-			return nil, err
-		}
+		for {
+			fileMetadata := &rfpb.FileMetadata{}
+			unlockFn := e.locker.RLock(key.LockID())
+			err = proto.Unmarshal(iter.Value(), fileMetadata)
+			unlockFn()
+			if err != nil {
+				return nil, err
+			}
 
-		atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-		age := time.Since(atime)
-		if age < e.minEvictionAge {
-			continue
-		}
+			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+			age := time.Since(atime)
+			if age < e.minEvictionAge {
+				continue
+			}
 
-		keyBytes := make([]byte, len(iter.Key()))
-		copy(keyBytes, iter.Key())
-		sample := &approxlru.Sample[*evictionKey]{
-			Key: &evictionKey{
-				bytes:           keyBytes,
-				storageMetadata: fileMetadata.GetStorageMetadata(),
-			},
-			SizeBytes: fileMetadata.GetStoredSizeBytes(),
-			Timestamp: atime,
-		}
+			keyBytes := make([]byte, len(iter.Key()))
+			copy(keyBytes, iter.Key())
+			sample := &approxlru.Sample[*evictionKey]{
+				Key: &evictionKey{
+					bytes:           keyBytes,
+					storageMetadata: fileMetadata.GetStorageMetadata(),
+				},
+				SizeBytes: fileMetadata.GetStoredSizeBytes(),
+				Timestamp: atime,
+			}
 
-		samples = append(samples, sample)
-		if len(samples) == k {
+			samples = append(samples, sample)
+
+			if !iter.Next() {
+				break
+			}
+
+			// Check if the next key is for the same digest in which case
+			// include it as a possible eviction candidate.
+			//
+			// This can happen for example if there are multiple AC entries
+			// with different "remote instance name hash" values:
+			//   PTfoo/GR123/foobar/ac/123
+			//   PTfoo/GR123/foobar/ac/456
+			// We want to consider both keys for eviction, not just the first
+			// one.
+			//
+			// The same situation can occur after enabling or disabling
+			// encryption which can produce multiple keys for the same hash.
+			var nextKey filestore.PebbleKey
+			if _, err := nextKey.FromBytes(iter.Key()); err != nil {
+				return nil, err
+			}
+			if nextKey.Hash() != key.Hash() {
+				break
+			}
+			key = nextKey
+		}
+		if len(samples) >= k {
 			break
 		}
 	}
@@ -2484,7 +2539,7 @@ func (p *PebbleCache) reader(ctx context.Context, iter *pebble.Iterator, r *rspb
 		if shouldDecrypt {
 			d, err := p.env.GetCrypter().NewDecryptor(ctx, r.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
 			if err != nil {
-				return nil, err
+				return nil, status.FailedPreconditionErrorf("decryptor not available: %s", err)
 			}
 			reader = d
 		}
