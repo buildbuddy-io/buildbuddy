@@ -489,7 +489,7 @@ type GitHubApp interface {
 	// owner (GitHub username or org name).
 	GetInstallationToken(ctx context.Context, owner string) (string, error)
 
-	// GetRepositoryInstallationToken returns an installation for the given
+	// GetRepositoryInstallationToken returns an installation token for the given
 	// GitRepository.
 	GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error)
 
