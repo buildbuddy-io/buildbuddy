@@ -332,8 +332,8 @@ http_archive(
 # protoc-gen-protobufjs (for .proto to .js codegen)
 http_archive(
     name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
-    sha256 = "387929c3d9606c51f68f9e729107ba211684d8a024b92b532fe42f0c7af9fb6b",
-    urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.7/protoc-gen-protobufjs-v0.0.7.tar.gz"],
+    sha256 = "9a43cb8f5353fa6e0858aa694d34e55e395c64703a7370cc116bd4501c46b622",
+    urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.8/protoc-gen-protobufjs-v0.0.8.tar.gz"],
 )
 
 # esbuild (for bundling JS)
