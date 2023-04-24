@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -43,7 +44,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -53,11 +53,10 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
-	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 	dockerclient "github.com/docker/docker/client"
@@ -203,18 +202,12 @@ type commandRunner struct {
 	imageCacheAuth *container.ImageCacheAuthenticator
 	p              *pool
 
-	// ACL controls who can use this runner.
-	ACL *aclpb.ACL
+	// key controls which tasks can execute on this runner.
+	key *rnpb.RunnerKey
+
 	// PlatformProperties holds the parsed platform properties for the last task
 	// executed by this runner.
 	PlatformProperties *platform.Properties
-	// Platform is the raw (unparsed) platform of this runner. Only tasks with
-	// an exact platform match can execute on this runner.
-	Platform *repb.Platform
-	// InstanceName is the remote instance name specified when creating this
-	// runner. Only tasks with matching remote instance names can execute on this
-	// runner.
-	InstanceName string
 	// debugID is a short debug ID used to identify this runner.
 	// It is not necessarily globally unique.
 	debugID string
@@ -268,14 +261,14 @@ type commandRunner struct {
 }
 
 func (r *commandRunner) String() string {
-	ph, err := platformHash(r.Platform)
+	ph, err := platformHash(r.key.Platform)
 	if err != nil {
 		ph = "<ERR!>"
 	}
 	return fmt.Sprintf(
 		"%s:%s:%d:%s:%s:%s",
-		r.debugID, r.state, r.taskNumber, r.ACL.GetGroupId(),
-		truncate(r.InstanceName, 8, "..."), truncate(ph, 8, ""))
+		r.debugID, r.state, r.taskNumber, r.key.GetGroupId(),
+		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
 func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
@@ -557,18 +550,6 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 
 	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &container.Stdio{})
 	return res.Error
-}
-
-// ACLForUser returns an ACL that grants anyone in the given user's group to
-// Read/Write permissions for a runner.
-func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
-	if user == nil {
-		return nil
-	}
-	userID := &uidpb.UserId{Id: user.GetUserID()}
-	groupID := user.GetGroupID()
-	permBits := perms.OWNER_READ | perms.OWNER_WRITE | perms.GROUP_READ | perms.GROUP_WRITE
-	return perms.ToACLProto(userID, groupID, permBits)
 }
 
 type ContainerProvider func(context.Context, *platform.Properties, *repb.ScheduledTask) (*container.TracedCommandContainer, error)
@@ -962,11 +943,13 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
 		return nil, err
 	}
-	rawPlatform := task.GetCommand().GetPlatform()
-
 	user, err := auth.UserFromTrustedJWT(ctx)
 	if err != nil && !authutil.IsAnonymousUserError(err) {
 		return nil, err
+	}
+	groupID := ""
+	if user != nil {
+		groupID = user.GetGroupID()
 	}
 	if props.RecycleRunner && err != nil {
 		return nil, status.InvalidArgumentError(
@@ -977,25 +960,14 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
 	}
 
-	instanceName := task.GetExecuteRequest().GetInstanceName()
-
-	workerKey := props.PersistentWorkerKey
-	if props.PersistentWorker && workerKey == "" {
-		workerArgs, _ := SplitArgsIntoWorkerArgsAndFlagFiles(task.GetCommand().GetArguments())
-		workerKey = strings.Join(workerArgs, " ")
-	}
-
-	wsOpts := &workspace.Opts{
-		Preserve:        props.PreserveWorkspace,
-		CleanInputs:     props.CleanWorkspaceInputs,
-		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
+	key := &rnpb.RunnerKey{
+		GroupId:             groupID,
+		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
+		Platform:            task.GetCommand().GetPlatform(),
+		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
 	}
 	if props.RecycleRunner {
-		r, err := p.take(ctx, &query{
-			User:         user,
-			InstanceName: instanceName,
-			Platform:     rawPlatform,
-		})
+		r, err := p.take(ctx, key)
 		if err != nil {
 			return nil, err
 		}
@@ -1008,6 +980,11 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
 			return r, nil
 		}
+	}
+	wsOpts := &workspace.Opts{
+		Preserve:        props.PreserveWorkspace,
+		CleanInputs:     props.CleanWorkspaceInputs,
+		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
@@ -1053,13 +1030,11 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		env:                p.env,
 		p:                  p,
 		imageCacheAuth:     p.imageCacheAuth,
+		key:                key,
 		debugID:            debugID,
-		ACL:                ACLForUser(user),
 		task:               task,
 		taskNumber:         1,
-		Platform:           rawPlatform,
 		PlatformProperties: props,
-		InstanceName:       instanceName,
 		Container:          ctr,
 		Workspace:          ws,
 		VFS:                fs,
@@ -1141,31 +1116,15 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 	return container.NewTracedCommandContainer(ctr), nil
 }
 
-// query specifies a set of search criteria for runners within a pool.
-// All criteria must match in order for a runner to be matched.
-type query struct {
-	// User is the current authenticated user. This query will only match runners
-	// that this user can access.
-	// Required.
-	User interfaces.UserInfo
-	// InstanceName is the remote instance name that must have been used when
-	// creating the runner.
-	// Required; the zero-value "" corresponds to the default instance name.
-	InstanceName string
-	// Platform is the platform requested for the runner.
-	// Required.
-	Platform *repb.Platform
-}
-
-func (q *query) String() string {
-	ph, err := platformHash(q.Platform)
+func keyString(k *rnpb.RunnerKey) string {
+	ph, err := platformHash(k.Platform)
 	if err != nil {
 		ph = "<ERR!>"
 	}
 	return fmt.Sprintf(
 		"%s:%s:%s",
-		q.User.GetGroupID(),
-		truncate(q.InstanceName, 8, "..."),
+		k.GetGroupId(),
+		truncate(k.InstanceName, 8, "..."),
 		truncate(ph, 8, ""))
 }
 
@@ -1175,30 +1134,29 @@ func (p *pool) String() string {
 
 // take finds the most recently used runner in the pool that matches the given
 // query. If one is found, it is unpaused and returned.
-func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
+func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	log.CtxInfof(ctx, "Looking for match for %q in runner pool %s", q, p)
-	qPlatform, err := platformHash(q.Platform)
+	log.CtxInfof(ctx, "Looking for match for %q in runner pool %s", keyString(key), p)
+	taskKeyBytes, err := proto.Marshal(key)
 	if err != nil {
-		return nil, status.InternalErrorf("Failed to compute platform hash: %s", err)
+		return nil, status.InternalErrorf("failed to marshal runner key: %s", err)
 	}
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
 		r := p.runners[i]
-
-		rPlatform, err := platformHash(r.Platform)
-		if err != nil {
-			log.Warningf("Failed to compute platform hash for %s: %s", r, err)
+		if key.GroupId != r.key.GroupId || r.state != paused {
 			continue
 		}
 
-		authErr := perms.AuthorizeWrite(&q.User, r.ACL)
-		if authErr != nil ||
-			r.state != paused ||
-			r.InstanceName != q.InstanceName ||
-			rPlatform != qPlatform {
+		// Check for an exact match on the runner pool keys.
+		runnerKeyBytes, err := proto.Marshal(r.key)
+		if err != nil {
+			log.Errorf("Failed to marshal runner key for %s: %s", r, err)
+			continue
+		}
+		if !bytes.Equal(taskKeyBytes, runnerKeyBytes) {
 			continue
 		}
 
@@ -1464,6 +1422,17 @@ func (es errSlice) Error() string {
 		msgs = append(msgs, err.Error())
 	}
 	return fmt.Sprintf("[multiple errors: %s]", strings.Join(msgs, "; "))
+}
+
+func effectivePersistentWorkerKey(props *platform.Properties, commandArgs []string) string {
+	if props.PersistentWorkerKey != "" {
+		return props.PersistentWorkerKey
+	}
+	if !props.PersistentWorker {
+		return ""
+	}
+	workerArgs, _ := SplitArgsIntoWorkerArgsAndFlagFiles(commandArgs)
+	return strings.Join(workerArgs, " ")
 }
 
 func SplitArgsIntoWorkerArgsAndFlagFiles(args []string) ([]string, []string) {
