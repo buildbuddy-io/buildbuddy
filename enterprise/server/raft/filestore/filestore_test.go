@@ -17,7 +17,7 @@ import (
 func TestKeyVersionCrossCompatibility(t *testing.T) {
 	testGroupID := "GR7890"
 	partitionID := "FOO"
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 
 	// What we are testing here is that for every version a key can be
 	// written at, it can also be re-read and rewritten at every other version.

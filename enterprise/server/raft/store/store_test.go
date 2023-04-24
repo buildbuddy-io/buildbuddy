@@ -277,7 +277,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 		Digest: d,
 	}
 
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 	fileMetadataKey := metadataKey(t, fr)
 
 	_, err := ts.APIClient.Get(ctx, ts.GRPCAddress)
@@ -314,7 +314,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 }
 
 func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 	pebbleKey, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
 	keyBytes, err := pebbleKey.Bytes(filestore.Version2)

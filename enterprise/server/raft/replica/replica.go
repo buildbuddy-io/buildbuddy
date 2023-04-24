@@ -1907,7 +1907,7 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore, partitions []di
 		partitions:          partitions,
 		lastUsageCheckIndex: 0,
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
-		fileStorer:          filestore.New(filestore.Opts{}),
+		fileStorer:          filestore.New(),
 		quitChan:            make(chan struct{}),
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
 		readQPS:             qps.NewCounter(),

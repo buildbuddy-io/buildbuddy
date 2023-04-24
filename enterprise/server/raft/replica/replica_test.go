@@ -106,7 +106,7 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 }
 
 func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) interfaces.CommittedWriteCloser {
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(t, err)
 	fileMetadataKey, err := key.Bytes(filestore.Version2)
@@ -308,7 +308,7 @@ func TestReplicaCAS(t *testing.T) {
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
 	fr := rt.writeRandom(header, defaultPartition, 100)
 
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 	key, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
 
