@@ -327,6 +327,18 @@ class Router {
     return Boolean(user?.canCall("listSecrets"));
   }
 
+  getHash() {
+    return window.location.hash.split("@")[0];
+  }
+
+  getLineNumber() {
+    let hashParts = location.hash.split("@");
+    if (hashParts.length > 1) {
+      return parseInt(hashParts[1]);
+    }
+    return undefined;
+  }
+
   /**
    * Routes the user to a new page if they don't have the ability to access the
    * current page.

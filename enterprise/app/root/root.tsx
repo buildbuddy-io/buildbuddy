@@ -58,7 +58,7 @@ export default class EnterpriseRootComponent extends React.Component {
   state: State = {
     loading: true,
     user: null,
-    hash: window.location.hash,
+    hash: router.getHash(),
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
@@ -86,7 +86,7 @@ export default class EnterpriseRootComponent extends React.Component {
       faviconService.setDefaultFavicon();
     }
     this.setState({
-      hash: window.location.hash,
+      hash: router.getHash(),
       path: window.location.pathname,
       search: new URLSearchParams(window.location.search),
     });

@@ -29,7 +29,7 @@ capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPat
 export default class RootComponent extends React.Component {
   state: State = {
     user: null,
-    hash: window.location.hash,
+    hash: router.getHash(),
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
@@ -54,7 +54,7 @@ export default class RootComponent extends React.Component {
       faviconService.setDefaultFavicon();
     }
     this.setState({
-      hash: window.location.hash,
+      hash: router.getHash(),
       path: window.location.pathname,
       search: new URLSearchParams(window.location.search),
     });
