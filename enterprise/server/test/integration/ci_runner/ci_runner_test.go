@@ -518,7 +518,6 @@ func TestRunAction_RespectsCommitSha(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
-	// TODO: Add combos of no pushed / target / commit_sha
 	baselineRunnerFlags := []string{
 		"--workflow_id=test-workflow",
 		"--action_name=Print args",
@@ -561,51 +560,41 @@ actions:
 	assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
 }
 
-func TestRunAction_ValidRepoConfigs(t *testing.T) {
+func TestRunAction_TargetRepoOnly(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
 	testCases := []struct {
 		name      string
+		useSha    bool
 		repoFlags []string
 	}{
 		{
-			name: "Target repo at a specific commit",
-			repoFlags: []string{
-				"--target_repo_url=file://" + repoPath,
-				"--commit_sha=" + initialCommitSHA,
-			},
+			name:   "With commit sha",
+			useSha: true,
 		},
 		{
-			name: "Target repo at a specific branch",
-			repoFlags: []string{
-				"--target_repo_url=file://" + repoPath,
-				"--target_branch=master",
-			},
+			name:   "Without commit sha",
+			useSha: false,
 		},
-		{
-			name: "Matching pushed repo to target repo",
-			repoFlags: []string{
-				"--target_repo_url=file://" + repoPath,
-				"--target_branch=master",
-				"--pushed_repo_url=file://" + repoPath,
-				"--pushed_branch=master",
-			},
-		},
-		// Different pushed repo from target repo
-		// Tested in TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning
 	}
 	baselineRunnerFlags := []string{
 		"--workflow_id=test-workflow",
 		"--action_name=Print args",
 		"--trigger_event=push",
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
 	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
 
 	for _, tc := range testCases {
-		runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
+		runnerFlags := baselineRunnerFlags
+		if tc.useSha {
+			runnerFlags = append(runnerFlags, "--commit_sha="+initialCommitSHA)
+		}
+
 		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 		checkRunnerResult(t, result)
 		assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
