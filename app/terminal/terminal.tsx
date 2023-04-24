@@ -266,7 +266,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   private scrollToEnd() {
     let lineNumber = router.getLineNumber();
     if (lineNumber) {
-      this.scrollToRow(lineNumber);
+      this.scrollToRow(lineNumber - 1);
       return;
     }
 
