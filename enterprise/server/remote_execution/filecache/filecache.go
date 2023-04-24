@@ -112,7 +112,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
-	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
+	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn, UpdateInPlace: true})
 	if err != nil {
 		return nil, err
 	}
