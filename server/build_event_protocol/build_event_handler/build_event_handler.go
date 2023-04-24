@@ -1339,6 +1339,7 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
+	// XXX: trim, remove empty.
 	tags := make([]string, len(p.Tags))
 	for i, tag := range p.Tags {
 		tags[i] = tag.Name
