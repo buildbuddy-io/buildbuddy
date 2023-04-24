@@ -245,7 +245,7 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 	var installation tables.GitHubAppInstallation
 	err = a.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT *
-		FROM GitHubAppInstallations
+		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
 	`, repo.GroupID, repoURL.Owner).Take(&installation).Error
