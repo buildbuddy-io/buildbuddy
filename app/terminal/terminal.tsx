@@ -10,6 +10,7 @@ import { Scroller } from "../util/scroller";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { Row, ROW_HEIGHT_PX } from "./row";
 import { getContent, updatedMatchIndexForSearch, toPlainText, Range, ListData } from "./text";
+import router from "../router/router";
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
 const WRAP_LOCAL_STORAGE_VALUE = "wrap";
@@ -263,6 +264,12 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   }
 
   private scrollToEnd() {
+    let lineNumber = router.getLineNumber();
+    if (lineNumber) {
+      this.scrollToRow(lineNumber - 1);
+      return;
+    }
+
     this.scroller.scrollTo(this.scroller.getMax(), { animate: false });
   }
 

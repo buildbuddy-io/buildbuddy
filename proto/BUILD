@@ -109,7 +109,6 @@ proto_library(
         ":remote_execution_proto",
         ":scheduler_proto",
         ":stat_filter_proto",
-        "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
@@ -1119,16 +1118,26 @@ go_proto_library(
 ts_proto_library(
     name = "acl_ts_proto",
     proto = ":acl_proto",
+    deps = [
+        ":user_id_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "api_key_ts_proto",
     proto = ":api_key_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "bazel_config_ts_proto",
     proto = ":bazel_config_proto",
+    deps = [
+        ":api_key_ts_proto",
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(
@@ -1139,26 +1148,49 @@ ts_proto_library(
 ts_proto_library(
     name = "execution_stats_ts_proto",
     proto = ":execution_stats_proto",
+    deps = [
+        ":acl_ts_proto",
+        ":context_ts_proto",
+        ":grpc_status_ts_proto",
+        ":invocation_status_ts_proto",
+        ":remote_execution_ts_proto",
+        ":scheduler_ts_proto",
+        ":stat_filter_ts_proto",
+        ":timestamp_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "github_ts_proto",
     proto = ":github_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "quota_ts_proto",
     proto = ":quota_proto",
+    deps = [
+        ":context_ts_proto",
+        ":duration_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "resource_ts_proto",
     proto = ":resource_proto",
+    deps = [
+        ":remote_execution_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "secrets_ts_proto",
     proto = ":secrets_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(
@@ -1169,46 +1201,114 @@ ts_proto_library(
 ts_proto_library(
     name = "stats_ts_proto",
     proto = ":stats_proto",
+    deps = [
+        ":context_ts_proto",
+        ":duration_ts_proto",
+        ":invocation_status_ts_proto",
+        ":stat_filter_ts_proto",
+        ":timestamp_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "scheduler_ts_proto",
     proto = ":scheduler_proto",
+    deps = [
+        ":acl_ts_proto",
+        ":context_ts_proto",
+        ":grpc_status_ts_proto",
+        ":timestamp_ts_proto",
+        ":trace_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "trace_ts_proto",
+    proto = ":trace_proto",
 )
 
 ts_proto_library(
     name = "suggestion_ts_proto",
     proto = ":suggestion_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "failure_details_ts_proto",
+    proto = ":failure_details_proto",
+    deps = [
+        ":descriptor_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "build_event_stream_ts_proto",
     proto = ":build_event_stream_proto",
+    deps = [
+        ":command_line_ts_proto",
+        ":descriptor_ts_proto",
+        ":duration_ts_proto",
+        ":failure_details_ts_proto",
+        ":invocation_policy_ts_proto",
+        ":timestamp_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "build_status_ts_proto",
+    proto = ":build_status_proto",
+    deps = [
+        ":any_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "target_ts_proto",
     proto = ":target_proto",
+    deps = [
+        ":context_ts_proto",
+        "//proto/api/v1:common_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "eventlog_ts_proto",
     proto = ":eventlog_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "workflow_ts_proto",
     proto = ":workflow_proto",
+    deps = [
+        ":context_ts_proto",
+        ":grpc_status_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "command_line_ts_proto",
     proto = ":command_line_proto",
+    deps = [
+        ":option_filters_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "option_filters_ts_proto",
+    proto = ":option_filters_proto",
 )
 
 ts_proto_library(
     name = "context_ts_proto",
     proto = ":context_proto",
+    deps = [
+        ":user_id_ts_proto",
+    ],
 )
 
 ts_proto_library(
@@ -1219,16 +1319,41 @@ ts_proto_library(
 ts_proto_library(
     name = "invocation_ts_proto",
     proto = ":invocation_proto",
+    deps = [
+        ":acl_ts_proto",
+        ":api_key_ts_proto",
+        ":build_event_stream_ts_proto",
+        ":cache_ts_proto",
+        ":command_line_ts_proto",
+        ":context_ts_proto",
+        ":duration_ts_proto",
+        ":invocation_status_ts_proto",
+        ":stat_filter_ts_proto",
+        ":timestamp_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "invocation_policy_ts_proto",
+    proto = ":invocation_policy_proto",
+    deps = [],
 )
 
 ts_proto_library(
     name = "usage_ts_proto",
     proto = ":usage_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "group_ts_proto",
     proto = ":group_proto",
+    deps = [
+        ":context_ts_proto",
+        ":user_id_ts_proto",
+    ],
 )
 
 ts_proto_library(
@@ -1237,13 +1362,70 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "grpc_status_ts_proto",
+    proto = "@go_googleapis//google/rpc:status_proto",
+    deps = [":any_ts_proto"],
+)
+
+ts_proto_library(
+    name = "google_api_ts_proto",
+    proto = "@go_googleapis//google/api:api_proto",
+)
+
+ts_proto_library(
+    name = "google_api_annotations_ts_proto",
+    proto = "@go_googleapis//google/api:annotations_proto",
+    deps = [
+        ":descriptor_ts_proto",
+        ":duration_ts_proto",
+        ":google_api_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "google_longrunning_ts_proto",
+    proto = "@go_googleapis//google/longrunning:longrunning_proto",
+    deps = [
+        ":any_ts_proto",
+        ":duration_ts_proto",
+        ":empty_ts_proto",
+        ":grpc_status_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "empty_ts_proto",
+    proto = "@com_google_protobuf//:empty_proto",
+)
+
+ts_proto_library(
     name = "timestamp_ts_proto",
     proto = "@com_google_protobuf//:timestamp_proto",
 )
 
 ts_proto_library(
+    name = "descriptor_ts_proto",
+    proto = "@com_google_protobuf//:descriptor_proto",
+)
+
+ts_proto_library(
     name = "duration_ts_proto",
     proto = "@com_google_protobuf//:duration_proto",
+)
+
+ts_proto_library(
+    name = "any_ts_proto",
+    proto = "@com_google_protobuf//:any_proto",
+)
+
+ts_proto_library(
+    name = "wrappers_ts_proto",
+    proto = "@com_google_protobuf//:wrappers_proto",
+)
+
+ts_proto_library(
+    name = "semver_ts_proto",
+    proto = ":semver_proto",
 )
 
 ts_proto_library(
@@ -1254,6 +1436,15 @@ ts_proto_library(
 ts_proto_library(
     name = "cache_ts_proto",
     proto = ":cache_proto",
+    deps = [
+        ":context_ts_proto",
+        ":duration_ts_proto",
+        ":field_mask_ts_proto",
+        ":grpc_status_ts_proto",
+        ":remote_execution_ts_proto",
+        ":resource_ts_proto",
+        ":timestamp_ts_proto",
+    ],
 )
 
 ts_proto_library(
@@ -1264,24 +1455,73 @@ ts_proto_library(
 ts_proto_library(
     name = "user_ts_proto",
     proto = ":user_proto",
+    deps = [
+        ":context_ts_proto",
+        ":group_ts_proto",
+        ":user_id_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "encryption_ts_proto",
+    proto = ":encryption_proto",
+    deps = [":context_ts_proto"],
 )
 
 ts_proto_library(
     name = "buildbuddy_service_ts_proto",
     proto = ":buildbuddy_service_proto",
+    deps = [
+        ":api_key_ts_proto",
+        ":bazel_config_ts_proto",
+        ":cache_ts_proto",
+        ":encryption_ts_proto",
+        ":eventlog_ts_proto",
+        ":execution_stats_ts_proto",
+        ":github_ts_proto",
+        ":group_ts_proto",
+        ":invocation_ts_proto",
+        ":quota_ts_proto",
+        ":runner_ts_proto",
+        ":scheduler_ts_proto",
+        ":secrets_ts_proto",
+        ":stats_ts_proto",
+        ":suggestion_ts_proto",
+        ":target_ts_proto",
+        ":usage_ts_proto",
+        ":user_ts_proto",
+        ":workflow_ts_proto",
+        ":zip_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "remote_execution_ts_proto",
     proto = ":remote_execution_proto",
+    deps = [
+        ":any_ts_proto",
+        ":duration_ts_proto",
+        ":google_api_annotations_ts_proto",
+        ":google_longrunning_ts_proto",
+        ":grpc_status_ts_proto",
+        ":scheduler_ts_proto",
+        ":semver_ts_proto",
+        ":timestamp_ts_proto",
+        ":wrappers_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "runner_ts_proto",
     proto = ":runner_proto",
+    deps = [
+        ":context_ts_proto",
+        ":remote_execution_ts_proto",
+    ],
 )
 
 ts_proto_library(
     name = "zip_ts_proto",
     proto = ":zip_proto",
+    deps = [":context_ts_proto"],
 )

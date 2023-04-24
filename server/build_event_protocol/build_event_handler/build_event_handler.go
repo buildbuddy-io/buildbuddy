@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -190,8 +192,9 @@ type recordStatsTask struct {
 	createdAt time.Time
 	// files contains a mapping of file digests to file name metadata for files
 	// referenced in the BEP.
-	files            map[string]*build_event_stream.File
-	invocationStatus inspb.InvocationStatus
+	files              map[string]*build_event_stream.File
+	artifactsToPersist map[string]*url.URL
+	invocationStatus   inspb.InvocationStatus
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -221,7 +224,7 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 
 // Enqueue enqueues a task for the given invocation's stats to be recorded
 // once they are available.
-func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation) {
+func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation, artifactsToPersist map[string]*url.URL) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -242,9 +245,10 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 			attempt: invocation.Attempt,
 			jwt:     jwt,
 		},
-		createdAt:        time.Now(),
-		files:            scorecard.ExtractFiles(invocation),
-		invocationStatus: invocation.GetInvocationStatus(),
+		createdAt:          time.Now(),
+		files:              scorecard.ExtractFiles(invocation),
+		invocationStatus:   invocation.GetInvocationStatus(),
+		artifactsToPersist: artifactsToPersist,
 	}
 	select {
 	case r.tasks <- req:
@@ -405,6 +409,35 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		alert.UnexpectedEvent(
 			"webhook_channel_buffer_full",
 			"Failed to notify webhook: channel buffer is full")
+	}
+
+	for path, uri := range task.artifactsToPersist {
+		if uri == nil {
+			// no artifact exists to persist
+			continue
+		}
+		path = task.invocationJWT.id + "/artifacts/" + path
+		if auth := r.env.GetAuthenticator(); auth != nil {
+			ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
+		}
+		w, err := r.env.GetBlobstore().Writer(ctx, path)
+		if err != nil {
+			log.CtxErrorf(ctx, "Failed to open writer to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
+			continue
+		}
+		if err := bytestream.StreamBytestreamFile(ctx, r.env, uri, w); err != nil {
+			log.CtxErrorf(ctx, "Failed to stream to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
+			w.Close()
+			continue
+		}
+		if err := w.Commit(); err != nil {
+			log.CtxErrorf(ctx, "Failed to commit to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
+			w.Close()
+			continue
+		}
+		if err := w.Close(); err != nil {
+			log.CtxErrorf(ctx, "Failed to close blobstore writer for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
+		}
 	}
 }
 
@@ -721,7 +754,13 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
-	e.statsRecorder.Enqueue(ctx, invocation)
+	e.statsRecorder.Enqueue(
+		ctx,
+		invocation,
+		map[string]*url.URL{
+			"timing_profile/" + e.beValues.ProfileName(): e.beValues.ProfileURI(),
+		},
+	)
 	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil
 }
@@ -1309,6 +1348,9 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
 		i.Perms |= perms.OTHERS_READ
 	}
+	i.DownloadOutputsOption = int64(p.DownloadOutputsOption)
+	i.RemoteExecutionEnabled = p.RemoteExecutionEnabled
+	i.UploadLocalResultsEnabled = p.UploadLocalResultsEnabled
 	return i, nil
 }
 
@@ -1362,6 +1404,9 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	}
 	out.Attempt = i.Attempt
 	out.BazelExitCode = i.BazelExitCode
+	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
+	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
+	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
 	return out
 }
 

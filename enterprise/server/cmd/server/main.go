@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -271,6 +272,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := crypter_service.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := sociartifactstore.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

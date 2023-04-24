@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -41,7 +43,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
-	gstatus "google.golang.org/grpc/status"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
@@ -52,6 +53,7 @@ import (
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	githubapi "github.com/google/go-github/v43/github"
 	guuid "github.com/google/uuid"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -255,12 +257,12 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		var q *db.DB
 		if req.GetId() != "" {
 			q = tx.Raw(`
-				SELECT * FROM Workflows WHERE workflow_id = ?
+				SELECT * FROM "Workflows" WHERE workflow_id = ?
 				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, req.GetId())
 		} else {
 			q = tx.Raw(`
-				SELECT * FROM Workflows
+				SELECT * FROM "Workflows"
 				WHERE group_id = ? AND repo_url = ?
 				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, authenticatedUser.GetGroupID(), req.GetRepoUrl())
@@ -272,7 +274,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, wf.WorkflowID).Error
+		return tx.Exec(`DELETE FROM "Workflows" WHERE workflow_id = ?`, wf.WorkflowID).Error
 	})
 	if err != nil {
 		return nil, err
@@ -297,7 +299,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 
 func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error) {
 	q, args := query_builder.
-		NewQuery("SELECT workflow_id FROM Workflows").
+		NewQuery(`SELECT workflow_id FROM "Workflows"`).
 		AddWhereClause("access_token = ?", accessToken).
 		Build()
 	rows, err := ws.env.GetDBHandle().DB(ctx).Raw(q, args...).Rows()
@@ -334,7 +336,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 
 	rsp := &wfpb.GetWorkflowsResponse{}
-	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
+	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM "Workflows"`)
 	// Respect selected group ID.
 	q.AddWhereClause(`group_id = ?`, groupID)
 	// Adds user / permissions check.
@@ -418,7 +420,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	} else {
 		wf = &tables.Workflow{}
 		err = ws.env.GetDBHandle().DB(ctx).Raw(
-			`SELECT * FROM Workflows WHERE workflow_id = ?`,
+			`SELECT * FROM "Workflows" WHERE workflow_id = ?`,
 			req.GetWorkflowId(),
 		).Take(wf).Error
 		if err != nil {
@@ -447,14 +449,14 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		wf.InstanceNameSuffix = suffix
 		if gitRepository != nil {
 			err = ws.env.GetDBHandle().DB(ctx).Exec(`
-				UPDATE GitRepositories
+				UPDATE "GitRepositories"
 				SET instance_name_suffix = ?
 				WHERE group_id = ? AND repo_url = ?`,
 				wf.InstanceNameSuffix, gitRepository.GroupID, gitRepository.RepoURL,
 			).Error
 		} else {
 			err = ws.env.GetDBHandle().DB(ctx).Exec(`
-				UPDATE Workflows
+				UPDATE "Workflows"
 				SET instance_name_suffix = ?
 				WHERE workflow_id = ?`,
 				wf.InstanceNameSuffix, wf.WorkflowID,
@@ -486,15 +488,24 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	actions, err := ws.getActions(ctx, wf, wd, req.GetActionName())
+	// TODO(Maggie): Clean this up after ActionName field is cleaned up
+	var actionNames []string
+	if len(req.GetActionNames()) > 0 {
+		actionNames = req.GetActionNames()
+	} else if req.GetActionName() != "" {
+		actionNames = []string{req.GetActionName()}
+	}
+
+	actions, err := ws.getActions(ctx, wf, wd, actionNames)
 	if err != nil {
 		return nil, err
 	}
 
 	wg := sync.WaitGroup{}
 	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
-	for _, action := range actions {
+	for actionName, action := range actions {
 		action := action
+		actionName := actionName
 		wg.Add(1)
 
 		go func() {
@@ -503,7 +514,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			var invocationID string
 			var err error
 			actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
-				ActionName: action.Name,
+				ActionName: actionName,
 			}
 			actionStatuses = append(actionStatuses, actionStatus)
 			defer func() {
@@ -511,9 +522,14 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 				actionStatus.Status = gstatus.Convert(err).Proto()
 			}()
 
+			if action == nil {
+				err = status.NotFoundErrorf("action %s not found", actionName)
+				return
+			}
+
 			invocationUUID, err := guuid.NewRandom()
 			if err != nil {
-				log.Warningf("Could not generate invocation ID for workflow action %s", req.GetActionName())
+				log.CtxWarningf(ctx, "Could not generate invocation ID for workflow action %s", req.GetActionName())
 				return
 			}
 			invocationID = invocationUUID.String()
@@ -523,11 +539,11 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			isTrusted := true
 			executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
 			if err != nil {
-				log.Warningf("Could not execute workflow action %s: %s", req.GetActionName(), err)
+				log.CtxWarningf(ctx, "Could not execute workflow action %s: %s", req.GetActionName(), err)
 				return
 			}
 			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
-				log.Warningf("Could not create invocation for workflow action %s: %s", req.GetActionName(), err)
+				log.CtxWarningf(ctx, "Could not create invocation for workflow action %s: %s", req.GetActionName(), err)
 				return
 			}
 		}()
@@ -549,7 +565,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}, nil
 }
 
-func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter string) ([]*config.Action, error) {
+func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) (map[string]*config.Action, error) {
 	// Fetch the workflow config
 	repoURL, err := gitutil.ParseRepoURL(wd.PushedRepoURL)
 	if err != nil {
@@ -564,26 +580,36 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 		return nil, err
 	}
 
-	actions := cfg.Actions
-	if actionFilter != "" {
-		actions = make([]*config.Action, 0, 1)
-		for _, a := range cfg.Actions {
-			if a.Name == actionFilter {
-				actions = append(actions, a)
-				break
+	actionMap := make(map[string]*config.Action, len(cfg.Actions))
+	for _, a := range cfg.Actions {
+		actionMap[a.Name] = a
+	}
+
+	var filteredActions map[string]*config.Action
+	if len(actionFilter) > 0 {
+		filteredActions = make(map[string]*config.Action, 0)
+		for _, actionName := range actionFilter {
+			a, ok := actionMap[actionName]
+			if ok {
+				filteredActions[a.Name] = a
+			} else {
+				log.Debugf("workflow action %s not found", actionName)
+				filteredActions[actionName] = nil
 			}
 		}
+	} else {
+		filteredActions = actionMap
 	}
 
-	if len(actions) == 0 {
-		if actionFilter == "" {
+	if len(filteredActions) == 0 {
+		if len(actionFilter) == 0 {
 			return nil, status.NotFoundError("no workflow actions found")
 		} else {
-			return nil, status.NotFoundErrorf("workflow action %q not found", actionFilter)
+			return nil, status.NotFoundErrorf("requested workflow actions %v not found", actionFilter)
 		}
 	}
 
-	return actions, nil
+	return filteredActions, nil
 }
 
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string) (*repositoryWorkflow, error) {
@@ -601,7 +627,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string)
 	gitRepository := &tables.GitRepository{}
 	err = ws.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT *
-		FROM GitRepositories
+		FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
 	`, groupID, repoURL.String()).Take(gitRepository).Error
@@ -611,7 +637,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string)
 		}
 		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
 	}
-	token, err := app.GetInstallationToken(ctx, repoURL.Owner)
+	token, err := app.GetRepositoryInstallationToken(ctx, gitRepository)
 	if err != nil {
 		return nil, err
 	}
@@ -979,7 +1005,7 @@ func (ws *workflowService) isTrustedCommit(ctx context.Context, gitProvider inte
 func (ws *workflowService) HandleRepositoryEvent(ctx context.Context, repo *tables.GitRepository, wd *interfaces.WebhookData, accessToken string) error {
 	u, err := url.Parse(repo.RepoURL)
 	if err != nil {
-		log.Errorf("Failed to parse repo URL %s", u.String())
+		log.CtxErrorf(ctx, "Failed to parse repo URL %s", u.String())
 		return status.InvalidArgumentError("failed to parse repo URL")
 	}
 	provider, err := ws.providerForRepo(u)
@@ -990,8 +1016,7 @@ func (ws *workflowService) HandleRepositoryEvent(ctx context.Context, repo *tabl
 	return ws.startWorkflow(ctx, provider, wd, wf)
 }
 
-func (ws *workflowService) startLegacyWorkflow(webhookID string, r *http.Request) error {
-	ctx := r.Context()
+func (ws *workflowService) startLegacyWorkflow(ctx context.Context, webhookID string, r *http.Request) error {
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
@@ -1006,9 +1031,7 @@ func (ws *workflowService) startLegacyWorkflow(webhookID string, r *http.Request
 	if wd == nil {
 		return nil
 	}
-	log.Debugf(
-		"Parsed webhook data: event=%q, target=%q, pushed=%q pr_author=%q, pr_approver=%q",
-		wd.EventName, wd.TargetRepoURL, wd.PushedRepoURL, wd.PullRequestAuthor, wd.PullRequestApprover)
+	log.CtxDebugf(ctx, "Parsed webhook data: %s", webhook_data.DebugString(wd))
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
 		return status.WrapErrorf(err, "failed to lookup workflow for webhook ID %q", webhookID)
@@ -1026,7 +1049,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	// only if the PR is not already trusted (to avoid unnecessary re-runs).
 	if wd.PullRequestApprover != "" {
 		if isTrusted {
-			log.Debugf("Ignoring approving pull request review for %s (pull request is already trusted)", wf.WorkflowID)
+			log.CtxInfof(ctx, "Ignoring approving pull request review for %s (pull request is already trusted)", wf.WorkflowID)
 			return nil
 		}
 		isApproverTrusted, err := gitProvider.IsTrusted(ctx, wf.AccessToken, wd.TargetRepoURL, wd.PullRequestApprover)
@@ -1034,7 +1057,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 			return err
 		}
 		if !isApproverTrusted {
-			log.Debugf("Ignoring approving pull request review for %s (approver is untrusted)", wf.WorkflowID)
+			log.CtxInfof(ctx, "Ignoring approving pull request review for %s (approver is untrusted)", wf.WorkflowID)
 			return nil
 		}
 		isTrusted = true
@@ -1049,8 +1072,11 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	if err != nil {
 		return err
 	}
+	var actionsStarted []*config.Action
 	for _, action := range cfg.Actions {
 		if !config.MatchesAnyTrigger(action, wd.EventName, wd.TargetBranch) {
+			jt, _ := json.Marshal(action.Triggers)
+			log.CtxDebugf(ctx, "Action %s not matched, triggers=%s", action.Name, string(jt))
 			continue
 		}
 		invocationUUID, err := guuid.NewRandom()
@@ -1061,17 +1087,19 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
 		if err != nil {
 			if err == ApprovalRequired {
-				log.Infof("Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
+				log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
 				if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
-					log.Warningf("Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
+					log.CtxWarningf(ctx, "Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
 				}
 				continue
 			}
 			// TODO: Create a UI for these errors instead of just logging on the
 			// server.
-			log.Warningf("Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
+			log.CtxWarningf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
 		}
+		actionsStarted = append(actionsStarted, action)
 	}
+	log.CtxInfof(ctx, "Started %d workflow action(s)", len(actionsStarted))
 	return nil
 }
 
@@ -1116,7 +1144,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
-	log.Infof("Started workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
+	log.CtxInfof(ctx, "Started workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
 	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
 		metrics.WebhookEventName: wd.EventName,
 	}).Inc()
@@ -1156,7 +1184,9 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	webhookID := workflowMatch[1]
-	if err := ws.startLegacyWorkflow(webhookID, r); err != nil {
+	ctx := r.Context()
+	ctx = log.EnrichContext(ctx, "github_delivery", r.Header.Get("X-GitHub-Delivery"))
+	if err := ws.startLegacyWorkflow(ctx, webhookID, r); err != nil {
 		log.Errorf("Failed to start workflow (webhook ID: %q): %s", webhookID, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

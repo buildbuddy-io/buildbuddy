@@ -31,7 +31,7 @@ import rpcService from "../../../app/service/rpc_service";
 
 interface Props {
   user?: User;
-  hash: string;
+  tab: string;
   path: string;
   search: URLSearchParams;
 }
@@ -63,7 +63,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
   }
 
   isHomeSelected() {
-    return this.props.path == "/" && (!this.props.hash || this.props.hash == "#");
+    return this.props.path == "/" && (!this.props.tab || this.props.tab == "#");
   }
 
   isTrendsSelected() {
@@ -79,23 +79,23 @@ export default class SidebarComponent extends React.Component<Props, State> {
   }
 
   isUsersSelected() {
-    return this.props.path.startsWith("/history/user/") || this.props.hash == "#users";
+    return this.props.path.startsWith("/history/user/") || this.props.tab == "#users";
   }
 
   isReposSelected() {
-    return this.props.path.startsWith("/history/repo/") || this.props.hash == "#repos";
+    return this.props.path.startsWith("/history/repo/") || this.props.tab == "#repos";
   }
 
   isBranchesSelected() {
-    return this.props.path.startsWith("/history/branch/") || this.props.hash == "#branches";
+    return this.props.path.startsWith("/history/branch/") || this.props.tab == "#branches";
   }
 
   isCommitsSelected() {
-    return this.props.path.startsWith("/history/commit/") || this.props.hash == "#commits";
+    return this.props.path.startsWith("/history/commit/") || this.props.tab == "#commits";
   }
 
   isHostsSelected() {
-    return this.props.path.startsWith("/history/host/") || this.props.hash == "#hosts";
+    return this.props.path.startsWith("/history/host/") || this.props.tab == "#hosts";
   }
 
   isWorkflowsSelected() {

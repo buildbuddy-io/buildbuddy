@@ -489,6 +489,10 @@ type GitHubApp interface {
 	// owner (GitHub username or org name).
 	GetInstallationToken(ctx context.Context, owner string) (string, error)
 
+	// GetRepositoryInstallationToken returns an installation token for the given
+	// GitRepository.
+	GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error)
+
 	// WebhookHandler returns the GitHub webhook HTTP handler.
 	WebhookHandler() http.Handler
 
@@ -1032,12 +1036,21 @@ type AEAD interface {
 	Decrypt(ciphertext, associatedData []byte) ([]byte, error)
 }
 
+type KMSType int
+
+const (
+	KMSTypeLocalInsecure KMSType = iota
+	KMSTypeGCP
+)
+
 // A KMS is a Key Managment Service (typically a cloud provider or external
 // service) that manages keys that can be fetched and used to encrypt/decrypt
 // data.
 type KMS interface {
 	FetchMasterKey() (AEAD, error)
 	FetchKey(uri string) (AEAD, error)
+
+	SupportedTypes() []KMSType
 }
 
 // SecretService manages secrets for an org.

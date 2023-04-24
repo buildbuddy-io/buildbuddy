@@ -116,6 +116,10 @@
   font-family: "Source Code Pro", monospace;
 }
 
+.terminal .terminal-line.selected {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
 .terminal .search-result-count {
   /* Fit 6-digit result counts without layout shifting. */
   min-width: 128px;

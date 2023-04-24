@@ -55,6 +55,10 @@ type fakeKMS struct {
 	keys map[string]*fakeKmsKey
 }
 
+func (f *fakeKMS) SupportedTypes() []interfaces.KMSType {
+	return nil
+}
+
 func newFakeKMS(t *testing.T) *fakeKMS {
 	return &fakeKMS{
 		t:    t,
@@ -647,7 +651,7 @@ func TestConfigAPI(t *testing.T) {
 		break
 	}
 
-	groupKMSKeyID := "groupKey"
+	groupKMSKeyID := "local-insecure-kms://groupKey"
 	groupKMSKey := make([]byte, 32)
 	_, err := rand.Read(groupKMSKey)
 	require.NoError(t, err)
@@ -693,8 +697,8 @@ func TestConfigAPI(t *testing.T) {
 
 	// Enable encryption.
 	_, err = crypter.SetEncryptionConfig(userCtx, &enpb.SetEncryptionConfigRequest{
-		Enabled: true,
-		KeyUri:  groupKMSKeyID,
+		Enabled:   true,
+		KmsConfig: &enpb.KMSConfig{LocalInsecureKmsConfig: &enpb.LocalInsecureKMSConfig{KeyId: "groupKey"}},
 	})
 	require.NoError(t, err)
 	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)

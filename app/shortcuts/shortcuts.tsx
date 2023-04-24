@@ -69,6 +69,10 @@ class Shortcut {
     this.action = action;
   }
 
+  reset() {
+    this.keyComboPosition = 0;
+  }
+
   matchKeyboardEvent(event: KeyboardEvent) {
     if (this.keyCombo[this.keyComboPosition].matches(event)) {
       this.keyComboPosition++;
@@ -136,6 +140,19 @@ export class Shortcuts {
         "keydown",
         function (event: KeyboardEvent) {
           if (!this.preferences.keyboardShortcutsEnabled) {
+            // TODO(iain): instead of reset-alling on keypress, do it on
+            // preference change. Note that this will require breaking the
+            // cyclical dependency between shortcuts & preferences.
+            this.resetAll();
+            return;
+          }
+          // Don't run when typing into a text box.
+          let activeElement = document.activeElement as HTMLInputElement;
+          if (
+            (activeElement.tagName === "INPUT" && activeElement.type === "text") ||
+            activeElement.tagName === "TEXTAREA"
+          ) {
+            this.resetAll();
             return;
           }
           for (let shortcut of this.shortcuts.values()) {
@@ -156,6 +173,12 @@ export class Shortcuts {
     }
     this.shortcuts.set(handle, shortcut);
     return handle;
+  }
+
+  resetAll() {
+    for (let shortcut of this.shortcuts.values()) {
+      shortcut.reset();
+    }
   }
 
   // Deregisters the keyboard shortcut with the provided handle. If the

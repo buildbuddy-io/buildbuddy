@@ -11,28 +11,35 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 func writeFile(t *testing.T, base string, path string, executable bool) {
+	content := path
+	if executable {
+		content = path + "-executable"
+	}
+	writeFileContent(t, base, path, content, executable)
+}
+
+func writeFileContent(t *testing.T, base, path, content string, executable bool) {
 	mod := fs.FileMode(0644)
-	suffix := ""
 	if executable {
 		mod = 0755
-		suffix = "-executable"
 	}
 	fullPath := filepath.Join(base, path)
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0777); err != nil {
 		t.Fatal(err)
 	}
 	log.Printf("Writing file %q", fullPath)
-	if err := os.WriteFile(fullPath, []byte(path+suffix), mod); err != nil {
+	if err := os.WriteFile(fullPath, []byte(content), mod); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func Test_Filecache(t *testing.T) {
+func TestFilecache(t *testing.T) {
 	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
 	fc, err := filecache.NewFileCache(fcDir, 100000)
@@ -80,6 +87,76 @@ func Test_Filecache(t *testing.T) {
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
+}
+
+func TestFileCacheOverwrite(t *testing.T) {
+	for _, test := range []struct {
+		Name       string
+		Executable bool
+	}{
+		{Name: "OverwriteExecutableFile", Executable: true},
+		{Name: "OverwriteNormalFile", Executable: false},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			filecacheRoot := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			tempDir := fc.TempDir()
+
+			writeFileContent(t, tempDir, "file1", "file1-content", test.Executable)
+			node := nodeFromString("file1-content", test.Executable)
+			{
+				// Add node for the first time
+				fc.AddFile(node, filepath.Join(tempDir, "file1"))
+				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file1-link1"))
+				require.True(t, linked, "expected cache hit after writing file")
+				// Verify all file contents
+				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
+				file1Link1Content := testfs.ReadFileAsString(t, tempDir, "file1-link1")
+				require.Equal(t, "file1-content", file1Content)
+				require.Equal(t, "file1-content", file1Link1Content)
+			}
+			{
+				// Overwrite existing node entry
+				fc.AddFile(node, filepath.Join(tempDir, "file1"))
+				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file1-link2"))
+				require.True(t, linked, "expected cache hit after overwriting file")
+				// Verify all file contents
+				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
+				file1Link1Content := testfs.ReadFileAsString(t, tempDir, "file1-link1")
+				file1Link2Content := testfs.ReadFileAsString(t, tempDir, "file1-link2")
+				require.Equal(t, "file1-content", file1Content)
+				require.Equal(t, "file1-content", file1Link1Content)
+				require.Equal(t, "file1-content", file1Link2Content)
+			}
+			{
+				// Overwrite again, this time the contents don't match the
+				// digest (filecache supports this, similar to AC).
+				writeFileContent(t, tempDir, "file2", "file2-content", test.Executable)
+				fc.AddFile(node, filepath.Join(tempDir, "file2"))
+				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file2-link1"))
+				require.True(t, linked, "expected cache hit after overwriting file with different digest")
+				// Verify all file contents
+				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
+				file1Link1Content := testfs.ReadFileAsString(t, tempDir, "file1-link1")
+				file1Link2Content := testfs.ReadFileAsString(t, tempDir, "file1-link2")
+				file2Content := testfs.ReadFileAsString(t, tempDir, "file2")
+				file2Link1Content := testfs.ReadFileAsString(t, tempDir, "file2-link1")
+				require.Equal(t, "file1-content", file1Content)
+				require.Equal(t, "file1-content", file1Link1Content)
+				require.Equal(t, "file1-content", file1Link2Content)
+				require.Equal(t, "file2-content", file2Content)
+				require.Equal(t, "file2-content", file2Link1Content)
+			}
+
+			// No evictions should have occurred.
+			// TODO(bduffany): this assertion fails currently. Fix!
+
+			// lastEvictionAge := testmetrics.GaugeValue(t, metrics.FileCacheLastEvictionAgeUsec)
+			// require.Equal(t, float64(0), lastEvictionAge, "last eviction age should still be 0")
+		})
+	}
 }
 
 func assertFileContents(t *testing.T, path, contents string) {

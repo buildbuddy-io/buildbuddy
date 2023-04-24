@@ -4,13 +4,29 @@ package encryption;
 
 import "proto/context.proto";
 
+message LocalInsecureKMSConfig {
+  string key_id = 1;
+}
+
+message GCPKMSConfig {
+  string project = 1;
+  string location = 2;
+  string key_ring = 3;
+  string key = 4;
+}
+
+message KMSConfig {
+  LocalInsecureKMSConfig local_insecure_kms_config = 1;
+  GCPKMSConfig gcp_kms_config = 2;
+}
+
 message SetEncryptionConfigRequest {
   context.RequestContext request_context = 1;
 
   bool enabled = 2;
 
   // This field is required when enabling encryption.
-  string key_uri = 3;
+  KMSConfig kms_config = 3;
 }
 
 message SetEncryptionConfigResponse {
@@ -21,9 +37,18 @@ message GetEncryptionConfigRequest {
   context.RequestContext request_context = 1;
 }
 
+enum KMS {
+  UNKNOWN_KMS = 0;
+
+  LOCAL_INSECURE = 1;
+  GCP = 2;
+}
+
 message GetEncryptionConfigResponse {
   context.ResponseContext response_context = 1;
 
   bool supported = 2;
   bool enabled = 3;
+
+  repeated KMS supported_kms = 4;
 }

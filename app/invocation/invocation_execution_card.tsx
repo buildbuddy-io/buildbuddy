@@ -44,7 +44,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     limit: 100,
   };
 
-  timeoutRef: number;
+  timeoutRef?: number;
 
   componentDidMount() {
     this.fetchExecution();
@@ -80,7 +80,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     clearTimeout(this.timeoutRef);
 
     // Refetch execution data in 3 seconds to update status.
-    this.timeoutRef = setTimeout(() => {
+    this.timeoutRef = window.setTimeout(() => {
       this.fetchExecution();
     }, 3000);
   }

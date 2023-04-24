@@ -119,7 +119,7 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
-	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
+	q := query_builder.NewQuery(`SELECT * FROM "Invocations" as i`)
 
 	// Don't include anonymous builds.
 	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")

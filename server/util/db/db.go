@@ -483,6 +483,10 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 			return nil, status.FailedPreconditionError("endpoint is required")
 		}
 
+		if ac.Driver == mysqlDriver {
+			dsn.AddParam("sql_mode", "ANSI_QUOTES")
+		}
+
 		if ac.UseAWSIAM {
 			if ac.Region == "" {
 				return nil, status.FailedPreconditionError("region is required to enable AWS IAM")
@@ -523,6 +527,21 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 			return nil, fmt.Errorf("malformed db connection string")
 		}
 		driverName, connString := parts[0], parts[1]
+		switch driverName {
+		case mysqlDriver:
+			cfg, err := gomysql.ParseDSN(connString)
+			if err != nil {
+				return nil, fmt.Errorf("malformed mySQL connection string: %s", err)
+			}
+			if cfg.Params == nil {
+				cfg.Params = make(map[string]string, 1)
+			}
+			if cfg.Params["sql_mode"] != "" {
+				cfg.Params["sql_mode"] += ","
+			}
+			cfg.Params["sql_mode"] += "ANSI_QUOTES"
+			connString = cfg.FormatDSN()
+		}
 		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
 	}
 

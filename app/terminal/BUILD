@@ -12,6 +12,7 @@ ts_library(
         "//app/components/input",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/router",
         "//app/terminal:row",
         "//app/terminal:text",
         "//app/util:math",
@@ -45,6 +46,7 @@ ts_library(
     name = "row",
     srcs = ["row.tsx"],
     deps = [
+        "//app/router",
         "//app/terminal:text",
         "@npm//@types/react",
         "@npm//@types/react-window",

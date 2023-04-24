@@ -1083,7 +1083,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 func (s *ExecutionServer) executionIDs(ctx context.Context, invocationID string) ([]string, error) {
 	dbh := s.env.GetDBHandle()
 	rows, err := dbh.DB(ctx).Raw(
-		"SELECT execution_id FROM Executions WHERE invocation_id = ? AND stage != ?",
+		`SELECT execution_id FROM "Executions" WHERE invocation_id = ? AND stage != ?`,
 		invocationID,
 		repb.ExecutionStage_COMPLETED).Rows()
 	if err != nil {

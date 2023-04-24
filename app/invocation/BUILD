@@ -305,6 +305,7 @@ ts_library(
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:remote_execution_ts_proto",
+        "//proto:timestamp_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",

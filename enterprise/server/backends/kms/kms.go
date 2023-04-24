@@ -113,6 +113,17 @@ func (k *KMS) FetchKey(uri string) (interfaces.AEAD, error) {
 	return c.GetAEAD(uri)
 }
 
+func (k *KMS) SupportedTypes() []interfaces.KMSType {
+	types := make([]interfaces.KMSType, 0)
+	if k.localInsecureKMSClient != nil {
+		types = append(types, interfaces.KMSTypeLocalInsecure)
+	}
+	if k.gcpClient != nil {
+		types = append(types, interfaces.KMSTypeGCP)
+	}
+	return types
+}
+
 type gcmAESAEAD struct {
 	ciph cipher.AEAD
 }

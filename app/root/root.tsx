@@ -17,7 +17,7 @@ declare var window: any;
 
 interface State {
   user?: User;
-  hash: string;
+  tab: string;
   path: string;
   search: URLSearchParams;
   preferences: UserPreferences;
@@ -27,7 +27,7 @@ capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPat
 
 export default class RootComponent extends React.Component {
   state: State = {
-    hash: window.location.hash,
+    tab: router.getTab(),
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
@@ -52,7 +52,7 @@ export default class RootComponent extends React.Component {
       faviconService.setDefaultFavicon();
     }
     this.setState({
-      hash: window.location.hash,
+      tab: router.getTab(),
       path: window.location.pathname,
       search: new URLSearchParams(window.location.search),
     });
@@ -76,7 +76,7 @@ export default class RootComponent extends React.Component {
               <InvocationComponent
                 invocationId={invocationId}
                 key={invocationId}
-                hash={this.state.hash}
+                tab={this.state.tab}
                 search={this.state.search}
                 preferences={this.state.preferences}
                 user={undefined}

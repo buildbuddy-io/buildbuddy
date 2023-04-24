@@ -105,7 +105,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
     this.setState({ linkedReposLoading: true });
     this.linkedReposRPC?.cancel();
     this.linkedReposRPC = rpcService.service
-      .getLinkedGitHubRepos(github.GetLinkedReposResponse.create())
+      .getLinkedGitHubRepos(github.GetLinkedReposRequest.create())
       .then((response) => this.setState({ linkedReposResponse: response }))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ linkedReposLoading: false }));
@@ -134,8 +134,8 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
   private onChangeSearch(e: React.ChangeEvent<HTMLInputElement>) {
     const searchQuery = e.target.value;
     this.setState({ searchQuery, accessibleReposLoading: true });
-    clearTimeout(this.searchTimeout);
-    this.searchTimeout = setTimeout(() => this.search(), SEARCH_DEBOUNCE_DURATION_MS);
+    window.clearTimeout(this.searchTimeout);
+    this.searchTimeout = window.setTimeout(() => this.search(), SEARCH_DEBOUNCE_DURATION_MS);
   }
 
   private onChangeOwner(e: React.ChangeEvent<HTMLSelectElement>) {

@@ -113,7 +113,7 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	    SUM(total_upload_size_bytes) as total_upload_size_bytes,
 	    SUM(total_download_usec) as total_download_usec,
         SUM(total_upload_usec) as total_upload_usec
-        FROM Invocations`
+        FROM "Invocations"`
 	return q
 }
 
@@ -245,7 +245,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
 	q := query_builder.NewQuery(`
     SELECT
 	    count(1) AS num_builds,
-		countIf(action_cache_hits + action_cache_misses > 0) as num_builds_with_remote_cache,
+		countIf(download_outputs_option IN (2, 3, 4)) as num_builds_with_remote_cache,
 		sum(total_cached_action_exec_usec) as cpu_micros_saved,
 		sum(action_cache_hits) as ac_cache_hits,
 		sum(action_cache_misses) as ac_cache_misses
@@ -320,7 +320,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int32) string {
 	return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
-	FROM Executions
+	FROM "Executions"
 	`
 }
 
@@ -462,7 +462,7 @@ func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) str
 	    COUNT(CASE WHEN (success AND invocation_status = 1) THEN 1 END) as total_num_sucessful_builds,
 	    COUNT(CASE WHEN (success != true AND invocation_status = 1) THEN 1 END) as total_num_failing_builds,
 	    SUM(action_count) as total_actions
-            FROM Invocations`
+            FROM "Invocations"`
 	return q
 }
 
@@ -480,7 +480,7 @@ type MetricRange = struct {
 }
 
 func (i *InvocationStatService) getMetricRange(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (*MetricRange, error) {
-	rangeQuery := fmt.Sprintf("SELECT min(%s) as low, max(%s) as high FROM %s %s", metric, metric, table, whereClauseStr)
+	rangeQuery := fmt.Sprintf(`SELECT min(%s) as low, max(%s) as high FROM "%s" %s`, metric, metric, table, whereClauseStr)
 	var rows *sql.Rows
 	rows, err := i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_metric_range"), rangeQuery, whereClauseArgs...).Rows()
 	if err != nil {
@@ -686,7 +686,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 					roundDown(updated_at_usec, CAST(%s AS Array(Int64))) AS timestamp,
 					roundDown(%s, CAST(%s AS Array(Int64))) AS bucket,
 					count(*) AS v
-					FROM %s %s
+					FROM "%s" %s
 					GROUP BY timestamp, bucket)
 			GROUP BY timestamp, bucket ORDER BY timestamp, bucket)
 		GROUP BY timestamp ORDER BY timestamp`,
@@ -898,14 +898,14 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 		return fmt.Sprintf(
 			`(SELECT %s, 0 AS totals_first, count(*) AS total,
 					countIf(%s) AS selection, countIf(not(%s)) AS inverse
-				FROM %s %s)`,
+				FROM "%s" %s)`,
 			nulledOutFieldList, drilldown, drilldown, table, where), args
 	}
 
 	return fmt.Sprintf(`
 		(SELECT %s, 1 AS totals_first, count(*) AS total, countIf(%s) AS selection,
 			countIf(not(%s)) AS inverse
-		FROM %s %s
+		FROM "%s" %s
 		GROUP BY %s ORDER BY selection DESCENDING, total DESCENDING LIMIT 25)`,
 		nulledOutFieldList, drilldown, drilldown, table, where, col), args
 }

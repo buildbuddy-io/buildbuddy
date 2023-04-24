@@ -41,7 +41,7 @@ import Modal from "../../../app/components/modal/modal";
 
 interface State {
   user?: User;
-  hash: string;
+  tab: string;
   path: string;
   search: URLSearchParams;
   preferences: UserPreferences;
@@ -67,7 +67,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
 export default class EnterpriseRootComponent extends React.Component {
   state: State = {
     loading: true,
-    hash: window.location.hash,
+    tab: router.getTab(),
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
@@ -97,7 +97,7 @@ export default class EnterpriseRootComponent extends React.Component {
       faviconService.setDefaultFavicon();
     }
     this.setState({
-      hash: window.location.hash,
+      tab: router.getTab(),
       path: window.location.pathname,
       search: new URLSearchParams(window.location.search),
     });
@@ -191,7 +191,7 @@ export default class EnterpriseRootComponent extends React.Component {
             {sidebar && (
               <SidebarComponent
                 path={this.state.path}
-                hash={this.state.hash}
+                tab={this.state.tab}
                 user={this.state.user}
                 search={this.state.search}></SidebarComponent>
             )}
@@ -207,7 +207,7 @@ export default class EnterpriseRootComponent extends React.Component {
                         user={this.state.user}
                         invocationId={invocationId}
                         key={invocationId}
-                        hash={this.state.hash}
+                        tab={this.state.tab}
                         search={this.state.search}
                         preferences={this.state.preferences}
                       />
@@ -227,7 +227,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <HistoryComponent
                       user={this.state.user}
                       username={historyUser}
-                      hash={this.state.hash}
+                      tab={this.state.tab}
                       search={this.state.search}
                     />
                   )}
@@ -235,7 +235,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <HistoryComponent
                       user={this.state.user}
                       hostname={historyHost}
-                      hash={this.state.hash}
+                      tab={this.state.tab}
                       search={this.state.search}
                     />
                   )}
@@ -243,7 +243,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <HistoryComponent
                       user={this.state.user}
                       repo={historyRepo}
-                      hash={this.state.hash}
+                      tab={this.state.tab}
                       search={this.state.search}
                     />
                   )}
@@ -251,7 +251,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <HistoryComponent
                       user={this.state.user}
                       branch={historyBranch}
-                      hash={this.state.hash}
+                      tab={this.state.tab}
                       search={this.state.search}
                     />
                   )}
@@ -259,7 +259,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <HistoryComponent
                       user={this.state.user}
                       commit={historyCommit}
-                      hash={this.state.hash}
+                      tab={this.state.tab}
                       search={this.state.search}
                     />
                   )}
@@ -277,19 +277,17 @@ export default class EnterpriseRootComponent extends React.Component {
                   {orgJoinAuthenticated && this.state.user && <JoinOrgComponent user={this.state.user} />}
                   {tests && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
-                      <TapComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
+                      <TapComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
                     </Suspense>
                   )}
                   {trends && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
-                      <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
+                      <TrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
                     </Suspense>
                   )}
                   {usage && this.state.user && <UsageComponent user={this.state.user} />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
-                  {home && (
-                    <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />
-                  )}
+                  {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
@@ -297,7 +295,7 @@ export default class EnterpriseRootComponent extends React.Component {
                         path={this.state.path}
                         user={this.state.user}
                         search={this.state.search}
-                        hash={this.state.hash}
+                        tab={this.state.tab}
                       />
                     </Suspense>
                   )}
