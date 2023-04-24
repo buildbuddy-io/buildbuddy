@@ -861,7 +861,7 @@ func updateInBatches(db *gorm.DB, baseQuery string, batchSize int64) error {
 }
 
 func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
-	updateInvocationStmt := `UPDATE Invocations SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
+	updateInvocationStmt := `UPDATE "Invocations" SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
 	if err := updateInBatches(db, updateInvocationStmt, 10000); err != nil {
 		return err
 	}

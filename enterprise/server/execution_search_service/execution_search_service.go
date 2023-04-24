@@ -64,7 +64,7 @@ type ExecutionWithInvocationId struct {
 }
 
 func (s *ExecutionSearchService) fetchExecutionData(ctx context.Context, groupId string, execIds []string) (map[string]*ExecutionWithInvocationId, error) {
-	q := query_builder.NewQuery("SELECT * FROM Executions")
+	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
 	q.AddWhereClause("execution_id IN ?", execIds)
 	q.AddWhereClause("group_id = ?", groupId)
 	if err := perms.AddPermissionsCheckToQuery(ctx, s.env, q); err != nil {

@@ -238,16 +238,16 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 	var args []interface{}
 	if ck.keyID != "" {
 		query = `
-			SELECT * FROM EncryptionKeyVersions ekv
-			JOIN EncryptionKeys ek ON ekv.encryption_key_id = ek.encryption_key_id
+			SELECT * FROM "EncryptionKeyVersions" ekv
+			JOIN "EncryptionKeys" ek ON ekv.encryption_key_id = ek.encryption_key_id
 			WHERE ek.group_id = ? 
 			AND ekv.encryption_key_id = ? AND ekv.version = ?
 		`
 		args = []interface{}{ck.groupID, ck.keyID, ck.version}
 	} else {
 		query = `
-			SELECT * FROM EncryptionKeyVersions ekv
-			JOIN EncryptionKeys ek ON ekv.encryption_key_id = ek.encryption_key_id
+			SELECT * FROM "EncryptionKeyVersions" ekv
+			JOIN "EncryptionKeys" ek ON ekv.encryption_key_id = ek.encryption_key_id
 			WHERE ek.group_id = ?
 		`
 		args = []interface{}{ck.groupID}
@@ -722,7 +722,7 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 		if err := tx.Create(keyVersion).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("UPDATE `Groups` SET cache_encryption_enabled = true WHERE group_id = ?", u.GetGroupID()).Error; err != nil {
+		if err := tx.Exec(`UPDATE "Groups" SET cache_encryption_enabled = true WHERE group_id = ?`, u.GetGroupID()).Error; err != nil {
 			return err
 		}
 		return nil
@@ -740,20 +740,20 @@ func (c *Crypter) disableEncryption(ctx context.Context) error {
 	}
 	err = c.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		q := `
-			DELETE FROM EncryptionKeyVersions 
+			DELETE FROM "EncryptionKeyVersions"
 			WHERE encryption_key_id IN (
 				SELECT encryption_key_id
-				FROM EncryptionKeys
+				FROM "EncryptionKeys"
 				WHERE group_id = ?
 			)
 		`
 		if err := tx.Exec(q, u.GetGroupID()).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("DELETE FROM EncryptionKeys where group_id = ?", u.GetGroupID()).Error; err != nil {
+		if err := tx.Exec(`DELETE FROM "EncryptionKeys" where group_id = ?`, u.GetGroupID()).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("UPDATE `Groups` SET cache_encryption_enabled = false WHERE group_id = ?", u.GetGroupID()).Error; err != nil {
+		if err := tx.Exec(`UPDATE "Groups" SET cache_encryption_enabled = false WHERE group_id = ?`, u.GetGroupID()).Error; err != nil {
 			return err
 		}
 		return nil
