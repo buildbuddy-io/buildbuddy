@@ -22,7 +22,7 @@ interface Props {
   user?: User;
   repo?: string;
   targetLabel: string;
-  hash: string;
+  tab: string;
   model: InvocationModel;
 
   files: build_event_stream.IFile[];
@@ -258,7 +258,7 @@ export default class TargetComponent extends React.Component<Props> {
                   href={`#${index + 1}`}
                   title={this.generateRunName(result.buildEvent.id.testResult)}
                   className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${
-                    (this.props.hash || "#1") == `#${index + 1}` ? "selected" : ""
+                    (this.props.tab || "#1") == `#${index + 1}` ? "selected" : ""
                   }`}>
                   Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard{" "}
                   {result.buildEvent.id.testResult.shard})
@@ -267,7 +267,7 @@ export default class TargetComponent extends React.Component<Props> {
             </div>
           )}
           {resultEvents
-            .filter((value, index) => `#${index + 1}` == (this.props.hash || "#1"))
+            .filter((value, index) => `#${index + 1}` == (this.props.tab || "#1"))
             .map((result) => (
               <span>
                 <TargetTestDocumentCardComponent
@@ -296,7 +296,7 @@ export default class TargetComponent extends React.Component<Props> {
           {resultEvents
             .filter(
               (value, index) =>
-                `#${index + 1}` == (this.props.hash || "#1") && value.buildEvent?.testResult?.testActionOutput
+                `#${index + 1}` == (this.props.tab || "#1") && value.buildEvent?.testResult?.testActionOutput
             )
             .map((result) => (
               <div>

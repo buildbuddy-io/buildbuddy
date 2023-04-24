@@ -349,7 +349,7 @@ class Router {
     return Boolean(user?.canCall("listSecrets"));
   }
 
-  getHash() {
+  getTab() {
     return window.location.hash.split("@")[0];
   }
 

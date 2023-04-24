@@ -1,29 +1,29 @@
 import React from "react";
 
 interface Props {
-  hash: string;
+  tab: string;
 }
 
 export default class HistoryTabsComponent extends React.Component<Props> {
   render() {
     return (
       <div className="tabs">
-        <a href="#" className={`tab ${this.props.hash == "" && "selected"}`}>
+        <a href="#" className={`tab ${this.props.tab == "" && "selected"}`}>
           BUILDS
         </a>
-        <a href="#users" className={`tab ${this.props.hash == "#users" && "selected"}`}>
+        <a href="#users" className={`tab ${this.props.tab == "#users" && "selected"}`}>
           USERS
         </a>
-        <a href="#hosts" className={`tab ${this.props.hash == "#hosts" && "selected"}`}>
+        <a href="#hosts" className={`tab ${this.props.tab == "#hosts" && "selected"}`}>
           HOSTS
         </a>
-        <a href="#repos" className={`tab ${this.props.hash == "#repos" && "selected"}`}>
+        <a href="#repos" className={`tab ${this.props.tab == "#repos" && "selected"}`}>
           REPOS
         </a>
-        <a href="#branches" className={`tab ${this.props.hash == "#branches" && "selected"}`}>
+        <a href="#branches" className={`tab ${this.props.tab == "#branches" && "selected"}`}>
           BRANCHES
         </a>
-        <a href="#commits" className={`tab ${this.props.hash == "#commits" && "selected"}`}>
+        <a href="#commits" className={`tab ${this.props.tab == "#commits" && "selected"}`}>
           COMMITS
         </a>
       </div>

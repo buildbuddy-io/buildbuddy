@@ -20,10 +20,10 @@ export function Row({ data, index, style }: ListChildComponentProps<ListData>) {
     return null;
   }
 
-  let selected = router.getLineNumber() === index;
+  let selected = router.getLineNumber() === index + 1;
   return (
     <div
-      onClick={() => (location.hash = `${router.getHash()}@${index}`)}
+      onClick={() => (location.hash = `${router.getTab()}@${index + 1}`)}
       style={{
         ...style,
         // Set line-height to match row height so that selection highlights

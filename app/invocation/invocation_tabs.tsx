@@ -8,7 +8,7 @@ export type InvocationTabsProps = TabsContext;
  * and which tab is the default tab.
  */
 export type TabsContext = {
-  hash: string;
+  tab: string;
   denseMode: boolean;
   role: string;
   executionsEnabled?: boolean;
@@ -30,12 +30,12 @@ export type TabId =
   | "fetches"
   | "action";
 
-export function getTabId(hash: string): TabId {
-  return (hash.substring(1) as TabId) || "all";
+export function getTabId(tab: string): TabId {
+  return (tab.substring(1) as TabId) || "all";
 }
 
-export function getActiveTab({ hash, role, denseMode }: TabsContext): TabId {
-  if (hash) return getTabId(hash);
+export function getActiveTab({ tab, role, denseMode }: TabsContext): TabId {
+  if (tab) return getTabId(tab);
 
   if (!denseMode) return "all";
 

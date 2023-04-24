@@ -59,7 +59,7 @@ interface Props {
   commit?: string;
   user?: User;
   search: URLSearchParams;
-  hash: string;
+  tab: string;
 }
 
 export default class HistoryComponent extends React.Component<Props, State> {
@@ -161,7 +161,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   getAggregateStats() {
     this.setState({ aggregateStats: undefined, loadingAggregateStats: true });
 
-    const aggregationType = this.hashToAggregationTypeMap.get(this.props.hash);
+    const aggregationType = this.hashToAggregationTypeMap.get(this.props.tab);
     const request = new invocation.GetInvocationStatRequest({ aggregationType });
     const filterParams = getProtoFilterParams(this.props.search);
     request.query = new invocation.InvocationStatQuery({
@@ -314,7 +314,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       localStorage["selected_invocation_id"] = "";
     }
 
-    if (this.props.hash !== prevProps.hash || this.props.search !== prevProps.search) {
+    if (this.props.tab !== prevProps.tab || this.props.search !== prevProps.search) {
       this.fetch();
     }
   }
@@ -437,7 +437,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   isAggregateView() {
-    return Boolean(this.props.hash);
+    return Boolean(this.props.tab);
   }
 
   render() {
@@ -448,11 +448,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
       this.props.branch ||
       format.formatGitUrl(this.props.repo);
     let viewType = "build history";
-    if (this.props.hash == "#users") viewType = "users";
-    if (this.props.hash == "#repos") viewType = "repos";
-    if (this.props.hash == "#branches") viewType = "branches";
-    if (this.props.hash == "#commits") viewType = "commits";
-    if (this.props.hash == "#hosts") viewType = "hosts";
+    if (this.props.tab == "#users") viewType = "users";
+    if (this.props.tab == "#repos") viewType = "repos";
+    if (this.props.tab == "#branches") viewType = "branches";
+    if (this.props.tab == "#commits") viewType = "commits";
+    if (this.props.tab == "#hosts") viewType = "hosts";
 
     // Note: we don't show summary stats for scoped views because the summary stats
     // don't currently get filtered by the scope as well.
@@ -484,33 +484,33 @@ export default class HistoryComponent extends React.Component<Props, State> {
                     {this.props.user?.selectedGroupName()}
                   </span>
                 )}
-                {(this.props.username || this.props.hash == "#users") && (
+                {(this.props.username || this.props.tab == "#users") && (
                   <span onClick={this.handleUsersClicked.bind(this)} className="clickable">
                     Users
                   </span>
                 )}
-                {(this.props.hostname || this.props.hash == "#hosts") && (
+                {(this.props.hostname || this.props.tab == "#hosts") && (
                   <span onClick={this.handleHostsClicked.bind(this)} className="clickable">
                     Hosts
                   </span>
                 )}
-                {(this.props.repo || this.props.hash == "#repos") && (
+                {(this.props.repo || this.props.tab == "#repos") && (
                   <span onClick={this.handleReposClicked.bind(this)} className="clickable">
                     Repos
                   </span>
                 )}
-                {(this.props.branch || this.props.hash == "#branches") && (
+                {(this.props.branch || this.props.tab == "#branches") && (
                   <span onClick={this.handleBranchesClicked.bind(this)} className="clickable">
                     Branches
                   </span>
                 )}
-                {(this.props.commit || this.props.hash == "#commits") && (
+                {(this.props.commit || this.props.tab == "#commits") && (
                   <span onClick={this.handleCommitsClicked.bind(this)} className="clickable">
                     Commits
                   </span>
                 )}
                 {scope && <span>{scope}</span>}
-                {!this.props.username && !this.props.hostname && this.props.hash == "" && (
+                {!this.props.username && !this.props.hostname && this.props.tab == "" && (
                   <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
                 )}
               </div>
@@ -656,7 +656,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
             </div>
           )}
         </div>
-        {this.props.hash === "#users" && this.props.user.canCall("getGroupUsers") && (
+        {this.props.tab === "#users" && this.props.user.canCall("getGroupUsers") && (
           <OrgJoinRequestsComponent user={this.props.user} />
         )}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
@@ -683,7 +683,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
             )}
             {this.state.aggregateStats?.map((invocationStat) => (
               <HistoryInvocationStatCardComponent
-                type={this.hashToAggregationTypeMap.get(this.props.hash)}
+                type={this.hashToAggregationTypeMap.get(this.props.tab)}
                 invocationStat={invocationStat}
               />
             ))}

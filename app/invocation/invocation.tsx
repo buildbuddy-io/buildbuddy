@@ -52,7 +52,7 @@ interface State {
 interface Props {
   user?: User;
   invocationId: string;
-  hash: string;
+  tab: string;
   search: URLSearchParams;
   preferences: UserPreferences;
 }
@@ -214,7 +214,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         <TargetComponent
           model={this.state.model}
           invocationId={this.props.invocationId}
-          hash={this.props.hash}
+          tab={this.props.tab}
           files={this.state.model.getFiles(completed?.buildEvent)}
           configuredEvent={this.state.model.configuredMap.get(targetLabel)}
           skippedEvent={this.state.model.skippedMap.get(targetLabel)}
@@ -231,7 +231,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }
 
     const activeTab = getActiveTab({
-      hash: this.props.hash,
+      tab: this.props.tab,
       role: this.state.model.getRole(),
       denseMode: this.props.preferences.denseModeEnabled,
     });
@@ -265,7 +265,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         </div>
         <div className="container nopadding-dense">
           <InvocationTabsComponent
-            hash={this.props.hash}
+            tab={this.props.tab}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
             executionsEnabled={this.state.model.getIsRBEEnabled() || this.state.model.isWorkflowInvocation()}
@@ -274,7 +274,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
             <InvocationFilterComponent
-              hash={this.props.hash}
+              tab={this.props.tab}
               search={this.props.search}
               placeholder={activeTab == "execution" ? "Filter by digest or command..." : ""}
             />
