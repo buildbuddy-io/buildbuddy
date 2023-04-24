@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	// "encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -136,6 +137,10 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	if err := h.insertWithRetrier(ctx, inv.TableName(), 1, inv); err != nil {
 		return status.UnavailableErrorf("failed to insert invocation (invocation_id = %q), err: %s", ti.InvocationID, err)
 	}
+	log.Warningf("About to read..")
+	readBack := &schema.Invocation{InvocationUUID: inv.InvocationUUID}
+	h.db.Take(readBack)
+	log.Warningf("read back: %s, %s, %v", readBack.InvocationUUID, readBack.Host, readBack.Tags)
 	return nil
 }
 
@@ -260,8 +265,7 @@ func Register(env environment.Env) error {
 	}
 
 	db, err := gorm.Open(gormclickhouse.New(gormclickhouse.Config{
-		Conn:                         sqlDB,
-		DontSupportEmptyDefaultValue: true,
+		Conn: sqlDB,
 	}))
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)

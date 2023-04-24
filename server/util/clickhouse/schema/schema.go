@@ -8,9 +8,10 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	// "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/array"
+	// "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/array"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -112,7 +113,7 @@ type Invocation struct {
 	DownloadOutputsOption             int64
 	UploadLocalResultsEnabled         bool
 	RemoteExecutionEnabled            bool
-	Tags                              pq.StringArray `gorm:"type:Array(String);"`
+	Tags                              []string `gorm:"type:Array(String);"`
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -381,6 +382,7 @@ func RunMigrations(gdb *gorm.DB) error {
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	log.Warningf("Tags to flush: %v", strings.Split(ti.Tags, ","))
+	var tagSlice []string = strings.Split(ti.Tags, ",")
 	return &Invocation{
 		GroupID:                           ti.GroupID,
 		UpdatedAtUsec:                     ti.UpdatedAtUsec,
