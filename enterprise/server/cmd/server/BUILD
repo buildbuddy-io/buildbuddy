@@ -47,6 +47,7 @@ go_library(
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/secrets",
         "//enterprise/server/selfauth",
+        "//enterprise/server/sociartifactstore",
         "//enterprise/server/splash",
         "//enterprise/server/suggestion",
         "//enterprise/server/tasksize",
