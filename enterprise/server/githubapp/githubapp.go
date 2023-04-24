@@ -234,6 +234,34 @@ func (a *GitHubApp) GetInstallationToken(ctx context.Context, owner string) (str
 	return tok.GetToken(), nil
 }
 
+func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
+	if err := perms.AuthorizeGroupAccess(ctx, a.env, repo.GroupID); err != nil {
+		return "", err
+	}
+	repoURL, err := gitutil.ParseGitHubRepoURL(repo.RepoURL)
+	if err != nil {
+		return "", err
+	}
+	var installation tables.GitHubAppInstallation
+	err = a.env.GetDBHandle().DB(ctx).Raw(`
+		SELECT *
+		FROM "GitHubAppInstallations"
+		WHERE group_id = ?
+		AND owner = ?
+	`, repo.GroupID, repoURL.Owner).Take(&installation).Error
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
+		}
+		return "", err
+	}
+	tok, err := a.createInstallationToken(ctx, installation.InstallationID)
+	if err != nil {
+		return "", err
+	}
+	return tok.GetToken(), nil
+}
+
 func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error) {
 	u, err := perms.AuthenticatedUser(ctx, a.env)
 	if err != nil {
