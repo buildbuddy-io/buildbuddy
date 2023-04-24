@@ -194,8 +194,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
-  showingDrilldown(): boolean {
-    return (capabilities.config.trendsHeatmapEnabled || false) && this.props.tab === "#drilldown";
+  showingDrilldown(tab: string): boolean {
+    return (capabilities.config.trendsHeatmapEnabled || false) && tab === "#drilldown";
   }
 
   render() {
@@ -220,11 +220,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
               </div>
             </div>
           )}
-          {this.showingDrilldown(this.props.hash) && (
+          {this.showingDrilldown(this.props.tab) && (
             <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
           )}
-          {!this.showingDrilldown(this.props.hash) && this.state.loading && <div className="loading"></div>}
-          {!this.showingDrilldown(this.props.hash) && !this.state.loading && (
+          {!this.showingDrilldown(this.props.tab) && this.state.loading && <div className="loading"></div>}
+          {!this.showingDrilldown(this.props.tab) && !this.state.loading && (
             <>
               {capabilities.config.trendsSummaryEnabled && this.state.currentSummary && (
                 <TrendsSummaryCard
