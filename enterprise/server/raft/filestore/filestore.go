@@ -88,8 +88,6 @@ type PebbleKey struct {
 	isolation          string
 	remoteInstanceHash string
 	hash               string
-
-	prioritizeHashInMetadataKey bool
 }
 
 func (pmk PebbleKey) String() string {
@@ -276,21 +274,11 @@ type Store interface {
 }
 
 type fileStorer struct {
-	prioritizeHashInMetadataKey bool
-}
-
-type Opts struct {
-	// PrioritizeHashInMetadataKey controls the placement of the digest within the metadata
-	// key. When enabled, the digest is placed before the cache type & isolation
-	// parts.
-	PrioritizeHashInMetadataKey bool
 }
 
 // New creates a new filestorer interface.
-func New(opts Opts) Store {
-	return &fileStorer{
-		prioritizeHashInMetadataKey: opts.PrioritizeHashInMetadataKey,
-	}
+func New() Store {
+	return &fileStorer{}
 }
 
 func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
@@ -355,12 +343,11 @@ func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
 		return PebbleKey{}, err
 	}
 	return PebbleKey{
-		partID:                      partID,
-		groupID:                     groupID,
-		isolation:                   isolation,
-		remoteInstanceHash:          remoteInstanceHash,
-		hash:                        hash,
-		prioritizeHashInMetadataKey: fs.prioritizeHashInMetadataKey,
+		partID:             partID,
+		groupID:            groupID,
+		isolation:          isolation,
+		remoteInstanceHash: remoteInstanceHash,
+		hash:               hash,
 	}, nil
 }
 

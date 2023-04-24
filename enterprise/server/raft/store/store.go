@@ -600,7 +600,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		replicas: sync.Map{},
 
 		metaRangeData: "",
-		fileStorer:    filestore.New(filestore.Opts{}),
+		fileStorer:    filestore.New(),
 		splitMu:       sync.Mutex{},
 		splitQueue:    make(chan *rfpb.RangeDescriptor, splitQueueSize),
 		eg:            &errgroup.Group{},
