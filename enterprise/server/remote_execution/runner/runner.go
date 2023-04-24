@@ -947,6 +947,10 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if err != nil && !authutil.IsAnonymousUserError(err) {
 		return nil, err
 	}
+	groupID := ""
+	if user != nil {
+		groupID = user.GetGroupID()
+	}
 	if props.RecycleRunner && err != nil {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
@@ -957,7 +961,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	}
 
 	key := &rnpb.RunnerKey{
-		GroupId:             user.GetGroupID(),
+		GroupId:             groupID,
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
 		Platform:            task.GetCommand().GetPlatform(),
 		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
