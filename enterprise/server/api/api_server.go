@@ -493,9 +493,9 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	wf, err := wfs.GetWorkflowByGroupAndRepo(ctx, user.GetGroupID(), req.GetRepoUrl())
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that Github App authentication is required"+
-				" to use this API. If you are using the legacy Workflow product, you will need"+
-				" to migrate to a Github App first.", req.GetRepoUrl())
+			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that the legacy Workflow product"+
+				" is not supported for this API. See https://www.buildbuddy.io/docs/workflows-setup/ for more information"+
+				" on how to correctly setup Workflows.", req.GetRepoUrl())
 		}
 		return nil, err
 	}
