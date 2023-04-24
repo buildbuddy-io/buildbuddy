@@ -36,7 +36,7 @@ import { normalizeRepoURL } from "../../../app/util/git";
 
 interface Props {
   user: User;
-  hash: string;
+  tab: string;
   search: URLSearchParams;
 }
 

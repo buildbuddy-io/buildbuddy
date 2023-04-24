@@ -3,7 +3,7 @@ import router from "../router/router";
 import { FilterInput } from "../components/filter_input/filter_input";
 
 interface Props {
-  hash: string;
+  tab: string;
   search: URLSearchParams;
   placeholder?: string;
 }
@@ -27,7 +27,7 @@ export default class InvocationFilterComponent extends React.Component<Props> {
   }
 
   filterType() {
-    switch (this.props.hash) {
+    switch (this.props.tab) {
       case "#artifacts":
         return "artifactFilter";
       case "#execution":

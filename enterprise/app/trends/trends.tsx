@@ -20,7 +20,7 @@ const BITS_PER_BYTE = 8;
 
 interface Props {
   user: User;
-  hash: string;
+  tab: string;
   search: URLSearchParams;
 }
 
@@ -61,7 +61,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.hash !== prevProps.hash || this.props.search != prevProps.search) {
+    if (this.props.tab !== prevProps.tab || this.props.search != prevProps.search) {
       this.fetchStats();
     }
   }
@@ -71,7 +71,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   getSelectedTab(): "charts" | "drilldown" {
-    if (this.props.hash.replace("#", "") === "drilldown") {
+    if (this.props.tab.replace("#", "") === "drilldown") {
       return "drilldown";
     }
     return "charts";
@@ -188,7 +188,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   showingDrilldown(): boolean {
-    return (capabilities.config.trendsHeatmapEnabled || false) && this.props.hash === "#drilldown";
+    return (capabilities.config.trendsHeatmapEnabled || false) && this.props.tab === "#drilldown";
   }
 
   render() {
