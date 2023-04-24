@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/webhooks/github",
+        "//enterprise/server/webhooks/webhook_data",
         "//proto:github_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/github",
