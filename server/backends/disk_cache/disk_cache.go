@@ -608,16 +608,20 @@ func makeRecordFromInfo(key *fileKey, info fs.FileInfo) *fileRecord {
 	}
 }
 
-func (p *partition) evictFn(value interface{}) {
+func (p *partition) evictFn(value interface{}, reason lru.EvictionReason) {
 	if v, ok := value.(*fileRecord); ok {
 		i, err := os.Stat(v.FullPath())
 		if err == nil {
 			lastUse := time.Unix(0, getLastUseNanos(i))
 			age := time.Now().Sub(lastUse)
-			lbls := prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}
-			metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
-			metrics.DiskCacheNumEvictions.With(lbls).Inc()
-			metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
+			// Only update metrics if the value was evicted because of capacity
+			// constraints (and not because of a manual deletion).
+			if reason == lru.SizeEviction {
+				lbls := prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}
+				metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+				metrics.DiskCacheNumEvictions.With(lbls).Inc()
+				metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
+			}
 		}
 		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
 			log.Warningf("Could not delete evicted file: %s", err)
