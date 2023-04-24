@@ -119,16 +119,14 @@ var (
 	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
 	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
-	// TODO(Maggie): Clean up this field - consolidate with --commit_sha
-	targetCommitSHA   = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
-	workflowID        = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
-	actionName        = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
-	invocationID      = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
-	visibility        = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
-	bazelSubCommand   = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	patchURIs         = flagutil.New("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-	recordRunMetadata = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
-	gitCleanExclude   = flagutil.New("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
+	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
+	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	patchURIs          = flagutil.New("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
+	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
+	gitCleanExclude    = flagutil.New("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -141,6 +139,9 @@ var (
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
+
+	// TODO(Maggie): Clean up this field - consolidate with --commit_sha
+	targetCommitSHA = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
 )
 
 type workspace struct {
@@ -1397,16 +1398,17 @@ func (ws *workspace) sync(ctx context.Context) error {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		checkoutLocalBranchName = *targetBranch
 	} else {
-		// If no branch is passed in, stay on the default branch. Don't set checkoutRef
+		// If no branch is passed in, stay on the default branch
+		checkoutRef = "HEAD"
 		checkoutLocalBranchName = "local"
 	}
 
 	// TODO(Maggie): If commit sha is not set, pull the actual sha so that it can be used in reporting
-	checkoutCommit := "HEAD"
+	// If a commit is set, use it
 	if *targetCommitSHA != "" {
-		checkoutCommit = *targetCommitSHA
+		checkoutRef = *targetCommitSHA
 	} else if *commitSHA != "" {
-		checkoutCommit = *commitSHA
+		checkoutRef = *commitSHA
 	}
 
 	// Clean up in case a previous workflow made a mess.
@@ -1423,15 +1425,8 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 
-	// Checkout the git branch
-	if checkoutRef != "" {
-		if err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
-			return err
-		}
-	}
-
-	// Checkout a specific commit on the branch and create the local branch if it doesn't already exist
-	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutCommit); err != nil {
+	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
+	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
 		return err
 	}
 
