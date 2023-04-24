@@ -10,7 +10,7 @@ import "proto/context.proto";
 import "proto/remote_execution.proto";
 import "proto/resource.proto";
 
-// Next Tag: 16
+// Next Tag: 17
 message CacheStats {
   // Server-side Action-cache stats.
   int64 action_cache_hits = 1;
@@ -49,6 +49,9 @@ message CacheStats {
   // The approximate time savings of a build based on
   // the sum of execution time of cached objects.
   int64 total_cached_action_exec_usec = 11;
+
+  // The sum of execution time of actions that missed the action cache.
+  int64 total_uncached_action_exec_usec = 16;
 }
 
 // Request to retrieve detailed per-request cache stats.

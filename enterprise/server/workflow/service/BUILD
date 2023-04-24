@@ -40,6 +40,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@org_golang_google_grpc//status",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )

@@ -47,17 +47,16 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       return;
     }
 
-    this.setState({ ...this.state, loading: true });
+    this.setState({ loading: true });
     const request = new zip.GetZipManifestRequest();
     request.uri = testOutputsUri;
     rpcService.service
       .getZipManifest(request)
       .then((response) => {
-        this.setState({ ...this.state, manifest: response.manifest, loading: false });
+        this.setState({ manifest: response.manifest, loading: false });
       })
       .catch(() => {
         this.setState({
-          ...this.state,
           loading: false,
           manifest: null,
         });

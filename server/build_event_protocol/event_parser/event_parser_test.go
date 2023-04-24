@@ -190,4 +190,155 @@ func TestFillInvocation(t *testing.T) {
 	assert.Equal(t, "WORKSPACE_STATUS_BUILD_USER", invocation.User)
 	assert.Equal(t, "METADATA_CI", invocation.Role)
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", invocation.RepoUrl, "repo URL should be normalized")
+	assert.Equal(t, false, invocation.GetUploadLocalResultsEnabled())
+	assert.Equal(t, false, invocation.GetRemoteExecutionEnabled())
+	assert.Equal(t, inpb.DownloadOutputsOption_NONE, invocation.GetDownloadOutputsOption())
+}
+
+func TestRemoteCacheOptions(t *testing.T) {
+	tests := []struct {
+		desc                              string
+		commandLineOptions                []*command_line.Option
+		expectedDownloadOutputOption      inpb.DownloadOutputsOption
+		expectedRemoteExecutionEnabled    bool
+		expectedUploadLocalResultsEnabled bool
+	}{
+		{
+			desc: "remote cache on, remote execution off, upload local results",
+			commandLineOptions: []*command_line.Option{
+				{
+					CombinedForm: "--remote_cache=grpcs://remote.buildbuddy.dev",
+					OptionName:   "remote_cache",
+					OptionValue:  "grpc://remote.buildbuddy.dev",
+				},
+				{
+					CombinedForm: "--remote_upload_local_results",
+					OptionName:   "remote_upload_local_results",
+					OptionValue:  "1",
+				},
+			},
+			expectedDownloadOutputOption:      inpb.DownloadOutputsOption_ALL,
+			expectedRemoteExecutionEnabled:    false,
+			expectedUploadLocalResultsEnabled: true,
+		},
+		{
+			desc: "remote cache on, remote execution off, no upload local results",
+			commandLineOptions: []*command_line.Option{
+				{
+					CombinedForm: "--remote_cache=grpcs://remote.buildbuddy.dev",
+					OptionName:   "remote_cache",
+					OptionValue:  "grpc://remote.buildbuddy.dev",
+				},
+				{
+					CombinedForm: "--noremote_upload_local_results",
+					OptionName:   "remote_upload_local_results",
+					OptionValue:  "0",
+				},
+			},
+			expectedDownloadOutputOption:      inpb.DownloadOutputsOption_ALL,
+			expectedRemoteExecutionEnabled:    false,
+			expectedUploadLocalResultsEnabled: false,
+		},
+		{
+			desc: "remote cache off, remote execution off, no upload local results",
+			commandLineOptions: []*command_line.Option{
+				{
+					CombinedForm: "--noremote_upload_local_results",
+					OptionName:   "remote_upload_local_results",
+					OptionValue:  "0",
+				},
+			},
+			expectedDownloadOutputOption:      inpb.DownloadOutputsOption_NONE,
+			expectedRemoteExecutionEnabled:    false,
+			expectedUploadLocalResultsEnabled: false,
+		},
+		{
+			desc: "minimal cache, remote execution on, upload local results",
+			commandLineOptions: []*command_line.Option{
+				{
+					CombinedForm: "--remote_cache=grpcs://remote.buildbuddy.dev",
+					OptionName:   "remote_cache",
+					OptionValue:  "grpc://remote.buildbuddy.dev",
+				},
+				{
+					CombinedForm: "--remote_executor=grpcs://remote.buildbuddy.dev",
+					OptionName:   "remote_executor",
+					OptionValue:  "grpcs://remote.buildbuddy.dev",
+				},
+				{
+					CombinedForm: "--remote_upload_local_results",
+					OptionName:   "remote_upload_local_results",
+					OptionValue:  "1",
+				},
+				{
+					CombinedForm: "--remote_download_outputs=minimal",
+					OptionName:   "remote_download_outputs",
+					OptionValue:  "minimal",
+				},
+			},
+			expectedDownloadOutputOption:      inpb.DownloadOutputsOption_MINIMAL,
+			expectedRemoteExecutionEnabled:    true,
+			expectedUploadLocalResultsEnabled: true,
+		},
+		{
+			desc: "toplevel cache, remote execution on, upload local results",
+			commandLineOptions: []*command_line.Option{
+				{
+					CombinedForm: "--remote_cache=grpcs://remote.buildbuddy.dev",
+					OptionName:   "remote_cache",
+					OptionValue:  "grpc://remote.buildbuddy.dev",
+				},
+				{
+					CombinedForm: "--remote_executor=grpcs://remote.buildbuddy.dev",
+					OptionName:   "remote_executor",
+					OptionValue:  "grpcs://remote.buildbuddy.dev",
+				},
+				{
+					CombinedForm: "--remote_upload_local_results",
+					OptionName:   "remote_upload_local_results",
+					OptionValue:  "1",
+				},
+				{
+					CombinedForm: "--remote_download_outputs=minimal",
+					OptionName:   "remote_download_outputs",
+					OptionValue:  "toplevel",
+				},
+			},
+			expectedDownloadOutputOption:      inpb.DownloadOutputsOption_TOP_LEVEL,
+			expectedRemoteExecutionEnabled:    true,
+			expectedUploadLocalResultsEnabled: true,
+		},
+	}
+
+	for _, tc := range tests {
+		structuredCommandLine := &command_line.CommandLine{
+			CommandLineLabel: "label",
+			Sections: []*command_line.CommandLineSection{
+				{
+					SectionLabel: "command",
+					SectionType: &command_line.CommandLineSection_OptionList{
+						OptionList: &command_line.OptionList{
+							Option: tc.commandLineOptions,
+						},
+					},
+				},
+			},
+		}
+		event := &build_event_stream.BuildEvent{
+			Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
+				StructuredCommandLine: structuredCommandLine,
+			},
+		}
+		t.Run(tc.desc, func(t *testing.T) {
+			invocation := &inpb.Invocation{
+				InvocationId:     "test-invocation",
+				InvocationStatus: inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
+			}
+			parser := event_parser.NewStreamingEventParser(invocation)
+			parser.ParseEvent(event)
+			assert.Equal(t, tc.expectedUploadLocalResultsEnabled, invocation.GetUploadLocalResultsEnabled())
+			assert.Equal(t, tc.expectedRemoteExecutionEnabled, invocation.GetRemoteExecutionEnabled())
+			assert.Equal(t, tc.expectedDownloadOutputOption, invocation.GetDownloadOutputsOption())
+		})
+	}
 }

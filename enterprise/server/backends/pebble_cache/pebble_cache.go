@@ -670,7 +670,6 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 			return nil
 		default:
 		}
-		_ = limiter.Wait(p.env.GetServerContext())
 
 		if time.Since(lastStatusUpdate) > 10*time.Second {
 			log.Infof("Pebble Cache: data migration progress: saw %d keys, migrated %d to version: %d in %s. Current key: %q", keysSeen, keysMigrated, maxVersion, time.Since(migrationStart), string(iter.Key()))
@@ -712,6 +711,8 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		if version < minVersion {
 			minVersion = version
 		}
+
+		_ = limiter.Wait(p.env.GetServerContext())
 
 		moveKey := func() error {
 			keyBytes, err := key.Bytes(version)
@@ -1159,14 +1160,14 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
+func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
 	groupID := p.userGroupID(ctx)
 	for _, pm := range p.partitionMappings {
 		if pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
-			return groupID, pm.PartitionID, nil
+			return groupID, pm.PartitionID
 		}
 	}
-	return groupID, DefaultPartitionID, nil
+	return groupID, DefaultPartitionID
 }
 
 func (p *PebbleCache) encryptionEnabled(ctx context.Context, partitionID string) (bool, error) {
@@ -1203,10 +1204,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		return nil, err
 	}
 
-	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
+	groupID, partID := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
@@ -2476,9 +2474,15 @@ func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, k
 		return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
 	}
 
-	shouldDecrypt, err := p.encryptionEnabled(ctx, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
-	if err != nil {
-		return nil, err
+	shouldDecrypt := fileMetadata.EncryptionMetadata != nil
+	if shouldDecrypt {
+		encryptionEnabled, err := p.encryptionEnabled(ctx, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+		if err != nil {
+			return nil, err
+		}
+		if !encryptionEnabled {
+			return nil, status.NotFoundErrorf("decryption key not available")
+		}
 	}
 
 	// If the data is stored uncompressed/unencrypted, we can use the offset/limit directly
@@ -2621,4 +2625,14 @@ func (p *PebbleCache) Stop() error {
 	log.Infof("Pebble Cache: db flushed")
 
 	return p.db.Close()
+}
+
+func (p *PebbleCache) SupportsEncryption(ctx context.Context) bool {
+	_, partID := p.lookupGroupAndPartitionID(ctx, "")
+	for _, part := range p.partitions {
+		if part.ID == partID {
+			return part.EncryptionSupported
+		}
+	}
+	return false
 }

@@ -60,7 +60,7 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubCl
 	if workflowID := r.buildEventAccumulator.WorkflowID(); workflowID != "" {
 		if dbh := r.env.GetDBHandle(); dbh != nil {
 			workflow := &tables.Workflow{}
-			if err := dbh.DB(ctx).Raw(`SELECT * from Workflows WHERE workflow_id = ?`, workflowID).Take(workflow).Error; err == nil {
+			if err := dbh.DB(ctx).Raw(`SELECT * from "Workflows" WHERE workflow_id = ?`, workflowID).Take(workflow).Error; err == nil {
 				return github.NewGithubClient(r.env, workflow.AccessToken)
 			}
 		}

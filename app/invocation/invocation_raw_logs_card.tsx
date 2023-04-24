@@ -37,7 +37,7 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
   }
 
   handleFilterChange(event: any) {
-    this.setState({ ...this.state, filterString: event.target.value });
+    this.setState({ filterString: event.target.value });
   }
 
   handleDownloadClicked() {

@@ -7,13 +7,13 @@ import { google as google_duration } from "../../../proto/duration_ts_proto";
 
 export interface BucketFormValues {
   namespace?: string;
-  bucket?: quota.IBucket;
+  bucket?: quota.Bucket;
 }
 
 export interface BucketFormProps {
   initialValues?: {
     namespace?: string;
-    bucket?: quota.IBucket;
+    bucket?: quota.Bucket;
   };
   namespaceEditable?: boolean;
   nameEditable?: boolean;

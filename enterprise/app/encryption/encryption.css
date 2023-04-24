@@ -1,0 +1,36 @@
+.kms-form .kms-config-row {
+  display: flex;
+  margin-top: 20px;
+  margin-bottom: 16px;
+}
+
+.kms-form input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+}
+
+.kms-form input[type="text"] {
+  width: 300px;
+  height: 40px;
+  padding: 16px;
+}
+
+.kms-form .kms-fields {
+  margin-top: 20px;
+}
+
+.kms-form .field-row {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 16px;
+}
+
+.kms-form .field-label {
+  margin-bottom: 8px;
+}
+
+.kms-form .form-error {
+  margin-top: 16px;
+  color: #f44336;
+}

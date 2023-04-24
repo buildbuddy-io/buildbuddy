@@ -115,7 +115,7 @@ func TestACIsolation(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	r1 := &rspb.ResourceName{
@@ -148,7 +148,7 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -183,7 +183,7 @@ func TestSet_DoubleWrite(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -213,7 +213,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(defaultExt4BlockSize*10))
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -237,7 +237,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	srcCache := &errorCache{}
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(1000))
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -260,7 +260,7 @@ func TestSet_SrcAndDestWriteErr(t *testing.T) {
 
 	srcCache := &errorCache{}
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -282,7 +282,7 @@ func TestGetSet(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
@@ -316,7 +316,7 @@ func TestGet_DoubleRead(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -341,7 +341,7 @@ func TestGet_DestReadErr(t *testing.T) {
 	require.NoError(t, err)
 	destCache := &errorCache{}
 
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -370,7 +370,7 @@ func TestGet_SrcReadErr(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	// Write data to dest cache only
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -402,7 +402,7 @@ func TestGetSet_EmptyData(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -437,7 +437,7 @@ func TestCopyDataInBackground(t *testing.T) {
 		CopyChanBufferSize: numTests + 1,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -486,7 +486,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 		CopyChanFullWarningIntervalMin: 1,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -536,7 +536,7 @@ func TestCopyDataInBackground_RateLimitMax(t *testing.T) {
 		MaxCopiesPerSec:    1,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -593,7 +593,7 @@ func TestCopyDataInBackground_RateLimitMin(t *testing.T) {
 		MaxCopiesPerSec:    10,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -651,7 +651,7 @@ func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
 		MaxCopiesPerSec:    1,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -715,7 +715,7 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 		MaxCopiesPerSec:    10,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -784,7 +784,7 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 		MaxCopiesPerSec:    10,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -847,7 +847,7 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 		LogNotFoundErrors:    true,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -900,7 +900,7 @@ func TestContains(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -934,7 +934,7 @@ func TestContains_DestErr(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -961,7 +961,7 @@ func TestMetadata(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -993,7 +993,7 @@ func TestMetadata_DestErr(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -1020,7 +1020,7 @@ func TestFindMissing(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -1057,7 +1057,7 @@ func TestFindMissing_DestSrcMismatch(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -1100,7 +1100,7 @@ func TestFindMissing_DestErr(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -1133,7 +1133,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 	require.NoError(t, err)
 	config := &migration_cache.MigrationConfig{}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -1186,7 +1186,7 @@ func TestSetMulti(t *testing.T) {
 	require.NoError(t, err)
 	config := &migration_cache.MigrationConfig{}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	lock := sync.RWMutex{}
@@ -1235,7 +1235,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	r := &rspb.ResourceName{
@@ -1287,7 +1287,7 @@ func TestReadWrite(t *testing.T) {
 		DoubleReadPercentage: 1.0,
 	}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
@@ -1360,7 +1360,7 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	destCache := &errorCache{}
 	config := &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 

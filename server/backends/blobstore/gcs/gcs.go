@@ -8,6 +8,8 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -133,4 +135,25 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	} else {
 		return false, err
 	}
+}
+
+func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	bw := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
+
+	zw := util.NewCompressWriter(bw)
+	cwc := ioutil.NewCustomCommitWriteCloser(zw)
+	cwc.CommitFn = func(int64) error {
+		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
+			cancel() // Don't try to finish the commit op if Close() failed.
+			// Canceling the context closes the Writer, so don't call bw.Close().
+			return compresserCloseErr
+		}
+		return bw.Close()
+	}
+	cwc.CloseFn = func() error {
+		cancel()
+		return nil
+	}
+	return cwc, nil
 }

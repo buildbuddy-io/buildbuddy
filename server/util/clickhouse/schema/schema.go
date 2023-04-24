@@ -108,6 +108,9 @@ type Invocation struct {
 	TotalUncachedActionExecUsec       int64
 	DownloadThroughputBytesPerSecond  int64
 	UploadThroughputBytesPerSecond    int64
+	DownloadOutputsOption             int64
+	UploadLocalResultsEnabled         bool
+	RemoteExecutionEnabled            bool
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -411,5 +414,8 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		TotalUncachedActionExecUsec:       ti.TotalUncachedActionExecUsec,
 		DownloadThroughputBytesPerSecond:  ti.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:    ti.UploadThroughputBytesPerSecond,
+		DownloadOutputsOption:             ti.DownloadOutputsOption,
+		UploadLocalResultsEnabled:         ti.UploadLocalResultsEnabled,
+		RemoteExecutionEnabled:            ti.RemoteExecutionEnabled,
 	}
 }

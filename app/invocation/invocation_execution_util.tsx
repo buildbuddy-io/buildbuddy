@@ -1,13 +1,14 @@
 import React from "react";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
-import { google } from "../../proto/grpc_code_ts_proto";
+import { google as google_grpc } from "../../proto/grpc_code_ts_proto";
+import { google as google_ts } from "../../proto/timestamp_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
 
 const GRPC_STATUS_LABEL_BY_CODE: Record<number, string> = Object.fromEntries(
-  Object.entries(google.rpc.Code).map(([name, value]) => [value, name])
+  Object.entries(google_grpc.rpc.Code).map(([name, value]) => [value, name])
 );
 
 const STATUSES_BY_STAGE: Record<number, ExecutionStatus> = {
@@ -45,9 +46,10 @@ export function getExecutionStatus(execution: execution_stats.IExecution): Execu
 }
 
 export function subtractTimestamp(
-  timestampA: { nanos?: number | Long; seconds?: number | Long },
-  timestampB: { nanos?: number | Long; seconds?: number | Long }
+  timestampA?: google_ts.protobuf.ITimestamp | null,
+  timestampB?: google_ts.protobuf.ITimestamp | null
 ) {
+  if (!timestampA || !timestampB) return NaN;
   let microsA = +timestampA.seconds * 1000000 + +timestampA.nanos / 1000;
   let microsB = +timestampB.seconds * 1000000 + +timestampB.nanos / 1000;
   return microsA - microsB;

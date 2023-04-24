@@ -21,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -30,10 +32,11 @@ import (
 )
 
 var (
-	readFromOLAPDBEnabled        = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, read from OLAP DB")
-	executionTrendsEnabled       = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
-	invocationPercentilesEnabled = flag.Bool("app.enable_invocation_stat_percentiles", false, "If enabled, provide percentile breakdowns for invocation stats in GetTrendResponse")
-	useTimezoneInHeatmapQueries  = flag.Bool("app.use_timezone_in_heatmap_queries", false, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
+	readFromOLAPDBEnabled          = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, read from OLAP DB")
+	executionTrendsEnabled         = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
+	invocationPercentilesEnabled   = flag.Bool("app.enable_invocation_stat_percentiles", false, "If enabled, provide percentile breakdowns for invocation stats in GetTrendResponse")
+	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", false, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
+	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 )
 
 type InvocationStatService struct {
@@ -110,7 +113,7 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	    SUM(total_upload_size_bytes) as total_upload_size_bytes,
 	    SUM(total_download_usec) as total_download_usec,
         SUM(total_upload_usec) as total_upload_usec
-        FROM Invocations`
+        FROM "Invocations"`
 	return q
 }
 
@@ -226,6 +229,42 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 	return nil
 }
 
+func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.Summary, error) {
+	if !i.isOLAPDBEnabled() {
+		// Invocation Summary is only available with OLAP DB enabled.
+		return nil, nil
+	}
+
+	startTime := req.GetQuery().GetUpdatedAfter().AsTime()
+
+	dataAvailableTime := time.UnixMicro(*invocationSummaryAvailableUsec)
+	if dataAvailableTime.After(startTime) {
+		return nil, nil
+	}
+
+	q := query_builder.NewQuery(`
+    SELECT
+	    count(1) AS num_builds,
+		countIf(download_outputs_option IN (2, 3, 4)) as num_builds_with_remote_cache,
+		sum(total_cached_action_exec_usec) as cpu_micros_saved,
+		sum(action_cache_hits) as ac_cache_hits,
+		sum(action_cache_misses) as ac_cache_misses
+	FROM Invocations
+    `)
+
+	reqCtx := req.GetRequestContext()
+	if err := addWhereClauses(q, req.GetQuery(), reqCtx, 0); err != nil {
+		return nil, err
+	}
+	qStr, qArgs := q.Build()
+	row := &stpb.Summary{}
+	err := i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_summary"), qStr, qArgs...).Take(row).Error
+	if err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
 func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stpb.GetTrendRequest) ([]*stpb.TrendStat, error) {
 	reqCtx := req.GetRequestContext()
 
@@ -281,7 +320,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int32) string {
 	return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
-	FROM Executions
+	FROM "Executions"
 	`
 }
 
@@ -354,6 +393,36 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var err error
+		if rsp.CurrentSummary, err = i.getInvocationSummary(ctx, req); err != nil {
+			return err
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		var err error
+		// TODO(jdhollen): This is a little funky: updated_after is set to midnight
+		// local time, so the subtraction we do below ends up being "last 29 days
+		// plus a few extra hours depending on what time of day it is".  There isn't
+		// really a "correct" solution, because we don't have a full day of data,
+		// but maybe we will decide we like showing the full previous 30 days.
+		endTime := time.Now()
+		if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
+			endTime = end.AsTime()
+		}
+		startTime := req.GetQuery().GetUpdatedAfter().AsTime()
+		duration := endTime.Sub(startTime)
+		endTime = startTime
+		startTime = endTime.Add(-duration)
+		newReq := proto.Clone(req).(*stpb.GetTrendRequest)
+		newReq.GetQuery().UpdatedBefore = timestamppb.New(endTime)
+		newReq.GetQuery().UpdatedAfter = timestamppb.New(startTime)
+		if rsp.PreviousSummary, err = i.getInvocationSummary(ctx, newReq); err != nil {
+			return err
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		var err error
 		if rsp.TrendStat, err = i.getInvocationTrend(ctx, req); err != nil {
 			return err
 		}
@@ -393,7 +462,7 @@ func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) str
 	    COUNT(CASE WHEN (success AND invocation_status = 1) THEN 1 END) as total_num_sucessful_builds,
 	    COUNT(CASE WHEN (success != true AND invocation_status = 1) THEN 1 END) as total_num_failing_builds,
 	    SUM(action_count) as total_actions
-            FROM Invocations`
+            FROM "Invocations"`
 	return q
 }
 
@@ -411,7 +480,7 @@ type MetricRange = struct {
 }
 
 func (i *InvocationStatService) getMetricRange(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (*MetricRange, error) {
-	rangeQuery := fmt.Sprintf("SELECT min(%s) as low, max(%s) as high FROM %s %s", metric, metric, table, whereClauseStr)
+	rangeQuery := fmt.Sprintf(`SELECT min(%s) as low, max(%s) as high FROM "%s" %s`, metric, metric, table, whereClauseStr)
 	var rows *sql.Rows
 	rows, err := i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_metric_range"), rangeQuery, whereClauseArgs...).Rows()
 	if err != nil {
@@ -617,7 +686,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 					roundDown(updated_at_usec, CAST(%s AS Array(Int64))) AS timestamp,
 					roundDown(%s, CAST(%s AS Array(Int64))) AS bucket,
 					count(*) AS v
-					FROM %s %s
+					FROM "%s" %s
 					GROUP BY timestamp, bucket)
 			GROUP BY timestamp, bucket ORDER BY timestamp, bucket)
 		GROUP BY timestamp ORDER BY timestamp`,
@@ -829,14 +898,14 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 		return fmt.Sprintf(
 			`(SELECT %s, 0 AS totals_first, count(*) AS total,
 					countIf(%s) AS selection, countIf(not(%s)) AS inverse
-				FROM %s %s)`,
+				FROM "%s" %s)`,
 			nulledOutFieldList, drilldown, drilldown, table, where), args
 	}
 
 	return fmt.Sprintf(`
 		(SELECT %s, 1 AS totals_first, count(*) AS total, countIf(%s) AS selection,
 			countIf(not(%s)) AS inverse
-		FROM %s %s
+		FROM "%s" %s
 		GROUP BY %s ORDER BY selection DESCENDING, total DESCENDING LIMIT 25)`,
 		nulledOutFieldList, drilldown, drilldown, table, where, col), args
 }

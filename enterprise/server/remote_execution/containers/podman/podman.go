@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
 
-	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -173,7 +172,6 @@ type podmanCommandContainer struct {
 	workDir   string
 
 	imageStreamingEnabled bool
-	registryClient        regpb.RegistryClient
 
 	options *PodmanOptions
 

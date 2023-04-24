@@ -3,7 +3,6 @@ package snaploader
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -13,13 +12,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
 	// The name of a file that will be included in the snapshot and contains
 	// metadata about the machine configuration that was snapshotted.
-	ManifestFileName = "manifest.json"
+	ManifestFileName = "manifest.bin"
 )
 
 // NewKey returns the cache key that can be used to look up the snapshot
@@ -40,7 +40,7 @@ func NewKey(configurationHash, runnerID string) *repb.Digest {
 
 type LoadSnapshotOptions struct {
 	// The following fields are all required.
-	ConfigurationData   []byte
+	VMConfiguration     *fcpb.VMConfiguration
 	MemSnapshotPath     string
 	VMStateSnapshotPath string
 	KernelImagePath     string
@@ -77,13 +77,13 @@ type Loader interface {
 	CacheSnapshot(ctx context.Context, snapshotDigest *repb.Digest, snapOpts *LoadSnapshotOptions) error
 	UnpackSnapshot(ctx context.Context, snapshotDigest *repb.Digest, outputDirectory string) error
 	DeleteSnapshot(ctx context.Context, snapshotDigest *repb.Digest) error
-	GetConfigurationData(ctx context.Context, snapshotDigest *repb.Digest) ([]byte, error)
+	GetConfiguration(ctx context.Context, snapshotDigest *repb.Digest) (*fcpb.VMConfiguration, error)
 }
 
 type FileCacheLoader struct {
 	env            environment.Env
 	snapshotDigest *repb.Digest
-	manifest       *manifestData
+	manifest       *fcpb.SnapshotManifest
 }
 
 // New returns a new snapshot.Loader that can be used to download the specified
@@ -108,13 +108,12 @@ func (l *FileCacheLoader) unpackManifest(snapshotDigest *repb.Digest) error {
 	return json.Unmarshal(buf, &l.manifest)
 }
 
-// GetConfigurationData returns the configuration data associated with a
-// snapshot.
-func (l *FileCacheLoader) GetConfigurationData(ctx context.Context, snapshotDigest *repb.Digest) ([]byte, error) {
+// GetConfigurationData returns the VM configuration associated with a snapshot.
+func (l *FileCacheLoader) GetConfiguration(ctx context.Context, snapshotDigest *repb.Digest) (*fcpb.VMConfiguration, error) {
 	if err := l.unpackManifest(snapshotDigest); err != nil {
 		return nil, err
 	}
-	return l.manifest.ConfigurationData, nil
+	return l.manifest.VmConfiguration, nil
 }
 
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
@@ -129,9 +128,9 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshotDigest *re
 			return err
 		}
 	}
-	for filename, dk := range l.manifest.CachedFiles {
-		if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(dk.ToDigest()), filepath.Join(outputDirectory, filename)) {
-			return status.UnavailableErrorf("snapshot artifact %q not found in local cache", filename)
+	for _, fileNode := range l.manifest.Files {
+		if !l.env.GetFileCache().FastLinkFile(fileNode, filepath.Join(outputDirectory, fileNode.GetName())) {
+			return status.UnavailableErrorf("snapshot artifact %q not found in local cache", fileNode.GetName())
 		}
 	}
 	return nil
@@ -148,8 +147,8 @@ func (l *FileCacheLoader) DeleteSnapshot(ctx context.Context, snapshotDigest *re
 	}
 	// Manually evict the manifest as well as all referenced files.
 	l.env.GetFileCache().DeleteFile(fileNodeFromDigest(manifestDigest(snapshotDigest)))
-	for _, dk := range l.manifest.CachedFiles {
-		l.env.GetFileCache().DeleteFile(fileNodeFromDigest(dk.ToDigest()))
+	for _, fileNode := range l.manifest.Files {
+		l.env.GetFileCache().DeleteFile(fileNode)
 	}
 	return nil
 }
@@ -159,19 +158,6 @@ func manifestDigest(snapshotDigest *repb.Digest) *repb.Digest {
 		Hash:      hash.String(snapshotDigest.GetHash() + ManifestFileName),
 		SizeBytes: int64(101),
 	}
-}
-
-type manifestData struct {
-	ConfigurationData []byte
-	CachedFiles       map[string]digest.Key
-}
-
-func (m *manifestData) String() string {
-	s, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Sprintf("manifestData(!MarshalError: %q)", err)
-	}
-	return string(s)
 }
 
 // CacheSnapshot stores a snapshot (described by snapOpts), in the filecache.
@@ -184,9 +170,8 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapshotDigest *rep
 		return status.FailedPreconditionErrorf("Unable to cache snapshot: FileCache not enabled")
 	}
 
-	manifest := &manifestData{
-		ConfigurationData: snapOpts.ConfigurationData,
-		CachedFiles:       make(map[string]digest.Key, 0),
+	manifest := &fcpb.SnapshotManifest{
+		VmConfiguration: snapOpts.VMConfiguration,
 	}
 
 	// Put the files from the snapshot into the filecache and record their
@@ -201,8 +186,10 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapshotDigest *rep
 			Hash:      hash.String(snapshotDigest.GetHash() + filename),
 			SizeBytes: int64(info.Size()),
 		}
-		l.env.GetFileCache().AddFile(fileNodeFromDigest(fileNameDigest), f)
-		manifest.CachedFiles[filename] = digest.NewKey(fileNameDigest)
+		fileNode := fileNodeFromDigest(fileNameDigest)
+		fileNode.Name = filename
+		l.env.GetFileCache().AddFile(fileNode, f)
+		manifest.Files = append(manifest.Files, fileNode)
 	}
 
 	// Write the manifest files and put it in the filecache too. We'll

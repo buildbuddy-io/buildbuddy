@@ -5,7 +5,7 @@ import format from "../../../app/format/format";
 import { Code } from "lucide-react";
 
 interface State {
-  repoStats: invocation.IInvocationStat[];
+  repoStats: invocation.InvocationStat[];
   loading: boolean;
 }
 

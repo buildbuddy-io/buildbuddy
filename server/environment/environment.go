@@ -4,7 +4,6 @@ import (
 	"context"
 	"io/fs"
 
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
@@ -13,6 +12,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -142,8 +142,6 @@ type Env interface {
 	GetInternalGRPCSServer() *grpc.Server
 	SetInternalGRPCSServer(*grpc.Server)
 	SetGRPCSServer(*grpc.Server)
-	GetRegistryServer() rgpb.RegistryServer
-	SetRegistryServer(r rgpb.RegistryServer)
 	GetOLAPDBHandle() interfaces.OLAPDBHandle
 	SetOLAPDBHandle(dbh interfaces.OLAPDBHandle)
 	GetKMS() interfaces.KMS
@@ -156,4 +154,6 @@ type Env interface {
 	SetSuggestionService(s interfaces.SuggestionService)
 	GetCrypter() interfaces.Crypter
 	SetCrypter(crypter interfaces.Crypter)
+	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
+	SetSociArtifactStoreServer(socipb.SociArtifactStoreServer)
 }

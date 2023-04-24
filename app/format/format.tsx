@@ -183,11 +183,11 @@ export function formatTimestampMillis(timestamp: number | Long) {
 }
 
 export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: number | Long }) {
-  return `${moment(+timestamp.seconds * 1000).format("MMMM Do, YYYY")} at ${moment(+timestamp.seconds * 1000).format(
-    "h:mm:ss"
-  )}.${Math.floor(+timestamp.nanos / 1_000_000)
+  return `${moment(+(timestamp.seconds || 0) * 1000).format("MMMM Do, YYYY")} at ${moment(
+    +(timestamp.seconds || 0) * 1000
+  ).format("h:mm:ss")}.${Math.floor(+(timestamp.nanos || 0) / 1_000_000)
     .toString()
-    .padStart(3, "0")} ${moment(+timestamp.seconds * 1000).format("A")}`;
+    .padStart(3, "0")} ${moment(+(timestamp.seconds || 0) * 1000).format("A")}`;
 }
 
 export function formatDate(date: Date): string {

@@ -27,6 +27,7 @@ interface Props {
   className?: string;
   hover?: boolean;
   isSelectedForCompare?: boolean;
+  isSelectedWithKeyboard?: boolean;
 }
 
 interface State {
@@ -38,7 +39,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
     time: Date.now(),
   };
 
-  interval: number;
+  interval?: number;
 
   componentDidMount() {
     this.updateTimeIfInProgress();
@@ -49,11 +50,11 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
       return;
     }
     this.setState({ time: Date.now() });
-    this.interval = setTimeout(() => this.updateTimeIfInProgress(), durationRefreshIntervalMillis);
+    this.interval = window.setInterval(() => this.updateTimeIfInProgress(), durationRefreshIntervalMillis);
   }
 
   componentWillUnmount() {
-    clearInterval(this.interval);
+    window.clearInterval(this.interval);
   }
 
   handleInvocationClicked() {
@@ -187,9 +188,10 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
         onClick={this.handleInvocationClicked.bind(this, this.props.invocation)}
         onMouseOver={this.props.onMouseOver}
         onMouseOut={this.props.onMouseOut}
-        className={`clickable card history-invocation-card ${this.props.className} ${
-          this.props.hover ? "card-hover" : ""
-        } ${this.getStatusClass()}`}>
+        className={`clickable card history-invocation-card
+          ${this.props.className}
+          ${this.props.hover ? "card-hover" : ""}
+          ${this.props.isSelectedWithKeyboard ? "selected-keyboard-shortcuts" : this.getStatusClass()}`}>
         <div className="content">
           {this.props.isSelectedForCompare && (
             <div className="comparison-buffer-illustration buffered" title="Selected for compare">

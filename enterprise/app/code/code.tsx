@@ -90,9 +90,9 @@ export default class CodeComponent extends React.Component<Props, State> {
   codeViewer = React.createRef<HTMLDivElement>();
   diffViewer = React.createRef<HTMLDivElement>();
 
-  octokit: Octokit;
+  octokit?: Octokit;
 
-  subscription: Subscription;
+  subscription?: Subscription;
 
   componentWillMount() {
     document.title = `Code | BuildBuddy`;
@@ -127,14 +127,14 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     window.addEventListener("resize", () => this.handleWindowResize());
 
-    this.editor = monaco.editor.create(this.codeViewer.current, {
+    this.editor = monaco.editor.create(this.codeViewer.current!, {
       value: ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n"),
       theme: "vs",
       readOnly: this.isSingleFile(),
     });
 
-    let bytestreamURL = this.props.search.get("bytestream_url");
-    let invocationID = this.props.search.get("invocation_id");
+    const bytestreamURL = this.props.search.get("bytestream_url") || "";
+    const invocationID = this.props.search.get("invocation_id") || "";
     let filename = this.props.search.get("filename");
     if (this.isSingleFile() && bytestreamURL) {
       rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result: any) => {
@@ -143,65 +143,61 @@ export default class CodeComponent extends React.Component<Props, State> {
       return;
     }
 
-    let lcovURL = this.props.search.get("lcov");
-    let commit = this.props.search.get("commit");
+    const lcovURL = this.props.search.get("lcov");
+    const commit = this.props.search.get("commit");
     if (this.isSingleFile() && lcovURL) {
-      this.octokit.rest.repos
-        .getContent({
-          owner: this.currentOwner(),
-          repo: this.currentRepo(),
-          path: this.currentPath(),
-          ref: commit || this.state.commitSHA || "master",
-        })
-        .then((response) => {
-          this.navigateToContent(this.currentPath(), (response.data as any).content);
-          rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result: any) => {
-            let records = parseLcov(result);
-            for (let record of records) {
-              if (record.sourceFile == this.currentPath()) {
-                this.editor.deltaDecorations(
-                  this.editor.getModel().getAllDecorations(),
-                  record.data.map((r) => {
-                    const parts = r.split(",");
-                    const lineNum = parseInt(parts[0]);
-                    const hit = parts[1] == "1";
-                    return {
-                      range: new monaco.Range(lineNum, 0, lineNum, 0),
-                      options: {
-                        isWholeLine: true,
-                        className: hit ? "codeCoverageHit" : "codeCoverageMiss",
-                        marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
-                        minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
-                      },
-                    };
-                  })
-                );
-              }
+      this.octokit!.rest.repos.getContent({
+        owner: this.currentOwner(),
+        repo: this.currentRepo(),
+        path: this.currentPath(),
+        ref: commit || this.state.commitSHA || "master",
+      }).then((response) => {
+        this.navigateToContent(this.currentPath(), (response.data as any).content);
+        rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result: any) => {
+          let records = parseLcov(result);
+          for (let record of records) {
+            if (record.sourceFile == this.currentPath()) {
+              this.editor.deltaDecorations(
+                this.editor.getModel().getAllDecorations(),
+                record.data.map((r) => {
+                  const parts = r.split(",");
+                  const lineNum = parseInt(parts[0]);
+                  const hit = parts[1] == "1";
+                  return {
+                    range: new monaco.Range(lineNum, 0, lineNum, 0),
+                    options: {
+                      isWholeLine: true,
+                      className: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                      marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                      minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
+                    },
+                  };
+                })
+              );
             }
-            console.log(result);
-          });
+          }
+          console.log(result);
         });
+      });
       return;
     }
 
     if (this.currentPath()) {
       if (!this.state.fullPathToModelMap.has(this.currentPath())) {
-        this.octokit.rest.repos
-          .getContent({
-            owner: this.currentOwner(),
-            repo: this.currentRepo(),
-            path: this.currentPath(),
-            ref: this.state.commitSHA || "master",
-          })
-          .then((response) => {
-            this.navigateToContent(this.currentPath(), (response.data as any).content);
-          });
+        this.octokit!.rest.repos.getContent({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          path: this.currentPath(),
+          ref: this.state.commitSHA || "master",
+        }).then((response) => {
+          this.navigateToContent(this.currentPath(), (response.data as any).content);
+        });
       }
 
       if (this.state.mergeConflicts.has(this.currentPath())) {
         this.handleViewConflictClicked(
           this.currentPath(),
-          this.state.mergeConflicts.get(this.currentPath()),
+          this.state.mergeConflicts.get(this.currentPath())!,
           undefined
         );
       } else {
@@ -266,9 +262,8 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   fetchCode() {
-    const storedState = localStorage.getItem(this.getStateCacheKey())
-      ? (JSON.parse(localStorage.getItem(this.getStateCacheKey()), stateReviver) as State)
-      : undefined;
+    const storageValue = localStorage.getItem(this.getStateCacheKey());
+    const storedState = storageValue ? (JSON.parse(storageValue, stateReviver) as State) : undefined;
     if (storedState) {
       this.setState(storedState);
       if (storedState.repoResponse && storedState.commitSHA) {
@@ -280,12 +275,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     }
 
     let commit = this.state.commitSHA || "master";
-    this.octokit
-      .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${commit}`)
-      .then((response: any) => {
+    this.octokit!.request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${commit}`).then(
+      (response: any) => {
         console.log(response);
         this.updateState({ repoResponse: response, commitSHA: response.data.sha });
-      });
+      }
+    );
   }
 
   // TODO(siggisim): Support deleting files
@@ -302,30 +297,28 @@ export default class CodeComponent extends React.Component<Props, State> {
         return;
       }
 
-      this.octokit
-        .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${node.sha}`)
-        .then((response: any) => {
+      this.octokit!.request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${node.sha}`).then(
+        (response: any) => {
           this.state.treeShaToExpanded.set(node.sha, true);
           this.state.treeShaToChildrenMap.set(node.sha, response.data.tree);
           this.updateState({
             treeShaToChildrenMap: this.state.treeShaToChildrenMap,
           });
           console.log(response);
-        });
+        }
+      );
       return;
     }
 
-    this.octokit.rest.git
-      .getBlob({
-        owner: this.currentOwner(),
-        repo: this.currentRepo(),
-        file_sha: node.sha,
-      })
-      .then((response: any) => {
-        console.log(response);
-        this.navigateToContent(fullPath, response.data.content);
-        this.navigateToPath(fullPath);
-      });
+    this.octokit!.rest.git.getBlob({
+      owner: this.currentOwner(),
+      repo: this.currentRepo(),
+      file_sha: node.sha,
+    }).then((response: any) => {
+      console.log(response);
+      this.navigateToContent(fullPath, response.data.content);
+      this.navigateToPath(fullPath);
+    });
   }
 
   navigateToContent(fullPath: string, content: string) {
@@ -401,8 +394,8 @@ export default class CodeComponent extends React.Component<Props, State> {
           diff.createTwoFilesPatch(
             `a/${path}`,
             `b/${path}`,
-            this.state.originalFileContents.get(path),
-            this.state.changes.get(path)
+            this.state.originalFileContents.get(path) || "",
+            this.state.changes.get(path) || ""
           )
         )
       );
@@ -443,7 +436,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
     );
 
-    let response = await createPullRequest(this.octokit, {
+    let response = await createPullRequest(this.octokit!, {
       owner: this.currentOwner(),
       repo: this.currentRepo(),
       title: this.state.prTitle,
@@ -513,8 +506,8 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   handleGitHubClicked() {
     const params = new URLSearchParams({
-      user_id: this.props.user?.displayUser?.userId.id,
       redirect_url: window.location.href,
+      ...(this.props.user.displayUser.userId && { user_id: this.props.user.displayUser.userId.id }),
     });
     window.location.href = `/auth/github/link/?${params}`;
   }
@@ -533,7 +526,7 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     let filenames = filteredEntries.map(([key, value]) => key).join(", ");
 
-    updatePullRequest(this.octokit, {
+    updatePullRequest(this.octokit!, {
       owner: this.currentOwner(),
       repo: this.currentRepo(),
       head: this.state.prBranch,
@@ -560,19 +553,17 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   handleMergePRClicked() {
-    this.octokit.rest.pulls
-      .merge({
-        owner: this.currentOwner(),
-        repo: this.currentRepo(),
-        pull_number: Number(this.state.prNumber),
-      })
-      .then(() => {
-        window.open(this.state.prLink, "_blank");
-        this.handleClearPRClicked();
-      });
+    this.octokit!.rest.pulls.merge({
+      owner: this.currentOwner(),
+      repo: this.currentRepo(),
+      pull_number: Number(this.state.prNumber),
+    }).then(() => {
+      window.open(this.state.prLink, "_blank");
+      this.handleClearPRClicked();
+    });
   }
 
-  handleRevertClicked(path: string, event: MouseEvent) {
+  handleRevertClicked(path: string, event: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
     this.state.changes.delete(path);
     this.state.fullPathToModelMap.get(path).setValue(this.state.originalFileContents.get(path));
     this.updateState({ changes: this.state.changes, fullPathToModelMap: this.state.fullPathToModelMap });
@@ -581,58 +572,58 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   // If a callback is set, alert messages will not be shown.
   handleUpdateCommitSha(callback?: (conflicts: number) => void) {
-    this.octokit
-      .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/compare/${this.state.commitSHA}...master`)
-      .then((response: any) => {
-        console.log(response);
-        let newCommits = response.data.ahead_by;
-        let newSha = response.data.commits.pop()?.sha;
-        if (newCommits == 0) {
-          if (callback) {
-            callback(0);
-          } else {
-            alert_service.success(`You're already up to date!`);
-          }
-          return;
+    this.octokit!.request(
+      `/repos/${this.currentOwner()}/${this.currentRepo()}/compare/${this.state.commitSHA}...master`
+    ).then((response: any) => {
+      console.log(response);
+      let newCommits = response.data.ahead_by;
+      let newSha = response.data.commits.pop()?.sha;
+      if (newCommits == 0) {
+        if (callback) {
+          callback(0);
+        } else {
+          alert_service.success(`You're already up to date!`);
         }
+        return;
+      }
 
-        let conflictCount = 0;
-        for (let file of response.data.files) {
-          if (this.state.changes.has(file.filename)) {
-            this.state.mergeConflicts.set(file.filename, file.sha);
-            conflictCount++;
-          }
+      let conflictCount = 0;
+      for (let file of response.data.files) {
+        if (this.state.changes.has(file.filename)) {
+          this.state.mergeConflicts.set(file.filename, file.sha);
+          conflictCount++;
         }
+      }
 
-        this.octokit
-          .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${newSha}`)
-          .then((response: any) => {
-            console.log(response);
-            this.updateState(
-              { repoResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
-              () => {
-                if (callback) {
-                  callback(conflictCount);
+      this.octokit!.request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${newSha}`).then(
+        (response: any) => {
+          console.log(response);
+          this.updateState(
+            { repoResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
+            () => {
+              if (callback) {
+                callback(conflictCount);
+              } else {
+                let message = `You were ${newCommits} commits behind head. You are now up to date!`;
+                if (conflictCount > 0) {
+                  message += ` There are ${conflictCount} conflicts you'll need to resolve below`;
+                  alert_service.error(message);
                 } else {
-                  let message = `You were ${newCommits} commits behind head. You are now up to date!`;
-                  if (conflictCount > 0) {
-                    message += ` There are ${conflictCount} conflicts you'll need to resolve below`;
-                    alert_service.error(message);
-                  } else {
-                    alert_service.success(message);
-                  }
-                }
-                if (this.state.mergeConflicts.has(this.currentPath())) {
-                  this.handleViewConflictClicked(
-                    this.currentPath(),
-                    this.state.mergeConflicts.get(this.currentPath()),
-                    undefined
-                  );
+                  alert_service.success(message);
                 }
               }
-            );
-          });
-      });
+              if (this.state.mergeConflicts.has(this.currentPath())) {
+                this.handleViewConflictClicked(
+                  this.currentPath(),
+                  this.state.mergeConflicts.get(this.currentPath())!,
+                  undefined
+                );
+              }
+            }
+          );
+        }
+      );
+    });
   }
 
   onTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -640,12 +631,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ prTitle: input.value });
   }
 
-  onBodyChange(e: React.ChangeEvent<HTMLInputElement>) {
+  onBodyChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const input = e.target;
     this.updateState({ prBody: input.value });
   }
 
-  handleResolveClicked(fullPath: string, sha: string, event: MouseEvent) {
+  handleResolveClicked(fullPath: string, event: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
     event.stopPropagation();
     this.state.changes.set(fullPath, this.state.fullPathToDiffModelMap.get(fullPath).modified.getValue());
     this.state.fullPathToDiffModelMap.delete(fullPath);
@@ -657,35 +648,33 @@ export default class CodeComponent extends React.Component<Props, State> {
     });
   }
 
-  handleViewConflictClicked(fullPath: string, sha: string, event: MouseEvent) {
+  handleViewConflictClicked(fullPath: string, sha: string, event?: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
     event?.stopPropagation();
-    this.octokit.rest.git
-      .getBlob({
-        owner: this.currentOwner(),
-        repo: this.currentRepo(),
-        file_sha: sha,
-      })
-      .then((response: any) => {
-        console.log(response);
-        if (!this.diffEditor) {
-          this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current);
-        }
-        let fileContents = atob(response.data.content);
-        let editedModel = this.state.fullPathToModelMap.get(fullPath);
-        let uri = monaco.Uri.file(`${fullPath}-${sha}`);
-        let latestModel = monaco.editor.getModel(uri);
-        if (!latestModel) {
-          latestModel = monaco.editor.createModel(fileContents, undefined, uri);
-        }
-        let diffModel = { original: latestModel, modified: editedModel };
-        this.diffEditor.setModel(diffModel);
-        this.state.fullPathToDiffModelMap.set(fullPath, diffModel);
+    this.octokit!.rest.git.getBlob({
+      owner: this.currentOwner(),
+      repo: this.currentRepo(),
+      file_sha: sha,
+    }).then((response: any) => {
+      console.log(response);
+      if (!this.diffEditor) {
+        this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
+      }
+      let fileContents = atob(response.data.content);
+      let editedModel = this.state.fullPathToModelMap.get(fullPath);
+      let uri = monaco.Uri.file(`${fullPath}-${sha}`);
+      let latestModel = monaco.editor.getModel(uri);
+      if (!latestModel) {
+        latestModel = monaco.editor.createModel(fileContents, undefined, uri);
+      }
+      let diffModel = { original: latestModel, modified: editedModel };
+      this.diffEditor.setModel(diffModel);
+      this.state.fullPathToDiffModelMap.set(fullPath, diffModel);
 
-        this.navigateToPath(fullPath);
-        this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
-          this.diffEditor.layout();
-        });
+      this.navigateToPath(fullPath);
+      this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+        this.diffEditor.layout();
       });
+    });
   }
 
   handleCloseReviewModal() {
@@ -772,13 +761,14 @@ export default class CodeComponent extends React.Component<Props, State> {
             <div className="code-menu-actions">
               <OutlinedButton
                 className="code-menu-download-button"
-                onClick={() =>
-                  rpcService.downloadBytestreamFile(
-                    this.props.search.get("filename"),
-                    this.props.search.get("bytestream_url"),
-                    this.props.search.get("invocation_id")
-                  )
-                }>
+                onClick={() => {
+                  const bsUrl = this.props.search.get("bytestream_url");
+                  const invocationId = this.props.search.get("invocation_id");
+                  if (!bsUrl || !invocationId) {
+                    return;
+                  }
+                  rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
+                }}>
                 <Download /> Download File
               </OutlinedButton>
             </div>
@@ -851,7 +841,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 <button onClick={this.handleNewFileClicked.bind(this)}>
                   <PlusCircle className="icon green" /> New
                 </button>
-                <button onClick={this.handleDeleteClicked.bind(this)}>
+                <button onClick={() => this.handleDeleteClicked("")}>
                   <XCircle className="icon red" /> Delete
                 </button>
               </div>
@@ -898,19 +888,13 @@ export default class CodeComponent extends React.Component<Props, State> {
                         onClick={this.handleViewConflictClicked.bind(
                           this,
                           fullPath,
-                          this.state.mergeConflicts.get(fullPath)
+                          this.state.mergeConflicts.get(fullPath)!
                         )}>
                         View Conflict
                       </span>
                     )}
                     {this.state.mergeConflicts.has(fullPath) && fullPath == this.currentPath() && (
-                      <span
-                        className="code-revert-button"
-                        onClick={this.handleResolveClicked.bind(
-                          this,
-                          fullPath,
-                          this.state.mergeConflicts.get(fullPath)
-                        )}>
+                      <span className="code-revert-button" onClick={this.handleResolveClicked.bind(this, fullPath)}>
                         Resolve Conflict
                       </span>
                     )}

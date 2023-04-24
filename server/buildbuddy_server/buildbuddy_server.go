@@ -38,6 +38,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
@@ -1285,4 +1286,20 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
+}
+
+func (s *BuildBuddyServer) SetEncryptionConfig(ctx context.Context, request *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error) {
+	crypter := s.env.GetCrypter()
+	if crypter == nil {
+		return nil, status.FailedPreconditionError("encryption not enabled in the server")
+	}
+	return crypter.SetEncryptionConfig(ctx, request)
+}
+
+func (s *BuildBuddyServer) GetEncryptionConfig(ctx context.Context, request *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {
+	crypter := s.env.GetCrypter()
+	if crypter == nil {
+		return nil, status.FailedPreconditionError("encryption not enabled in the server")
+	}
+	return crypter.GetEncryptionConfig(ctx, request)
 }

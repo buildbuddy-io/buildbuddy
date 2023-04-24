@@ -10,10 +10,10 @@ import (
 	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -98,13 +98,14 @@ type RealEnv struct {
 	internalGRPCSServer              *grpc.Server
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
-	registryServer                   rgpb.RegistryServer
 	olapDBHandle                     interfaces.OLAPDBHandle
 	kms                              interfaces.KMS
 	secretService                    interfaces.SecretService
 	executionCollector               interfaces.ExecutionCollector
 	suggestionService                interfaces.SuggestionService
 	crypterService                   interfaces.Crypter
+	sociArtifactStoreServer          socipb.SociArtifactStoreServer
+	sociArtifactStoreClient          socipb.SociArtifactStoreClient
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -551,14 +552,6 @@ func (r *RealEnv) SetGRPCSServer(grpcsServer *grpc.Server) {
 	r.grpcsServer = grpcsServer
 }
 
-func (r *RealEnv) GetRegistryServer() rgpb.RegistryServer {
-	return r.registryServer
-}
-
-func (r *RealEnv) SetRegistryServer(server rgpb.RegistryServer) {
-	r.registryServer = server
-}
-
 func (r *RealEnv) GetOLAPDBHandle() interfaces.OLAPDBHandle {
 	return r.olapDBHandle
 }
@@ -602,4 +595,11 @@ func (r *RealEnv) GetCrypter() interfaces.Crypter {
 }
 func (r *RealEnv) SetCrypter(c interfaces.Crypter) {
 	r.crypterService = c
+}
+
+func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
+	return r.sociArtifactStoreServer
+}
+func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
+	r.sociArtifactStoreServer = s
 }

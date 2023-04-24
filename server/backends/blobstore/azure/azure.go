@@ -10,7 +10,9 @@ import (
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -157,4 +159,49 @@ func (z *AzureBlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 		return false, err
 	}
 	return true, nil
+}
+
+func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	// Open a pipe.
+	pr, pw := io.Pipe()
+
+	errch := make(chan error, 1)
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	// Upload from pr in a separate Go routine.
+	go func() {
+		defer pr.Close()
+		_, err := azblob.UploadStreamToBlockBlob(
+			ctx,
+			pr,
+			z.containerURL.NewBlockBlobURL(util.BlobPath(blobName)),
+			azblob.UploadStreamToBlockBlobOptions{},
+		)
+		errch <- err
+		close(errch)
+	}()
+
+	zw := util.NewCompressWriter(pw)
+	cwc := ioutil.NewCustomCommitWriteCloser(zw)
+	cwc.CommitFn = func(int64) error {
+		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
+			cancel() // Don't try to finish the commit op if Close() failed.
+			if pipeCloseErr := pw.Close(); pipeCloseErr != nil {
+				log.Errorf("Error closing the pipe for %s: %s", blobName, pipeCloseErr)
+			}
+			// Canceling the context makes any error in errch meaningless; don't
+			// bother to read it.
+			return compresserCloseErr
+		}
+		if writerCloseErr := pw.Close(); writerCloseErr != nil {
+			return writerCloseErr
+		}
+		return <-errch
+	}
+	cwc.CloseFn = func() error {
+		cancel()
+		return nil
+	}
+	return cwc, nil
 }

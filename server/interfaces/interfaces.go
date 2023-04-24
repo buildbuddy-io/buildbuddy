@@ -19,6 +19,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -208,6 +209,7 @@ type Blobstore interface {
 	// and calling delete on a non-existent blob, so this is the only way to
 	// provide a consistent interface.
 	DeleteBlob(ctx context.Context, blobName string) error
+	Writer(ctx context.Context, blobName string) (CommittedWriteCloser, error)
 }
 
 type CacheMetadata struct {
@@ -240,6 +242,7 @@ type Cache interface {
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
+	SupportsEncryption(ctx context.Context) bool
 }
 
 type StoppableCache interface {
@@ -1029,12 +1032,21 @@ type AEAD interface {
 	Decrypt(ciphertext, associatedData []byte) ([]byte, error)
 }
 
+type KMSType int
+
+const (
+	KMSTypeLocalInsecure KMSType = iota
+	KMSTypeGCP
+)
+
 // A KMS is a Key Managment Service (typically a cloud provider or external
 // service) that manages keys that can be fetched and used to encrypt/decrypt
 // data.
 type KMS interface {
 	FetchMasterKey() (AEAD, error)
 	FetchKey(uri string) (AEAD, error)
+
+	SupportedTypes() []KMSType
 }
 
 // SecretService manages secrets for an org.
@@ -1079,6 +1091,9 @@ type Decryptor interface {
 }
 
 type Crypter interface {
+	SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error)
+	GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error)
+
 	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (Decryptor, error)
 }

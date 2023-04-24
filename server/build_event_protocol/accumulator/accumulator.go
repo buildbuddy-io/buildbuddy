@@ -2,6 +2,7 @@ package accumulator
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"time"
 
@@ -76,6 +77,8 @@ type BEValues struct {
 	sawBuildMetadataEvent   bool
 	sawFinishedEvent        bool
 	buildStartTime          time.Time
+	profileURI              *url.URL
+	profileName             string
 
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
@@ -111,8 +114,22 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
 	case *build_event_stream.BuildEvent_Finished:
 		v.sawFinishedEvent = true
+	case *build_event_stream.BuildEvent_BuildToolLogs:
+		for _, toolLog := range p.BuildToolLogs.Log {
+			// Get the first non-empty URI like we do in the app.
+			if uri := toolLog.GetUri(); uri != "" {
+				if url, err := url.Parse(uri); err != nil {
+					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
+				} else {
+					v.profileURI = url
+					v.profileName = toolLog.Name
+				}
+				break
+			}
+		}
 	}
 }
+
 func (v *BEValues) Finalize(ctx context.Context) {
 	invocation := v.Invocation()
 	invocation.InvocationStatus = inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS
@@ -184,6 +201,14 @@ func (v *BEValues) BuildMetadataIsLoaded() bool {
 
 func (v *BEValues) BuildFinished() bool {
 	return v.sawFinishedEvent
+}
+
+func (v *BEValues) ProfileURI() *url.URL {
+	return v.profileURI
+}
+
+func (v *BEValues) ProfileName() string {
+	return v.profileName
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {

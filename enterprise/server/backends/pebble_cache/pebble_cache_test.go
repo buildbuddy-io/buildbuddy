@@ -1899,7 +1899,7 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 
 	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
 	require.NoError(t, err)
-	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, nil)
+	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, []byte(groupID))
 
 	key := &tables.EncryptionKey{
 		EncryptionKeyID: keyID,
@@ -1982,7 +1982,7 @@ func TestEncryption(t *testing.T) {
 		require.NoError(t, err)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		err = pc.Set(ctx, rn, buf)
-		require.ErrorContains(t, err, "no encryption key available")
+		require.ErrorContains(t, err, "no key available")
 
 		err = pc.Stop()
 		require.NoError(t, err)
@@ -2332,4 +2332,68 @@ func BenchmarkSet(b *testing.B) {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 	}
+}
+
+func TestSupportsEncryption(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	apiKey1 := "AK2222"
+	group1 := "GR7890"
+	apiKey2 := "AK3333"
+	group2 := "GR1111"
+	testUsers := testauth.TestUsers(apiKey1, group1, apiKey2, group2)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	group1PartitionID := "user1part"
+	group2PartitionID := "user2part"
+	opts := &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 100,
+		Partitions: []disk.Partition{
+			{
+				ID:           pebble_cache.DefaultPartitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           group1PartitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:                  group2PartitionID,
+				MaxSizeBytes:        maxSizeBytes,
+				EncryptionSupported: true,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     group1,
+				PartitionID: group1PartitionID,
+			},
+			{
+				GroupID:     group2,
+				PartitionID: group2PartitionID,
+			},
+		},
+	}
+
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	// Anon write should go to the default partition which doesn't support
+	// encryption.
+	ctx := getAnonContext(t, te)
+	require.False(t, pc.SupportsEncryption(ctx))
+
+	// First group is mapped to a partition that does not have encryption
+	// support.
+	ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), apiKey1)
+	require.False(t, pc.SupportsEncryption(ctx))
+
+	// Second user should be able to use encryption.
+	ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), apiKey2)
+	require.True(t, pc.SupportsEncryption(ctx))
 }

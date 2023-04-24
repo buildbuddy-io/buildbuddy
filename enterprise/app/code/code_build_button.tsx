@@ -16,7 +16,7 @@ export interface CodeBuildButtonProps {
 }
 
 type State = {
-  isMenuOpen?: boolean;
+  isMenuOpen: boolean;
   commands: string[];
 };
 
@@ -24,6 +24,7 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
   state: State = this.getSavedState()
     ? (JSON.parse(this.getSavedState()) as State)
     : {
+        isMenuOpen: false,
         commands: ["build //...", "test //..."],
       };
 

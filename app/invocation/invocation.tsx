@@ -34,6 +34,8 @@ import { BuildBuddyError } from "../util/errors";
 import UserPreferences from "../preferences/preferences";
 import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "./cache_requests_card";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
+import router from "../router/router";
 import rpc_service from "../service/rpc_service";
 import { InvocationBotCard } from "./invocation_bot_card";
 
@@ -43,10 +45,12 @@ interface State {
   error: BuildBuddyError | null;
 
   model: InvocationModel;
+
+  keyboardShortcutHandle: string;
 }
 
 interface Props {
-  user?: User | null;
+  user?: User;
   invocationId: string;
   hash: string;
   search: URLSearchParams;
@@ -56,7 +60,6 @@ interface Props {
 const largePageSize = 100;
 const smallPageSize = 10;
 
-let modelChangedSubscription: Subscription = undefined;
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
     loading: true,
@@ -64,11 +67,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
     error: null,
 
     model: new InvocationModel(),
+
+    keyboardShortcutHandle: "",
   };
 
   private timeoutRef: number;
   private logsModel: InvocationLogsModel;
-  private logsSubscription: Subscription;
+  private logsSubscription?: Subscription;
+  private modelChangedSubscription?: Subscription;
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -85,10 +91,41 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.logsModel.startFetching();
   }
 
+  componentDidMount() {
+    let handle = shortcuts.register(KeyCombo.u, () => {
+      // Used to select the correct invocation on the history page so that
+      // selecting an invocation with 'enter' and then going back with 'u' ends
+      // up with the same invocation still selected.
+      localStorage["selected_invocation_id"] = this.props.invocationId;
+      router.navigateHome();
+    });
+    this.setState({ keyboardShortcutHandle: handle });
+  }
+
+  componentDidUpdate(_prevProps: Props, prevState: State) {
+    // Update model subscription
+    if (this.state.model !== prevState.model) {
+      this.modelChangedSubscription?.unsubscribe();
+      this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
+    }
+    // Update title and favicon
+    if (this.state.model.invocations?.length) {
+      document.title = `${this.state.model.getUser(
+        true
+      )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
+      faviconService.setFaviconForType(this.state.model.getFaviconType());
+    }
+    // If in progress, schedule another fetch
+    if (this.state.model?.isInProgress()) {
+      this.scheduleRefetch();
+    }
+  }
+
   componentWillUnmount() {
     clearTimeout(this.timeoutRef);
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
+    shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
   fetchInvocation() {
@@ -99,41 +136,22 @@ export default class InvocationComponent extends React.Component<Props, State> {
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {
         console.log(response);
-        let showInProgressScreen = false;
-        if (
-          response.invocation.length &&
-          response.invocation[0].invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS
-        ) {
-          showInProgressScreen = response.invocation[0].event.length == 0;
-          this.fetchUpdatedProgress();
-        }
-        if (modelChangedSubscription) {
-          modelChangedSubscription.unsubscribe();
-        }
-        let model = InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]);
-        modelChangedSubscription = model.onChange.subscribe(() => {
-          this.setState({ model: this.state.model });
-        });
+        const model = InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]);
+        // Only show the in-progress screen if we don't have any events yet.
+        const showInProgressScreen = model.isInProgress() && !response.invocation[0]?.event?.length;
         this.setState({
           inProgress: showInProgressScreen,
           model: model,
-          loading: false,
         });
-        document.title = `${this.state.model.getUser(
-          true
-        )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
-        faviconService.setFaviconForType(this.state.model.getFaviconType());
       })
       .catch((error: any) => {
         console.error(error);
-        this.setState({
-          error: BuildBuddyError.parse(error),
-          loading: false,
-        });
-      });
+        this.setState({ error: BuildBuddyError.parse(error) });
+      })
+      .finally(() => this.setState({ loading: false }));
   }
 
-  fetchUpdatedProgress() {
+  scheduleRefetch() {
     clearTimeout(this.timeoutRef);
     // Refetch invocation data in 3 seconds to update status.
     this.timeoutRef = window.setTimeout(() => {
@@ -158,7 +176,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   render() {
-    if (this.state.loading || this.props.user === undefined) {
+    if (this.state.loading) {
       return <div className="loading"></div>;
     }
 

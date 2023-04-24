@@ -4,8 +4,9 @@ import Long from "long";
 import moment from "moment";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
+import { api } from "../../../proto/api/v1/common_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
-import { api, target } from "../../../proto/target_ts_proto";
+import { target } from "../../../proto/target_ts_proto";
 import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
@@ -172,6 +173,15 @@ export default class TapComponent extends React.Component<Props, State> {
    * history.
    */
   fetchTargets(initial: boolean) {
+    this.targetsRPC?.cancel();
+    this.setState({ loading: false });
+
+    const repoUrl = this.selectedRepo();
+    if (!repoUrl) {
+      this.updateState(new target.GetTargetResponse(), initial);
+      return;
+    }
+
     let request = new target.GetTargetRequest();
 
     request.startTimeUsec = Long.fromNumber(moment().subtract(DAYS_OF_DATA_TO_FETCH, "day").utc().valueOf() * 1000);
@@ -179,15 +189,17 @@ export default class TapComponent extends React.Component<Props, State> {
     request.serverSidePagination = this.isV2;
     request.pageToken = initial ? "" : this.state.nextPageToken;
     if (this.isV2) {
-      request.query = target.TargetQuery.create({ repoUrl: this.selectedRepo() });
+      request.query = target.TargetQuery.create({ repoUrl });
     }
 
     this.setState({ loading: true });
-    this.targetsRPC?.cancel();
-    this.targetsRPC = rpcService.service.getTarget(request).then((response: target.GetTargetResponse) => {
-      console.log(response);
-      this.updateState(response, initial);
-    });
+    this.targetsRPC = rpcService.service
+      .getTarget(request)
+      .then((response: target.GetTargetResponse) => {
+        this.updateState(response, initial);
+      })
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ loading: false }));
   }
 
   updateState(response: target.GetTargetResponse, initial: boolean) {

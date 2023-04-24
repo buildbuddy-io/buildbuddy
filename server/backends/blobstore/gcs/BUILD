@@ -7,6 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/backends/blobstore/util",
+        "//server/interfaces",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",

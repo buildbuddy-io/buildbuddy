@@ -17,6 +17,7 @@ import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
 import { ProtoFilterParams, getProtoFilterParams } from "../filter/filter_util";
 import Spinner from "../../../app/components/spinner/spinner";
+import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import Long from "long";
 import { BarChart2, CheckCircle, Clock, GitBranch, GitCommit, Github, Hash, Percent, XCircle } from "lucide-react";
 
@@ -27,6 +28,8 @@ interface State {
    */
   invocations?: invocation.IInvocation[];
   loadingInvocations?: boolean;
+  selectedInvocationId: string;
+  selectedInvocationIndex: number;
   /**
    * Stats summarizing the fetched invocations.
    * Not fetched for aggregate (sliced) views.
@@ -44,6 +47,8 @@ interface State {
   hoveredInvocationId?: string;
   pageToken?: string;
   invocationIdToCompare?: string;
+
+  keyboardShortcutHandles: string[];
 }
 
 interface Props {
@@ -59,7 +64,10 @@ interface Props {
 
 export default class HistoryComponent extends React.Component<Props, State> {
   state: State = {
+    selectedInvocationId: "",
+    selectedInvocationIndex: -1,
     invocationIdToCompare: localStorage["invocation_id_to_compare"],
+    keyboardShortcutHandles: [],
   };
 
   refreshSubscription = new Subscription();
@@ -224,9 +232,88 @@ export default class HistoryComponent extends React.Component<Props, State> {
     this.refreshSubscription.add(fromEvent(window, "storage").subscribe(this.handleStorage.bind(this)));
 
     this.fetch();
+
+    let handles = new Array<string>();
+    handles.push(
+      shortcuts.register(KeyCombo.j, () => {
+        this.selectNextInvocation();
+      })
+    );
+    handles.push(
+      shortcuts.register(KeyCombo.k, () => {
+        this.selectPreviousInvocation();
+      })
+    );
+    handles.push(
+      shortcuts.register(KeyCombo.enter, () => {
+        this.navigateToSelectedInvocation();
+      })
+    );
+    this.setState({
+      keyboardShortcutHandles: handles,
+    });
+  }
+
+  selectNextInvocation() {
+    let newInvocationIndex = this.state.selectedInvocationIndex + 1;
+    if (newInvocationIndex >= this.state.invocations!.length) {
+      newInvocationIndex = newInvocationIndex - 1;
+    }
+    let newInvocationId = this.state.invocations![newInvocationIndex].invocationId;
+    this.setState({
+      selectedInvocationIndex: newInvocationIndex,
+      selectedInvocationId: newInvocationId,
+    });
+  }
+
+  selectPreviousInvocation() {
+    let newInvocationIndex = this.state.selectedInvocationIndex - 1;
+    if (newInvocationIndex < 0) {
+      newInvocationIndex = 0;
+    }
+    let newInvocationId = this.state.invocations![newInvocationIndex].invocationId;
+    this.setState({
+      selectedInvocationIndex: newInvocationIndex,
+      selectedInvocationId: newInvocationId,
+    });
+  }
+
+  selectInvocation(invocationId: string) {
+    for (let i = 0; i < this.state.invocations!.length; i++) {
+      if (this.state.invocations![i].invocationId == invocationId) {
+        this.setState({
+          selectedInvocationIndex: i,
+          selectedInvocationId: invocationId,
+        });
+        return;
+      }
+    }
+    // Not found, reset the id because it might be invalid.
+    if (this.state.selectedInvocationIndex < 0) {
+      this.setState({
+        selectedInvocationIndex: -1,
+        selectedInvocationId: "",
+      });
+    }
+  }
+
+  navigateToSelectedInvocation() {
+    if (this.state.selectedInvocationId !== "") {
+      router.navigateTo("/invocation/" + this.state.selectedInvocationId);
+    }
   }
 
   componentDidUpdate(prevProps: Props) {
+    // Select the invocation id from local storage. This is so that when
+    // navigating around the app, the selected invocation is sticky -- though
+    // it gets cleared on refresh or navigation requests.
+    // This must be done in  componentDidUpdate because the list of invocations
+    // is fetched after componentDidMount.
+    if (localStorage["selected_invocation_id"] !== "" && this.state.invocations != undefined) {
+      this.selectInvocation(localStorage["selected_invocation_id"]);
+      localStorage["selected_invocation_id"] = "";
+    }
+
     if (this.props.hash !== prevProps.hash || this.props.search !== prevProps.search) {
       this.fetch();
     }
@@ -234,6 +321,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
   componentWillUnmount() {
     this.refreshSubscription.unsubscribe();
+    // State is reset on unmount, so no need to explicitly delete the handles.
+    for (let i = 0; i < this.state.keyboardShortcutHandles.length; i++) {
+      shortcuts.deregister(this.state.keyboardShortcutHandles[i]);
+    }
   }
 
   fetch() {
@@ -578,6 +669,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   onMouseOut={this.handleMouseOut.bind(this, invocation)}
                   invocation={invocation}
                   isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
+                  isSelectedWithKeyboard={invocation.invocationId === this.state.selectedInvocationId}
                 />
               </a>
             ))}

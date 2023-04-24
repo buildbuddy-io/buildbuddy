@@ -12,7 +12,7 @@ index 2ff57db..7d0c6be 100644
 +func Run() {
  	log.SetPrefix("gazelle: ")
  	log.SetFlags(0) // don't print timestamps
- 
+
 diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
 index 1cbaea7..4f9a083 100644
 --- a/cmd/gazelle/BUILD.bazel
@@ -26,3 +26,17 @@ index 1cbaea7..4f9a083 100644
  gazelle_binary(
      name = "gazelle",
      languages = DEFAULT_LANGUAGES,
+
+diff --git a/internal/module/BUILD.bazel b/internal/module/BUILD.bazel
+index 9ed4db9..69db844 100644
+--- a/internal/module/BUILD.bazel
++++ b/internal/module/BUILD.bazel
+@@ -4,7 +4,7 @@ go_library(
+     name = "module",
+     srcs = ["module.go"],
+     importpath = "github.com/bazelbuild/bazel-gazelle/internal/module",
+-    visibility = ["//:__subpackages__"],
++    visibility = ["//visibility:public"],
+     deps = ["@com_github_bazelbuild_buildtools//build:go_default_library"],
+ )
+ 

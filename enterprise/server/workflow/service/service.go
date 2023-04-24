@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -40,6 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
+	gstatus "google.golang.org/grpc/status"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
@@ -253,12 +255,12 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		var q *db.DB
 		if req.GetId() != "" {
 			q = tx.Raw(`
-				SELECT * FROM Workflows WHERE workflow_id = ?
+				SELECT * FROM "Workflows" WHERE workflow_id = ?
 				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, req.GetId())
 		} else {
 			q = tx.Raw(`
-				SELECT * FROM Workflows
+				SELECT * FROM "Workflows"
 				WHERE group_id = ? AND repo_url = ?
 				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, authenticatedUser.GetGroupID(), req.GetRepoUrl())
@@ -270,7 +272,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, wf.WorkflowID).Error
+		return tx.Exec(`DELETE FROM "Workflows" WHERE workflow_id = ?`, wf.WorkflowID).Error
 	})
 	if err != nil {
 		return nil, err
@@ -295,7 +297,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 
 func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error) {
 	q, args := query_builder.
-		NewQuery("SELECT workflow_id FROM Workflows").
+		NewQuery(`SELECT workflow_id FROM "Workflows"`).
 		AddWhereClause("access_token = ?", accessToken).
 		Build()
 	rows, err := ws.env.GetDBHandle().DB(ctx).Raw(q, args...).Rows()
@@ -332,7 +334,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 
 	rsp := &wfpb.GetWorkflowsResponse{}
-	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
+	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM "Workflows"`)
 	// Respect selected group ID.
 	q.AddWhereClause(`group_id = ?`, groupID)
 	// Adds user / permissions check.
@@ -393,9 +395,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetTargetBranch() == "" {
 		return nil, status.InvalidArgumentError("Missing target_branch")
 	}
-	if req.GetActionName() == "" {
-		return nil, status.InvalidArgumentError("Missing action_name")
-	}
 
 	// Authenticate
 	user, err := perms.AuthenticatedUser(ctx, ws.env)
@@ -419,7 +418,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	} else {
 		wf = &tables.Workflow{}
 		err = ws.env.GetDBHandle().DB(ctx).Raw(
-			`SELECT * FROM Workflows WHERE workflow_id = ?`,
+			`SELECT * FROM "Workflows" WHERE workflow_id = ?`,
 			req.GetWorkflowId(),
 		).Take(wf).Error
 		if err != nil {
@@ -448,14 +447,14 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		wf.InstanceNameSuffix = suffix
 		if gitRepository != nil {
 			err = ws.env.GetDBHandle().DB(ctx).Exec(`
-				UPDATE GitRepositories
+				UPDATE "GitRepositories"
 				SET instance_name_suffix = ?
 				WHERE group_id = ? AND repo_url = ?`,
 				wf.InstanceNameSuffix, gitRepository.GroupID, gitRepository.RepoURL,
 			).Error
 		} else {
 			err = ws.env.GetDBHandle().DB(ctx).Exec(`
-				UPDATE Workflows
+				UPDATE "Workflows"
 				SET instance_name_suffix = ?
 				WHERE workflow_id = ?`,
 				wf.InstanceNameSuffix, wf.WorkflowID,
@@ -479,11 +478,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		// Don't set IsTargetRepoPublic here; instead set visibility directly
 		// from build metadata.
 	}
-	invocationUUID, err := guuid.NewRandom()
-	if err != nil {
-		return nil, err
-	}
-	invocationID := invocationUUID.String()
 	extraCIRunnerArgs := []string{
 		fmt.Sprintf("--visibility=%s", req.GetVisibility()),
 	}
@@ -492,7 +486,85 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	// Fetch the workflow config for the action we're about to execute
+	// TODO(Maggie): Clean this up after ActionName field is cleaned up
+	var actionNames []string
+	if len(req.GetActionNames()) > 0 {
+		actionNames = req.GetActionNames()
+	} else if req.GetActionName() != "" {
+		actionNames = []string{req.GetActionName()}
+	}
+
+	actions, err := ws.getActions(ctx, wf, wd, actionNames)
+	if err != nil {
+		return nil, err
+	}
+
+	wg := sync.WaitGroup{}
+	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
+	for actionName, action := range actions {
+		action := action
+		actionName := actionName
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			var invocationID string
+			var err error
+			actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
+				ActionName: actionName,
+			}
+			actionStatuses = append(actionStatuses, actionStatus)
+			defer func() {
+				actionStatus.InvocationId = invocationID
+				actionStatus.Status = gstatus.Convert(err).Proto()
+			}()
+
+			if action == nil {
+				err = status.NotFoundErrorf("action %s not found", actionName)
+				return
+			}
+
+			invocationUUID, err := guuid.NewRandom()
+			if err != nil {
+				log.Warningf("Could not generate invocation ID for workflow action %s", req.GetActionName())
+				return
+			}
+			invocationID = invocationUUID.String()
+
+			// The workflow execution is trusted since we're authenticated as a member of
+			// the BuildBuddy org that owns the workflow.
+			isTrusted := true
+			executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
+			if err != nil {
+				log.Warningf("Could not execute workflow action %s: %s", req.GetActionName(), err)
+				return
+			}
+			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
+				log.Warningf("Could not create invocation for workflow action %s: %s", req.GetActionName(), err)
+				return
+			}
+		}()
+	}
+	wg.Wait()
+
+	// TODO(Maggie): Deprecate the InvocationID field and clean up
+	var invocationID string
+	if req.GetActionName() != "" {
+		if len(actionStatuses) != 1 || actionStatuses[0].ActionName != req.GetActionName() {
+			return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
+		}
+		invocationID = actionStatuses[0].InvocationId
+	}
+
+	return &wfpb.ExecuteWorkflowResponse{
+		InvocationId:   invocationID,
+		ActionStatuses: actionStatuses,
+	}, nil
+}
+
+func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) (map[string]*config.Action, error) {
+	// Fetch the workflow config
 	repoURL, err := gitutil.ParseRepoURL(wd.PushedRepoURL)
 	if err != nil {
 		return nil, err
@@ -505,28 +577,37 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if err != nil {
 		return nil, err
 	}
-	var action *config.Action
+
+	actionMap := make(map[string]*config.Action, len(cfg.Actions))
 	for _, a := range cfg.Actions {
-		if a.Name == req.GetActionName() {
-			action = a
-			break
-		}
-	}
-	if action == nil {
-		return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
-	}
-	// The workflow execution is trusted since we're authenticated as a member of
-	// the BuildBuddy org that owns the workflow.
-	isTrusted := true
-	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
-	if err != nil {
-		return nil, err
-	}
-	if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
-		return nil, err
+		actionMap[a.Name] = a
 	}
 
-	return &wfpb.ExecuteWorkflowResponse{InvocationId: invocationID}, nil
+	var filteredActions map[string]*config.Action
+	if len(actionFilter) > 0 {
+		filteredActions = make(map[string]*config.Action, 0)
+		for _, actionName := range actionFilter {
+			a, ok := actionMap[actionName]
+			if ok {
+				filteredActions[a.Name] = a
+			} else {
+				log.Debugf("workflow action %s not found", actionName)
+				filteredActions[actionName] = nil
+			}
+		}
+	} else {
+		filteredActions = actionMap
+	}
+
+	if len(filteredActions) == 0 {
+		if len(actionFilter) == 0 {
+			return nil, status.NotFoundError("no workflow actions found")
+		} else {
+			return nil, status.NotFoundErrorf("requested workflow actions %v not found", actionFilter)
+		}
+	}
+
+	return filteredActions, nil
 }
 
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string) (*repositoryWorkflow, error) {
@@ -544,7 +625,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string)
 	gitRepository := &tables.GitRepository{}
 	err = ws.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT *
-		FROM GitRepositories
+		FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
 	`, groupID, repoURL.String()).Take(gitRepository).Error

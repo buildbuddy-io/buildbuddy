@@ -50,23 +50,21 @@ export default class ActionCardComponent extends React.Component<Props, State> {
     }
 
     if (!logUrl.startsWith("bytestream://")) {
-      this.setState({ ...this.state, cacheEnabled: false });
+      this.setState({ cacheEnabled: false });
       return;
     }
 
-    this.setState({ ...this.state, loadingStderr: true });
+    this.setState({ loadingStderr: true });
     rpcService
       .fetchBytestreamFile(logUrl, this.props.invocationId)
       .then((contents: string) => {
         this.setState({
-          ...this.state,
           stdErr: contents,
           loadingStderr: false,
         });
       })
       .catch(() => {
         this.setState({
-          ...this.state,
           stdErr: "Error loading bytestream stderr!",
         });
       });
@@ -80,23 +78,21 @@ export default class ActionCardComponent extends React.Component<Props, State> {
     }
 
     if (!logUrl.startsWith("bytestream://")) {
-      this.setState({ ...this.state, cacheEnabled: false });
+      this.setState({ cacheEnabled: false });
       return;
     }
 
-    this.setState({ ...this.state, loadingStdout: true });
+    this.setState({ loadingStdout: true });
     rpcService
       .fetchBytestreamFile(logUrl, this.props.invocationId)
       .then((contents: string) => {
         this.setState({
-          ...this.state,
           stdOut: contents,
           loadingStdout: false,
         });
       })
       .catch(() => {
         this.setState({
-          ...this.state,
           stdErr: "Error loading bytestream stdout!",
         });
       });

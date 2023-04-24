@@ -72,6 +72,7 @@ const (
 	UploadUsec
 
 	CachedActionExecUsec
+	UncachedActionExecUsec
 
 	// New counter types go here!
 )
@@ -128,6 +129,8 @@ func counterField(actionCache bool, ct counterType) string {
 		return "upload-usec"
 	case CachedActionExecUsec:
 		return "cached-action-exec-usec"
+	case UncachedActionExecUsec:
+		return "uncached-action-exec-usec"
 	default:
 		return "UNKNOWN-COUNTER-TYPE"
 	}
@@ -388,6 +391,7 @@ type transferTimer struct {
 	start time.Time
 	actionCounter,
 	sizeCounter,
+	execDurationCounter,
 	timeCounter counterType
 	// TODO(bduffany): response code
 }
@@ -453,6 +457,16 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 			return err
 		}
 	}
+
+	if md := h.executedActionMetadata; h.actionCache && md != nil {
+		execStartTime := md.GetExecutionStartTimestamp().AsTime()
+		execEndTime := md.GetExecutionCompletedTimestamp().AsTime()
+		execDuration := execEndTime.Sub(execStartTime)
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.execDurationCounter), execDuration.Microseconds()); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
@@ -465,12 +479,13 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		h:             h,
-		d:             d,
-		start:         start,
-		actionCounter: Hit,
-		sizeCounter:   DownloadSizeBytes,
-		timeCounter:   DownloadUsec,
+		h:                   h,
+		d:                   d,
+		start:               start,
+		actionCounter:       Hit,
+		sizeCounter:         DownloadSizeBytes,
+		timeCounter:         DownloadUsec,
+		execDurationCounter: CachedActionExecUsec,
 	}
 }
 
@@ -483,12 +498,13 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		h:             h,
-		d:             d,
-		start:         start,
-		actionCounter: Upload,
-		sizeCounter:   UploadSizeBytes,
-		timeCounter:   UploadUsec,
+		h:                   h,
+		d:                   d,
+		start:               start,
+		actionCounter:       Upload,
+		sizeCounter:         UploadSizeBytes,
+		timeCounter:         UploadUsec,
+		execDurationCounter: UncachedActionExecUsec,
 	}
 }
 
@@ -635,6 +651,7 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	cs.UploadThroughputBytesPerSecond = computeThroughputBytesPerSecond(cs.TotalUploadSizeBytes, cs.TotalUploadUsec)
 
 	cs.TotalCachedActionExecUsec = counts[counterField(false, CachedActionExecUsec)]
+	cs.TotalUncachedActionExecUsec = counts[counterField(false, UncachedActionExecUsec)]
 
 	return cs
 }

@@ -52,22 +52,22 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private horizontalScrollbarRef = React.createRef<HorizontalScrollbar>();
   private hoveredBlockInfoRef = React.createRef<HoveredBlockInfo>();
 
-  private viewport: HTMLDivElement;
-  private barsContainerSvg: SVGSVGElement;
-  private header: SVGGElement;
-  private contentContainer: SVGGElement;
-  private gridlines: SVGGElement;
+  private viewport!: HTMLDivElement;
+  private barsContainerSvg!: SVGSVGElement;
+  private header!: SVGGElement;
+  private contentContainer!: SVGGElement;
+  private gridlines!: SVGGElement;
 
-  private horizontalScrollbar: HorizontalScrollbar;
+  private horizontalScrollbar!: HorizontalScrollbar;
 
-  private chartModel: FlameChartModel;
-  private buildDuration: number;
+  private chartModel!: FlameChartModel;
+  private buildDuration = 0;
 
   componentDidMount() {
     this.buildDuration = this.props.profile.traceEvents
       .map((event) => (event.ts || 0) + (event.dur || 0))
       .reduce((a, b) => Math.max(a, b));
-    const rulerWidth = this.rulerRef.current.getBoundingClientRect().width;
+    const rulerWidth = this.rulerRef.current!.getBoundingClientRect().width;
     const singlePixelDuration = this.buildDuration / rulerWidth;
 
     this.chartModel = buildFlameChartModel(this.props.profile.traceEvents, {
@@ -82,13 +82,13 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   componentDidUpdate() {
     if (!this.chartModel) return;
 
-    this.viewport = this.viewportRef.current;
-    this.barsContainerSvg = this.barsContainerRef.current;
-    this.header = this.headerRef.current;
-    this.contentContainer = this.contentContainerRef.current;
-    this.gridlines = this.gridlinesRef.current;
+    this.viewport = this.viewportRef.current!;
+    this.barsContainerSvg = this.barsContainerRef.current!;
+    this.header = this.headerRef.current!;
+    this.contentContainer = this.contentContainerRef.current!;
+    this.gridlines = this.gridlinesRef.current!;
 
-    this.horizontalScrollbar = this.horizontalScrollbarRef.current;
+    this.horizontalScrollbar = this.horizontalScrollbarRef.current!;
 
     const xMax = this.chartModel.blocks
       .map((block) => block.rectProps.x + block.rectProps.width)
@@ -98,13 +98,15 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     this.screenPixelsPerSecond.value = this.screenPixelsPerSecond.target = this.screenPixelsPerSecond.min;
 
     this.subscription
-      .add(fromEvent(window, "mousemove").subscribe(this.onMouseMove.bind(this)))
-      .add(fromEvent(window, "mouseup").subscribe(this.onMouseUp.bind(this)))
-      .add(fromEvent(window, "resize").subscribe(this.onWindowResize.bind(this)))
+      .add(fromEvent<MouseEvent>(window, "mousemove").subscribe(this.onMouseMove.bind(this)))
+      .add(fromEvent<MouseEvent>(window, "mouseup").subscribe(this.onMouseUp.bind(this)))
+      .add(fromEvent<UIEvent>(window, "resize").subscribe(this.onWindowResize.bind(this)))
       // NOTE: Can't do `<div onWheel={this.onWheel.bind(this)} >` since
       // the event target gets treated as "passive," which forbids us from calling
       // preventDefault() on Ctrl+Wheel
-      .add(fromEvent(this.viewport, "wheel", { passive: false }).subscribe(this.onWheel.bind(this)));
+      .add(
+        fromEvent<WheelEvent>(this.viewport, "wheel", { passive: false }).subscribe(this.onWheel.bind(this))
+      );
 
     this.updateDOM();
 
@@ -122,7 +124,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     this.hoveredBlockInfoRef.current?.setState({ x, y });
   }
   private onBlocksMouseLeave(e: React.MouseEvent<SVGGElement, MouseEvent>) {
-    this.hoveredBlockInfoRef.current?.setState({ block: null });
+    this.hoveredBlockInfoRef.current?.setState({ block: undefined });
   }
 
   private setMaxXCoordinate(value: number) {
@@ -194,7 +196,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     this.screenPixelsPerSecond.target = Math.pow(Math.E, y1);
     this.animation.start();
   }
-  private onMouseMove(e: MouseEvent) {
+  private onMouseMove(e: MouseEvent | React.MouseEvent) {
     this.updateMouse(e);
     if (this.isPanning) {
       this.animation.start();
@@ -205,7 +207,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   private isPanning = false;
-  private onMouseDown(e: MouseEvent) {
+  private onMouseDown(e: MouseEvent | React.MouseEvent) {
     // Non-left click cancels pan.
     if (e.button !== LEFT_MOUSE_BUTTON) {
       this.onMouseUp(e);
@@ -216,7 +218,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     this.setCursorOverride("grabbing");
     this.isPanning = true;
   }
-  private onMouseUp(e: MouseEvent) {
+  private onMouseUp(e: MouseEvent | React.MouseEvent) {
     this.setCursorOverride(null);
 
     if (e.button === LEFT_MOUSE_BUTTON) {
@@ -225,11 +227,11 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   private setCursorOverride(cursor: "grabbing" | null) {
-    document.body.style.cursor = cursor;
+    document.body.style.cursor = cursor || "";
   }
 
   private mouse = { x: 0, seconds: 0, y: 0, scrollTop: 0 };
-  private updateMouse(e: MouseEvent) {
+  private updateMouse(e: MouseEvent | React.MouseEvent) {
     const x = e.clientX - this.barsContainerSvg.getBoundingClientRect().x;
     const y = e.clientY - this.viewport.getBoundingClientRect().y;
     this.mouse = {
@@ -277,7 +279,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   private renderDebugInfo() {
-    const el = this.debugRef.current;
+    const el = this.debugRef.current!;
     const debugDrawLoop = new AnimationLoop(() => {
       el.innerHTML = JSON.stringify(
         {
@@ -492,7 +494,7 @@ class HoveredBlockInfo extends React.Component<{ buildDuration: number }, Hovere
     if (!this.blockRef.current || !this.state.block) return 0;
 
     const width = this.blockRef.current.getBoundingClientRect().width;
-    const rightEdgeX = this.state.x + width;
+    const rightEdgeX = (this.state.x || 0) + width;
     return Math.max(0, rightEdgeX - window.innerWidth);
   }
 

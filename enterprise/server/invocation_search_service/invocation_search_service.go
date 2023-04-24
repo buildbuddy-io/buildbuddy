@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -100,6 +101,13 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 }
 
 func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
+	if req.GetQuery().GetRepoUrl() != "" {
+		norm, err := git.NormalizeRepoURL(req.GetQuery().GetRepoUrl())
+		if err == nil { // if we normalized successfully
+			req.Query.RepoUrl = norm.String()
+		}
+	}
+
 	if err := s.checkPreconditions(req); err != nil {
 		return nil, err
 	}
@@ -111,7 +119,7 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
-	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
+	q := query_builder.NewQuery(`SELECT * FROM "Invocations" as i`)
 
 	// Don't include anonymous builds.
 	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")

@@ -17,26 +17,36 @@ import CreateOrgComponent from "../org/create_org";
 import JoinOrgComponent from "../org/join_org";
 import SettingsComponent from "../settings/settings";
 import SidebarComponent from "../sidebar/sidebar";
+import ShortcutsComponent from "../shortcuts/shortcuts";
 import TapComponent from "../tap/tap";
 import TrendsComponent from "../trends/trends";
+import Shortcuts from "../../../app/shortcuts/shortcuts";
 import UsageComponent from "../usage/usage";
 import GroupSearchComponent from "../group_search/group_search";
 import { AlertCircle, LogOut } from "lucide-react";
 import { OutlinedButton } from "../../../app/components/button/button";
+import Dialog, {
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
+} from "../../../app/components/dialog/dialog";
 const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
 import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
+import Modal from "../../../app/components/modal/modal";
 
 interface State {
-  // TODO: change user to optional instead of "| null".
-  user: User | null;
+  user?: User;
   hash: string;
   path: string;
   search: URLSearchParams;
   preferences: UserPreferences;
   loading: boolean;
+  keyboardShortcutHelpShowing: boolean;
 }
 
 capabilities.register("BuildBuddy Enterprise", true, [
@@ -57,24 +67,25 @@ capabilities.register("BuildBuddy Enterprise", true, [
 export default class EnterpriseRootComponent extends React.Component {
   state: State = {
     loading: true,
-    user: null,
     hash: router.getHash(),
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
+    keyboardShortcutHelpShowing: false,
   };
 
   componentWillMount() {
     if (!capabilities.auth) {
-      this.setState({ ...this.state, user: null, loading: false });
+      this.setState({ user: undefined, loading: false });
     }
     authService.userStream.subscribe({
-      next: (user: User) => this.setState({ ...this.state, user, loading: false }),
+      next: (user?: User) => this.setState({ user, loading: false }),
     });
     authService.register();
     router.register(this.handlePathChange.bind(this));
     faviconService.setDefaultFavicon();
     (window as any)._preferences = this.state.preferences;
+    Shortcuts.setPreferences(this.state.preferences);
   }
 
   componentDidMount() {
@@ -94,7 +105,7 @@ export default class EnterpriseRootComponent extends React.Component {
   }
 
   handlePreferencesChanged() {
-    this.setState({ ...this.state, preferences: this.state.preferences });
+    this.forceUpdate();
   }
 
   handleOrganizationClicked() {
@@ -114,8 +125,8 @@ export default class EnterpriseRootComponent extends React.Component {
     let historyBranch = this.state.user && router.getHistoryBranch(this.state.path);
     let historyCommit = this.state.user && router.getHistoryCommit(this.state.path);
     let settings = this.state.user && this.state.path.startsWith("/settings");
-    let org = this.state.path.startsWith("/org/");
-    let orgCreate = this.state.path === Path.createOrgPath;
+    let org = this.state.user && this.state.path.startsWith("/org/");
+    let orgCreate = this.state.user && this.state.path === Path.createOrgPath;
     let orgJoinAuthenticated = this.state.path.startsWith("/join") && this.state.user;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
@@ -252,7 +263,7 @@ export default class EnterpriseRootComponent extends React.Component {
                       search={this.state.search}
                     />
                   )}
-                  {settings && (
+                  {settings && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <SettingsComponent
                         user={this.state.user}
@@ -262,25 +273,25 @@ export default class EnterpriseRootComponent extends React.Component {
                       />
                     </Suspense>
                   )}
-                  {orgCreate && <CreateOrgComponent user={this.state.user} />}
-                  {orgJoinAuthenticated && <JoinOrgComponent user={this.state.user} />}
-                  {tests && (
+                  {orgCreate && this.state.user && <CreateOrgComponent user={this.state.user} />}
+                  {orgJoinAuthenticated && this.state.user && <JoinOrgComponent user={this.state.user} />}
+                  {tests && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <TapComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                     </Suspense>
                   )}
-                  {trends && (
+                  {trends && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                     </Suspense>
                   )}
-                  {usage && <UsageComponent user={this.state.user} />}
-                  {executors && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
+                  {usage && this.state.user && <UsageComponent user={this.state.user} />}
+                  {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {home && (
                     <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />
                   )}
-                  {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
-                  {code && (
+                  {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
+                  {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent
                         path={this.state.path}
@@ -314,6 +325,7 @@ export default class EnterpriseRootComponent extends React.Component {
           </div>
           <GroupSearchComponent />
           <AlertComponent />
+          <ShortcutsComponent preferences={this.state.preferences} />
         </div>
       </>
     );

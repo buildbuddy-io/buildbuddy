@@ -5,19 +5,23 @@ import (
 	"context"
 	"math"
 	"time"
+
+	"github.com/jonboulle/clockwork"
 )
 
 // This code was inspired by cocroach's retry util.
 type Options struct {
-	InitialBackoff time.Duration // How long to wait after the first request
-	MaxBackoff     time.Duration // Max amount of time to wait for a single request
-	Multiplier     float64       // Next backoff is this * previous backoff
-	MaxRetries     int           // Max number of retries; 0 is based on time
+	InitialBackoff time.Duration   // How long to wait after the first request
+	MaxBackoff     time.Duration   // Max amount of time to wait for a single request
+	Multiplier     float64         // Next backoff is this * previous backoff
+	MaxRetries     int             // Max number of retries; 0 is based on time
+	Clock          clockwork.Clock // Optional clock implementation to use.
 }
 
 type Retry struct {
-	opts *Options
-	ctx  context.Context
+	opts  *Options
+	ctx   context.Context
+	clock clockwork.Clock
 
 	currentAttempt int
 	maxAttempts    int
@@ -50,14 +54,29 @@ func New(ctx context.Context, opts *Options) *Retry {
 		}
 	}
 
+	clock := opts.Clock
+	if clock == nil {
+		clock = clockwork.NewRealClock()
+	}
+
 	r := &Retry{
 		ctx:         ctx,
 		opts:        opts,
 		maxAttempts: maxAttempts,
 		maxTime:     maxTime,
+		clock:       clock,
 	}
 	r.Reset()
 	return r
+}
+
+func DefaultOptions() *Options {
+	return &Options{
+		InitialBackoff: 50 * time.Millisecond,
+		MaxBackoff:     3 * time.Second,
+		Multiplier:     2,
+		MaxRetries:     0, // unlimited, time based max by default.
+	}
 }
 
 // DefaultWithContext returns a new retry.Retry object that is ready to use.
@@ -69,15 +88,7 @@ func New(ctx context.Context, opts *Options) *Retry {
 //	  doSomething()
 //	}
 func DefaultWithContext(ctx context.Context) *Retry {
-	return New(
-		ctx,
-		&Options{
-			InitialBackoff: 50 * time.Millisecond,
-			MaxBackoff:     3 * time.Second,
-			Multiplier:     2,
-			MaxRetries:     0, // unlimited, time based max by default.
-		},
-	)
+	return New(ctx, DefaultOptions())
 }
 
 func (r *Retry) Reset() {
@@ -139,7 +150,7 @@ func (r *Retry) Next() bool {
 	}
 
 	select {
-	case <-time.After(d):
+	case <-r.clock.After(d):
 		return true
 	case <-r.ctx.Done():
 		return false

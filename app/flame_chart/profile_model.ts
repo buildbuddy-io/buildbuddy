@@ -132,7 +132,7 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   }
 
   for (const event of events) {
-    event.tid = threadNameToTidMap.get(threadNameByTid.get(event.tid));
+    event.tid = threadNameToTidMap.get(threadNameByTid.get(event.tid) || "") || -1;
   }
 
   events.sort(eventComparator);
@@ -140,7 +140,7 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   const timelines: ThreadTimeline[] = [];
   let tid = null;
   let timeline: ThreadTimeline | null = null;
-  let stack: ThreadEvent[];
+  let stack: ThreadEvent[] = [];
   for (const event of events as ThreadEvent[]) {
     if (tid === null || event.tid !== tid) {
       // Encountered new thread, and we're done processing events from the previous thread
@@ -177,13 +177,13 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
       stack.pop();
     }
     event.depth = stack.length;
-    timeline.maxDepth = Math.max(event.depth, timeline.maxDepth);
-    timeline.events.push(event);
+    timeline!.maxDepth = Math.max(event.depth, timeline!.maxDepth);
+    timeline!.events.push(event);
     stack.push(event);
   }
 
   for (const timeline of timelines) {
-    timeline.threadName = threadNameByTid.get(timeline.tid);
+    timeline.threadName = threadNameByTid.get(timeline.tid) || "";
   }
 
   timelines.sort(timelineComparator);
