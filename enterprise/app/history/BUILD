@@ -17,6 +17,7 @@ ts_library(
         "//app/components/tooltip",
         "//app/format",
         "//app/router",
+        "//app/router:router_params",
         "//app/service:rpc_service",
         "//app/shortcuts",
         "//enterprise/app/filter",

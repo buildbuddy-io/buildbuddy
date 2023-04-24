@@ -42,6 +42,7 @@ var (
 	testOutputManifestsEnabled = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
 	patternFilterEnabled       = flag.Bool("app.pattern_filter_enabled", false, "If set, allow filtering by pattern in the client.")
 	executionSearchEnabled     = flag.Bool("app.execution_search_enabled", false, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
+	trendsSummaryEnabled       = flag.Bool("app.trends_summary_enabled", false, "If set, show the new 'summary' section at the top of the trends UI.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -161,6 +162,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		PatternFilterEnabled:          *patternFilterEnabled,
 		BotSuggestionsEnabled:         env.GetSuggestionService() != nil,
 		ExecutionSearchEnabled:        *executionSearchEnabled,
+		TrendsSummaryEnabled:          *trendsSummaryEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

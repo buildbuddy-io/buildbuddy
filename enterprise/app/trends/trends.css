@@ -157,3 +157,46 @@
 .selection-summary-text {
   vertical-align: top;
 }
+
+.card.trend-summary-group {
+  flex-direction: column;
+  display: inline-block;
+  flex-grow: 1;
+  margin: 0;
+  max-width: 300px;
+}
+
+.trend-headline-stat {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.trend-headline-text {
+  font-weight: bold;
+  vertical-align: top;
+  margin-left: 8px;
+}
+
+.trend-sub-item {
+  font-size: 12px;
+  max-width: 240px;
+}
+
+.trend-change {
+  font-weight: bold;
+}
+
+.trend-change.up {
+  color: #4caf50;
+}
+
+.trend-change.down {
+  color: #f44336;
+}
+
+.trend-summary-block {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 16px;
+  column-gap: 16px;
+}

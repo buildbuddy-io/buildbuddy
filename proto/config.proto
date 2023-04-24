@@ -89,4 +89,7 @@ message FrontendConfig {
 
   // Whether the GitHub app is enabled.
   bool github_app_enabled = 29;
+
+  // Whether or not we show the new summary section on the trends page.
+  bool trends_summary_enabled = 30;
 }

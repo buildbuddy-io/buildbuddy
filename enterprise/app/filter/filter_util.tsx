@@ -1,4 +1,5 @@
 import capabilities from "../../../app/capabilities/capabilities";
+import { formatPreviousDateRange, formatDateRange } from "../../../app/format/format";
 import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -22,7 +23,7 @@ import {
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
-} from "../../../app/router/router";
+} from "../../../app/router/router_params";
 
 // URL param value representing the empty role (""), which is the default.
 const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
@@ -105,6 +106,14 @@ export function getStartDate(search: URLSearchParams): Date {
   return getDefaultStartDate();
 }
 
+export function getDisplayDateRange(search: URLSearchParams): { startDate: Date; endDate: Date } {
+  // Not using `getEndDate` here because it's set to "start of day after the one specified
+  // in the URL" which causes an off-by-one error if we were to render that directly in
+  // the calendar.
+  const endDate = search.get(END_DATE_PARAM_NAME) ? moment(search.get(END_DATE_PARAM_NAME)).toDate() : new Date();
+  return { startDate: getStartDate(search), endDate };
+}
+
 export function getEndDate(search: URLSearchParams): Date | undefined {
   if (!search.get(END_DATE_PARAM_NAME)) {
     return undefined;
@@ -152,6 +161,32 @@ export function toStatusParam(statuses: Iterable<invocation_status.OverallStatus
 
 export function isExecutionMetric(m: stat_filter.Metric): boolean {
   return m.execution !== null && m.execution !== undefined;
+}
+
+export function formatPreviousDateRangeFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  return formatPreviousDateRange(startDate, endDate);
+}
+
+export function formatDateRangeFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  return formatDateRange(startDate, endDate);
+}
+
+export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
+  return Boolean(
+    search.get(ROLE_PARAM_NAME) ||
+      search.get(STATUS_PARAM_NAME) ||
+      search.get(USER_PARAM_NAME) ||
+      search.get(REPO_PARAM_NAME) ||
+      search.get(BRANCH_PARAM_NAME) ||
+      search.get(COMMIT_PARAM_NAME) ||
+      search.get(HOST_PARAM_NAME) ||
+      search.get(COMMAND_PARAM_NAME) ||
+      search.get(PATTERN_PARAM_NAME) ||
+      search.get(MINIMUM_DURATION_PARAM_NAME) ||
+      search.get(MAXIMUM_DURATION_PARAM_NAME)
+  );
 }
 
 function parseDuration(value: string | null): google_duration.protobuf.Duration | undefined {

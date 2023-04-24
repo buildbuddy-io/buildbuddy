@@ -7,8 +7,8 @@ import { stats } from "../../../proto/stats_ts_proto";
 import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
 import PercentilesChartComponent from "./percentile_chart";
+import TrendsSummaryCard from "./summary_card";
 import { Subscription } from "rxjs";
-import CheckboxButton from "../../../app/components/button/checkbox_button";
 import FilterComponent from "../filter/filter";
 import capabilities from "../../../app/capabilities/capabilities";
 import { getProtoFilterParams } from "../filter/filter_util";
@@ -30,6 +30,8 @@ interface State {
   dateToStatMap: Map<string, stats.ITrendStat>;
   dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
+  currentSummary?: stats.Summary;
+  previousSummary?: stats.Summary;
   dates: string[];
 }
 
@@ -61,7 +63,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.tab !== prevProps.tab || this.props.search != prevProps.search) {
+    if (
+      this.showingDrilldown(this.props.tab) !== this.showingDrilldown(prevProps.tab) ||
+      this.props.search.toString() != prevProps.search.toString()
+    ) {
       this.fetchStats();
     }
   }
@@ -159,6 +164,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
           // End date may not be defined -- default to today.
           request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date()
         ),
+        currentSummary: response.currentSummary || undefined,
+        previousSummary: response.previousSummary || undefined,
         dateToStatMap,
         dateToExecutionStatMap,
         enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
@@ -187,8 +194,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
-  showingDrilldown(): boolean {
-    return (capabilities.config.trendsHeatmapEnabled || false) && this.props.tab === "#drilldown";
+  showingDrilldown(tab: string): boolean {
+    return (capabilities.config.trendsHeatmapEnabled || false) && tab === "#drilldown";
   }
 
   render() {
@@ -213,14 +220,21 @@ export default class TrendsComponent extends React.Component<Props, State> {
               </div>
             </div>
           )}
-          {this.showingDrilldown() && (
+          {this.showingDrilldown(this.props.tab) && (
             <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
           )}
-          {!this.showingDrilldown() && this.state.loading && <div className="loading"></div>}
-          {!this.showingDrilldown() && !this.state.loading && (
+          {!this.showingDrilldown(this.props.tab) && this.state.loading && <div className="loading"></div>}
+          {!this.showingDrilldown(this.props.tab) && !this.state.loading && (
             <>
+              {capabilities.config.trendsSummaryEnabled && this.state.currentSummary && (
+                <TrendsSummaryCard
+                  search={this.props.search}
+                  currentPeriod={this.state.currentSummary}
+                  previousPeriod={this.state.previousSummary}></TrendsSummaryCard>
+              )}
               <TrendsChartComponent
                 title="Builds"
+                id="builds"
                 data={this.state.dates}
                 extractValue={(date) => +(this.getStat(date).totalNumBuilds ?? 0)}
                 extractSecondaryValue={(date) => {
@@ -245,6 +259,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               {this.state.enableInvocationPercentileCharts && (
                 <PercentilesChartComponent
                   title="Build duration"
+                  id="duration"
                   data={this.state.dates}
                   extractLabel={this.formatShortDate}
                   formatHoverLabel={this.formatLongDate}
@@ -259,6 +274,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               {!this.state.enableInvocationPercentileCharts && (
                 <TrendsChartComponent
                   title="Build duration"
+                  id="duration"
                   data={this.state.dates}
                   extractValue={(date) => {
                     let stat = this.getStat(date);
@@ -279,6 +295,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
               <CacheChartComponent
                 title="Action Cache"
+                id="cache"
                 data={this.state.dates}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}

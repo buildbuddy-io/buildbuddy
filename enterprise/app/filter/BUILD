@@ -16,6 +16,7 @@ ts_library(
         "//app/components/slider",
         "//app/format",
         "//app/router",
+        "//app/router:router_params",
         "//enterprise/app/filter:filter_util",
         "//proto:invocation_status_ts_proto",
         "@npm//@types/moment",
@@ -43,7 +44,8 @@ ts_library(
     srcs = ["filter_util.tsx"],
     deps = [
         "//app/capabilities",
-        "//app/router",
+        "//app/format",
+        "//app/router:router_params",
         "//app/util:proto",
         "//proto:duration_ts_proto",
         "//proto:invocation_status_ts_proto",
