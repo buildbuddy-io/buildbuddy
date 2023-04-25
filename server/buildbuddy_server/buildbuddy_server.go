@@ -1185,8 +1185,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWriter, params url.Values) {
 	iid := params.Get("invocation_id")
 	if iid == "" {
-		log.Warningf("Build log requested with empty invocation id.")
-		http.Error(w, "File not found", http.StatusNotFound)
+		http.Error(w, "Missing invocation_id param", http.StatusBadRequest)
 		return
 	}
 	if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
@@ -1202,9 +1201,13 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 	}
 	switch params.Get("artifact") {
 	case "buildlog":
-		attempt := uint64(0)
-		if n, err := strconv.ParseUint(params.Get("attempt"), 10, 64); err == nil {
-			attempt = n
+		attempt, err := strconv.ParseUint(params.Get("attempt"), 10, 64)
+		if err == nil {
+			http.Error(
+				w,
+				fmt.Sprintf("Attempt param '%s' is not parseable to uint64.", params.Get("attempt")),
+				http.StatusBadRequest,
+			)
 		}
 		c := chunkstore.New(
 			s.env.GetBlobstore(),
@@ -1213,17 +1216,8 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		// Stream the file back to our client
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s.log", iid))
 		w.Header().Set("Content-Type", "application/octet-stream")
-		_, err := io.Copy(
-			w,
-			c.Reader(
-				ctx,
-				eventlog.GetEventLogPathFromInvocationIdAndAttempt(
-					iid,
-					attempt,
-				),
-			),
-		)
-		if err != nil {
+		path := eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, attempt)
+		if _, err = io.Copy(w, c.Reader(ctx, path)); err != nil {
 			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
