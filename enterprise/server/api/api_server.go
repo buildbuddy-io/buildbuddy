@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -24,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -477,4 +479,52 @@ func actionMatchesActionSelector(action *apipb.Action, selector *apipb.ActionSel
 		(selector.TargetLabel == "" || selector.TargetLabel == action.GetTargetLabel()) &&
 		(selector.ConfigurationId == "" || selector.ConfigurationId == action.GetId().ConfigurationId) &&
 		(selector.ActionId == "" || selector.ActionId == action.GetId().ActionId)
+}
+
+func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkflowRequest) (*apipb.ExecuteWorkflowResponse, error) {
+	user, err := s.checkPreconditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	wfs := s.env.GetWorkflowService()
+	requestCtx := requestcontext.ProtoRequestContextFromContext(ctx)
+
+	wf, err := wfs.GetWorkflowByGroupAndRepo(ctx, user.GetGroupID(), req.GetRepoUrl())
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that the legacy Workflow product"+
+				" is not supported for this API. See https://www.buildbuddy.io/docs/workflows-setup/ for more information"+
+				" on how to correctly setup Workflows.", req.GetRepoUrl())
+		}
+		return nil, err
+	}
+
+	r := &workflow.ExecuteWorkflowRequest{
+		RequestContext: requestCtx,
+		WorkflowId:     wf.WorkflowID,
+		ActionNames:    req.GetActionNames(),
+		PushedRepoUrl:  req.GetRepoUrl(),
+		PushedBranch:   req.GetRef(),
+		TargetRepoUrl:  req.GetRepoUrl(),
+		TargetBranch:   req.GetRef(),
+		Clean:          req.GetClean(),
+		Visibility:     req.GetVisibility(),
+	}
+	rsp, err := wfs.ExecuteWorkflow(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	actionStatuses := make([]*apipb.ExecuteWorkflowResponse_ActionStatus, len(rsp.GetActionStatuses()))
+	for i, as := range rsp.GetActionStatuses() {
+		actionStatuses[i] = &apipb.ExecuteWorkflowResponse_ActionStatus{
+			ActionName:   as.ActionName,
+			InvocationId: as.InvocationId,
+			Status:       as.Status,
+		}
+	}
+	return &apipb.ExecuteWorkflowResponse{
+		ActionStatuses: actionStatuses,
+	}, nil
 }

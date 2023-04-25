@@ -42,12 +42,14 @@ proto_library(
         "log.proto",
         "service.proto",
         "target.proto",
+        "workflow.proto",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":common_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
+        "@go_googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -59,5 +61,6 @@ go_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
