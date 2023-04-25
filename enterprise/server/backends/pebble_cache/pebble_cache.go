@@ -1417,28 +1417,9 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 
 	buf := &bytes.Buffer{}
 	for _, r := range resources {
-		fileRecord, err := p.makeFileRecord(ctx, r)
-		if err != nil {
-			return nil, err
-		}
-		key, err := p.fileStorer.PebbleKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-
-		unlockFn := p.locker.RLock(key.LockID())
-		fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
-		unlockFn()
-		if err != nil {
-			continue
-		}
-
-		rc, err := p.reader(ctx, r, key, fileMetadata, 0, 0)
+		rc, err := p.reader(ctx, iter, r, 0, 0)
 		if err != nil {
 			if status.IsNotFoundError(err) || os.IsNotExist(err) {
-				unlockFn := p.locker.Lock(key.LockID())
-				p.handleMetadataMismatch(ctx, err, key, fileMetadata)
-				unlockFn()
 				continue
 			}
 			return nil, err
@@ -1623,31 +1604,8 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, r)
+	rc, err := p.reader(ctx, iter, r, uncompressedOffset, limit)
 	if err != nil {
-		return nil, err
-	}
-
-	key, err := p.fileStorer.PebbleKey(fileRecord)
-	if err != nil {
-		return nil, err
-	}
-
-	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	unlockFn := p.locker.RLock(key.LockID())
-	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
-	unlockFn()
-	if err != nil {
-		return nil, err
-	}
-
-	rc, err := p.reader(ctx, r, key, fileMetadata, uncompressedOffset, limit)
-	if err != nil {
-		if status.IsNotFoundError(err) || os.IsNotExist(err) {
-			unlockFn := p.locker.Lock(key.LockID())
-			p.handleMetadataMismatch(ctx, err, key, fileMetadata)
-			unlockFn()
-		}
 		return nil, err
 	}
 
@@ -2464,9 +2422,25 @@ type readCloser struct {
 	io.Closer
 }
 
-func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) reader(ctx context.Context, iter *pebble.Iterator, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+	fileRecord, err := p.makeFileRecord(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	unlockFn := p.locker.RLock(key.LockID())
+	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+	unlockFn()
+	if err != nil {
+		return nil, err
+	}
+
 	blobDir := p.blobDir()
-	requestedCompression := resource.GetCompressor()
+	requestedCompression := r.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
 	if requestedCompression == cachedCompression &&
 		requestedCompression != repb.Compressor_IDENTITY &&
@@ -2497,13 +2471,18 @@ func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, k
 
 	reader, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
+		if status.IsNotFoundError(err) || os.IsNotExist(err) {
+			unlockFn := p.locker.Lock(key.LockID())
+			p.handleMetadataMismatch(ctx, err, key, fileMetadata)
+			unlockFn()
+		}
 		return nil, err
 	}
 	p.sendAtimeUpdate(key, fileMetadata)
 
 	if !rawStorage {
 		if shouldDecrypt {
-			d, err := p.env.GetCrypter().NewDecryptor(ctx, resource.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
+			d, err := p.env.GetCrypter().NewDecryptor(ctx, r.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
 			if err != nil {
 				return nil, err
 			}
@@ -2529,7 +2508,7 @@ func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, k
 
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
 		bufSize := int64(CompressorBufSizeBytes)
-		resourceSize := resource.GetDigest().GetSizeBytes()
+		resourceSize := r.GetDigest().GetSizeBytes()
 		if resourceSize > 0 && resourceSize < bufSize {
 			bufSize = resourceSize
 		}
