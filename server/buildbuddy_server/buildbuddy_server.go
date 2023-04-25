@@ -1205,34 +1205,27 @@ func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Reque
 func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWriter, params url.Values) (int, error) {
 	iid := params.Get("invocation_id")
 	if iid == "" {
-		http.Error(w, "File not found", http.StatusNotFound)
 		return http.StatusBadRequest, status.FailedPreconditionError("Missing invocation_id param")
 	}
 	if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
 		if status.IsPermissionDeniedError(err) {
-			return http.StatusForbidden, status.PermissionDeniedErrorf("User does not have permissions to access invocation %s.", iid)
+			return http.StatusForbidden, status.PermissionDeniedErrorf("User does not have permissions to access invocation %s", iid)
 		} else if status.IsNotFoundError(err) {
-			http.Error(w, "File not found", http.StatusNotFound)
+			return http.StatusNotFound, status.NotFoundErrorf("Invocation %s does not exist.", iid)
 		} else {
 			log.Errorf("Error looking up invocation %s for build log fetch: %s", iid, err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
 		}
-		if status.IsNotFoundError(err) {
-			return http.StatusNotFound, status.NotFoundErrorf("Invocation %s does not exist.", iid)
-		}
-		log.Warningf("Error looking up invocation %s for build log fetch: %s", iid, err)
-		return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
 	}
 	switch params.Get("artifact") {
 	case "buildlog":
 		attempt, err := strconv.ParseUint(params.Get("attempt"), 10, 64)
 		if err != nil {
-			http.Error(
-				w,
-				fmt.Sprintf("Attempt param '%s' is not parseable to uint64.", params.Get("attempt")),
-				http.StatusBadRequest,
+			err = status.FailedPreconditionErrorf(
+				"Attempt param '%s' is not parseable to uint64.",
+				params.Get("attempt"),
 			)
-			return
+			return http.StatusBadRequest, err
 		}
 		c := chunkstore.New(
 			s.env.GetBlobstore(),
