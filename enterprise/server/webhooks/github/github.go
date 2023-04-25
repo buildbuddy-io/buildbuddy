@@ -149,7 +149,12 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		if !(baseBranchChanged || event.GetAction() == "opened" || event.GetAction() == "synchronize" || event.GetAction() == "reopened") {
 			return nil, nil
 		}
-		return parsePullRequestOrReview(event)
+		wd, err := parsePullRequestOrReview(event)
+		if err != nil {
+			return nil, err
+		}
+		wd.PullRequestNumber = int64(event.GetPullRequest().GetNumber())
+		return wd, nil
 
 	case *gh.PullRequestReviewEvent:
 		if event.GetAction() != "submitted" {
@@ -163,6 +168,7 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 			return nil, err
 		}
 		wd.PullRequestApprover = event.GetReview().GetUser().GetLogin()
+		wd.PullRequestNumber = int64(event.GetPullRequest().GetNumber())
 		return wd, nil
 
 	default:

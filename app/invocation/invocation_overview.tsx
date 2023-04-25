@@ -16,12 +16,14 @@ import {
   User as UserIcon,
   Wrench,
   Zap,
+  GitPullRequest,
 } from "lucide-react";
 import React from "react";
 import { User } from "../auth/auth_service";
 import { Link } from "../components/link/link";
 import format from "../format/format";
 import router from "../router/router";
+import { RepoURL } from "../util/git";
 import InvocationButtons from "./invocation_buttons";
 import InvocationModel from "./invocation_model";
 
@@ -184,10 +186,27 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               {format.formatGitUrl(this.props.model.getRepo())}
             </div>
           )}
-          {this.props.model.getBranchName() && (
+          {this.props.model.getRepo() && this.props.model.getPullRequestNumber() && (
+            <Link
+              className="detail"
+              href={RepoURL.parse(this.props.model.getRepo())?.pullRequestLink(
+                this.props.model.getPullRequestNumber()
+              )}>
+              <GitPullRequest className="icon" />#{this.props.model.getPullRequestNumber()}
+            </Link>
+          )}
+          {/* For branches that aren't in forked repos, show a link to the branch history. */}
+          {this.props.model.getBranchName() && !this.props.model.getForkRepoURL() && (
             <div className="detail clickable" onClick={this.handleBranchClicked.bind(this)}>
               <GitBranch className="icon" />
               {this.props.model.getBranchName()}
+            </div>
+          )}
+          {/* For branches in forked repos, just render "{forkName}:{branchName}" */}
+          {this.props.model.getBranchName() && this.props.model.getForkRepoURL() && (
+            <div className="detail">
+              <GitBranch className="icon" />
+              {RepoURL.parse(this.props.model.getForkRepoURL())?.owner}:{this.props.model.getBranchName()}
             </div>
           )}
           {this.props.model.getCommit() && (

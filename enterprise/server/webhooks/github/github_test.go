@@ -53,6 +53,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 		TargetRepoDefaultBranch: "main",
 		TargetBranch:            "main",
 		PullRequestAuthor:       "test",
+		PullRequestNumber:       37,
 	}, data)
 }
 
@@ -71,6 +72,7 @@ func TestParseRequest_ValidPullRequestReviewEvent_Success(t *testing.T) {
 		TargetRepoDefaultBranch: "main",
 		IsTargetRepoPublic:      true,
 		TargetBranch:            "main",
+		PullRequestNumber:       1,
 		PullRequestAuthor:       "test2",
 		PullRequestApprover:     "test",
 	}, data)
