@@ -1356,7 +1356,7 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 		return err
 	}
 	_ = f.Close()
-	if err := git(ctx, ws.log, "apply", "--verbose", patchFileName); err != nil {
+	if _, err := git(ctx, ws.log, "apply", "--verbose", patchFileName); err != nil {
 		return err
 	}
 	return nil
@@ -1403,7 +1403,6 @@ func (ws *workspace) sync(ctx context.Context) error {
 		checkoutLocalBranchName = *targetBranch
 	}
 
-	// TODO(Maggie): If commit sha is not set, pull the actual sha so that it can be used in reporting
 	// If a commit is set, use it
 	if *targetCommitSHA != "" {
 		checkoutRef = *targetCommitSHA
@@ -1421,22 +1420,31 @@ func (ws *workspace) sync(ctx context.Context) error {
 	for _, path := range *gitCleanExclude {
 		cleanArgs = append(cleanArgs, "-e", path)
 	}
-	if err := git(ctx, ws.log, cleanArgs...); err != nil {
+	if _, err := git(ctx, ws.log, cleanArgs...); err != nil {
 		return err
 	}
 
 	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
-	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
+	if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
 		return err
+	}
+
+	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
+	if *commitSHA == "" {
+		headCommitSHA, err := git(ctx, ws.log, "rev-parse", "HEAD")
+		if err != nil {
+			return err
+		}
+		*commitSHA = headCommitSHA
 	}
 
 	// Merge the target branch (if different from the pushed branch) so that the
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
+		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
-			if err := git(ctx, ws.log, "merge", "--abort"); err != nil {
+			if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 				errMsg += "\n" + err.Output
 			}
 			// Make note of the merge conflict and abort. We'll run all actions and each
@@ -1473,7 +1481,7 @@ func (ws *workspace) config(ctx context.Context) error {
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
 		// Don't show the config output.
-		if err := git(ctx, io.Discard, "config", kv[0], kv[1]); err != nil {
+		if _, err := git(ctx, io.Discard, "config", kv[0], kv[1]); err != nil {
 			return err
 		}
 	}
@@ -1506,11 +1514,11 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
 	// Don't show `git remote add` command or the error message since the URL may
 	// contain the repo access token.
-	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
+	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
 	fetchArgs := append([]string{"fetch", "--filter=blob:none", "--force", remoteName}, branches...)
-	if err := git(ctx, ws.log, fetchArgs...); err != nil {
+	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
 	return nil
@@ -1534,14 +1542,15 @@ func isAlreadyUpToDate(err error) bool {
 	return ok && strings.Contains(gitErr.Output, "up to date")
 }
 
-func git(ctx context.Context, out io.Writer, args ...string) *gitError {
+func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError) {
 	var buf bytes.Buffer
 	w := io.MultiWriter(out, &buf)
 	printCommandLine(out, "git", args...)
 	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
-		return &gitError{err, string(buf.Bytes())}
+		return "", &gitError{err, string(buf.Bytes())}
 	}
-	return nil
+	output := string(buf.Bytes())
+	return strings.TrimSpace(output), nil
 }
 
 func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
