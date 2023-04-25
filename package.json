@@ -65,7 +65,7 @@
     "react-slider": "^2.0.4",
     "react-virtualized-auto-sizer": "^1.0.6",
     "react-window": "^1.8.7",
-    "recharts": "^2.1.9",
+    "recharts": "^2.1.16",
     "rollup-plugin-replace": "^2.2.0",
     "rxjs": "^6.6.3",
     "tslib": "^2.1.0",
