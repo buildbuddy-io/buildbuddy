@@ -1202,12 +1202,13 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 	switch params.Get("artifact") {
 	case "buildlog":
 		attempt, err := strconv.ParseUint(params.Get("attempt"), 10, 64)
-		if err == nil {
+		if err != nil {
 			http.Error(
 				w,
 				fmt.Sprintf("Attempt param '%s' is not parseable to uint64.", params.Get("attempt")),
 				http.StatusBadRequest,
 			)
+			return
 		}
 		c := chunkstore.New(
 			s.env.GetBlobstore(),
