@@ -745,12 +745,12 @@ func TestConfigAPI(t *testing.T) {
 	// The previously written unencrypted data becomes inaccessible.
 	_, err = pc.Get(apiKeyCtx, plaintextResource)
 	require.Error(t, err)
-	require.True(t, status.IsUnavailableError(err))
+	require.True(t, status.IsFailedPreconditionError(err))
 
 	// Shouldn't be able to read the encrypted resource anymore.
 	_, err = pc.Get(apiKeyCtx, encryptedResource)
 	require.Error(t, err)
-	require.True(t, status.IsUnavailableError(err))
+	require.True(t, status.IsFailedPreconditionError(err))
 
 	// Restore the key so we can test disabling encryption via the API.
 	kms.SetKey(groupKMSKeyID, groupKMSKey)

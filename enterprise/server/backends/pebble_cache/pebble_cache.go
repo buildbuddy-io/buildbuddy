@@ -1227,7 +1227,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 	if encryptionEnabled {
 		ak, err := p.env.GetCrypter().ActiveKey(ctx)
 		if err != nil {
-			return nil, status.UnavailableErrorf("could not obtain encryption key: %s", err)
+			return nil, status.FailedPreconditionErrorf("encryption key not available: %s", err)
 		}
 		encryption = &rfpb.Encryption{KeyId: ak.GetEncryptionKeyId()}
 	}
