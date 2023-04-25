@@ -1431,11 +1431,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 
 	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
 	if *commitSHA == "" {
-		headCommitSha, err := git(ctx, ws.log, "rev-parse", "HEAD")
+		headCommitSHA, err := git(ctx, ws.log, "rev-parse", "HEAD")
 		if err != nil {
 			return err
 		}
-		commitSHA = &headCommitSha
+		*commitSHA = headCommitSHA
 	}
 
 	// Merge the target branch (if different from the pushed branch) so that the
