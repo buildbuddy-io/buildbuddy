@@ -1611,7 +1611,10 @@ func readConfig() (*config.BuildBuddyConfig, error) {
 	f, err := os.Open(config.FilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return config.GetDefault(), nil
+			// Note: targetRepoDefaultBranch is only used to compute triggers,
+			// but we don't read triggers in the CI runner (since the runner is
+			// already triggered). So we exclude the default branch here.
+			return config.GetDefault("" /*=targetRepoDefaultBranch*/), nil
 		}
 		return nil, status.FailedPreconditionErrorf("open %q: %s", config.FilePath, err)
 	}

@@ -216,18 +216,13 @@ func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, eventType string, e
 		ctx, row.GitRepository, wd, tok.GetToken())
 }
 
-func (a *GitHubApp) GetInstallationToken(ctx context.Context, owner string) (string, error) {
-	u, err := perms.AuthenticatedUser(ctx, a.env)
-	if err != nil {
-		return "", err
-	}
+func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (string, error) {
 	var installation tables.GitHubAppInstallation
-	err = a.env.GetDBHandle().DB(ctx).Raw(`
+	err := a.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
-		WHERE group_id = ?
-		AND owner = ?
-	`, u.GetGroupID(), owner).Take(&installation).Error
+		WHERE owner = ?
+	`, owner).Take(&installation).Error
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)

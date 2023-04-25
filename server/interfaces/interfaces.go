@@ -484,10 +484,11 @@ type GitHubApp interface {
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
 
-	// GetInstallationToken returns an installation token for the installation
-	// associated with the authenticated group ID and the given installation
-	// owner (GitHub username or org name).
-	GetInstallationToken(ctx context.Context, owner string) (string, error)
+	// GetInstallationTokenForStatusReportingOnly returns an installation token
+	// for the installation associated with the given installation owner (GitHub
+	// username or org name). It does not authorize the authenticated group ID,
+	// so should be used for status reporting only.
+	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (string, error)
 
 	// GetRepositoryInstallationToken returns an installation token for the given
 	// GitRepository.
@@ -564,6 +565,11 @@ type WebhookData struct {
 	// workflow.
 	// Ex: "https://github.com/acme-inc/acme"
 	TargetRepoURL string
+
+	// TargetRepoDefaultBranch is the default / main branch of the target repo.
+	// The default branch can be configured in the repo settings on GitHub.
+	// Ex: "main"
+	TargetRepoDefaultBranch string
 
 	// TargetBranch is the branch associated with the event that determines whether
 	// actions should be triggered. For push events this is the branch that was

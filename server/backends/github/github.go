@@ -397,8 +397,11 @@ func (c *OAuthHandler) handleInstallation(w http.ResponseWriter, r *http.Request
 }
 
 func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
-	if ownerRepo == "" || commitSHA == "" {
-		return nil // We can't create a status without an owner/repo and a commit SHA.
+	if ownerRepo == "" {
+		return status.InvalidArgumentErrorf("failed to create GitHub status: ownerRepo argument is empty")
+	}
+	if commitSHA == "" {
+		return status.InvalidArgumentError("failed to create GitHub status: commitSHA argument is empty")
 	}
 
 	var err error
@@ -406,12 +409,12 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 		err = c.populateTokenIfNecessary(ctx, ownerRepo)
 	})
 	if err != nil {
-		return nil
+		return status.WrapErrorf(err, "failed to populate GitHub token")
 	}
 
 	// If we don't have a github token, we can't post a status.
 	if c.githubToken == "" {
-		return nil
+		return status.UnknownError("failed to populate GitHub token")
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/statuses/%s", ownerRepo, commitSHA)
@@ -422,13 +425,13 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
-		return err
+		return status.InternalErrorf("failed to create request: %s", err)
 	}
 
 	req.Header.Set("Authorization", "token "+c.githubToken)
 	res, err := c.client.Do(req)
 	if err != nil {
-		return err
+		return status.UnavailableErrorf("failed to send request: %s", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
@@ -450,7 +453,7 @@ func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo st
 	if len(parts) != 2 {
 		return "", status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
 	}
-	return app.GetInstallationToken(ctx, parts[0])
+	return app.GetInstallationTokenForStatusReportingOnly(ctx, parts[0])
 }
 
 func (c *GithubClient) populateTokenIfNecessary(ctx context.Context, ownerRepo string) error {
@@ -460,7 +463,7 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context, ownerRepo s
 
 	installationToken, err := c.getAppInstallationToken(ctx, ownerRepo)
 	if err != nil {
-		log.Debug("Failed to look up app installation token; falling back to legacy OAuth lookup.")
+		log.CtxInfof(ctx, "Failed to look up app installation token; falling back to legacy OAuth lookup: %s", err)
 	}
 	if installationToken != "" {
 		c.githubToken = installationToken
