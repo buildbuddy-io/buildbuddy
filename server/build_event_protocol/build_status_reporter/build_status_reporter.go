@@ -136,12 +136,19 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 			break
 		}
 		commitSHA := r.buildEventAccumulator.CommitSHA()
-		err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
-		if err != nil {
-			log.CtxWarningf(ctx, "Failed to report GitHub status: %s", err)
-			continue
+		if ownerRepo != "" && commitSHA != "" {
+			err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
+			if err != nil {
+				// Note: using info-level log since this is often due to client
+				// misconfiguration (e.g. user doesn't have BB GitHub app
+				// installed).
+				log.CtxInfof(ctx, "Failed to report GitHub status for %q @ %q: %s", ownerRepo, commitSHA, err)
+				continue
+			}
+			log.CtxInfof(ctx, "Reported GitHub status %q for %q @ %q", payload.State, ownerRepo, commitSHA)
+		} else {
+			log.CtxDebugf(ctx, "Not reporting GitHub status (missing REPO_URL or COMMIT_SHA metadata)")
 		}
-		log.CtxInfof(ctx, "Reported GitHub status %q", payload.State)
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)
