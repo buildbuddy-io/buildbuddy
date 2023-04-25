@@ -148,14 +148,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--target_repo_url=" + repoURL.String(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,
+		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
+		"--target_branch=" + req.GetRepoState().GetBranch(),
 	}
 	if strings.HasPrefix(req.GetBazelCommand(), "run ") {
 		args = append(args, "--record_run_metadata")
-	}
-	if req.GetRepoState().GetCommitSha() != "" {
-		args = append(args, "--target_commit_sha="+req.GetRepoState().GetCommitSha())
-	} else {
-		args = append(args, "--target_branch="+req.GetRepoState().GetBranch())
 	}
 	if req.GetInstanceName() != "" {
 		args = append(args, "--remote_instance_name="+req.GetInstanceName())

@@ -119,7 +119,6 @@ var (
 	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
 	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
-	targetCommitSHA    = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
 	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
@@ -140,6 +139,9 @@ var (
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
+
+	// TODO(Maggie): Clean up this field - consolidate with --commit_sha
+	targetCommitSHA = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
 )
 
 type workspace struct {
@@ -1361,6 +1363,10 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
+	if *pushedBranch == "" && *targetBranch == "" {
+		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `target_branch` to be set")
+	}
+
 	// Fetch the pushed and target branches from their respective remotes.
 	// "base" here is referring to the repo on which the workflow is configured.
 	// "fork" is referring to the forked repo, if the runner was triggered by a
@@ -1393,13 +1399,16 @@ func (ws *workspace) sync(ctx context.Context) error {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 		checkoutLocalBranchName = *pushedBranch
 	} else {
-		if *targetBranch != "" {
-			checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-			checkoutLocalBranchName = *targetBranch
-		} else {
-			checkoutRef = *targetCommitSHA
-			checkoutLocalBranchName = "local"
-		}
+		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
+		checkoutLocalBranchName = *targetBranch
+	}
+
+	// TODO(Maggie): If commit sha is not set, pull the actual sha so that it can be used in reporting
+	// If a commit is set, use it
+	if *targetCommitSHA != "" {
+		checkoutRef = *targetCommitSHA
+	} else if *commitSHA != "" {
+		checkoutRef = *commitSHA
 	}
 
 	// Clean up in case a previous workflow made a mess.
@@ -1415,11 +1424,12 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err := git(ctx, ws.log, cleanArgs...); err != nil {
 		return err
 	}
-	// Create the branch if it doesn't already exist, then update it to point to
-	// the pushed branch tip.
+
+	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
 	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
 		return err
 	}
+
 	// Merge the target branch (if different from the pushed branch) so that the
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
