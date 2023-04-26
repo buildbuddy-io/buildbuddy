@@ -335,7 +335,7 @@ func (c *keyCache) loadKey(ctx context.Context, em *rfpb.EncryptionMetadata) (*l
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		if e.err != nil {
-			return nil, err
+			return nil, e.err
 		}
 		return &loadedKey{e.derivedKey, e.keyMetadata}, nil
 	}

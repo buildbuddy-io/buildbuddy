@@ -632,6 +632,35 @@ func TestKeyCaching(t *testing.T) {
 		err = testKeyError(ctx, t, auther, crypter, userID1, clock)
 		require.True(t, status.IsUnavailableError(err))
 	}
+
+	// Test error caching.
+	{
+		clock := clockwork.NewFakeClock()
+		crypter, err := New(env, clock)
+		require.NoError(t, err)
+		kms.ResetFetchCount(group1KeyURI)
+		kms.ResetFetchCount(group2KeyURI)
+
+		kms.ReturnError(group1KeyURI, status.UnavailableError("mainframe down"))
+		err = testKeyError(ctx, t, auther, crypter, userID1, clock)
+		require.True(t, status.IsUnavailableError(err))
+		// There should be number of fetch attempts due to retries.
+		require.Greater(t, kms.GetFetchCount(group1KeyURI), 1)
+		fetchCount := kms.GetFetchCount(group1KeyURI)
+
+		// The error should be temporarily cached which means there should not
+		// be any additional fetch attempts.
+		err = testKeyError(ctx, t, auther, crypter, userID1, clock)
+		require.True(t, status.IsUnavailableError(err))
+		require.Equal(t, fetchCount, kms.GetFetchCount(group1KeyURI))
+
+		// Once enough time passes, we should try to fetch the key again.
+		clock.Advance(keyErrCacheTime)
+		err = testKeyError(ctx, t, auther, crypter, userID1, clock)
+		require.True(t, status.IsUnavailableError(err))
+		require.Equal(t, kms.GetFetchCount(group1KeyURI), fetchCount)
+	}
+
 }
 
 func TestConfigAPI(t *testing.T) {
