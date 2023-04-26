@@ -4,21 +4,26 @@
 package sociartifactstore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/awslabs/soci-snapshotter/compression"
 	"github.com/awslabs/soci-snapshotter/soci"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/awslabs/soci-snapshotter/ztoc"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/containerd/containerd/images"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/match"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
@@ -33,17 +38,33 @@ import (
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	godigest "github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-var (
+const (
 	// Prefix for soci artifacts store in blobstore
 	blobKeyPrefix = "soci-index-"
 
-	// The directory where soci artifact blobs are stored
-	blobDirectory = "/var/lib/soci-snapshotter-grpc/content/blobs/sha256/"
+	// The span sized used to genereate the ZToCs. The ZToC generating code
+	// will create access points into the ZToC approximately every this many
+	// bytes.
+	ztocSpanSize = 1 << 22 // about 4MB
 
-	// The name of the soci artifact database file
-	sociDbPath = "/var/lib/soci-snapshotter-grpc/artifacts.db"
+	// The minimum layer size for generating ZToCs. Layers smaller than this won't be
+	ztocMinLayerSize = 10 << 20 // about 10MB
+
+	// The SOCI Index build tool. !!! WARNING !!! This is embedded in both the
+	// ZToCs and SOCI index, so changing it will re-hash all soci artifacts,
+	// invalidating all previously generated and stored soci artifacts.
+	buildToolIdentifier = "AWS SOCI CLI v0.1"
+
+	octetStreamMediaType = "application/octet-stream"
+
+	// Annotation keys used in the soci index.
+	sociImageLayerDigestKey    = "com.amazon.soci.image-layer-digest"
+	sociImageLayerMediaTypeKey = "com.amazon.soci.image-layer-mediaType"
+	sociBuildToolIdentifierKey = "com.amazon.soci.build-tool-identifier"
 )
 
 type SociArtifactStore struct {
@@ -207,6 +228,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 		return nil, err
 	}
 	imageRefDigest := imageRef.DigestStr()
+	// TODO(iain): throw a single-flight mutex here.
 	exists, err := s.blobstore.BlobExists(ctx, blobKey(imageRefDigest))
 	if err != nil {
 		return nil, err
@@ -214,12 +236,8 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if exists {
 		return s.getArtifactsFromCache(ctx, imageRefDigest)
 	}
-	// TODO(iain): add a mutex to prevent multiple parallel calls
-	sociIndexDigest, ztocDigests, err := pullAndIndexImage(ctx, req.Image, imageRef.DigestStr())
+	sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, req.Image, imageRef.DigestStr(), req.Credentials)
 	if err != nil {
-		return nil, err
-	}
-	if err = s.writeArtifactsToCache(ctx, imageRefDigest, sociIndexDigest, ztocDigests); err != nil {
 		return nil, err
 	}
 	return getArtifactsResponse(imageRefDigest, sociIndexDigest, ztocDigests), nil
@@ -227,10 +245,6 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 
 func blobKey(hash string) string {
 	return blobKeyPrefix + hash
-}
-
-func blobPath(hash string) string {
-	return blobDirectory + hash
 }
 
 func resourceName(digest *repb.Digest) *rspb.ResourceName {
@@ -285,112 +299,196 @@ func deserializeDigest(s string) (*repb.Digest, error) {
 
 }
 
-func pullAndIndexImage(ctx context.Context, imageName, imageRef string) (*repb.Digest, []*repb.Digest, error) {
+func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageName, imageRef string, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
 	log.Infof("soci artifacts not found, generating them for image %s", imageName)
-	if err := pullImage(ctx, imageName); err != nil {
-		return nil, nil, err
-	}
-	if err := runSoci(ctx, imageName); err != nil {
-		return nil, nil, err
-	}
-	sociIndex, err := findSociIndex(ctx, imageRef)
+	image, err := pullImage(ctx, imageName, credentials)
 	if err != nil {
 		return nil, nil, err
 	}
-	// The ztocs are associated with layers, not the image in the artifact
-	// database, so read them from the index instead.
-	sociIndexBytes, err := os.ReadFile(blobPath(sociIndex.Hash))
+	return s.indexImage(ctx, image)
+}
+
+func pullImage(ctx context.Context, image string, credentials *rgpb.Credentials) (v1.Image, error) {
+	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
-		return nil, nil, err
-	}
-	ztocDigests, err := getZtocDigests(sociIndexBytes)
-	return sociIndex, ztocDigests, nil
-}
-
-// Pulls the requested image using containerd.
-// TODO(iain): remove containerd from the mix.
-func pullImage(ctx context.Context, imageName string) error {
-	cmd := []string{"ctr", "i", "pull", imageName}
-	start := time.Now()
-	defer log.Infof("Pulling image %s took %s", imageName, time.Since(start))
-	return commandutil.Run(ctx, &repb.Command{Arguments: cmd}, "" /*=workDir*/, nil /*=statsListener*/, nil /*=stdio*/).Error
-}
-
-// "soci create" generates two types of artifacts that we'll want to store:
-//  1. A soci index -- this is a json file that contains the ztoc of each
-//     layer of the indexed image.
-//  2. A bunch of ztocs (<= 1 per layer) -- ztoc stands for Zip Table of
-//     Contents. This is a json file that contains a map from filename to
-//     the byte offset and size where that file exists in the indexed
-//     layer. Note: only layers above a certain size are indexed, so there
-//     may be fewer ztocs than layers.
-//
-// TODO(iain): create soci artifacts directly here instead of calling out.
-func runSoci(ctx context.Context, imageName string) error {
-	log.Debugf("indexing image %s", imageName)
-	cmd := []string{"soci", "create", imageName}
-	start := time.Now()
-	defer log.Infof("Indexing image %s took %s", imageName, time.Since(start))
-	return commandutil.Run(ctx, &repb.Command{Arguments: cmd}, "" /*=workDir*/, nil /*=statsListener*/, nil /*=stdio*/).Error
-
-}
-
-func findSociIndex(ctx context.Context, imageRef string) (*repb.Digest, error) {
-	// TODO(iain): make the path a variable or something
-	db, err := soci.NewDB(sociDbPath)
-	if err != nil {
-		return nil, err
+		return nil, status.InvalidArgumentErrorf("invalid image %q", image)
 	}
 
-	var sociIndex *repb.Digest = nil
-	err = db.Walk(func(entry *soci.ArtifactEntry) error {
-		if entry.Type == soci.ArtifactEntryTypeIndex && entry.ImageDigest == imageRef {
-			sociIndex = &repb.Digest{
-				Hash:      strings.ReplaceAll(entry.Digest, "sha256:", ""),
-				SizeBytes: entry.Size,
-			}
-			return nil
+	remoteOpts := []remote.Option{remote.WithContext(ctx)}
+	if credentials.GetUsername() != "" || credentials.GetPassword() != "" {
+		authenticator := &authn.Basic{
+			Username: credentials.GetUsername(),
+			Password: credentials.GetPassword(),
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
 	}
-	return sociIndex, nil
+
+	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+
+	switch remoteDesc.MediaType {
+	case types.OCIImageIndex, types.DockerManifestList:
+		return nil, status.InvalidArgumentErrorf("image index not expected in conversion request")
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+		img, err := remoteDesc.Image()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
+		}
+		return img, nil
+	default:
+		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
+	}
 }
 
-func toDigest(hash string) (*repb.Digest, error) {
-	stat, err := os.Stat(blobPath(hash))
+func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image) (*repb.Digest, []*repb.Digest, error) {
+	layers, err := image.Layers()
+	if err != nil {
+		return nil, nil, err
+	}
+	ztocDigests := []*repb.Digest{}
+	ztocDescriptors := []ocispec.Descriptor{}
+	for _, layer := range layers {
+		layerDigest, err := layer.Digest()
+		if err != nil {
+			return nil, nil, err
+		}
+		layerMediaType, err := layer.MediaType()
+		if err != nil {
+			return nil, nil, err
+		}
+		layerSize, err := layer.Size()
+		if err != nil {
+			return nil, nil, err
+		}
+		if layerSize < ztocMinLayerSize {
+			log.Debugf("layer %s below minimum layer size, skipping ztoc", layerDigest.String())
+			continue
+		}
+
+		start := time.Now()
+		// These layers are lazily fetched, so this call includes the pull time.
+		ztocDigest, err := s.indexLayer(ctx, layer)
+		log.Infof("pulling and indexing layer %s took %s", layerDigest.String(), time.Since(start))
+		if err != nil {
+			return nil, nil, err
+		}
+		ztocDigests = append(ztocDigests, ztocDigest)
+		ztocDescriptors = append(ztocDescriptors, *ztocDescriptor(layerDigest.String(), string(layerMediaType), ztocDigest))
+	}
+
+	imageDesc, err := imageDescriptor(image)
+	annotations := map[string]string{sociBuildToolIdentifierKey: buildToolIdentifier}
+	index := soci.NewIndex(ztocDescriptors, imageDesc, annotations)
+	indexBytes, err := soci.MarshalIndex(index)
+	if err != nil {
+		return nil, nil, err
+	}
+	indexHash, indexSizeBytes, err := v1.SHA256(bytes.NewReader(indexBytes))
+	if err != nil {
+		return nil, nil, err
+	}
+	indexDigest := repb.Digest{
+		Hash:      rmSha256Prefix(indexHash.String()),
+		SizeBytes: indexSizeBytes,
+	}
+	s.cache.Set(ctx, resourceName(&indexDigest), indexBytes)
+	return &indexDigest, ztocDigests, nil
+}
+
+func ztocDescriptor(layerDigest, layerMediaType string, digest *repb.Digest) *ocispec.Descriptor {
+	var annotations = map[string]string{
+		sociImageLayerDigestKey:    layerDigest,
+		sociImageLayerMediaTypeKey: layerMediaType,
+	}
+	return &ocispec.Descriptor{
+		MediaType:   octetStreamMediaType,
+		Digest:      godigest.Digest(digest.Hash),
+		Size:        digest.SizeBytes,
+		Annotations: annotations,
+	}
+}
+
+func imageDescriptor(image v1.Image) (*ocispec.Descriptor, error) {
+	mediaType, err := image.MediaType()
 	if err != nil {
 		return nil, err
 	}
-	return &repb.Digest{
-		Hash:      hash,
-		SizeBytes: stat.Size(),
+	digest, err := image.Digest()
+	if err != nil {
+		return nil, err
+	}
+	size, err := image.Size()
+	if err != nil {
+		return nil, err
+	}
+	return &ocispec.Descriptor{
+		MediaType: string(mediaType),
+		Digest:    godigest.Digest(digest.String()),
+		Size:      size,
 	}, nil
 }
 
-func (s *SociArtifactStore) writeArtifactsToCache(ctx context.Context, imageId string, sociIndexDigest *repb.Digest, ztocDigests []*repb.Digest) error {
-	if _, err := s.blobstore.WriteBlob(ctx, blobKey(imageId), []byte(serializeDigest(sociIndexDigest))); err != nil {
-		return err
-	}
-	if err := s.writeArtifactToCache(ctx, sociIndexDigest); err != nil {
-		return err
-	}
-	for _, ztocDigest := range ztocDigests {
-		if err := s.writeArtifactToCache(ctx, ztocDigest); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *SociArtifactStore) writeArtifactToCache(ctx context.Context, digest *repb.Digest) error {
-	bytes, err := os.ReadFile(blobPath(digest.Hash))
+func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*repb.Digest, error) {
+	mediaType, err := layer.MediaType()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return s.cache.Set(ctx, resourceName(digest), bytes)
+	layerDigest, err := layer.Digest()
+	if err != nil {
+		return nil, err
+	}
+	layerSize, err := layer.Size()
+	if err != nil {
+		return nil, err
+	}
+
+	compressionAlgo, err := images.DiffCompression(ctx, string(mediaType))
+	if err != nil {
+		return nil, status.NotFoundErrorf("could not determine layer compression: %s", err)
+	}
+	if compressionAlgo != compression.Gzip {
+		return nil, status.UnimplementedErrorf("layer %s (%s) cannot be indexed because it is compressed with %s",
+			layerDigest.Hex, mediaType, compressionAlgo)
+	}
+
+	layerTmpFile, err := os.CreateTemp("", "layer.*")
+	if err != nil {
+		return nil, err
+	}
+	layerReader, err := layer.Compressed()
+	if err != nil {
+		return nil, err
+	}
+	numBytes, err := io.Copy(layerTmpFile, layerReader)
+	if err != nil {
+		return nil, err
+	}
+	if numBytes != layerSize {
+		return nil, status.DataLossErrorf("written layer size does not match that of the digest")
+	}
+
+	ztocBuilder := ztoc.NewBuilder(buildToolIdentifier)
+	toc, err := ztocBuilder.BuildZtoc(layerTmpFile.Name(), ztocSpanSize, ztoc.WithCompression(compressionAlgo))
+	if err != nil {
+		return nil, err
+	}
+
+	ztocReader, ztocDesc, err := ztoc.Marshal(toc)
+	if err != nil {
+		return nil, err
+	}
+	ztocDigest := repb.Digest{
+		Hash:      rmSha256Prefix(ztocDesc.Digest.String()),
+		SizeBytes: ztocDesc.Size,
+	}
+	ztocBytes, err := ioutil.ReadAll(ztocReader)
+	s.cache.Set(ctx, resourceName(&ztocDigest), ztocBytes)
+	return &ztocDigest, nil
 }
 
 type SociLayerIndexStruct struct {
@@ -412,7 +510,7 @@ func getZtocDigests(sociIndexBytes []byte) ([]*repb.Digest, error) {
 	}
 	digests := []*repb.Digest{}
 	for _, layerIndex := range sociIndex.Layers {
-		digest := strings.ReplaceAll(layerIndex.Digest, "sha256:", "")
+		digest := rmSha256Prefix(layerIndex.Digest)
 		digests = append(digests, &repb.Digest{Hash: digest, SizeBytes: layerIndex.Size})
 	}
 	return digests, nil
@@ -426,4 +524,8 @@ func getArtifactsResponse(imageId string, sociIndexDigest *repb.Digest, ztocDige
 		resp.Artifacts = append(resp.Artifacts, &socipb.Artifact{Digest: ztocDigest, Type: socipb.Type_ZTOC})
 	}
 	return &resp
+}
+
+func rmSha256Prefix(s string) string {
+	return strings.ReplaceAll(s, "sha256:", "")
 }
