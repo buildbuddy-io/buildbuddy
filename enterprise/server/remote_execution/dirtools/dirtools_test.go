@@ -75,7 +75,7 @@ func TestUploadTree(t *testing.T) {
 			},
 		},
 		{
-			name: "FileAndDirectory",
+			name: "OutputDirectory",
 			cmd: &repb.Command{
 				OutputDirectories: []string{"a"},
 			},
