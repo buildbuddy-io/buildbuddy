@@ -593,3 +593,7 @@ func getArtifactsResponse(imageId string, sociIndexDigest *repb.Digest, ztocDige
 	}
 	return &resp
 }
+
+func rmSha256Prefix(s string) string {
+	return strings.ReplaceAll(s, "sha256:", "")
+}
