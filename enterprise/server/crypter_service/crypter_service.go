@@ -48,6 +48,7 @@ const (
 	// How long to wait after a failed refresh attempt before trying again.
 	keyRefreshRetryInterval = 30 * time.Second
 	keyRefreshDeadline      = 25 * time.Second
+	keyErrCacheTime         = 10 * time.Second
 )
 
 // Note: there are two types of keys in the cache, one with only groupID set
@@ -67,6 +68,8 @@ func (ck *cacheKey) String() string {
 }
 
 type cacheEntry struct {
+	err error
+
 	mu                 sync.Mutex
 	keyMetadata        *rfpb.EncryptionMetadata
 	derivedKey         []byte
@@ -103,15 +106,15 @@ func (c *keyCache) checkCacheEntry(ck cacheKey, ce *cacheEntry) {
 	ce.mu.Lock()
 	defer ce.mu.Unlock()
 
-	// If the expiration is far into the future, don't do anything.
-	if ce.expiresAfter.Sub(c.clock.Now()) > *keyTTL/2 {
-		return
-	}
-
 	// If we reached the expiration and the key was not refreshed, then
 	// remove it from the cache.
 	if c.clock.Now().After(ce.expiresAfter) {
 		c.data.Delete(ck)
+		return
+	}
+
+	// If the expiration is far into the future, don't do anything.
+	if ce.expiresAfter.Sub(c.clock.Now()) > *keyTTL/2 {
 		return
 	}
 
@@ -133,7 +136,7 @@ func (c *keyCache) checkCacheEntry(ck cacheKey, ce *cacheEntry) {
 		ce.mu.Lock()
 		ce.lastRefreshAttempt = c.clock.Now()
 		ce.mu.Unlock()
-		loadedKey, err := c.refreshKey(ctx, ck)
+		loadedKey, err := c.refreshKey(ctx, ck, false /*=cacheErr*/)
 		if err == nil {
 			ce.mu.Lock()
 			ce.derivedKey = loadedKey.derivedKey
@@ -281,7 +284,7 @@ type loadedKey struct {
 	metadata   *rfpb.EncryptionMetadata
 }
 
-func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey) (*loadedKey, error) {
+func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool) (*loadedKey, error) {
 	v, err, _ := c.sf.Do(ck.String(), func() (interface{}, error) {
 		var lastErr error
 		opts := retry.DefaultOptions()
@@ -294,6 +297,12 @@ func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey) (*loadedKey, err
 				return &loadedKey{key, md}, err
 			}
 			lastErr = err
+		}
+		if cacheError {
+			c.cacheAdd(ck, &cacheEntry{
+				err:          lastErr,
+				expiresAfter: time.Now().Add(keyErrCacheTime),
+			})
 		}
 		return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", lastErr)
 	})
@@ -325,10 +334,14 @@ func (c *keyCache) loadKey(ctx context.Context, em *rfpb.EncryptionMetadata) (*l
 	if ok {
 		e.mu.Lock()
 		defer e.mu.Unlock()
+		if e.err != nil {
+			return nil, e.err
+		}
 		return &loadedKey{e.derivedKey, e.keyMetadata}, nil
 	}
 
-	loadedKey, err := c.refreshKey(ctx, ck)
+	// If obtaining the key fails, cache the error.
+	loadedKey, err := c.refreshKey(ctx, ck, true /*=cacheErr*/)
 	if err != nil {
 		log.Warningf("could not refresh key: %s", err)
 		return nil, err
