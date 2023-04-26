@@ -58,10 +58,11 @@ const (
 	ztocMinLayerSize = 10 << 20 // about 10MB
 
 	// The SOCI Index build tool. !!! WARNING !!! This is embedded in both the
-	// ZToCs and SOCI index, so changing it will re-hash all soci artifacts,
-	// invalidating all previously generated and stored soci artifacts.
+	// ZToCs and SOCI index, so changing it will invalidate all previously
+	// generated and stored soci artifacts, forcing a re-pull and re-index.
 	buildToolIdentifier = "AWS SOCI CLI v0.1"
 
+	// Media type for binary data (e.g. ZTOC format).
 	octetStreamMediaType = "application/octet-stream"
 
 	// Annotation keys used in the soci index.
@@ -237,7 +238,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 
 	// Try to only read-pull-index-write once at a time to prevent hammering
 	// the containter registry with a ton of parallel pull requests, and save
-	// our apps a bunch of parallel work.
+	// apps a bunch of parallel work.
 	workKey := fmt.Sprintf("soci-artifact-store-image-" + imageRefDigest)
 	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
 		exists, err := s.blobstore.BlobExists(ctx, blobKey(imageRefDigest))
