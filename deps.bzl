@@ -6264,13 +6264,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         executable = True,
         downloaded_file_path = "soci-store-v0.2.3-linux-amd64",
     )
-    http_file(
-        name = "com_github_iain_macdonald_soci_snapshotter-soci-v0.2.3-linux-amd64",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-v0.2.3-linux-amd64"],
-        sha256 = "7a9c7b3e49cdd5ea81e1a57576fc17f04ef8ff1f1234e38666ba7bfef1dcd42b",
-        executable = True,
-        downloaded_file_path = "soci-v0.2.3-linux-amd64",
-    )
 
     http_file(
         name = "com_github_redis_redis-redis-server-v6.2.1-linux-x86_64",
