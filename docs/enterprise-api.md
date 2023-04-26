@@ -742,3 +742,86 @@ message DeleteFileRequest {
 // Response object for DeleteFile
 message DeleteFileResponse {}
 ```
+
+## ExecuteWorkflow
+
+The `ExecuteWorkflow` endpoint lets you trigger a Buildbuddy Workflow for the given repository and branch.
+
+Note: Github App authentication is required. The API does not support running legacy workflows. See
+https://www.buildbuddy.io/docs/workflows-setup/ for more information on how to setup workflows with
+Github App authentication.
+
+### Endpoint
+
+```
+https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+```
+
+### Service
+
+```protobuf
+rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
+```
+
+### Example cURL request
+
+```bash
+curl -d '{"repo_url":"https://github.com/buildbuddy-io/buildbuddy-ci-playground", "ref": "main", "action_names": ["Build and test (Mac M1)"]}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+```
+
+### ExecuteWorkflowRequest
+
+```protobuf
+message ExecuteWorkflowRequest {
+  // URL of the repo the workflow is running for
+  // Ex. "https://github.com/some-user/acme"
+  string repo_url = 1;
+  // Reference for where the workflow should be run (currently only branch names
+  // are supported) Ex. "cool-feature" or "main"
+  string ref = 2;
+
+  // OPTIONAL FIELDS
+
+  // Names of the workflow actions to execute. Correspond to actions
+  // in buildbuddy.yaml, or actions in the default workflow config if
+  // buildbuddy.yaml is missing from the repo.
+  //
+  // If this is not set, will execute all actions in the workflow config.
+  //
+  // Ex. ["Browser Tests", "Docker tests"]
+  repeated string action_names = 3;
+  // Whether to run the workflow in a clean container. This prevents all
+  // existing workflow containers from being reused, so using this flag is not
+  // encouraged.
+  bool clean = 4;
+  // VISIBILITY build metadata used for the workflow invocation.
+  // Workflow invocations are private by default, but this can be
+  // set to "PUBLIC" to make the workflow invocation public.
+  string visibility = 5;
+}
+```
+
+### ExecuteWorkflowResponse
+
+```protobuf
+message ExecuteWorkflowResponse {
+  message ActionStatus {
+    // Corresponds to an action in buildbuddy.yaml, or an action name in the
+    // default workflow config if buildbuddy.yaml is missing from the repo. Ex.
+    // "Test all targets"
+    string action_name = 1;
+
+    // The BuildBuddy invocation ID from executing the action.
+    string invocation_id = 2;
+
+    // The GRPC status from executing the action.
+    google.rpc.Status status = 3;
+  }
+
+  // A list of the actions executed by the API.
+  repeated ActionStatus action_statuses = 1;
+}
+```
