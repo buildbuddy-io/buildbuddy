@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -22,8 +25,12 @@ const (
 	ManifestFileName = "manifest.bin"
 )
 
-// NewKey returns the cache key that can be used to look up the snapshot
-// manifest.
+type SnapshotKey struct {
+	ConfigurationHash string
+	RunnerID          string
+}
+
+// NewKey returns the cache key for a snapshot.
 // TODO(bduffany): once runners are capable of sharing snapshots, remove
 // runnerID from the digest hash.
 // TODO(bduffany): use ResourceName instead of digest and incorporate
@@ -31,11 +38,54 @@ const (
 // since we only match tasks to runners if their instance name matches the
 // runner's instance name. But once we have snapshot sharing, runnerID will no
 // longer be part of the snapshot key.
-func NewKey(configurationHash, runnerID string) *repb.Digest {
-	return &repb.Digest{
-		Hash:      hash.String(hash.String(configurationHash) + hash.String(runnerID)),
-		SizeBytes: 101, // arbitrary
+func NewKey(configurationHash, runnerID string) *SnapshotKey {
+	return &SnapshotKey{
+		ConfigurationHash: configurationHash,
+		RunnerID:          runnerID,
 	}
+}
+
+func (s *SnapshotKey) ManifestDigest() *repb.Digest {
+	return &repb.Digest{
+		Hash:      hashStrings(s.ConfigurationHash, s.RunnerID, ManifestFileName),
+		SizeBytes: 1, // arbitrary
+	}
+}
+
+type Snapshot struct {
+	env environment.Env
+
+	key *SnapshotKey
+
+	manifestOnce sync.Once
+	manifest     *fcpb.SnapshotManifest
+	manifestErr  error
+}
+
+func (s *Snapshot) GetVMConfiguration() (*fcpb.VMConfiguration, error) {
+	m, err := s.loadManifest()
+	if err != nil {
+		return nil, err
+	}
+	return m.GetVmConfiguration(), nil
+}
+
+func (s *Snapshot) loadManifest() (*fcpb.SnapshotManifest, error) {
+	s.manifestOnce.Do(func() {
+		manifestNode := fileNodeFromDigest(s.key.ManifestDigest())
+		buf, err := filecacheutil.Read(s.env.GetFileCache(), manifestNode)
+		if err != nil {
+			s.manifestErr = status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
+			return
+		}
+		manifest := &fcpb.SnapshotManifest{}
+		if err := proto.Unmarshal(buf, manifest); err != nil {
+			s.manifestErr = status.UnavailableErrorf("failed to unmarshal snapshot manifest: %s", status.Message(err))
+			return
+		}
+		s.manifest = manifest
+	})
+	return s.manifest, s.manifestErr
 }
 
 type LoadSnapshotOptions struct {
@@ -77,35 +127,17 @@ type Loader interface {
 	CacheSnapshot(ctx context.Context, snapshotDigest *repb.Digest, snapOpts *LoadSnapshotOptions) error
 	UnpackSnapshot(ctx context.Context, snapshotDigest *repb.Digest, outputDirectory string) error
 	DeleteSnapshot(ctx context.Context, snapshotDigest *repb.Digest) error
-	GetConfiguration(ctx context.Context, snapshotDigest *repb.Digest) (*fcpb.VMConfiguration, error)
 }
 
 type FileCacheLoader struct {
-	env            environment.Env
-	snapshotDigest *repb.Digest
-	manifest       *fcpb.SnapshotManifest
+	env environment.Env
 }
 
 // New returns a new snapshot.Loader that can be used to download the specified
 // snapshot into the target chroot.
 func New(env environment.Env) (Loader, error) {
-	l := &FileCacheLoader{
-		env: env,
-	}
+	l := &FileCacheLoader{env: env}
 	return l, nil
-}
-
-func (l *FileCacheLoader) unpackManifest(snapshotDigest *repb.Digest) error {
-	if l.env.GetFileCache() == nil {
-		return status.FailedPreconditionErrorf("Unable to load snapshot: FileCache not enabled")
-	}
-	l.snapshotDigest = snapshotDigest
-	manifestNode := fileNodeFromDigest(manifestDigest(l.snapshotDigest))
-	buf, err := filecacheutil.Read(l.env.GetFileCache(), manifestNode)
-	if err != nil {
-		return status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
-	}
-	return json.Unmarshal(buf, &l.manifest)
 }
 
 // GetConfigurationData returns the VM configuration associated with a snapshot.
@@ -151,13 +183,6 @@ func (l *FileCacheLoader) DeleteSnapshot(ctx context.Context, snapshotDigest *re
 		l.env.GetFileCache().DeleteFile(fileNode)
 	}
 	return nil
-}
-
-func manifestDigest(snapshotDigest *repb.Digest) *repb.Digest {
-	return &repb.Digest{
-		Hash:      hash.String(snapshotDigest.GetHash() + ManifestFileName),
-		SizeBytes: int64(101),
-	}
 }
 
 // CacheSnapshot stores a snapshot (described by snapOpts), in the filecache.
@@ -210,4 +235,12 @@ func fileNodeFromDigest(d *repb.Digest) *repb.FileNode {
 		Digest:       d,
 		IsExecutable: false,
 	}
+}
+
+func hashStrings(strs ...string) string {
+	out := ""
+	for _, s := range strs {
+		out += hash.String(s)
+	}
+	return hash.String(out)
 }
