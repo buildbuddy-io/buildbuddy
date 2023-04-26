@@ -148,7 +148,7 @@ func main() {
 			if err != nil {
 				log.Fatalf(err.Error())
 			}
-			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName(), rspb.CacheType_AC, repb.DigestFunction_SHA256)
 			ar, err = cachetools.GetActionResult(ctx, acClient, ind)
 			if err != nil {
 				log.Fatal(err.Error())
