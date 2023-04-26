@@ -165,6 +165,8 @@ const (
 
 	/// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
+
+	APIKeyLookupStatus = "status"
 )
 
 const (
@@ -1741,6 +1743,15 @@ var (
 		Help:      "Age of items evicted from the cache, in **milliseconds**.",
 	}, []string{
 		PartitionID,
+	})
+
+	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "auth",
+		Name:      "api_key_lookup_count",
+		Help:      "Total number of API key lookups.",
+	}, []string{
+		APIKeyLookupStatus,
 	})
 )
 

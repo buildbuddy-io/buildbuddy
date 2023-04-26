@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -676,6 +678,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKey)
 		if ok {
+			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
 			return d, nil
 		}
 	}
@@ -685,7 +688,10 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	}
 	apkg, err := authDB.GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 	if err == nil && a.apiKeyGroupCache != nil {
+		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
 		a.apiKeyGroupCache.Add(apiKey, apkg)
+	} else {
+		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
 	}
 	return apkg, err
 }
