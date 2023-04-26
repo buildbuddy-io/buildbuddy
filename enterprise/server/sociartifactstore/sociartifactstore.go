@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/awslabs/soci-snapshotter/compression"
 	"github.com/awslabs/soci-snapshotter/soci"
 	"github.com/awslabs/soci-snapshotter/ztoc"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -31,6 +33,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -71,6 +74,8 @@ type SociArtifactStore struct {
 	cache     interfaces.Cache
 	blobstore interfaces.Blobstore
 	env       environment.Env
+
+	deduper *dsingleflight.Coordinator
 }
 
 func Register(env environment.Env) error {
@@ -93,6 +98,7 @@ func NewSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 		cache:     env.GetCache(),
 		blobstore: env.GetBlobstore(),
 		env:       env,
+		deduper:   dsingleflight.New(env.GetDefaultRedisClient()),
 	}
 }
 
@@ -228,19 +234,40 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 		return nil, err
 	}
 	imageRefDigest := imageRef.DigestStr()
-	// TODO(iain): throw a single-flight mutex here.
-	exists, err := s.blobstore.BlobExists(ctx, blobKey(imageRefDigest))
-	if err != nil {
+
+	// Try to only read-pull-index-write once at a time to prevent hammering
+	// the containter registry with a ton of parallel pull requests, and save
+	// our apps a bunch of parallel work.
+	workKey := fmt.Sprintf("soci-artifact-store-image-" + imageRefDigest)
+	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
+		exists, err := s.blobstore.BlobExists(ctx, blobKey(imageRefDigest))
+		if err != nil {
+			return nil, err
+		}
+		var resp *socipb.GetArtifactsResponse
+		if exists {
+			resp, err = s.getArtifactsFromCache(ctx, imageRefDigest)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, req.Image, imageRef.DigestStr(), req.Credentials)
+			if err != nil {
+				return nil, err
+			}
+			resp = getArtifactsResponse(imageRefDigest, sociIndexDigest, ztocDigests)
+		}
+		proto, err := proto.Marshal(resp)
+		if err != nil {
+			return nil, err
+		}
+		return proto, nil
+	})
+	var resp socipb.GetArtifactsResponse
+	if err := proto.Unmarshal(respBytes, &resp); err != nil {
 		return nil, err
 	}
-	if exists {
-		return s.getArtifactsFromCache(ctx, imageRefDigest)
-	}
-	sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, req.Image, imageRef.DigestStr(), req.Credentials)
-	if err != nil {
-		return nil, err
-	}
-	return getArtifactsResponse(imageRefDigest, sociIndexDigest, ztocDigests), nil
+	return &resp, nil
 }
 
 func blobKey(hash string) string {

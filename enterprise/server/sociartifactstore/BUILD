@@ -16,6 +16,7 @@ go_library(
             "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/util/dsingleflight",
             "//proto:registry_go_proto",
             "//proto:remote_execution_go_proto",
             "//proto:resource_go_proto",
@@ -39,6 +40,7 @@ go_library(
             "@com_github_google_go_containerregistry//pkg/v1/types",
             "@com_github_opencontainers_go_digest//:go-digest",
             "@com_github_opencontainers_image_spec//specs-go/v1:specs-go",
+            "@org_golang_google_protobuf//proto",
             "@org_golang_x_sync//errgroup",
         ],
         "//conditions:default": [],
