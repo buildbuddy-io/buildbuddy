@@ -804,7 +804,7 @@ message ExecuteWorkflowRequest {
 }
 ```
 
-### DeleteFileResponse
+### ExecuteWorkflowResponse
 
 ```protobuf
 message ExecuteWorkflowResponse {
