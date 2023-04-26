@@ -21,9 +21,9 @@ func init() {
 
 func DebugString(wd *interfaces.WebhookData) string {
 	return fmt.Sprintf(
-		"event=%s, pushed=%s@%s:%s, target=%s@%s (public=%t, default_branch=%s), pr_author=%s, pr_approver=%s",
+		"event=%s, pushed=%s@%s:%s, target=%s@%s (public=%t, default_branch=%s), pr #%d (author=%s, approver=%s)",
 		wd.EventName,
 		wd.PushedRepoURL, wd.PushedBranch, wd.SHA,
 		wd.TargetRepoURL, wd.TargetBranch, wd.IsTargetRepoPublic, wd.TargetRepoDefaultBranch,
-		wd.PullRequestAuthor, wd.PullRequestApprover)
+		wd.PullRequestNumber, wd.PullRequestAuthor, wd.PullRequestApprover)
 }

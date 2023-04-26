@@ -18,6 +18,7 @@ import rpcService, { CancelablePromise } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Spinner from "../components/spinner/spinner";
 import { ChevronDown, RefreshCw } from "lucide-react";
+import Long from "long";
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
@@ -69,6 +70,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           targetBranch: configuredEvent.targetBranch,
           clean,
           visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
+          pullRequestNumber: Long.fromString(this.props.model.buildMetadataMap.get("PULL_REQUEST_NUMBER") || "0"),
         })
       )
       .then((response) => router.navigateTo(`/invocation/${response.invocationId}`))

@@ -59,6 +59,7 @@ ts_library(
     name = "git",
     srcs = ["git.ts"],
     strict = True,
+    deps = ["@npm//tslib"],
 )
 
 ts_jasmine_node_test(

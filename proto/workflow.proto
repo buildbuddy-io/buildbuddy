@@ -170,6 +170,9 @@ message ExecuteWorkflowRequest {
   //
   // Ex. ["Browser Tests", "Docker tests"]
   repeated string action_names = 12;
+
+  // Optional: PR number associated with the workflow run.
+  int64 pull_request_number = 13;
 }
 
 message ExecuteWorkflowResponse {

@@ -584,6 +584,10 @@ type WebhookData struct {
 	// the git provider.
 	IsTargetRepoPublic bool
 
+	// PullRequestNumber is the PR number if applicable.
+	// Ex: 123
+	PullRequestNumber int64
+
 	// PullRequestAuthor is the user name of the author of the pull request,
 	// if applicable.
 	// Ex: "externaldev123"

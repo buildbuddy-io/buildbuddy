@@ -116,6 +116,7 @@ var (
 	triggerEvent       = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL      = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
 	pushedBranch       = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	prNumber           = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
 	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
@@ -786,6 +787,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		buildMetadata.Metadata["ROLE"] = "CI_RUNNER"
 	} else {
 		buildMetadata.Metadata["ROLE"] = "HOSTED_BAZEL"
+	}
+	if *prNumber != 0 {
+		buildMetadata.Metadata["PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
+	}
+	if *targetRepoURL != "" {
+		buildMetadata.Metadata["REPO_URL"] = *targetRepoURL
+	}
+	if *pushedRepoURL != *targetRepoURL {
+		buildMetadata.Metadata["FORK_REPO_URL"] = *pushedRepoURL
 	}
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
@@ -1597,6 +1607,12 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	if *workflowID != "" {
 		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)
+	}
+	if *prNumber != 0 {
+		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
+	}
+	if *pushedRepoURL != *targetRepoURL {
+		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
 	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)

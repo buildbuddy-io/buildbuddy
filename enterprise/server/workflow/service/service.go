@@ -423,11 +423,12 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
 	wd := &interfaces.WebhookData{
-		PushedRepoURL: req.GetPushedRepoUrl(),
-		PushedBranch:  req.GetPushedBranch(),
-		TargetRepoURL: req.GetTargetRepoUrl(),
-		TargetBranch:  req.GetTargetBranch(),
-		SHA:           req.GetCommitSha(),
+		PushedRepoURL:     req.GetPushedRepoUrl(),
+		PushedBranch:      req.GetPushedBranch(),
+		TargetRepoURL:     req.GetTargetRepoUrl(),
+		TargetBranch:      req.GetTargetBranch(),
+		SHA:               req.GetCommitSha(),
+		PullRequestNumber: req.GetPullRequestNumber(),
 		// Don't set IsTargetRepoPublic here; instead set visibility directly
 		// from build metadata.
 	}
@@ -862,6 +863,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--commit_sha=" + wd.SHA,
 			"--pushed_repo_url=" + wd.PushedRepoURL,
 			"--pushed_branch=" + wd.PushedBranch,
+			"--pull_request_number=" + fmt.Sprintf("%d", wd.PullRequestNumber),
 			"--target_repo_url=" + wd.TargetRepoURL,
 			"--target_branch=" + wd.TargetBranch,
 			"--visibility=" + visibility,
