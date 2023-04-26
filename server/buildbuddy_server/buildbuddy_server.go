@@ -1183,50 +1183,59 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // serveArtifact handles requests that specify particular build artifacts
 func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWriter, params url.Values) {
+	iid := params.Get("invocation_id")
+	if iid == "" {
+		http.Error(w, "Missing invocation_id param", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
+		if status.IsPermissionDeniedError(err) {
+			http.Error(w, "Access denied", http.StatusForbidden)
+		} else if status.IsNotFoundError(err) {
+			http.Error(w, "File not found", http.StatusNotFound)
+		} else {
+			log.Errorf("Error looking up invocation %s for build log fetch: %s", iid, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
 	switch params.Get("artifact") {
 	case "buildlog":
-		iid := params.Get("invocation_id")
-		if iid == "" {
-			log.Warningf("Build log requested with empty invocation id.")
-			http.Error(w, "File not found", http.StatusNotFound)
-			return
-		}
-		if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
-			if status.IsPermissionDeniedError(err) {
-				http.Error(w, "Access denied", http.StatusForbidden)
-			} else if status.IsNotFoundError(err) {
-				http.Error(w, "File not found", http.StatusNotFound)
-			} else {
-				log.Warningf("Error looking up invocation %s for build log fetch: %s", iid, err)
-				http.Error(w, "Internal server error", http.StatusInternalServerError)
-			}
+		attempt, err := strconv.ParseUint(params.Get("attempt"), 10, 64)
+		if err != nil {
+			http.Error(
+				w,
+				fmt.Sprintf("Attempt param '%s' is not parseable to uint64.", params.Get("attempt")),
+				http.StatusBadRequest,
+			)
 			return
 		}
 		c := chunkstore.New(
 			s.env.GetBlobstore(),
 			&chunkstore.ChunkstoreOptions{},
 		)
-		attempt := uint64(0)
-		if n, err := strconv.ParseUint(params.Get("attempt"), 10, 64); err == nil {
-			attempt = n
-		}
 		// Stream the file back to our client
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s.log", iid))
 		w.Header().Set("Content-Type", "application/octet-stream")
-		_, err := io.Copy(
-			w,
-			c.Reader(
-				ctx,
-				eventlog.GetEventLogPathFromInvocationIdAndAttempt(
-					iid,
-					attempt,
-				),
-			),
-		)
-		if err != nil {
+		path := eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, attempt)
+		if _, err = io.Copy(w, c.Reader(ctx, path)); err != nil {
 			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
+	case "timing_profile":
+		name := params.Get("name")
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/timing_profile/"+name)
+		if err != nil {
+			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", name, iid, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", name))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		if strings.HasSuffix(name, ".gz") {
+			w.Header().Set("Content-Encoding", "gzip")
+		}
+		w.Write(b)
 	default:
 		http.Error(w, "File not found", http.StatusNotFound)
 	}
