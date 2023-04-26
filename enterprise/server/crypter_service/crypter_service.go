@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	mrand "math/rand"
+
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -33,7 +35,8 @@ import (
 )
 
 var (
-	keyTTL = flag.Duration("crypter.key_ttl", 10*time.Minute, "The maximum amount of time a key can be cached without being re-verified before it is considered invalid.")
+	keyTTL               = flag.Duration("crypter.key_ttl", 10*time.Minute, "The maximum amount of time a key can be cached without being re-verified before it is considered invalid.")
+	keyReencryptInterval = flag.Duration("crypter.key_reencrypt_interval", 6*time.Hour, "How frequently keys will be re-encrypted (to support key rotation).")
 )
 
 const (
@@ -49,6 +52,11 @@ const (
 	keyRefreshRetryInterval = 30 * time.Second
 	keyRefreshDeadline      = 25 * time.Second
 	keyErrCacheTime         = 10 * time.Second
+
+	// Timeout for querying keys to re-encrypt.
+	keyReencryptListQueryTimeout = 60 * time.Second
+	// Timeout for re-encrypting a single key.
+	keyReencryptTimeout = 60 * time.Second
 )
 
 // Note: there are two types of keys in the cache, one with only groupID set
@@ -366,6 +374,7 @@ type Crypter struct {
 	env      environment.Env
 	dbh      interfaces.DBHandle
 	kms      interfaces.KMS
+	clock    clockwork.Clock
 	cache    *keyCache
 	quitChan chan struct{}
 }
@@ -394,13 +403,16 @@ func New(env environment.Env, clock clockwork.Clock) (*Crypter, error) {
 	}
 	quitChan := make(chan struct{})
 	cache.startRefresher(quitChan)
-	return &Crypter{
+	c := &Crypter{
 		env:      env,
 		kms:      env.GetKMS(),
+		clock:    clock,
 		dbh:      env.GetDBHandle(),
 		cache:    cache,
 		quitChan: quitChan,
-	}, nil
+	}
+	c.startKeyReencryptor(quitChan)
+	return c, nil
 }
 
 type Encryptor struct {
@@ -637,6 +649,164 @@ func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.Re
 	return c.newDecryptorWithChunkSize(ctx, digest, r, em, u.GetGroupID(), plainTextChunkSize)
 }
 
+type encryptionKeyVersionWithGroupID struct {
+	GroupID string
+	tables.EncryptionKeyVersion
+}
+
+func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWithGroupID) error {
+	bbmk, err := c.kms.FetchMasterKey()
+	if err != nil {
+		return err
+	}
+
+	gmk, err := c.kms.FetchKey(ekv.GroupKeyURI)
+	if err != nil {
+		return err
+	}
+
+	masterKeyPortion, err := bbmk.Decrypt(ekv.MasterEncryptedKey, nil)
+	if err != nil {
+		return err
+	}
+	groupKeyPortion, err := gmk.Decrypt(ekv.GroupEncryptedKey, []byte(ekv.GroupID))
+	if err != nil {
+		return err
+	}
+	encMasterKeyPortion, err := bbmk.Encrypt(masterKeyPortion, nil)
+	if err != nil {
+		return err
+	}
+	encGroupKeyPortion, err := gmk.Encrypt(groupKeyPortion, []byte(ekv.GroupID))
+	if err != nil {
+		return err
+	}
+
+	q := `
+		UPDATE "EncryptionKeyVersions"
+		SET master_encrypted_key = ?,
+			group_encrypted_key = ?,
+			last_encryption_attempt_at_usec = ?,
+			last_encrypted_at_usec = ?
+		WHERE encryption_key_id = ? AND version = ?
+	`
+	now := c.clock.Now()
+	args := []interface{}{encMasterKeyPortion, encGroupKeyPortion, now.UnixMicro(), now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
+	if err := c.dbh.DB(ctx).Exec(q, args...).Error; err != nil {
+		return err
+	}
+
+	log.Infof("Successfully re-encrypted key %q version %d", ekv.EncryptionKeyID, ekv.Version)
+
+	return nil
+}
+
+func (c *Crypter) keyRencryptorIteration(cutoff time.Time) error {
+	queryKeys := func() ([]*encryptionKeyVersionWithGroupID, error) {
+		ctx, cancel := context.WithTimeout(c.env.GetServerContext(), keyReencryptListQueryTimeout)
+		defer cancel()
+		q := `
+			SELECT ek.group_id, ekv.*
+			FROM "EncryptionKeyVersions" ekv
+			JOIN "EncryptionKeys" ek ON ek.encryption_key_id = ekv.encryption_key_id
+			WHERE ekv.last_encryption_attempt_at_usec < ?
+			LIMIT 1000
+	`
+
+		retrier := retry.DefaultWithContext(ctx)
+		var lastErr error
+		var ekvs []*encryptionKeyVersionWithGroupID
+		for retrier.Next() {
+			ekvs = nil
+			rows, err := c.dbh.DB(ctx).Raw(q, cutoff.UnixMicro()).Rows()
+			if err != nil {
+				lastErr = err
+				continue
+			}
+
+			for rows.Next() {
+				var ekv encryptionKeyVersionWithGroupID
+				if err := c.dbh.DB(ctx).ScanRows(rows, &ekv); err != nil {
+					return nil, err
+				}
+				ekvs = append(ekvs, &ekv)
+			}
+			return ekvs, nil
+		}
+
+		return nil, lastErr
+	}
+
+	reencryptKey := func(ekv *encryptionKeyVersionWithGroupID) {
+		qCtx, qCancel := context.WithTimeout(c.env.GetServerContext(), keyReencryptTimeout)
+		defer qCancel()
+		retrier := retry.DefaultWithContext(qCtx)
+		for retrier.Next() {
+			if err := c.reencryptKey(qCtx, ekv); err != nil {
+				log.Warningf("could not reencrypt key %q: %s", ekv.EncryptionKeyID, err)
+			} else {
+				break
+			}
+		}
+
+		// Use a separate context in case we already fully used up the time on
+		// the previous one. We still want to make sure we have time to update
+		// the DB.
+		uCtx, uCancel := context.WithTimeout(c.env.GetServerContext(), keyReencryptTimeout/4)
+		defer uCancel()
+		// Unconditionally update the last attempt timestamp, whether we
+		// succeeded or not.
+		q := `
+				UPDATE "EncryptionKeyVersions"
+				SET last_encryption_attempt_at_usec = ?
+				WHERE encryption_key_id = ? AND version = ?
+			`
+		now := c.clock.Now()
+		args := []interface{}{now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
+		if err := c.dbh.DB(uCtx).Exec(q, args...).Error; err != nil {
+			log.Warningf("could not update attempt timestamp: %s", err)
+		}
+	}
+
+	for {
+		remainingKeys, err := queryKeys()
+		if err != nil {
+			return err
+		}
+
+		if len(remainingKeys) == 0 {
+			break
+		}
+
+		for _, ekv := range remainingKeys {
+			reencryptKey(ekv)
+		}
+	}
+	return nil
+}
+
+func (c *Crypter) startKeyReencryptor(quitChan chan struct{}) {
+	// All the apps will be re-encrypting keys. We add a jitter to try to avoid
+	// having apps do duplicate work.
+	jitter := time.Duration(mrand.Int63n(int64(*keyReencryptInterval / 2)))
+	go func() {
+		for {
+			cutoff := c.clock.Now().Add(-*keyReencryptInterval).Add(-jitter)
+
+			if err := c.keyRencryptorIteration(cutoff); err != nil {
+				log.Warningf("could not rencrypt keys: %s", err)
+			}
+
+			select {
+			case <-quitChan:
+				return
+			case <-c.clock.After(1 * time.Minute):
+				break
+			}
+		}
+	}()
+}
+
 func (c *Crypter) Stop() {
 	close(c.quitChan)
 }
@@ -733,12 +903,15 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 		EncryptionKeyID: keyID,
 		GroupID:         u.GetGroupID(),
 	}
+	now := c.clock.Now()
 	keyVersion := &tables.EncryptionKeyVersion{
-		EncryptionKeyID:    keyID,
-		Version:            1,
-		MasterEncryptedKey: encMasterKeyPart,
-		GroupKeyURI:        groupKeyURI,
-		GroupEncryptedKey:  encGroupKeyPart,
+		EncryptionKeyID:             keyID,
+		Version:                     1,
+		MasterEncryptedKey:          encMasterKeyPart,
+		GroupKeyURI:                 groupKeyURI,
+		GroupEncryptedKey:           encGroupKeyPart,
+		LastEncryptionAttemptAtUsec: now.UnixMicro(),
+		LastEncryptedAtUsec:         now.UnixMicro(),
 	}
 	err = c.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(key).Error; err != nil {
