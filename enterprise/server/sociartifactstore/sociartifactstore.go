@@ -183,10 +183,10 @@ func checkAccess(ctx context.Context, imgRepo ctrname.Repository, img v1.Image, 
 	return nil
 }
 
-func getImageManifestConfig(ctx context.Context, image string, platform *rgpb.Platform, creds *rgpb.Credentials) (v1.Hash, error) {
+func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platform, creds *rgpb.Credentials) (targetImage ctrname.Digest, manifestConfig v1.Hash, err error) {
 	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
-		return v1.Hash{}, status.InvalidArgumentErrorf("invalid image %q", image)
+		return ctrname.Digest{}, v1.Hash{}, status.InvalidArgumentErrorf("invalid image %q", image)
 	}
 
 	var authenticator authn.Authenticator
@@ -202,27 +202,32 @@ func getImageManifestConfig(ctx context.Context, image string, platform *rgpb.Pl
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return v1.Hash{}, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+			return ctrname.Digest{}, v1.Hash{}, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
 		}
-		return v1.Hash{}, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		return ctrname.Digest{}, v1.Hash{}, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
 	targetImg, err := targetImageFromDescriptor(remoteDesc, platform)
 	if err != nil {
-		return v1.Hash{}, err
+		return ctrname.Digest{}, v1.Hash{}, err
 	}
 
 	// Check whether the supplied credentials are sufficient to access the
 	// remote image.
 	if err := checkAccess(ctx, imageRef.Context(), targetImg, authenticator); err != nil {
-		return v1.Hash{}, err
+		return ctrname.Digest{}, v1.Hash{}, err
 	}
 
 	manifest, err := targetImg.Manifest()
 	if err != nil {
-		return v1.Hash{}, err
+		return ctrname.Digest{}, v1.Hash{}, err
 	}
-	return manifest.Config.Digest, nil
+
+	targetImgDigest, err := targetImg.Digest()
+	if err != nil {
+		return ctrname.Digest{}, v1.Hash{}, err
+	}
+	return imageRef.Context().Digest(targetImgDigest.String()), manifest.Config.Digest, nil
 }
 
 func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArtifactsRequest) (*socipb.GetArtifactsResponse, error) {
@@ -230,7 +235,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err != nil {
 		return nil, err
 	}
-	configHash, err := getImageManifestConfig(ctx, req.Image, req.Platform, req.Credentials)
+	targetImageRef, configHash, err := getTargetImageInfo(ctx, req.Image, req.Platform, req.Credentials)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +248,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
 		resp, err := s.getArtifactsFromCache(ctx, configHashHex)
 		if status.IsNotFoundError(err) {
-			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, req.Image, req.Credentials)
+			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, req.Credentials)
 			if err != nil {
 				return nil, err
 			}
@@ -339,21 +344,16 @@ func deserializeDigest(s string) (*repb.Digest, error) {
 
 }
 
-func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageName string, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
-	log.Infof("soci artifacts not found, generating them for image %s", imageName)
-	image, err := fetchImageDescriptor(ctx, imageName, credentials)
+func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
+	log.Infof("soci artifacts not found, generating them for image %s", imageRef.DigestStr())
+	image, err := fetchImageDescriptor(ctx, imageRef, credentials)
 	if err != nil {
 		return nil, nil, err
 	}
 	return s.indexImage(ctx, image)
 }
 
-func fetchImageDescriptor(ctx context.Context, image string, credentials *rgpb.Credentials) (v1.Image, error) {
-	imageRef, err := ctrname.ParseReference(image)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid image %q", image)
-	}
-
+func fetchImageDescriptor(ctx context.Context, imageRef ctrname.Digest, credentials *rgpb.Credentials) (v1.Image, error) {
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
 	if credentials.GetUsername() != "" || credentials.GetPassword() != "" {
 		authenticator := &authn.Basic{
