@@ -229,7 +229,7 @@ func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platfo
 		return ctrname.Digest{}, v1.Hash{}, err
 	}
 
-	targetImgDigest, err := targetImg.Digest()
+	manifest, err := targetImg.Manifest()
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, err
 	}
@@ -592,8 +592,4 @@ func getArtifactsResponse(imageId string, sociIndexDigest *repb.Digest, ztocDige
 		resp.Artifacts = append(resp.Artifacts, &socipb.Artifact{Digest: ztocDigest, Type: socipb.Type_ZTOC})
 	}
 	return &resp
-}
-
-func rmSha256Prefix(s string) string {
-	return strings.ReplaceAll(s, "sha256:", "")
 }
