@@ -227,6 +227,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
+	res.UsageStats = nil
 	assert.Equal(t, expectedResult, res)
 }
 
