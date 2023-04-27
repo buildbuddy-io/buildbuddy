@@ -40,6 +40,10 @@ const (
 	// Path under the CLI storage dir where plugins are saved.
 	pluginsStorageDirName = "plugins"
 
+	// Environment variable whose presence indicates that a script has been
+	// invoked by BB as a plugin.
+	isPluginEnvVar = "IS_BB_PLUGIN"
+
 	installCommandUsage = `
 Usage: bb install [REPO[@VERSION]][:PATH] [--user]
 
@@ -420,6 +424,12 @@ type Plugin struct {
 // LoadAll loads all plugins from the combined user and workspace configs, and
 // ensures that any remote plugins are downloaded.
 func LoadAll(tempDir string) ([]*Plugin, error) {
+	// When invoking a nested bazel invocation from within a plugin,
+	// disable plugins. Otherwise, this can result in infinite recursion.
+	if os.Getenv(isPluginEnvVar) == "1" {
+		return nil, nil
+	}
+
 	ws, err := workspace.Path()
 	if err != nil {
 		return nil, err
@@ -692,6 +702,7 @@ func (p *Plugin) Path() (string, error) {
 func (p *Plugin) commandEnv() []string {
 	env := os.Environ()
 	env = append(env, fmt.Sprintf("PLUGIN_TEMPDIR=%s", p.tempDir))
+	env = append(env, fmt.Sprintf("%s=1", isPluginEnvVar))
 	return env
 }
 
