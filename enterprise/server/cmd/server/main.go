@@ -291,9 +291,12 @@ func main() {
 	telemetryClient.Start()
 	defer telemetryClient.Stop()
 
-	cleanupService := janitor.NewJanitor(realEnv)
-	cleanupService.Start()
-	defer cleanupService.Stop()
+	invocationCleanupService := janitor.NewInvocationJanitor(realEnv)
+	invocationCleanupService.Start()
+	defer invocationCleanupService.Stop()
+	executionCleanupService := janitor.NewExecutionJanitor(realEnv)
+	executionCleanupService.Start()
+	defer executionCleanupService.Stop()
 
 	if err := selfauth.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
