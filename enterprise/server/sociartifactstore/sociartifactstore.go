@@ -183,10 +183,10 @@ func checkAccess(ctx context.Context, imgRepo ctrname.Repository, img v1.Image, 
 	return nil
 }
 
-func getTargetImageRef(ctx context.Context, image string, platform *rgpb.Platform, creds *rgpb.Credentials) (ctrname.Digest, error) {
+func getImageManifestConfig(ctx context.Context, image string, platform *rgpb.Platform, creds *rgpb.Credentials) (v1.Hash, error) {
 	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
-		return ctrname.Digest{}, status.InvalidArgumentErrorf("invalid image %q", image)
+		return v1.Hash{}, status.InvalidArgumentErrorf("invalid image %q", image)
 	}
 
 	var authenticator authn.Authenticator
@@ -202,27 +202,27 @@ func getTargetImageRef(ctx context.Context, image string, platform *rgpb.Platfor
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return ctrname.Digest{}, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+			return v1.Hash{}, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
 		}
-		return ctrname.Digest{}, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		return v1.Hash{}, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
 	targetImg, err := targetImageFromDescriptor(remoteDesc, platform)
 	if err != nil {
-		return ctrname.Digest{}, err
+		return v1.Hash{}, err
 	}
 
 	// Check whether the supplied credentials are sufficient to access the
 	// remote image.
 	if err := checkAccess(ctx, imageRef.Context(), targetImg, authenticator); err != nil {
-		return ctrname.Digest{}, err
+		return v1.Hash{}, err
 	}
 
-	targetImgDigest, err := targetImg.Digest()
+	manifest, err := targetImg.Manifest()
 	if err != nil {
-		return ctrname.Digest{}, err
+		return v1.Hash{}, err
 	}
-	return imageRef.Context().Digest(targetImgDigest.String()), nil
+	return manifest.Config.Digest, nil
 }
 
 func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArtifactsRequest) (*socipb.GetArtifactsResponse, error) {
@@ -230,33 +230,33 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err != nil {
 		return nil, err
 	}
-	imageRef, err := getTargetImageRef(ctx, req.Image, req.Platform, req.Credentials)
+	configHash, err := getImageManifestConfig(ctx, req.Image, req.Platform, req.Credentials)
 	if err != nil {
 		return nil, err
 	}
-	imageRefDigest := imageRef.DigestStr()
+	configHashHex := configHash.Hex
 
 	// Try to only read-pull-index-write once at a time to prevent hammering
 	// the containter registry with a ton of parallel pull requests, and save
 	// apps a bunch of parallel work.
-	workKey := fmt.Sprintf("soci-artifact-store-image-" + imageRefDigest)
+	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHashHex)
 	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
-		exists, err := s.blobstore.BlobExists(ctx, blobKey(imageRefDigest))
+		exists, err := s.blobstore.BlobExists(ctx, blobKey(configHashHex))
 		if err != nil {
 			return nil, err
 		}
 		var resp *socipb.GetArtifactsResponse
 		if exists {
-			resp, err = s.getArtifactsFromCache(ctx, imageRefDigest)
+			resp, err = s.getArtifactsFromCache(ctx, configHashHex)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, req.Image, imageRef.DigestStr(), req.Credentials)
+			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, req.Image, req.Credentials)
 			if err != nil {
 				return nil, err
 			}
-			resp = getArtifactsResponse(imageRefDigest, sociIndexDigest, ztocDigests)
+			resp = getArtifactsResponse(configHashHex, sociIndexDigest, ztocDigests)
 		}
 		proto, err := proto.Marshal(resp)
 		if err != nil {
@@ -327,7 +327,7 @@ func deserializeDigest(s string) (*repb.Digest, error) {
 
 }
 
-func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageName, imageRef string, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
+func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageName string, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
 	log.Infof("soci artifacts not found, generating them for image %s", imageName)
 	image, err := pullImage(ctx, imageName, credentials)
 	if err != nil {
@@ -421,22 +421,22 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image) (*re
 		return nil, nil, err
 	}
 	indexDigest := repb.Digest{
-		Hash:      rmSha256Prefix(indexHash.String()),
+		Hash:      indexHash.Hex,
 		SizeBytes: indexSizeBytes,
 	}
 	s.cache.Set(ctx, resourceName(&indexDigest), indexBytes)
 	return &indexDigest, ztocDigests, nil
 }
 
-func ztocDescriptor(layerDigest, layerMediaType string, digest *repb.Digest) *ocispec.Descriptor {
+func ztocDescriptor(layerDigest, layerMediaType string, ztocDigest *repb.Digest) *ocispec.Descriptor {
 	var annotations = map[string]string{
 		sociImageLayerDigestKey:    layerDigest,
 		sociImageLayerMediaTypeKey: layerMediaType,
 	}
 	return &ocispec.Descriptor{
 		MediaType:   octetStreamMediaType,
-		Digest:      godigest.Digest(digest.Hash),
-		Size:        digest.SizeBytes,
+		Digest:      godigest.NewDigestFromEncoded(godigest.SHA256, ztocDigest.Hash),
+		Size:        ztocDigest.SizeBytes,
 		Annotations: annotations,
 	}
 }
@@ -511,7 +511,7 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 		return nil, err
 	}
 	ztocDigest := repb.Digest{
-		Hash:      rmSha256Prefix(ztocDesc.Digest.String()),
+		Hash:      ztocDesc.Digest.Encoded(),
 		SizeBytes: ztocDesc.Size,
 	}
 	ztocBytes, err := ioutil.ReadAll(ztocReader)
@@ -538,8 +538,8 @@ func getZtocDigests(sociIndexBytes []byte) ([]*repb.Digest, error) {
 	}
 	digests := []*repb.Digest{}
 	for _, layerIndex := range sociIndex.Layers {
-		digest := rmSha256Prefix(layerIndex.Digest)
-		digests = append(digests, &repb.Digest{Hash: digest, SizeBytes: layerIndex.Size})
+		digest := godigest.NewDigestFromEncoded(godigest.SHA256, layerIndex.Digest)
+		digests = append(digests, &repb.Digest{Hash: digest.Encoded(), SizeBytes: layerIndex.Size})
 	}
 	return digests, nil
 }
@@ -552,8 +552,4 @@ func getArtifactsResponse(imageId string, sociIndexDigest *repb.Digest, ztocDige
 		resp.Artifacts = append(resp.Artifacts, &socipb.Artifact{Digest: ztocDigest, Type: socipb.Type_ZTOC})
 	}
 	return &resp
-}
-
-func rmSha256Prefix(s string) string {
-	return strings.ReplaceAll(s, "sha256:", "")
 }
