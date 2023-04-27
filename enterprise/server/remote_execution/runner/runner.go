@@ -434,7 +434,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
-	txInfo, err := r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
+	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, actionResult, cmdResult)
 	if err != nil {
 		return err
 	}

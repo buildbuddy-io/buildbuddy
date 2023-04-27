@@ -99,6 +99,10 @@ func NewDirHelper(rootDir string, outputDirectories, outputPaths []string, dirPe
 	// of the output_directories, so go ahead and do that. The directories are
 	// also present in output_paths, so they're forgotten after creation here
 	// and then selected for upload through the output_paths.
+	//
+	// As of Bazel 6.0.0, the output directories are included as part of the
+	// InputRoot, so this hack is only needed for older clients.
+	// See: https://github.com/bazelbuild/bazel/pull/15366 for more info.
 	for _, outputDirectory := range outputDirectories {
 		fullPath := filepath.Join(c.rootDir, outputDirectory)
 		c.dirsToCreate = append(c.dirsToCreate, fullPath)
@@ -285,7 +289,7 @@ func uploadFiles(uploader *cachetools.BatchCASUploader, fc interfaces.FileCache,
 	return nil
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, actionResult *repb.ActionResult) (*TransferInfo, error) {
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 	treesToUpload := make([]string, 0)
@@ -325,7 +329,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				return nil, err
 			}
 			fqfn := filepath.Join(fullPath, info.Name())
-			if info.Mode().IsDir() {
+			if info.IsDir() {
 				// Don't recurse on non-uploadable directories.
 				if !dirHelper.ShouldUploadAnythingInDir(fqfn) {
 					continue
@@ -357,6 +361,33 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if err != nil {
 					return nil, err
 				}
+
+				// OutputFileSymlinks and OutputDirectorySymlinks are deprecated in REAPI v2.1,
+				// but Bazel still uses them as of v6.2.0.
+				//
+				// TODO(sluongng): Set OutputSymlinks when Bazel has support for it.
+				// References:
+				// - https://github.com/bazelbuild/remote-apis/blob/35aee1c4a4250d3df846f7ba3e4a4e66cb014ecd/build/bazel/remote/execution/v2/remote_execution.proto#L1071
+				// - https://github.com/bazelbuild/bazel/pull/18198
+				// - https://github.com/bazelbuild/bazel/pull/18202
+				symlinkPath := trimPathPrefix(fqfn, rootDir)
+				symlink := &repb.OutputSymlink{
+					Path:   symlinkPath,
+					Target: target,
+				}
+				for _, expectedFile := range cmd.OutputFiles {
+					if symlinkPath == expectedFile {
+						actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
+						break
+					}
+				}
+				for _, expectedDir := range cmd.OutputDirectories {
+					if symlinkPath == expectedDir {
+						actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
+						break
+					}
+				}
+
 				directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
 					Name:   trimPathPrefix(fqfn, rootDir),
 					Target: target,

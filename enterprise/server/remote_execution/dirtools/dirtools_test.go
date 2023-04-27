@@ -2,6 +2,7 @@ package dirtools_test
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,17 +11,321 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+func TestUploadTree(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		cmd            *repb.Command
+		directoryPaths []string
+		fileContents   map[string]string
+		symlinkPaths   map[string]string
+
+		expectedResult *repb.ActionResult
+		expectedInfo   *dirtools.TransferInfo
+	}{
+		{
+			name:           "NoFiles",
+			cmd:            &repb.Command{},
+			directoryPaths: []string{},
+			fileContents:   map[string]string{},
+			symlinkPaths:   map[string]string{},
+			expectedResult: &repb.ActionResult{},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        0,
+				BytesTransferred: 0,
+			},
+		},
+		{
+			name: "SomeFile",
+			cmd: &repb.Command{
+				OutputFiles: []string{"fileA.txt"},
+			},
+			directoryPaths: []string{},
+			fileContents: map[string]string{
+				"fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{},
+			expectedResult: &repb.ActionResult{
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      hash.String("a"),
+						},
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        1,
+				BytesTransferred: 1,
+			},
+		},
+		{
+			name: "OutputDirectory",
+			cmd: &repb.Command{
+				OutputDirectories: []string{"a"},
+			},
+			directoryPaths: []string{
+				"a",
+			},
+			fileContents: map[string]string{
+				"a/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 85,
+							Hash:      "895545df6841b7efb2e9cc903a4eac7a60c645199be059f6056817ae6feb071d",
+						},
+					},
+				},
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "a/fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      hash.String("a"),
+						},
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        2,
+				BytesTransferred: 84,
+			},
+		},
+		{
+			name: "SymlinkToFile",
+			cmd: &repb.Command{
+				OutputFiles: []string{
+					"fileA.txt",
+					"linkA.txt",
+				},
+			},
+			directoryPaths: []string{},
+			fileContents: map[string]string{
+				"fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{
+				"linkA.txt": "fileA.txt",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+						},
+					},
+				},
+				OutputFileSymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "linkA.txt",
+						Target: "fileA.txt",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        1,
+				BytesTransferred: 1,
+			},
+		},
+		{
+			name: "SymlinkToDirectory",
+			cmd: &repb.Command{
+				OutputDirectories: []string{
+					"a",
+					"linkA",
+				},
+			},
+			directoryPaths: []string{
+				"a",
+			},
+			fileContents: map[string]string{
+				"a/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{
+				"linkA": "a",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 85,
+							Hash:      "895545df6841b7efb2e9cc903a4eac7a60c645199be059f6056817ae6feb071d",
+						},
+					},
+				},
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "a/fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      hash.String("a"),
+						},
+					},
+				},
+				OutputDirectorySymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "linkA",
+						Target: "a",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        2,
+				BytesTransferred: 84,
+			},
+		},
+		{
+			// We don't support dangling symlinks currently, but this could change
+			// in the future as Bazel started to support some cases of dangling
+			// symlinks starting from Bazel 6.0.0.
+			//
+			// TODO(sluongng): Support dangling symlinks after implementing support for
+			// Command.output_paths and ActionResult.output_symlinks.
+			name: "DanglingSymlinkIsIgnored",
+			cmd: &repb.Command{
+				OutputFiles:       []string{"a/fileA.txt"},
+				OutputDirectories: []string{"a"},
+			},
+			directoryPaths: []string{"a"},
+			fileContents:   map[string]string{"a/fileA.txt": "a"},
+			symlinkPaths: map[string]string{
+				"a/linkB": "b",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 99,
+							Hash:      "85fe6d19a6bd4cad6c5a3576929e1c894653c38da15fe44d22897e17dd44f8c6",
+						},
+					},
+				},
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "a/fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      hash.String("a"),
+						},
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        2,
+				BytesTransferred: 98,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := testEnv(t)
+			rootDir := testfs.MakeTempDir(t)
+
+			// Prepare inputs
+			testfs.WriteAllFileContents(t, rootDir, tc.fileContents)
+			for name, target := range tc.symlinkPaths {
+				err := os.Symlink(target, filepath.Join(rootDir, name))
+				require.NoError(t, err)
+			}
+
+			var outputPaths []string
+			for _, path := range tc.directoryPaths {
+				outputPaths = append(outputPaths, path)
+			}
+			for path := range tc.fileContents {
+				outputPaths = append(outputPaths, path)
+			}
+			for path := range tc.symlinkPaths {
+				outputPaths = append(outputPaths, path)
+			}
+			dirHelper := dirtools.NewDirHelper(rootDir, []string{} /*outputDirs*/, outputPaths, fs.FileMode(0o755))
+
+			actionResult := &repb.ActionResult{}
+			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, tc.cmd, actionResult)
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.expectedInfo.FileCount, txInfo.FileCount)
+			assert.Equal(t, tc.expectedInfo.BytesTransferred, txInfo.BytesTransferred)
+
+			for _, file := range tc.expectedResult.OutputFiles {
+				has, err := env.GetCache().Contains(ctx, &rspb.ResourceName{
+					InstanceName: "",
+					CacheType:    rspb.CacheType_CAS,
+					Digest:       file.Digest,
+				})
+				assert.NoError(t, err)
+				assert.True(t, has)
+			}
+			for _, expectedDir := range tc.expectedResult.OutputDirectories {
+				found := false
+				for _, dir := range actionResult.OutputDirectories {
+					if dir.Path == expectedDir.Path {
+						assert.Equal(t, expectedDir.TreeDigest.SizeBytes, dir.TreeDigest.SizeBytes)
+						assert.Equal(t, expectedDir.TreeDigest.Hash, dir.TreeDigest.Hash)
+						found = true
+						break
+					}
+				}
+				assert.True(t, found)
+			}
+			for _, expectedSymlink := range tc.expectedResult.OutputSymlinks {
+				found := false
+				for _, symlink := range actionResult.OutputSymlinks {
+					if symlink.Path == expectedSymlink.Path {
+						assert.Equal(t, expectedSymlink.Target, symlink.Target)
+						found = true
+						break
+					}
+				}
+				assert.True(t, found)
+			}
+			for _, expectedSymlink := range tc.expectedResult.OutputFileSymlinks {
+				found := false
+				for _, symlink := range actionResult.OutputFileSymlinks {
+					if symlink.Path == expectedSymlink.Path {
+						assert.Equal(t, expectedSymlink.Target, symlink.Target)
+						found = true
+						break
+					}
+				}
+				assert.True(t, found)
+			}
+			for _, expectedSymlink := range tc.expectedResult.OutputDirectorySymlinks {
+				found := false
+				for _, symlink := range actionResult.OutputDirectorySymlinks {
+					if symlink.Path == expectedSymlink.Path {
+						assert.Equal(t, expectedSymlink.Target, symlink.Target)
+						found = true
+						break
+					}
+				}
+				assert.True(t, found)
+			}
+		})
+	}
+}
 
 func TestDownloadTree(t *testing.T) {
 	env, ctx := testEnv(t)
@@ -215,17 +520,24 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
+	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	if err != nil {
+		t.Error(err)
+	}
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
 	if err != nil {
 		t.Error(err)
 	}
 	grpcServer, runFunc := env.LocalGRPCServer()
+	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
+
 	conn, err := env.LocalGRPCConn(ctx)
 	if err != nil {
 		t.Error(err)
 	}
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	filecacheRootDir := testfs.MakeTempDir(t)
 	fileCacheMaxSizeBytes := int64(10e9)
