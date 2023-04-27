@@ -112,9 +112,9 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	    SUM(total_download_size_bytes) as total_download_size_bytes,
 	    SUM(total_upload_size_bytes) as total_upload_size_bytes,
 	    SUM(total_download_usec) as total_download_usec,
-        SUM(total_upload_usec) as total_upload_usec,
-        SUM(total_cached_action_exec_usec) as total_cpu_micros_saved
-        FROM "Invocations"`
+	    SUM(total_upload_usec) as total_upload_usec,
+	    SUM(total_cached_action_exec_usec) as total_cpu_micros_saved
+	    FROM "Invocations"`
 	return q
 }
 
