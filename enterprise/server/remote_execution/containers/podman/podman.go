@@ -127,13 +127,13 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
-		[storage]
-		driver = "overlay"
-		runroot = "/run/containers/storage"
-		graphroot = "/var/lib/containers/storage"
-		[storage.options]
-		additionallayerstores=["/var/lib/soci-store/store:ref"]
-		`
+			[storage]
+			driver = "overlay"
+			runroot = "/run/containers/storage"
+			graphroot = "/var/lib/containers/storage"
+			[storage.options]
+			additionallayerstores=["/var/lib/soci-store/store:ref"]
+			`
 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
 		}
@@ -517,7 +517,11 @@ func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error
 		} else if artifact.Type == socipb.Type_SOCI_INDEX {
 			// Write the index file, this is what the snapshotter uses to
 			// associate the requested image with its soci index.
-			if err = os.WriteFile(sociIndex(resp.ImageId), []byte(artifact.Digest.Hash), 0644); err != nil {
+			if err = os.MkdirAll(sociIndexDirectory, 0644); err != nil {
+				return err
+			}
+			log.Info("Writing soci index file: " + strings.ReplaceAll(resp.ImageId, "sha256:", "") + " ==> " + strings.ReplaceAll(artifact.Digest.Hash, "sha256:", ""))
+			if err = os.WriteFile(sociIndex(strings.ReplaceAll(resp.ImageId, "sha256:", "")), []byte(strings.ReplaceAll(artifact.Digest.Hash, "sha256:", "")), 0644); err != nil {
 				return err
 			}
 		}
@@ -534,7 +538,9 @@ func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error
 		}
 		// Write the artifact to the local filesystem so the snapshotter can
 		// read it.
-		os.WriteFile(sociBlob(blob.Digest.Hash), blob.Data, 0644)
+		if err = os.WriteFile(sociBlob(strings.ReplaceAll(blob.Digest.Hash, "sha256:", "")), blob.Data, 0644); err != nil {
+			return err
+		}
 
 		// TODO(iain): remove log statement, just for checking in dev!
 		log.Info("Wrote soci artifact " + sociBlob(blob.Digest.Hash))
