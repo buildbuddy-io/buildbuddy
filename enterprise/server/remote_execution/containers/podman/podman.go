@@ -538,6 +538,9 @@ func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error
 		}
 		// Write the artifact to the local filesystem so the snapshotter can
 		// read it.
+		if err = os.MkdirAll(sociBlobDirectory, 0644); err != nil {
+			return err
+		}
 		if err = os.WriteFile(sociBlob(strings.ReplaceAll(blob.Digest.Hash, "sha256:", "")), blob.Data, 0644); err != nil {
 			return err
 		}
