@@ -69,11 +69,12 @@ export default class TrendsSummaryCard extends React.Component<Props> {
                 {format.durationMillis(+this.props.currentPeriod.cpuMicrosSaved / 1000)} CPU saved
               </span>
             </div>
-            {this.props.previousPeriod &&
-              this.renderChangeText(
-                +this.props.currentPeriod.cpuMicrosSaved,
-                +this.props.previousPeriod.cpuMicrosSaved
-              )}
+            <div className="trend-sub-item">
+              <span>
+                That's <strong>{format.durationMillis(+this.props.currentPeriod.cpuMicrosSaved / 8000)}</strong> not
+                waiting for code to compile on an 8-core machine.
+              </span>
+            </div>
             <div className="trend-sub-item">
               {cacheRequestTotal > 0 && (
                 <span>
