@@ -371,6 +371,10 @@ type Crypter struct {
 }
 
 func Register(env environment.Env) error {
+	if env.GetKMS() == nil {
+		return nil
+	}
+
 	crypter, err := New(env, clockwork.NewRealClock())
 	if err != nil {
 		return err
