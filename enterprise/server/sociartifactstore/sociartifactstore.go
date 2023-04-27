@@ -241,22 +241,15 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	// apps a bunch of parallel work.
 	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHashHex)
 	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
-		exists, err := s.blobstore.BlobExists(ctx, blobKey(configHashHex))
-		if err != nil {
-			return nil, err
-		}
-		var resp *socipb.GetArtifactsResponse
-		if exists {
-			resp, err = s.getArtifactsFromCache(ctx, configHashHex)
-			if err != nil {
-				return nil, err
-			}
-		} else {
+		resp, err := s.getArtifactsFromCache(ctx, configHashHex)
+		if status.IsNotFoundError(err) {
 			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, req.Image, req.Credentials)
 			if err != nil {
 				return nil, err
 			}
 			resp = getArtifactsResponse(configHashHex, sociIndexDigest, ztocDigests)
+		} else if err != nil {
+			return nil, err
 		}
 		proto, err := proto.Marshal(resp)
 		if err != nil {
@@ -264,6 +257,9 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 		}
 		return proto, nil
 	})
+	if err != nil {
+		return nil, err
+	}
 	var resp socipb.GetArtifactsResponse
 	if err := proto.Unmarshal(respBytes, &resp); err != nil {
 		return nil, err
@@ -286,6 +282,13 @@ func resourceName(digest *repb.Digest) *rspb.ResourceName {
 }
 
 func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageId string) (*socipb.GetArtifactsResponse, error) {
+	exists, err := s.blobstore.BlobExists(ctx, imageId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, status.NotFoundErrorf("soci index for image with manifest config %s not found in blobstore", imageId)
+	}
 	bytes, err := s.blobstore.ReadBlob(ctx, blobKey(imageId))
 	if err != nil {
 		return nil, err
@@ -301,6 +304,15 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageId s
 	ztocDigests, err := getZtocDigests(sociIndexBytes)
 	if err != nil {
 		return nil, err
+	}
+	for _, ztocDigest := range ztocDigests {
+		exists, err := s.cache.Contains(ctx, resourceName(ztocDigest))
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, status.NotFoundErrorf("ztoc %s not found in cache", ztocDigest.Hash)
+		}
 	}
 	return getArtifactsResponse(imageId, sociIndexDigest, ztocDigests), nil
 }
@@ -329,14 +341,14 @@ func deserializeDigest(s string) (*repb.Digest, error) {
 
 func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageName string, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
 	log.Infof("soci artifacts not found, generating them for image %s", imageName)
-	image, err := pullImage(ctx, imageName, credentials)
+	image, err := fetchImageDescriptor(ctx, imageName, credentials)
 	if err != nil {
 		return nil, nil, err
 	}
 	return s.indexImage(ctx, image)
 }
 
-func pullImage(ctx context.Context, image string, credentials *rgpb.Credentials) (v1.Image, error) {
+func fetchImageDescriptor(ctx context.Context, image string, credentials *rgpb.Credentials) (v1.Image, error) {
 	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", image)
