@@ -119,6 +119,9 @@ message TrendStat {
 
   // The number of unique branches that were built.
   int64 branch_count = 20;
+
+  // The sum of the cpu time saved.
+  int64 total_cpu_micros_saved = 26;
 }
 
 message Summary {
