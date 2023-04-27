@@ -149,6 +149,90 @@ func TestUploadTree(t *testing.T) {
 			},
 		},
 		{
+			name: "SymlinkToFileInOutputPaths",
+			cmd: &repb.Command{
+				OutputPaths: []string{
+					"fileA.txt",
+					"linkA.txt",
+				},
+			},
+			directoryPaths: []string{},
+			fileContents: map[string]string{
+				"fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{
+				"linkA.txt": "fileA.txt",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+						},
+					},
+				},
+				OutputSymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "linkA.txt",
+						Target: "fileA.txt",
+					},
+				},
+				OutputFileSymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "linkA.txt",
+						Target: "fileA.txt",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        1,
+				BytesTransferred: 1,
+			},
+		},
+		{
+			name: "SymlinkToFileInBothOutputPathsAndOutputFiles",
+			cmd: &repb.Command{
+				OutputFiles: []string{
+					"fileA.txt",
+					"linkA.txt",
+				},
+				OutputPaths: []string{
+					"fileA.txt",
+					"linkA.txt",
+				},
+			},
+			directoryPaths: []string{},
+			fileContents: map[string]string{
+				"fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{
+				"linkA.txt": "fileA.txt",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+						},
+					},
+				},
+				OutputFileSymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "linkA.txt",
+						Target: "fileA.txt",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        1,
+				BytesTransferred: 1,
+			},
+		},
+		{
 			name: "SymlinkToDirectory",
 			cmd: &repb.Command{
 				OutputDirectories: []string{
@@ -197,29 +281,29 @@ func TestUploadTree(t *testing.T) {
 			},
 		},
 		{
-			// We don't support dangling symlinks currently, but this could change
-			// in the future as Bazel started to support some cases of dangling
-			// symlinks starting from Bazel 6.0.0.
-			//
-			// TODO(sluongng): Support dangling symlinks after implementing support for
-			// Command.output_paths and ActionResult.output_symlinks.
-			name: "DanglingSymlinkIsIgnored",
+			name: "SymlinkToDirectoryInOutputPaths",
 			cmd: &repb.Command{
-				OutputFiles:       []string{"a/fileA.txt"},
-				OutputDirectories: []string{"a"},
+				OutputPaths: []string{
+					"a",
+					"linkA",
+				},
 			},
-			directoryPaths: []string{"a"},
-			fileContents:   map[string]string{"a/fileA.txt": "a"},
+			directoryPaths: []string{
+				"a",
+			},
+			fileContents: map[string]string{
+				"a/fileA.txt": "a",
+			},
 			symlinkPaths: map[string]string{
-				"a/linkB": "b",
+				"linkA": "a",
 			},
 			expectedResult: &repb.ActionResult{
 				OutputDirectories: []*repb.OutputDirectory{
 					{
 						Path: "a",
 						TreeDigest: &repb.Digest{
-							SizeBytes: 99,
-							Hash:      "85fe6d19a6bd4cad6c5a3576929e1c894653c38da15fe44d22897e17dd44f8c6",
+							SizeBytes: 85,
+							Hash:      "895545df6841b7efb2e9cc903a4eac7a60c645199be059f6056817ae6feb071d",
 						},
 					},
 				},
@@ -232,10 +316,137 @@ func TestUploadTree(t *testing.T) {
 						},
 					},
 				},
+				OutputSymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "linkA",
+						Target: "a",
+					},
+				},
+				OutputDirectorySymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "linkA",
+						Target: "a",
+					},
+				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
 				FileCount:        2,
-				BytesTransferred: 98,
+				BytesTransferred: 84,
+			},
+		},
+		{
+			name: "SymlinkToDirectoryInBothOutputPathsAndOutputDirectories",
+			cmd: &repb.Command{
+				OutputDirectories: []string{
+					"a",
+					"linkA",
+				},
+				OutputPaths: []string{
+					"a",
+					"linkA",
+				},
+			},
+			directoryPaths: []string{
+				"a",
+			},
+			fileContents: map[string]string{
+				"a/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{
+				"linkA": "a",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 85,
+							Hash:      "895545df6841b7efb2e9cc903a4eac7a60c645199be059f6056817ae6feb071d",
+						},
+					},
+				},
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "a/fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      hash.String("a"),
+						},
+					},
+				},
+				OutputDirectorySymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "linkA",
+						Target: "a",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        2,
+				BytesTransferred: 84,
+			},
+		},
+		{
+			name: "DanglingFileSymlink",
+			cmd: &repb.Command{
+				OutputFiles: []string{"a"},
+			},
+			symlinkPaths: map[string]string{
+				"a": "b",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputFileSymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "a",
+						Target: "b",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        0,
+				BytesTransferred: 0,
+			},
+		},
+		{
+			name: "DanglingDirectorySymlink",
+			cmd: &repb.Command{
+				OutputDirectories: []string{"a"},
+			},
+			symlinkPaths: map[string]string{
+				"a": "b",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputDirectorySymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "a",
+						Target: "b",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        0,
+				BytesTransferred: 0,
+			},
+		},
+		{
+			name: "DanglingSymlinkInOutputPaths",
+			cmd: &repb.Command{
+				OutputPaths: []string{"a"},
+			},
+			symlinkPaths: map[string]string{
+				"a": "b",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputSymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "a",
+						Target: "b",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        0,
+				BytesTransferred: 0,
 			},
 		},
 	} {
