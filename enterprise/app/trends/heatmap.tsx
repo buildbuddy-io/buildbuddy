@@ -9,8 +9,8 @@ import { pinBottomLeftOffsetFromMouse, MouseCoords, Tooltip } from "../../../app
 
 interface HeatmapProps {
   heatmapData: stats.GetStatHeatmapResponse;
-  width: number;
-  height: number; // Unused, by react-resize-detector types require it.
+  width: number; // Use getWidth()! react-resize-detector lets this be NaN.
+  height: number; // Use getHeight()! react-resize-detector lets this be NaN.
   valueFormatter: (value: number) => string;
   metricBucketName: string;
   metricBucketFormatter: (value: number) => string;
