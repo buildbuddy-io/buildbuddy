@@ -354,6 +354,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 separateAxis={true}
               />
 
+              {capabilities.config.trendsSummaryEnabled && (
+                <TrendsChartComponent
+                  title="Saved CPU Time"
+                  data={this.state.dates}
+                  extractValue={(date) => +(this.getStat(date).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractLabel={this.formatShortDate}
+                  formatTickValue={format.durationSec}
+                  allowDecimals={false}
+                  formatHoverLabel={this.formatLongDate}
+                  formatHoverValue={(value) => `${format.durationSec(value || 0)} CPU time saved`}
+                  name="saved cpu time"
+                />
+              )}
+
               <TrendsChartComponent
                 title="Users with builds"
                 data={this.state.dates}
