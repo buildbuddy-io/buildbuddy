@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-# gazelle:default_visibility //enterprise/server/webhooks/bitbucket:__subpackages__
+# gazelle:default_visibility //enterprise:__subpackages__,//enterprise/server/webhooks/bitbucket:__subpackages__
 package(default_visibility = [
     "//enterprise:__subpackages__",
     "//enterprise/server/webhooks/bitbucket:__subpackages__",
