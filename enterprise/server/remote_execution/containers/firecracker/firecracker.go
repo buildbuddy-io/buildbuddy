@@ -280,7 +280,8 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 type FirecrackerContainer struct {
 	id          string // a random GUID, unique per-run of firecracker
 	vmIdx       int    // the index of this vm on the host machine
-	snapshotKey *repb.Digest
+	loader      snaploader.Loader
+	snapshotKey *snaploader.Key
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -352,6 +353,10 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	if err := copyStaticFiles(context.Background(), env, opts.JailerRoot); err != nil {
 		return nil, err
 	}
+	loader, err := snaploader.New(env)
+	if err != nil {
+		return nil, err
+	}
 
 	c := &FirecrackerContainer{
 		vmConfig: &fcpb.VMConfiguration{
@@ -362,6 +367,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 			InitDockerd:       opts.InitDockerd,
 			DebugMode:         opts.DebugMode,
 		},
+		loader:             loader,
 		jailerRoot:         opts.JailerRoot,
 		dockerClient:       opts.DockerClient,
 		containerImage:     opts.ContainerImage,
@@ -471,22 +477,21 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 }
 
 func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, error) {
-	loader, err := snaploader.New(c.env)
-	if err != nil {
-		return "", err
-	}
 	baseDir := filepath.Join(c.getChroot(), "base")
 	if err := disk.EnsureDirectoryExists(baseDir); err != nil {
 		return "", err
 	}
-	if err := loader.UnpackSnapshot(ctx, c.snapshotKey, baseDir); err != nil {
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
+	if err != nil {
 		return "", err
 	}
-
+	if err := c.loader.UnpackSnapshot(ctx, snap, baseDir); err != nil {
+		return "", err
+	}
 	// The base snapshot is no longer useful since we're merging on top
 	// of it and replacing the paused VM snapshot with the new merged
 	// snapshot. Delete it to prevent unnecessary filecache evictions.
-	if err := loader.DeleteSnapshot(ctx, c.snapshotKey); err != nil {
+	if err := c.loader.DeleteSnapshot(ctx, snap); err != nil {
 		log.Warningf("Failed to delete snapshot: %s", err)
 	}
 
@@ -574,7 +579,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
-	opts := &snaploader.LoadSnapshotOptions{
+	opts := &snaploader.CacheSnapshotOptions{
 		VMConfiguration:     c.vmConfig,
 		MemSnapshotPath:     memSnapshotPath,
 		VMStateSnapshotPath: vmStateSnapshotPath,
@@ -586,11 +591,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	}
 
 	snaploaderStart := time.Now()
-	loader, err := snaploader.New(c.env)
-	if err != nil {
-		return err
-	}
-	if err := loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
+	if _, err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
 		return err
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
@@ -606,7 +607,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "LoadSnapshot %s took %s", c.snapshotKey.GetHash(), time.Since(start))
+		log.CtxDebugf(ctx, "LoadSnapshot took %s", time.Since(start))
 	}()
 
 	c.rmOnce = &sync.Once{}
@@ -662,16 +663,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		ForwardSignals: make([]os.Signal, 0),
 	}
 
-	loader, err := snaploader.New(c.env)
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
 	if err != nil {
 		return err
 	}
-
-	vmCfg, err := loader.GetConfiguration(ctx, c.snapshotKey)
-	if err != nil {
-		return err
-	}
-	c.vmConfig = vmCfg
+	c.vmConfig = snap.GetVMConfiguration()
 
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
@@ -695,7 +691,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	if err := loader.UnpackSnapshot(ctx, c.snapshotKey, c.getChroot()); err != nil {
+	if err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot()); err != nil {
 		return err
 	}
 
