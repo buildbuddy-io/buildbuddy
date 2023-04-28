@@ -79,6 +79,7 @@ type RunOpts struct {
 type RepoConfig struct {
 	Root      string
 	URL       string
+	Ref       string
 	CommitSHA string
 	Patches   [][]byte
 }
@@ -229,6 +230,7 @@ func Config(path string) (*RepoConfig, error) {
 		Root:      wt.Filesystem.Root(),
 		URL:       fetchURL,
 		CommitSHA: defaultBranchCommitHash.String(),
+		Ref:       defaultBranchRef,
 	}
 
 	patch, err := runGit("diff", defaultBranchCommitHash.String())
@@ -517,6 +519,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		},
 		RepoState: &rnpb.RunRequest_RepoState{
 			CommitSha: repoConfig.CommitSHA,
+			Branch:    repoConfig.Ref,
 		},
 		SessionAffinityKey: fmt.Sprintf("%x", instanceHash.Sum(nil)),
 		BazelCommand:       strings.Join(bazelArgs, " "),
