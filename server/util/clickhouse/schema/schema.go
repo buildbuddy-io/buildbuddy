@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	// "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/array"
-	// "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/array"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
