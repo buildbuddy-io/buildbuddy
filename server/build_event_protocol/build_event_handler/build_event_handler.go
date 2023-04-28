@@ -416,6 +416,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			// no artifact exists to persist
 			continue
 		}
+		if uri.Scheme != "bytestream" {
+			// artifact exists outside the cache, cannot stream it to blobstore
+			continue
+		}
 		path = task.invocationJWT.id + "/artifacts/" + path
 		if auth := r.env.GetAuthenticator(); auth != nil {
 			ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
