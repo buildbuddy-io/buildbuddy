@@ -94,10 +94,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	apiKey, err := r.lookupAPIKey(ctx)
-	if err != nil {
-		return nil, err
-	}
 	binaryBlob, err := fs.ReadFile(r.env.GetFileResolver(), runnerPath)
 	if err != nil {
 		return nil, err
@@ -169,9 +165,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
-			{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
-			{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
 			// Run from the scratch disk, since the workspace disk is hot-swapped
 			// between runs, which may not be very Bazel-friendly.
 			{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"},
@@ -216,6 +209,21 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	return actionDigest, err
 }
 
+func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
+	apiKey, err := r.lookupAPIKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Use env override headers for credentials.
+	envOverrides := []*repb.Command_EnvironmentVariable{
+		{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
+		{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
+		{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
+	}
+	ctx = withEnvOverrides(ctx, envOverrides)
+	return ctx, nil
+}
+
 // Run creates and dispatches an execution that will call the CI-runner and run
 // the (bazel) command specified in RunRequest. It ruturns as soon as an
 // invocation has been created by the execution or an error has been
@@ -244,6 +252,11 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, err
 	}
+	execCtx, err = r.withCredentials(execCtx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	executionID, err := r.env.GetRemoteExecutionService().Dispatch(execCtx, &repb.ExecuteRequest{
 		InstanceName:    req.GetInstanceName(),
 		SkipCacheLookup: true,
@@ -327,4 +340,13 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 		}
 	}
+}
+
+func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {
+	assignments := make([]string, 0, len(env))
+	for _, e := range env {
+		assignments = append(assignments, e.Name+"="+e.Value)
+	}
+	return platform.WithRemoteHeaderOverride(
+		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
 }
