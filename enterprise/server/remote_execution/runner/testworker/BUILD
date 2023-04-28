@@ -2,7 +2,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 # gazelle:default_visibility //enterprise/server/remote_execution/runner:__subpackages__
 package(default_visibility = [
-    "//enterprise:__subpackages__",
     "//enterprise/server/remote_execution/runner:__subpackages__",
 ])
 

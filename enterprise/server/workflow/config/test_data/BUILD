@@ -2,7 +2,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 # gazelle:default_visibility //enterprise/server/workflow/config:__subpackages__
 package(default_visibility = [
-    "//enterprise:__subpackages__",
     "//enterprise/server/workflow/config:__subpackages__",
 ])
 
