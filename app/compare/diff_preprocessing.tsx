@@ -52,7 +52,7 @@ export function prepareForDiff(
   }
 
   if (invocation.event) {
-    const events: invocation_proto.IInvocationEvent[] = [];
+    const events: invocation_proto.InvocationEvent[] = [];
     for (const e of invocation.event) {
       const event: invocation_proto.IInvocationEvent = e;
       if (sortEvents) {
@@ -81,29 +81,31 @@ export function prepareForDiff(
         if (id?.workspaceStatus) {
           const timestampItem = buildEvent.workspaceStatus?.item?.find((item: any) => item.key === "BUILD_TIMESTAMP");
           if (timestampItem) {
-            delete timestampItem.value;
+            delete (timestampItem as build_event_stream.WorkspaceStatus.IItem).value;
           }
-        } else if (id?.buildToolLogs) {
-          buildEvent.buildToolLogs.log = event.buildEvent.buildToolLogs.log.filter(
+        } else if (id?.buildToolLogs && buildEvent.buildToolLogs?.log) {
+          buildEvent.buildToolLogs.log = buildEvent.buildToolLogs.log.filter(
             (log) => !["elapsed time", "critical path", "process stats"].includes(log.name)
           );
-        } else if (id?.structuredCommandLine) {
+        } else if (id?.structuredCommandLine && buildEvent.structuredCommandLine) {
           removeTimingData(buildEvent.structuredCommandLine);
-        } else if (id?.buildMetrics) {
-          delete buildEvent.buildMetrics.timingMetrics;
-          removeTimingDataInActionSummary(buildEvent.buildMetrics.actionSummary);
-        } else if (id?.started) {
-          delete buildEvent.started.startTimeMillis;
-          delete buildEvent.started.startTime;
-        } else if (id?.buildFinished) {
-          delete buildEvent.finished.finishTimeMillis;
-          delete buildEvent.finished.finishTime;
+        } else if (id?.buildMetrics && buildEvent.buildMetrics) {
+          delete (buildEvent.buildMetrics as build_event_stream.IBuildMetrics).timingMetrics;
+          if (buildEvent.buildMetrics.actionSummary) {
+            removeTimingDataInActionSummary(buildEvent.buildMetrics.actionSummary);
+          }
+        } else if (id?.started && buildEvent.started) {
+          delete (buildEvent.started as build_event_stream.IBuildStarted).startTimeMillis;
+          delete (buildEvent.started as build_event_stream.IBuildStarted).startTime;
+        } else if (id?.buildFinished && buildEvent.finished) {
+          delete (buildEvent.finished as build_event_stream.IBuildFinished).finishTimeMillis;
+          delete (buildEvent.finished as build_event_stream.IBuildFinished).finishTime;
         }
       }
 
       if (hideUuids) {
-        if (id?.started) {
-          delete buildEvent.started.uuid;
+        if (id?.started && buildEvent.started) {
+          delete (buildEvent.started as build_event_stream.IBuildStarted).uuid;
         }
       }
 
@@ -115,14 +117,15 @@ export function prepareForDiff(
 }
 
 function removeTimingData(commandLine: command_line.ICommandLine) {
-  for (const section of commandLine.sections) {
+  for (const section of commandLine.sections || []) {
     if (!section?.optionList?.option) continue;
     section.optionList.option = section.optionList.option.filter((option) => option.optionName !== "startup_time");
   }
 }
 
 function removeTimingDataInActionSummary(actionSummary: build_event_stream.BuildMetrics.IActionSummary) {
-  for (const actionData of actionSummary?.actionData || []) {
+  for (const actionData of (actionSummary?.actionData ||
+    []) as build_event_stream.BuildMetrics.ActionSummary.IActionData[]) {
     delete actionData.firstStartedMs;
     delete actionData.lastEndedMs;
   }
