@@ -1,4 +1,51 @@
-# Firecracker disk layout
+# Firecracker notes
+
+## Testing
+
+Firecracker only runs on Linux, so when testing Firecracker,
+make sure to test from a Linux machine.
+
+To test firecracker locally, make sure to run `sudo tools/enable_local_firecracker.sh`. You will need to re-run this
+every time you reboot your machine.
+
+You can then run the executor with `--executor.enable_firecracker=true`,
+then run Bazel targets with `exec_properties` configured with
+`"workload-isolation-type": "firecracker"`.
+
+If you want to test workflows locally with firecracker, make sure to set
+`--app.workflows_enable_firecracker=true`.
+
+You can also test firecracker just by running
+`bazel test //enterprise/server/remote_execution/containers/firecracker:firecracker_test`. Make sure to run these tests
+before submitting any changes.
+
+## Troubleshooting
+
+### VM crashes / `DebugMode`
+
+You can configure Firecracker with `DebugMode: true` to see more detailed
+VM logs, including logs from the init binary and vmexec server.
+When testing, you can set this manually in the container options.
+When running the executor, you can configure debug mode with
+`--executor.firecracker_debug_mode=true`.
+
+It's useful to use debug mode whenever the executor can't connect
+to the VM (indicating the VM might have crashed).
+
+### Networking issues
+
+Occasionally, you might wind up force-killing firecracker or the executor
+while a container is running, leaving the networking setup in a bad state.
+If this happens, then you may need to run
+`sudo tools/firecracker_clean_networking.sh`.
+
+### Image pull issues
+
+If `firecracker_test` is having trouble pulling docker images,
+particularly from gcr.io, make sure you have run
+`gcloud auth configure-docker`.
+
+## Disk layout
 
 There are a lot of different files involved with Firecracker containers,
 and it can be hard to keep track of which files live where. The following
@@ -10,7 +57,7 @@ shows the directories relevant to a firecracker container instance:
 # except for filecache. This is currently expected to live on the same
 # device as the filecache, so that we can hardlink files from the
 # filecache to here.
-- /tmp/remote_build/:
+- /tmp/${USER}_remote_build/:
     # /executor/ contains a CAS-like dir structure that is persisted
     # across executor restarts, and does not (currently) have an
     # associated eviction mechanism. Note, this is *not* the same as the
@@ -119,7 +166,7 @@ shows the directories relevant to a firecracker container instance:
 # container is not in use. The filecache may expire these artifacts,
 # in which case calling Unpause() on a firecracker container will fail
 # due to the artifacts being not found.
-- /tmp/cache/:
+- /tmp/${USER}_filecache/:
     # The filecache contains a snapshot manifest file, which contains the
     # filecache keys for the VM snapshot artifacts, as well as the
     # serialized VM `Constants`

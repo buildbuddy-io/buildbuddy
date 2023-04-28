@@ -2,13 +2,13 @@ package flags
 
 import (
 	"flag"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/stretchr/testify/require"
 
-	flagutil_common "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
@@ -17,7 +17,11 @@ var populateFlagsOnce sync.Once
 func PopulateFlagsFromData(t testing.TB, testConfigData []byte) {
 	populateFlagsOnce.Do(func() {
 		// add placeholder type for type adding by testing
-		flagutil_common.AddTestFlagTypeForTesting(flag.Lookup("test.benchtime").Value, &struct{}{})
+		flag.VisitAll(func(flg *flag.Flag) {
+			if strings.HasPrefix(flg.Name, "test.") {
+				flagyaml.IgnoreFlagForYAML(flg.Name)
+			}
+		})
 		err := flagyaml.PopulateFlagsFromData(testConfigData)
 		require.NoError(t, err)
 	})

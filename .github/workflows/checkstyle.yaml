@@ -25,7 +25,7 @@ jobs:
       - name: Setup go
         uses: actions/setup-go@v2
         with:
-          go-version: "1.19.3" # Keep in sync with WORKSPACE
+          go-version: "1.20.3" # Keep in sync with WORKSPACE
 
       - name: Mount go cache
         uses: actions/cache@v2
@@ -65,7 +65,7 @@ jobs:
       - name: gazelle
         run: |
           # Invoke gazelle via bb fix for TypeScript support
-          cli/install.sh
+          cli/install.sh tags/5.0.6
           bb version
           bb fix -mode diff > gazelle-diff.txt || true
           echo "gazelle diff:"
