@@ -379,7 +379,6 @@ func RunMigrations(gdb *gorm.DB) error {
 }
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
-	log.Warningf("Tags to flush: %v", strings.Split(ti.Tags, ","))
 	return &Invocation{
 		GroupID:                           ti.GroupID,
 		UpdatedAtUsec:                     ti.UpdatedAtUsec,
