@@ -24,6 +24,7 @@ go_library(
         "//server/util/random",
         "//server/util/retry",
         "//server/util/status",
+        "@com_github_opencontainers_go_digest//:go-digest",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],

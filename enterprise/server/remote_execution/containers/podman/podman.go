@@ -35,6 +35,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	godigest "github.com/opencontainers/go-digest"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -521,7 +522,8 @@ func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error
 				return err
 			}
 			log.Info("Writing soci index file: " + strings.ReplaceAll(resp.ImageId, "sha256:", "") + " ==> " + strings.ReplaceAll(artifact.Digest.Hash, "sha256:", ""))
-			if err = os.WriteFile(sociIndex(strings.ReplaceAll(resp.ImageId, "sha256:", "")), []byte(strings.ReplaceAll(artifact.Digest.Hash, "sha256:", "")), 0644); err != nil {
+			sociIndexDigest := godigest.NewDigestFromEncoded(godigest.SHA256, artifact.Digest.Hash)
+			if err = os.WriteFile(sociIndex(strings.ReplaceAll(resp.ImageId, "sha256:", "")), []byte(sociIndexDigest.String()), 0644); err != nil {
 				return err
 			}
 		}
