@@ -57,7 +57,7 @@ const (
 )
 
 var (
-	testJailerRoot = flag.String("test_jailer_root", "", "If set, use this as the jailer root. Helps avoid excessive image pulling when re-running tests.")
+	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
 
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
@@ -65,6 +65,28 @@ var (
 func init() {
 	// Set umask to match the executor process.
 	syscall.Umask(0)
+}
+
+// cleanExecutorRoot cleans all entries in the test root dir *except* for cached
+// ext4 images. Converting docker images to ext4 images takes a long time and
+// it would slow down testing to build these images from scratch every time.
+// So we instead keep the same directory around and clean it between tests.
+//
+// See README.md for more details on the filesystem layout.
+func cleanExecutorRoot(t *testing.T, path string) {
+	err := os.MkdirAll(path, 0755)
+	require.NoError(t, err)
+	entries, err := os.ReadDir(path)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		// The "/executor" subdir contains the cached images.
+		// Delete all other content.
+		if entry.Name() == "executor" {
+			continue
+		}
+		err := os.RemoveAll(filepath.Join(path, entry.Name()))
+		require.NoError(t, err)
+	}
 }
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
@@ -114,8 +136,9 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 }
 
 func tempJailerRoot(t *testing.T) string {
-	if *testJailerRoot != "" {
-		return *testJailerRoot
+	if *testExecutorRoot != "" {
+		cleanExecutorRoot(t, *testExecutorRoot)
+		return *testExecutorRoot
 	}
 
 	// NOTE: JailerRoot needs to be < 38 chars long, so can't just use
@@ -295,6 +318,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		if res.Error != nil {
 			t.Fatalf("error: %s", res.Error)
 		}
+		res.UsageStats = nil
 		assert.Equal(t, expectedResult, res)
 	}
 }
