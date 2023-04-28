@@ -112,8 +112,9 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	    SUM(total_download_size_bytes) as total_download_size_bytes,
 	    SUM(total_upload_size_bytes) as total_upload_size_bytes,
 	    SUM(total_download_usec) as total_download_usec,
-        SUM(total_upload_usec) as total_upload_usec
-        FROM "Invocations"`
+	    SUM(total_upload_usec) as total_upload_usec,
+	    SUM(total_cached_action_exec_usec) as total_cpu_micros_saved
+	    FROM "Invocations"`
 	return q
 }
 
@@ -138,6 +139,7 @@ func flattenTrendsQuery(innerQuery string) string {
 	total_upload_size_bytes,
 	total_download_usec,
 	total_upload_usec,
+	total_cpu_micros_saved,
 	arrayElement(build_time_quantiles, 1) as build_time_usec_p50,
 	arrayElement(build_time_quantiles, 2) as build_time_usec_p75,
 	arrayElement(build_time_quantiles, 3) as build_time_usec_p90,
