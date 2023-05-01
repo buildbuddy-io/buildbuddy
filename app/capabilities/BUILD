@@ -7,6 +7,6 @@ ts_library(
     srcs = ["capabilities.tsx"],
     deps = [
         "//proto:config_ts_proto",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )

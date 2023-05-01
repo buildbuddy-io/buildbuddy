@@ -9,9 +9,9 @@ ts_library(
     srcs = ["dialog.tsx"],
     strict = True,
     deps = [
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -24,8 +24,8 @@ ts_library(
         "//app/components/dialog",
         "//app/components/modal",
         "//app/components/spinner",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )

@@ -23,10 +23,10 @@ def ts_proto_library(name, proto, deps = [], **kwargs):
         name = name,
         srcs = [":" + name + "__gen_protobufjs"],
         deps = [
-            "@npm//@types/long",
-            "@npm//long",
-            "@npm//protobufjs",
-            "@npm//tslib",
+            "//:node_modules/@types/long",
+            "//:node_modules/long",
+            "//:node_modules/protobufjs",
+            "//:node_modules/tslib",
         ] + deps,
         **kwargs
     )

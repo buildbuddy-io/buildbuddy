@@ -10,7 +10,7 @@ ts_library(
         "//app/invocation:invocation_buttons",
         "//app/invocation:invocation_model",
         "//app/router",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )

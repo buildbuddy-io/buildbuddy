@@ -17,15 +17,15 @@ ts_library(
         "//app/terminal:text",
         "//app/util:math",
         "//app/util:scroller",
-        "@npm//@types/react",
-        "@npm//@types/react-virtualized-auto-sizer",
-        "@npm//@types/react-window",
-        "@npm//lucide-react",
-        "@npm//memoize-one",
-        "@npm//react",
-        "@npm//react-virtualized-auto-sizer",
-        "@npm//react-window",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-virtualized-auto-sizer",
+        "//:node_modules/@types/react-window",
+        "//:node_modules/lucide-react",
+        "//:node_modules/memoize-one",
+        "//:node_modules/react",
+        "//:node_modules/react-virtualized-auto-sizer",
+        "//:node_modules/react-window",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -39,7 +39,7 @@ ts_jasmine_node_test(
 ts_library(
     name = "ansi",
     srcs = ["ansi.tsx"],
-    deps = ["@npm//tslib"],
+    deps = ["//:node_modules/tslib"],
 )
 
 ts_library(
@@ -48,11 +48,11 @@ ts_library(
     deps = [
         "//app/router",
         "//app/terminal:text",
-        "@npm//@types/react",
-        "@npm//@types/react-window",
-        "@npm//react",
-        "@npm//react-window",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-window",
+        "//:node_modules/react",
+        "//:node_modules/react-window",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -61,7 +61,7 @@ ts_library(
     srcs = ["text.tsx"],
     deps = [
         "//app/terminal:ansi",
-        "@npm//memoize-one",
-        "@npm//tslib",
+        "//:node_modules/memoize-one",
+        "//:node_modules/tslib",
     ],
 )

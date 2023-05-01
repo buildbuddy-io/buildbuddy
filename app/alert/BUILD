@@ -9,9 +9,9 @@ ts_library(
     deps = [
         "//app/alert:alert_service",
         "//app/components/banner",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//rxjs",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
     ],
 )
 
@@ -21,5 +21,5 @@ ts_library(
     name = "alert_service",
     srcs = ["alert_service.ts"],
     strict = True,
-    deps = ["@npm//rxjs"],
+    deps = ["//:node_modules/rxjs"],
 )

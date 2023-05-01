@@ -21,9 +21,9 @@ ts_library(
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -36,9 +36,9 @@ ts_library(
         "//app/service:rpc_service",
         "//app/terminal",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -50,9 +50,9 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:build_event_stream_ts_proto",
         "//proto:zip_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -61,9 +61,9 @@ ts_library(
     srcs = ["target_log_card.tsx"],
     deps = [
         "//app/terminal",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -75,9 +75,9 @@ ts_library(
         "//app/terminal",
         "//app/util:proto",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -89,8 +89,8 @@ ts_library(
         "//app/target:target_log_card",
         "//app/target:target_test_cases_card",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -105,9 +105,9 @@ ts_library(
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -121,8 +121,8 @@ ts_library(
         "//app/util:color",
         "//app/util:lcov",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

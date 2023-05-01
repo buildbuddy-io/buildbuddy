@@ -9,9 +9,9 @@ ts_library(
     srcs = ["filter_input.tsx"],
     strict = True,
     deps = [
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )

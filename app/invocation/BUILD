@@ -44,12 +44,12 @@ ts_library(
         "//app/util:errors",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
-        "@npm//@types/moment",
-        "@npm//@types/react",
-        "@npm//moment",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
+        "//:node_modules/@types/moment",
+        "//:node_modules/@types/react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -75,10 +75,10 @@ ts_library(
         "//proto:field_mask_ts_proto",
         "//proto:invocation_status_ts_proto",
         "//proto:resource_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -89,8 +89,8 @@ ts_library(
         "//app/format",
         "//app/router",
         "//proto:build_event_stream_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -101,9 +101,9 @@ ts_library(
         "//app/invocation:child_invocation_card",
         "//app/invocation:invocation_model",
         "//app/util:proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -120,9 +120,9 @@ ts_library(
         "//app/service:rpc_service",
         "//app/terminal",
         "//proto:remote_execution_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -132,9 +132,9 @@ ts_library(
     deps = [
         "//app/components/digest",
         "//proto:remote_execution_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -145,10 +145,10 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//proto:build_event_stream_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -158,10 +158,10 @@ ts_library(
     deps = [
         "//app/format",
         "//app/util:color",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//recharts",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/recharts",
     ],
 )
 
@@ -170,9 +170,9 @@ ts_library(
     srcs = ["invocation_build_logs_card.tsx"],
     deps = [
         "//app/terminal",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -189,10 +189,10 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_share_button",
         "//app/invocation:workflow_rerun_button",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -202,10 +202,10 @@ ts_library(
     deps = [
         "//app/format",
         "//app/invocation:invocation_model",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//recharts",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/recharts",
     ],
 )
 
@@ -218,9 +218,9 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -233,10 +233,10 @@ ts_library(
         "//app/components/menu",
         "//app/components/popup",
         "//app/router",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -248,11 +248,11 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/util:clipboard",
         "//proto:command_line_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//shlex",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/shlex",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -261,9 +261,9 @@ ts_library(
     srcs = ["invocation_error_card.tsx"],
     deps = [
         "//app/invocation:invocation_model",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -279,8 +279,8 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
         "//proto:remote_execution_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -293,8 +293,8 @@ ts_library(
         "//app/format",
         "//app/invocation:invocation_execution_util",
         "//proto:execution_stats_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -306,9 +306,9 @@ ts_library(
         "//proto:grpc_code_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:timestamp_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -317,9 +317,9 @@ ts_library(
     srcs = ["invocation_fetch_card.tsx"],
     deps = [
         "//app/invocation:invocation_model",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -329,9 +329,9 @@ ts_library(
     deps = [
         "//app/components/filter_input",
         "//app/router",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -339,9 +339,9 @@ ts_library(
     name = "invocation_in_progress",
     srcs = ["invocation_in_progress.tsx"],
     deps = [
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -352,7 +352,7 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:eventlog_ts_proto",
-        "@npm//rxjs",
+        "//:node_modules/rxjs",
     ],
 )
 
@@ -373,10 +373,10 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -396,13 +396,13 @@ ts_library(
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:suggestion_ts_proto",
-        "@npm//@types/moment",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//moment",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
+        "//:node_modules/@types/moment",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -417,8 +417,8 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -433,9 +433,9 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/router",
         "//app/util:git",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -444,12 +444,12 @@ ts_library(
     srcs = ["invocation_query_graph_card.tsx"],
     deps = [
         "//app/invocation:invocation_model",
-        "@npm//@types/dagre-d3",  # keep
-        "@npm//@types/react",
-        "@npm//dagre-d3-react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/dagre-d3",  # keep
+        "//:node_modules/@types/react",
+        "//:node_modules/dagre-d3-react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -461,10 +461,10 @@ ts_library(
         "//app/components/filter_input",
         "//app/invocation:invocation_model",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -486,10 +486,10 @@ ts_library(
         "//app/shortcuts",
         "//proto:acl_ts_proto",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -502,10 +502,10 @@ ts_library(
         "//app/components/link",
         "//app/invocation:invocation_model",
         "//proto:group_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -514,8 +514,8 @@ ts_library(
     srcs = ["invocation_tabs.tsx"],
     deps = [
         "//app/invocation:invocation_model",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -525,9 +525,9 @@ ts_library(
     deps = [
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_targets_card",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -540,10 +540,10 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/util:clipboard",
         "//proto:build_event_stream_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -561,12 +561,12 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_suggestion_card",
         "//app/service:rpc_service",
-        "@npm//@types/pako",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//pako",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/pako",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/pako",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -577,10 +577,10 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/router",
         "//proto:cache_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -600,11 +600,11 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:workflow_ts_proto",
-        "@npm//@types/long",
-        "@npm//@types/react",
-        "@npm//long",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -612,8 +612,8 @@ ts_library(
     name = "invocation_bot_card",
     srcs = ["invocation_bot_card.tsx"],
     deps = [
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

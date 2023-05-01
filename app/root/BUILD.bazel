@@ -21,7 +21,7 @@ ts_library(
         "//app/menu",
         "//app/preferences",
         "//app/router",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )

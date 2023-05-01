@@ -15,11 +15,11 @@ ts_library(
         "//app/util:animation_loop",
         "//app/util:dom",
         "//app/util:math",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -38,7 +38,7 @@ ts_library(
         "//app/flame_chart:profile_model",
         "//app/flame_chart:style_constants",
         "//app/util:color",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 

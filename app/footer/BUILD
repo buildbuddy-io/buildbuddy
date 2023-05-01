@@ -8,7 +8,7 @@ ts_library(
     strict = True,
     deps = [
         "//app/capabilities",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )

@@ -7,10 +7,10 @@ ts_library(
     srcs = ["scrollbar.tsx"],
     strict = True,
     deps = [
-        "@npm//@types/react",
-        "@npm//@types/uuid",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//uuid",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/uuid",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/uuid",
     ],
 )

@@ -17,12 +17,12 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
-        "@npm//@types/diff-match-patch",
-        "@npm//@types/react",
-        "@npm//diff-match-patch",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/diff-match-patch",
+        "//:node_modules/@types/react",
+        "//:node_modules/diff-match-patch",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -31,11 +31,11 @@ ts_library(
     srcs = ["diff_chunk.tsx"],
     deps = [
         "//app/components/button",
-        "@npm//@types/diff-match-patch",
-        "@npm//@types/react",
-        "@npm//diff-match-patch",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/diff-match-patch",
+        "//:node_modules/@types/react",
+        "//:node_modules/diff-match-patch",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 

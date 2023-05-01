@@ -10,10 +10,10 @@ ts_library(
     strict = True,
     deps = [
         "//app/format",
-        "@npm//@types/long",
-        "@npm//@types/react",
-        "@npm//long",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )

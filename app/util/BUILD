@@ -27,7 +27,7 @@ ts_jasmine_node_test(
     srcs = ["async_test.ts"],
     deps = [
         ":async",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -59,7 +59,7 @@ ts_library(
     name = "git",
     srcs = ["git.ts"],
     strict = True,
-    deps = ["@npm//tslib"],
+    deps = ["//:node_modules/tslib"],
 )
 
 ts_jasmine_node_test(
@@ -105,8 +105,8 @@ ts_library(
     deps = [
         "//proto:duration_ts_proto",
         "//proto:timestamp_ts_proto",
-        "@npm//@types/long",
-        "@npm//long",
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
     ],
 )
 
