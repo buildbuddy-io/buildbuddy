@@ -80,7 +80,7 @@ exports_files([
     "yarn.lock",
 ])
 
-npm_link_all_packages()
+npm_link_all_packages(name = "node_modules")
 
 ts_config(
     name = "tsconfig",
