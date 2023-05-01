@@ -1,36 +1,36 @@
 import { config } from "../../proto/config_ts_proto";
 
 declare const window: Window & {
-  buildbuddyConfig: config.IFrontendConfig;
+  buildbuddyConfig: config.FrontendConfig;
   gtag?: (method: string, ...args: any[]) => void;
 };
 
 export class Capabilities {
-  name: string;
-  paths: Set<string>;
-  enterprise: boolean;
+  name: string = "";
+  paths: Set<string> = new Set();
+  enterprise: boolean = false;
 
-  config: config.IFrontendConfig;
+  config: config.FrontendConfig = new config.FrontendConfig({});
 
-  version: string;
-  github: boolean;
-  auth: string;
-  anonymous: boolean;
-  test: boolean;
-  createOrg: boolean;
-  invocationSharing: boolean;
-  compareInvocations: boolean;
-  deleteInvocation: boolean;
-  manageApiKeys: boolean;
-  workflows: boolean;
-  executors: boolean;
-  action: boolean;
-  userOwnedExecutors: boolean;
-  executorKeyCreation: boolean;
-  code: boolean;
-  sso: boolean;
-  usage: boolean;
-  userManagement: boolean;
+  version: string = "";
+  github: boolean = false;
+  auth: string = "";
+  anonymous: boolean = false;
+  test: boolean = false;
+  createOrg: boolean = false;
+  invocationSharing: boolean = false;
+  compareInvocations: boolean = false;
+  deleteInvocation: boolean = false;
+  manageApiKeys: boolean = false;
+  workflows: boolean = false;
+  executors: boolean = false;
+  action: boolean = false;
+  userOwnedExecutors: boolean = false;
+  executorKeyCreation: boolean = false;
+  code: boolean = false;
+  sso: boolean = false;
+  usage: boolean = false;
+  userManagement: boolean = false;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;

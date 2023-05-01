@@ -25,8 +25,8 @@ type Diff = DiffChunkData[];
 interface State {
   status?: Status;
   error?: string | null;
-  invocationA?: invocation.IInvocation | null;
-  invocationB?: invocation.IInvocation | null;
+  invocationA?: invocation.Invocation;
+  invocationB?: invocation.Invocation;
   diff?: Diff | null;
   showChangesOnly: boolean;
 }
@@ -34,8 +34,6 @@ interface State {
 const INITIAL_STATE: State = {
   status: "INIT",
   error: null,
-  invocationA: null,
-  invocationB: null,
   showChangesOnly: true,
 };
 
@@ -79,7 +77,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     const { invocationAId, invocationBId } = this.props;
 
     let error: any;
-    let invocationA: invocation.IInvocation, invocationB: invocation.IInvocation;
+    let invocationA: invocation.Invocation, invocationB: invocation.Invocation;
     try {
       [invocationA, invocationB] = await Promise.all([
         this.fetchInvocation(invocationAId),
@@ -88,6 +86,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     } catch (e) {
       error = e;
     }
+    // Don't tell the user about an error if they've already moved on anyway.
     if (invocationAId !== this.props.invocationAId || invocationBId !== this.props.invocationBId) {
       return;
     }
@@ -97,10 +96,12 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       this.setState({ status: "ERROR", error: BuildBuddyError.parse(error).description });
       return;
     }
-    this.computeDiff(invocationA, invocationB);
+
+    // Typescript knows you can throw `undefined`, and I know we won't do that.
+    this.computeDiff(invocationA!, invocationB!);
   }
 
-  private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
+  private computeDiff(invocationA?: invocation.Invocation, invocationB?: invocation.Invocation) {
     if (this.state.error) return;
 
     const textA = JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2);
@@ -122,7 +123,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     });
   }
 
-  private async fetchInvocation(invocationId: string) {
+  private async fetchInvocation(invocationId: string): Promise<invocation.Invocation> {
     const response = await rpcService.service.getInvocation(
       new invocation.GetInvocationRequest({
         lookup: new invocation.InvocationLookup({
