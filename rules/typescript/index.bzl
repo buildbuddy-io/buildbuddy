@@ -1,11 +1,11 @@
-load("@aspect_rules_swc//swc:swc.bzl", "swc_transpiler")
 load("@build_bazel_rules_nodejs//internal/common:copy_to_bin.bzl", "copy_to_bin")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild")
 load("@npm//@bazel/typescript:index.bzl", "ts_project")
 load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
+load("@aspect_rules_swc//swc:defs.bzl", "swc_compile")
 
 def _swc(**kwargs):
-    swc_transpiler(
+    swc_compile(
         swcrc = "//:.swcrc",
         **kwargs
     )
