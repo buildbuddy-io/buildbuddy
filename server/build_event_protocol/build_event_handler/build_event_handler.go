@@ -756,7 +756,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 
 	artifactsToPersist := make(map[string]*url.URL, 0)
 	if e.beValues.ProfileURI() != nil && e.beValues.ProfileURI().Scheme == "bytestream" {
-		artifactsToPersist["timing_profile/" + e.beValues.ProfileName()] = e.beValues.ProfileURI()
+		artifactsToPersist["timing_profile/"+e.beValues.ProfileName()] = e.beValues.ProfileURI()
 	}
 
 	e.statsRecorder.Enqueue(
