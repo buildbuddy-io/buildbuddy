@@ -2,11 +2,10 @@ package arg
 
 import (
 	"fmt"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-import "testing"
 
 func TestFindLast(t *testing.T) {
 	repr := func(val string, idx, length int) string {
@@ -66,7 +65,12 @@ func TestGetTargets(t *testing.T) {
 	targets = GetTargets(args)
 	assert.Equal(t, []string{"foo", "bar"}, targets)
 
-	args = []string{"build", "--opt=val", "foo", "bar", "--", "baz"}
+	args = []string{"run", "--opt=val", "foo", "bar", "--", "baz"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{"foo", "bar"}, targets)
+
+	// Support subtractive patterns https://bazel.build/run/build#specifying-build-targets
+	args = []string{"build", "--opt=val", "--", "foo", "bar", "-baz"}
 	targets = GetTargets(args)
 	assert.Equal(t, []string{"foo", "bar"}, targets)
 

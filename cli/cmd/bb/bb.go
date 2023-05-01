@@ -126,6 +126,9 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 
+	// Show a picker if target argument is omitted.
+	args = picker.HandlePicker(args)
+
 	// Parse args.
 	bazelArgs, execArgs := arg.SplitExecutableArgs(args)
 	// TODO: Expanding configs results in a long explicit command line in the BB
@@ -161,9 +164,6 @@ func run() (exitCode int, err error) {
 			return -1, err
 		}
 	}
-
-	// Show a picker if target argument is omitted.
-	args = picker.HandlePicker(args)
 
 	// Note: sidecar is configured after pre-bazel plugins, since pre-bazel
 	// plugins may change the value of bes_backend, remote_cache,
