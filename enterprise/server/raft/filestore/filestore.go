@@ -75,6 +75,10 @@ const (
 	// regardless of remote instance name.
 	Version2
 
+	// Version3 adds an optional encryption key ID for keys that refer to
+	// encrypted data.
+	Version3
+
 	// TestingMaxKeyVersion should not be used directly -- it is always
 	// 1 more than the highest defined version, which allows for tests
 	// to iterate across all versions from UndefinedKeyVersion to
@@ -88,6 +92,7 @@ type PebbleKey struct {
 	isolation          string
 	remoteInstanceHash string
 	hash               string
+	encryptionKeyID    string
 }
 
 func (pmk PebbleKey) String() string {
@@ -114,6 +119,10 @@ func (pmk PebbleKey) CacheType() rspb.CacheType {
 	default:
 		return rspb.CacheType_UNKNOWN_CACHE_TYPE
 	}
+}
+
+func (pmk PebbleKey) Hash() string {
+	return pmk.hash
 }
 
 // Returns a group ID that is zero padded to 20 digits in order to make all
@@ -163,6 +172,18 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		}
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v2")
+		return []byte(filePath), nil
+	case Version3:
+		rih := pmk.remoteInstanceHash
+		if pmk.isolation == "ac" && rih == "" {
+			rih = "0"
+		}
+		filePath := filepath.Join(pmk.hash, pmk.isolation, rih, pmk.encryptionKeyID)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(fixedWidthGroupID(pmk.groupID), filePath)
+		}
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v3")
 		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
@@ -219,6 +240,38 @@ func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
 	return nil
 }
 
+func (pmk *PebbleKey) parseVersion3(parts [][]byte) error {
+	switch len(parts) {
+	// CAS artifact
+	// PTfoo/abcd12345asdasdasd123123123asdasdasd/v3
+	case 4:
+		pmk.partID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2])
+	// encrypted CAS artifact
+	// PTfoo/abcd12345asdasdasd123123123asdasdasd/EK123/v3
+	case 5:
+		pmk.partID, pmk.hash, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	// AC artifact
+	// PTfoo/GR123/abcd12345asdasdasd123123123asdasdasd/ac/123/v3
+	case 6:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	// encrypted AC artifact
+	// PTfoo/GR123/abcd12345asdasdasd123123123asdasdasd/ac/123/EK123/v3
+	case 7:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	pmk.groupID = trimFixedWidthGroupID(pmk.groupID)
+	return nil
+}
+
 func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	version := UndefinedKeyVersion
 	slash := []byte{filepath.Separator}
@@ -247,6 +300,8 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 		return Version1, pmk.parseVersion1(parts)
 	case Version2:
 		return Version2, pmk.parseVersion2(parts)
+	case Version3:
+		return Version3, pmk.parseVersion3(parts)
 	default:
 		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
 	}
@@ -348,6 +403,7 @@ func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
 		isolation:          isolation,
 		remoteInstanceHash: remoteInstanceHash,
 		hash:               hash,
+		encryptionKeyID:    r.GetEncryption().GetKeyId(),
 	}, nil
 }
 

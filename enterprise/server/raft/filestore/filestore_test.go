@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
@@ -57,20 +58,27 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 
 func TestKnownVersions(t *testing.T) {
 	versionExemplars := map[filestore.PebbleKeyVersion][]string{
-		filestore.UndefinedKeyVersion: []string{
+		filestore.UndefinedKeyVersion: {
 			"PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2",
 			"PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
 			"PTdefault/GR5787812970202071253/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
 		},
-		filestore.Version1: []string{
+		filestore.Version1: {
 			"PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/v1",
 			"PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
 			"PTFOO/GR7890/ac/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
 		},
-		filestore.Version2: []string{
+		filestore.Version2: {
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/cas/v2",
 			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/2364854541/v2",
 			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/v2",
+		},
+		filestore.Version3: {
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/cas/v3",
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/cas/EK123/v3",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/2364854541/v3",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/2364854541/EK123/v3",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/0/v3",
 		},
 	}
 
@@ -95,16 +103,19 @@ func TestMigration(t *testing.T) {
 			filestore.UndefinedKeyVersion: "PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2",
 			filestore.Version1:            "PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/v1",
 			filestore.Version2:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v2",
+			filestore.Version3:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v3",
 		},
 		{
 			filestore.UndefinedKeyVersion: "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
 			filestore.Version1:            "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
 			filestore.Version2:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v2",
+			filestore.Version3:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3",
 		},
 		{
 			filestore.UndefinedKeyVersion: "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
 			filestore.Version1:            "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/v1",
 			filestore.Version2:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/v2",
+			filestore.Version3:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/0/v3",
 		},
 	}
 
@@ -195,5 +206,61 @@ func TestLockID(t *testing.T) {
 			assert.NotContains(t, uniqueLocks, l)
 			uniqueLocks[l] = struct{}{}
 		}
+	}
+}
+
+func formatKey(t *testing.T, fr *rfpb.FileRecord) string {
+	fs := filestore.New()
+	pk, err := fs.PebbleKey(fr)
+	require.NoError(t, err)
+	bs, err := pk.Bytes(filestore.Version3)
+	require.NoError(t, err)
+	return string(bs)
+}
+
+func TestVersion3(t *testing.T) {
+	partitionID := "foo"
+	groupID := "GR123"
+	d := &repb.Digest{Hash: "647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309", SizeBytes: 123}
+
+	// AC
+	{
+		// AC w/o instance name.
+		fr := &rfpb.FileRecord{
+			Isolation: &rfpb.Isolation{
+				CacheType:          rspb.CacheType_AC,
+				RemoteInstanceName: "",
+				PartitionId:        partitionID,
+				GroupId:            groupID,
+			},
+			Digest: d,
+		}
+		require.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/0/v3", formatKey(t, fr))
+
+		// AC w/ instance name.
+		fr.Isolation.RemoteInstanceName = "remote_instance_name"
+		require.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3", formatKey(t, fr))
+
+		// AC w/ instance name & encryption.
+		fr.Encryption = &rfpb.Encryption{KeyId: "EK456"}
+		require.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/EK456/v3", formatKey(t, fr))
+	}
+
+	// CAS
+	{
+		// CAS w/o encryption
+		fr := &rfpb.FileRecord{
+			Isolation: &rfpb.Isolation{
+				CacheType:   rspb.CacheType_CAS,
+				PartitionId: partitionID,
+				GroupId:     groupID,
+			},
+			Digest: d,
+		}
+		require.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/v3", formatKey(t, fr))
+
+		// CAS w/ encryption
+		fr.Encryption = &rfpb.Encryption{KeyId: "EK456"}
+		require.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/EK456/v3", formatKey(t, fr))
 	}
 }
