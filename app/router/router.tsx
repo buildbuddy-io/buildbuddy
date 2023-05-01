@@ -306,7 +306,8 @@ class Router {
   }
 
   getTab() {
-    return window.location.hash.split("@")[0];
+    let tab = window.location.hash.split("@")[0];
+    return tab == "#" ? "" : tab;
   }
 
   getLineNumber() {
