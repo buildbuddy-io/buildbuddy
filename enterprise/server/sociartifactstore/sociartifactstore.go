@@ -7,11 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +46,10 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+var (
+	layerStorage = flag.String("soci_artifact_store.layer_storage", "/tmp/", "Directory in which to store pulled container image layers for indexing by soci artifact store.")
+)
+
 const (
 	// Prefix for soci artifacts store in blobstore
 	blobKeyPrefix = "soci-index-"
@@ -60,7 +65,7 @@ const (
 	// The SOCI Index build tool. !!! WARNING !!! This is embedded in both the
 	// ZToCs and SOCI index, so changing it will invalidate all previously
 	// generated and stored soci artifacts, forcing a re-pull and re-index.
-	buildToolIdentifier = "AWS SOCI CLI v0.1"
+	buildToolIdentifier = "BuildBuddy SOCI Artifact Store v0.1"
 
 	// Media type for binary data (e.g. ZTOC format).
 	octetStreamMediaType = "application/octet-stream"
@@ -390,6 +395,8 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image) (*re
 	if err != nil {
 		return nil, nil, err
 	}
+	// TODO(iain): parallelize layer ztoc generation:
+	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/2267
 	ztocDigests := []*repb.Digest{}
 	ztocDescriptors := []ocispec.Descriptor{}
 	for _, layer := range layers {
@@ -496,7 +503,7 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 			layerDigest.Hex, mediaType, compressionAlgo)
 	}
 
-	layerTmpFile, err := os.CreateTemp("", "layer.*")
+	layerTmpFile, err := os.Create(filepath.Join(*layerStorage, layerDigest.Hex))
 	if err != nil {
 		return nil, err
 	}
@@ -526,8 +533,18 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 		Hash:      ztocDesc.Digest.Encoded(),
 		SizeBytes: ztocDesc.Size,
 	}
-	ztocBytes, err := ioutil.ReadAll(ztocReader)
-	s.cache.Set(ctx, resourceName(&ztocDigest), ztocBytes)
+	cacheWriter, err := s.cache.Writer(ctx, resourceName(&ztocDigest))
+	if err != nil {
+		return nil, err
+	}
+	defer cacheWriter.Close()
+	_, err = io.Copy(cacheWriter, ztocReader)
+	if err != nil {
+		return err
+	}
+	if err = cacheWriter.Commit(); err != nil {
+		return err
+	}
 	return &ztocDigest, nil
 }
 
