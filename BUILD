@@ -2,6 +2,8 @@ load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 load("@npm//@bazel/typescript:index.bzl", "ts_config")
 load("//rules/go:index.bzl", "go_sdk_tool")
+load("@bazel_tools//tools/sh:sh_toolchain.bzl", "sh_toolchain")
+load("@npm//:defs.bzl", "npm_link_all_packages")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -77,6 +79,8 @@ exports_files([
     "package.json",
     "yarn.lock",
 ])
+
+npm_link_all_packages()
 
 ts_config(
     name = "tsconfig",
@@ -207,8 +211,6 @@ platform(
 # https://github.com/aspect-build/rules_swc/issues/20
 # We should probably either move these to the buildbuddy-toolchain repo
 # or add a symlink from /usr/bin/bash -> /bin/bash to remove the need for these.
-load("@bazel_tools//tools/sh:sh_toolchain.bzl", "sh_toolchain")
-
 sh_toolchain(
     name = "bash_rbe_ubuntu1604",
     path = "/bin/bash",
