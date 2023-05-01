@@ -480,6 +480,9 @@ func testDecryption(ctx context.Context, t *testing.T, crypter *Crypter, input [
 }
 
 func testEncryptDecrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, expectedKeyID string) {
+	ctx, err := auther.WithAuthenticatedUser(ctx, userID)
+	require.NoError(t, err)
+
 	input := []byte("hello world")
 
 	encrypted, metadata := testEncrypt(ctx, t, auther, crypter, userID, expectedKeyID, input)
