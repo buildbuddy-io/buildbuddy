@@ -3,6 +3,8 @@ lockfileVersion: '6.0'
 overrides:
   '@types/react': ^16.8.17
 
+packageExtensionsChecksum: 5a3207fb7fe6afadf1bf8137ee0e9e35
+
 dependencies:
   shlex:
     specifier: ^2.1.2
@@ -238,6 +240,13 @@ packages:
 
   /@babel/runtime@7.18.6:
     resolution: {integrity: sha512-t9wi7/AW6XtKahAe20Yw0/mMljKq0B1r2fPdvaAdV/KPDZewFXdaaa6K7lxmZBZ8FBNpCiAT6iHPmd6QO9bKfQ==}
+    engines: {node: '>=6.9.0'}
+    dependencies:
+      regenerator-runtime: 0.13.7
+    dev: true
+
+  /@babel/runtime@7.19.0:
+    resolution: {integrity: sha512-eR8Lo9hnDS7tqkO7NsV+mKvCmv5boaXFSZ70DnfhcgiEne8hv9oCEd36Klw74EtizEqLsy4YnW8UWwpBVolHZA==}
     engines: {node: '>=6.9.0'}
     dependencies:
       regenerator-runtime: 0.13.7
@@ -1118,7 +1127,7 @@ packages:
   /dom-helpers@3.4.0:
     resolution: {integrity: sha512-LnuPJ+dwqKDIyotW1VzmOZ5TONUN7CwkCR5hrgawTUbkBGYdeoNLZo6nNfGkCrjtE1nXXaj7iMMpDa8/d9WoIA==}
     dependencies:
-      '@babel/runtime': 7.18.6
+      '@babel/runtime': 7.19.0
     dev: true
 
   /emoji-regex@7.0.3:
@@ -2181,6 +2190,7 @@ packages:
     peerDependencies:
       react: ^16 || ^17 || ^18
     dependencies:
+      '@babel/runtime': 7.19.0
       prop-types: 15.8.1
       react: 16.14.0
     dev: true

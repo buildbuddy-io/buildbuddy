@@ -77,5 +77,15 @@
   },
   "dependencies": {
     "shlex": "^2.1.2"
+  },
+  "pnpm": {
+    "packageExtensions": {
+      "react-slider": {
+        "//": "Fixes an issue that esbuild can't build react-slider because it implicitly depends on @babel/runtime.",
+        "dependencies": {
+          "@babel/runtime": "7.19.0"
+        }
+      }
+    }
   }
 }
