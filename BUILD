@@ -1,6 +1,6 @@
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
-load("@npm//@bazel/typescript:index.bzl", "ts_config")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//rules/go:index.bzl", "go_sdk_tool")
 load("@bazel_tools//tools/sh:sh_toolchain.bzl", "sh_toolchain")
 load("@npm//:defs.bzl", "npm_link_all_packages")

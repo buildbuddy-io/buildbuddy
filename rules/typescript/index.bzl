@@ -1,6 +1,6 @@
 load("@build_bazel_rules_nodejs//internal/common:copy_to_bin.bzl", "copy_to_bin")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@npm//@bazel/typescript:index.bzl", "ts_project")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@aspect_rules_swc//swc:defs.bzl", "swc_compile")
 load("@npm//:jasmine/package_json.bzl", jasmine_bin = "bin")
 
