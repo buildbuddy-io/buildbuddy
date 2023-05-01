@@ -1,5 +1,5 @@
 load("//rules/typescript:index.bzl", "ts_library")
-load("@npm//@bazel/esbuild:index.bzl", "esbuild", "esbuild_config")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("//rules/sha:index.bzl", "sha")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
@@ -9,24 +9,9 @@ config_setting(
     values = {"compilation_mode": "fastbuild"},
 )
 
-esbuild_config(
-    name = "esbuild_config",
-    config_file = "esbuild.config.mjs",
-)
-
 esbuild(
     name = "app_bundle",
-    args = {
-        "resolveExtensions": [
-            ".mjs",
-            ".js",
-        ],
-        "loader": {
-            ".ttf": "binary",
-            ".css": "binary",
-        },
-    },
-    config = ":esbuild_config",
+    config = ":esbuild.config.mjs",
     define = {"process.env.NODE_ENV": '"production"'},
     entry_points = [
         "app.tsx",

@@ -1,5 +1,5 @@
 load("@build_bazel_rules_nodejs//internal/common:copy_to_bin.bzl", "copy_to_bin")
-load("@npm//@bazel/esbuild:index.bzl", "esbuild")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@npm//@bazel/typescript:index.bzl", "ts_project")
 load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
 load("@aspect_rules_swc//swc:defs.bzl", "swc_compile")
@@ -55,7 +55,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", strict = False, 
     # more easily supported there.
     esbuild(
         name = "%s_commonjs" % name,
-        args = {"resolveExtensions": [".mjs", ".js"]},
+        config = {"resolveExtensions": [".mjs", ".js"]},
         testonly = 1,
         entry_point = srcs[0],
         deps = ["%s_esm" % name],
