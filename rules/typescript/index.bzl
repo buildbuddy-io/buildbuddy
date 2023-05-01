@@ -20,6 +20,15 @@ def ts_library(name, srcs, strict = False, **kwargs):
         composite = True,
         transpiler = _swc,
         srcs = srcs,
+        validate = False,
+        # ts_project uses persistent worker by default,
+        # However the worker pool is shared per package thus having multiple
+        # ts_project rules in the same package will cause the workers to
+        # generate the wrong .tsbuildinfo file.
+        # Disable for now (use RBE instead).
+        #
+        # https://github.com/aspect-build/rules_ts/issues/309
+        supports_workers = False,
         **kwargs
     )
 
@@ -36,7 +45,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", strict = False, 
         strict = strict,
         testonly = 1,
         srcs = srcs,
-        deps = deps + ["@npm//@types/jasmine"],
+        deps = deps + ["//:node_modules/@types/jasmine"],
         **kwargs
     )
 

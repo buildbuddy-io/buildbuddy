@@ -103,10 +103,10 @@ ts_library(
     srcs = ["proto.ts"],
     strict = True,
     deps = [
-        "//proto:duration_ts_proto",
-        "//proto:timestamp_ts_proto",
         "//:node_modules/@types/long",
         "//:node_modules/long",
+        "//proto:duration_ts_proto",
+        "//proto:timestamp_ts_proto",
     ],
 )
 
