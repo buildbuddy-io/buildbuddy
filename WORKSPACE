@@ -2,8 +2,7 @@ workspace(
     name = "buildbuddy",
 )
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
 # Bazel platforms
 
@@ -85,16 +84,22 @@ go_register_toolchains(
 gazelle_dependencies()
 
 # Node
-
 http_archive(
     name = "build_bazel_rules_nodejs",
     sha256 = "2b2004784358655f334925e7eadc7ba80f701144363df949b3293e1ae7a2fb7b",
     urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.4.0/rules_nodejs-5.4.0.tar.gz"],
 )
 
-load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
+http_archive(
+    name = "aspect_rules_js",
+    sha256 = "3e237129b3554373a80c681c4b47348f91c294ff32d4bc8f8297f40511a4eb6c",
+    strip_prefix = "rules_js-1.25.4",
+    url = "https://github.com/aspect-build/rules_js/releases/download/v1.25.4/rules_js-v1.25.4.tar.gz",
+)
 
-build_bazel_rules_nodejs_dependencies()
+load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
+
+rules_js_dependencies()
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
@@ -103,22 +108,17 @@ nodejs_register_toolchains(
     node_version = "16.9.0",
 )
 
-load("@rules_nodejs//nodejs:yarn_repositories.bzl", "yarn_repositories")
+load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock")
 
-yarn_repositories(
-    name = "yarn",
-    yarn_version = "1.22.10",
-)
-
-load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
-
-yarn_install(
+npm_translate_lock(
     name = "npm",
-    exports_directories_only = False,
-    package_json = "//:package.json",
-    symlink_node_modules = False,
-    yarn_lock = "//:yarn.lock",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
 )
+
+load("@npm//:repositories.bzl", "npm_repositories")
+
+npm_repositories()
 
 # Proto -- must be before container_repositories so we don't inherit their rules_pkg.
 
