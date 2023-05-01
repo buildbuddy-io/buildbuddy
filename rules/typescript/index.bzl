@@ -1,8 +1,8 @@
 load("@build_bazel_rules_nodejs//internal/common:copy_to_bin.bzl", "copy_to_bin")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@npm//@bazel/typescript:index.bzl", "ts_project")
-load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
 load("@aspect_rules_swc//swc:defs.bzl", "swc_compile")
+load("@npm//:jasmine/package_json.bzl", jasmine_bin = "bin")
 
 def _swc(**kwargs):
     swc_compile(
@@ -72,9 +72,10 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", strict = False, 
         tags = ["local"],
     )
 
-    jasmine_node_test(
+    jasmine_bin.jasmine_test(
         name = name,
         size = "small",
-        srcs = [":%s_commonjs.test.js" % name],
+        data = [":%s_commonjs.test.js" % name],
+        args = ["**/*.test.js"],
         **kwargs
     )
