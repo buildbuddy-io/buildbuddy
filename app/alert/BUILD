@@ -7,11 +7,11 @@ ts_library(
     srcs = ["alert.tsx"],
     strict = True,
     deps = [
-        "//app/alert:alert_service",
-        "//app/components/banner",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/rxjs",
+        "//app/alert:alert_service",
+        "//app/components/banner",
     ],
 )
 

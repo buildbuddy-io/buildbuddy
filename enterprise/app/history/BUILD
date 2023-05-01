@@ -8,6 +8,13 @@ ts_library(
     name = "history",
     srcs = ["history.tsx"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
@@ -27,13 +34,6 @@ ts_library(
         "//enterprise/app/org:org_join_requests",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/long",
-        "//:node_modules/@types/react",
-        "//:node_modules/long",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -41,14 +41,14 @@ ts_library(
     name = "history_invocation_card",
     srcs = ["history_invocation_card.tsx"],
     deps = [
-        "//app/format",
-        "//app/router",
-        "//proto:invocation_status_ts_proto",
-        "//proto:invocation_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/format",
+        "//app/router",
+        "//proto:invocation_status_ts_proto",
+        "//proto:invocation_ts_proto",
     ],
 )
 
@@ -56,12 +56,12 @@ ts_library(
     name = "history_invocation_stat_card",
     srcs = ["history_invocation_stat_card.tsx"],
     deps = [
-        "//app/format",
-        "//app/router",
-        "//proto:invocation_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/format",
+        "//app/router",
+        "//proto:invocation_ts_proto",
     ],
 )
 

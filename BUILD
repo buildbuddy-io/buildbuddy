@@ -1,10 +1,10 @@
 load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
-load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//rules/go:index.bzl", "go_sdk_tool")
+load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@bazel_tools//tools/sh:sh_toolchain.bzl", "sh_toolchain")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 load("@npm//:defs.bzl", "npm_link_all_packages")
+load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
 

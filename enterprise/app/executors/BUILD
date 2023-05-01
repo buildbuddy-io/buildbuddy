@@ -8,6 +8,10 @@ ts_library(
     name = "executors",
     srcs = ["executors.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/components/banner",
         "//app/components/button",
@@ -19,10 +23,6 @@ ts_library(
         "//proto:api_key_ts_proto",
         "//proto:bazel_config_ts_proto",
         "//proto:scheduler_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -30,10 +30,10 @@ ts_library(
     name = "executor_card",
     srcs = ["executor_card.tsx"],
     deps = [
-        "//app/format",
-        "//proto:scheduler_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/format",
+        "//proto:scheduler_ts_proto",
     ],
 )

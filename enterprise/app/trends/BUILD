@@ -9,6 +9,12 @@ ts_library(
     srcs = ["trends.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/moment",
+        "//:node_modules/@types/react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/format",
@@ -23,12 +29,6 @@ ts_library(
         "//enterprise/app/trends:summary_card",
         "//enterprise/app/trends:trends_chart",
         "//proto:stats_ts_proto",
-        "//:node_modules/@types/moment",
-        "//:node_modules/@types/react",
-        "//:node_modules/moment",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -37,11 +37,11 @@ ts_library(
     srcs = ["cache_chart.tsx"],
     strict = True,
     deps = [
-        "//app/format",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/recharts",
         "//:node_modules/tslib",
+        "//app/format",
     ],
 )
 
@@ -50,6 +50,15 @@ ts_library(
     srcs = ["drilldown_page.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/moment",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/lucide-react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//:node_modules/recharts",
+        "//:node_modules/tslib",
         "//app/auth:user",
         "//app/capabilities",
         "//app/components/button",
@@ -69,15 +78,6 @@ ts_library(
         "//proto:stat_filter_ts_proto",
         "//proto:stats_ts_proto",
         "//proto:timestamp_ts_proto",
-        "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
-        "//:node_modules/@types/react",
-        "//:node_modules/long",
-        "//:node_modules/lucide-react",
-        "//:node_modules/moment",
-        "//:node_modules/react",
-        "//:node_modules/recharts",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -86,8 +86,6 @@ ts_library(
     srcs = ["heatmap.tsx"],
     strict = True,
     deps = [
-        "//app/components/tooltip",
-        "//proto:stats_ts_proto",
         "//:node_modules/@types/d3-scale",
         "//:node_modules/@types/long",
         "//:node_modules/@types/moment",
@@ -98,6 +96,8 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-resize-detector",
         "//:node_modules/tslib",
+        "//app/components/tooltip",
+        "//proto:stats_ts_proto",
     ],
 )
 
@@ -106,11 +106,11 @@ ts_library(
     srcs = ["percentile_chart.tsx"],
     strict = True,
     deps = [
-        "//app/format",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/recharts",
         "//:node_modules/tslib",
+        "//app/format",
     ],
 )
 
@@ -119,13 +119,13 @@ ts_library(
     srcs = ["summary_card.tsx"],
     strict = True,
     deps = [
-        "//app/format",
-        "//enterprise/app/filter:filter_util",
-        "//proto:stats_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/format",
+        "//enterprise/app/filter:filter_util",
+        "//proto:stats_ts_proto",
     ],
 )
 

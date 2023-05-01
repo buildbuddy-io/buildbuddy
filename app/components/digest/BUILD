@@ -9,11 +9,11 @@ ts_library(
     srcs = ["digest.tsx"],
     strict = True,
     deps = [
-        "//app/format",
         "//:node_modules/@types/long",
         "//:node_modules/@types/react",
         "//:node_modules/long",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/format",
     ],
 )

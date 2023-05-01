@@ -9,11 +9,11 @@ ts_library(
     srcs = ["quota.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//enterprise/app/quota:bucket",
         "//enterprise/app/quota:namespace",
         "//enterprise/app/quota:namespaces",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -22,6 +22,9 @@ ts_library(
     srcs = ["bucket.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/errors:error_service",
         "//app/router",
@@ -29,9 +32,6 @@ ts_library(
         "//enterprise/app/quota:bucket_form",
         "//enterprise/app/quota:quota_breadcrumbs",
         "//proto:quota_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -40,14 +40,14 @@ ts_library(
     srcs = ["bucket_form.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/input",
         "//proto:duration_ts_proto",
         "//proto:quota_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -56,6 +56,8 @@ ts_library(
     srcs = ["namespace.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/button:link_button",
@@ -68,8 +70,6 @@ ts_library(
         "//app/util:proto",
         "//enterprise/app/quota:quota_breadcrumbs",
         "//proto:quota_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -78,6 +78,8 @@ ts_library(
     srcs = ["namespaces.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/button:link_button",
@@ -86,8 +88,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:quota_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -96,8 +96,8 @@ ts_library(
     srcs = ["quota_breadcrumbs.tsx"],
     strict = True,
     deps = [
-        "//app/components/link",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//app/components/link",
     ],
 )

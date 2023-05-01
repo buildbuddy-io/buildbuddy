@@ -6,6 +6,9 @@ ts_library(
     name = "target",
     srcs = ["target.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/components/button:link_button",
@@ -21,9 +24,6 @@ ts_library(
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -31,14 +31,14 @@ ts_library(
     name = "action_card",
     srcs = ["action_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/docs:setup_code",
         "//app/format",
         "//app/service:rpc_service",
         "//app/terminal",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -46,13 +46,13 @@ ts_library(
     name = "target_artifacts_card",
     srcs = ["target_artifacts_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/capabilities",
         "//app/service:rpc_service",
         "//proto:build_event_stream_ts_proto",
         "//proto:zip_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -60,10 +60,10 @@ ts_library(
     name = "target_log_card",
     srcs = ["target_log_card.tsx"],
     deps = [
-        "//app/terminal",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/terminal",
     ],
 )
 
@@ -71,13 +71,13 @@ ts_library(
     name = "target_test_cases_card",
     srcs = ["target_test_cases_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/format",
         "//app/terminal",
         "//app/util:proto",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -85,12 +85,12 @@ ts_library(
     name = "target_test_document_card",
     srcs = ["target_test_document_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/service:rpc_service",
         "//app/target:target_log_card",
         "//app/target:target_test_cases_card",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -98,6 +98,9 @@ ts_library(
     name = "target_test_log_card",
     srcs = ["target_test_log_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/docs:setup_code",
         "//app/format",
         "//app/service:rpc_service",
@@ -105,9 +108,6 @@ ts_library(
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -115,14 +115,14 @@ ts_library(
     name = "target_test_coverage_card",
     srcs = ["target_test_coverage_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/format",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//app/util:color",
         "//app/util:lcov",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )

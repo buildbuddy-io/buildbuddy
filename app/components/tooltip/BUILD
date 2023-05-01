@@ -7,11 +7,11 @@ ts_library(
     srcs = ["tooltip.tsx"],
     strict = True,
     deps = [
-        "//app/util:math",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/tslib",
+        "//app/util:math",
     ],
 )

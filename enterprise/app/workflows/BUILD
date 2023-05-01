@@ -9,6 +9,10 @@ ts_library(
     srcs = ["workflows.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -29,10 +33,6 @@ ts_library(
         "//enterprise/app/workflows:zero_state",
         "//proto:github_ts_proto",
         "//proto:workflow_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -41,6 +41,9 @@ ts_library(
     srcs = ["create_workflow.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/components/button",
@@ -51,9 +54,6 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:workflow_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -62,6 +62,9 @@ ts_library(
     srcs = ["github_import.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/link",
@@ -70,9 +73,6 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:workflow_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -91,6 +91,9 @@ ts_library(
     srcs = ["github_app_import.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/auth:user",
         "//app/components/banner",
@@ -104,8 +107,5 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:git",
         "//proto:github_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )

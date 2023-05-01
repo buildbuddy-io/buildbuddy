@@ -9,6 +9,9 @@ ts_library(
     srcs = ["root.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -39,8 +42,5 @@ ts_library(
         "//enterprise/app/trends",
         "//enterprise/app/usage",
         "//enterprise/app/workflows",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )

@@ -7,6 +7,8 @@ ts_library(
     srcs = ["auth_service.ts"],
     strict = True,
     deps = [
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/auth:user",
         "//app/capabilities",
         "//app/errors:error_service",
@@ -16,8 +18,6 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "//proto:user_ts_proto",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
     ],
 )
 

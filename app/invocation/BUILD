@@ -8,6 +8,12 @@ ts_library(
     name = "invocation",
     srcs = ["invocation.tsx"],
     deps = [
+        "//:node_modules/@types/moment",
+        "//:node_modules/@types/react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/favicon",
@@ -44,12 +50,6 @@ ts_library(
         "//app/util:errors",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/moment",
-        "//:node_modules/@types/react",
-        "//:node_modules/moment",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -57,6 +57,10 @@ ts_library(
     name = "cache_requests_card",
     srcs = ["cache_requests_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/digest",
         "//app/components/filter_input",
@@ -75,10 +79,6 @@ ts_library(
         "//proto:field_mask_ts_proto",
         "//proto:invocation_status_ts_proto",
         "//proto:resource_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -86,11 +86,11 @@ ts_library(
     name = "child_invocation_card",
     srcs = ["child_invocation_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/format",
         "//app/router",
         "//proto:build_event_stream_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -98,12 +98,12 @@ ts_library(
     name = "child_invocations",
     srcs = ["child_invocations.tsx"],
     deps = [
-        "//app/invocation:child_invocation_card",
-        "//app/invocation:invocation_model",
-        "//app/util:proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/invocation:child_invocation_card",
+        "//app/invocation:invocation_model",
+        "//app/util:proto",
     ],
 )
 
@@ -111,6 +111,9 @@ ts_library(
     name = "invocation_action_card",
     srcs = ["invocation_action_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/components/digest",
         "//app/components/link",
         "//app/format",
@@ -120,9 +123,6 @@ ts_library(
         "//app/service:rpc_service",
         "//app/terminal",
         "//proto:remote_execution_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -130,11 +130,11 @@ ts_library(
     name = "invocation_action_input_node",
     srcs = ["invocation_action_input_node.tsx"],
     deps = [
-        "//app/components/digest",
-        "//proto:remote_execution_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/components/digest",
+        "//proto:remote_execution_ts_proto",
     ],
 )
 
@@ -142,13 +142,13 @@ ts_library(
     name = "invocation_artifacts_card",
     srcs = ["invocation_artifacts_card.tsx"],
     deps = [
-        "//app/invocation:invocation_model",
-        "//app/service:rpc_service",
-        "//proto:build_event_stream_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//proto:build_event_stream_ts_proto",
     ],
 )
 
@@ -156,12 +156,12 @@ ts_library(
     name = "invocation_breakdown_card",
     srcs = ["invocation_breakdown_card.tsx"],
     deps = [
-        "//app/format",
-        "//app/util:color",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/recharts",
+        "//app/format",
+        "//app/util:color",
     ],
 )
 
@@ -169,10 +169,10 @@ ts_library(
     name = "invocation_build_logs_card",
     srcs = ["invocation_build_logs_card.tsx"],
     deps = [
-        "//app/terminal",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/terminal",
     ],
 )
 
@@ -180,6 +180,10 @@ ts_library(
     name = "invocation_buttons",
     srcs = ["invocation_buttons.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
@@ -189,10 +193,6 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_share_button",
         "//app/invocation:workflow_rerun_button",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -200,12 +200,12 @@ ts_library(
     name = "invocation_cache_card",
     srcs = ["invocation_cache_card.tsx"],
     deps = [
-        "//app/format",
-        "//app/invocation:invocation_model",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/recharts",
+        "//app/format",
+        "//app/invocation:invocation_model",
     ],
 )
 
@@ -213,14 +213,14 @@ ts_library(
     name = "invocation_cancel_button",
     srcs = ["invocation_cancel_button.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/components/button",
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -228,15 +228,15 @@ ts_library(
     name = "invocation_compare_button",
     srcs = ["invocation_compare_button.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/capabilities",
         "//app/components/button",
         "//app/components/menu",
         "//app/components/popup",
         "//app/router",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -244,15 +244,15 @@ ts_library(
     name = "invocation_details_card",
     srcs = ["invocation_details_card.tsx"],
     deps = [
-        "//app/alert:alert_service",
-        "//app/invocation:invocation_model",
-        "//app/util:clipboard",
-        "//proto:command_line_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/shlex",
         "//:node_modules/tslib",
+        "//app/alert:alert_service",
+        "//app/invocation:invocation_model",
+        "//app/util:clipboard",
+        "//proto:command_line_ts_proto",
     ],
 )
 
@@ -260,10 +260,10 @@ ts_library(
     name = "invocation_error_card",
     srcs = ["invocation_error_card.tsx"],
     deps = [
-        "//app/invocation:invocation_model",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/invocation:invocation_model",
     ],
 )
 
@@ -271,6 +271,8 @@ ts_library(
     name = "invocation_execution_card",
     srcs = ["invocation_execution_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/components/button",
         "//app/components/select",
         "//app/invocation:invocation_execution_table",
@@ -279,8 +281,6 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
         "//proto:remote_execution_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -288,13 +288,13 @@ ts_library(
     name = "invocation_execution_table",
     srcs = ["invocation_execution_table.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/components/digest",
         "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_execution_util",
         "//proto:execution_stats_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -302,13 +302,13 @@ ts_library(
     name = "invocation_execution_util",
     srcs = ["invocation_execution_util.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:timestamp_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -316,10 +316,10 @@ ts_library(
     name = "invocation_fetch_card",
     srcs = ["invocation_fetch_card.tsx"],
     deps = [
-        "//app/invocation:invocation_model",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/invocation:invocation_model",
     ],
 )
 
@@ -327,11 +327,11 @@ ts_library(
     name = "invocation_filter",
     srcs = ["invocation_filter.tsx"],
     deps = [
-        "//app/components/filter_input",
-        "//app/router",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/components/filter_input",
+        "//app/router",
     ],
 )
 
@@ -349,10 +349,10 @@ ts_library(
     name = "invocation_logs_model",
     srcs = ["invocation_logs_model.tsx"],
     deps = [
+        "//:node_modules/rxjs",
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:eventlog_ts_proto",
-        "//:node_modules/rxjs",
     ],
 )
 
@@ -360,6 +360,10 @@ ts_library(
     name = "invocation_menu",
     srcs = ["invocation_menu.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
@@ -373,10 +377,6 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -384,6 +384,13 @@ ts_library(
     name = "invocation_model",
     srcs = ["invocation_model.tsx"],
     deps = [
+        "//:node_modules/@types/moment",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/favicon",
         "//app/format",
         "//app/service:rpc_service",
@@ -396,13 +403,6 @@ ts_library(
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:suggestion_ts_proto",
-        "//:node_modules/@types/moment",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/moment",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -410,6 +410,8 @@ ts_library(
     name = "invocation_not_found",
     srcs = ["invocation_not_found.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
@@ -417,8 +419,6 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -426,6 +426,9 @@ ts_library(
     name = "invocation_overview",
     srcs = ["invocation_overview.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/components/link",
         "//app/format",
@@ -433,9 +436,6 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/router",
         "//app/util:git",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -443,13 +443,13 @@ ts_library(
     name = "invocation_query_graph_card",
     srcs = ["invocation_query_graph_card.tsx"],
     deps = [
-        "//app/invocation:invocation_model",
         "//:node_modules/@types/dagre-d3",  # keep
         "//:node_modules/@types/react",
         "//:node_modules/dagre-d3-react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/invocation:invocation_model",
     ],
 )
 
@@ -457,14 +457,14 @@ ts_library(
     name = "invocation_raw_logs_card",
     srcs = ["invocation_raw_logs_card.tsx"],
     deps = [
-        "//app/components/button",
-        "//app/components/filter_input",
-        "//app/invocation:invocation_model",
-        "//proto:invocation_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/components/button",
+        "//app/components/filter_input",
+        "//app/invocation:invocation_model",
+        "//proto:invocation_ts_proto",
     ],
 )
 
@@ -472,6 +472,10 @@ ts_library(
     name = "invocation_share_button",
     srcs = ["invocation_share_button.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -486,10 +490,6 @@ ts_library(
         "//app/shortcuts",
         "//proto:acl_ts_proto",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -497,15 +497,15 @@ ts_library(
     name = "invocation_suggestion_card",
     srcs = ["invocation_suggestion_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/auth:user",
         "//app/capabilities",
         "//app/components/link",
         "//app/invocation:invocation_model",
         "//proto:group_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -513,9 +513,9 @@ ts_library(
     name = "invocation_tabs",
     srcs = ["invocation_tabs.tsx"],
     deps = [
-        "//app/invocation:invocation_model",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//app/invocation:invocation_model",
     ],
 )
 
@@ -523,11 +523,11 @@ ts_library(
     name = "invocation_targets",
     srcs = ["invocation_targets.tsx"],
     deps = [
-        "//app/invocation:invocation_model",
-        "//app/invocation:invocation_targets_card",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/invocation:invocation_model",
+        "//app/invocation:invocation_targets_card",
     ],
 )
 
@@ -535,15 +535,15 @@ ts_library(
     name = "invocation_targets_card",
     srcs = ["invocation_targets_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/components/link",
         "//app/invocation:invocation_model",
         "//app/util:clipboard",
         "//proto:build_event_stream_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -551,6 +551,12 @@ ts_library(
     name = "invocation_timing_card",
     srcs = ["invocation_timing_card.tsx"],
     deps = [
+        "//:node_modules/@types/pako",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/pako",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/components/button",
         "//app/docs:setup_code",
         "//app/errors:error_service",
@@ -561,12 +567,6 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_suggestion_card",
         "//app/service:rpc_service",
-        "//:node_modules/@types/pako",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/pako",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -574,13 +574,13 @@ ts_library(
     name = "scorecard_card",
     srcs = ["scorecard_card.tsx"],
     deps = [
-        "//app/invocation:invocation_model",
-        "//app/router",
-        "//proto:cache_ts_proto",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/invocation:invocation_model",
+        "//app/router",
+        "//proto:cache_ts_proto",
     ],
 )
 
@@ -588,6 +588,11 @@ ts_library(
     name = "workflow_rerun_button",
     srcs = ["workflow_rerun_button.tsx"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/components/button",
         "//app/components/button:button_group",
         "//app/components/dialog",
@@ -600,11 +605,6 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:workflow_ts_proto",
-        "//:node_modules/@types/long",
-        "//:node_modules/@types/react",
-        "//:node_modules/long",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 

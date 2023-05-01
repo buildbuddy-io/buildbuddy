@@ -7,6 +7,14 @@ ts_library(
     srcs = ["filter.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/moment",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-date-range",
+        "//:node_modules/lucide-react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//:node_modules/react-date-range",
+        "//:node_modules/tslib",
         "//app/capabilities",
         "//app/components/button",
         "//app/components/checkbox",
@@ -19,14 +27,6 @@ ts_library(
         "//app/router:router_params",
         "//enterprise/app/filter:filter_util",
         "//proto:invocation_status_ts_proto",
-        "//:node_modules/@types/moment",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-date-range",
-        "//:node_modules/lucide-react",
-        "//:node_modules/moment",
-        "//:node_modules/react",
-        "//:node_modules/react-date-range",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -43,6 +43,9 @@ ts_library(
     name = "filter_util",
     srcs = ["filter_util.tsx"],
     deps = [
+        "//:node_modules/@types/moment",
+        "//:node_modules/moment",
+        "//:node_modules/tslib",
         "//app/capabilities",
         "//app/format",
         "//app/router:router_params",
@@ -51,8 +54,5 @@ ts_library(
         "//proto:invocation_status_ts_proto",
         "//proto:stat_filter_ts_proto",
         "//proto:timestamp_ts_proto",
-        "//:node_modules/@types/moment",
-        "//:node_modules/moment",
-        "//:node_modules/tslib",
     ],
 )

@@ -12,12 +12,12 @@ ts_library(
     name = "router",
     srcs = ["router.tsx"],
     deps = [
+        "//:node_modules/tslib",
         "//app/auth:user",
         "//app/capabilities",
         "//app/format",
         "//app/router:router_params",
         "//app/service:rpc_service",
         "//app/shortcuts",
-        "//:node_modules/tslib",
     ],
 )

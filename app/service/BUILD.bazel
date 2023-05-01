@@ -7,11 +7,11 @@ ts_library(
     srcs = ["rpc_service.ts"],
     strict = True,
     deps = [
-        "//app/util:async",
-        "//proto:buildbuddy_service_ts_proto",
-        "//proto:context_ts_proto",
         "//:node_modules/protobufjs",
         "//:node_modules/rxjs",
         "//:node_modules/tslib",
+        "//app/util:async",
+        "//proto:buildbuddy_service_ts_proto",
+        "//proto:context_ts_proto",
     ],
 )

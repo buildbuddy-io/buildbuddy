@@ -7,11 +7,11 @@ ts_library(
     srcs = ["shortcuts.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/components/dialog",
         "//app/components/modal",
         "//app/preferences",
         "//app/shortcuts",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )

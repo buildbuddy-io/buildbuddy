@@ -9,14 +9,6 @@ ts_library(
     srcs = ["terminal.tsx"],
     strict = True,
     deps = [
-        "//app/components/input",
-        "//app/components/spinner",
-        "//app/errors:error_service",
-        "//app/router",
-        "//app/terminal:row",
-        "//app/terminal:text",
-        "//app/util:math",
-        "//app/util:scroller",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-virtualized-auto-sizer",
         "//:node_modules/@types/react-window",
@@ -26,6 +18,14 @@ ts_library(
         "//:node_modules/react-virtualized-auto-sizer",
         "//:node_modules/react-window",
         "//:node_modules/tslib",
+        "//app/components/input",
+        "//app/components/spinner",
+        "//app/errors:error_service",
+        "//app/router",
+        "//app/terminal:row",
+        "//app/terminal:text",
+        "//app/util:math",
+        "//app/util:scroller",
     ],
 )
 
@@ -46,13 +46,13 @@ ts_library(
     name = "row",
     srcs = ["row.tsx"],
     deps = [
-        "//app/router",
-        "//app/terminal:text",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-window",
         "//:node_modules/react",
         "//:node_modules/react-window",
         "//:node_modules/tslib",
+        "//app/router",
+        "//app/terminal:text",
     ],
 )
 
@@ -60,8 +60,8 @@ ts_library(
     name = "text",
     srcs = ["text.tsx"],
     deps = [
-        "//app/terminal:ansi",
         "//:node_modules/memoize-one",
         "//:node_modules/tslib",
+        "//app/terminal:ansi",
     ],
 )

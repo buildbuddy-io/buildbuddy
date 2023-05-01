@@ -7,6 +7,9 @@ ts_library(
     srcs = ["login.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -15,8 +18,5 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )

@@ -7,8 +7,8 @@ ts_library(
     srcs = ["footer.tsx"],
     strict = True,
     deps = [
-        "//app/capabilities",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//app/capabilities",
     ],
 )

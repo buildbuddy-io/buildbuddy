@@ -31,11 +31,11 @@ ts_library(
     srcs = ["checkbox_button.tsx"],
     strict = True,
     deps = [
-        "//app/components/button",
-        "//app/components/checkbox",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/components/button",
+        "//app/components/checkbox",
     ],
 )
 
@@ -44,9 +44,9 @@ ts_library(
     srcs = ["link_button.tsx"],
     strict = True,
     deps = [
-        "//app/components/link",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/components/link",
     ],
 )

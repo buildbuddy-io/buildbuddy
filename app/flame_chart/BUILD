@@ -7,6 +7,11 @@ ts_library(
     srcs = ["flame_chart.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/components/scrollbar",
         "//app/flame_chart:flame_chart_model",
         "//app/flame_chart:profile_model",
@@ -15,11 +20,6 @@ ts_library(
         "//app/util:animation_loop",
         "//app/util:dom",
         "//app/util:math",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -35,10 +35,10 @@ ts_library(
     srcs = ["flame_chart_model.ts"],
     strict = True,
     deps = [
+        "//:node_modules/tslib",
         "//app/flame_chart:profile_model",
         "//app/flame_chart:style_constants",
         "//app/util:color",
-        "//:node_modules/tslib",
     ],
 )
 

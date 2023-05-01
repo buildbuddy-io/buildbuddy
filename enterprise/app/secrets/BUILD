@@ -9,10 +9,10 @@ ts_library(
     srcs = ["secrets.tsx"],
     strict = True,
     deps = [
-        "//enterprise/app/secrets:secrets_list",
-        "//enterprise/app/secrets:update_secret",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//enterprise/app/secrets:secrets_list",
+        "//enterprise/app/secrets:update_secret",
     ],
 )
 
@@ -21,6 +21,9 @@ ts_library(
     srcs = ["secrets_list.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/button:link_button",
@@ -29,9 +32,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:secrets_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -40,6 +40,11 @@ ts_library(
     srcs = ["update_secret.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/libsodium-wrappers",
+        "//:node_modules/@types/react",
+        "//:node_modules/libsodium-wrappers",
+        "//:node_modules/path-browserify",  # keep
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/input",
@@ -49,10 +54,5 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:secrets_ts_proto",
-        "//:node_modules/@types/libsodium-wrappers",
-        "//:node_modules/@types/react",
-        "//:node_modules/libsodium-wrappers",
-        "//:node_modules/path-browserify",  # keep
-        "//:node_modules/react",
     ],
 )

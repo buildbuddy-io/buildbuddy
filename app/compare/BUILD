@@ -8,6 +8,12 @@ ts_library(
     name = "compare_invocations",
     srcs = ["compare_invocations.tsx"],
     deps = [
+        "//:node_modules/@types/diff-match-patch",
+        "//:node_modules/@types/react",
+        "//:node_modules/diff-match-patch",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/compare:diff_chunk",
         "//app/compare:diff_preprocessing",
@@ -17,12 +23,6 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
-        "//:node_modules/@types/diff-match-patch",
-        "//:node_modules/@types/react",
-        "//:node_modules/diff-match-patch",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -30,12 +30,12 @@ ts_library(
     name = "diff_chunk",
     srcs = ["diff_chunk.tsx"],
     deps = [
-        "//app/components/button",
         "//:node_modules/@types/diff-match-patch",
         "//:node_modules/@types/react",
         "//:node_modules/diff-match-patch",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/components/button",
     ],
 )
 

@@ -9,6 +9,9 @@ ts_library(
     srcs = ["settings.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/banner",
@@ -26,9 +29,6 @@ ts_library(
         "//enterprise/app/settings:github_complete_installation",
         "//enterprise/app/settings:github_link",
         "//enterprise/app/settings:user_github_link",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -37,6 +37,9 @@ ts_library(
     srcs = ["github_link.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/auth:user",
@@ -52,9 +55,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
     ],
 )
 
@@ -63,6 +63,11 @@ ts_library(
     srcs = ["user_github_link.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@octokit/rest",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/auth:user",
@@ -74,11 +79,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
-        "//:node_modules/@octokit/rest",
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -87,6 +87,10 @@ ts_library(
     srcs = ["github_complete_installation.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/auth:user",
@@ -98,9 +102,5 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
-        "//:node_modules/@types/long",
-        "//:node_modules/@types/react",
-        "//:node_modules/long",
-        "//:node_modules/react",
     ],
 )

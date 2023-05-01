@@ -6,14 +6,14 @@ ts_library(
     name = "setup",
     srcs = ["setup.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/capabilities",
         "//app/docs:setup_code",
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:bazel_config_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
@@ -21,6 +21,8 @@ ts_library(
     name = "setup_code",
     srcs = ["setup_code.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
@@ -28,7 +30,5 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:bazel_config_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )

@@ -6,8 +6,8 @@ ts_library(
     name = "shortcuts",
     srcs = ["shortcuts.tsx"],
     deps = [
-        "//app/preferences",
         "//:node_modules/@types/uuid",
         "//:node_modules/uuid",
+        "//app/preferences",
     ],
 )

@@ -9,13 +9,13 @@ ts_library(
     srcs = ["usage.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/components/select",
         "//app/errors:error_service",
         "//app/format",
         "//app/service:rpc_service",
         "//proto:usage_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )

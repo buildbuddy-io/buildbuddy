@@ -7,6 +7,9 @@ ts_library(
     srcs = ["encryption.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/modal",
@@ -15,9 +18,6 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:encryption_ts_proto",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
     ],
 )
 
