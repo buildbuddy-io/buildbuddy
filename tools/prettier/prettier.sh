@@ -43,9 +43,8 @@ fi
 # Run bazel quietly; see: https://github.com/bazelbuild/bazel/issues/4867#issuecomment-796208829
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-bazel run @npm//prettier/bin:prettier --script_path="$tmp/run.sh" &>"$tmp/build.log" || {
+bazel build //tools/prettier &>"$tmp/build.log" || {
   cat "$tmp/build.log" >&2
   exit 1
 }
-chmod +x "$tmp/run.sh"
-"$tmp/run.sh" --bazel_node_working_dir="$PWD" "${paths[@]}" "$@"
+BAZEL_BINDIR=. ./bazel-bin/tools/prettier/prettier.sh "${paths[@]}" "$@"

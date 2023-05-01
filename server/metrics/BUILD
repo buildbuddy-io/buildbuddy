@@ -12,18 +12,24 @@ go_library(
     ],
 )
 
+py_binary(
+    name = "generate_docs",
+    srcs = ["generate_docs.py"],
+    main = "generate_docs.py",
+)
+
 genrule(
     name = "generate_mdx",
     srcs = [":metrics.go"],
     outs = ["docs.mdx"],
     cmd_bash = """
-    python3 $(location :generate_docs.py) \
-        --prettier_path=$(location @npm//prettier/bin:prettier) \
+    BAZEL_BINDIR=$(BINDIR) $(location :generate_docs) \
+        --prettier_path=$(location //tools/prettier) \
         --input_path=$(SRCS) \
         --output_path=$@
     """,
     tools = [
-        ":generate_docs.py",
-        "@npm//prettier/bin:prettier",
+        ":generate_docs",
+        "//tools/prettier",
     ],
 )
