@@ -11,8 +11,8 @@ ts_library(
     deps = [
         "//enterprise/app/secrets:secrets_list",
         "//enterprise/app/secrets:update_secret",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -29,9 +29,9 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:secrets_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -49,10 +49,10 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:secrets_ts_proto",
-        "@npm//@types/libsodium-wrappers",
-        "@npm//@types/react",
-        "@npm//libsodium-wrappers",
-        "@npm//path-browserify",  # keep
-        "@npm//react",
+        "//:node_modules/@types/libsodium-wrappers",
+        "//:node_modules/@types/react",
+        "//:node_modules/libsodium-wrappers",
+        "//:node_modules/path-browserify",  # keep
+        "//:node_modules/react",
     ],
 )

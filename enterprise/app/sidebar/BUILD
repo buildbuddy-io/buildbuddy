@@ -14,9 +14,9 @@ ts_library(
         "//app/components/link",
         "//app/router",
         "//app/service:rpc_service",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )

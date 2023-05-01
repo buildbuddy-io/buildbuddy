@@ -19,10 +19,10 @@ ts_library(
         "//proto:api_key_ts_proto",
         "//proto:bazel_config_ts_proto",
         "//proto:scheduler_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -32,8 +32,8 @@ ts_library(
     deps = [
         "//app/format",
         "//proto:scheduler_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

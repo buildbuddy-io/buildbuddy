@@ -20,9 +20,9 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:api_key_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )

@@ -39,8 +39,8 @@ ts_library(
         "//enterprise/app/trends",
         "//enterprise/app/usage",
         "//enterprise/app/workflows",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

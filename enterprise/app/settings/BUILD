@@ -26,9 +26,9 @@ ts_library(
         "//enterprise/app/settings:github_complete_installation",
         "//enterprise/app/settings:github_link",
         "//enterprise/app/settings:user_github_link",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -52,9 +52,9 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -74,11 +74,11 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
-        "@npm//@octokit/rest",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@octokit/rest",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -98,9 +98,9 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
-        "@npm//@types/long",
-        "@npm//@types/react",
-        "@npm//long",
-        "@npm//react",
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/react",
     ],
 )

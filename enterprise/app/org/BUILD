@@ -16,9 +16,9 @@ ts_library(
         "//app/service:rpc_service",
         "//enterprise/app/org:org_form",
         "//proto:group_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -32,10 +32,10 @@ ts_library(
         "//app/service:rpc_service",
         "//enterprise/app/org:org_form",
         "//proto:group_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -50,9 +50,9 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:group_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -67,9 +67,9 @@ ts_library(
         "//app/components/select",
         "//app/util:errors",
         "//proto:group_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -83,9 +83,9 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -107,8 +107,8 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )

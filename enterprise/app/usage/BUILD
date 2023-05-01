@@ -15,7 +15,7 @@ ts_library(
         "//app/format",
         "//app/service:rpc_service",
         "//proto:usage_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )

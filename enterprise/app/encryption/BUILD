@@ -15,9 +15,9 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:encryption_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 

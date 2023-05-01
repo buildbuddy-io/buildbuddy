@@ -25,15 +25,15 @@ ts_library(
         "//enterprise/app/code:code_pull_request",
         "//enterprise/app/code:code_sidebar_node",
         "//proto:runner_ts_proto",
-        "@npm//@octokit/rest",
-        "@npm//@types/diff",
-        "@npm//@types/react",
-        "@npm//diff",
-        "@npm//lucide-react",
-        "@npm//monaco-editor",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
+        "//:node_modules/@octokit/rest",
+        "//:node_modules/@types/diff",
+        "//:node_modules/@types/react",
+        "//:node_modules/diff",
+        "//:node_modules/lucide-react",
+        "//:node_modules/monaco-editor",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -47,10 +47,10 @@ ts_library(
         "//app/components/menu",
         "//app/components/popup",
         "//app/components/spinner",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -62,9 +62,9 @@ ts_library(
         "//app/format",
         "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -73,8 +73,8 @@ ts_library(
     srcs = ["code_pull_request.ts"],
     strict = True,
     deps = [
-        "@npm//@octokit/rest",
-        "@npm//tslib",
+        "//:node_modules/@octokit/rest",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -83,8 +83,8 @@ ts_library(
     srcs = ["code_sidebar_node.tsx"],
     strict = True,
     deps = [
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

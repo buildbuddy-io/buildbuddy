@@ -11,7 +11,7 @@ ts_library(
         "//app/components/modal",
         "//app/preferences",
         "//app/shortcuts",
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )

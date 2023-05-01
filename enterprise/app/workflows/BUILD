@@ -29,10 +29,10 @@ ts_library(
         "//enterprise/app/workflows:zero_state",
         "//proto:github_ts_proto",
         "//proto:workflow_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -51,9 +51,9 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:workflow_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -70,9 +70,9 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:workflow_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
 
@@ -81,8 +81,8 @@ ts_library(
     srcs = ["zero_state.tsx"],
     strict = True,
     deps = [
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -104,8 +104,8 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:git",
         "//proto:github_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
