@@ -754,12 +754,15 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
+	artifactsToPersist := make(map[string]*url.URL, 0)
+	if e.beValues.ProfileURI() != nil && e.beValues.ProfileURI().Scheme == "bytestream" {
+		artifactsToPersist["timing_profile/"+e.beValues.ProfileName()] = e.beValues.ProfileURI()
+	}
+
 	e.statsRecorder.Enqueue(
 		ctx,
 		invocation,
-		map[string]*url.URL{
-			"timing_profile/" + e.beValues.ProfileName(): e.beValues.ProfileURI(),
-		},
+		artifactsToPersist,
 	)
 	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil
