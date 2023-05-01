@@ -540,10 +540,10 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 	defer cacheWriter.Close()
 	_, err = io.Copy(cacheWriter, ztocReader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err = cacheWriter.Commit(); err != nil {
-		return err
+		return nil, err
 	}
 	return &ztocDigest, nil
 }
