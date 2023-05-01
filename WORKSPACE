@@ -382,11 +382,11 @@ load("@aspect_rules_swc//swc:dependencies.bzl", "rules_swc_dependencies")
 
 rules_swc_dependencies()
 
-load("@aspect_rules_swc//swc:repositories.bzl", "swc_register_toolchains")
+load("@aspect_rules_swc//swc:repositories.bzl", "swc_register_toolchains", LATEST_SWC_VERSION = "LATEST_VERSION")
 
 swc_register_toolchains(
     name = "swc",
-    swc_version = "v1.2.141",
+    swc_version = LATEST_SWC_VERSION,
 )
 
 # Web testing
