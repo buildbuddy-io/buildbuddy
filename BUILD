@@ -1,3 +1,4 @@
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -75,12 +76,16 @@ go_sdk_tool(
 )
 
 exports_files([
-    ".swcrc",
     "package.json",
     "yarn.lock",
 ])
 
 npm_link_all_packages(name = "node_modules")
+
+copy_to_bin(
+    name = "swcrc",
+    srcs = [".swcrc"],
+)
 
 ts_config(
     name = "tsconfig",

@@ -6,7 +6,7 @@ load("@npm//:jasmine/package_json.bzl", jasmine_bin = "bin")
 
 def _swc(**kwargs):
     swc_compile(
-        swcrc = "//:.swcrc",
+        swcrc = "//:swcrc",
         **kwargs
     )
 
