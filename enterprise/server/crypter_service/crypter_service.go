@@ -27,6 +27,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/sync/singleflight"
+	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
@@ -57,6 +58,8 @@ const (
 	keyReencryptListQueryTimeout = 60 * time.Second
 	// Timeout for re-encrypting a single key.
 	keyReencryptTimeout = 60 * time.Second
+	// Rate limit for re-encrypt operations.
+	keyReencryptRateLimit = 50
 )
 
 // Note: there are two types of keys in the cache, one with only groupID set
@@ -701,7 +704,9 @@ func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWit
 	return nil
 }
 
-func (c *Crypter) keyRencryptorIteration(cutoff time.Time) error {
+func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
+	lim := rate.NewLimiter(rate.Limit(keyReencryptRateLimit), 1)
+
 	queryKeys := func() ([]*encryptionKeyVersionWithGroupID, error) {
 		ctx, cancel := context.WithTimeout(c.env.GetServerContext(), keyReencryptListQueryTimeout)
 		defer cancel()
@@ -778,6 +783,9 @@ func (c *Crypter) keyRencryptorIteration(cutoff time.Time) error {
 		}
 
 		for _, ekv := range remainingKeys {
+			// We don't expect to hit this rate limit in practice. It's here
+			// as a precaution.
+			_ = lim.Wait(c.env.GetServerContext())
 			reencryptKey(ekv)
 		}
 	}
@@ -792,7 +800,7 @@ func (c *Crypter) startKeyReencryptor(quitChan chan struct{}) {
 		for {
 			cutoff := c.clock.Now().Add(-*keyReencryptInterval).Add(-jitter)
 
-			if err := c.keyRencryptorIteration(cutoff); err != nil {
+			if err := c.keyReencryptorIteration(cutoff); err != nil {
 				log.Warningf("could not rencrypt keys: %s", err)
 			}
 

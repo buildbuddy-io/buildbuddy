@@ -21,6 +21,7 @@ go_library(
         "@org_golang_x_crypto//chacha20poly1305",
         "@org_golang_x_crypto//hkdf",
         "@org_golang_x_sync//singleflight",
+        "@org_golang_x_time//rate",
         "@org_uber_go_atomic//:atomic",
     ],
 )
