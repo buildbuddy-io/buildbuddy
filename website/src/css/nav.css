@@ -10,7 +10,9 @@
   }
 }
 
-.aa-DetachedSearchButton {
+.dsla-search-wrapper .aa-DetachedSearchButton {
+  width: 44px;
+  height: 44px;
   border: none !important;
 }
 
@@ -84,6 +86,9 @@ html[data-theme="dark"] .menu {
 .dsla-search-wrapper {
   width: 44px;
   height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @media (max-width: 996px) {
@@ -139,12 +144,15 @@ html[data-theme="dark"] .menu {
   position: absolute;
   right: 24px;
   margin: 0;
+  z-index: 1;
 }
 
 .navbar-sidebar {
   transform: translate3d(100%, 0, 0);
   right: 0;
   left: initial;
+  z-index: 2;
+  height: 100%;
 }
 
 .docs-wrapper .menu {
