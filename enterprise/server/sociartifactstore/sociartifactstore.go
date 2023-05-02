@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/containerd/containerd/images"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -503,7 +504,15 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 			layerDigest.Hex, mediaType, compressionAlgo)
 	}
 
-	layerTmpFile, err := os.Create(filepath.Join(*layerStorage, layerDigest.Hex))
+	// Store layers in files with random names to prevent parallel indexing of
+	// images sharing layers from interfering with each other.
+	tmpFileName, err := random.RandomString(10)
+	if err != nil {
+		return nil, err
+	}
+	layerTmpFileName := filepath.Join(*layerStorage, tmpFileName)
+	layerTmpFile, err := os.Create(layerTmpFileName)
+	defer os.Remove(layerTmpFileName)
 	if err != nil {
 		return nil, err
 	}

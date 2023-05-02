@@ -25,6 +25,7 @@ go_library(
             "//server/interfaces",
             "//server/util/log",
             "//server/util/prefix",
+            "//server/util/random",
             "//server/util/status",
             "@com_github_awslabs_soci_snapshotter//compression",
             "@com_github_awslabs_soci_snapshotter//soci",
