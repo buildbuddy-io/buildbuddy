@@ -9,13 +9,12 @@ interface Props {}
 
 interface State {
   menuExpanded: boolean;
-  bazelConfigResponse: bazel_config.GetBazelConfigResponse;
+  bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
 }
 
 export default class SetupComponent extends React.Component<Props> {
   state: State = {
     menuExpanded: false,
-    bazelConfigResponse: null,
   };
 
   componentWillMount() {
