@@ -742,16 +742,15 @@ func TestConfigAPI(t *testing.T) {
 	kms.RemoveKey(groupKMSKeyID)
 	advanceTimeAndWaitForRefresh(clock, crypter, 11*time.Minute)
 
-	// Should succeed since this digest was written before encryption was
-	// enabled.
-	plaintextReadBuf, err := pc.Get(apiKeyCtx, plaintextResource)
-	require.NoError(t, err)
-	require.Equal(t, plaintextBuf, plaintextReadBuf)
+	// The previously written unencrypted data becomes inaccessible.
+	_, err = pc.Get(apiKeyCtx, plaintextResource)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err))
 
 	// Shouldn't be able to read the encrypted resource anymore.
 	_, err = pc.Get(apiKeyCtx, encryptedResource)
 	require.Error(t, err)
-	require.True(t, status.IsNotFoundError(err))
+	require.True(t, status.IsUnavailableError(err))
 
 	// Restore the key so we can test disabling encryption via the API.
 	kms.SetKey(groupKMSKeyID, groupKMSKey)

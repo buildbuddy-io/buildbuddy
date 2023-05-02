@@ -1218,6 +1218,20 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 
 	groupID, partID := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 
+	encryptionEnabled, err := p.encryptionEnabled(ctx, partID)
+	if err != nil {
+		return nil, err
+	}
+
+	var encryption *rfpb.Encryption
+	if encryptionEnabled {
+		ak, err := p.env.GetCrypter().ActiveKey(ctx)
+		if err != nil {
+			return nil, status.UnavailableErrorf("encryption key not available: %s", err)
+		}
+		encryption = &rfpb.Encryption{KeyId: ak.GetEncryptionKeyId()}
+	}
+
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
 			CacheType:          r.GetCacheType(),
@@ -1227,6 +1241,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		},
 		Digest:     r.GetDigest(),
 		Compressor: r.GetCompressor(),
+		Encryption: encryption,
 	}, nil
 }
 
@@ -1804,7 +1819,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, r.GetDigest(), wc)
 		if err != nil {
 			_ = wc.Close()
-			return nil, err
+			return nil, status.UnavailableErrorf("encryptor not available: %s", err)
 		}
 		encryptionMetadata = ewc.Metadata()
 		wc = ewc
@@ -2496,7 +2511,7 @@ func (p *PebbleCache) reader(ctx context.Context, iter *pebble.Iterator, r *rspb
 		if shouldDecrypt {
 			d, err := p.env.GetCrypter().NewDecryptor(ctx, r.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
 			if err != nil {
-				return nil, err
+				return nil, status.UnavailableErrorf("decryptor not available: %s", err)
 			}
 			reader = d
 		}
