@@ -100,6 +100,21 @@ func (wt *WebTester) Get(url string) {
 	require.NoError(wt.t, err)
 }
 
+// Returns the current URL, fails if there is an error.
+func (wt *WebTester) CurrentURL() string {
+	url, err := wt.driver.CurrentURL()
+	require.NoError(wt.t, err)
+	return url
+}
+
+// Returns the <body> element of the current page. Exactly one body element
+// must exist, otherwise the test fails.
+func (wt *WebTester) FindBody() *Element {
+	el, err := wt.driver.FindElement(selenium.ByTagName, "body")
+	require.NoError(wt.t, err)
+	return &Element{wt.t, el}
+}
+
 // Find returns the element matching the given CSS selector. Exactly one
 // element must be matched, otherwise the test fails.
 func (wt *WebTester) Find(cssSelector string) *Element {
@@ -130,6 +145,13 @@ func (wt *WebTester) FindByDebugID(debugID string) *Element {
 	return &Element{wt.t, el}
 }
 
+// AssertNotFound asserts the provided CSS selector does not exist in the DOM.
+func (wt *WebTester) AssertNotFound(cssSelector string) {
+	els, err := wt.driver.FindElements(selenium.ByCSSSelector, cssSelector)
+	require.NoError(wt.t, err)
+	require.Empty(wt.t, els)
+}
+
 // Screenshot takes a screenshot and saves it in the test outputs directory. The
 // given tag is used to disambiguate between other screenhots taken in the test.
 func (wt *WebTester) Screenshot(tag string) {
@@ -156,6 +178,28 @@ func (wt *WebTester) screenshot(tag string) error {
 	}
 	wt.t.Logf("Screenshot saved to %s", screenshotFile.Name())
 	return nil
+}
+
+// Sends the provided key combination to the browser. All keys are pressed in
+// the order passed, and then released in that order.
+func (wt *WebTester) SendKeyCombo(keys []string) {
+	for _, key := range keys {
+		err := wt.driver.KeyDown(key)
+		require.NoError(wt.t, err, "Failed to send keystroke "+key)
+	}
+	for _, key := range keys {
+		err := wt.driver.KeyUp(key)
+		require.NoError(wt.t, err, "Failed to send keystroke "+key)
+	}
+}
+
+// WaitWithTimeout waits for up to timeout for the provided condition to return
+// true and fails the test if it does not within the timeout.
+func (wt *WebTester) WaitWithTimeout(condition func() bool, timeout time.Duration) {
+	err := wt.driver.WaitWithTimeout(
+		func(wd selenium.WebDriver) (bool, error) { return condition(), nil },
+		timeout)
+	require.NoError(wt.t, err)
 }
 
 // Element wraps selenium.WebElement, failing the test instead of returning
