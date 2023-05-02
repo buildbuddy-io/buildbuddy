@@ -386,7 +386,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	if len(ti.Tags) > 0 {
 		tags = strings.Split(ti.Tags, ",")
 	} else {
-		tags = make([]string, 0)
+		tags = []string{}
 	}
 
 	return &Invocation{
