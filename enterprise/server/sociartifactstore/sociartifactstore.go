@@ -503,7 +503,9 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 			layerDigest.Hex, mediaType, compressionAlgo)
 	}
 
-	layerTmpFile, err := os.Create(filepath.Join(*layerStorage, layerDigest.Hex))
+	layerTmpFileName := filepath.Join(*layerStorage, layerDigest.Hex)
+	layerTmpFile, err := os.Create(layerTmpFileName)
+	defer os.Remove(layerTmpFileName)
 	if err != nil {
 		return nil, err
 	}
