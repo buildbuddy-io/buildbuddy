@@ -8,7 +8,7 @@ import Translate from "@docusaurus/Translate";
 
 function getCategoryOfTag(tag: string) {
   // tag's category should be customizable
-  return tag[0].toUpperCase();
+  return tag.name[0].toUpperCase();
 }
 
 function BlogTagsListPage(props: Props): JSX.Element {
@@ -16,7 +16,7 @@ function BlogTagsListPage(props: Props): JSX.Element {
 
   const tagCategories: { [category: string]: string[] } = {};
   Object.keys(tags).forEach((tag) => {
-    const category = getCategoryOfTag(tag);
+    const category = getCategoryOfTag(tags[tag]);
     tagCategories[category] = tagCategories[category] || [];
     tagCategories[category].push(tag);
   });
