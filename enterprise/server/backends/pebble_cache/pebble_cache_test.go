@@ -2490,7 +2490,7 @@ func TestSampling(t *testing.T) {
 
 	// The other random digests should also exist.
 	for _, rr := range randomResources {
-		exists, err := pc.Contains(ctx, rr)
+		exists, err := pc.Contains(anonCtx, rr)
 		require.NoError(t, err)
 		require.True(t, exists)
 	}
