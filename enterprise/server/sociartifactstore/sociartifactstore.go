@@ -229,7 +229,7 @@ func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platfo
 		return ctrname.Digest{}, v1.Hash{}, err
 	}
 
-	manifest, err := targetImg.Manifest()
+	targetImgDigest, err := targetImg.Digest()
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, err
 	}
