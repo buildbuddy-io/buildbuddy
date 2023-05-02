@@ -133,6 +133,7 @@ func ConfigureSidecar(args []string) []string {
 	besBackendFlag := arg.Get(args, "bes_backend")
 	remoteCacheFlag := arg.Get(args, "remote_cache")
 	remoteExecFlag := arg.Get(args, "remote_executor")
+	synchronousWriteFlag, args := arg.Pop(args, "synchronous_write")
 
 	if besBackendFlag != "" {
 		sidecarArgs = append(sidecarArgs, "--bes_backend="+besBackendFlag)
@@ -144,6 +145,10 @@ func ConfigureSidecar(args []string) []string {
 		// disk caches.
 		diskCacheDir := filepath.Join(cacheDir, "filecache")
 		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
+	}
+
+	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
+		sidecarArgs = append(sidecarArgs, "--synchronous_write")
 	}
 
 	if len(sidecarArgs) == 0 {

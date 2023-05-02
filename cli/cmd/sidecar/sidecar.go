@@ -217,6 +217,7 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 }
 
 func Handle() {
+	log.Info("Sidecar")
 	sc, args := arg.Pop(os.Args, "sidecar")
 	if sc != "1" {
 		return
@@ -239,6 +240,7 @@ func Handle() {
 	// Shutdown the server gracefully after a period of inactivity configurable
 	// with the --inactivity_timeout flag.
 	startInactivityWatcher(ctx, func() {
+		log.Info("Shutdown Sidecar")
 		env.GetHealthChecker().Shutdown()
 	})
 
@@ -258,6 +260,7 @@ func Handle() {
 	scpb.RegisterSidecarServer(grpcServer, &sidecarService{})
 
 	log.Printf("Listening on %s", lis.Addr())
+
 	grpcServer.Serve(lis)
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }

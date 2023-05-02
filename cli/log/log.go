@@ -16,6 +16,7 @@ var verbose bool
 func Configure(args []string) []string {
 	verboseFlagVal, args := arg.Pop(args, "verbose")
 	verbose = verboseFlagVal == "1" || verboseFlagVal == "true"
+	log.Printf("verbose: %t", verbose)
 	log.SetFlags(0)
 	return args
 }

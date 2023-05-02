@@ -28,8 +28,9 @@ import (
 )
 
 var (
-	readThrough  = flag.Bool("read_through", true, "If true, cache remote reads locally")
-	writeThrough = flag.Bool("write_through", true, "If true, upload writes to remote cache too")
+	readThrough      = flag.Bool("read_through", true, "If true, cache remote reads locally")
+	writeThrough     = flag.Bool("write_through", true, "If true, upload writes to remote cache too")
+	synchronousWrite = flag.Bool("synchronous_write", false, "If true, wait until writes to remote cache are finished")
 )
 
 const (
@@ -239,7 +240,10 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 	var wreq *bspb.WriteRequest
 	clientStream, err := p.localBSSClient.Write(stream.Context())
-	if err != nil {
+
+	log.Infof("synchronous: %t", *synchronousWrite)
+
+	if err != nil && !*synchronousWrite {
 		return err
 	}
 	for {
