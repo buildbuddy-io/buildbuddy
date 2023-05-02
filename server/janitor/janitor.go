@@ -16,15 +16,15 @@ var (
 	// Flags shared by both invocation and execution janitor.
 	logDeletionErrors = flag.Bool("log_deletion_errors", false, "If true; log errors when ttl-deleting expired data")
 
-	// Flags for Invocaction Janitor.
-	ttlSeconds = flag.Int("storage.ttl_seconds", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
+	// Flags for Invocation Janitor.
+	invocationTTLSeconds = flag.Int("storage.ttl_seconds", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
 
-	cleanupBatchSize = flag.Int("storage.cleanup_batch_size", 10, "How many invocations to delete in each janitor cleanup task")
-	cleanupInterval  = flag.Duration("cleanup_interval", 10*60*time.Second, "How often the janitor cleanup tasks will run")
-	cleanupWorkers   = flag.Int("cleanup_workers", 1, "How many cleanup tasks to run")
+	invocationCleanupBatchSize = flag.Int("storage.cleanup_batch_size", 10, "How many invocations to delete in each janitor cleanup task")
+	invocationCleanupInterval  = flag.Duration("cleanup_interval", 10*60*time.Second, "How often the janitor cleanup tasks will run")
+	invocationCleanupWorkers   = flag.Int("cleanup_workers", 1, "How many cleanup tasks to run")
 
-	// Flags for Invocaction Janitor.
-	executionTTLSeconds = flag.Int("storage.execution.ttl_seconds", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
+	// Flags for Execution Janitor.
+	executionTTL = flag.Duration("storage.execution.ttl", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
 
 	executionCleanupBatchSize = flag.Int("storage.execution.cleanup_batch_size", 200, "How many invocations to delete in each janitor cleanup task")
 	executionCleanupInterval  = flag.Duration("storage.execution.cleanup_interval", 5*time.Minute, "How often the janitor cleanup tasks will run")
@@ -80,15 +80,15 @@ func deleteExpiredInvocations(c *JanitorConfig) {
 func NewInvocationJanitor(env environment.Env) *Janitor {
 	c := &JanitorConfig{
 		env:                 env,
-		ttl:                 time.Duration(*ttlSeconds) * time.Second,
-		batchSize:           *cleanupBatchSize,
+		ttl:                 time.Duration(*invocationTTLSeconds) * time.Second,
+		batchSize:           *invocationCleanupBatchSize,
 		errorLoggingEnabled: *logDeletionErrors,
 	}
 	return &Janitor{
 		name:       "invocation janitor",
 		config:     c,
-		interval:   *cleanupInterval,
-		numWorkers: *cleanupWorkers,
+		interval:   *invocationCleanupInterval,
+		numWorkers: *invocationCleanupWorkers,
 		deleteFn:   deleteExpiredInvocations,
 	}
 }
@@ -147,7 +147,7 @@ func deleteExpiredExecutions(c *JanitorConfig) {
 func NewExecutionJanitor(env environment.Env) *Janitor {
 	c := &JanitorConfig{
 		env:                 env,
-		ttl:                 time.Duration(*executionTTLSeconds) * time.Second,
+		ttl:                 *executionTTL,
 		batchSize:           *executionCleanupBatchSize,
 		errorLoggingEnabled: *logDeletionErrors,
 	}
