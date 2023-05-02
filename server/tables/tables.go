@@ -170,6 +170,8 @@ type Invocation struct {
 
 	// The user's setting of whether remote execution is enabled.
 	RemoteExecutionEnabled bool `gorm:"type:tinyint(1)"`
+
+	Tags string
 }
 
 func (i *Invocation) TableName() string {
