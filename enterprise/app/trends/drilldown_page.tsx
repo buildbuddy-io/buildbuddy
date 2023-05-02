@@ -521,13 +521,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       );
     }
     if (!query.updatedBefore) {
-      query.updatedBefore = usecToTimestamp(Date.now() * 1000);
+      // Always explicitly set "now" to the start of the next day so that the
+      // length of the last bucket doesn't change on page refresh.  This
+      // prevents weird issues with selections breaking when refreshing.
+      query.updatedBefore = usecToTimestamp(moment().add(1, "day").startOf("day").unix() * 1e6);
     }
-    query.updatedBefore = usecToTimestamp(
-      moment(+query.updatedBefore.seconds * 1000)
-        .endOf("day")
-        .unix() * 1e6
-    );
 
     if (!this.currentZoomFilters) {
       return;
