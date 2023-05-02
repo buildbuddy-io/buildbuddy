@@ -745,7 +745,7 @@ func (c *Crypter) keyRencryptorIteration(cutoff time.Time) error {
 			if err := c.reencryptKey(qCtx, ekv); err != nil {
 				log.Warningf("could not reencrypt key %q: %s", ekv.EncryptionKeyID, err)
 			} else {
-				break
+				return
 			}
 		}
 
@@ -754,8 +754,7 @@ func (c *Crypter) keyRencryptorIteration(cutoff time.Time) error {
 		// the DB.
 		uCtx, uCancel := context.WithTimeout(c.env.GetServerContext(), keyReencryptTimeout/4)
 		defer uCancel()
-		// Unconditionally update the last attempt timestamp, whether we
-		// succeeded or not.
+		// Update the attempt timestamp.
 		q := `
 				UPDATE "EncryptionKeyVersions"
 				SET last_encryption_attempt_at_usec = ?
