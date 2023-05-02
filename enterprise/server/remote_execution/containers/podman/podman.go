@@ -128,12 +128,12 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
-			[storage]
-			driver = "overlay"
-			runroot = "/run/containers/storage"
-			graphroot = "/var/lib/containers/storage"
-			[storage.options]
-			additionallayerstores=["/var/lib/soci-store/store:ref"]
+[storage]
+driver = "overlay"
+runroot = "/run/containers/storage"
+graphroot = "/var/lib/containers/storage"
+[storage.options]
+additionallayerstores=["/var/lib/soci-store/store:ref"]
 			`
 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
@@ -158,7 +158,6 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 			),
 		)
 	}
-
 	return &Provider{
 		env:                   env,
 		imageCacheAuth:        imageCacheAuthenticator,
@@ -521,9 +520,9 @@ func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error
 			if err = os.MkdirAll(sociIndexDirectory, 0644); err != nil {
 				return err
 			}
-			log.Info("Writing soci index file: " + strings.ReplaceAll(resp.ImageId, "sha256:", "") + " ==> " + strings.ReplaceAll(artifact.Digest.Hash, "sha256:", ""))
 			sociIndexDigest := godigest.NewDigestFromEncoded(godigest.SHA256, artifact.Digest.Hash)
-			if err = os.WriteFile(sociIndex(strings.ReplaceAll(resp.ImageId, "sha256:", "")), []byte(sociIndexDigest.String()), 0644); err != nil {
+			imageDigest := godigest.NewDigestFromEncoded(godigest.SHA256, resp.ImageId)
+			if err = os.WriteFile(sociIndex(imageDigest), []byte(sociIndexDigest.String()), 0644); err != nil {
 				return err
 			}
 		}
@@ -543,22 +542,19 @@ func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error
 		if err = os.MkdirAll(sociBlobDirectory, 0644); err != nil {
 			return err
 		}
-		if err = os.WriteFile(sociBlob(strings.ReplaceAll(blob.Digest.Hash, "sha256:", "")), blob.Data, 0644); err != nil {
+		if err = os.WriteFile(sociBlob(blob.Digest), blob.Data, 0644); err != nil {
 			return err
 		}
-
-		// TODO(iain): remove log statement, just for checking in dev!
-		log.Info("Wrote soci artifact " + sociBlob(blob.Digest.Hash))
 	}
 	return nil
 }
 
-func sociIndex(digest string) string {
-	return sociIndexDirectory + digest
+func sociIndex(digest godigest.Digest) string {
+	return sociIndexDirectory + digest.Encoded()
 }
 
-func sociBlob(digest string) string {
-	return sociBlobDirectory + digest
+func sociBlob(digest *repb.Digest) string {
+	return sociBlobDirectory + digest.Hash
 }
 
 func resourceName(digest *repb.Digest) *rspb.ResourceName {
