@@ -508,7 +508,7 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 	// images sharing layers from interfering with each other.
 	tmpFileName, err := random.RandomString(10)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	layerTmpFileName := filepath.Join(*layerStorage, tmpFileName)
 	layerTmpFile, err := os.Create(layerTmpFileName)
