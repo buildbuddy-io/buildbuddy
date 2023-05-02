@@ -124,6 +124,10 @@ message Invocation {
 
   // The user's setting of whether remote execution is enabled
   bool remote_execution_enabled = 30;
+  message Tag {
+    string name = 1;
+  }
+  repeated Tag tags = 31;
 }
 
 message InvocationEvent {

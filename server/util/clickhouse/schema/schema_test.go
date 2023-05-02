@@ -3,6 +3,7 @@ package schema
 import (
 	"encoding/hex"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -97,6 +98,11 @@ func TestSchemaInSync(t *testing.T) {
 	}
 }
 
+var NonStandardInvocationCopyFields = []string{
+	"InvocationUUID",
+	"Tags",
+}
+
 func TestToInvocationFromPrimaryDB(t *testing.T) {
 	src := &tables.Invocation{}
 	err := faker.FakeData(src)
@@ -111,10 +117,12 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 
 	expectedUUID := hex.EncodeToString(src.InvocationUUID)
 	assert.Equal(t, dest.InvocationUUID, expectedUUID, "src and dest have different values for field 'InvocationUUID'. src = %v, dest = %v", src.InvocationUUID, expectedUUID)
+	// faker might pick a string with commas in it, so we unfortunately have to split here, too.
+	assert.Equal(t, dest.Tags, strings.Split(src.Tags, ","))
 
 	for _, primaryField := range primaryInvFields {
-		if isInList(primaryField.Name, excludedFields) || primaryField.Anonymous || primaryField.Name == "InvocationUUID" {
-			// check InvocationUUID field seperately
+		if isInList(primaryField.Name, excludedFields) || primaryField.Anonymous || isInList(primaryField.Name, NonStandardInvocationCopyFields) {
+			// already checked fields that don't do direct copies seperately above.
 			continue
 		}
 		srcFieldValue := srcValue.FieldByName(primaryField.Name)
