@@ -9,8 +9,8 @@ go_web_test_suite(
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//server/testutil/testbazel",
         "//server/testutil/webtester",
-        "@com_github_tebeka_selenium//:selenium",
         "@com_github_stretchr_testify//require",
+        "@com_github_tebeka_selenium//:selenium",
     ],
 )
 
