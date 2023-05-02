@@ -36,6 +36,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
@@ -139,6 +140,8 @@ type Options struct {
 	AtimeUpdateThreshold *time.Duration
 	AtimeBufferSize      *int
 	MinEvictionAge       *time.Duration
+
+	Clock clockwork.Clock
 }
 
 type sizeUpdate struct {
@@ -175,6 +178,7 @@ type PebbleCache struct {
 	db     *pebble.DB
 	leaser pebbleutil.Leaser
 	locker lockmap.Locker
+	clock  clockwork.Clock
 
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
@@ -367,6 +371,10 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	clock := opts.Clock
+	if clock == nil {
+		clock = clockwork.NewRealClock()
+	}
 	pc := &PebbleCache{
 		name:                        opts.Name,
 		rootDirectory:               opts.RootDirectory,
@@ -382,6 +390,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		db:                          db,
 		leaser:                      pebbleutil.NewDBLeaser(db),
 		locker:                      lockmap.New(),
+		clock:                       clock,
 		brokenFilesDone:             make(chan struct{}),
 		orphanedFilesDone:           make(chan struct{}),
 		eg:                          &errgroup.Group{},
@@ -470,7 +479,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
 			if err != nil {
 				return err
 			}
@@ -587,7 +596,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 	newVersionMetadata := proto.Clone(oldVersionMetadata).(*rfpb.VersionMetadata)
 	newVersionMetadata.MinVersion = int64(minVersion)
 	newVersionMetadata.MaxVersion = int64(maxVersion)
-	newVersionMetadata.LastModifyUsec = time.Now().UnixMicro()
+	newVersionMetadata.LastModifyUsec = p.clock.Now().UnixMicro()
 
 	buf, err := proto.Marshal(newVersionMetadata)
 	if err != nil {
@@ -633,7 +642,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
 	}
-	md.LastAccessUsec = time.Now().UnixMicro()
+	md.LastAccessUsec = p.clock.Now().UnixMicro()
 	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
@@ -1764,7 +1773,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
 	cwc.CloseFn = db.Close
 	cwc.CommitFn = func(bytesWritten int64) error {
-		now := time.Now().UnixMicro()
+		now := p.clock.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
 			FileRecord:         fileRecord,
 			StorageMetadata:    wcm.Metadata(),
@@ -1902,6 +1911,7 @@ type partitionEvictor struct {
 	versionGetter versionGetter
 	accesses      chan<- *accessTimeUpdate
 	rng           *rand.Rand
+	clock         clockwork.Clock
 
 	lru       *approxlru.LRU[*evictionKey]
 	sizeBytes int64
@@ -1916,7 +1926,7 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, locker lockmap.Locker, vg versionGetter, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:              &sync.Mutex{},
 		part:            part,
@@ -1927,6 +1937,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		versionGetter:   vg,
 		accesses:        accesses,
 		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:           clock,
 		atimeBufferSize: atimeBufferSize,
 		minEvictionAge:  minEvictionAge,
 		cacheName:       cacheName,
@@ -2272,38 +2283,66 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 		if !valid {
 			continue
 		}
+
 		var key filestore.PebbleKey
 		if _, err := key.FromBytes(iter.Key()); err != nil {
 			return nil, err
 		}
 
-		fileMetadata := &rfpb.FileMetadata{}
-		unlockFn := e.locker.RLock(key.LockID())
-		err = proto.Unmarshal(iter.Value(), fileMetadata)
-		unlockFn()
-		if err != nil {
-			return nil, err
-		}
+		for {
+			fileMetadata := &rfpb.FileMetadata{}
+			unlockFn := e.locker.RLock(key.LockID())
+			err = proto.Unmarshal(iter.Value(), fileMetadata)
+			unlockFn()
+			if err != nil {
+				return nil, err
+			}
 
-		atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-		age := time.Since(atime)
-		if age < e.minEvictionAge {
-			continue
-		}
+			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+			age := e.clock.Since(atime)
 
-		keyBytes := make([]byte, len(iter.Key()))
-		copy(keyBytes, iter.Key())
-		sample := &approxlru.Sample[*evictionKey]{
-			Key: &evictionKey{
-				bytes:           keyBytes,
-				storageMetadata: fileMetadata.GetStorageMetadata(),
-			},
-			SizeBytes: fileMetadata.GetStoredSizeBytes(),
-			Timestamp: atime,
-		}
+			if age >= e.minEvictionAge {
+				keyBytes := make([]byte, len(iter.Key()))
+				copy(keyBytes, iter.Key())
+				sample := &approxlru.Sample[*evictionKey]{
+					Key: &evictionKey{
+						bytes:           keyBytes,
+						storageMetadata: fileMetadata.GetStorageMetadata(),
+					},
+					SizeBytes: fileMetadata.GetStoredSizeBytes(),
+					Timestamp: atime,
+				}
 
-		samples = append(samples, sample)
-		if len(samples) == k {
+				samples = append(samples, sample)
+			}
+
+			if !iter.Next() {
+				break
+			}
+
+			// Check if the next key is for the same digest in which case
+			// include it as a possible eviction candidate.
+			//
+			// This can happen for example if there are multiple AC entries
+			// with different "remote instance name hash" values:
+			//   PTfoo/GR123/foobar/ac/123
+			//   PTfoo/GR123/foobar/ac/456
+			// We want to consider both keys for eviction, not just the first
+			// one.
+			//
+			// The same situation can occur after enabling or disabling
+			// encryption which can produce multiple keys with the same hash
+			// prefix.
+			var nextKey filestore.PebbleKey
+			if _, err := nextKey.FromBytes(iter.Key()); err != nil {
+				return nil, err
+			}
+			if nextKey.Hash() != key.Hash() {
+				break
+			}
+			key = nextKey
+		}
+		if len(samples) >= k {
 			break
 		}
 	}
