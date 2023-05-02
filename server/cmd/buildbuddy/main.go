@@ -37,7 +37,7 @@ func main() {
 	telemetryClient.Start()
 	defer telemetryClient.Stop()
 
-	cleanupService := janitor.NewJanitor(env)
+	cleanupService := janitor.NewInvocationJanitor(env)
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
