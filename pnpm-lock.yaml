@@ -9,6 +9,9 @@ importers:
 
   .:
     dependencies:
+      pnpm:
+        specifier: ^8.3.1
+        version: 8.3.1
       shlex:
         specifier: ^2.1.2
         version: 2.1.2
@@ -8024,6 +8027,12 @@ packages:
   /pngjs@3.4.0:
     resolution: {integrity: sha512-NCrCHhWmnQklfH4MtJMRjZ2a8c80qXeMlQMv2uVp9ISJMTt562SbGd6n2oq0PaPgKm7Z6pL9E2UlLIhC+SHL3w==}
     engines: {node: '>=4.0.0'}
+    dev: false
+
+  /pnpm@8.3.1:
+    resolution: {integrity: sha512-0mT2ZAv08J3nz8xUdWhRW88GE89IWgPo/xZhb6acQXK2+aCikl7kT7Bg31ZcnJqOrwYXSed68xjLd/ZoSnBR8w==}
+    engines: {node: '>=16.14'}
+    hasBin: true
     dev: false
 
   /polished@4.2.2:

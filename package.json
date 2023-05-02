@@ -76,6 +76,7 @@
     "@types/react": "^16.8.17"
   },
   "dependencies": {
+    "pnpm": "^8.3.1",
     "shlex": "^2.1.2"
   },
   "pnpm": {
