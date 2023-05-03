@@ -7,6 +7,7 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "history",
     srcs = ["history.tsx"],
+    strict = False,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -40,6 +41,7 @@ ts_library(
 ts_library(
     name = "history_invocation_card",
     srcs = ["history_invocation_card.tsx"],
+    strict = False,
     deps = [
         "//app/format",
         "//app/router",
@@ -55,6 +57,7 @@ ts_library(
 ts_library(
     name = "history_invocation_stat_card",
     srcs = ["history_invocation_stat_card.tsx"],
+    strict = False,
     deps = [
         "//app/format",
         "//app/router",

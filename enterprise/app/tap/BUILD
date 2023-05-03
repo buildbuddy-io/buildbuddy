@@ -7,6 +7,7 @@ exports_files(["tap.css"])
 ts_library(
     name = "tap",
     srcs = ["tap.tsx"],
+    strict = False,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
