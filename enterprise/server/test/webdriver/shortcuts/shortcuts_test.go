@@ -49,9 +49,9 @@ func TestNavShortcuts(t *testing.T) {
 
 func TestInvocationNavShortcuts(t *testing.T) {
 	wt, target := newWebTester(t)
-	enableShortcuts(t, wt)
-
 	invocationIDs := []string{addBuild(t, wt, target), addBuild(t, wt, target), addBuild(t, wt, target)}
+
+	enableShortcuts(t, wt)
 
 	wt.FindBody().SendKeys("ga")
 	wt.FindBody().SendKeys("j")
@@ -87,7 +87,6 @@ func newWebTester(t *testing.T) (*webtester.WebTester, buildbuddy_enterprise.Web
 	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(t)
 	webtester.Login(wt, target)
-	wt.Get(target.HTTPURL())
 	return wt, target
 }
 
