@@ -715,6 +715,12 @@ type EncryptionKeyVersion struct {
 	GroupKeyURI string
 	// Group portion of the composite key encrypted using the above group key.
 	GroupEncryptedKey []byte
+
+	// Last time we attempted to encrypt composite key portions using the KMS
+	// keys.
+	LastEncryptionAttemptAtUsec int64 `gorm:"index:last_encryption_attempt_idx"`
+	// Last time the composite key portions were encrypted using the KMS keys.
+	LastEncryptedAtUsec int64
 }
 
 func (*EncryptionKeyVersion) TableName() string {

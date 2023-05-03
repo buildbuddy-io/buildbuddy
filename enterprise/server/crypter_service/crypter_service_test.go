@@ -174,7 +174,7 @@ func writeInRandomChunks(t *testing.T, w interfaces.Encryptor, data []byte) {
 	require.NoError(t, err)
 }
 
-func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI string) {
+func createKey(t *testing.T, env environment.Env, clock clockwork.Clock, keyID, groupID, groupKeyURI string) *tables.EncryptionKeyVersion {
 	kmsClient := env.GetKMS()
 
 	masterKeyPart := make([]byte, 32)
@@ -198,17 +198,20 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 		GroupID:         groupID,
 	}
 	keyVersion := &tables.EncryptionKeyVersion{
-		EncryptionKeyID:    keyID,
-		Version:            1,
-		MasterEncryptedKey: encMasterKeyPart,
-		GroupKeyURI:        groupKeyURI,
-		GroupEncryptedKey:  encGroupKeyPart,
+		EncryptionKeyID:             keyID,
+		Version:                     1,
+		MasterEncryptedKey:          encMasterKeyPart,
+		GroupKeyURI:                 groupKeyURI,
+		GroupEncryptedKey:           encGroupKeyPart,
+		LastEncryptionAttemptAtUsec: clock.Now().UnixMicro(),
+		LastEncryptedAtUsec:         clock.Now().UnixMicro(),
 	}
 	ctx := context.Background()
 	err = env.GetDBHandle().DB(ctx).Create(key).Error
 	require.NoError(t, err)
 	err = env.GetDBHandle().DB(ctx).Create(keyVersion).Error
 	require.NoError(t, err)
+	return keyVersion
 }
 
 func getEnv(t *testing.T) (*testenv.TestEnv, *fakeKMS) {
@@ -233,7 +236,9 @@ func TestEncryptDecrypt(t *testing.T) {
 	groupID := "GR123"
 	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
-	createKey(t, env, "EK123", groupID, customerKeyURI)
+	clock := clockwork.NewRealClock()
+
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
 
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
@@ -275,7 +280,9 @@ func TestDecryptWrongGroup(t *testing.T) {
 	groupID := "GR123"
 	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
-	createKey(t, env, "EK123", groupID, customerKeyURI)
+	clock := clockwork.NewRealClock()
+
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
 
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
@@ -316,8 +323,9 @@ func TestDecryptWrongDigest(t *testing.T) {
 	groupID := "GR123"
 	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID, groupID))
 	env.SetAuthenticator(auther)
+	clock := clockwork.NewRealClock()
 
-	createKey(t, env, "EK123", groupID, customerKeyURI)
+	createKey(t, env, clock, "EK123", groupID, customerKeyURI)
 
 	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
@@ -372,11 +380,12 @@ func TestKeyLookup(t *testing.T) {
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
 	group2KeyURI := generateKMSKey(t, kms, "group2Key")
 	ctx := context.Background()
+	clock := clockwork.NewRealClock()
 
 	// Add separate keys for the first and second users.
 	// Third user doesn't have a key configured.
-	createKey(t, env, group1KeyID, groupID1, group1KeyURI)
-	createKey(t, env, group2KeyID, groupID2, group2KeyURI)
+	createKey(t, env, clock, group1KeyID, groupID1, group1KeyURI)
+	createKey(t, env, clock, group2KeyID, groupID2, group2KeyURI)
 
 	crypter, err := New(env, clockwork.NewRealClock())
 	defer crypter.Stop()
@@ -448,7 +457,7 @@ func TestKeyLookup(t *testing.T) {
 	}
 }
 
-func testEncryptDecrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, expectedKeyID string) {
+func testEncrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, expectedKeyID string, input []byte) ([]byte, *rfpb.EncryptionMetadata) {
 	out := bytes.NewBuffer(nil)
 	ctx, err := auther.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
@@ -457,14 +466,27 @@ func testEncryptDecrypt(ctx context.Context, t *testing.T, auther *testauth.Test
 	require.Equal(t, c.Metadata().GetEncryptionKeyId(), expectedKeyID)
 	require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
-	input := []byte("hello world")
 	writeInRandomChunks(t, c, input)
-	d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
+	return out.Bytes(), c.Metadata()
+}
+
+func testDecryption(ctx context.Context, t *testing.T, crypter *Crypter, input []byte, metadata *rfpb.EncryptionMetadata, expectedOutput []byte) {
+	d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(input)), metadata)
 	require.NoError(t, err)
-	decrypted := make([]byte, len(input))
+	decrypted := make([]byte, len(expectedOutput))
 	_, err = d.Read(decrypted)
 	require.NoError(t, err)
-	require.Equal(t, input, decrypted)
+	require.Equal(t, expectedOutput, decrypted)
+}
+
+func testEncryptDecrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, expectedKeyID string) {
+	ctx, err := auther.WithAuthenticatedUser(ctx, userID)
+	require.NoError(t, err)
+
+	input := []byte("hello world")
+
+	encrypted, metadata := testEncrypt(ctx, t, auther, crypter, userID, expectedKeyID, input)
+	testDecryption(ctx, t, crypter, encrypted, metadata, input)
 }
 
 func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, clock clockwork.FakeClock) error {
@@ -532,11 +554,12 @@ func TestKeyCaching(t *testing.T) {
 	group1KeyURI := generateKMSKey(t, kms, "group1Key")
 	group2KeyURI := generateKMSKey(t, kms, "group2Key")
 	ctx := context.Background()
+	clock := clockwork.NewRealClock()
 
 	// Add separate keys for the first and second users.
 	// Third user doesn't have a key configured.
-	createKey(t, env, group1KeyID, groupID1, group1KeyURI)
-	createKey(t, env, group2KeyID, groupID2, group2KeyURI)
+	createKey(t, env, clock, group1KeyID, groupID1, group1KeyURI)
+	createKey(t, env, clock, group2KeyID, groupID2, group2KeyURI)
 
 	// Note that encryption and decryption keys are cached separately so a
 	// encryption/decryption round trip requires two key lookups.
@@ -768,4 +791,69 @@ func TestConfigAPI(t *testing.T) {
 	_, err = pc.Get(apiKeyCtx, encryptedResource)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestKeyReencryption(t *testing.T) {
+	env, kms := getEnv(t)
+
+	userID1 := "US123"
+	groupID1 := "GR123"
+	group1KeyID := "EK123"
+	userID2 := "US456"
+	groupID2 := "GR456"
+	group2KeyID := "EK456"
+	auther := testauth.NewTestAuthenticator(testauth.TestUsers(userID1, groupID1, userID2, groupID2))
+	env.SetAuthenticator(auther)
+
+	group1KeyURI := generateKMSKey(t, kms, "group1Key")
+	group2KeyURI := generateKMSKey(t, kms, "group2Key")
+	clock := clockwork.NewFakeClock()
+	crypter, err := New(env, clock)
+	require.NoError(t, err)
+
+	// Add separate keys for the first and second users.
+	user1KeyDBEntry := createKey(t, env, clock, group1KeyID, groupID1, group1KeyURI)
+	user2KeyDBEntry := createKey(t, env, clock, group2KeyID, groupID2, group2KeyURI)
+
+	// Write some data for bother users. We should be able to read the data
+	// back after we re-encrypt the keys.
+	user1Data := []byte("hello user1")
+	user1Ctx, err := auther.WithAuthenticatedUser(context.Background(), userID1)
+	require.NoError(t, err)
+	user1EncData, user1EncMD := testEncrypt(user1Ctx, t, auther, crypter, userID1, group1KeyID, user1Data)
+	user2Data := []byte("hello user2")
+	user2Ctx, err := auther.WithAuthenticatedUser(context.Background(), userID2)
+	require.NoError(t, err)
+	user2EncData, user2EncMD := testEncrypt(user2Ctx, t, auther, crypter, userID2, group2KeyID, user2Data)
+
+	// Allow the keys to be expired from the cache now so we don't have to
+	// worry about the cached values when re-encryption happens.
+	advanceTimeAndWaitForRefresh(clock, crypter, *keyTTL+1*time.Minute)
+
+	clock.Advance(*keyReencryptInterval * 2)
+
+	var user1NewKeyDBEntry, user2NewKeyDBEntry tables.EncryptionKeyVersion
+	for i := 0; i < 5; i++ {
+		q := `SELECT * FROM "EncryptionKeyVersions" WHERE encryption_key_id = ? AND version = 1`
+		err = env.GetDBHandle().DB(context.Background()).Raw(q, group1KeyID).Take(&user1NewKeyDBEntry).Error
+		require.NoError(t, err)
+		err = env.GetDBHandle().DB(context.Background()).Raw(q, group2KeyID).Take(&user2NewKeyDBEntry).Error
+		require.NoError(t, err)
+		if user1NewKeyDBEntry.LastEncryptionAttemptAtUsec > user1KeyDBEntry.LastEncryptionAttemptAtUsec &&
+			user2NewKeyDBEntry.LastEncryptionAttemptAtUsec > user2KeyDBEntry.LastEncryptionAttemptAtUsec {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Verify that the encrypted key contents is different from before.
+	require.NotEqual(t, user1KeyDBEntry.GroupEncryptedKey, user1NewKeyDBEntry.GroupEncryptedKey)
+	require.NotEqual(t, user1KeyDBEntry.MasterEncryptedKey, user1NewKeyDBEntry.MasterEncryptedKey)
+
+	require.NotEqual(t, user2KeyDBEntry.GroupEncryptedKey, user2NewKeyDBEntry.GroupEncryptedKey)
+	require.NotEqual(t, user2KeyDBEntry.MasterEncryptedKey, user2NewKeyDBEntry.MasterEncryptedKey)
+
+	// Verify that existing content can continue to be decrypted.
+	testDecryption(user1Ctx, t, crypter, user1EncData, user1EncMD, user1Data)
+	testDecryption(user2Ctx, t, crypter, user2EncData, user2EncMD, user2Data)
 }
