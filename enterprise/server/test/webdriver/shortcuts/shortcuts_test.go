@@ -3,7 +3,6 @@ package invocation_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
@@ -13,21 +12,13 @@ import (
 )
 
 func TestShortcutsDisabled(t *testing.T) {
-	wt := webtester.New(t)
-	target := buildbuddy_enterprise.SetupWebTarget(t)
-	webtester.Login(wt, target)
-	wt.Get(target.HTTPURL())
-
+	wt, _ := newWebTester(t)
 	wt.FindBody().SendKeys("?")
 	wt.AssertNotFound(".keyboard-shortcut-title")
 }
 
 func TestHelpMenu(t *testing.T) {
-	wt := webtester.New(t)
-	target := buildbuddy_enterprise.SetupWebTarget(t)
-	webtester.Login(wt, target)
-	wt.Get(target.HTTPURL())
-
+	wt, _ := newWebTester(t)
 	enableShortcuts(t, wt)
 
 	wt.FindBody().SendKeys("?")
@@ -39,11 +30,7 @@ func TestHelpMenu(t *testing.T) {
 }
 
 func TestNavShortcuts(t *testing.T) {
-	wt := webtester.New(t)
-	target := buildbuddy_enterprise.SetupWebTarget(t)
-	webtester.Login(wt, target)
-	wt.Get(target.HTTPURL())
-
+	wt, target := newWebTester(t)
 	enableShortcuts(t, wt)
 
 	wt.FindBody().SendKeys("ga")
@@ -61,64 +48,47 @@ func TestNavShortcuts(t *testing.T) {
 }
 
 func TestInvocationNavShortcuts(t *testing.T) {
-	wt := webtester.New(t)
-	target := buildbuddy_enterprise.SetupWebTarget(t)
-	webtester.Login(wt, target)
-	wt.Get(target.HTTPURL())
-
+	wt, target := newWebTester(t)
 	enableShortcuts(t, wt)
 
 	invocationIDs := []string{addBuild(t, wt, target), addBuild(t, wt, target), addBuild(t, wt, target)}
 
 	wt.FindBody().SendKeys("ga")
 	wt.FindBody().SendKeys("j")
-	wt.SendKeyCombo([]string{selenium.EnterKey})
+	wt.FindBody().SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[2], wt.CurrentURL())
 
 	wt.FindBody().SendKeys("u")
 	for i := 1; i < 5; i++ {
 		wt.FindBody().SendKeys("j")
 	}
-	wt.SendKeyCombo([]string{selenium.EnterKey})
+	wt.FindBody().SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[0], wt.CurrentURL())
 
 	wt.FindBody().SendKeys("u")
 	wt.FindBody().SendKeys("k")
-	wt.SendKeyCombo([]string{selenium.EnterKey})
+	wt.FindBody().SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[1], wt.CurrentURL())
 
 	wt.FindBody().SendKeys("u")
 	for i := 1; i < 5; i++ {
 		wt.FindBody().SendKeys("k")
 	}
-	wt.SendKeyCombo([]string{selenium.EnterKey})
+	wt.FindBody().SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[2], wt.CurrentURL())
 }
 
-func TestCopyInvocationLink(t *testing.T) {
+// TODO: add a test for shift-c that copies the invocation URL on the
+// invocation page. It's a little funky to test because the javascript that
+// renders the banner doesn't work great remotely and testing the clipboard
+// values interferes with the local clipboard if running locally.
+
+func newWebTester(t *testing.T) (*webtester.WebTester, buildbuddy_enterprise.WebTarget) {
 	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(t)
 	webtester.Login(wt, target)
 	wt.Get(target.HTTPURL())
-
-	enableShortcuts(t, wt)
-
-	invocationID := addBuild(t, wt, target)
-
-	wt.Get(target.HTTPURL() + "/invocation/" + invocationID)
-
-	wt.SendKeyCombo([]string{selenium.ShiftKey, "c"})
-
-	// TODO: it'd be nice to verify the contents of the clipboard, but selenium
-	// doesn't have great support for that. The current recommendation is to
-	// paste into a textbox and then read the contents. For now, just verify
-	// that the toast shows.
-	// It takes a sec for the banner to render, give it 100ms before failing.
-	wt.WaitWithTimeout(
-		func() bool {
-			return wt.Has(".banner.banner-success") && wt.Find(".banner.banner-success").Find(".banner-content").Text() == "Copied invocation link to clipboard"
-		},
-		100*time.Millisecond)
+	return wt, target
 }
 
 func enableShortcuts(t *testing.T, wt *webtester.WebTester) {

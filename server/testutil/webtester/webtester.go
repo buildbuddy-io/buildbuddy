@@ -48,7 +48,6 @@ func New(t *testing.T) *WebTester {
 		// `SetWindowSize` returning an error in headless mode
 		// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
 		"--window-size=1920,1000",
-		"--enable-javascript",
 	}
 	chromedriverArgs := []string{}
 	if *debug {
@@ -116,13 +115,6 @@ func (wt *WebTester) FindBody() *Element {
 	return &Element{wt.t, el}
 }
 
-// Has returns true if the DOM contains an element matching the given CSS
-// selector or false otherwise.
-func (wt *WebTester) Has(cssSelector string) bool {
-	_, err := wt.driver.FindElement(selenium.ByCSSSelector, cssSelector)
-	return err == nil
-}
-
 // Find returns the element matching the given CSS selector. Exactly one
 // element must be matched, otherwise the test fails.
 func (wt *WebTester) Find(cssSelector string) *Element {
@@ -188,28 +180,6 @@ func (wt *WebTester) screenshot(tag string) error {
 	return nil
 }
 
-// Sends the provided key combination to the browser. All keys are pressed in
-// the order passed, and then released in that order.
-func (wt *WebTester) SendKeyCombo(keys []string) {
-	for _, key := range keys {
-		err := wt.driver.KeyDown(key)
-		require.NoError(wt.t, err, "Failed to send keystroke "+key)
-	}
-	for _, key := range keys {
-		err := wt.driver.KeyUp(key)
-		require.NoError(wt.t, err, "Failed to send keystroke "+key)
-	}
-}
-
-// WaitWithTimeout waits for up to timeout for the provided condition to return
-// true and fails the test if it does not within the timeout.
-func (wt *WebTester) WaitWithTimeout(condition func() bool, timeout time.Duration) {
-	err := wt.driver.WaitWithTimeout(
-		func(wd selenium.WebDriver) (bool, error) { return condition(), nil },
-		timeout)
-	require.NoError(wt.t, err)
-}
-
 // Element wraps selenium.WebElement, failing the test instead of returning
 // errors for all of its API methods.
 type Element struct {
@@ -228,6 +198,13 @@ func (el *Element) Text() string {
 	txt, err := el.webElement.Text()
 	require.NoError(el.t, err)
 	return txt
+}
+
+// Value returns the text of the element.
+func (el *Element) Value() string {
+	val, err := el.webElement.GetAttribute("value")
+	require.NoError(el.t, err)
+	return val
 }
 
 // IsSelected returns whether the element is selected.
