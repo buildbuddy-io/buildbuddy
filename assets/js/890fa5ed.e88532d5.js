@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[9541],{9596:function(e){e.exports=JSON.parse('{"permalink":"/blog/tags/release-notes","page":1,"postsPerPage":10,"totalPages":2,"totalCount":11,"nextPage":"/blog/tags/release-notes/page/2","blogDescription":"Blog","blogTitle":"Blog"}')}}]);
