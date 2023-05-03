@@ -29,7 +29,7 @@ Similar to [Bazel 5.0's changes][whats-new-in-bazel-5],
 the end result was quite big,
 so I've included a table of contents to allow easy navigation to the changes that interest you the most:
 
-<nav class="toc">
+<nav className="toc">
 
 - [Command-line flag changes](#command-line-flag-changes)
   - [Renamed](#renamed)

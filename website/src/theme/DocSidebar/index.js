@@ -4,22 +4,17 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-import React, { useState } from "react";
-import clsx from "clsx";
-import {
-  useThemeConfig,
-  useAnnouncementBar,
-  MobileSecondaryMenuFiller,
-  ThemeClassNames,
-  useScrollPosition,
-} from "@docusaurus/theme-common";
-import useWindowSize from "@theme/hooks/useWindowSize";
-import Logo from "@theme/Logo";
-import IconArrow from "@theme/IconArrow";
+import { NavbarSecondaryMenuFiller, ThemeClassNames, useThemeConfig, useWindowSize } from "@docusaurus/theme-common";
+import { useAnnouncementBar, useScrollPosition } from "@docusaurus/theme-common/internal";
 import { translate } from "@docusaurus/Translate";
-import { DocSidebarItems } from "@theme/DocSidebarItem";
-import styles from "./styles.module.css";
 import useIsBrowser from "@docusaurus/useIsBrowser";
+import DocSidebarItems from "@theme/DocSidebarItems";
+import IconArrow from "@theme/Icon/Arrow";
+import Logo from "@theme/Logo";
+import clsx from "clsx";
+import React, { useState } from "react";
+
+import styles from "./styles.module.css";
 
 function useShowAnnouncementBar() {
   const { isActive } = useAnnouncementBar();
@@ -69,6 +64,7 @@ function DocSidebarDesktop({ path, sidebar, onCollapse, isHidden }) {
         [styles.sidebarWithHideableNavbar]: hideOnScroll,
         [styles.sidebarHidden]: isHidden,
       })}>
+      {" "}
       {hideOnScroll && <Logo tabIndex={-1} className={styles.sidebarLogo} />}
       <nav
         className={clsx("menu", styles.menu, {
@@ -105,7 +101,7 @@ const DocSidebarMobileSecondaryMenu = ({ toggleSidebar, sidebar, path }) => (
 );
 
 function DocSidebarMobile(props) {
-  return <MobileSecondaryMenuFiller component={DocSidebarMobileSecondaryMenu} props={props} />;
+  return <NavbarSecondaryMenuFiller component={DocSidebarMobileSecondaryMenu} props={props} />;
 }
 
 const DocSidebarDesktopMemo = React.memo(DocSidebarDesktop);

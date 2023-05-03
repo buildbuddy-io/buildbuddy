@@ -4,7 +4,7 @@ import { MDXProvider } from "@mdx-js/react";
 import Translate, { translate } from "@docusaurus/Translate";
 import Link from "@docusaurus/Link";
 import MDXComponents from "@theme/MDXComponents";
-import Seo from "@theme/Seo";
+import { PageMetadata } from "@docusaurus/theme-common";
 import type { Props } from "@theme/BlogPostItem";
 
 import styles from "./styles.module.css";
@@ -143,7 +143,7 @@ function BlogPostItem(props: Props): JSX.Element {
 
   return (
     <>
-      <Seo {...{ keywords, image }} />
+      <PageMetadata {...{ keywords, image }} />
 
       <article className={!isBlogPostPage ? "margin-bottom--xl" : undefined}>
         {renderPostHeader()}

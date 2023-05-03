@@ -6,9 +6,9 @@ import type { Props } from "@theme/BlogTagsListPage";
 import BlogSidebar from "../BlogSidebar";
 import Translate from "@docusaurus/Translate";
 
-function getCategoryOfTag(tag: string) {
+function getCategoryOfTag(tag_label: string) {
   // tag's category should be customizable
-  return tag.name[0].toUpperCase();
+  return tag_label[0].toUpperCase();
 }
 
 function BlogTagsListPage(props: Props): JSX.Element {
@@ -16,7 +16,7 @@ function BlogTagsListPage(props: Props): JSX.Element {
 
   const tagCategories: { [category: string]: string[] } = {};
   Object.keys(tags).forEach((tag) => {
-    const category = getCategoryOfTag(tags[tag]);
+    const category = getCategoryOfTag(tags[tag].label);
     tagCategories[category] = tagCategories[category] || [];
     tagCategories[category].push(tag);
   });
@@ -32,7 +32,7 @@ function BlogTagsListPage(props: Props): JSX.Element {
         <h3>{category}</h3>
         {tagsForCategory.map((tag) => (
           <Link className="padding-right--md" href={tags[tag].permalink} key={tag}>
-            {tags[tag].name} ({tags[tag].count})
+            {tags[tag].label} ({tags[tag].count})
           </Link>
         ))}
         <hr />

@@ -28,7 +28,7 @@ So that's what I did 😄.
 The end result was quite big though,
 so I've included a table of contents to allow easy navigation to the changes that interest you the most:
 
-<nav class="toc">
+<nav className="toc">
 
 - [Command-line flag changes](#command-line-flag-changes)
   - [Renamed](#renamed)
