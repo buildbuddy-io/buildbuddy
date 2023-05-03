@@ -200,13 +200,6 @@ func (el *Element) Text() string {
 	return txt
 }
 
-// Value returns the text of the element.
-func (el *Element) Value() string {
-	val, err := el.webElement.GetAttribute("value")
-	require.NoError(el.t, err)
-	return val
-}
-
 // IsSelected returns whether the element is selected.
 func (el *Element) IsSelected() bool {
 	val, err := el.webElement.IsSelected()
