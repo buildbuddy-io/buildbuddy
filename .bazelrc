@@ -149,6 +149,12 @@ test:webdriver-debug --test_env=DISPLAY
 # otherwise), and display verbose webdriver output in the terminal.
 test:webdriver-debug --test_output=streamed
 
+# Currently only works for go tests
+# Coverage outputs could be viewed with `genhtml`:
+#   $ genhtml -o cover bazel-out/_coverage/_coverage_report.dat
+#   $ open cover/index.html
+coverage --combined_report=lcov
+
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
 # cp template-user.bazelrc user.bazelrc

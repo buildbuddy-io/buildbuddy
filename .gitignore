@@ -42,3 +42,6 @@ user.bazelrc
 # BuildBuddy certs
 buildbuddy-cert.pem
 buildbuddy-key.pem
+
+# genhtml coverage outputs
+/cover
