@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/cockroachdb/pebble"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -2396,4 +2397,104 @@ func TestSupportsEncryption(t *testing.T) {
 	// Second user should be able to use encryption.
 	ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), apiKey2)
 	require.True(t, pc.SupportsEncryption(ctx))
+}
+
+func TestSampling(t *testing.T) {
+	flags.Set(t, "cache.pebble.active_key_version", 3)
+
+	te, kmsDir := getCrypterEnv(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	groupKeyID := "EK123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{userID: user}
+	auther := testauth.NewTestAuthenticator(users)
+	te.SetAuthenticator(auther)
+
+	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+
+	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+	err = te.GetDBHandle().DB(ctx).Create(key).Error
+	require.NoError(t, err)
+	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	require.NoError(t, err)
+
+	rootDir := testfs.MakeTempDir(t)
+	minEvictionAge := 1 * time.Hour
+	clock := clockwork.NewFakeClock()
+
+	opts := &pebble_cache.Options{
+		RootDirectory: rootDir,
+		Partitions: []disk.Partition{{
+			ID:                  pebble_cache.DefaultPartitionID,
+			EncryptionSupported: true,
+			// Force all entries to be evicted as soon as they pass the minimum
+			// eviction age.
+			MaxSizeBytes: 2,
+		}},
+		MinEvictionAge: &minEvictionAge,
+		Clock:          clock,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	anonCtx := getAnonContext(t, te)
+	err = pc.Set(anonCtx, rn, buf)
+	require.NoError(t, err)
+
+	// Advance time (to force newer atime) and write the same digest
+	// encrypted. The encrypted key should have the same digest prefix as the
+	// unencrypted key and come before the unencrypted key in lexicographical f
+	// order.
+	clock.Advance(5 * time.Minute)
+	err = pc.Set(ctx, rn, buf)
+	require.NoError(t, err)
+
+	// Write some random digests as well.
+	var randomResources []*rspb.ResourceName
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		anonCtx := getAnonContext(t, te)
+		err = pc.Set(anonCtx, rn, buf)
+		require.NoError(t, err)
+		randomResources = append(randomResources, rn)
+	}
+
+	// Now advance the clock past the min eviction age to allow eviction to
+	// kick in. The unencrypted test digest should be evicted.
+	clock.Advance(minEvictionAge - 1*time.Minute)
+
+	for i := 0; i < 5; i++ {
+		if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// The unencrypted key should no longer exist.
+	unencryptedExists, err := pc.Contains(anonCtx, rn)
+	require.NoError(t, err)
+	require.False(t, unencryptedExists)
+
+	// The encrypted key should still exist.
+	encryptedExists, err := pc.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, encryptedExists)
+
+	// The other random digests should also exist.
+	for _, rr := range randomResources {
+		exists, err := pc.Contains(anonCtx, rr)
+		require.NoError(t, err)
+		require.True(t, exists)
+	}
+
+	err = pc.Stop()
+	require.NoError(t, err)
 }
