@@ -61,7 +61,7 @@ go_rules_dependencies()
         name = "go_sdk_{}_{}".format(goos, goarch),
         goarch = goarch,
         goos = goos,
-        version = "1.20.3",  # Keep in sync with .github/workflows/checkstyle.yaml
+        version = "1.20.4",  # Keep in sync with .github/workflows/checkstyle.yaml
     )
     for goos in [
         "linux",
