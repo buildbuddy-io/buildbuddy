@@ -281,11 +281,13 @@ func Login(wt *WebTester, target Target) {
 		wt.FindByDebugID("sso-button").Click()
 		wt.FindByDebugID("sso-slug").SendKeys(target.SSOSlug())
 		wt.FindByDebugID("sso-button").Click()
-		return
+	} else {
+		// Otherwise attempt self-auth.
+		wt.FindByDebugID("login-button").Click()
 	}
 
-	// Otherwise attempt self-auth.
-	wt.FindByDebugID("login-button").Click()
+	// Login can have a delay. Wait for the sidebar before proceeding.
+	wt.Find(".sidebar-footer")
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,
