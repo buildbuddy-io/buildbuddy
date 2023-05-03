@@ -184,7 +184,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
   }
 
   private onAWSARNChange(event: React.ChangeEvent<HTMLInputElement>) {
-    this.setState({awsARN: event.target.value})
+    this.setState({ awsARN: event.target.value });
   }
 
   private renderKMSFields(kms: encryption.KMS) {
@@ -276,27 +276,27 @@ export default class EncryptionComponent extends React.Component<{}, State> {
         );
       case encryption.KMS.AWS:
         return (
-            <>
-              <div className="kms-instructions">
-                You must grant BuildBuddy permission to use the specified key for encryption and decryption by adding
-                the following AWS account to the KMS key:
-                <code>561871016185</code>
-              </div>
-              <div className="field-row">
-                <label htmlFor="awsARN" className="field-label">
-                  Key Resource Name (ARN)
-                </label>
-                <TextInput
-                    autoComplete="off"
-                    type="text"
-                    name="awsARN"
-                    onChange={this.onAWSARNChange.bind(this)}
-                    value={this.state.awsARN}
-                    placeholder="e.g. arn:aws:kms:us-east-1:123456789:key/123456"
-                    className="aws-arn"
-                />
-              </div>
-            </>
+          <>
+            <div className="kms-instructions">
+              You must grant BuildBuddy permission to use the specified key for encryption and decryption by adding the
+              following AWS account to the KMS key:
+              <code>561871016185</code>
+            </div>
+            <div className="field-row">
+              <label htmlFor="awsARN" className="field-label">
+                Key Resource Name (ARN)
+              </label>
+              <TextInput
+                autoComplete="off"
+                type="text"
+                name="awsARN"
+                onChange={this.onAWSARNChange.bind(this)}
+                value={this.state.awsARN}
+                placeholder="e.g. arn:aws:kms:us-east-1:123456789:key/123456"
+                className="aws-arn"
+              />
+            </div>
+          </>
         );
     }
   }

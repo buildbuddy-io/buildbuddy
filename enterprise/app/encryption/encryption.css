@@ -16,7 +16,7 @@
   padding: 16px;
 }
 
-.kms-form input[type=text].aws-arn {
+.kms-form input[type="text"].aws-arn {
   width: 700px;
 }
 
