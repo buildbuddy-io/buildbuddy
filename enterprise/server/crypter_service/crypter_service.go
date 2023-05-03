@@ -54,6 +54,8 @@ const (
 	keyRefreshDeadline      = 25 * time.Second
 	keyErrCacheTime         = 10 * time.Second
 
+	// How often to check for keys needing re-encryption.
+	keyReencryptCheckInterval = 15 * time.Minute
 	// Timeout for querying keys to re-encrypt.
 	keyReencryptListQueryTimeout = 60 * time.Second
 	// Timeout for re-encrypting a single key.
@@ -807,7 +809,7 @@ func (c *Crypter) startKeyReencryptor(quitChan chan struct{}) {
 			select {
 			case <-quitChan:
 				return
-			case <-c.clock.After(1 * time.Minute):
+			case <-c.clock.After(keyReencryptCheckInterval):
 				break
 			}
 		}

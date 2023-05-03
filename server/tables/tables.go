@@ -718,7 +718,7 @@ type EncryptionKeyVersion struct {
 
 	// Last time we attempted to encrypt composite key portions using the KMS
 	// keys.
-	LastEncryptionAttemptAtUsec int64
+	LastEncryptionAttemptAtUsec int64 `gorm:"index:last_encryption_attempt_idx"`
 	// Last time the composite key portions were encrypted using the KMS keys.
 	LastEncryptedAtUsec int64
 }
