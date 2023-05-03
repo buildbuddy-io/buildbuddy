@@ -138,6 +138,11 @@ func (k *KMS) initAWSClient(ctx context.Context) error {
 	k.awsClients = make(map[string]registry.KMSClient)
 	if *awsCredentailsFile != "" {
 		log.Debugf("KMS: using AWS credentials file: %q", *awsCredentailsFile)
+		// Verify the credential file format is valid.
+		_, err := loadAWSCreds(*awsCredentailsFile)
+		if err != nil {
+			return status.FailedPreconditionErrorf("AWS credentials file not valid: %s", err)
+		}
 	}
 	if strings.HasPrefix(*masterKeyURI, awsKMSPrefix) {
 		_, err := k.clientForURI(*masterKeyURI)
@@ -160,6 +165,7 @@ func loadAWSCreds(file string) (*awscreds.Value, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 	rs, err := csv.NewReader(f).ReadAll()
 	if err != nil {
 		return nil, err
@@ -183,7 +189,6 @@ func crateAWSClientWithCreds(arn *awsKMSARN, credsFile string) (registry.KMSClie
 	if err != nil {
 		return nil, status.UnknownErrorf("could not load credentials file: %s", err)
 	}
-	log.Warningf("using creds %q %q", credValue.AccessKeyID, credValue.SecretAccessKey)
 	creds := awscreds.NewStaticCredentialsFromCreds(*credValue)
 	sess, err := awssession.NewSession(&aws.Config{
 		Credentials: creds,
