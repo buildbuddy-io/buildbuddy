@@ -115,6 +115,13 @@ func (wt *WebTester) FindBody() *Element {
 	return &Element{wt.t, el}
 }
 
+// Has returns true if the DOM contains an element matching the given CSS
+// selector or false otherwise.
+func (wt *WebTester) Has(cssSelector string) bool {
+	_, err := wt.driver.FindElement(selenium.ByCSSSelector, cssSelector)
+	return err == nil
+}
+
 // Find returns the element matching the given CSS selector. Exactly one
 // element must be matched, otherwise the test fails.
 func (wt *WebTester) Find(cssSelector string) *Element {

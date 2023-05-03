@@ -112,11 +112,12 @@ func TestCopyInvocationLink(t *testing.T) {
 	// TODO: it'd be nice to verify the contents of the clipboard, but selenium
 	// doesn't have great support for that. The current recommendation is to
 	// paste into a textbox and then read the contents. For now, just verify
-	// that the toast shows. It takes a lil bit for the banner to render, so
-	// give it 100ms before failing.
-	bannerContent := wt.Find(".banner.banner-success").Find(".banner-content")
+	// that the toast shows.
+	// It takes a sec for the banner to render, give it 100ms before failing.
 	wt.WaitWithTimeout(
-		func() bool { return bannerContent.Text() == "Copied invocation link to clipboard" },
+		func() bool {
+			return wt.Has(".banner.banner-success") && wt.Find(".banner.banner-success").Find(".banner-content").Text() == "Copied invocation link to clipboard"
+		},
 		100*time.Millisecond)
 }
 
