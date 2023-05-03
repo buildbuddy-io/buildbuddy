@@ -13,6 +13,7 @@ import Spinner from "../../../app/components/spinner/spinner";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import { BuildBuddyError } from "../../../app/util/errors";
 import error_service from "../../../app/errors/error_service";
+import TextInput from "../../../app/components/input/input";
 
 interface State {
   encryptionSupported: boolean;
@@ -37,6 +38,9 @@ interface State {
   gcpLocation: string;
   gcpKeyRing: string;
   gcpKey: string;
+
+  // AWS KMS form.
+  awsARN: string;
 }
 
 export default class EncryptionComponent extends React.Component<{}, State> {
@@ -55,6 +59,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     gcpLocation: "",
     gcpKeyRing: "",
     gcpKey: "",
+    awsARN: "",
   };
 
   componentDidMount() {
@@ -122,6 +127,13 @@ export default class EncryptionComponent extends React.Component<{}, State> {
           }),
         });
         break;
+      case encryption.KMS.AWS:
+        req.kmsConfig = encryption.KMSConfig.create({
+          awsKmsConfig: encryption.AWSKMSConfig.create({
+            arn: this.state.awsARN,
+          }),
+        });
+        break;
     }
     try {
       await rpc_service.service.setEncryptionConfig(req);
@@ -144,6 +156,8 @@ export default class EncryptionComponent extends React.Component<{}, State> {
         return "Local Insecure KMS (non-production use)";
       case encryption.KMS.GCP:
         return "Google Cloud Platform KMS";
+      case encryption.KMS.AWS:
+        return "Amazon Web Services KMS";
       default:
         return "Unknown KMS";
     }
@@ -167,6 +181,10 @@ export default class EncryptionComponent extends React.Component<{}, State> {
 
   private onGCPLocationChange(event: React.ChangeEvent<HTMLInputElement>) {
     this.setState({ gcpLocation: event.target.value });
+  }
+
+  private onAWSARNChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({awsARN: event.target.value})
   }
 
   private renderKMSFields(kms: encryption.KMS) {
@@ -255,6 +273,30 @@ export default class EncryptionComponent extends React.Component<{}, State> {
               />
             </div>
           </>
+        );
+      case encryption.KMS.AWS:
+        return (
+            <>
+              <div className="kms-instructions">
+                You must grant BuildBuddy permission to use the specified key for encryption and decryption by adding
+                the following AWS account to the KMS key:
+                <code>561871016185</code>
+              </div>
+              <div className="field-row">
+                <label htmlFor="awsARN" className="field-label">
+                  Key Resource Name (ARN)
+                </label>
+                <TextInput
+                    autoComplete="off"
+                    type="text"
+                    name="awsARN"
+                    onChange={this.onAWSARNChange.bind(this)}
+                    value={this.state.awsARN}
+                    placeholder="e.g. arn:aws:kms:us-east-1:123456789:key/123456"
+                    className="aws-arn"
+                />
+              </div>
+            </>
         );
     }
   }
