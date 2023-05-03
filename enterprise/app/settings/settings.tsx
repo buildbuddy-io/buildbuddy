@@ -157,7 +157,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <div className="settings-tab-group-subtitle">{this.props.user.displayUser.name?.full}</div>
               </div>
               <div className="settings-tab-group">
-                <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId}>
+                <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId} debugId="personal-preferences">
                   Preferences
                 </SettingsTab>
                 {this.props.user?.selectedGroup?.userOwnedKeysEnabled && (
@@ -209,7 +209,8 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </div>
                   <FilledButton
                     className="settings-button"
-                    onClick={() => this.props.preferences.toggleKeyboardShortcuts()}>
+                    onClick={() => this.props.preferences.toggleKeyboardShortcuts()}
+                    debug-id="keyboard-shortcuts-button">
                     {this.props.preferences.keyboardShortcutsEnabled ? "Disable" : "Enable"} keyboard shortcuts
                   </FilledButton>
                 </>
@@ -330,6 +331,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
 type SettingsTabProps = {
   id: TabId;
   activeTabId: TabId;
+  debugId?: string;
 };
 
 class SettingsTab extends React.Component<SettingsTabProps> {
@@ -337,7 +339,8 @@ class SettingsTab extends React.Component<SettingsTabProps> {
     return (
       <Link
         className={`settings-tab ${this.props.activeTabId === this.props.id ? "active-tab" : ""}`}
-        href={`/settings/${this.props.id}`}>
+        href={`/settings/${this.props.id}`}
+        debug-id={this.props.debugId}>
         {this.props.children}
       </Link>
     );
