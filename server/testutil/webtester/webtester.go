@@ -48,6 +48,7 @@ func New(t *testing.T) *WebTester {
 		// `SetWindowSize` returning an error in headless mode
 		// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
 		"--window-size=1920,1000",
+		"--enable-javascript",
 	}
 	chromedriverArgs := []string{}
 	if *debug {
