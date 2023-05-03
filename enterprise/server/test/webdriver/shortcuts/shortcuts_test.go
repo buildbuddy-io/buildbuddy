@@ -93,12 +93,10 @@ func newWebTester(t *testing.T) (*webtester.WebTester, buildbuddy_enterprise.Web
 
 func enableShortcuts(t *testing.T, wt *webtester.WebTester) {
 	webtester.ClickSidebarItem(wt, "Settings")
-	preferencesButton := wt.FindByDebugID("personal-preferences")
-	preferencesButton.Click()
+	wt.FindByDebugID("personal-preferences").Click()
 	shortcutsButton := wt.FindByDebugID("keyboard-shortcuts-button")
 	require.Equal(t, "Enable keyboard shortcuts", shortcutsButton.Text())
 	shortcutsButton.Click()
-	shortcutsButton = wt.FindByDebugID("keyboard-shortcuts-button")
 	require.Equal(t, "Disable keyboard shortcuts", shortcutsButton.Text())
 }
 
