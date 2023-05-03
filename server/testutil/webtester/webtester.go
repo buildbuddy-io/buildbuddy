@@ -264,6 +264,10 @@ func Login(wt *WebTester, target Target) {
 
 	// Otherwise attempt self-auth.
 	wt.FindByDebugID("login-button").Click()
+
+	// Sometimes login can have a slight delay. Wait for the logout link to
+	// appear before proceeding.
+	wt.Find(".sidebar-logout-item")
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,
