@@ -5,6 +5,10 @@ go_library(
     srcs = ["invocation_format.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format",
     visibility = ["//visibility:public"],
+    deps = [
+        "//proto:invocation_go_proto",
+        "//server/util/status",
+    ],
 )
 
 go_test(
@@ -13,6 +17,7 @@ go_test(
     srcs = ["invocation_format_test.go"],
     deps = [
         ":invocation_format",
+        "//proto:invocation_go_proto",
         "@com_github_stretchr_testify//assert",
     ],
 )

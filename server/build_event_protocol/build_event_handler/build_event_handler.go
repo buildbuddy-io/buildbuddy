@@ -1341,6 +1341,11 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
+	tags, err := invocation_format.JoinTags(p.Tags)
+	if err != nil {
+		return nil, err
+	}
+	i.Tags = tags
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
@@ -1410,6 +1415,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
 	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
 	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
+	out.Tags = invocation_format.SplitAndTrimTags(i.Tags)
 	return out
 }
 

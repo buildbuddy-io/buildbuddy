@@ -1,11 +1,13 @@
 package event_parser
 
 import (
+	"flag"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -15,6 +17,10 @@ import (
 const (
 	envVarOptionName = "client_env"
 	envVarSeparator  = "="
+)
+
+var (
+	tagsEnabled = flag.Bool("app.tags_enabled", false, "Enable setting tags on invocations via build_metadata")
 )
 
 const (
@@ -101,7 +107,8 @@ type fieldPriorities struct {
 	BranchName,
 	CommitSha,
 	Command,
-	Pattern int
+	Pattern,
+	Tags int
 }
 
 func NewStreamingEventParser(invocation *inpb.Invocation) *StreamingEventParser {
@@ -382,6 +389,9 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
+	if tags, ok := metadata["TAGS"]; ok && tags != "" {
+		sep.setTags(tags, priority)
+	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured) {
@@ -448,5 +458,11 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 	if sep.priority.Pattern <= priority {
 		sep.priority.Pattern = priority
 		sep.invocation.Pattern = value
+	}
+}
+func (sep *StreamingEventParser) setTags(value string, priority int) {
+	if *tagsEnabled && sep.priority.Tags <= priority {
+		sep.priority.Tags = priority
+		sep.invocation.Tags = invocation_format.SplitAndTrimTags(value)
 	}
 }
