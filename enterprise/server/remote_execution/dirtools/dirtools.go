@@ -32,7 +32,7 @@ import (
 const gRPCMaxSize = int64(4000000)
 
 var (
-	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", false, "If true, enable compression of downloads from remote caches")
+	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
 )
 
 type TransferInfo struct {
