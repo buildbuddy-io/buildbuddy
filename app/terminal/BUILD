@@ -32,7 +32,6 @@ ts_library(
 ts_jasmine_node_test(
     name = "text_test",
     srcs = ["text_test.ts"],
-    strict = True,
     deps = [":terminal"],
 )
 

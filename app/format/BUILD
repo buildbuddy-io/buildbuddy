@@ -18,7 +18,6 @@ ts_library(
 ts_jasmine_node_test(
     name = "format_test",
     srcs = ["format_test.ts"],
-    strict = True,
     deps = [
         ":format",
         "@npm//@types/long",
