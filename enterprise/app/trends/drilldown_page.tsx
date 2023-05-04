@@ -38,20 +38,13 @@ function encodeMetricUrlParam(metric: stat_filter.Metric): string {
 }
 
 function decodeMetricUrlParam(param: string): MetricOption | undefined {
-  let decoded;
   if (param.length < 2) {
     return undefined;
   } else if (param[0] === "e") {
     const metric = Number.parseInt(param.substring(1));
-    if (!metric || !stat_filter.ExecutionMetricType[metric]) {
-      return undefined;
-    }
     return METRIC_OPTIONS.find((v) => metric === v.metric.execution) || undefined;
   } else if (param[0] === "i") {
     const metric = Number.parseInt(param.substring(1));
-    if (!metric || !stat_filter.InvocationMetricType[metric]) {
-      return undefined;
-    }
     return METRIC_OPTIONS.find((v) => metric === v.metric.invocation) || undefined;
   } else {
     return undefined;
