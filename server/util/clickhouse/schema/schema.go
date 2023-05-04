@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -379,16 +380,6 @@ func RunMigrations(gdb *gorm.DB) error {
 }
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
-	// A temporary hack to avoid writing arrays with empty strings to the DB while
-	// allowing tests with real values to pass.  This will be fixed shortly to
-	// actually trim and format array entries.
-	var tags []string
-	if len(ti.Tags) > 0 {
-		tags = strings.Split(ti.Tags, ",")
-	} else {
-		tags = []string{}
-	}
-
 	return &Invocation{
 		GroupID:                           ti.GroupID,
 		UpdatedAtUsec:                     ti.UpdatedAtUsec,
@@ -428,6 +419,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		DownloadOutputsOption:             ti.DownloadOutputsOption,
 		UploadLocalResultsEnabled:         ti.UploadLocalResultsEnabled,
 		RemoteExecutionEnabled:            ti.RemoteExecutionEnabled,
-		Tags:                              tags,
+		Tags:                              invocation_format.ConvertDbTagsToOlap(ti.Tags),
 	}
 }

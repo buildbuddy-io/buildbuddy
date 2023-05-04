@@ -69,3 +69,10 @@ func JoinTags(tags []invocation.Invocation_Tag) string {
 	}
 	return strings.Join(outSlice, ",")
 }
+
+func ConvertDbTagsToOlap(tags string) []string {
+	if len(tags) == 0 {
+		return []string{}
+	}
+	return strings.Split(tags, ",")
+}
