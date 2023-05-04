@@ -3,6 +3,8 @@ package invocation_format
 import (
 	"fmt"
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 const (
@@ -39,18 +41,31 @@ func ShortFormatPatterns(patterns []string) string {
 	return out
 }
 
-func TrimTags(tags string) string {
+func SplitAndTrimTags(tags string) []invocation.Invocation_Tag {
 	if len(tags) == 0 {
-		return ""
+		return []string{}
 	}
-
 	splitTags := strings.Split(tags, ",")
 	out := make([]string, 0, len(splitTags))
 	for _, t := range splitTags {
 		trimmed := strings.TrimSpace(t)
 		if len(trimmed) > 0 {
-			out = append(out, trimmed)
+			out = append(out, &invocation.Invocation_Tag{Name: trimmed})
 		}
 	}
-	return strings.Join(out, ",")
+	return out
+}
+
+func JoinTags(tags []invocation.Invocation_Tag) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	outSlice := make([]string, 0, len(tags))
+	for _, t := range tags {
+		trimmed := strings.TrimSpace(t.Name)
+		if len(trimmed) > 0 {
+			outSlice = append(outSlice, trimmed)
+		}
+	}
+	return strings.Join(outSlice, ",")
 }

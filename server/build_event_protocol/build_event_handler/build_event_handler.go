@@ -15,7 +15,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
@@ -1342,7 +1341,7 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
-	i.Tags = invocation_format.TrimTags(p.Tags)
+	i.Tags = invocation_format.JoinTags(p.Tags)
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
@@ -1412,11 +1411,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
 	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
 	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
-
-	tags := strings.Split(i.Tags, ",")
-	for _, name := range tags {
-		out.Tags = append(out.Tags, &invocation.Invocation_Tag{Name: name})
-	}
+	out.Tags = invocation_format.SplitAndTrimTags(i.Tags)
 	return out
 }
 

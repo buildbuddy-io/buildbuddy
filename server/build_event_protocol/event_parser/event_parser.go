@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -455,17 +456,8 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 	}
 }
 func (sep *StreamingEventParser) setTags(value string, priority int) {
-	values := strings.Split(value, ",")
 	if sep.priority.Tags <= priority {
 		sep.priority.Tags = priority
-		var tags = make([]*inpb.Invocation_Tag, 0)
-		for _, tag := range values {
-			trimmed := strings.TrimSpace(tag)
-			if trimmed == "" {
-				continue
-			}
-			tags = append(tags, &inpb.Invocation_Tag{Name: trimmed})
-		}
-		sep.invocation.Tags = tags
+		sep.invocation.Tags = invocation_format.SplitAndTrimTags(value)
 	}
 }
