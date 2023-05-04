@@ -117,9 +117,6 @@ func isCI(args []string) bool {
 func ConfigureSidecar(args []string) []string {
 	// Disable sidecar on CI for now since the async upload behavior can cause
 	// problems if the CI runner terminates before the uploads have completed.
-	// TODO: The sidecar is just an async BES/cache proxy at the moment, but if
-	// we add more sidecar features then we should find a way to re-enable it in
-	// "synchronous" mode on CI.
 	if isCI(args) {
 		log.Debugf("CI build detected.")
 		syncFlag := arg.Get(args, "sync")
@@ -160,6 +157,7 @@ func ConfigureSidecar(args []string) []string {
 
 	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
 		sidecarArgs = append(sidecarArgs, "--synchronous_write")
+		sidecarArgs = append(sidecarArgs, "--build_event_server.synchronous")
 		args = append(args, "--bes_upload_mode=wait_for_upload_complete")
 	}
 

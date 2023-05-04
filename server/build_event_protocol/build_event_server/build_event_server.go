@@ -2,8 +2,10 @@ package build_event_server
 
 import (
 	"context"
+	"flag"
 	"io"
 	"sort"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -14,6 +16,10 @@ import (
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+)
+
+var (
+	synchronous = flag.Bool("build_event_server.synchronous", false, "If true, wait until forwarding clients acknowledges")
 )
 
 type BuildEventProtocolServer struct {
@@ -37,11 +43,17 @@ func NewBuildEventProtocolServer(env environment.Env) (*BuildEventProtocolServer
 }
 
 func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*emptypb.Empty, error) {
+	wg := &sync.WaitGroup{}
 	for _, c := range s.env.GetBuildEventProxyClients() {
 		client := c
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			client.PublishLifecycleEvent(ctx, req)
 		}()
+	}
+	if *synchronous {
+		wg.Wait()
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -68,15 +80,35 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	var streamID *bepb.StreamId
 	var channel interfaces.BuildEventChannel
 
+	wg := &sync.WaitGroup{}
+	if *synchronous {
+		// wait for acknowledges from the forwarding stream clients. Note: Wait()
+		// needs to be run *after* fwdStream.CloseSend()
+		defer wg.Wait()
+	}
 	forwardingStreams := make([]pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, 0)
 	for _, client := range s.env.GetBuildEventProxyClients() {
-		stream, err := client.PublishBuildToolEventStream(ctx, grpc.WaitForReady(false))
+		fwdStream, err := client.PublishBuildToolEventStream(ctx, grpc.WaitForReady(false))
 		if err != nil {
 			log.CtxWarningf(ctx, "Unable to proxy stream: %s", err)
 			continue
 		}
-		defer stream.CloseSend()
-		forwardingStreams = append(forwardingStreams, stream)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				_, err := fwdStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					log.Warningf("Got error while getting response from proxy: %s", err.Error())
+					break
+				}
+			}
+		}()
+		defer fwdStream.CloseSend()
+		forwardingStreams = append(forwardingStreams, fwdStream)
 	}
 
 	disconnectWithErr := func(e error) error {

@@ -3,7 +3,6 @@ package build_event_proxy
 import (
 	"context"
 	"flag"
-	"io"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -86,30 +85,14 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 		ctx:    ctx,
 		events: make(chan *pepb.PublishBuildToolEventStreamRequest, *bufferSize),
 	}
+	stream, err := c.client.PublishBuildToolEventStream(ctx, opts...)
+	if err != nil {
+		log.Warningf("Error opening BES stream to proxy: %s", err.Error())
+		return nil
+	}
+	asp.PublishBuildEvent_PublishBuildToolEventStreamClient = stream
 	// Start a goroutine that will open the stream and pass along events.
 	go func() {
-		stream, err := c.client.PublishBuildToolEventStream(ctx, opts...)
-		if err != nil {
-			log.Warningf("Error opening BES stream to proxy: %s", err.Error())
-			return
-		}
-		asp.PublishBuildEvent_PublishBuildToolEventStreamClient = stream
-
-		// Receive all responses (ACKs) from the proxy, but ignore those.
-		// Without this step the channel maybe blocked with outstanding messages.
-		go func() {
-			for {
-				_, err := stream.Recv()
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					log.Warningf("Got error while getting response from proxy: %s", err.Error())
-					break
-				}
-			}
-		}()
-
 		// `range` *copies* the values it returns into the loopvar, and
 		// copies of protos are not permitted, so rather than range over the
 		// channel we read from the channel inside of an outer loop.
@@ -140,7 +123,7 @@ func (asp *asyncStreamProxy) Send(req *pepb.PublishBuildToolEventStreamRequest) 
 }
 
 func (asp *asyncStreamProxy) Recv() (*pepb.PublishBuildToolEventStreamResponse, error) {
-	return nil, nil
+	return asp.PublishBuildEvent_PublishBuildToolEventStreamClient.Recv()
 }
 
 func (asp *asyncStreamProxy) CloseSend() error {
