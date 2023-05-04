@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
@@ -56,9 +57,9 @@ func SplitAndTrimTags(tags string) []*invocation.Invocation_Tag {
 	return out
 }
 
-func JoinTags(tags []*invocation.Invocation_Tag) string {
+func JoinTags(tags []*invocation.Invocation_Tag) (string, error) {
 	if len(tags) == 0 {
-		return ""
+		return "", nil
 	}
 	outSlice := make([]string, 0, len(tags))
 	for _, t := range tags {
@@ -66,11 +67,14 @@ func JoinTags(tags []*invocation.Invocation_Tag) string {
 			continue
 		}
 		trimmed := strings.TrimSpace(t.Name)
+		if strings.Contains(trimmed, ",") {
+			return "", status.InvalidArgumentError(fmt.Sprintf("Invalid tag: %s", trimmed))
+		}
 		if len(trimmed) > 0 {
 			outSlice = append(outSlice, trimmed)
 		}
 	}
-	return strings.Join(outSlice, ",")
+	return strings.Join(outSlice, ","), nil
 }
 
 // This *does not* trim whitespace and therefore must not be used for

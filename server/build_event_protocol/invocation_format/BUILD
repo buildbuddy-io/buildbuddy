@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:invocation_go_proto",
+        "//server/util/status",
     ],
 )
 
@@ -16,6 +17,7 @@ go_test(
     srcs = ["invocation_format_test.go"],
     deps = [
         ":invocation_format",
+        "//proto:invocation_go_proto",
         "@com_github_stretchr_testify//assert",
     ],
 )
