@@ -146,7 +146,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     Secrets
                   </SettingsTab>
                 )}
-                {router.canAccessEncryptionPage(this.props.user) && (
+                {capabilities.config.customerManagedEncryptionKeysEnabled && router.canAccessEncryptionPage(this.props.user) && (
                   <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
                     Encryption keys
                   </SettingsTab>

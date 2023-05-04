@@ -864,10 +864,6 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 		return err
 	}
 
-	if !c.env.GetCache().SupportsEncryption(ctx) {
-		return status.UnavailableError("enabling encryption requires an account with dedicated storage")
-	}
-
 	// Get the KMS clients for the customer and our own keys. This doesn't
 	// actually talk to the KMS systems yet.
 	groupKeyClient, err := c.env.GetKMS().FetchKey(groupKeyURI)
@@ -1012,8 +1008,7 @@ func (c *Crypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncrypti
 	}
 
 	rsp := &enpb.GetEncryptionConfigResponse{
-		Supported: c.env.GetCache().SupportsEncryption(ctx),
-		Enabled:   g.CacheEncryptionEnabled,
+		Enabled: g.CacheEncryptionEnabled,
 	}
 
 	for _, t := range c.env.GetKMS().SupportedTypes() {

@@ -15,7 +15,6 @@ import { BuildBuddyError } from "../../../app/util/errors";
 import error_service from "../../../app/errors/error_service";
 
 interface State {
-  encryptionSupported: boolean;
   encryptionEnabled: boolean;
   supportedKMS: encryption.KMS[];
 
@@ -41,7 +40,6 @@ interface State {
 
 export default class EncryptionComponent extends React.Component<{}, State> {
   state: State = {
-    encryptionSupported: false,
     encryptionEnabled: false,
     supportedKMS: [],
     isDisableModalOpen: false,
@@ -65,7 +63,6 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     try {
       const response = await rpc_service.service.getEncryptionConfig(encryption.GetEncryptionConfigRequest.create());
       this.setState({
-        encryptionSupported: response.supported,
         encryptionEnabled: response.enabled,
         supportedKMS: response.supportedKms,
       });
@@ -276,13 +273,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
   render() {
     return (
       <>
-        {!this.state.encryptionSupported && (
-          <div>
-            To configure customer managed encryption keys, please reach out to us via Slack or email us at
-            support@buildbuddy.io.
-          </div>
-        )}
-        {this.state.encryptionSupported && this.state.encryptionEnabled && (
+        {this.state.encryptionEnabled && (
           <div>
             <p>Customer-managed encryption keys are enabled.</p>
 
@@ -322,7 +313,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
             </Modal>
           </div>
         )}
-        {this.state.encryptionSupported && !this.state.encryptionEnabled && (
+        {!this.state.encryptionEnabled && (
           <div>
             <p>Customer managed encryption keys are not currently enabled.</p>
             <p>
