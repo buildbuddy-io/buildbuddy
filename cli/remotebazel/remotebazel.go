@@ -48,7 +48,7 @@ const (
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
-	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
+	defaultRemoteExecutionURL  = "remote.buildbuddy.dev"
 )
 
 var (

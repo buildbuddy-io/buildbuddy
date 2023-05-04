@@ -977,8 +977,10 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			r.taskNumber += 1
 			r.PlatformProperties = props
 			p.mu.Unlock()
-			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
-			return r, nil
+			log.CtxInfof(ctx, "Would've reused existing runner %s for task", r)
+
+			//log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
+			//return r, nil
 		}
 	}
 	wsOpts := &workspace.Opts{
