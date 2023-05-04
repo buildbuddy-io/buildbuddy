@@ -885,7 +885,23 @@ func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error) {
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if authenticatedUser.GetGroupID() == "" {
+		return nil, status.InternalErrorf("authenticated user's group ID is empty")
+	}
+
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		// TODO: This won't work for legacy workflows
+		if req.GetWorkflowId() == "" {
+			req.WorkflowId = wfs.GetLegacyWorkflowID(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
+		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")

@@ -606,6 +606,13 @@ func (ws *workflowService) GetWorkflowByGroupAndRepo(ctx context.Context, groupI
 	return rwf.Workflow, nil
 }
 
+// GetLegacyWorkflowID generates an artificial workflow ID so that legacy Workflow structs
+// can be created from GitRepositories to play nicely with the pre-existing architecture
+// that expects the legacy format
+func (ws *workflowService) GetLegacyWorkflowID(groupID string, repoURL string) string {
+	return fmt.Sprintf("%s:%s:%s", repoWorkflowIDPrefix, groupID, repoURL)
+}
+
 // To run workflow in a clean container, update the instance name suffix
 func (ws *workflowService) useCleanWorkflow(ctx context.Context, wf *tables.Workflow) error {
 	suffix, err := random.RandomString(10)
@@ -657,7 +664,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 	if err != nil {
 		return nil, err
 	}
-	return gitRepositoryWorkflow(gitRepository, token), nil
+	return ws.gitRepositoryWorkflow(gitRepository, token), nil
 }
 
 func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context, executionID, invocationID string) error {
@@ -1029,7 +1036,7 @@ func (ws *workflowService) HandleRepositoryEvent(ctx context.Context, repo *tabl
 	if err != nil {
 		return err
 	}
-	wf := gitRepositoryWorkflow(repo, accessToken).Workflow
+	wf := ws.gitRepositoryWorkflow(repo, accessToken).Workflow
 	return ws.startWorkflow(ctx, provider, wd, wf)
 }
 
@@ -1217,10 +1224,10 @@ type repositoryWorkflow struct {
 }
 
 // Adapts a GitRepository to a legacy Workflow struct.
-func gitRepositoryWorkflow(repo *tables.GitRepository, accessToken string) *repositoryWorkflow {
+func (ws *workflowService) gitRepositoryWorkflow(repo *tables.GitRepository, accessToken string) *repositoryWorkflow {
 	// Construct an artificial workflow ID which identifies this workflow with
 	// the original GitRepository row.
-	repositoryID := fmt.Sprintf("%s:%s:%s", repoWorkflowIDPrefix, repo.GroupID, repo.RepoURL)
+	repositoryID := ws.GetLegacyWorkflowID(repo.GroupID, repo.RepoURL)
 	wf := &tables.Workflow{
 		WorkflowID:         repositoryID,
 		UserID:             repo.UserID,

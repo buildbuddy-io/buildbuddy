@@ -471,6 +471,7 @@ type WorkflowService interface {
 	WorkflowsPoolName() string
 
 	GetWorkflowByGroupAndRepo(ctx context.Context, groupID string, repoURL string) (*tables.Workflow, error)
+	GetLegacyWorkflowID(groupID string, repoURL string) string
 }
 
 type GitHubApp interface {
