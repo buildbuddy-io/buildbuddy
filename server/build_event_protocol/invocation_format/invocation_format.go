@@ -38,3 +38,19 @@ func ShortFormatPatterns(patterns []string) string {
 	}
 	return out
 }
+
+func TrimTags(tags string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+
+	splitTags := strings.Split(tags, ",")
+	out := make([]string, 0, len(splitTags))
+	for _, t := range splitTags {
+		trimmed := strings.TrimSpace(t)
+		if len(trimmed) > 0 {
+			out = append(out, trimmed)
+		}
+	}
+	return strings.Join(out, ",")
+}
