@@ -6284,30 +6284,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-3.7-darwin-x86_64",
-        sha256 = "80c82e93a12ba30021692b11c78007807e82383a673be1602573b944beb359ab",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/3.7.2/bazel-3.7.2-darwin-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-3.7-linux-x86_64",
-        sha256 = "70dc0bee198a4c3d332925a32d464d9036a831977501f66d4996854ad4e4fc0d",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/3.7.2/bazel-3.7.2-linux-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-4.1-darwin-x86_64",
-        sha256 = "2eecc3abb0ff653ed0bffdb9fbfda7b08548c2868f13da4a995f01528db200a9",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/4.1.0/bazel-4.1.0-darwin-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-4.1-linux-x86_64",
-        sha256 = "0eb2e378d2782e7810753e2162245ad1179c1bb12f848c692b4a595b4edf779b",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/4.1.0/bazel-4.1.0-linux-x86_64"],
-        executable = True,
-    )
-    http_file(
         name = "io_bazel_bazel-5.3.2-darwin-x86_64",
         sha256 = "fe01824013184899386a4807435e38811949ca13f46713e7fc39c70fa1528a17",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-darwin-x86_64"],
