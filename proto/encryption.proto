@@ -17,7 +17,7 @@ message GCPKMSConfig {
 
 message AWSKMSConfig {
   // Amazon Resource Name for the key resource.
-  string arn = 1;
+  string key_arn = 1;
 }
 
 message KMSConfig {

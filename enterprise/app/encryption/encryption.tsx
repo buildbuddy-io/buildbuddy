@@ -40,7 +40,7 @@ interface State {
   gcpKey: string;
 
   // AWS KMS form.
-  awsARN: string;
+  awsKeyARN: string;
 }
 
 export default class EncryptionComponent extends React.Component<{}, State> {
@@ -59,7 +59,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     gcpLocation: "",
     gcpKeyRing: "",
     gcpKey: "",
-    awsARN: "",
+    awsKeyARN: "",
   };
 
   componentDidMount() {
@@ -130,7 +130,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
       case encryption.KMS.AWS:
         req.kmsConfig = encryption.KMSConfig.create({
           awsKmsConfig: encryption.AWSKMSConfig.create({
-            arn: this.state.awsARN,
+            keyArn: this.state.awsKeyARN,
           }),
         });
         break;
@@ -184,7 +184,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
   }
 
   private onAWSARNChange(event: React.ChangeEvent<HTMLInputElement>) {
-    this.setState({ awsARN: event.target.value });
+    this.setState({ awsKeyARN: event.target.value });
   }
 
   private renderKMSFields(kms: encryption.KMS) {
@@ -283,15 +283,15 @@ export default class EncryptionComponent extends React.Component<{}, State> {
               <code>561871016185</code>
             </div>
             <div className="field-row">
-              <label htmlFor="awsARN" className="field-label">
+              <label htmlFor="awsKeyARN" className="field-label">
                 Key Resource Name (ARN)
               </label>
               <TextInput
                 autoComplete="off"
                 type="text"
-                name="awsARN"
+                name="awsKeyARN"
                 onChange={this.onAWSARNChange.bind(this)}
-                value={this.state.awsARN}
+                value={this.state.awsKeyARN}
                 placeholder="e.g. arn:aws:kms:us-east-1:123456789:key/123456"
                 className="aws-arn"
               />
