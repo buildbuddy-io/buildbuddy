@@ -41,12 +41,12 @@ func ShortFormatPatterns(patterns []string) string {
 	return out
 }
 
-func SplitAndTrimTags(tags string) []invocation.Invocation_Tag {
+func SplitAndTrimTags(tags string) []*invocation.Invocation_Tag {
 	if len(tags) == 0 {
-		return []string{}
+		return []*invocation.Invocation_Tag{}
 	}
 	splitTags := strings.Split(tags, ",")
-	out := make([]string, 0, len(splitTags))
+	out := make([]*invocation.Invocation_Tag, 0, len(splitTags))
 	for _, t := range splitTags {
 		trimmed := strings.TrimSpace(t)
 		if len(trimmed) > 0 {
@@ -56,12 +56,15 @@ func SplitAndTrimTags(tags string) []invocation.Invocation_Tag {
 	return out
 }
 
-func JoinTags(tags []invocation.Invocation_Tag) string {
+func JoinTags(tags []*invocation.Invocation_Tag) string {
 	if len(tags) == 0 {
 		return ""
 	}
 	outSlice := make([]string, 0, len(tags))
 	for _, t := range tags {
+		if t == nil {
+			continue
+		}
 		trimmed := strings.TrimSpace(t.Name)
 		if len(trimmed) > 0 {
 			outSlice = append(outSlice, trimmed)
@@ -70,6 +73,9 @@ func JoinTags(tags []invocation.Invocation_Tag) string {
 	return strings.Join(outSlice, ",")
 }
 
+// This *does not* trim whitespace and therefore must not be used for
+// general-purpose conversion--it's taking a shortcut because we trust that the
+// DB already has properly-trimmed tags.
 func ConvertDbTagsToOlap(tags string) []string {
 	if len(tags) == 0 {
 		return []string{}
