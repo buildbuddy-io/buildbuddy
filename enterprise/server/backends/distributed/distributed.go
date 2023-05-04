@@ -38,7 +38,7 @@ var (
 	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
-	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", false, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
+	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
 )
 
 const (
