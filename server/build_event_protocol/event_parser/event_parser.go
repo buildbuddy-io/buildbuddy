@@ -1,12 +1,12 @@
 package event_parser
 
 import (
+	"flag"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/config"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
@@ -17,6 +17,10 @@ import (
 const (
 	envVarOptionName = "client_env"
 	envVarSeparator  = "="
+)
+
+var (
+	tagsEnabled = flag.Bool("app.tags_enabled", false, "Enable setting tags on invocations via build_metadata")
 )
 
 const (
@@ -457,7 +461,7 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 	}
 }
 func (sep *StreamingEventParser) setTags(value string, priority int) {
-	if config.TagsEnabled() && sep.priority.Tags <= priority {
+	if *tagsEnabled && sep.priority.Tags <= priority {
 		sep.priority.Tags = priority
 		sep.invocation.Tags = invocation_format.SplitAndTrimTags(value)
 	}
