@@ -26,7 +26,6 @@ ts_library(
 ts_jasmine_node_test(
     name = "profile_model_test",
     srcs = ["profile_model_test.ts"],
-    strict = True,
     deps = [":flame_chart"],
 )
 

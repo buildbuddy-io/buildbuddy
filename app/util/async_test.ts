@@ -1,10 +1,10 @@
 import { CancelablePromise } from "./async";
 
-function delayedResolve<T>(value: T = undefined, delayMs: number = 1): Promise<T> {
+function delayedResolve<T>(value?: T, delayMs: number = 1): Promise<T | undefined> {
   return new Promise((resolve) => setTimeout(() => resolve(value), delayMs));
 }
 
-function delayedReject<T>(value: T = undefined, delayMs: number = 1): Promise<T> {
+function delayedReject<T>(value?: T, delayMs: number = 1): Promise<T> {
   return new Promise((_, reject) => setTimeout(() => reject(value), delayMs));
 }
 
