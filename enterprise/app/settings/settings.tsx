@@ -146,11 +146,12 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     Secrets
                   </SettingsTab>
                 )}
-                {router.canAccessEncryptionPage(this.props.user) && (
-                  <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
-                    Encryption keys
-                  </SettingsTab>
-                )}
+                {capabilities.config.customerManagedEncryptionKeysEnabled &&
+                  router.canAccessEncryptionPage(this.props.user) && (
+                    <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
+                      Encryption keys
+                    </SettingsTab>
+                  )}
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>

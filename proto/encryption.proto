@@ -47,8 +47,7 @@ enum KMS {
 message GetEncryptionConfigResponse {
   context.ResponseContext response_context = 1;
 
-  bool supported = 2;
-  bool enabled = 3;
+  bool enabled = 2;
 
-  repeated KMS supported_kms = 4;
+  repeated KMS supported_kms = 3;
 }
