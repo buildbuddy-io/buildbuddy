@@ -3,10 +3,12 @@ package pebble_cache
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
+	"math/big"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -32,12 +34,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -73,6 +77,12 @@ var (
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 50, "Maximum number of entries to evict per second (per partition).")
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
+
+	// ac eviction flags
+	groupIDSamplingEnabled  = flag.Bool("cache.pebble.groupid_sampling_enabled", false, "Whether AC entries are sampled and exported via metrics. Not yet used for eviction.")
+	samplesPerGroupID       = flag.Int("cache.pebble.samples_per_groupid", 20, "How many samples to use when approximating AC item count for groups.")
+	groupIDSamplesOnStartup = flag.Int("cache.pebble.num_groupid_samples_on_startup", 10, "How many group IDs to sample to on startup.")
+	groupIDSampleFrequency  = flag.Duration("cache.pebble_groupid_sample_frequency", 5*time.Second, "How often to perform a new group ID / approximate count sampling.")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
@@ -1346,7 +1356,6 @@ func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool,
 	if err != nil {
 		return false, err
 	}
-	log.Debugf("Pebble contains %s is %t", key.String(), found)
 	return found, nil
 }
 
@@ -1893,6 +1902,12 @@ func (k *evictionKey) String() string {
 	return string(k.bytes)
 }
 
+type groupIDApproxCount struct {
+	groupID         string
+	count           int64
+	cumulativeCount int64
+}
+
 type partitionEvictor struct {
 	mu            *sync.Mutex
 	part          disk.Partition
@@ -1910,6 +1925,12 @@ type partitionEvictor struct {
 	sizeBytes int64
 	casCount  int64
 	acCount   int64
+
+	// Total, approximate number of items stored under sampled group IDs.
+	groupIDApproxTotalCount int64
+	// List of sampled group IDs and their approximate item counts, sorted by
+	// item count.
+	groupIDApproxCounts []groupIDApproxCount
 
 	atimeBufferSize int
 	minEvictionAge  time.Duration
@@ -1966,8 +1987,167 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	pe.acCount = acCount
 	pe.lru.UpdateSizeBytes(sizeBytes)
 
+	// Sample some random groups at startup so that eviction has something to
+	// work with.
+	// AC eviction requires version 2 or higher.
+	if vg.minDatabaseVersion() >= filestore.Version2 && *groupIDSamplingEnabled {
+		db, err := dbg.DB()
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+
+		approxTotalCount := int64(0)
+		seenGroupIDs := make(map[string]struct{})
+		var approxCounts []groupIDApproxCount
+		for i := 0; i < *groupIDSamplesOnStartup; i++ {
+			groupID, err := pe.sampleGroupID()
+			if status.IsNotFoundError(err) {
+				continue
+			}
+			if err != nil {
+				log.Warningf("Could not sample group ID: %s", err)
+				continue
+			}
+			if _, ok := seenGroupIDs[groupID]; ok {
+				continue
+			}
+			seenGroupIDs[groupID] = struct{}{}
+
+			approxCount, err := pe.approxGroupItemCount(groupID)
+			if err != nil {
+				log.Warningf("Could not approximate count for group ID %s: %s", groupID, err)
+				continue
+			}
+			log.Debugf("Sampled group ID %q with approx item count %d", groupID, approxCount)
+			approxTotalCount += approxCount
+			approxCounts = append(approxCounts, groupIDApproxCount{groupID: groupID, count: approxCount})
+		}
+
+		slices.SortFunc(approxCounts, func(a, b groupIDApproxCount) bool {
+			return a.count < b.count
+		})
+
+		cumulativeCount := int64(0)
+		for i, v := range approxCounts {
+			cumulativeCount += v.count
+			approxCounts[i].cumulativeCount = cumulativeCount
+		}
+
+		pe.groupIDApproxTotalCount = approxTotalCount
+		pe.groupIDApproxCounts = approxCounts
+	}
+
 	log.Infof("Pebble Cache: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
 	return pe, nil
+}
+
+func (e *partitionEvictor) sampleGroupID() (string, error) {
+	if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
+		return "", status.FailedPreconditionErrorf("AC eviction requires at least version 2")
+	}
+	db, err := e.dbGetter.DB()
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
+	iter := db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	defer iter.Close()
+
+	randomGroupID := fmt.Sprintf("GR%020d", random.RandUint64())
+	randomKey := e.partitionKeyPrefix() + "/" + randomGroupID
+	if !iter.SeekGE([]byte(randomKey)) {
+		return "", status.NotFoundError("did not find key")
+	}
+
+	var key filestore.PebbleKey
+	if _, err := key.FromBytes(iter.Key()); err != nil {
+		return "", err
+	}
+
+	// We hit a key without a group ID (i.e. a CAS entry).
+	if key.GroupID() == "" {
+		return "", status.NotFoundErrorf("did not find key")
+	}
+
+	return key.GroupID(), nil
+}
+
+// maximum value of a 32 byte hash, represented as a big int
+var maxHashAsBigInt = big.NewInt(0).SetBytes([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+
+// approximates the number of items in a group by measuring the distance
+// between adjacent keys over n keys and then taking the median value.
+func (e *partitionEvictor) approxGroupItemCount(groupID string) (int64, error) {
+	if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
+		return 0, status.FailedPreconditionErrorf("AC eviction requires at least version 2")
+	}
+	db, err := e.dbGetter.DB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	groupPrefix := []byte(fmt.Sprintf("%s/%s/", e.partitionKeyPrefix(), filestore.FixedWidthGroupID(groupID)))
+	lower, upper := keys.Range(groupPrefix)
+
+	iter := db.NewIter(&pebble.IterOptions{
+		LowerBound: lower,
+		UpperBound: upper,
+	})
+	defer iter.Close()
+
+	if !iter.First() {
+		return 0, nil
+	}
+
+	var approxCounts []int64
+	prevKeyAsNum := big.NewInt(0)
+
+	for len(approxCounts) < *samplesPerGroupID {
+		var key filestore.PebbleKey
+		_, err := key.FromBytes(iter.Key())
+		if err != nil {
+			return 0, status.UnknownErrorf("could not parse key %q: %s", string(iter.Key()), err)
+		}
+		hash, err := hex.DecodeString(key.Hash())
+		if err != nil {
+			return 0, status.UnknownErrorf("could not parse key %q hash: %s", string(iter.Key()), err)
+		}
+		for len(hash) < 32 {
+			hash = append(hash, 0)
+		}
+		if len(hash) > 32 {
+			hash = hash[:32]
+		}
+
+		keyAsNum := big.NewInt(0).SetBytes(hash)
+
+		if keyAsNum.Cmp(prevKeyAsNum) != 0 {
+			gap := big.NewInt(0).Sub(keyAsNum, prevKeyAsNum)
+			approxCount := big.NewInt(0).Div(maxHashAsBigInt, gap)
+			if !approxCount.IsInt64() {
+				log.Warningf("cannot represent %s as an int64", approxCount)
+			} else {
+				approxCounts = append(approxCounts, approxCount.Int64())
+			}
+			prevKeyAsNum = keyAsNum
+		}
+
+		// If we exhausted all the keys in the group, then we don't need to
+		// guess the count since we have the exact count.
+		if !iter.Next() {
+			return int64(len(approxCounts)), nil
+		}
+	}
+
+	slices.Sort(approxCounts)
+	approxCount := approxCounts[len(approxCounts)/2]
+	return approxCount, nil
 }
 
 func (e *partitionEvictor) updateMetrics() {
@@ -2248,6 +2428,33 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 	return false, atime, nil
 }
 
+func (e *partitionEvictor) sampleGroup() {
+	if !*groupIDSamplingEnabled {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.groupIDApproxCounts) == 0 {
+		return
+	}
+
+	n := rand.Int63n(e.groupIDApproxTotalCount)
+
+	pos, _ := slices.BinarySearchFunc(e.groupIDApproxCounts, groupIDApproxCount{cumulativeCount: n}, func(a, b groupIDApproxCount) int {
+		if a.cumulativeCount < b.cumulativeCount {
+			return -1
+		} else if a.cumulativeCount > b.cumulativeCount {
+			return 1
+		}
+		return 0
+	})
+	if pos == len(e.groupIDApproxCounts) {
+		log.Warningf("strange, did not find group in list, looking for %d\n%s", n, e.formatGroupIDApproxCounts())
+		return
+	}
+	metrics.PebbleCacheGroupIDSampleCount.With(prometheus.Labels{metrics.GroupID: e.groupIDApproxCounts[pos].groupID}).Inc()
+}
+
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -2261,6 +2468,8 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 	})
 	iter.SeekGE(start)
 	defer iter.Close()
+
+	e.sampleGroup()
 
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
 
@@ -2401,7 +2610,139 @@ func (e *partitionEvictor) partitionKeyPrefix() string {
 	return filestore.PartitionDirectoryPrefix + e.part.ID
 }
 
+func (e *partitionEvictor) formatGroupIDApproxCounts() string {
+	var sb strings.Builder
+	cumulativeCount := int64(0)
+	for _, v := range e.groupIDApproxCounts {
+		cumulativeCount += v.count
+		if cumulativeCount != v.cumulativeCount {
+			sb.WriteString(fmt.Sprintf("CUMULATIVE COUNT MISMATCH, expected %d but was %d\n", cumulativeCount, v.cumulativeCount))
+		}
+		sb.WriteString(fmt.Sprintf("%23s %20d %20d\n", v.groupID, v.count, v.cumulativeCount))
+	}
+	if cumulativeCount != e.groupIDApproxTotalCount {
+		sb.WriteString(fmt.Sprintf("TOTAL COUNT MISMATCH %d vs %d\n", cumulativeCount, e.groupIDApproxTotalCount))
+	}
+	return sb.String()
+}
+
+// samples a random group ID and updates the approximate count for that group
+func (e *partitionEvictor) updateGroupIDApproxCounts() {
+	randomGroupID, err := e.sampleGroupID()
+	if status.IsNotFoundError(err) {
+		return
+	}
+	if err != nil {
+		log.Warningf("could not sample group ID: %s", err)
+		return
+	}
+
+	approxCount, err := e.approxGroupItemCount(randomGroupID)
+	if err != nil {
+		log.Warningf("could not approximate group count for %s: %s", randomGroupID, err)
+		return
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	sampledGroupIdx := -1
+	for i, w := range e.groupIDApproxCounts {
+		if w.groupID == randomGroupID {
+			sampledGroupIdx = i
+		}
+	}
+
+	// If the group ID is already in the list, we need to update the count.
+	if sampledGroupIdx != -1 {
+		data := e.groupIDApproxCounts
+		oldCount := data[sampledGroupIdx].count
+		delta := approxCount - oldCount
+		data[sampledGroupIdx].count = approxCount
+		data[sampledGroupIdx].cumulativeCount += delta
+		e.groupIDApproxTotalCount += delta
+
+		// Shift the entry up or down as necessary to keep the list sorted.
+
+		for i := sampledGroupIdx - 1; i >= 0; i-- {
+			if data[i].count <= data[i+1].count {
+				break
+			}
+			tmp := data[i]
+			data[i] = data[i+1]
+			data[i].cumulativeCount -= tmp.count
+			data[i+1] = tmp
+			data[i+1].cumulativeCount += approxCount
+		}
+
+		for i := sampledGroupIdx + 1; i < len(data); i++ {
+			if data[i-1].count <= data[i].count {
+				data[i].cumulativeCount += delta
+				continue
+			}
+			tmp := data[i-1]
+			data[i-1] = data[i]
+			data[i-1].cumulativeCount -= oldCount
+			data[i] = tmp
+			data[i].cumulativeCount += data[i-1].count
+		}
+	} else {
+		e.groupIDApproxTotalCount += approxCount
+		// Not in the list, need to insert it.
+		idx, _ := slices.BinarySearchFunc(e.groupIDApproxCounts, groupIDApproxCount{count: approxCount}, func(a, b groupIDApproxCount) int {
+			if a.count < b.count {
+				return -1
+			}
+			if a.count > b.count {
+				return 1
+			}
+			return 0
+		})
+		cumulativeCount := approxCount
+		if idx > 0 {
+			cumulativeCount = e.groupIDApproxCounts[idx-1].cumulativeCount + approxCount
+		}
+		w := groupIDApproxCount{groupID: randomGroupID, count: approxCount, cumulativeCount: cumulativeCount}
+		e.groupIDApproxCounts = append(e.groupIDApproxCounts[:idx], append([]groupIDApproxCount{w}, e.groupIDApproxCounts[idx:]...)...)
+		for i := idx + 1; i < len(e.groupIDApproxCounts); i++ {
+			e.groupIDApproxCounts[i].cumulativeCount += approxCount
+		}
+	}
+}
+
+func (e *partitionEvictor) startGroupIDSampler(quitChan chan struct{}) {
+	if *activeKeyVersion < int64(filestore.Version2) {
+		return
+	}
+
+	lastLog := time.Now()
+
+	go func() {
+		for {
+			select {
+			case <-quitChan:
+				return
+			case <-time.After(*groupIDSampleFrequency):
+				if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
+					continue
+				}
+				e.updateGroupIDApproxCounts()
+
+				// temporary -- log the approximate counts so that we can verify
+				// tracking is working as intended.
+				if time.Since(lastLog) > 10*time.Minute {
+					log.Infof("Group ID approx counts:\n%s", e.formatGroupIDApproxCounts())
+					lastLog = time.Now()
+				}
+			}
+		}
+	}()
+}
+
 func (e *partitionEvictor) run(quitChan chan struct{}) error {
+	if *groupIDSamplingEnabled {
+		e.startGroupIDSampler(quitChan)
+	}
 	e.lru.Start()
 	<-quitChan
 	e.lru.Stop()
