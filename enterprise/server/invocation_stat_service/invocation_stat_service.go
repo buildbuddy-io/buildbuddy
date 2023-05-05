@@ -81,12 +81,11 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) string {
 	q := ""
 	if i.isOLAPDBEnabled() {
-		q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
+		q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
 	} else {
-		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
+		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
 	}
+	q = q + ` SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 
 	// Insert quantiles stuff..
 	if i.isInvocationPercentilesEnabled() {
