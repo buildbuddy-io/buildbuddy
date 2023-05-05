@@ -40,8 +40,8 @@ var (
 	enableWorkflows                      = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
 	enableExecutorKeyCreation            = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
 	testOutputManifestsEnabled           = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
-	patternFilterEnabled       = flag.Bool("app.pattern_filter_enabled", true, "If set, allow filtering by pattern in the client.")
-	executionSearchEnabled     = flag.Bool("app.execution_search_enabled", true, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
+	patternFilterEnabled                 = flag.Bool("app.pattern_filter_enabled", true, "If set, allow filtering by pattern in the client.")
+	executionSearchEnabled               = flag.Bool("app.execution_search_enabled", true, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
 	trendsSummaryEnabled                 = flag.Bool("app.trends_summary_enabled", false, "If set, show the new 'summary' section at the top of the trends UI.")
 	customerManagedEncryptionKeysEnabled = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
 
