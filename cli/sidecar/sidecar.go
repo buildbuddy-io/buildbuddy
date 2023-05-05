@@ -95,8 +95,15 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	return sockPath, nil
 }
 
+func isFlagTrue(flag string) bool {
+	if flag == "1" || strings.EqualFold(flag, "true") {
+		return true
+	}
+	return false
+}
+
 func isCI(args []string) bool {
-	if os.Getenv("CI") == "1" || strings.EqualFold(os.Getenv("CI"), "true") {
+	if isFlagTrue(os.Getenv("CI")) {
 		return true
 	}
 	for _, md := range arg.GetMulti(args, "build_metadata") {
@@ -110,12 +117,13 @@ func isCI(args []string) bool {
 func ConfigureSidecar(args []string) []string {
 	// Disable sidecar on CI for now since the async upload behavior can cause
 	// problems if the CI runner terminates before the uploads have completed.
-	// TODO: The sidecar is just an async BES/cache proxy at the moment, but if
-	// we add more sidecar features then we should find a way to re-enable it in
-	// "synchronous" mode on CI.
 	if isCI(args) {
-		log.Debugf("CI build detected; sidecar is disabled.")
-		return args
+		log.Debugf("CI build detected.")
+		syncFlag := arg.Get(args, "sync")
+		if !isFlagTrue(syncFlag) {
+			log.Debugf("CI build detected. add --sync=true")
+			args = append(args, "--sync=true")
+		}
 	}
 
 	log.Debugf("Configuring sidecar")
@@ -133,6 +141,7 @@ func ConfigureSidecar(args []string) []string {
 	besBackendFlag := arg.Get(args, "bes_backend")
 	remoteCacheFlag := arg.Get(args, "remote_cache")
 	remoteExecFlag := arg.Get(args, "remote_executor")
+	synchronousWriteFlag, args := arg.Pop(args, "sync")
 
 	if besBackendFlag != "" {
 		sidecarArgs = append(sidecarArgs, "--bes_backend="+besBackendFlag)
@@ -144,6 +153,12 @@ func ConfigureSidecar(args []string) []string {
 		// disk caches.
 		diskCacheDir := filepath.Join(cacheDir, "filecache")
 		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
+	}
+
+	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
+		sidecarArgs = append(sidecarArgs, "--synchronous_write")
+		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
+		args = append(args, "--bes_upload_mode=wait_for_upload_complete")
 	}
 
 	if len(sidecarArgs) == 0 {

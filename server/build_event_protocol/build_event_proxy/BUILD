@@ -13,5 +13,6 @@ go_library(
         "//server/util/log",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_x_sync//errgroup",
     ],
 )
