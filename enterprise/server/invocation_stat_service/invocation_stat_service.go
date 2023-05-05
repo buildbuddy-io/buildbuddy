@@ -82,7 +82,7 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	q := ""
 	if i.isOLAPDBEnabled() {
 		q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-	    SUM(duration_usec) as total_build_time_usec,`
+		  SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	} else {
 		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
@@ -641,10 +641,13 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 		MetricArrayStr:         metricArrayStr}, nil
 }
 
-func getWhereClauseForHeatmapQuery(q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
+func getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
 	placeholderQuery := query_builder.NewQuery("")
 	if err := addWhereClauses(placeholderQuery, q, reqCtx, 0); err != nil {
 		return "", nil, err
+	}
+	if m.GetInvocation() == sfpb.InvocationMetricType_DURATION_USEC_INVOCATION_METRIC {
+		placeholderQuery.AddWhereClause("duration_usec > 0")
 	}
 	whereString, whereArgs := placeholderQuery.Build()
 	return whereString, whereArgs, nil
@@ -668,7 +671,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
-	whereClauseStr, whereClauseArgs, err := getWhereClauseForHeatmapQuery(req.GetQuery(), req.GetRequestContext())
+	whereClauseStr, whereClauseArgs, err := getWhereClauseForHeatmapQuery(req.GetMetric(), req.GetQuery(), req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
