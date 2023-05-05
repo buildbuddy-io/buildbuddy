@@ -32,10 +32,10 @@ import (
 )
 
 var (
-	readFromOLAPDBEnabled          = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, read from OLAP DB")
-	executionTrendsEnabled         = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
-	invocationPercentilesEnabled   = flag.Bool("app.enable_invocation_stat_percentiles", false, "If enabled, provide percentile breakdowns for invocation stats in GetTrendResponse")
-	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", false, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
+	readFromOLAPDBEnabled          = flag.Bool("app.enable_read_from_olap_db", true, "If enabled, read from OLAP DB")
+	executionTrendsEnabled         = flag.Bool("app.enable_execution_trends", true, "If enabled, fill execution trend stats in GetTrendResponse")
+	invocationPercentilesEnabled   = flag.Bool("app.enable_invocation_stat_percentiles", true, "If enabled, provide percentile breakdowns for invocation stats in GetTrendResponse")
+	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", true, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 )
 
