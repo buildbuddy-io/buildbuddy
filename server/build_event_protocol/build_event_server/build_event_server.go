@@ -2,15 +2,14 @@ package build_event_server
 
 import (
 	"context"
-	"flag"
 	"io"
 	"sort"
-	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -18,17 +17,15 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
-var (
-	synchronous = flag.Bool("build_event_server.synchronous", false, "If true, wait until forwarding clients acknowledges")
-)
-
 type BuildEventProtocolServer struct {
 	env environment.Env
+	// If true, wait until orwarding clients acknowledge.
+	synchronous bool
 }
 
 func Register(env environment.Env) error {
 	// Register to handle build event protocol messages.
-	buildEventServer, err := NewBuildEventProtocolServer(env)
+	buildEventServer, err := NewBuildEventProtocolServer(env, false)
 	if err != nil {
 		return status.InternalErrorf("Error initializing BuildEventProtocolServer: %s", err)
 	}
@@ -36,24 +33,24 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewBuildEventProtocolServer(env environment.Env) (*BuildEventProtocolServer, error) {
+func NewBuildEventProtocolServer(env environment.Env, synchronous bool) (*BuildEventProtocolServer, error) {
 	return &BuildEventProtocolServer{
-		env: env,
+		env:         env,
+		synchronous: synchronous,
 	}, nil
 }
 
 func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*emptypb.Empty, error) {
-	wg := &sync.WaitGroup{}
+	eg, ctx := errgroup.WithContext(ctx)
 	for _, c := range s.env.GetBuildEventProxyClients() {
 		client := c
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		eg.Go(func() error {
 			client.PublishLifecycleEvent(ctx, req)
-		}()
+			return nil
+		})
 	}
-	if *synchronous {
-		wg.Wait()
+	if s.synchronous {
+		eg.Wait()
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -80,11 +77,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	var streamID *bepb.StreamId
 	var channel interfaces.BuildEventChannel
 
-	wg := &sync.WaitGroup{}
-	if *synchronous {
+	eg, ctx := errgroup.WithContext(ctx)
+	if s.synchronous {
 		// wait for acknowledges from the forwarding stream clients. Note: Wait()
 		// needs to be run *after* fwdStream.CloseSend()
-		defer wg.Wait()
+		defer eg.Wait()
 	}
 	forwardingStreams := make([]pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, 0)
 	for _, client := range s.env.GetBuildEventProxyClients() {
@@ -93,20 +90,19 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			log.CtxWarningf(ctx, "Unable to proxy stream: %s", err)
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		eg.Go(func() error {
 			for {
 				_, err := fwdStream.Recv()
 				if err == io.EOF {
 					break
 				}
 				if err != nil {
-					log.Warningf("Got error while getting response from proxy: %s", err.Error())
+					log.Warningf("Got error while getting response from proxy: %s", err)
 					break
 				}
 			}
-		}()
+			return nil
+		})
 		defer fwdStream.CloseSend()
 		forwardingStreams = append(forwardingStreams, fwdStream)
 	}

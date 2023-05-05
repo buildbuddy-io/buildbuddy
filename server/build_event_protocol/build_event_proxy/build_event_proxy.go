@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -21,10 +22,11 @@ var (
 )
 
 type BuildEventProxyClient struct {
-	client    pepb.PublishBuildEventClient
-	rootCtx   context.Context
-	target    string
-	clientMux sync.Mutex // PROTECTS(client)
+	client      pepb.PublishBuildEventClient
+	rootCtx     context.Context
+	target      string
+	clientMux   sync.Mutex // PROTECTS(client)
+	synchronous bool
 }
 
 func (c *BuildEventProxyClient) reconnectIfNecessary() {
@@ -47,17 +49,18 @@ func Register(env environment.Env) error {
 	for i, target := range *hosts {
 		// NB: This can block for up to a second on connecting. This would be a
 		// great place to have our health checker and mark these as optional.
-		buildEventProxyClients[i] = NewBuildEventProxyClient(env, target)
+		buildEventProxyClients[i] = NewBuildEventProxyClient(env, target, false)
 		log.Printf("Proxy: forwarding build events to: %s", target)
 	}
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 	return nil
 }
 
-func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventProxyClient {
+func NewBuildEventProxyClient(env environment.Env, target string, synchronous bool) *BuildEventProxyClient {
 	c := &BuildEventProxyClient{
-		target:  target,
-		rootCtx: env.GetServerContext(),
+		target:      target,
+		rootCtx:     env.GetServerContext(),
+		synchronous: synchronous,
 	}
 	c.reconnectIfNecessary()
 	return c
@@ -65,12 +68,17 @@ func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventPro
 
 func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pepb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	c.reconnectIfNecessary()
-	go func() {
-		_, err := c.client.PublishLifecycleEvent(c.rootCtx, req)
+	eg, ctx := errgroup.WithContext(c.rootCtx)
+	eg.Go(func() error {
+		_, err := c.client.PublishLifecycleEvent(ctx, req)
 		if err != nil {
 			log.Warningf("Error publishing lifecycle event: %s", err.Error())
 		}
-	}()
+		return nil
+	})
+	if c.synchronous {
+		eg.Wait()
+	}
 	return &emptypb.Empty{}, nil
 }
 

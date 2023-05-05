@@ -157,7 +157,7 @@ func ConfigureSidecar(args []string) []string {
 
 	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
 		sidecarArgs = append(sidecarArgs, "--synchronous_write")
-		sidecarArgs = append(sidecarArgs, "--build_event_server.synchronous")
+		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
 		args = append(args, "--bes_upload_mode=wait_for_upload_complete")
 	}
 

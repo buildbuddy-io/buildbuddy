@@ -49,6 +49,7 @@ var (
 	cacheDir          = flag.String("cache_dir", "", "Root directory to use for local cache")
 	cacheMaxSizeBytes = flag.Int64("cache_max_size_bytes", 0, "Max cache size, in bytes")
 	inactivityTimeout = flag.Duration("inactivity_timeout", 5*time.Minute, "Sidecar will terminate after this much inactivity")
+	besSynchronous    = flag.Bool("bes_synchronous", false, "If true, wait until ackowledged")
 )
 
 var (
@@ -161,12 +162,12 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	for _, besBE := range strings.Split(*besBackend, ",") {
 		besTarget := normalizeGrpcTarget(besBE)
 		targets = append(targets, besTarget)
-		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget))
+		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget, *besSynchronous))
 	}
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 
 	// Register to handle build event protocol messages.
-	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
+	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env, *besSynchronous)
 	if err != nil {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err.Error())
 	}
