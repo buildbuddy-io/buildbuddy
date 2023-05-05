@@ -1207,16 +1207,7 @@ func (p *PebbleCache) encryptionEnabled(ctx context.Context, partitionID string)
 		return false, status.FailedPreconditionError("encryption requested, but crypter not available")
 	}
 
-	for _, p := range p.partitions {
-		if p.ID == partitionID {
-			if !p.EncryptionSupported {
-				return false, status.FailedPreconditionError("encryption enabled, but writing to a partition that doesn't support encryption")
-			}
-			return true, nil
-		}
-	}
-
-	return false, status.InvalidArgumentError("partition not found")
+	return true, nil
 }
 
 func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {

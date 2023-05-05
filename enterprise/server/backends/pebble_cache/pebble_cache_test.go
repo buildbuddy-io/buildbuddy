@@ -1948,30 +1948,12 @@ func TestEncryption(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
-	// Customer has encryption enabled but partition does not support encryption.
-	{
-		opts := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
-		pc, err := pebble_cache.NewPebbleCache(te, opts)
-		require.NoError(t, err)
-		err = pc.Start()
-		require.NoError(t, err)
-
-		ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
-		require.NoError(t, err)
-		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-		err = pc.Set(ctx, rn, buf)
-		require.ErrorContains(t, err, "partition that doesn't support encryption")
-
-		err = pc.Stop()
-		require.NoError(t, err)
-	}
-
 	// Customer has encryption enabled, but no keys are available.
 	{
 		opts := &pebble_cache.Options{
 			RootDirectory: rootDir,
 			Partitions: []disk.Partition{{
-				ID: pebble_cache.DefaultPartitionID, EncryptionSupported: true, MaxSizeBytes: maxSizeBytes,
+				ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 			}},
 		}
 		pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2054,7 +2036,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 	opts := &pebble_cache.Options{
 		RootDirectory: rootDir,
 		Partitions: []disk.Partition{{
-			ID: pebble_cache.DefaultPartitionID, EncryptionSupported: true, MaxSizeBytes: maxSizeBytes,
+			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 		}},
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2430,8 +2412,7 @@ func TestSampling(t *testing.T) {
 	opts := &pebble_cache.Options{
 		RootDirectory: rootDir,
 		Partitions: []disk.Partition{{
-			ID:                  pebble_cache.DefaultPartitionID,
-			EncryptionSupported: true,
+			ID: pebble_cache.DefaultPartitionID,
 			// Force all entries to be evicted as soon as they pass the minimum
 			// eviction age.
 			MaxSizeBytes: 2,
