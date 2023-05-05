@@ -82,7 +82,7 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	q := ""
 	if i.isOLAPDBEnabled() {
 		q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-		  SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
+	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	} else {
 		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
