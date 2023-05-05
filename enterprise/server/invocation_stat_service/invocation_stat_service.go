@@ -85,7 +85,7 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	} else {
 		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
 	}
-	q = q + ` SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
+	q = q + `SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 
 	// Insert quantiles stuff..
 	if i.isInvocationPercentilesEnabled() {
