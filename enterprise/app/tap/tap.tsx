@@ -106,7 +106,7 @@ export default class TapComponent extends React.Component<Props, State> {
 
   isV2 = Boolean(capabilities.config.testGridV2Enabled);
 
-  subscription: Subscription;
+  subscription?: Subscription;
   targetsRPC?: CancelablePromise;
 
   componentWillMount() {
@@ -216,9 +216,9 @@ export default class TapComponent extends React.Component<Props, State> {
       let stats: Stat = { count: 0, pass: 0, totalDuration: 0, maxDuration: 0, avgDuration: 0 };
       for (let status of targetHistory.targetStatus) {
         stats.count += 1;
-        let duration = this.durationToNum(status.timing.duration);
+        let duration = this.durationToNum(status.timing?.duration);
         stats.totalDuration += duration;
-        stats.maxDuration = Math.max(stats.maxDuration, this.durationToNum(status.timing.duration));
+        stats.maxDuration = Math.max(stats.maxDuration, duration);
         if (status.status == Status.PASSED) {
           stats.pass += 1;
         }
@@ -226,18 +226,22 @@ export default class TapComponent extends React.Component<Props, State> {
       stats.avgDuration = stats.totalDuration / stats.count;
       maxInvocations = Math.max(maxInvocations, stats.count);
       maxDuration = Math.max(maxDuration, stats.maxDuration);
-      this.state.stats.set(targetHistory.target.label, stats);
+      this.state.stats.set(targetHistory.target?.label || "undefined", stats);
     }
 
     this.setState({
       loading: false,
       targetHistory: histories,
       nextPageToken: response.nextPageToken,
-      ...(this.isV2 && this.groupByCommit(histories)),
       stats: this.state.stats,
       maxInvocations: maxInvocations,
       maxDuration: maxDuration,
     });
+    if (this.isV2) {
+      this.setState({
+        ...this.groupByCommit(histories),
+      });
+    }
   }
 
   groupByCommit(targetHistories: target.ITargetHistory[]): CommitGrouping {
@@ -245,7 +249,7 @@ export default class TapComponent extends React.Component<Props, State> {
     const commitToTargetLabelToStatus = new Map<string, Map<string, target.ITargetStatus>>();
 
     for (const history of targetHistories) {
-      for (const targetStatus of history.targetStatus) {
+      for (const targetStatus of history.targetStatus || []) {
         const timestamp = Number(targetStatus.invocationCreatedAtUsec);
         const commitMaxTimestamp = commitToMaxInvocationCreatedAtUsec.get(targetStatus.commitSha) || 0;
         if (timestamp > commitMaxTimestamp) {
@@ -265,14 +269,16 @@ export default class TapComponent extends React.Component<Props, State> {
         // TODO(bduffany): Keep track of per-target count by commit, in
         // case the same target was executed multiple times for a given
         // commit. Otherwise the count stat looks incorrect.
-        const existing = targetLabelToStatus.get(history.target.label);
-        if (!existing || timestamp > Number(existing.invocationCreatedAtUsec)) {
-          targetLabelToStatus.set(history.target.label, targetStatus);
+        if (history.target) {
+          const existing = targetLabelToStatus.get(history.target!.label);
+          if (!existing || timestamp > Number(existing.invocationCreatedAtUsec)) {
+            targetLabelToStatus.set(history.target!.label, targetStatus);
+          }
         }
       }
     }
     const commits = [...commitToMaxInvocationCreatedAtUsec.keys()].sort(
-      (a, b) => commitToMaxInvocationCreatedAtUsec.get(b) - commitToMaxInvocationCreatedAtUsec.get(a)
+      (a, b) => commitToMaxInvocationCreatedAtUsec.get(b)! - commitToMaxInvocationCreatedAtUsec.get(a)!
     );
 
     return { commits, commitToMaxInvocationCreatedAtUsec, commitToTargetLabelToStatus };
@@ -403,33 +409,57 @@ export default class TapComponent extends React.Component<Props, State> {
     let first = this.getSortDirection() == "asc" ? a : b;
     let second = this.getSortDirection() == "asc" ? b : a;
 
-    let firstStats = this.state.stats.get(first?.target?.label);
-    let secondStats = this.state.stats.get(second?.target?.label);
+    let firstTarget = first.target;
+    let secondTarget = second.target;
+
+    let firstStats = this.state.stats.get(first?.target?.label || "");
+    let secondStats = this.state.stats.get(second?.target?.label || "");
+
+    if (!firstStats && !secondStats) {
+      return 0;
+    } else if (!firstStats) {
+      return 1;
+    } else if (!secondStats) {
+      return -1;
+    }
+
+    if (this.getSortMode() == "target") {
+      if (!firstTarget && !secondTarget) {
+        return 0;
+      } else if (!firstTarget) {
+        return 1;
+      } else if (!secondTarget) {
+        return -1;
+      } else {
+        return firstTarget!.label.localeCompare(secondTarget!.label);
+      }
+    }
 
     switch (this.getSortMode()) {
-      case "target":
-        return first?.target?.label.localeCompare(second?.target?.label);
       case "count":
-        return firstStats.count - secondStats.count;
+        return firstStats!.count - secondStats!.count;
       case "pass":
-        return firstStats.pass / firstStats.count - secondStats.pass / secondStats.count;
+        return firstStats!.pass / firstStats!.count - secondStats!.pass / secondStats!.count;
       case "avgDuration":
-        return firstStats.avgDuration - secondStats.avgDuration;
+        return firstStats!.avgDuration - secondStats!.avgDuration;
       case "maxDuration":
-        return firstStats.maxDuration - secondStats.maxDuration;
+        return firstStats!.maxDuration - secondStats!.maxDuration;
     }
+    return 0;
   }
 
   getTargetStatuses(history: target.ITargetHistory): CommitStatus[] {
     if (!this.isV2) {
-      return history.targetStatus.map((status) => ({ commitSha: status.commitSha, status }));
+      return history.targetStatus?.map((status) => ({ commitSha: status.commitSha, status })) || [];
     }
     // For test grid V2, ignore the incoming history (for now) and use the indexes we
     // built to order by commit.
-    return this.state.commits.map((commitSha) => ({
-      commitSha,
-      status: this.state.commitToTargetLabelToStatus.get(commitSha)?.get(history.target.label) || null,
-    }));
+    return (
+      this.state.commits?.map((commitSha) => ({
+        commitSha,
+        status: this.state.commitToTargetLabelToStatus?.get(commitSha)?.get(history.target?.label || "") || null,
+      })) || []
+    );
   }
 
   render() {
@@ -502,7 +532,7 @@ export default class TapComponent extends React.Component<Props, State> {
       );
     }
 
-    let filter = this.props.search.get("filter");
+    let filter: string = this.props.search.get("filter") || "";
 
     const showMoreInvocationsButton = this.isV2
       ? this.state.nextPageToken
@@ -522,7 +552,7 @@ export default class TapComponent extends React.Component<Props, State> {
     );
 
     const filteredTargets = this.state.targetHistory
-      .filter((targetHistory) => (filter ? targetHistory.target.label.includes(filter) : true))
+      .filter((targetHistory) => (filter ? targetHistory.target?.label.includes(filter) : true))
       .sort(this.sort.bind(this));
 
     return (
@@ -572,24 +602,28 @@ export default class TapComponent extends React.Component<Props, State> {
         <div className="container tap-grid-container">
           {this.isV2 && (
             <InnerTopBar
-              commits={this.state.commits}
-              commitToMaxInvocationCreatedAtUsec={this.state.commitToMaxInvocationCreatedAtUsec}
+              commits={this.state.commits || []}
+              commitToMaxInvocationCreatedAtUsec={
+                this.state.commitToMaxInvocationCreatedAtUsec || new Map<string, number>()
+              }
               moreInvocationsButton={moreInvocationsButton}
             />
           )}
           {filteredTargets.slice(0, this.state.targetLimit).map((targetHistory) => {
-            let targetParts = targetHistory.target.label.split(":");
+            let targetParts = targetHistory.target?.label.split(":") || [];
             let targetPath = targetParts.length > 0 ? targetParts[0] : "";
             let targetName = targetParts.length > 1 ? targetParts[1] : "";
-            let stats = this.state.stats.get(targetHistory.target.label);
+            let stats = this.state.stats.get(targetHistory.target?.label || "");
             return (
-              <React.Fragment key={targetHistory.target.label}>
-                <div title={targetHistory.target.ruleType} className="tap-target-label">
+              <React.Fragment key={targetHistory.target?.label || ""}>
+                <div title={targetHistory.target?.ruleType || ""} className="tap-target-label">
                   <span className="tap-target-path">{targetPath}</span>:
                   <span className="tap-target-name">{targetName}</span>
                   <span className="tap-target-stats">
-                    ({format.formatWithCommas(stats.count)} invocations, {format.percent(stats.pass / stats.count)}%
-                    pass, {format.durationSec(stats.avgDuration)} avg, {format.durationSec(stats.maxDuration)} max)
+                    ({format.formatWithCommas(stats?.count || 0)} invocations,{" "}
+                    {format.percent((stats?.pass || 0) / (stats?.count || Number.MAX_VALUE))}% pass,{" "}
+                    {format.durationSec(stats?.avgDuration || 0)} avg, {format.durationSec(stats?.maxDuration || 0)}{" "}
+                    max)
                   </span>
                 </div>
                 <div className="tap-row">
@@ -610,18 +644,18 @@ export default class TapComponent extends React.Component<Props, State> {
                       }
 
                       let destinationUrl = `/invocation/${status.invocationId}?target=${encodeURIComponent(
-                        targetHistory.target.label
+                        targetHistory.target?.label || ""
                       )}`;
                       let title =
                         this.getColorMode() == "timing"
-                          ? `${this.durationToNum(status.timing.duration).toFixed(2)}s`
-                          : this.statusToString(status.status);
+                          ? `${(this.durationToNum(status.timing?.duration) || 0).toFixed(2)}s`
+                          : this.statusToString(status.status || Status.STATUS_UNSPECIFIED);
                       if (this.isV2 && commitSha) {
                         title += ` at commit ${commitSha}`;
                       }
                       return (
                         <a
-                          key={targetHistory.target.label + status.invocationId}
+                          key={targetHistory.target?.label || "" + status.invocationId}
                           href={destinationUrl}
                           onClick={this.navigateTo.bind(this, destinationUrl)}
                           title={title}
@@ -630,14 +664,14 @@ export default class TapComponent extends React.Component<Props, State> {
                               this.getColorMode() == "timing"
                                 ? Math.max(
                                     MIN_OPACITY,
-                                    (1.0 * this.durationToNum(status.timing.duration)) / stats.maxDuration
+                                    (1.0 * this.durationToNum(status.timing?.duration) || 0) / (stats?.maxDuration || 1)
                                   )
                                 : undefined,
                           }}
                           className={`tap-block ${
                             this.getColorMode() == "status" ? `status-${status.status}` : "timing"
                           } clickable`}>
-                          {this.statusToIcon(status.status)}
+                          {this.statusToIcon(status.status || Status.STATUS_UNSPECIFIED)}
                         </a>
                       );
                     })}
@@ -685,15 +719,13 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
   private hoveredCommitInfo = React.createRef<HTMLDivElement>();
   private hoveredCommitPointer = React.createRef<HTMLDivElement>();
   // TODO(bduffany): Use a generic tooltip component.
-  private tooltipPortal: HTMLDivElement;
+  private tooltipPortal: HTMLDivElement = document.createElement("div");
 
   componentWillMount() {
-    const tooltipPortal = document.createElement("div");
-    tooltipPortal.style.position = "fixed";
-    tooltipPortal.style.zIndex = "1";
-    tooltipPortal.style.opacity = "0";
-    document.body.appendChild(tooltipPortal);
-    this.tooltipPortal = tooltipPortal;
+    this.tooltipPortal.style.position = "fixed";
+    this.tooltipPortal.style.zIndex = "1";
+    this.tooltipPortal.style.opacity = "0";
+    document.body.appendChild(this.tooltipPortal);
   }
 
   componentWillUnmount() {
@@ -709,7 +741,7 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
     this.setState({
       hoveredCommit: {
         commitSha,
-        timestampUsec: this.props.commitToMaxInvocationCreatedAtUsec.get(commitSha),
+        timestampUsec: this.props.commitToMaxInvocationCreatedAtUsec.get(commitSha) || 0,
       },
     });
 
@@ -720,7 +752,9 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
   onClickCommitLink(event: React.MouseEvent) {
     event.preventDefault();
     const link = event.target as HTMLAnchorElement;
-    router.navigateTo(link.getAttribute("href"));
+    if (link.getAttribute("href")) {
+      router.navigateTo(link.getAttribute("href")!);
+    }
   }
 
   centerHoveredCommitWith(element: HTMLElement) {
@@ -728,12 +762,13 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
     if (!hoveredCommit) return;
 
     const hoveredCommitPointer = this.hoveredCommitPointer.current!;
+    const hoveredCommitRow = this.hoveredCommitRow.current!;
 
     const screenCenterX = element.getBoundingClientRect().left + element.clientWidth / 2;
     const maxScreenLeftX = window.innerWidth - hoveredCommit.clientWidth;
     const screenLeftX = clamp(screenCenterX - hoveredCommit.clientWidth / 2, 0, maxScreenLeftX);
-    const screenTop = this.hoveredCommitRow.current.getBoundingClientRect().top;
-    const screenBottom = screenTop + this.hoveredCommitRow.current.clientHeight;
+    const screenTop = hoveredCommitRow.getBoundingClientRect().top;
+    const screenBottom = screenTop + hoveredCommitRow.clientHeight;
 
     hoveredCommit.style.left = `${screenLeftX}px`;
     hoveredCommit.style.top = `${screenTop}px`;
@@ -792,12 +827,12 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
 function mergeHistories(h1: target.TargetHistory[], h2: target.TargetHistory[]): target.TargetHistory[] {
   const targetLabelToHistory = new Map<string, target.TargetHistory>();
   for (const history of h1) {
-    targetLabelToHistory.set(history.target.label, history);
+    targetLabelToHistory.set(history.target?.label || "undefined", history);
   }
   for (const history of h2) {
-    const h1History = targetLabelToHistory.get(history.target.label);
+    const h1History = targetLabelToHistory.get(history.target?.label || "undefined");
     if (!h1History) {
-      targetLabelToHistory.set(history.target.label, history);
+      targetLabelToHistory.set(history.target?.label || "undefined", history);
       h1.push(history);
       continue;
     }
