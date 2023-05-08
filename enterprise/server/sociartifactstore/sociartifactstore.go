@@ -285,7 +285,6 @@ func blobKey(hash string) string {
 func resourceName(digest *repb.Digest) *rspb.ResourceName {
 	return &rspb.ResourceName{
 		Digest:         digest,
-		InstanceName:   "soci",
 		Compressor:     repb.Compressor_IDENTITY,
 		CacheType:      rspb.CacheType_CAS,
 		DigestFunction: repb.DigestFunction_SHA256,
