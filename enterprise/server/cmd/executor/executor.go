@@ -121,9 +121,9 @@ func InitializeInternalClients(internalTarget string, realEnv *real_environment.
 	realEnv.SetSociArtifactStoreClient(socipb.NewSociArtifactStoreClient(conn))
 }
 
-// Adds a healthchecker to the provided connection. If not required, the
-// healthchecker will try to reconnect idle connections without reporting
-// unhealthiness, otherwise idleness will reported as unhealthy.
+// Adds a healthchecker to the provided connection. If required, the
+// healthchecker must pass to report readiness, otherwise idle connections
+// will not block readiness, but the health checker will try to reconnect them.
 func addHealthCheck(conn *grpc.ClientConn, required bool, healthCheckName string, healthChecker interfaces.HealthChecker) {
 	healthChecker.AddHealthCheck(
 		healthCheckName, interfaces.CheckerFunc(

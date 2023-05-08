@@ -9,11 +9,14 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:soci_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/cachetools",
+        "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/background",
         "//server/util/disk",
@@ -25,7 +28,6 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@com_github_opencontainers_go_digest//:go-digest",
-        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
 )

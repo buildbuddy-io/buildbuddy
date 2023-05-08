@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -32,11 +35,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
 
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	godigest "github.com/opencontainers/go-digest"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -487,7 +490,7 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	if *imageStreamingEnabled {
-		if err := c.prepareToStreamImage(ctx); err != nil {
+		if err := c.prepareToStreamImage(ctx, creds); err != nil {
 			return err
 		}
 	}
@@ -498,18 +501,30 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 	return nil
 }
 
-func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error {
+func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context, creds container.PullCredentials) error {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
 	if err != nil {
 		return err
 	}
-	resp, err := c.env.GetSociArtifactStoreClient().GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: c.image})
-	if err != nil {
+	if err = os.MkdirAll(sociBlobDirectory, 0644); err != nil {
 		return err
 	}
-	blobReq := repb.BatchReadBlobsRequest{
-		InstanceName:   "soci",
-		DigestFunction: repb.DigestFunction_SHA256,
+	req := socipb.GetArtifactsRequest{
+		Image: c.image,
+		Credentials: &rgpb.Credentials{
+			Username: creds.Username,
+			Password: creds.Password,
+		},
+		Platform: &rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+			// TODO: support CPU variants. Details here:
+			// https://github.com/opencontainers/image-spec/blob/v1.0.0/image-index.md
+		},
+	}
+	resp, err := c.env.GetSociArtifactStoreClient().GetArtifacts(ctx, &req)
+	if err != nil {
+		return err
 	}
 	for _, artifact := range resp.Artifacts {
 		if artifact.Type == socipb.Type_UNKNOWN_TYPE {
@@ -526,23 +541,13 @@ func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context) error
 				return err
 			}
 		}
-		blobReq.Digests = append(blobReq.Digests, artifact.Digest)
-	}
-	blobResp, err := c.env.GetContentAddressableStorageClient().BatchReadBlobs(ctx, &blobReq)
-	if err != nil {
-		return err
-	}
-	for _, blob := range blobResp.Responses {
-		err := gstatus.ErrorProto(blob.Status)
+		blobFile, err := os.Create(sociBlob(artifact.Digest))
+		defer blobFile.Close()
 		if err != nil {
 			return err
 		}
-		// Write the artifact to the local filesystem so the snapshotter can
-		// read it.
-		if err = os.MkdirAll(sociBlobDirectory, 0644); err != nil {
-			return err
-		}
-		if err = os.WriteFile(sociBlob(blob.Digest), blob.Data, 0644); err != nil {
+		resourceName := digest.NewResourceName(artifact.Digest, "" /*=instanceName -- not used */, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		if err = cachetools.GetBlob(ctx, c.env.GetByteStreamClient(), resourceName, blobFile); err != nil {
 			return err
 		}
 	}
@@ -555,16 +560,6 @@ func sociIndex(digest godigest.Digest) string {
 
 func sociBlob(digest *repb.Digest) string {
 	return sociBlobDirectory + digest.Hash
-}
-
-func resourceName(digest *repb.Digest) *rspb.ResourceName {
-	return &rspb.ResourceName{
-		Digest:         digest,
-		InstanceName:   "soci",
-		Compressor:     repb.Compressor_IDENTITY,
-		CacheType:      rspb.CacheType_CAS,
-		DigestFunction: repb.DigestFunction_SHA256,
-	}
 }
 
 // cidFilePath returns the path to the container's cidfile. Podman will write
