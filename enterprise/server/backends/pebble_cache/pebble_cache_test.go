@@ -1986,7 +1986,7 @@ func TestEncryption(t *testing.T) {
 		opts := &pebble_cache.Options{
 			RootDirectory: rootDir,
 			Partitions: []disk.Partition{{
-				ID: pebble_cache.DefaultPartitionID, EncryptionSupported: true, MaxSizeBytes: maxSizeBytes,
+				ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 			}},
 		}
 		pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2317,7 +2317,7 @@ func BenchmarkSet(b *testing.B) {
 	}
 }
 
-func TestSupportsEncryption(t *testing.T) {
+func TestPartitionMetadata(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	apiKey1 := "AK2222"
 	group1 := "GR7890"
@@ -2326,37 +2326,27 @@ func TestSupportsEncryption(t *testing.T) {
 	testUsers := testauth.TestUsers(apiKey1, group1, apiKey2, group2)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
 
-	maxSizeBytes := int64(1_000_000_000) // 1GB
+	defaultMaxSizeBytes := int64(1_000_000_000) // 1GB
+	group1PartMaxSizeBytes := int64(1_000)
 	rootDir := testfs.MakeTempDir(t)
 	group1PartitionID := "user1part"
-	group2PartitionID := "user2part"
 	opts := &pebble_cache.Options{
 		RootDirectory:          rootDir,
-		MaxSizeBytes:           maxSizeBytes,
 		MaxInlineFileSizeBytes: 100,
 		Partitions: []disk.Partition{
 			{
 				ID:           pebble_cache.DefaultPartitionID,
-				MaxSizeBytes: maxSizeBytes,
+				MaxSizeBytes: defaultMaxSizeBytes,
 			},
 			{
 				ID:           group1PartitionID,
-				MaxSizeBytes: maxSizeBytes,
-			},
-			{
-				ID:                  group2PartitionID,
-				MaxSizeBytes:        maxSizeBytes,
-				EncryptionSupported: true,
+				MaxSizeBytes: group1PartMaxSizeBytes,
 			},
 		},
 		PartitionMappings: []disk.PartitionMapping{
 			{
 				GroupID:     group1,
 				PartitionID: group1PartitionID,
-			},
-			{
-				GroupID:     group2,
-				PartitionID: group2PartitionID,
 			},
 		},
 	}
@@ -2366,19 +2356,26 @@ func TestSupportsEncryption(t *testing.T) {
 	err = pc.Start()
 	require.NoError(t, err)
 
-	// Anon write should go to the default partition which doesn't support
-	// encryption.
+	// Anon write should go to the default partition.
 	ctx := getAnonContext(t, te)
-	require.False(t, pc.SupportsEncryption(ctx))
+	md, err := pc.Partition(ctx)
+	require.NoError(t, err)
+	require.Equal(t, pebble_cache.DefaultPartitionID, md.ID)
+	require.Equal(t, defaultMaxSizeBytes, md.MaxSizeBytes)
 
-	// First group is mapped to a partition that does not have encryption
-	// support.
+	// First group is mapped to a custom partition.
 	ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), apiKey1)
-	require.False(t, pc.SupportsEncryption(ctx))
+	md, err = pc.Partition(ctx)
+	require.NoError(t, err)
+	require.Equal(t, group1PartitionID, md.ID)
+	require.Equal(t, group1PartMaxSizeBytes, md.MaxSizeBytes)
 
-	// Second user should be able to use encryption.
+	// Second group should be mapped to default partition.
 	ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), apiKey2)
-	require.True(t, pc.SupportsEncryption(ctx))
+	md, err = pc.Partition(ctx)
+	require.NoError(t, err)
+	require.Equal(t, pebble_cache.DefaultPartitionID, md.ID)
+	require.Equal(t, defaultMaxSizeBytes, md.MaxSizeBytes)
 }
 
 func TestSampling(t *testing.T) {

@@ -530,3 +530,7 @@ func (g *GCSCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 func (g *GCSCache) SupportsEncryption(ctx context.Context) bool {
 	return false
 }
+
+func (g *GCSCache) Partition(ctx context.Context) (*interfaces.PartitionMetadata, error) {
+	return nil, status.UnimplementedError("not supported")
+}

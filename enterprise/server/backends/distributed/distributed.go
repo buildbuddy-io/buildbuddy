@@ -1017,6 +1017,6 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return false
 }
 
-func (c *Cache) SupportsEncryption(ctx context.Context) bool {
-	return c.local.SupportsEncryption(ctx)
+func (c *Cache) Partition(ctx context.Context) (*interfaces.PartitionMetadata, error) {
+	return c.local.Partition(ctx)
 }

@@ -322,6 +322,6 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (c *Cache) SupportsEncryption(ctx context.Context) bool {
-	return false
+func (c *Cache) Partition(ctx context.Context) (*interfaces.PartitionMetadata, error) {
+	return nil, status.UnimplementedError("not supported")
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -278,6 +279,6 @@ func (c *ComposableCache) SupportsCompressor(compressor repb.Compressor_Value) b
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (c *ComposableCache) SupportsEncryption(ctx context.Context) bool {
-	return false
+func (c *ComposableCache) Partition(ctx context.Context) (*interfaces.PartitionMetadata, error) {
+	return nil, status.UnimplementedError("not supported")
 }

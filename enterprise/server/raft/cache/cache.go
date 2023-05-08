@@ -595,6 +595,18 @@ func (rc *RaftCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (rc *RaftCache) SupportsEncryption(ctx context.Context) bool {
-	return false
+func (rc *RaftCache) Partition(ctx context.Context) (*interfaces.PartitionMetadata, error) {
+	_, partID, err := rc.lookupGroupAndPartitionID(ctx, "" /*=remoteInstanceName*/)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range rc.conf.Partitions {
+		if p.ID == partID {
+			return &interfaces.PartitionMetadata{
+				ID:           partID,
+				MaxSizeBytes: p.MaxSizeBytes,
+			}, nil
+		}
+	}
+	return nil, status.NotFoundError("could not find partition for user")
 }

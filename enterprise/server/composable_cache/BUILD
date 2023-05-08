@@ -11,6 +11,7 @@ go_library(
         "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/status",
     ],
 )
 

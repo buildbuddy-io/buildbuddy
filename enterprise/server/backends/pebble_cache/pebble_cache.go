@@ -2663,12 +2663,15 @@ func (p *PebbleCache) Stop() error {
 	return p.db.Close()
 }
 
-func (p *PebbleCache) SupportsEncryption(ctx context.Context) bool {
+func (p *PebbleCache) Partition(ctx context.Context) (*interfaces.PartitionMetadata, error) {
 	_, partID := p.lookupGroupAndPartitionID(ctx, "")
 	for _, part := range p.partitions {
 		if part.ID == partID {
-			return part.EncryptionSupported
+			return &interfaces.PartitionMetadata{
+				ID:           partID,
+				MaxSizeBytes: part.MaxSizeBytes,
+			}, nil
 		}
 	}
-	return false
+	return nil, status.NotFoundErrorf("could not find partition for group")
 }

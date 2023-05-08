@@ -599,6 +599,6 @@ func (s3c *S3Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (s3c *S3Cache) SupportsEncryption(ctx context.Context) bool {
-	return false
+func (s3c *S3Cache) Partition(ctx context.Context) (*interfaces.PartitionMetadata, error) {
+	return nil, status.UnimplementedError("not supported")
 }

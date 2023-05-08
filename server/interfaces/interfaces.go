@@ -220,6 +220,11 @@ type CacheMetadata struct {
 	LastModifyTimeUsec int64
 }
 
+type PartitionMetadata struct {
+	ID           string
+	MaxSizeBytes int64
+}
+
 // Similar to a blobstore, a cache allows for reading and writing data, but
 // additionally it is responsible for deleting data that is past TTL to keep to
 // a manageable size.
@@ -242,7 +247,11 @@ type Cache interface {
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
-	SupportsEncryption(ctx context.Context) bool
+
+	// Partition returns the partition metadata for the customer identified by
+	// the context. Returns Unimplemented status if the cache implementation
+	// does not support partitions.
+	Partition(ctx context.Context) (*PartitionMetadata, error)
 }
 
 type StoppableCache interface {
