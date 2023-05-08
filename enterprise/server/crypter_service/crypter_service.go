@@ -441,7 +441,7 @@ type Encryptor struct {
 }
 
 func makeChunkAuthHeader(chunkIndex uint32, d *repb.Digest, groupID string) []byte {
-	return []byte(strings.Join([]string{fmt.Sprint(chunkIndex), digest.String(d), groupID}, ","))
+	return []byte(strings.Join([]string{fmt.Sprint(encryptedDataHeaderVersion), fmt.Sprint(chunkIndex), digest.String(d), groupID}, ","))
 }
 
 func (e *Encryptor) flushBlock() error {
