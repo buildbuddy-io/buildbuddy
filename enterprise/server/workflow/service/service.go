@@ -592,24 +592,10 @@ func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID strin
 	return rwf.Workflow, nil
 }
 
-func (ws *workflowService) GetWorkflowByGroupAndRepo(ctx context.Context, groupID string, repoURL string) (*tables.Workflow, error) {
-	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
-	if err != nil {
-		return nil, err
-	}
-
-	rwf, err := ws.getRepositoryWorkflow(ctx, groupID, parsedRepoURL)
-	if err != nil {
-		return nil, err
-	}
-
-	return rwf.Workflow, nil
-}
-
-// GetLegacyWorkflowID generates an artificial workflow ID so that legacy Workflow structs
+// GetLegacyWorkflowIDForGitRepository generates an artificial workflow ID so that legacy Workflow structs
 // can be created from GitRepositories to play nicely with the pre-existing architecture
 // that expects the legacy format
-func (ws *workflowService) GetLegacyWorkflowID(groupID string, repoURL string) string {
+func (ws *workflowService) GetLegacyWorkflowIDForGitRepository(groupID string, repoURL string) string {
 	return fmt.Sprintf("%s:%s:%s", repoWorkflowIDPrefix, groupID, repoURL)
 }
 
@@ -1227,7 +1213,7 @@ type repositoryWorkflow struct {
 func (ws *workflowService) gitRepositoryWorkflow(repo *tables.GitRepository, accessToken string) *repositoryWorkflow {
 	// Construct an artificial workflow ID which identifies this workflow with
 	// the original GitRepository row.
-	repositoryID := ws.GetLegacyWorkflowID(repo.GroupID, repo.RepoURL)
+	repositoryID := ws.GetLegacyWorkflowIDForGitRepository(repo.GroupID, repo.RepoURL)
 	wf := &tables.Workflow{
 		WorkflowID:         repositoryID,
 		UserID:             repo.UserID,

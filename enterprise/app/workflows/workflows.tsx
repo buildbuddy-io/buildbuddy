@@ -258,6 +258,19 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
             </p>
           </SimpleModalDialog>
           <SimpleModalDialog
+            title="Unlink repository"
+            isOpen={Boolean(this.state.workflowToDelete)}
+            onRequestClose={() => this.setState({ workflowToDelete: null })}
+            submitLabel="Unlink"
+            destructive
+            onSubmit={() => this.onClickUnlinkWorkflow()}
+            loading={this.state.isDeletingWorkflow}>
+            <p>
+              Are you sure you want to unlink <strong>{formatURL(this.state.workflowToDelete?.repoUrl || "")}</strong>?
+              This will prevent BuildBuddy workflows from being run.
+            </p>
+          </SimpleModalDialog>
+          <SimpleModalDialog
             title="Run workflow in clean container"
             isOpen={Boolean(this.state.showCleanWorkflowWarning)}
             onRequestClose={() => this.setState({ showCleanWorkflowWarning: false })}
@@ -337,8 +350,9 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
 
   private runWorkflow() {
     this.setState({ runWorkflowActionStatuses: null });
-    this.setState({ isMenuOpen: false });
     this.setState({ isWorkflowRunning: true });
+    this.onCloseMenu();
+
     rpcService.service
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
@@ -425,9 +439,14 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                   <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
                 )}
                 <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
-                <MenuItem onClick={this.onClickRunWorkflowMenuItem.bind(this)} disabled={this.state.isWorkflowRunning}>
-                  Run workflow
-                </MenuItem>
+                {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
+                {!this.props.webhookUrl && (
+                  <MenuItem
+                    onClick={this.onClickRunWorkflowMenuItem.bind(this)}
+                    disabled={this.state.isWorkflowRunning}>
+                    Run workflow
+                  </MenuItem>
+                )}
                 <Popup
                   isOpen={this.state.showRunWorkflowInput}
                   onRequestClose={this.onCloseMenu.bind(this)}
@@ -439,8 +458,8 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                   />
                   <div className="title">Visibility metadata:</div>
                   <TextInput
-                      placeholder={"e.g. PUBLIC"}
-                      onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
+                    placeholder={"e.g. PUBLIC (optional)"}
+                    onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
                   />
                   {/*The Popup component has e.preventDefault in its onClick handler, which messes up the checkbox.
                   We need e.stopPropagation to prevent the parent Popup's onClick handler from triggering
