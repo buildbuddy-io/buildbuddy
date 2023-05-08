@@ -342,7 +342,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   onClickRunClean() {
-    if (!this.state.runClean) {
+    if (!this.state.runClean && this.props.showCleanWorkflowWarning) {
       this.props.showCleanWorkflowWarning();
     }
     this.setState({ runClean: !this.state.runClean });
@@ -376,23 +376,25 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   renderWorkflowResults() {
-    return this.state.runWorkflowActionStatuses.map((actionStatus) => {
-      if ((actionStatus.status?.code || 0) !== 0 /*OK*/) {
+    if (this.state.runWorkflowActionStatuses) {
+      return this.state.runWorkflowActionStatuses.map((actionStatus) => {
+        if ((actionStatus.status?.code || 0) !== 0 /*OK*/) {
+          return (
+            <Tooltip renderContent={() => this.renderActionErrorCard(actionStatus)}>
+              <TextLink>{actionStatus.actionName}</TextLink>
+            </Tooltip>
+          );
+        }
+        const invocationLink = `/invocation/${actionStatus.invocationId}`;
         return (
-          <Tooltip renderContent={() => this.renderActionErrorCard(actionStatus)}>
-            <TextLink>{actionStatus.actionName}</TextLink>
-          </Tooltip>
+          <div>
+            <TextLink href={invocationLink} target="_blank">
+              {actionStatus.actionName}
+            </TextLink>
+          </div>
         );
-      }
-      const invocationLink = `/invocation/${actionStatus.invocationId}`;
-      return (
-        <div>
-          <TextLink href={invocationLink} target="_blank">
-            {actionStatus.actionName}
-          </TextLink>
-        </div>
-      );
-    });
+      });
+    }
   }
 
   renderActionErrorCard(actionResult: workflow.ExecuteWorkflowResponse.ActionStatus) {
