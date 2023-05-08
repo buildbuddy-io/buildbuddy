@@ -288,6 +288,7 @@ type RepoItemState = {
 
   showRunWorkflowInput: boolean;
   runWorkflowBranch: string;
+  runWorkflowVisibility: string;
   runClean: boolean;
   isWorkflowRunning: boolean;
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
@@ -298,6 +299,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     isMenuOpen: false,
     showRunWorkflowInput: false,
     runWorkflowBranch: "",
+    runWorkflowVisibility: "",
     runClean: false,
     isWorkflowRunning: false,
     runWorkflowActionStatuses: null,
@@ -337,7 +339,6 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     this.setState({ runWorkflowActionStatuses: null });
     this.setState({ isMenuOpen: false });
     this.setState({ isWorkflowRunning: true });
-    // TODO: Set visibility?
     rpcService.service
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
@@ -346,6 +347,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
           targetRepoUrl: this.props.repoUrl,
           targetBranch: this.state.runWorkflowBranch,
           clean: this.state.runClean,
+          visibility: this.state.runWorkflowVisibility,
         })
       )
       .then((response) => {
@@ -434,6 +436,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                   <TextInput
                     placeholder={"e.g. main"}
                     onChange={(e) => this.setState({ runWorkflowBranch: e.target.value })}
+                  />
+                  <div className="title">Visibility metadata:</div>
+                  <TextInput
+                      placeholder={"e.g. PUBLIC"}
+                      onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
                   />
                   {/*The Popup component has e.preventDefault in its onClick handler, which messes up the checkbox.
                   We need e.stopPropagation to prevent the parent Popup's onClick handler from triggering

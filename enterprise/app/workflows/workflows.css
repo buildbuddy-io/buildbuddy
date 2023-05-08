@@ -132,17 +132,6 @@
   margin-right: 8px;
 }
 
-.workflows-page .workflow-item .action-error-hovercard {
-  width: 30%;
-  margin: 12px;
-  background: rgba(255, 255, 255, 0.8);
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  font-size: 14px;
-  backdrop-filter: blur(3px);
-}
-
 .workflows-page .workflow-item .run-workflow-input {
   padding: 12px;
 }
@@ -166,6 +155,17 @@
 
 .workflows-page .workflow-item .run-workflow-input .run-clean-container span {
   padding-left: 8px;
+}
+
+.action-error-hovercard {
+  width: 30%;
+  margin: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-size: 14px;
+  backdrop-filter: blur(3px);
 }
 
 /* CREATE WORKFLOW PAGE */
