@@ -6,6 +6,7 @@ import { getChartColor } from "../util/color";
 
 interface Props {
   durationMap: Map<string, number>;
+  durationByCategoryMap: Map<string, number>;
 }
 
 interface Datum {
@@ -22,14 +23,15 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
     let building = total - analysis - targets;
 
     let runningProcess = this.props.durationMap.get("subprocess.run");
-    let compilingSwift = this.props.durationMap.get("SwiftCompile");
-    let compilingObjc = this.props.durationMap.get("ObjcCompile");
+    let localActionExecution = this.props.durationByCategoryMap.get("local action execution");
+	let localExecution = runningProcess + localActionExecution;
+
     let executingRemotely = this.props.durationMap.get("execute remotely");
     let sandboxSetup = this.props.durationMap.get("sandbox.createFileSystem");
     let sandboxTeardown = this.props.durationMap.get("sandbox.delete");
     let inputMapping = this.props.durationMap.get("AbstractSpawnStrategy.getInputMapping");
     let merkleTree = this.props.durationMap.get("MerkleTree.build(ActionInput)");
-    let downloadOuputs = this.props.durationMap.get("download outputs");
+    let downloadOuputs = this.props.durationByCategoryMap.get("remote output download");
     let uploadMissing = this.props.durationMap.get("upload missing inputs");
     let uploadOutputs = this.props.durationMap.get("upload outputs");
     let checkCache = this.props.durationMap.get("check cache hit");
@@ -46,7 +48,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
     phaseData = phaseData.sort((a, b) => b.value - a.value).filter((entry) => entry.value > 0);
 
     let executionData = [
-      { value: runningProcess, name: "Executing locally" },
+      { value: localExecution, name: "Executing locally" },
       { value: inputMapping, name: "Input mapping" },
       { value: merkleTree, name: "Merkle tree building" },
       { value: sandboxSetup, name: "Local sandbox creation" },
@@ -58,8 +60,6 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
       { value: uploadOutputs, name: "Uploading outputs" },
       { value: detectModifiedOutput, name: "Detect modified output files" },
       { value: stableStatus, name: "Generating stable-status.txt" },
-      { value: compilingSwift, name: "Compiling Swift" },
-      { value: compilingObjc, name: "Compiling Objective-C" },
     ];
 
     executionData = executionData.sort((a, b) => (b?.value || 0) - (a?.value || 0)).filter((entry) => entry.value > 0);

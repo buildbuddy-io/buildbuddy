@@ -23,6 +23,7 @@ interface State {
   threadToNumEventPagesMap: Map<number, number>;
   threadMap: Map<number, Thread>;
   durationMap: Map<string, number>;
+  durationByCategoryMap: Map<string, number>;
   sortBy: string;
   groupBy: string;
   threadPageSize: number;
@@ -53,6 +54,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadToNumEventPagesMap: new Map<number, number>(),
     threadMap: new Map<number, Thread>(),
     durationMap: new Map<string, number>(),
+    durationByCategoryMap: new Map<string, number>(),
     sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
@@ -140,6 +142,12 @@ export default class InvocationTimingCardComponent extends React.Component<Props
         } else {
           this.state.durationMap.set(event.name, event.dur);
         }
+
+		if (this.state.durationByCategoryMap.get(event.cat)) {
+          this.state.durationByCategoryMap.set(event.cat, this.state.durationByCategoryMap.get(event.cat) + event.dur);
+		} else {
+          this.state.durationByCategoryMap.set(event.cat, event.dur);
+		}
       }
 
       if (event.ph == "X") {
@@ -263,7 +271,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return (
       <>
         <FlameChart profile={this.state.profile} />
-        <InvocationBreakdownCardComponent durationMap={this.state.durationMap} />
+        <InvocationBreakdownCardComponent durationMap={this.state.durationMap} durationByCategoryMap={this.state.durationByCategoryMap}/>
 
         {this.renderTimingSuggestionCard()}
 
