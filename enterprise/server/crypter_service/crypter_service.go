@@ -456,8 +456,8 @@ func (e *Encryptor) flushBlock() error {
 		return err
 	}
 
-	e.chunkCounter++
 	chunkAuth := makeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID)
+	e.chunkCounter++
 	ct := e.ciph.Seal(e.buf[:0], e.nonceBuf, e.buf[:e.bufIdx], chunkAuth)
 	if _, err := e.w.Write(ct); err != nil {
 		return err
@@ -556,8 +556,8 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 			return 0, status.InternalError("could not read nonce for chunk")
 		}
 
-		d.chunkCounter++
 		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID)
+		d.chunkCounter++
 		nonce := d.buf[:nonceSize]
 		ciphertext := d.buf[nonceSize:n]
 
