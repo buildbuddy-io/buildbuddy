@@ -440,15 +440,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	// TODO(Maggie): Clean this up after ActionName field is cleaned up
-	var actionNames []string
-	if len(req.GetActionNames()) > 0 {
-		actionNames = req.GetActionNames()
-	} else if req.GetActionName() != "" {
-		actionNames = []string{req.GetActionName()}
-	}
-
-	actions, err := ws.getActions(ctx, wf, wd, actionNames)
+	actions, err := ws.getActions(ctx, wf, wd, req.GetActionNames())
 	if err != nil {
 		return nil, err
 	}
