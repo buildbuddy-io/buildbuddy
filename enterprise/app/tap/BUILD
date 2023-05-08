@@ -7,7 +7,6 @@ exports_files(["tap.css"])
 ts_library(
     name = "tap",
     srcs = ["tap.tsx"],
-    strict = False,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -21,6 +20,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:git",
         "//app/util:math",
+        "//proto:duration_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:target_ts_proto",
         "//proto/api/v1:common_ts_proto",
