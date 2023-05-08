@@ -1895,7 +1895,7 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 
 	masterAEAD, err := kmsClient.FetchMasterKey()
 	require.NoError(t, err)
-	encMasterKeyPart, err := masterAEAD.Encrypt(masterKeyPart, nil)
+	encMasterKeyPart, err := masterAEAD.Encrypt(masterKeyPart, []byte(groupID))
 	require.NoError(t, err)
 
 	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
