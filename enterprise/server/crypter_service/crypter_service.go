@@ -216,7 +216,7 @@ func (c *keyCache) derivedKey(groupID string, key *tables.EncryptionKeyVersion) 
 		return nil, err
 	}
 
-	ckSrc := make([]byte, len(masterKeyPortion)+len(groupKeyPortion))
+	ckSrc := make([]byte, 0, len(masterKeyPortion)+len(groupKeyPortion))
 	ckSrc = append(ckSrc, masterKeyPortion...)
 	ckSrc = append(ckSrc, groupKeyPortion...)
 
