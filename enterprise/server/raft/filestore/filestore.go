@@ -358,6 +358,9 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.GetEncryption().GetKeyId() != "" {
+		hash += "_" + r.GetEncryption().GetKeyId()
+	}
 	partDir := PartitionDirectoryPrefix + partID
 	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
 		return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil

@@ -2009,6 +2009,71 @@ func TestEncryption(t *testing.T) {
 	}
 }
 
+// The same digest encrypted/unencrypted should be able to co-exist in the
+// cache.
+func TestEncryptedUnencryptedSameDigest(t *testing.T) {
+	flags.Set(t, "cache.pebble.active_key_version", 3)
+
+	te, kmsDir := getCrypterEnv(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{userID: user}
+	auther := testauth.NewTestAuthenticator(users)
+	te.SetAuthenticator(auther)
+
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	ctx := context.Background()
+
+	groupKeyID := "EK456"
+	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+	err := te.GetDBHandle().DB(ctx).Create(key).Error
+	require.NoError(t, err)
+	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	require.NoError(t, err)
+
+	opts := &pebble_cache.Options{
+		RootDirectory: rootDir,
+		Partitions: []disk.Partition{{
+			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
+		}},
+		MaxInlineFileSizeBytes: 1,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	userCtx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+	anonCtx := getAnonContext(t, te)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = pc.Set(anonCtx, rn, buf)
+	require.NoError(t, err)
+	err = pc.Set(userCtx, rn, buf)
+	require.NoError(t, err)
+
+	readBuf, err := pc.Get(userCtx, rn)
+	require.NoError(t, err)
+	if !bytes.Equal(buf, readBuf) {
+		require.FailNow(t, "original text and decrypted text didn't match")
+	}
+
+	readBuf, err = pc.Get(anonCtx, rn)
+	require.NoError(t, err)
+	if !bytes.Equal(buf, readBuf) {
+		require.FailNow(t, "original text and read text didn't match")
+	}
+
+	err = pc.Stop()
+	require.NoError(t, err)
+}
+
 func TestEncryptionAndCompression(t *testing.T) {
 	te, kmsDir := getCrypterEnv(t)
 
