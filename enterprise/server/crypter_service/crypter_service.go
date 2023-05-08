@@ -851,6 +851,13 @@ func buildKeyURI(kmsConfig *enpb.KMSConfig) (string, error) {
 		}
 		return fmt.Sprintf("gcp-kms://projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s", gc.GetProject(), gc.GetLocation(), gc.GetKeyRing(), gc.GetKey()), nil
 	}
+	if ac := kmsConfig.GetAwsKmsConfig(); ac != nil {
+		if strings.TrimSpace(ac.GetKeyArn()) == "" {
+			return "", status.InvalidArgumentError("Key ARN is required")
+		}
+		return fmt.Sprintf("aws-kms://%s", ac.GetKeyArn()), nil
+	}
+
 	return "", status.FailedPreconditionError("KMS config is empty")
 }
 
@@ -1018,6 +1025,8 @@ func (c *Crypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncrypti
 			rsp.SupportedKms = append(rsp.SupportedKms, enpb.KMS_LOCAL_INSECURE)
 		case interfaces.KMSTypeGCP:
 			rsp.SupportedKms = append(rsp.SupportedKms, enpb.KMS_GCP)
+		case interfaces.KMSTypeAWS:
+			rsp.SupportedKms = append(rsp.SupportedKms, enpb.KMS_AWS)
 		default:
 			log.Warningf("unknown KMS type %q", t)
 		}

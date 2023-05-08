@@ -9,6 +9,7 @@ ts_library(
     deps = [
         "//app/components/button",
         "//app/components/dialog",
+        "//app/components/input",
         "//app/components/modal",
         "//app/components/spinner",
         "//app/errors:error_service",

@@ -15,9 +15,15 @@ message GCPKMSConfig {
   string key = 4;
 }
 
+message AWSKMSConfig {
+  // Amazon Resource Name for the key resource.
+  string key_arn = 1;
+}
+
 message KMSConfig {
   LocalInsecureKMSConfig local_insecure_kms_config = 1;
   GCPKMSConfig gcp_kms_config = 2;
+  AWSKMSConfig aws_kms_config = 3;
 }
 
 message SetEncryptionConfigRequest {
@@ -42,6 +48,7 @@ enum KMS {
 
   LOCAL_INSECURE = 1;
   GCP = 2;
+  AWS = 3;
 }
 
 message GetEncryptionConfigResponse {

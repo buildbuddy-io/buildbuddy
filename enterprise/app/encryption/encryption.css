@@ -16,6 +16,10 @@
   padding: 16px;
 }
 
+.kms-form input[type="text"].aws-key-arn {
+  width: 700px;
+}
+
 .kms-form .kms-fields {
   margin-top: 20px;
 }

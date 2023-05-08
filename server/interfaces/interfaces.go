@@ -1053,6 +1053,7 @@ type KMSType int
 const (
 	KMSTypeLocalInsecure KMSType = iota
 	KMSTypeGCP
+	KMSTypeAWS
 )
 
 // A KMS is a Key Managment Service (typically a cloud provider or external
