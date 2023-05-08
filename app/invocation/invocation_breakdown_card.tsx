@@ -24,7 +24,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
 
     let runningProcess = this.props.durationMap.get("subprocess.run");
     let localActionExecution = this.props.durationByCategoryMap.get("local action execution");
-	let localExecution = runningProcess + localActionExecution;
+    let localExecution = runningProcess + localActionExecution;
 
     let executingRemotely = this.props.durationMap.get("execute remotely");
     let sandboxSetup = this.props.durationMap.get("sandbox.createFileSystem");

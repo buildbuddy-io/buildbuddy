@@ -143,11 +143,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           this.state.durationMap.set(event.name, event.dur);
         }
 
-		if (this.state.durationByCategoryMap.get(event.cat)) {
+        if (this.state.durationByCategoryMap.get(event.cat)) {
           this.state.durationByCategoryMap.set(event.cat, this.state.durationByCategoryMap.get(event.cat) + event.dur);
-		} else {
+        } else {
           this.state.durationByCategoryMap.set(event.cat, event.dur);
-		}
+        }
       }
 
       if (event.ph == "X") {
@@ -271,7 +271,10 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return (
       <>
         <FlameChart profile={this.state.profile} />
-        <InvocationBreakdownCardComponent durationMap={this.state.durationMap} durationByCategoryMap={this.state.durationByCategoryMap}/>
+        <InvocationBreakdownCardComponent
+          durationMap={this.state.durationMap}
+          durationByCategoryMap={this.state.durationByCategoryMap}
+        />
 
         {this.renderTimingSuggestionCard()}
 
