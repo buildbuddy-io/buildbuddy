@@ -207,7 +207,7 @@ func (c *keyCache) derivedKey(groupID string, key *tables.EncryptionKeyVersion) 
 		return nil, err
 	}
 
-	masterKeyPortion, err := bbmk.Decrypt(key.MasterEncryptedKey, nil)
+	masterKeyPortion, err := bbmk.Decrypt(key.MasterEncryptedKey, []byte(groupID))
 	if err != nil {
 		return nil, err
 	}
@@ -670,7 +670,7 @@ func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWit
 		return err
 	}
 
-	masterKeyPortion, err := bbmk.Decrypt(ekv.MasterEncryptedKey, nil)
+	masterKeyPortion, err := bbmk.Decrypt(ekv.MasterEncryptedKey, []byte(ekv.GroupID))
 	if err != nil {
 		return err
 	}
@@ -678,7 +678,7 @@ func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWit
 	if err != nil {
 		return err
 	}
-	encMasterKeyPortion, err := bbmk.Encrypt(masterKeyPortion, nil)
+	encMasterKeyPortion, err := bbmk.Encrypt(masterKeyPortion, []byte(ekv.GroupID))
 	if err != nil {
 		return err
 	}
@@ -891,7 +891,7 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 		return status.InternalErrorf("could not generate key id: %s", err)
 	}
 
-	encMasterKeyPart, err := masterKeyClient.Encrypt(masterKeyPart, nil)
+	encMasterKeyPart, err := masterKeyClient.Encrypt(masterKeyPart, []byte(u.GetGroupID()))
 	if err != nil {
 		return status.InternalErrorf("could not encrypt master portion of composite key: %s", err)
 	}
