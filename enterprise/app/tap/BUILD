@@ -20,6 +20,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:git",
         "//app/util:math",
+        "//proto:duration_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:target_ts_proto",
         "//proto/api/v1:common_ts_proto",

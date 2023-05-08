@@ -9,6 +9,7 @@ import { invocation } from "../../../proto/invocation_ts_proto";
 import { target } from "../../../proto/target_ts_proto";
 import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
+import { google as google_duration } from "../../../proto/duration_ts_proto";
 import format from "../../../app/format/format";
 import { clamp } from "../../../app/util/math";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
@@ -216,7 +217,7 @@ export default class TapComponent extends React.Component<Props, State> {
       let stats: Stat = { count: 0, pass: 0, totalDuration: 0, maxDuration: 0, avgDuration: 0 };
       for (let status of targetHistory.targetStatus) {
         stats.count += 1;
-        let duration = this.durationToNum(status.timing?.duration);
+        let duration = this.durationToNum(status.timing?.duration || undefined);
         stats.totalDuration += duration;
         stats.maxDuration = Math.max(stats.maxDuration, duration);
         if (status.status == Status.PASSED) {
@@ -293,7 +294,10 @@ export default class TapComponent extends React.Component<Props, State> {
     router.setQueryParam("filter", event.target.value);
   }
 
-  durationToNum(duration: any) {
+  durationToNum(duration?: google_duration.protobuf.Duration) {
+    if (!duration) {
+      return 0;
+    }
     return +duration.seconds + +duration.nanos / 1000000000;
   }
 
@@ -412,17 +416,6 @@ export default class TapComponent extends React.Component<Props, State> {
     let firstTarget = first.target;
     let secondTarget = second.target;
 
-    let firstStats = this.state.stats.get(first?.target?.label || "");
-    let secondStats = this.state.stats.get(second?.target?.label || "");
-
-    if (!firstStats && !secondStats) {
-      return 0;
-    } else if (!firstStats) {
-      return 1;
-    } else if (!secondStats) {
-      return -1;
-    }
-
     if (this.getSortMode() == "target") {
       if (!firstTarget && !secondTarget) {
         return 0;
@@ -433,6 +426,17 @@ export default class TapComponent extends React.Component<Props, State> {
       } else {
         return firstTarget!.label.localeCompare(secondTarget!.label);
       }
+    }
+
+    let firstStats = this.state.stats.get(first?.target?.label || "");
+    let secondStats = this.state.stats.get(second?.target?.label || "");
+
+    if (!firstStats && !secondStats) {
+      return 0;
+    } else if (!firstStats) {
+      return 1;
+    } else if (!secondStats) {
+      return -1;
     }
 
     switch (this.getSortMode()) {
@@ -648,7 +652,7 @@ export default class TapComponent extends React.Component<Props, State> {
                       )}`;
                       let title =
                         this.getColorMode() == "timing"
-                          ? `${(this.durationToNum(status.timing?.duration) || 0).toFixed(2)}s`
+                          ? `${this.durationToNum(status.timing?.duration || undefined).toFixed(2)}s`
                           : this.statusToString(status.status || Status.STATUS_UNSPECIFIED);
                       if (this.isV2 && commitSha) {
                         title += ` at commit ${commitSha}`;
@@ -664,7 +668,8 @@ export default class TapComponent extends React.Component<Props, State> {
                               this.getColorMode() == "timing"
                                 ? Math.max(
                                     MIN_OPACITY,
-                                    (1.0 * this.durationToNum(status.timing?.duration) || 0) / (stats?.maxDuration || 1)
+                                    (1.0 * this.durationToNum(status.timing?.duration || undefined)) /
+                                      (stats?.maxDuration || 1)
                                   )
                                 : undefined,
                           }}
@@ -719,22 +724,22 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
   private hoveredCommitInfo = React.createRef<HTMLDivElement>();
   private hoveredCommitPointer = React.createRef<HTMLDivElement>();
   // TODO(bduffany): Use a generic tooltip component.
-  private tooltipPortal: HTMLDivElement = document.createElement("div");
+  private tooltipPortal?: HTMLDivElement;
 
   componentWillMount() {
-    this.tooltipPortal.style.position = "fixed";
-    this.tooltipPortal.style.zIndex = "1";
-    this.tooltipPortal.style.opacity = "0";
-    document.body.appendChild(this.tooltipPortal);
+    this.tooltipPortal!.style.position = "fixed";
+    this.tooltipPortal!.style.zIndex = "1";
+    this.tooltipPortal!.style.opacity = "0";
+    document.body.appendChild(this.tooltipPortal!);
   }
 
   componentWillUnmount() {
-    this.tooltipPortal.remove();
+    this.tooltipPortal!.remove();
   }
 
   onMouseLeaveCommitTimeline(event: React.MouseEvent) {
     this.setState({ hoveredCommit: null });
-    this.tooltipPortal.style.opacity = "0";
+    this.tooltipPortal!.style.opacity = "0";
   }
 
   onMouseOverCommit(commitSha: string, event: React.MouseEvent) {
@@ -774,7 +779,7 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
     hoveredCommit.style.top = `${screenTop}px`;
     hoveredCommitPointer.style.left = `${screenCenterX}px`;
     hoveredCommitPointer.style.top = `${screenBottom}px`;
-    this.tooltipPortal.style.opacity = "1";
+    this.tooltipPortal!.style.opacity = "1";
   }
 
   render() {
@@ -793,7 +798,7 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
                     {this.state.hoveredCommit.commitSha.substring(0, 6)}
                   </div>
                 </>,
-                this.tooltipPortal
+                this.tooltipPortal!
               )}
           </div>
           <div
