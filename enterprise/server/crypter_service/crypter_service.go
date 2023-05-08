@@ -513,12 +513,13 @@ func (e *Encryptor) Close() error {
 }
 
 type Decryptor struct {
-	ciph            cipher.AEAD
-	digest          *repb.Digest
-	groupID         string
-	r               io.ReadCloser
-	headerValidated bool
-	chunkCounter    uint32
+	ciph               cipher.AEAD
+	digest             *repb.Digest
+	groupID            string
+	r                  io.ReadCloser
+	headerValidated    bool
+	lastChunkValidated bool
+	chunkCounter       uint32
 
 	// buf contains the decrypted plaintext ready to be read.
 	buf []byte
@@ -551,6 +552,9 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		// chunk.
 		lastChunk := err == io.ErrUnexpectedEOF
 		if err != nil && err != io.ErrUnexpectedEOF {
+			if err == io.EOF && !d.lastChunkValidated {
+				return 0, status.DataLossError("did not find last chunk, file possibly truncated")
+			}
 			return 0, err
 		}
 
@@ -572,6 +576,10 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		// ciphertext was, past the nonce.
 		d.bufIdx = nonceSize
 		d.bufLen = len(pt) + nonceSize
+
+		if lastChunk {
+			d.lastChunkValidated = true
+		}
 	}
 
 	n = copy(p, d.buf[d.bufIdx:d.bufLen])
