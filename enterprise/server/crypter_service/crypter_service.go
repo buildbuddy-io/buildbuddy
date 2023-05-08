@@ -220,8 +220,9 @@ func (c *keyCache) derivedKey(groupID string, key *tables.EncryptionKeyVersion) 
 	ckSrc = append(ckSrc, masterKeyPortion...)
 	ckSrc = append(ckSrc, groupKeyPortion...)
 
+	info := append([]byte{encryptedDataHeaderVersion}, []byte(groupID)...)
 	derivedKey := make([]byte, 32)
-	r := hkdf.Expand(sha256.New, ckSrc, nil)
+	r := hkdf.Expand(sha256.New, ckSrc, info)
 	n, err := r.Read(derivedKey)
 	if err != nil {
 		return nil, err
