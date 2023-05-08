@@ -441,15 +441,15 @@ type Encryptor struct {
 	bufCap int
 }
 
-func makeChunkAuthHeader(chunkIndex uint32, d *repb.Digest, groupID string) []byte {
-	return []byte(strings.Join([]string{fmt.Sprint(encryptedDataHeaderVersion), fmt.Sprint(chunkIndex), digest.String(d), groupID}, ","))
+func makeChunkAuthHeader(chunkIndex uint32, d *repb.Digest, groupID string, lastChunk bool) []byte {
+	chunk := fmt.Sprint(chunkIndex)
+	if lastChunk {
+		chunk = "last"
+	}
+	return []byte(strings.Join([]string{fmt.Sprint(encryptedDataHeaderVersion), chunk, digest.String(d), groupID}, ","))
 }
 
-func (e *Encryptor) flushBlock() error {
-	if e.bufIdx == 0 {
-		return nil
-	}
-
+func (e *Encryptor) flushBlock(lastChunk bool) error {
 	if _, err := rand.Read(e.nonceBuf); err != nil {
 		return err
 	}
@@ -457,7 +457,7 @@ func (e *Encryptor) flushBlock() error {
 		return err
 	}
 
-	chunkAuth := makeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID)
+	chunkAuth := makeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID, lastChunk)
 	e.chunkCounter++
 	ct := e.ciph.Seal(e.buf[:0], e.nonceBuf, e.buf[:e.bufIdx], chunkAuth)
 	if _, err := e.w.Write(ct); err != nil {
@@ -492,7 +492,7 @@ func (e *Encryptor) Write(p []byte) (n int, err error) {
 		e.bufIdx += readLen
 		readIdx += readLen
 		if e.bufIdx == e.bufCap {
-			if err := e.flushBlock(); err != nil {
+			if err := e.flushBlock(false /*=lastChunk*/); err != nil {
 				return 0, err
 			}
 		}
@@ -502,7 +502,7 @@ func (e *Encryptor) Write(p []byte) (n int, err error) {
 }
 
 func (e *Encryptor) Commit() error {
-	if err := e.flushBlock(); err != nil {
+	if err := e.flushBlock(true /*=lastChunk*/); err != nil {
 		return err
 	}
 	return e.w.Commit()
@@ -549,6 +549,7 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		// ErrUnexpectedEOF indicates that the underlying reader returned EOF
 		// before the buffer could be filled, which is expected on the last
 		// chunk.
+		lastChunk := err == io.ErrUnexpectedEOF
 		if err != nil && err != io.ErrUnexpectedEOF {
 			return 0, err
 		}
@@ -557,7 +558,7 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 			return 0, status.InternalError("could not read nonce for chunk")
 		}
 
-		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID)
+		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID, lastChunk)
 		d.chunkCounter++
 		nonce := d.buf[:nonceSize]
 		ciphertext := d.buf[nonceSize:n]
