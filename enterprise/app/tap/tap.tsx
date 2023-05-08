@@ -727,10 +727,12 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
   private tooltipPortal?: HTMLDivElement;
 
   componentWillMount() {
-    this.tooltipPortal!.style.position = "fixed";
-    this.tooltipPortal!.style.zIndex = "1";
-    this.tooltipPortal!.style.opacity = "0";
-    document.body.appendChild(this.tooltipPortal!);
+    const tooltipPortal = document.createElement("div");
+    tooltipPortal.style.position = "fixed";
+    tooltipPortal.style.zIndex = "1";
+    tooltipPortal.style.opacity = "0";
+    document.body.appendChild(tooltipPortal);
+    this.tooltipPortal = tooltipPortal;
   }
 
   componentWillUnmount() {
