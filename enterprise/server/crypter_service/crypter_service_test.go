@@ -723,7 +723,7 @@ func TestConfigAPI(t *testing.T) {
 		RootDirectory: rootDir,
 		Partitions: []disk.Partition{
 			{ID: "default", MaxSizeBytes: cacheSizeBytes},
-			{ID: customPartID, MaxSizeBytes: cacheSizeBytes, EncryptionSupported: true},
+			{ID: customPartID, MaxSizeBytes: cacheSizeBytes},
 		},
 		PartitionMappings: []disk.PartitionMapping{
 			{GroupID: groupID, PartitionID: customPartID},
