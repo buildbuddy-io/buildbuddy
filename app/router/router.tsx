@@ -8,19 +8,19 @@ import { GLOBAL_FILTER_PARAM_NAMES, PERSISTENT_URL_PARAMS } from "./router_param
 
 class Router {
   register(pathChangeHandler: VoidFunction) {
-    history.pushState = ((f) =>
-      function pushState() {
-        var ret = f.apply(this, arguments);
-        pathChangeHandler();
-        return ret;
-      })(history.pushState);
+    const oldPushState = history.pushState;
+    history.pushState = (data: any, unused: string, url?: string | URL): void => {
+      oldPushState.apply(history, [data, unused, url]);
+      pathChangeHandler();
+      return undefined;
+    };
 
-    history.replaceState = ((f) =>
-      function replaceState() {
-        var ret = f.apply(this, arguments);
-        pathChangeHandler();
-        return ret;
-      })(history.replaceState);
+    const oldReplaceState = history.replaceState;
+    history.replaceState = (data: any, unused: string, url?: string | URL): void => {
+      oldReplaceState.apply(history, [data, unused, url]);
+      pathChangeHandler();
+      return undefined;
+    };
 
     window.addEventListener("popstate", () => {
       pathChangeHandler();
@@ -60,6 +60,10 @@ class Router {
     const newUrl = new URL(url, window.location.href);
 
     const matchedPath = getMatchedPath(newUrl.pathname);
+    if (matchedPath === null) {
+      alert("Requested path not found.");
+      return;
+    }
     const unavailableMsg = getUnavailableMessage(matchedPath);
     if (unavailableMsg && !capabilities.canNavigateToPath(matchedPath)) {
       alert(unavailableMsg);
@@ -68,8 +72,9 @@ class Router {
 
     // Preserve persistent URL params.
     for (const key of PERSISTENT_URL_PARAMS) {
-      if (!newUrl.searchParams.get(key) && oldUrl.searchParams.get(key)) {
-        newUrl.searchParams.set(key, oldUrl.searchParams.get(key));
+      const oldParam = oldUrl.searchParams.get(key);
+      if (!newUrl.searchParams.get(key) && oldParam) {
+        newUrl.searchParams.set(key, oldParam);
       }
     }
 

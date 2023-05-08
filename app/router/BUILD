@@ -11,7 +11,6 @@ ts_library(
 ts_library(
     name = "router",
     srcs = ["router.tsx"],
-    strict = False,
     deps = [
         "//app/auth:user",
         "//app/capabilities",
