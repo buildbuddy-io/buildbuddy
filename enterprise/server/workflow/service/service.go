@@ -912,6 +912,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if workflowAction.SelfHosted {
 		useSelfHostedExecutors = "true"
 	}
+	pool := ws.WorkflowsPoolName()
+	if workflowAction.Pool != "" {
+		pool = workflowAction.Pool
+	}
+
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -940,7 +945,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.WorkflowsPoolName()},
+				{Name: "Pool", Value: pool},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: platform.DockerUserPropertyName, Value: workflowAction.User},

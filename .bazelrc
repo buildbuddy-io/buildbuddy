@@ -159,6 +159,11 @@ build --experimental_inprocess_symlink_creation
 # on Docker for development.
 test --test_tag_filters=-docker
 
+# Don't build or run Firecracker tests by default, because they cannot be run on all environments
+# (Can only be run on Linux machines with bare execution)
+test --test_tag_filters=-bare
+build --build_tag_filters=-bare
+
 # Use C++17 standard for all C++ compilation
 build --host_cxxopt=-std=c++17
 
