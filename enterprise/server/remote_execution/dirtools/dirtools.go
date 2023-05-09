@@ -300,15 +300,12 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 		Path:   trimPathPrefix(fqfn, rootDir),
 		Target: target,
 	}
-	foundSymlink := false
-	defer func() {
-		if foundSymlink {
-			directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
-				Name:   symlink.Path,
-				Target: symlink.Target,
-			})
-		}
-	}()
+	addSymlinkToDir := func() {
+		directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
+			Name:   symlink.Path,
+			Target: symlink.Target,
+		})
+	}
 
 	// REAPI specification:
 	//   `output_symlinks` will only be populated if the command `output_paths` field
@@ -320,7 +317,7 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 			return nil
 		}
 		// REAPI >= v2.1
-		foundSymlink = true
+		addSymlinkToDir()
 		actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
 
 		// REAPI specification:
@@ -354,14 +351,14 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	// REAPI < v2.1
 	for _, expectedFile := range cmd.OutputFiles {
 		if symlink.Path == expectedFile {
-			foundSymlink = true
+			addSymlinkToDir()
 			actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
 			break
 		}
 	}
 	for _, expectedDir := range cmd.OutputDirectories {
 		if symlink.Path == expectedDir {
-			foundSymlink = true
+			addSymlinkToDir()
 			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
 			break
 		}
