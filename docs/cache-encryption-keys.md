@@ -1,5 +1,5 @@
 ---
-id: cache-cmek
+id: cache-encryption-keys
 title: Customer Managed Encryption Keys
 sidebar_label: Customer Managed Encryption Keys
 ---
@@ -41,8 +41,8 @@ grant this AWS account access to the supplied key.
  - Artifacts written prior to enabling this feature will not be retroactively encrypted using the new key, but will  
    become effectively inaccessible and will be evicted from the cache as part of the regular cache lifecycle. 
 
- - The key used for encryption and decryption may be cached by the BuildBuddy infrastructure for up to 10 minutes for 
-   performance reasons.
+ - The key used for encryption and decryption may be cached in memory by the BuildBuddy infrastructure for up to 10 
+ - minutes for performance reasons.
 
  - The customer managed key may be rotated. During rotation, the old key material must remain accessible for at least 24
    hours.
@@ -56,12 +56,13 @@ and the second being the "BuildBuddy Key". Before being stored within BuildBuddy
 using the customer supplied key and the BuildBuddy key is encrypted using a BuildBuddy managed key. 
 
 To perform encryption or decryption, a third 256-bit key ("Derived Key") is obtained by decrypting the Customer Key and 
-the BuildBuddy key and feeding their concatenation into HKDF-Expand.
+the BuildBuddy key and feeding their concatenation into HKDF-Expand using a SHA256 hash.
  
-During operation, the Derived Key may be cached by BuildBuddy systems for up to 10 minutes for performance reasons.
+During operation, the Derived Key may be cached in memory by BuildBuddy systems for up to 10 minutes for performance 
+reasons.
 
 If the feature is disabled, the Customer Key and BuildBuddy Key material are immediately deleted. Previously encrypted
-data will no longer be decryptable after 10 minutes at most, due to temporary key caching.
+data will no longer be decryptable after 10 minutes at most, due to temporary in-memory key caching.
 
 ### Content encryption and decryption
 
