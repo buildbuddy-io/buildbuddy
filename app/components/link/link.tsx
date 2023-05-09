@@ -26,7 +26,9 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
           onClick(e);
           if (e.defaultPrevented) return;
         }
-
+        if (e.metaKey) {
+          return;
+        }
         e.preventDefault();
         if (href) router.navigateTo(href);
       };
