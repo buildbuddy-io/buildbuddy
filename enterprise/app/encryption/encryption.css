@@ -4,6 +4,12 @@
   margin-bottom: 16px;
 }
 
+.kms-form .kms-title {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
 .kms-form input[type="radio"] {
   width: 20px;
   height: 20px;
