@@ -312,9 +312,10 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   )}
                   {activeTabId == TabId.OrgCacheEncryption && (
                     <>
-                      <div className="settings-option-title">Encryption keys</div>
+                      <div className="settings-option-title">Customer managed encryption keys</div>
                       <div className="settings-option-description">
-                        Encryption keys allow control over storage encryption.
+                        Customer managed encryption keys give you the ability to provide and manage your own encryption
+                        keys that are used for the encryption of your BuildBuddy cache artifacts.
                       </div>
                       <EncryptionComponent />
                     </>
