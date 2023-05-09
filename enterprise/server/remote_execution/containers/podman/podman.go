@@ -73,6 +73,8 @@ const (
 
 	// argument to podman to enable the use of the soci store for streaming
 	enableStreamingStoreArg = "--storage-opt=additionallayerstore=/var/lib/soci-store/store:ref"
+
+	sociStorePath = "/var/lib/soci-store/store"
 )
 
 type pullStatus struct {
@@ -90,7 +92,7 @@ type Provider struct {
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if len(*streamableImages) > 0 {
 		log.Infof("Starting soci store")
-		sociStoreDir := "/var/lib/soci-store/store"
+		sociStoreDir := sociStorePath
 		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", sociStoreDir)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
@@ -119,6 +121,21 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		if err := disk.WaitUntilExists(context.Background(), sociStoreDir, disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
 		}
+
+		// TODO(iain): there's a concurrency bug in soci-store that causes it
+		// to die occasionally. Report the executor as unhealthy if the
+		// soci-store directory doesn't exist for any reason.
+		env.GetHealthChecker().AddHealthCheck(
+			"soci_store", interfaces.CheckerFunc(
+				func(ctx context.Context) error {
+					if _, err := os.Stat(sociStorePath); err == nil {
+						return nil
+					} else {
+						return fmt.Errorf("soci-store died (stat returned: %s", err)
+					}
+				},
+			),
+		)
 	}
 
 	return &Provider{
