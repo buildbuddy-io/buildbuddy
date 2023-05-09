@@ -887,7 +887,7 @@ func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		// Set the workflow ID if it's not on the request
-		// Note: This will only work for workflows created with the githup app integration and not the legacy approach
+		// Note: This will only work for workflows created with the github app integration and not the legacy approach
 		if req.GetWorkflowId() == "" {
 			auth := s.env.GetAuthenticator()
 			if auth == nil {

@@ -132,28 +132,28 @@
   margin-right: 8px;
 }
 
-.workflows-page .workflow-item .run-workflow-input {
+.workflows-page .run-workflow-input {
   padding: 12px;
 }
 
-.workflows-page .workflow-item .run-workflow-input .title {
+.workflows-page .run-workflow-input .title {
   font-weight: 600;
   font-size: 15px;
   background: white;
   padding: 4px;
 }
 
-.workflows-page .workflow-item .run-workflow-input button {
+.workflows-page .run-workflow-input button {
   margin-top: 8px;
 }
 
-.workflows-page .workflow-item .run-workflow-input .run-clean-container {
+.workflows-page .run-clean-container {
   display: flex;
   align-items: center;
   padding: 8px 0px;
 }
 
-.workflows-page .workflow-item .run-workflow-input .run-clean-container span {
+.workflows-page .run-clean-container span {
   padding-left: 8px;
 }
 
