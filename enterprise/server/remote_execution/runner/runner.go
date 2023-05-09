@@ -1081,7 +1081,11 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			EnableStats:          *podmanEnableStats,
 			EnableImageStreaming: props.EnablePodmanImageStreaming,
 		}
-		ctr = p.podmanProvider.NewContainer(props.ContainerImage, opts)
+		c, err := p.podmanProvider.NewContainer(ctx, props.ContainerImage, opts)
+		if err != nil {
+			return nil, err
+		}
+		ctr = c
 	case platform.FirecrackerContainerType:
 		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
 		opts := firecracker.ContainerOpts{

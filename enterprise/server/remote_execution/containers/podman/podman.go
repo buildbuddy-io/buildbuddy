@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -89,17 +90,33 @@ type Provider struct {
 	streamableImages []string
 }
 
+func runSociStore(ctx context.Context) error {
+	// If the store crashed, the path must be unmounted to recover.
+	syscall.Unmount(sociStorePath, 0)
+
+	log.Infof("Starting soci store")
+	sociStoreDir := sociStorePath
+	cmd := exec.CommandContext(ctx, "soci-store", sociStoreDir)
+	logWriter := log.Writer("[socistore] ")
+	cmd.Stderr = logWriter
+	cmd.Stdout = logWriter
+	if err := cmd.Start(); err != nil {
+		return status.UnavailableErrorf("could not start soci store: %s", err)
+	}
+
+	// To prevent podman trying to read from the soci-store directory
+	// before it's ready (which can take a few hundred ms), wait for up to
+	// one second for soci-store to start up. Note that this is happening
+	// during executor start up so it won't affect RBE times.
+	if err := disk.WaitUntilExists(context.Background(), sociStoreDir, disk.WaitOpts{}); err != nil {
+		return status.UnavailableErrorf("soci-store failed to start: %s", err)
+	}
+	return nil
+}
+
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if len(*streamableImages) > 0 {
-		log.Infof("Starting soci store")
-		sociStoreDir := sociStorePath
-		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", sociStoreDir)
-		logWriter := log.Writer("[socistore] ")
-		cmd.Stderr = logWriter
-		cmd.Stdout = logWriter
-		if err := cmd.Start(); err != nil {
-			return nil, status.UnavailableErrorf("could not start soci store: %s", err)
-		}
+		runSociStore(env.GetServerContext())
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
@@ -112,14 +129,6 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 `
 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
-		}
-
-		// To prevent podman trying to read from the soci-store directory
-		// before it's ready (which can take a few hundred ms), wait for up to
-		// one second for soci-store to start up. Note that this is happening
-		// during executor start up so it won't affect RBE times.
-		if err := disk.WaitUntilExists(context.Background(), sociStoreDir, disk.WaitOpts{}); err != nil {
-			return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
 		}
 
 		// TODO(iain): there's a concurrency bug in soci-store that causes it
@@ -146,12 +155,18 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 	}, nil
 }
 
-func (p *Provider) NewContainer(image string, options *PodmanOptions) container.CommandContainer {
+func (p *Provider) NewContainer(ctx context.Context, image string, options *PodmanOptions) (container.CommandContainer, error) {
 	imageIsStreamable := false
 	for _, streamableImage := range p.streamableImages {
 		if image == streamableImage {
 			imageIsStreamable = true
 			break
+		}
+	}
+	if _, err := os.Stat(sociStorePath); err != nil {
+		log.Infof("soci store appears to have died, trying to restart")
+		if err := runSociStore(ctx); err != nil {
+			return nil, err
 		}
 	}
 	return &podmanCommandContainer{
@@ -161,7 +176,7 @@ func (p *Provider) NewContainer(image string, options *PodmanOptions) container.
 		imageStreamingEnabled: imageIsStreamable,
 		buildRoot:             p.buildRoot,
 		options:               options,
-	}
+	}, nil
 }
 
 type PodmanOptions struct {
