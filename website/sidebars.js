@@ -2,9 +2,7 @@ module.exports = {
   someSidebar: {
     "Getting Started": ["introduction", "cloud", "on-prem", "contributing"],
     Guides: ["guides", "guide-auth", "guide-metadata"],
-    "Cache": [
-      "cache-cmek.md",
-    ],
+    Cache: ["cache-encryption-keys"],
     "Remote Build Execution": [
       "remote-build-execution",
       "rbe-setup",
