@@ -5,7 +5,10 @@ import format from "../format/format";
 import { getChartColor } from "../util/color";
 
 interface Props {
-  durationMap: Map<string, number>;
+  // The total duration by event names
+  durationByNameMap: Map<string, number>;
+  // The total duration by event categories
+  durationByCategoryMap: Map<string, number>;
 }
 
 interface Datum {
@@ -15,26 +18,27 @@ interface Datum {
 
 export default class InvocationBreakdownCardComponent extends React.Component<Props> {
   render() {
-    let launching = this.props.durationMap.get("Launch Blaze");
-    let total = this.props.durationMap.get("buildTargets");
-    let targets = this.props.durationMap.get("evaluateTargetPatterns");
-    let analysis = this.props.durationMap.get("runAnalysisPhase");
+    let launching = this.props.durationByNameMap.get("Launch Blaze");
+    let total = this.props.durationByNameMap.get("buildTargets");
+    let targets = this.props.durationByNameMap.get("evaluateTargetPatterns");
+    let analysis = this.props.durationByNameMap.get("runAnalysisPhase");
     let building = total - analysis - targets;
 
-    let runningProcess = this.props.durationMap.get("subprocess.run");
-    let compilingSwift = this.props.durationMap.get("SwiftCompile");
-    let compilingObjc = this.props.durationMap.get("ObjcCompile");
-    let executingRemotely = this.props.durationMap.get("execute remotely");
-    let sandboxSetup = this.props.durationMap.get("sandbox.createFileSystem");
-    let sandboxTeardown = this.props.durationMap.get("sandbox.delete");
-    let inputMapping = this.props.durationMap.get("AbstractSpawnStrategy.getInputMapping");
-    let merkleTree = this.props.durationMap.get("MerkleTree.build(ActionInput)");
-    let downloadOuputs = this.props.durationMap.get("download outputs");
-    let uploadMissing = this.props.durationMap.get("upload missing inputs");
-    let uploadOutputs = this.props.durationMap.get("upload outputs");
-    let checkCache = this.props.durationMap.get("check cache hit");
-    let detectModifiedOutput = this.props.durationMap.get("detectModifiedOutputFiles");
-    let stableStatus = this.props.durationMap.get("BazelWorkspaceStatusAction stable-status.txt");
+    let runningProcess = this.props.durationByNameMap.get("subprocess.run");
+    let localActionExecution = this.props.durationByCategoryMap.get("local action execution");
+    let localExecution = runningProcess + localActionExecution;
+
+    let executingRemotely = this.props.durationByNameMap.get("execute remotely");
+    let sandboxSetup = this.props.durationByNameMap.get("sandbox.createFileSystem");
+    let sandboxTeardown = this.props.durationByNameMap.get("sandbox.delete");
+    let inputMapping = this.props.durationByNameMap.get("AbstractSpawnStrategy.getInputMapping");
+    let merkleTree = this.props.durationByNameMap.get("MerkleTree.build(ActionInput)");
+    let downloadOuputs = this.props.durationByCategoryMap.get("remote output download");
+    let uploadMissing = this.props.durationByNameMap.get("upload missing inputs");
+    let uploadOutputs = this.props.durationByNameMap.get("upload outputs");
+    let checkCache = this.props.durationByNameMap.get("check cache hit");
+    let detectModifiedOutput = this.props.durationByNameMap.get("detectModifiedOutputFiles");
+    let stableStatus = this.props.durationByNameMap.get("BazelWorkspaceStatusAction stable-status.txt");
 
     let phaseData = [
       { value: launching, name: "Launch" },
@@ -46,7 +50,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
     phaseData = phaseData.sort((a, b) => b.value - a.value).filter((entry) => entry.value > 0);
 
     let executionData = [
-      { value: runningProcess, name: "Executing locally" },
+      { value: localExecution, name: "Executing locally" },
       { value: inputMapping, name: "Input mapping" },
       { value: merkleTree, name: "Merkle tree building" },
       { value: sandboxSetup, name: "Local sandbox creation" },
@@ -58,8 +62,6 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
       { value: uploadOutputs, name: "Uploading outputs" },
       { value: detectModifiedOutput, name: "Detect modified output files" },
       { value: stableStatus, name: "Generating stable-status.txt" },
-      { value: compilingSwift, name: "Compiling Swift" },
-      { value: compilingObjc, name: "Compiling Objective-C" },
     ];
 
     executionData = executionData.sort((a, b) => (b?.value || 0) - (a?.value || 0)).filter((entry) => entry.value > 0);

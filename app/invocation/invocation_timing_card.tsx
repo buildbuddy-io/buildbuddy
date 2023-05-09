@@ -22,7 +22,8 @@ interface State {
   threadNumPages: number;
   threadToNumEventPagesMap: Map<number, number>;
   threadMap: Map<number, Thread>;
-  durationMap: Map<string, number>;
+  durationByNameMap: Map<string, number>;
+  durationByCategoryMap: Map<string, number>;
   sortBy: string;
   groupBy: string;
   threadPageSize: number;
@@ -52,7 +53,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadNumPages: 1,
     threadToNumEventPagesMap: new Map<number, number>(),
     threadMap: new Map<number, Thread>(),
-    durationMap: new Map<string, number>(),
+    durationByNameMap: new Map<string, number>(),
+    durationByCategoryMap: new Map<string, number>(),
     sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
@@ -135,11 +137,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       };
 
       if (event.dur) {
-        if (this.state.durationMap.get(event.name)) {
-          this.state.durationMap.set(event.name, this.state.durationMap.get(event.name) + event.dur);
-        } else {
-          this.state.durationMap.set(event.name, event.dur);
-        }
+        this.state.durationByNameMap.set(event.name, (this.state.durationByNameMap.get(event.name) || 0) + event.dur);
+        this.state.durationByCategoryMap.set(
+          event.cat,
+          (this.state.durationByCategoryMap.get(event.cat) || 0) + event.dur
+        );
       }
 
       if (event.ph == "X") {
@@ -263,7 +265,10 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return (
       <>
         <FlameChart profile={this.state.profile} />
-        <InvocationBreakdownCardComponent durationMap={this.state.durationMap} />
+        <InvocationBreakdownCardComponent
+          durationByNameMap={this.state.durationByNameMap}
+          durationByCategoryMap={this.state.durationByCategoryMap}
+        />
 
         {this.renderTimingSuggestionCard()}
 
