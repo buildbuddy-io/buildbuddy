@@ -839,7 +839,15 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                     <div className="history">
                       <div className="container nopadding-dense">
                         {this.state.eventData.invocations.map((invocation) => (
-                          <a href={`/invocation/${invocation.invocationId}`} onClick={(e) => e.preventDefault()}>
+                          <a
+                            href={`/invocation/${invocation.invocationId}`}
+                            onClick={(e) => {
+                              // TODO(siggisim): Switch this to using the <Link> component
+                              if (e.metaKey || e.ctrlKey) {
+                                return;
+                              }
+                              e.preventDefault();
+                            }}>
                             <HistoryInvocationCardComponent invocation={invocation} />
                           </a>
                         ))}

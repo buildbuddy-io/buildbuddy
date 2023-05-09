@@ -26,7 +26,7 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
           onClick(e);
           if (e.defaultPrevented) return;
         }
-        if (e.metaKey) {
+        if (e.metaKey || e.ctrlKey) {
           return;
         }
         e.preventDefault();

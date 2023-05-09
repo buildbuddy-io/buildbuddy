@@ -222,6 +222,10 @@ function InvocationIdTag({ prefix, id }: { prefix: string; id: string }) {
       <a
         href={href}
         onClick={(e: React.MouseEvent) => {
+          // TODO(siggisim): Switch this to using the <Link> component
+          if (e.metaKey || e.ctrlKey) {
+            return;
+          }
           e.preventDefault();
           router.navigateTo(href);
         }}>

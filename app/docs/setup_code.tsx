@@ -202,6 +202,10 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   }
 
   onClickLink(href: string, e: React.MouseEvent<HTMLAnchorElement>) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateTo(href);
   }

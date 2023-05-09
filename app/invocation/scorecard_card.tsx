@@ -29,6 +29,10 @@ export default class ScorecardCardComponent extends React.Component<Props, State
   }
 
   onClickAction(e: React.MouseEvent) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     const url = (e.target as HTMLAnchorElement).getAttribute("href");
     router.navigateTo(url);

@@ -20,6 +20,10 @@ enum FetchType {
 
 function linkHandler(href: string) {
   return (e: React.MouseEvent) => {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateTo(href);
   };

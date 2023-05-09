@@ -20,6 +20,10 @@ export type ChildInvocationCardProps = {
 
 export default class ChildInvocationCard extends React.Component<ChildInvocationCardProps> {
   private handleCommandClicked(invocationId: string, e: React.MouseEvent) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateTo(`/invocation/${invocationId}`);
   }
@@ -34,7 +38,8 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
           </div>
           <div className="details">
             {this.props.results.map((result) => (
-              <div
+              <a
+                href={`/invocation/${result.invocation.invocationId}`}
                 className="list-grid"
                 onClick={
                   !this.props.linksDisabled && this.handleCommandClicked.bind(this, result.invocation.invocationId)
@@ -43,7 +48,7 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
                   <span className="target-status-icon">{this.props.icon}</span> {result.invocation.bazelCommand}
                 </div>
                 <div>{typeof result.durationMillis === "number" && format.durationMillis(result.durationMillis)}</div>
-              </div>
+              </a>
             ))}
           </div>
         </div>

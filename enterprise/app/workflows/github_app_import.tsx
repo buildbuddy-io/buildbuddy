@@ -150,6 +150,10 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
   }
 
   private onClickWorkflowBreadcrumb(e: React.MouseEvent) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateToWorkflows();
   }
