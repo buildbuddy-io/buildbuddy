@@ -290,7 +290,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
                 onChange={this.onAWSARNChange.bind(this)}
                 value={this.state.awsKeyARN}
                 placeholder="e.g. arn:aws:kms:us-east-1:123456789:key/123456"
-                className="aws-arn"
+                className="aws-key-arn"
               />
             </div>
           </>
