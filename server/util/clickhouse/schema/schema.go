@@ -12,9 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
-
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 var (
@@ -380,32 +377,6 @@ func RunMigrations(gdb *gorm.DB) error {
 		return status.InternalErrorf("failed to add projection %q: %s", projectionCommits, err)
 	}
 	return nil
-}
-
-func ToProtoFromDB(ti *Invocation) *inpb.Invocation {
-	out := &inpb.Invocation{
-		UpdatedAtUsec:             ti.UpdatedAtUsec,
-		CreatedAtUsec:             ti.CreatedAtUsec,
-		InvocationId:              ti.InvocationUUID, // XXX: Fix.
-		Role:                      ti.Role,
-		User:                      ti.User,
-		Host:                      ti.Host,
-		CommitSha:                 ti.CommitSHA,
-		BranchName:                ti.BranchName,
-		Command:                   ti.Command,
-		BazelExitCode:             ti.BazelExitCode,
-		Pattern:                   strings.Split(ti.Pattern, ", "),
-		Attempt:                   ti.Attempt,
-		ActionCount:               ti.ActionCount,
-		InvocationStatus:          inspb.InvocationStatus(ti.InvocationStatus),
-		RepoUrl:                   ti.RepoURL,
-		DurationUsec:              ti.DurationUsec,
-		Success:                   ti.Success,
-		UploadLocalResultsEnabled: ti.UploadLocalResultsEnabled,
-		RemoteExecutionEnabled:    ti.RemoteExecutionEnabled,
-		Tags:                      invocation_format.ConvertOlapTagsToProto(ti.Tags),
-	}
-	return out
 }
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
