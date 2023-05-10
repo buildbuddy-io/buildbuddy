@@ -1753,6 +1753,63 @@ var (
 	}, []string{
 		APIKeyLookupStatus,
 	})
+
+	EncryptionKeyRefreshCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "key_refresh_count",
+		Help:      "Total number of encryption key refresh attempts.",
+	})
+
+	EncryptionKeyRefreshFailureCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "key_refresh_failure_count",
+		Help:      "Total number of unsuccessful encryption key refresh attempts.",
+	})
+
+	EncryptionEncryptedBlockCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "encrypted_block_count",
+		Help:      "Total number of blocks encrypted.",
+	})
+
+	EncryptionEncryptedBlobCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "encrypted_blob_count",
+		Help:      "Total number of blobs encrypted.",
+	})
+
+	EncryptionDecryptedBlockCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "decrypted_block_count",
+		Help:      "Total number of blocks decrypted.",
+	})
+
+	EncryptionDecryptedBlobCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "decrypted_blob_count",
+		Help:      "Total number of blobs decrypted.",
+	})
+
+	EncryptionDecryptionErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "decryption_error_count",
+		Help:      "Total number of decryption errors.",
+	})
+
+	EncryptionKeyLastEncryptedAgeUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "key_last_encryption_age_usec",
+		Buckets:   durationUsecBuckets(1*time.Hour, 1*time.Hour*24*7, 4),
+		Help:      "Age of encrypted keys (i.e. how long it has been since the keys were re-encrypted).",
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

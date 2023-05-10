@@ -17,6 +17,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -301,32 +302,41 @@ type loadedKey struct {
 	metadata   *rfpb.EncryptionMetadata
 }
 
+func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cacheError bool) (*loadedKey, error) {
+	var lastErr error
+	opts := retry.DefaultOptions()
+	opts.Clock = c.clock
+	retrier := retry.New(ctx, opts)
+	for retrier.Next() {
+		key, md, err := c.refreshKeySingleAttempt(ctx, ck)
+		// TODO(vadim): figure out if there are other KMS errors we can treat as immediate failures
+		if err == nil || status.IsNotFoundError(err) {
+			return &loadedKey{key, md}, err
+		}
+		lastErr = err
+	}
+	if cacheError {
+		c.cacheAdd(ck, &cacheEntry{
+			err:          lastErr,
+			expiresAfter: c.clock.Now().Add(keyErrCacheTime),
+		})
+	}
+	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", lastErr)
+}
+
 func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool) (*loadedKey, error) {
 	v, err, _ := c.sf.Do(ck.String(), func() (interface{}, error) {
-		var lastErr error
-		opts := retry.DefaultOptions()
-		opts.Clock = c.clock
-		retrier := retry.New(ctx, opts)
-		for retrier.Next() {
-			key, md, err := c.refreshKeySingleAttempt(ctx, ck)
-			// TODO(vadim): figure out if there are other KMS errors we can treat as immediate failures
-			if err == nil || status.IsNotFoundError(err) {
-				return &loadedKey{key, md}, err
-			}
-			lastErr = err
+		metrics.EncryptionKeyRefreshCount.Inc()
+		k, err := c.refreshKeyWithRetries(ctx, ck, cacheError)
+		if err != nil {
+			metrics.EncryptionKeyRefreshFailureCount.Inc()
 		}
-		if cacheError {
-			c.cacheAdd(ck, &cacheEntry{
-				err:          lastErr,
-				expiresAfter: c.clock.Now().Add(keyErrCacheTime),
-			})
-		}
-		return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", lastErr)
+		return k, err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return v.(*loadedKey), err
+	return v.(*loadedKey), nil
 }
 
 func (c *keyCache) loadKey(ctx context.Context, em *rfpb.EncryptionMetadata) (*loadedKey, error) {
@@ -467,6 +477,7 @@ func (e *Encryptor) flushBlock(lastChunk bool) error {
 		return err
 	}
 	e.bufIdx = 0
+	metrics.EncryptionEncryptedBlockCount.Inc()
 	return nil
 }
 
@@ -508,6 +519,7 @@ func (e *Encryptor) Commit() error {
 	if err := e.flushBlock(true /*=lastChunk*/); err != nil {
 		return err
 	}
+	metrics.EncryptionEncryptedBlobCount.Inc()
 	return e.w.Commit()
 }
 
@@ -558,6 +570,9 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 			if err == io.EOF && !d.lastChunkValidated {
 				return 0, status.DataLossError("did not find last chunk, file possibly truncated")
 			}
+			if err == io.EOF {
+				metrics.EncryptionDecryptedBlobCount.Inc()
+			}
 			return 0, err
 		}
 
@@ -572,8 +587,11 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 
 		pt, err := d.ciph.Open(ciphertext[:0], nonce, ciphertext, chunkAuth)
 		if err != nil {
+			metrics.EncryptionDecryptionErrorCount.Inc()
 			return 0, err
 		}
+
+		metrics.EncryptionDecryptedBlockCount.Inc()
 
 		// We decrypted in place so the plaintext will start where the
 		// ciphertext was, past the nonce.
@@ -714,6 +732,8 @@ func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWit
 		return err
 	}
 
+	ekv.LastEncryptedAtUsec = now.UnixMicro()
+
 	log.Infof("Successfully re-encrypted key %q version %d", ekv.EncryptionKeyID, ekv.Version)
 
 	return nil
@@ -802,6 +822,7 @@ func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
 			// as a precaution.
 			_ = lim.Wait(c.env.GetServerContext())
 			reencryptKey(ekv)
+			metrics.EncryptionKeyLastEncryptedAgeUsec.Observe(float64(time.Since(time.UnixMicro(ekv.LastEncryptedAtUsec)).Microseconds()))
 		}
 	}
 	return nil
