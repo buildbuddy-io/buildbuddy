@@ -100,9 +100,11 @@ func runSociStore(ctx context.Context) {
 		cmd.Stdout = logWriter
 		cmd.Run()
 
-		log.Infof("Detected soci store crash, restating")
+		log.Infof("Detected soci store crash, restarting")
 		// If the store crashed, the path must be unmounted to recover.
 		syscall.Unmount(sociStorePath, 0)
+
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -136,7 +138,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 					if _, err := os.Stat(sociStorePath); err == nil {
 						return nil
 					} else {
-						return fmt.Errorf("soci-store died (stat returned: %s", err)
+						return fmt.Errorf("soci-store died (stat returned: %s)", err)
 					}
 				},
 			),
@@ -161,7 +163,7 @@ func (p *Provider) NewContainer(ctx context.Context, image string, options *Podm
 	}
 	if imageIsStreamable {
 		if err := disk.WaitUntilExists(context.Background(), sociStorePath, disk.WaitOpts{}); err != nil {
-			return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
+			return nil, status.UnavailableErrorf("soci-store not available: %s", err)
 		}
 	}
 	return &podmanCommandContainer{
