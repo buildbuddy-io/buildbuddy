@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	olapInvocationSearchEnabled = flag.Bool("app.olap_invocation_search_enabled", false, "If true, InvocationSearchService will query clickhouse for some queries.")
+	olapInvocationSearchEnabled = flag.Bool("app.olap_invocation_search_enabled", true, "If true, InvocationSearchService will query clickhouse for some queries.")
 )
 
 type InvocationSearchService struct {
@@ -58,13 +58,13 @@ func defaultSortParams() *inpb.InvocationSort {
 }
 
 // Clickhouse UUIDs are formatted without any dashes :(
-func fixUuid(uuid string) string {
+func fixUUID(uuid string) string {
 	return uuid[0:8] + "-" + uuid[8:12] + "-" + uuid[12:16] + "-" + uuid[16:20] + "-" + uuid[20:32]
 }
 
 func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, invocationIds []string, sort *inpb.InvocationSort) ([]*inpb.Invocation, error) {
 	q := query_builder.NewQuery(`SELECT * FROM "Invocations" as i`)
-	q.AddWhereClause("i.invocation_id IN ? ", invocationIds)
+	q.AddWhereClause("i.invocation_id IN ?", invocationIds)
 	addOrderBy(sort, q)
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
@@ -113,14 +113,15 @@ func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.
 		if err := s.oh.DB(ctx).ScanRows(rows, &ti); err != nil {
 			return nil, 0, err
 		}
-		tis = append(tis, fixUuid(ti.InvocationUUID))
+		tis = append(tis, fixUUID(ti.InvocationUUID))
 	}
 
 	invocations, err := s.hydrateInvocationsFromDB(ctx, tis, req.GetSort())
 	// It's possible but unlikely that some of the invocations we find in
 	// Clickhouse can't be found in the main database.  In this case, we
 	// silently drop these invocations but still use the number of
-	// invocations returned by Clickhouse as the offset for future queries.
+	// invocations returned by Clickhouse as the offset for future queries
+	// so that the pagination offset picks up from the right place.
 	return invocations, int64(len(tis)), err
 }
 
@@ -381,10 +382,10 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	} else {
 		invocations, count, err = s.rawQueryInvocations(ctx, req, offset, limit)
 	}
-
 	if err != nil {
 		return nil, err
 	}
+
 	rsp := &inpb.SearchInvocationResponse{Invocation: invocations}
 	if count == limit {
 		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(offset+limit, 10)
