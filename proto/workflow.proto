@@ -179,9 +179,8 @@ message ExecuteWorkflowResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
-  // TODO(Maggie): Deprecate this field and clean up references
-  // The invocation ID of the workflow execution.
-  string invocation_id = 2;
+  // DEPRECATED: Use the action_statuses field.
+  string invocation_id = 2 [deprecated = true];
 
   message ActionStatus {
     // Corresponds to an action in buildbuddy.yaml, or an action name in the

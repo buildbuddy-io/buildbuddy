@@ -494,17 +494,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 	wg.Wait()
 
-	// TODO(Maggie): Deprecate the InvocationID field and clean up
-	var invocationID string
-	if req.GetActionName() != "" {
-		if len(actionStatuses) != 1 || actionStatuses[0].ActionName != req.GetActionName() {
-			return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
-		}
-		invocationID = actionStatuses[0].InvocationId
-	}
-
 	return &wfpb.ExecuteWorkflowResponse{
-		InvocationId:   invocationID,
 		ActionStatuses: actionStatuses,
 	}, nil
 }
