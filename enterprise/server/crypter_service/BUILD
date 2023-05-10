@@ -48,7 +48,6 @@ go_test(
         "//server/util/ioutil",
         "//server/util/role",
         "//server/util/status",
-        "//server/util/testing/flags",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
