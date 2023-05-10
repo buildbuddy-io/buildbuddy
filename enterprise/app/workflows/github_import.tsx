@@ -65,11 +65,19 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
   }
 
   private onClickWorkflowBreadcrumb(e: React.MouseEvent) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateToWorkflows();
   }
 
   private onClickAddOther(e: React.MouseEvent) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateTo("/workflows/new/custom");
   }
