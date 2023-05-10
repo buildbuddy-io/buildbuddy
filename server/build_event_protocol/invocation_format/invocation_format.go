@@ -80,6 +80,17 @@ func JoinTags(tags []*invocation.Invocation_Tag) (string, error) {
 // This *does not* trim whitespace and therefore must not be used for
 // general-purpose conversion--it's taking a shortcut because we trust that the
 // DB already has properly-trimmed tags.
+func ConvertOlapTagsToProto(tags []string) []*invocation.Invocation_Tag {
+	out := make([]*invocation.Invocation_Tag, len(tags))
+	for i, t := range tags {
+		out[i] = &invocation.Invocation_Tag{Name: t}
+	}
+	return out
+}
+
+// This *does not* trim whitespace and therefore must not be used for
+// general-purpose conversion--it's taking a shortcut because we trust that the
+// DB already has properly-trimmed tags.
 func ConvertDbTagsToOlap(tags string) []string {
 	if len(tags) == 0 {
 		return []string{}

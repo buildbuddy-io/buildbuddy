@@ -6,6 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//server/build_event_protocol/invocation_format",
         "//server/tables",
         "//server/util/log",
