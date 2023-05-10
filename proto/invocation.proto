@@ -267,9 +267,6 @@ message InvocationQuery {
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 15;
-
-  // The tag to search for.
-  string tag = 16;
 }
 
 message InvocationSort {
