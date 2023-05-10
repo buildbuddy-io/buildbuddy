@@ -57,6 +57,7 @@ func defaultSortParams() *inpb.InvocationSort {
 	}
 }
 
+// Clickhouse UUIDs are formatted without any dashes :(
 func fixUuid(uuid string) string {
 	return uuid[0:8] + "-" + uuid[8:12] + "-" + uuid[12:16] + "-" + uuid[16:20] + "-" + uuid[20:32]
 }
@@ -339,7 +340,6 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	}
 
 	addOrderBy(req.Sort, q)
-
 	q.SetLimit(limit)
 
 	q.SetOffset(offset)
