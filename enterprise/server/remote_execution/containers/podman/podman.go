@@ -94,7 +94,7 @@ func runSociStore(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
 		sociStoreDir := sociStorePath
-		cmd := exec.CommandContext(ctx, "sudo", "/home/iain/soci-snapshotter-grpc/out/soci-store", sociStoreDir)
+		cmd := exec.CommandContext(ctx, "soci-store", sociStoreDir)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
