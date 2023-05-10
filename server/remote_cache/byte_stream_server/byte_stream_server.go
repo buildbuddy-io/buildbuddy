@@ -381,6 +381,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 		bytesUploadedFromClient += len(req.Data)
 		if streamState == nil { // First message
+			log.Infof("START WRITE %q", req.ResourceName)
 			if err := checkInitialPreconditions(req); err != nil {
 				return err
 			}
@@ -427,6 +428,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err := streamState.Commit(); err != nil {
 				return err
 			}
+			log.Infof("DONE WRITE %q", req.ResourceName)
 			return stream.SendAndClose(&bspb.WriteResponse{
 				CommittedSize: streamState.offset,
 			})

@@ -342,6 +342,7 @@ func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedO
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	log.Infof("REDIS NEW WRITER FOR %s", r)
 	if !c.eligibleForCache(r.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for redis", r.GetDigest())
 	}
@@ -353,7 +354,9 @@ func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.Co
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
 	wc.CommitFn = func(int64) error {
+		log.Infof("REDIS SET %d BYTES FOR %s", buffer.Len(), r)
 		err := c.rdbSet(ctx, k, buffer.Bytes())
+		log.Infof("REDIS DONE BYTES FOR %s", r)
 		timer.ObserveWrite(int64(buffer.Len()), err)
 		// Locking and key prefixing are handled in Set.
 		return err
