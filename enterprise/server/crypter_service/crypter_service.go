@@ -122,6 +122,9 @@ func (c *keyCache) checkCacheEntry(ck cacheKey, ce *cacheEntry) {
 	// If we reached the expiration and the key was not refreshed, then
 	// remove it from the cache.
 	if c.clock.Now().After(ce.expiresAfter) {
+		for i := range ce.derivedKey {
+			ce.derivedKey[i] = 0
+		}
 		c.data.Delete(ck)
 		return
 	}
