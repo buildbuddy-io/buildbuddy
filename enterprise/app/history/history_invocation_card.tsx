@@ -57,7 +57,11 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
     window.clearInterval(this.interval);
   }
 
-  handleInvocationClicked() {
+  handleInvocationClicked(e: any) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     router.navigateToInvocation(this.props.invocation.invocationId);
   }
 
@@ -185,7 +189,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
     return (
       <div
         key={this.props.invocation.invocationId}
-        onClick={this.handleInvocationClicked.bind(this, this.props.invocation)}
+        onClick={this.handleInvocationClicked.bind(this, event)}
         onMouseOver={this.props.onMouseOver}
         onMouseOut={this.props.onMouseOut}
         className={`clickable card history-invocation-card
