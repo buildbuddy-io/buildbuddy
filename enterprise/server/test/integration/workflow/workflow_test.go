@@ -93,7 +93,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 			env.SetGitProviders([]interfaces.GitProvider{gp})
 			workflowService = service.NewWorkflowService(env)
 			env.SetWorkflowService(workflowService)
-			iss := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
+			iss := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
 			env.SetInvocationSearchService(iss)
 		},
 	})

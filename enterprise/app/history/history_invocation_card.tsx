@@ -273,6 +273,8 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                 {this.props.invocation.branchName}
               </div>
             )}
+            {this.props.invocation.tags &&
+              this.props.invocation.tags.map((tag) => <span className="invocation-tag">{tag.name}</span>)}
             {!this.props.hover && this.props.invocation.commitSha && (
               <div
                 className="detail clickable"

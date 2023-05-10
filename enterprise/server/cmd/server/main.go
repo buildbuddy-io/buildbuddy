@@ -135,7 +135,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	stat := invocation_stat_service.NewInvocationStatService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
 	env.SetInvocationStatService(stat)
 
-	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
+	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
 	env.SetInvocationSearchService(search)
 
 	if err := usage_service.Register(env); err != nil {
