@@ -289,6 +289,83 @@ func uploadFiles(uploader *cachetools.BatchCASUploader, fc interfaces.FileCache,
 	return nil
 }
 
+// handleSymlink adds the symlink to the directory and actionResult proto so that
+// they could be recreated on the Bazel client side if needed.
+func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, directory *repb.Directory, fqfn string) error {
+	target, err := os.Readlink(fqfn)
+	if err != nil {
+		return err
+	}
+	symlink := &repb.OutputSymlink{
+		Path:   trimPathPrefix(fqfn, rootDir),
+		Target: target,
+	}
+	addSymlinkToDir := func() {
+		directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
+			Name:   symlink.Path,
+			Target: symlink.Target,
+		})
+	}
+
+	// REAPI specification:
+	//   `output_symlinks` will only be populated if the command `output_paths` field
+	//   was used, and not the pre v2.1 `output_files` or `output_directories` fields.
+	//
+	// Check whether the current client is using REAPI version before or after v2.1.
+	if len(cmd.OutputPaths) > 0 && len(cmd.OutputFiles) == 0 && len(cmd.OutputDirectories) == 0 {
+		if !dirHelper.IsOutputPath(fqfn) {
+			return nil
+		}
+		// REAPI >= v2.1
+		addSymlinkToDir()
+		actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
+
+		// REAPI specification:
+		//   Servers that wish to be compatible with v2.0 API should still
+		//   populate `output_file_symlinks` and `output_directory_symlinks`
+		//   in addition to `output_symlinks`.
+		//
+		// TODO(sluongng): Since v6.0.0, all the output directories are included in
+		// Action.input_root_digest. So we should be able to save a `stat()` call by
+		// checking wherether the symlink target was included as a directory inside
+		// input root or not.
+		//
+		// Reference:
+		//   https://github.com/bazelbuild/bazel/commit/4310aeb36c134e5fc61ed5cdfdf683f3e95f19b7
+		symlinkInfo, err := os.Stat(fqfn)
+		if err != nil {
+			// When encounter a dangling symlink, skip setting it to legacy fields.
+			// TODO(sluongng): do we care to log this?
+			log.Warningf("Could not find symlink %q's target: %s, skip legacy fields", fqfn, err)
+			return nil
+		}
+		if symlinkInfo.IsDir() {
+			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
+			return nil
+		}
+
+		actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
+		return nil
+	}
+
+	// REAPI < v2.1
+	for _, expectedFile := range cmd.OutputFiles {
+		if symlink.Path == expectedFile {
+			addSymlinkToDir()
+			actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
+			break
+		}
+	}
+	for _, expectedDir := range cmd.OutputDirectories {
+		if symlink.Path == expectedDir {
+			addSymlinkToDir()
+			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
+			break
+		}
+	}
+	return nil
+}
+
 func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
@@ -357,41 +434,9 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
 				directory.Files = append(directory.Files, fileNode)
 			} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
-				target, err := os.Readlink(fqfn)
-				if err != nil {
+				if err := handleSymlink(dirHelper, rootDir, cmd, actionResult, directory, fqfn); err != nil {
 					return nil, err
 				}
-
-				// OutputFileSymlinks and OutputDirectorySymlinks are deprecated in REAPI v2.1,
-				// but Bazel still uses them as of v6.2.0.
-				//
-				// TODO(sluongng): Set OutputSymlinks when Bazel has support for it.
-				// References:
-				// - https://github.com/bazelbuild/remote-apis/blob/35aee1c4a4250d3df846f7ba3e4a4e66cb014ecd/build/bazel/remote/execution/v2/remote_execution.proto#L1071
-				// - https://github.com/bazelbuild/bazel/pull/18198
-				// - https://github.com/bazelbuild/bazel/pull/18202
-				symlinkPath := trimPathPrefix(fqfn, rootDir)
-				symlink := &repb.OutputSymlink{
-					Path:   symlinkPath,
-					Target: target,
-				}
-				for _, expectedFile := range cmd.OutputFiles {
-					if symlinkPath == expectedFile {
-						actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
-						break
-					}
-				}
-				for _, expectedDir := range cmd.OutputDirectories {
-					if symlinkPath == expectedDir {
-						actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
-						break
-					}
-				}
-
-				directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
-					Name:   trimPathPrefix(fqfn, rootDir),
-					Target: target,
-				})
 			}
 		}
 
