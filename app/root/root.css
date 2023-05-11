@@ -438,8 +438,8 @@ svg.icon.orange {
 }
 
 .card.selected-keyboard-shortcuts {
-  box-shadow: 4px 4px 4px #ccc;
-  border-left: 6px solid #039be5;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+  border-left: 6px solid #ffd54f;
 }
 
 .card.card-success {
