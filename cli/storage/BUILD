@@ -4,6 +4,7 @@ go_library(
     name = "storage",
     srcs = ["storage.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/storage",
-    visibility = ["//visibility:public"],
     deps = ["//cli/workspace"],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

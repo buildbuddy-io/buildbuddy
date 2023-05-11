@@ -4,7 +4,6 @@ go_library(
     name = "login",
     srcs = ["login.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/login",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/log",
@@ -12,3 +11,5 @@ go_library(
         "//cli/storage",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

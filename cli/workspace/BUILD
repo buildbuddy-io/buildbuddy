@@ -4,6 +4,7 @@ go_library(
     name = "workspace",
     srcs = ["workspace.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/workspace",
-    visibility = ["//visibility:public"],
     deps = ["//server/util/disk"],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

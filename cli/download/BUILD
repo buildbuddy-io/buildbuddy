@@ -4,7 +4,6 @@ go_library(
     name = "download",
     srcs = ["download.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/download",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/log",
@@ -21,3 +20,5 @@ go_library(
         "@org_golang_google_protobuf//proto",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

@@ -36,7 +36,6 @@ esbuild(
         ":fastbuild": False,
         "//conditions:default": True,
     }),
-    visibility = ["//visibility:public"],
     deps = [
         ":app",
     ],
@@ -74,7 +73,6 @@ genrule(
         done;
         cat out > $@;
     """,
-    visibility = ["//visibility:public"],
 )
 
 sha(
@@ -83,7 +81,6 @@ sha(
         ":style.css",
         "//enterprise/app:app_bundle",
     ],
-    visibility = ["//visibility:public"],
 )
 
 ts_library(

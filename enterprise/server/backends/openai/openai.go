@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -49,7 +49,7 @@ func GetCompletions(data *CompletionRequest) (*CompletionResponse, error) {
 	}
 
 	if postResp.StatusCode != http.StatusOK {
-		log.Debugf("%+v %+v", postResp.StatusCode, string(body))
+		log.Debugf("error getting completions from openai: %+v body: %+v", postResp.StatusCode, string(body))
 		return nil, status.UnavailableError("Unable to contact suggestion provider.") // todo
 	}
 

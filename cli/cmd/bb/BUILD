@@ -110,3 +110,5 @@ go_binary(
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])
