@@ -187,7 +187,7 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
       search.get(HOST_PARAM_NAME) ||
       search.get(COMMAND_PARAM_NAME) ||
       search.get(PATTERN_PARAM_NAME) ||
-      search.get(TAG_PARAM_NAME) ||
+      (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
       search.get(MINIMUM_DURATION_PARAM_NAME) ||
       search.get(MAXIMUM_DURATION_PARAM_NAME)
   );

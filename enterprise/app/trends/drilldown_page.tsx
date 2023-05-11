@@ -295,7 +295,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
     });
-
     this.roundDateRangesAndAddZoomFiltersToQuery(drilldownRequest.query);
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
