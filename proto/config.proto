@@ -95,4 +95,7 @@ message FrontendConfig {
 
   // Whether to show encryption settings.
   bool customer_managed_encryption_keys_enabled = 31;
+
+  // True if multiple suggestions providers are configured.
+  bool multiple_suggestion_providers = 32;
 }
