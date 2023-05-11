@@ -48,13 +48,14 @@ var (
 	// then look at the output of
 	//     find /sys/fs/cgroup | grep libpod-$(podman container inspect sleepy | jq -r '.[0].Id')
 
-	memUsagePathTemplate  = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
-	cpuUsagePathTemplate  = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
-	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "Whether container image streaming is enabled by default")
+	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
+	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
 
-	// TODO(iain): delete this flag.
-	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of images that can be streamed by podman. Note that if executor.podman.enable_image_streaming is set then all images are streamed and the value of this flag is ignored.")
-	pullTimeout      = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
+	// TODO(iain): delete the streamableImages flag
+	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all podman images are streamed using soci artifacts generated and stored in the apps.")
+	streamableImages      = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
+
+	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -100,11 +101,11 @@ type pullStatus struct {
 }
 
 type Provider struct {
-	env                   environment.Env
-	imageCacheAuth        *container.ImageCacheAuthenticator
-	buildRoot             string
-	imageStreamingEnabled bool
-	streamableImages      []string
+	env                      environment.Env
+	imageCacheAuth           *container.ImageCacheAuthenticator
+	buildRoot                string
+	streamableImages         []string
+	pullSociArtifactsFromApp bool
 }
 
 func runSociStore(ctx context.Context) {
@@ -126,7 +127,7 @@ func runSociStore(ctx context.Context) {
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if *imageStreamingEnabled || len(*streamableImages) > 0 {
-		go runSociStore(env.GetServerContext())
+		//go runSociStore(env.GetServerContext())
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
@@ -161,11 +162,14 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		)
 	}
 	return &Provider{
-		env:                   env,
-		imageCacheAuth:        imageCacheAuthenticator,
-		imageStreamingEnabled: *imageStreamingEnabled,
-		streamableImages:      *streamableImages,
-		buildRoot:             buildRoot,
+		env:              env,
+		imageCacheAuth:   imageCacheAuthenticator,
+		streamableImages: *streamableImages,
+
+		// When imageStreamingEnabled is set, generate and pull soci artifacts
+		// from the app instead of from the container registry.
+		pullSociArtifactsFromApp: *imageStreamingEnabled,
+		buildRoot:                buildRoot,
 	}, nil
 }
 
@@ -183,12 +187,13 @@ func (p *Provider) NewContainer(ctx context.Context, image string, options *Podm
 		}
 	}
 	return &podmanCommandContainer{
-		env:                   p.env,
-		imageCacheAuth:        p.imageCacheAuth,
-		image:                 image,
-		imageStreamingEnabled: *imageStreamingEnabled || imageIsStreamable,
-		buildRoot:             p.buildRoot,
-		options:               options,
+		env:                      p.env,
+		imageCacheAuth:           p.imageCacheAuth,
+		image:                    image,
+		imageStreamingEnabled:    *imageStreamingEnabled || imageIsStreamable,
+		pullSociArtifactsFromApp: p.pullSociArtifactsFromApp,
+		buildRoot:                p.buildRoot,
+		options:                  options,
 	}, nil
 }
 
@@ -216,7 +221,8 @@ type podmanCommandContainer struct {
 	buildRoot string
 	workDir   string
 
-	imageStreamingEnabled bool
+	imageStreamingEnabled    bool
+	pullSociArtifactsFromApp bool
 
 	options *PodmanOptions
 
@@ -488,8 +494,8 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	if *imageStreamingEnabled {
-		if err := c.prepareToStreamImage(ctx, creds); err != nil {
+	if *imageStreamingEnabled && c.pullSociArtifactsFromApp {
+		if err := c.getSociArtifacts(ctx, creds); err != nil {
 			return err
 		}
 	}
@@ -500,7 +506,7 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 	return nil
 }
 
-func (c *podmanCommandContainer) prepareToStreamImage(ctx context.Context, creds container.PullCredentials) error {
+func (c *podmanCommandContainer) getSociArtifacts(ctx context.Context, creds container.PullCredentials) error {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
 	if err != nil {
 		return err
