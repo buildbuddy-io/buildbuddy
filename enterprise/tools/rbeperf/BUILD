@@ -43,6 +43,7 @@ go_image(
     base = "@buildbuddy_go_image_base//image",
     binary = ":rbeperf",
     tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 # Definitions for uploading new default base docker image.
