@@ -10,13 +10,20 @@ import (
 	"os"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/stream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -24,14 +31,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
-	"github.com/google/go-containerregistry/pkg/crane"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/registry"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/empty"
-	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/stream"
 )
 
 func TestNoImage(t *testing.T) {
@@ -117,6 +116,7 @@ func TestIndexPartiallyExists(t *testing.T) {
 
 	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json")
 	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc")
+	// Don't write the second ztoc (ffc7a...) to the cache.
 	env.GetBlobstore().WriteBlob(ctx, "soci-index-dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b", []byte("7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea/1225"))
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
@@ -263,11 +263,11 @@ func writeFileContentsToCache(ctx context.Context, t *testing.T, env *testenv.Te
 	require.NoError(t, env.GetCache().Set(ctx, resourceName.ToProto(), data))
 }
 
-func setup(t *testing.T) (*testenv.TestEnv, *sociartifactstore.SociArtifactStore, containerRegistry, context.Context) {
+func setup(t *testing.T) (*testenv.TestEnv, *SociArtifactStore, containerRegistry, context.Context) {
 	env := testenv.GetTestEnv(t)
 	env.SetDefaultRedisClient(testredis.Start(t).Client())
 	reg := runContainerRegistry(t)
-	err, store := sociartifactstore.NewSociArtifactStore(env)
+	err, store := NewSociArtifactStore(env)
 	require.NoError(t, err)
 	ctx, err := prefix.AttachUserPrefixToContext(context.TODO(), env)
 	require.NoError(t, err)
