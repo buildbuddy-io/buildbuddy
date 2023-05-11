@@ -34,12 +34,18 @@ import (
 )
 
 func TestNoImage(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.SkipNow()
+	}
 	_, store, _, ctx := setup(t)
 	_, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{})
 	assert.True(t, status.IsInvalidArgumentError(err))
 }
 
 func TestIndexExists(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.SkipNow()
+	}
 	env, store, r, ctx := setup(t)
 
 	image := appendLayer(t, empty.Image, "test_data/layers/59fe65d9e601b6db7125a2259b7d64064db081ac6ed94ef24cc961f4438d1008.tar.gz")
@@ -93,6 +99,9 @@ func TestIndexExists(t *testing.T) {
 }
 
 func TestIndexPartiallyExists(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.SkipNow()
+	}
 	env, store, r, ctx := setup(t)
 
 	image := appendLayer(t, empty.Image, "test_data/layers/59fe65d9e601b6db7125a2259b7d64064db081ac6ed94ef24cc961f4438d1008.tar.gz")
@@ -146,6 +155,9 @@ func TestIndexPartiallyExists(t *testing.T) {
 }
 
 func TestIndexDoesNotExist(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.SkipNow()
+	}
 	env, store, r, ctx := setup(t)
 
 	image := appendLayer(t, empty.Image, "test_data/layers/59fe65d9e601b6db7125a2259b7d64064db081ac6ed94ef24cc961f4438d1008.tar.gz")
@@ -194,6 +206,9 @@ func TestIndexDoesNotExist(t *testing.T) {
 }
 
 func TestSmallImage(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.SkipNow()
+	}
 	env, store, r, ctx := setup(t)
 
 	// Make a small image and push it to the registry.
