@@ -296,7 +296,7 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	if tag := req.GetQuery().GetTag(); tag != "" {
 		if s.shouldQueryClickhouse(req) {
 			q.AddWhereClause("has(i.tags, ?)", tag)
-		} else if s.h.DB(ctx).Dialector.Name() == "mysql" {
+		} else if s.dbh.DB(ctx).Dialector.Name() == "mysql" {
 			q.AddWhereClause("FIND_IN_SET(?, i.tags)", tag)
 		} else {
 			q.AddWhereClause("i.tags LIKE ?", "%"+strings.ReplaceAll(tag, "%", "\\%")+"%")

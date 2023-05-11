@@ -6,6 +6,7 @@ import { X, ZoomIn } from "lucide-react";
 import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import HistoryInvocationCardComponent from "../../app/history/history_invocation_card";
@@ -24,7 +25,6 @@ import { User } from "../../../app/auth/user";
 import Select, { Option } from "../../../app/components/select/select";
 import router from "../../../app/router/router";
 import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
-import Banner from "../../../app/components/banner/banner";
 
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
@@ -288,17 +288,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
-      tag: filterParams.tag,
+      // TODO(jdhollen): Support tags on executions.
+      tag: isExecutionMetric(this.selectedMetric.metric) ? undefined : filterParams.tag,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
     });
-
-    // TODO(jdhollen): Support tags on executions.
-    if (isExecutionMetric(this.selectedMetric.metric) && drilldownRequest.query.tag) {
-      drilldownRequest.query.tag = undefined;
-    }
 
     this.roundDateRangesAndAddZoomFiltersToQuery(drilldownRequest.query);
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
@@ -426,6 +422,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     heatmapRequest.metric = this.selectedMetric.metric;
     const isExecution = isExecutionMetric(heatmapRequest.metric);
 
+    // TODO(jdhollen): Support tags on executions.
+    if (isExecution && filterParams.tag) {
+      this.setState({ unsupported: true });
+    }
+
     heatmapRequest.query = new stats.TrendQuery({
       host: filterParams.host,
       user: filterParams.user,
@@ -434,7 +435,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
-      tag: filterParams.tag,
+      // TODO(jdhollen): Support tags on executions.
+      tag: isExecution ? undefined : filterParams.tag,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -443,12 +445,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       status: filterParams.status,
     });
     this.roundDateRangesAndAddZoomFiltersToQuery(heatmapRequest.query);
-
-    // TODO(jdhollen): Support tags on executions.
-    if (isExecution && heatmapRequest.query.tag) {
-      heatmapRequest.query.tag = undefined;
-      this.setState({ unsupported: true });
-    }
 
     rpcService.service
       .getStatHeatmap(heatmapRequest)
