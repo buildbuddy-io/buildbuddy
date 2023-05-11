@@ -101,11 +101,11 @@ type pullStatus struct {
 }
 
 type Provider struct {
-	env                      environment.Env
-	imageCacheAuth           *container.ImageCacheAuthenticator
-	buildRoot                string
-	streamableImages         []string
-	pullSociArtifactsFromApp bool
+	env                   environment.Env
+	imageCacheAuth        *container.ImageCacheAuthenticator
+	buildRoot             string
+	streamableImages      []string
+	imageStreamingEnabled bool
 }
 
 func runSociStore(ctx context.Context) {
@@ -162,14 +162,11 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		)
 	}
 	return &Provider{
-		env:              env,
-		imageCacheAuth:   imageCacheAuthenticator,
-		streamableImages: *streamableImages,
-
-		// When imageStreamingEnabled is set, generate and pull soci artifacts
-		// from the app instead of from the container registry.
-		pullSociArtifactsFromApp: *imageStreamingEnabled,
-		buildRoot:                buildRoot,
+		env:                   env,
+		imageCacheAuth:        imageCacheAuthenticator,
+		streamableImages:      *streamableImages,
+		imageStreamingEnabled: *imageStreamingEnabled,
+		buildRoot:             buildRoot,
 	}, nil
 }
 
@@ -187,11 +184,15 @@ func (p *Provider) NewContainer(ctx context.Context, image string, options *Podm
 		}
 	}
 	return &podmanCommandContainer{
-		env:                      p.env,
-		imageCacheAuth:           p.imageCacheAuth,
-		image:                    image,
-		imageStreamingEnabled:    *imageStreamingEnabled || imageIsStreamable,
-		pullSociArtifactsFromApp: p.pullSociArtifactsFromApp,
+		env:                   p.env,
+		imageCacheAuth:        p.imageCacheAuth,
+		image:                 image,
+		imageStreamingEnabled: *imageStreamingEnabled || imageIsStreamable,
+
+		// When image streaming is enabled for all images, pull soci artifacts
+		// from the app instead of from the container registry, which is how
+		// per-image streaming works.
+		pullSociArtifactsFromApp: p.imageStreamingEnabled,
 		buildRoot:                p.buildRoot,
 		options:                  options,
 	}, nil

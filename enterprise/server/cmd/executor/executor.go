@@ -102,7 +102,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 		}
 		log.Infof("Connecting to cache target: %s", cacheTarget)
 	}
-	addHealthCheck(conn, true /*=reportIdleAsHealthy*/, "grpc_cache_connection", realEnv.GetHealthChecker())
+	addHealthCheck(conn, "grpc_cache_connection", realEnv.GetHealthChecker(), true /*=reportIdleAsHealthy*/)
 
 	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -117,14 +117,14 @@ func initializeInternalClientsOrDie(internalTarget string, realEnv *real_environ
 		return
 	}
 	log.Infof("Connecting to cache target: %s", internalTarget)
-	addHealthCheck(conn, false /*=reportIdleAsHealthy*/, "grpc_internal_services_connection", realEnv.GetHealthChecker())
+	addHealthCheck(conn, "grpc_internal_services_connection", realEnv.GetHealthChecker(), false /*=reportIdleAsHealthy*/)
 	realEnv.SetSociArtifactStoreClient(socipb.NewSociArtifactStoreClient(conn))
 }
 
 // Adds a healthchecker to the provided connection. If reportIdleAsHealthy is
 // true, idle connections will not block readiness, but the health checker will
 // try to reconnect them.
-func addHealthCheck(conn *grpc.ClientConn, reportIdleAsHealthy bool, healthCheckName string, healthChecker interfaces.HealthChecker) {
+func addHealthCheck(conn *grpc.ClientConn, healthCheckName string, healthChecker interfaces.HealthChecker, reportIdleAsHealthy bool) {
 	healthChecker.AddHealthCheck(
 		healthCheckName, interfaces.CheckerFunc(
 			func(ctx context.Context) error {
@@ -202,7 +202,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 	}
 	log.Infof("Connecting to app target: %s", *appTarget)
 
-	addHealthCheck(conn, false /*=reportIdleAsHealthy*/, "grpc_app_connection", realEnv.GetHealthChecker())
+	addHealthCheck(conn, "grpc_app_connection", realEnv.GetHealthChecker(), false /*=reportIdleAsHealthy*/)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 
