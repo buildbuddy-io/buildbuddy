@@ -110,8 +110,7 @@ type Provider struct {
 func runSociStore(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
-		sociStoreDir := sociStorePath
-		cmd := exec.CommandContext(ctx, "soci-store", sociStoreDir)
+		cmd := exec.CommandContext(ctx, "soci-store", sociStorePath)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
@@ -126,7 +125,7 @@ func runSociStore(ctx context.Context) {
 }
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
-	if len(*streamableImages) > 0 {
+	if *imageStreamingEnabled || len(*streamableImages) > 0 {
 		go runSociStore(env.GetServerContext())
 
 		// Configures podman to check soci store for image data.
