@@ -822,7 +822,7 @@ func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
 			// as a precaution.
 			_ = lim.Wait(c.env.GetServerContext())
 			reencryptKey(ekv)
-			metrics.EncryptionKeyLastEncryptedAgeUsec.Observe(float64(time.Since(time.UnixMicro(ekv.LastEncryptedAtUsec)).Microseconds()))
+			metrics.EncryptionKeyLastEncryptedAgeMsec.Observe(float64(time.Since(time.UnixMicro(ekv.LastEncryptedAtUsec)).Milliseconds()))
 		}
 	}
 	return nil
