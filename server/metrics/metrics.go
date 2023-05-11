@@ -1803,10 +1803,12 @@ var (
 		Help:      "Total number of decryption errors.",
 	})
 
-	EncryptionKeyLastEncryptedAgeUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+	// This metric is in milliseconds because Grafana heatmaps don't display
+	// microsecond durations nicely when they can contain large durations.
+	EncryptionKeyLastEncryptedAgeMsec = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "encryption",
-		Name:      "key_last_encryption_age_usec",
+		Name:      "key_last_encryption_age_msec",
 		Buckets:   durationUsecBuckets(1*time.Hour, 1*time.Hour*24*7, 4),
 		Help:      "Age of encrypted keys (i.e. how long it has been since the keys were re-encrypted).",
 	})
