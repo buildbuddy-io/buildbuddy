@@ -57,7 +57,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 25
+            "y": 57
           },
           "hiddenSeries": false,
           "id": 21,
@@ -162,7 +162,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 32
+            "y": 64
           },
           "hiddenSeries": false,
           "id": 932,
@@ -278,7 +278,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 26
+            "y": 58
           },
           "hiddenSeries": false,
           "id": 348,
@@ -366,7 +366,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 26
+            "y": 58
           },
           "hiddenSeries": false,
           "id": 804,
@@ -486,7 +486,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 3
+            "y": 35
           },
           "hiddenSeries": false,
           "id": 13,
@@ -577,7 +577,7 @@
             "h": 8,
             "w": 10,
             "x": 9,
-            "y": 3
+            "y": 35
           },
           "hiddenSeries": false,
           "id": 25,
@@ -671,7 +671,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 11
+            "y": 43
           },
           "hiddenSeries": false,
           "id": 1232,
@@ -785,7 +785,7 @@
             "h": 8,
             "w": 12,
             "x": 9,
-            "y": 11
+            "y": 43
           },
           "hiddenSeries": false,
           "id": 65,
@@ -945,7 +945,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 28
+            "y": 60
           },
           "id": 1182,
           "options": {
@@ -1035,7 +1035,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 28
+            "y": 60
           },
           "id": 1186,
           "options": {
@@ -1124,7 +1124,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 36
+            "y": 68
           },
           "id": 1183,
           "options": {
@@ -1214,7 +1214,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 36
+            "y": 68
           },
           "id": 1187,
           "options": {
@@ -1303,7 +1303,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 44
+            "y": 76
           },
           "id": 1184,
           "options": {
@@ -1393,7 +1393,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 44
+            "y": 76
           },
           "id": 1188,
           "options": {
@@ -1465,7 +1465,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 29
+            "y": 61
           },
           "hiddenSeries": false,
           "id": 230,
@@ -1554,7 +1554,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 29
+            "y": 61
           },
           "hiddenSeries": false,
           "id": 310,
@@ -1653,7 +1653,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 37
+            "y": 69
           },
           "hiddenSeries": false,
           "id": 312,
@@ -1770,7 +1770,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 39
+            "y": 71
           },
           "hiddenSeries": false,
           "id": 254,
@@ -1866,7 +1866,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 39
+            "y": 71
           },
           "hiddenSeries": false,
           "id": 251,
@@ -1991,7 +1991,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 47
+            "y": 79
           },
           "hiddenSeries": false,
           "id": 250,
@@ -2117,7 +2117,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 47
+            "y": 79
           },
           "hiddenSeries": false,
           "id": 252,
@@ -2243,7 +2243,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 55
+            "y": 87
           },
           "hiddenSeries": false,
           "id": 253,
@@ -2397,7 +2397,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 31
+            "y": 63
           },
           "hiddenSeries": false,
           "id": 1506,
@@ -2528,7 +2528,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 31
+            "y": 63
           },
           "hiddenSeries": false,
           "id": 1507,
@@ -2701,7 +2701,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 39
+            "y": 71
           },
           "id": 1509,
           "options": {
@@ -2791,7 +2791,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 39
+            "y": 71
           },
           "id": 1586,
           "options": {
@@ -2893,7 +2893,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 47
+            "y": 79
           },
           "id": 1663,
           "options": {
@@ -2983,7 +2983,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 47
+            "y": 79
           },
           "id": 1740,
           "options": {
@@ -3073,7 +3073,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 55
+            "y": 87
           },
           "id": 1816,
           "options": {
@@ -3163,7 +3163,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 55
+            "y": 87
           },
           "id": 1893,
           "options": {
@@ -3253,7 +3253,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 63
+            "y": 95
           },
           "id": 1970,
           "options": {
@@ -4554,6 +4554,420 @@
     },
     {
       "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "id": 3104,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 12
+          },
+          "id": 3187,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_encryption_encrypted_block_count{region=\"${region}\"}[5m]))",
+              "legendFormat": "Blocks",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_encryption_encrypted_blob_count{region=\"${region}\"}[5m]))",
+              "hide": false,
+              "legendFormat": "Blobs",
+              "range": true,
+              "refId": "B"
+            }
+          ],
+          "title": "Encryption (QPS)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 12
+          },
+          "id": 3269,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_encryption_decrypted_block_count{region=\"${region}\"}[5m]))",
+              "legendFormat": "Blocks",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_encryption_decrypted_blob_count{region=\"${region}\"}[5m]))",
+              "hide": false,
+              "legendFormat": "Blobs",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_encryption_decryption_error_count{region=\"${region}\"}[5m]))",
+              "hide": false,
+              "legendFormat": "Errors",
+              "range": true,
+              "refId": "C"
+            }
+          ],
+          "title": "Decryption (QPS)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 20
+          },
+          "id": 3433,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_encryption_key_refresh_count{region=\"${region}\"}[5m]))",
+              "legendFormat": "Attempts",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_encryption_key_refresh_failure_count{region=\"${region}\"}[5m]))",
+              "hide": false,
+              "legendFormat": "Errors",
+              "range": true,
+              "refId": "B"
+            }
+          ],
+          "title": "Key Refreshes (QPS)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "scaleDistribution": {
+                  "type": "linear"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 20
+          },
+          "id": 3597,
+          "options": {
+            "calculate": false,
+            "cellGap": 1,
+            "color": {
+              "exponent": 0.5,
+              "fill": "dark-orange",
+              "mode": "scheme",
+              "reverse": false,
+              "scale": "exponential",
+              "scheme": "Oranges",
+              "steps": 64
+            },
+            "exemplars": {
+              "color": "rgba(255,0,255,0.7)"
+            },
+            "filterValues": {
+              "le": 1e-09
+            },
+            "legend": {
+              "show": true
+            },
+            "rowsFrame": {
+              "layout": "auto"
+            },
+            "tooltip": {
+              "show": true,
+              "yHistogram": false
+            },
+            "yAxis": {
+              "axisPlacement": "left",
+              "reverse": false,
+              "unit": "dtdurationms"
+            }
+          },
+          "pluginVersion": "9.3.1",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(buildbuddy_encryption_key_last_encryption_age_msec_bucket{region=\"${region}\"}[6h])) by (le)",
+              "format": "heatmap",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Internal Key Freshness",
+          "type": "heatmap"
+        }
+      ],
+      "title": "Remote cache encryption",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
       "datasource": {
         "type": "prometheus",
         "uid": "prom"
@@ -4562,7 +4976,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 12
       },
       "id": 264,
       "panels": [
@@ -4590,7 +5004,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 34
+            "y": 66
           },
           "hiddenSeries": false,
           "id": 274,
@@ -4709,7 +5123,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 34
+            "y": 66
           },
           "hiddenSeries": false,
           "id": 276,
@@ -4806,7 +5220,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 42
+            "y": 74
           },
           "hiddenSeries": false,
           "id": 290,
@@ -4903,7 +5317,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 42
+            "y": 74
           },
           "hiddenSeries": false,
           "id": 292,
@@ -5000,7 +5414,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 50
+            "y": 82
           },
           "hiddenSeries": false,
           "id": 278,
@@ -5097,7 +5511,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 50
+            "y": 82
           },
           "hiddenSeries": false,
           "id": 280,
@@ -5195,7 +5609,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 15
       },
       "id": 38,
       "panels": [
@@ -5215,7 +5629,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 13
+            "y": 45
           },
           "hiddenSeries": false,
           "id": 40,
@@ -5320,7 +5734,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 26
+            "y": 58
           },
           "hiddenSeries": false,
           "id": 76,
@@ -5415,7 +5829,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 40
+            "y": 72
           },
           "hiddenSeries": false,
           "id": 42,
@@ -5507,7 +5921,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 40
+            "y": 72
           },
           "hiddenSeries": false,
           "id": 46,
@@ -5599,7 +6013,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 48
+            "y": 80
           },
           "hiddenSeries": false,
           "id": 44,
@@ -5696,7 +6110,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 16
       },
       "id": 458,
       "panels": [
@@ -5728,7 +6142,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 36
+            "y": 68
           },
           "hiddenSeries": false,
           "id": 498,
@@ -5828,7 +6242,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 36
+            "y": 68
           },
           "hiddenSeries": false,
           "id": 542,
@@ -5917,7 +6331,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 45
+            "y": 77
           },
           "hiddenSeries": false,
           "hideTimeOverride": true,
@@ -6022,7 +6436,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 54
+            "y": 86
           },
           "hiddenSeries": false,
           "id": 496,
@@ -6127,7 +6541,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 96
           },
           "hiddenSeries": false,
           "id": 500,
@@ -6232,7 +6646,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 64
+            "y": 96
           },
           "hiddenSeries": false,
           "id": 504,
@@ -6336,7 +6750,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 17
       },
       "id": 48,
       "panels": [
@@ -6361,7 +6775,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 118
+            "y": 150
           },
           "hiddenSeries": false,
           "id": 50,
@@ -6458,7 +6872,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 118
+            "y": 150
           },
           "hiddenSeries": false,
           "id": 53,
@@ -6554,7 +6968,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 126
+            "y": 158
           },
           "hiddenSeries": false,
           "id": 51,
@@ -6651,7 +7065,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 126
+            "y": 158
           },
           "hiddenSeries": false,
           "id": 55,
@@ -6748,7 +7162,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 18
       },
       "id": 384,
       "panels": [
@@ -6767,7 +7181,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 32
+            "y": 64
           },
           "hiddenSeries": false,
           "id": 742,
@@ -6856,7 +7270,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 32
+            "y": 64
           },
           "hiddenSeries": false,
           "id": 422,
@@ -6944,7 +7358,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 40
+            "y": 72
           },
           "hiddenSeries": false,
           "id": 420,
@@ -7123,7 +7537,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 40
+            "y": 72
           },
           "id": 1223,
           "options": {
@@ -7289,7 +7703,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 48
+            "y": 80
           },
           "id": 1224,
           "options": {
@@ -7342,7 +7756,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 19
       },
       "id": 107,
       "panels": [
@@ -7369,7 +7783,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 135
+            "y": 167
           },
           "hiddenSeries": false,
           "id": 122,
@@ -7464,7 +7878,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 135
+            "y": 167
           },
           "hiddenSeries": false,
           "id": 116,
@@ -7563,7 +7977,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 143
+            "y": 175
           },
           "hiddenSeries": false,
           "id": 112,
@@ -7665,7 +8079,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 143
+            "y": 175
           },
           "hiddenSeries": false,
           "id": 120,
@@ -7765,7 +8179,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 151
+            "y": 183
           },
           "hiddenSeries": false,
           "id": 118,
@@ -7860,7 +8274,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 151
+            "y": 183
           },
           "hiddenSeries": false,
           "id": 124,
@@ -7957,7 +8371,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 20
       },
       "id": 28,
       "panels": [
@@ -7979,7 +8393,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 33
+            "y": 65
           },
           "hiddenSeries": false,
           "id": 190,
@@ -8084,7 +8498,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 33
+            "y": 65
           },
           "hiddenSeries": false,
           "id": 159,
@@ -8205,7 +8619,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 41
+            "y": 73
           },
           "hiddenSeries": false,
           "id": 210,
@@ -8340,7 +8754,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 41
+            "y": 73
           },
           "id": 1209,
           "options": {
@@ -8430,7 +8844,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 49
+            "y": 81
           },
           "id": 31,
           "options": {
@@ -8478,7 +8892,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 49
+            "y": 81
           },
           "hiddenSeries": false,
           "id": 178,
@@ -8623,7 +9037,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 57
+            "y": 89
           },
           "id": 1216,
           "options": {
@@ -8748,7 +9162,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 57
+            "y": 89
           },
           "id": 1231,
           "options": {
@@ -8830,7 +9244,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 97
           },
           "hiddenSeries": false,
           "id": 33,
@@ -8921,7 +9335,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 65
+            "y": 97
           },
           "hiddenSeries": false,
           "id": 35,
@@ -9010,7 +9424,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 105
           },
           "hiddenSeries": false,
           "id": 129,
@@ -9102,7 +9516,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 105
           },
           "hiddenSeries": false,
           "id": 102,
@@ -9239,7 +9653,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 113
           },
           "id": 1195,
           "options": {
@@ -9284,7 +9698,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 81
+            "y": 113
           },
           "hiddenSeries": false,
           "id": 180,
@@ -9422,7 +9836,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 89
+            "y": 121
           },
           "id": 1202,
           "options": {
@@ -9576,7 +9990,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 89
+            "y": 121
           },
           "id": 1196,
           "options": {
@@ -9632,7 +10046,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 23
       },
       "id": 83,
       "panels": [
@@ -9652,7 +10066,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 47
+            "y": 79
           },
           "hiddenSeries": false,
           "id": 85,
@@ -9750,7 +10164,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 47
+            "y": 79
           },
           "hiddenSeries": false,
           "id": 87,
@@ -9842,7 +10256,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 56
+            "y": 88
           },
           "hiddenSeries": false,
           "id": 91,
@@ -9933,7 +10347,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 56
+            "y": 88
           },
           "hiddenSeries": false,
           "id": 93,
@@ -10034,7 +10448,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 27
       },
       "id": 71,
       "panels": [
@@ -10070,7 +10484,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 45
+            "y": 77
           },
           "hiddenSeries": false,
           "id": 73,
@@ -10163,7 +10577,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 45
+            "y": 77
           },
           "hiddenSeries": false,
           "id": 79,
@@ -10299,7 +10713,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 54
+            "y": 86
           },
           "id": 2087,
           "options": {
@@ -10395,7 +10809,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 54
+            "y": 86
           },
           "id": 2039,
           "options": {
@@ -10464,7 +10878,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 28
       },
       "id": 1088,
       "panels": [
@@ -10528,7 +10942,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 42
+            "y": 74
           },
           "id": 1127,
           "options": {
@@ -10619,7 +11033,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 42
+            "y": 74
           },
           "id": 1166,
           "options": {
@@ -10721,7 +11135,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 50
+            "y": 82
           },
           "id": 1168,
           "options": {
@@ -10787,7 +11201,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 32
       },
       "id": 962,
       "panels": [
@@ -10884,7 +11298,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 75
           },
           "id": 992,
           "options": {
@@ -10987,7 +11401,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 33
       },
       "id": 1975,
       "panels": [
@@ -11127,7 +11541,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 44
+            "y": 76
           },
           "id": 1257,
           "maxPerRow": 2,
@@ -11233,7 +11647,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 34
       },
       "id": 1988,
       "panels": [
@@ -11298,7 +11712,7 @@
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 102
+            "y": 134
           },
           "id": 1991,
           "options": {
@@ -11354,7 +11768,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 35
       },
       "id": 1983,
       "panels": [
@@ -11451,7 +11865,7 @@
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 103
+            "y": 135
           },
           "id": 1261,
           "options": {
@@ -11519,7 +11933,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 36
       },
       "id": 8,
       "panels": [
@@ -11541,7 +11955,7 @@
             "h": 10,
             "w": 12,
             "x": 0,
-            "y": 104
+            "y": 136
           },
           "hiddenSeries": false,
           "id": 2,
@@ -11654,7 +12068,7 @@
             "h": 10,
             "w": 12,
             "x": 12,
-            "y": 104
+            "y": 136
           },
           "hiddenSeries": false,
           "id": 578,
@@ -11788,7 +12202,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 114
+            "y": 146
           },
           "id": 1239,
           "options": {
@@ -11842,7 +12256,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 37
       },
       "id": 1346,
       "panels": [
@@ -11862,7 +12276,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 33
+            "y": 65
           },
           "hiddenSeries": false,
           "id": 2556,
@@ -11969,7 +12383,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 46
+            "y": 78
           },
           "hiddenSeries": false,
           "id": 2840,
@@ -12068,7 +12482,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 60
+            "y": 92
           },
           "hiddenSeries": false,
           "id": 2890,
@@ -12162,7 +12576,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 60
+            "y": 92
           },
           "hiddenSeries": false,
           "id": 2940,
@@ -12300,7 +12714,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 68
+            "y": 100
           },
           "id": 1353,
           "links": [
