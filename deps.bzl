@@ -843,8 +843,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_containerd_stargz_snapshotter_estargz",
         importpath = "github.com/containerd/stargz-snapshotter/estargz",
-        sum = "h1:+7nYmHJb0tEkcRaAW+MHqoKaJYZmkikupxCqVtmPuY0=",
-        version = "v0.12.1",
+        sum = "h1:OqlDCK3ZVUO6C3B/5FSkDwbkEETK84kQgEeFwDC+62k=",
+        version = "v0.14.3",
     )
 
     go_repository(
@@ -1131,8 +1131,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_docker_docker",
         importpath = "github.com/docker/docker",
-        sum = "h1:Ugvxm7a8+Gz6vqQYQQ2W7GYq5EUPaAiuPgIfVyI3dYE=",
-        version = "v20.10.24+incompatible",
+        sum = "h1:vjgvJZxprTTE1A37nm+CLNAdwu6xZekyoiVlUZEINcY=",
+        version = "v23.0.1+incompatible",
     )
     go_repository(
         name = "com_github_docker_docker_credential_helpers",
@@ -1943,8 +1943,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         # build_file_generation = "off",
         # patch_args = ["-p1"],
         # patches = ["@io_bazel_rules_go//third_party:com_github_golang_protobuf-gazelle.patch"],
-        sum = "h1:ROPKBNFfQgOUMifHyP+KYbvpjbdoFNs+aK7DXlji0Tw=",
-        version = "v1.5.2",
+        sum = "h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=",
+        version = "v1.5.3",
     )
 
     go_repository(
@@ -2065,8 +2065,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_google_go_containerregistry",
         importpath = "github.com/google/go-containerregistry",
-        sum = "h1:nidOEtFYlgPCRqxCKj/4c/js940HVWplCWc5ftdfdUA=",
-        version = "v0.12.0",
+        sum = "h1:z58vMqHxuwvAsVwvKEkmVBz2TlgBgH5k6koEXBtlYkw=",
+        version = "v0.14.0",
     )
 
     go_repository(
@@ -2149,8 +2149,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_googleapis_enterprise_certificate_proxy",
         importpath = "github.com/googleapis/enterprise-certificate-proxy",
-        sum = "h1:y8Yozv7SZtlU//QXbezB6QkpuE6jMD2/gfzk4AftXjs=",
-        version = "v0.2.0",
+        sum = "h1:RY7tHKZcRlk788d5WSo/e83gOyyy742E8GSs771ySpg=",
+        version = "v0.2.1",
     )
 
     go_repository(
@@ -2530,8 +2530,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_inconshreveable_mousetrap",
         importpath = "github.com/inconshreveable/mousetrap",
-        sum = "h1:U3uMjPSQEBMNp1lFxmllqCPM6P5u/Xq7Pgzkat/bFNc=",
-        version = "v1.0.1",
+        sum = "h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=",
+        version = "v1.1.0",
     )
     go_repository(
         name = "com_github_intel_goresctrl",
@@ -4283,8 +4283,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_spf13_cobra",
         importpath = "github.com/spf13/cobra",
-        sum = "h1:42a0n6jwCot1pUmomAp4T7DeMD+20LFv4Q54pxLf2LI=",
-        version = "v1.6.0",
+        sum = "h1:o94oiPyS4KD1mPy2fmcYYHHfCxLqYjJOhGsCHFZtEzA=",
+        version = "v1.6.1",
     )
 
     go_repository(
@@ -4938,8 +4938,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_google_cloud_go_compute",
         importpath = "cloud.google.com/go/compute",
-        sum = "h1:7UGq3QknM33pw5xATlpzeoomNxsacIVvTqTTvbfajmE=",
-        version = "v1.15.1",
+        sum = "h1:FEigFqoDbys2cvFkZ9Fjq4gnHBP55anJ0yQyau2f9oY=",
+        version = "v1.18.0",
     )
     go_repository(
         name = "com_google_cloud_go_compute_metadata",
@@ -6020,8 +6020,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_api",
         importpath = "google.golang.org/api",
-        sum = "h1:9yuVqlu2JCvcLg9p8S3fcFLZij8EPSyvODIY1rkMizQ=",
-        version = "v0.103.0",
+        sum = "h1:WVBc/faN0DkKtR43Q/7+tPny9ZoLZdIiAyG5Q9vFClg=",
+        version = "v0.108.0",
     )
 
     go_repository(
@@ -6067,8 +6067,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         # build_file_generation = "off",
         # patch_args = ["-p1"],
         # patches = ["@io_bazel_rules_go//third_party:org_golang_google_protobuf-gazelle.patch"],
-        sum = "h1:ED3clF8cKmSuqHQDqBb1yBDKTBy5QbB144qZpJt5Ohk=",
-        version = "v1.28.2-0.20230209092751-246af0d153ca",
+        sum = "h1:44S3JjaKmLEE4YIkjzexaP+NzZsudE3Zin5Njn/pYX0=",
+        version = "v1.29.0",
     )
     go_repository(
         name = "org_golang_x_crypto",
@@ -6127,8 +6127,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_oauth2",
         importpath = "golang.org/x/oauth2",
-        sum = "h1:NF0gk8LVPg1Ml7SSbGyySuoxdsXitj7TvgvuRxIMc/M=",
-        version = "v0.4.0",
+        sum = "h1:Lh8GPgSKBfWSwFvtuWOfeI3aAAnbXTSutYxJiOJFgIw=",
+        version = "v0.6.0",
     )
 
     go_repository(

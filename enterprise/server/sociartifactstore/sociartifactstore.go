@@ -292,7 +292,7 @@ func resourceName(digest *repb.Digest) *rspb.ResourceName {
 }
 
 func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageId string) (*socipb.GetArtifactsResponse, error) {
-	exists, err := s.blobstore.BlobExists(ctx, imageId)
+	exists, err := s.blobstore.BlobExists(ctx, blobKey(imageId))
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +332,7 @@ func serializeDigest(d *repb.Digest) string {
 	return d.Hash + "/" + strconv.FormatInt(d.SizeBytes, 10)
 }
 
-// Deserializes a digest ("<digest>/<site-bytes") into a repb.Digest
+// Deserializes a digest ("<digest>/<size-bytes>") into a repb.Digest
 func deserializeDigest(s string) (*repb.Digest, error) {
 	pieces := strings.Split(s, "/")
 	if len(pieces) != 2 {
@@ -575,7 +575,10 @@ func getZtocDigests(sociIndexBytes []byte) ([]*repb.Digest, error) {
 	}
 	digests := []*repb.Digest{}
 	for _, layerIndex := range sociIndex.Layers {
-		digest := godigest.NewDigestFromEncoded(godigest.SHA256, layerIndex.Digest)
+		digest, err := godigest.Parse(layerIndex.Digest)
+		if err != nil {
+			return nil, err
+		}
 		digests = append(digests, &repb.Digest{Hash: digest.Encoded(), SizeBytes: layerIndex.Size})
 	}
 	return digests, nil
