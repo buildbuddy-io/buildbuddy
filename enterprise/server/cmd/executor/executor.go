@@ -102,7 +102,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 		}
 		log.Infof("Connecting to cache target: %s", cacheTarget)
 	}
-	addHealthCheck(conn, "grpc_cache_connection", realEnv.GetHealthChecker(), true /*=reportIdleAsHealthy*/)
+	addHealthCheck(conn, "grpc_cache_connection", realEnv.GetHealthChecker())
 
 	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -117,14 +117,12 @@ func initializeInternalClientsOrDie(internalTarget string, realEnv *real_environ
 		return
 	}
 	log.Infof("Connecting to cache target: %s", internalTarget)
-	addHealthCheck(conn, "grpc_internal_services_connection", realEnv.GetHealthChecker(), false /*=reportIdleAsHealthy*/)
+	addHealthCheck(conn, "grpc_internal_services_connection", realEnv.GetHealthChecker())
 	realEnv.SetSociArtifactStoreClient(socipb.NewSociArtifactStoreClient(conn))
 }
 
-// Adds a healthchecker to the provided connection. If reportIdleAsHealthy is
-// true, idle connections will not block readiness, but the health checker will
-// try to reconnect them.
-func addHealthCheck(conn *grpc.ClientConn, healthCheckName string, healthChecker interfaces.HealthChecker, reportIdleAsHealthy bool) {
+// Adds a healthchecker to the provided connection.
+func addHealthCheck(conn *grpc.ClientConn, healthCheckName string, healthChecker interfaces.HealthChecker) {
 	healthChecker.AddHealthCheck(
 		healthCheckName, interfaces.CheckerFunc(
 			func(ctx context.Context) error {
@@ -133,9 +131,7 @@ func addHealthCheck(conn *grpc.ClientConn, healthCheckName string, healthChecker
 					return nil
 				} else if connState == connectivity.Idle {
 					conn.Connect()
-					if reportIdleAsHealthy {
-						return nil
-					}
+					return nil
 				}
 				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
 			},
@@ -202,7 +198,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 	}
 	log.Infof("Connecting to app target: %s", *appTarget)
 
-	addHealthCheck(conn, "grpc_app_connection", realEnv.GetHealthChecker(), false /*=reportIdleAsHealthy*/)
+	addHealthCheck(conn, "grpc_app_connection", realEnv.GetHealthChecker())
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 
