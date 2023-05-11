@@ -114,6 +114,7 @@ func main() {
 
 func queryMetric(promAPI promapi.API, metricName string, query string, isMissingDataValid bool) (float64, error) {
 	log.Debugf("Attempting to query metric %s", metricName)
+	log.Debugf(query)
 
 	result, _, err := promAPI.Query(context.Background(), query, time.Now())
 	if err != nil {
