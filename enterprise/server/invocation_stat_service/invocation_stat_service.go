@@ -173,7 +173,6 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		q.AddWhereClause("pattern = ?", pattern)
 	}
 
-	// XXX: Don't do executions yet...
 	if tag := tq.GetTag(); tag != "" {
 		if i.isOLAPDBEnabled() {
 			q.AddWhereClause("has(tags, ?)", tag)
