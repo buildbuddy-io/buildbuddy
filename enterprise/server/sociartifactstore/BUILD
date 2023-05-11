@@ -52,8 +52,8 @@ go_test(
     name = "sociartifactstore_test",
     srcs = ["sociartifactstore_test.go"],
     data = [":test_data"],
+    embed = [":sociartifactstore"],
     deps = [
-        ":sociartifactstore",
         "//enterprise/server/testutil/testredis",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -63,7 +63,6 @@ go_test(
         "//server/testutil/testport",
         "//server/util/prefix",
         "//server/util/status",
-        "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/crane",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/registry",
