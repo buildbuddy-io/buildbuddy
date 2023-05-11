@@ -27,7 +27,7 @@ interface State {
    * Invocations corresponding to individual invocation cards.
    * Not fetched for aggregate (sliced) views.
    */
-  invocations?: invocation.IInvocation[];
+  invocations?: invocation.Invocation[];
   loadingInvocations?: boolean;
   selectedInvocationId: string;
   selectedInvocationIndex: number;
@@ -35,14 +35,14 @@ interface State {
    * Stats summarizing the fetched invocations.
    * Not fetched for aggregate (sliced) views.
    */
-  summaryStat?: invocation.IInvocationStat;
+  summaryStat?: invocation.InvocationStat;
   loadingSummaryStat?: boolean;
 
   /**
    * Stats fetched for aggregate views.
    * Each stat corresponds to a card displaying the stats for a single repo (or user, etc.)
    */
-  aggregateStats?: invocation.IInvocationStat[];
+  aggregateStats?: invocation.InvocationStat[];
   loadingAggregateStats?: boolean;
 
   hoveredInvocationId?: string;
@@ -73,9 +73,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
   refreshSubscription = new Subscription();
 
-  invocationsRpc: CancelablePromise;
-  summaryStatRpc: CancelablePromise;
-  aggregateStatsRpc: CancelablePromise;
+  invocationsRpc?: CancelablePromise;
+  summaryStatRpc?: CancelablePromise;
+  aggregateStatsRpc?: CancelablePromise;
 
   hashToAggregationTypeMap = new Map<string, invocation.AggType>([
     ["#users", invocation.AggType.USER_AGGREGATION_TYPE],
@@ -129,6 +129,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
         command: filterParams.command,
         pattern: filterParams.pattern,
         groupId: this.props.user?.selectedGroup?.id,
+        role: filterParams.role,
+        updatedAfter: filterParams.updatedAfter,
+        updatedBefore: filterParams.updatedBefore,
+        status: filterParams.status,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
       }),
@@ -140,10 +144,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
       count: 126,
     });
-    request.query.role = filterParams.role;
-    request.query.updatedAfter = filterParams.updatedAfter;
-    request.query.updatedBefore = filterParams.updatedBefore;
-    request.query.status = filterParams.status;
 
     this.invocationsRpc = rpcService.service
       .searchInvocation(request)
@@ -151,7 +151,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         console.log(response);
         this.setState({
           invocations: nextPage
-            ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
+            ? (this.state.invocations || []).concat(response.invocation || [])
             : response.invocation,
           pageToken: response.nextPageToken,
         });
@@ -219,9 +219,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
     document.title = `${
       this.props.username ||
       this.props.hostname ||
-      format.formatGitUrl(this.props.repo) ||
+      (this.props.repo && format.formatGitUrl(this.props.repo)) ||
       this.props.branch ||
-      format.formatCommitHash(this.props.commit) ||
+      (this.props.commit && format.formatCommitHash(this.props.commit)) ||
       this.props.user?.selectedGroupName()
     } Build History | BuildBuddy`;
 
@@ -409,7 +409,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   handleMouseOut(invocation: invocation.IInvocation) {
-    this.setState({ hoveredInvocationId: null });
+    this.setState({ hoveredInvocationId: undefined });
   }
 
   handleLoadNextPageClicked() {
@@ -445,9 +445,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
     let scope =
       this.props.username ||
       this.props.hostname ||
-      format.formatCommitHash(this.props.commit) ||
+      (this.props.commit && format.formatCommitHash(this.props.commit)) ||
       this.props.branch ||
-      format.formatGitUrl(this.props.repo);
+      (this.props.repo && format.formatGitUrl(this.props.repo));
     let viewType = "build history";
     if (this.props.tab == "#users") viewType = "users";
     if (this.props.tab == "#repos") viewType = "repos";
@@ -637,7 +637,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
               </div>
             )}
           </div>
-          {Boolean(this.state.invocations?.length) && (
+          {this.state.invocations?.length && (
             <div className="container nopadding-dense">
               <div className={`grid ${this.state.invocations.length < 20 ? "grid-grow" : ""}`}>
                 {this.state.invocations.map((invocation) => (
@@ -657,7 +657,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
             </div>
           )}
         </div>
-        {this.props.tab === "#users" && this.props.user.canCall("getGroupUsers") && (
+        {this.props.tab === "#users" && this.props.user?.canCall("getGroupUsers") && (
           <OrgJoinRequestsComponent user={this.props.user} />
         )}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
@@ -692,7 +692,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
             )}
             {this.state.aggregateStats?.map((invocationStat) => (
               <HistoryInvocationStatCardComponent
-                type={this.hashToAggregationTypeMap.get(this.props.tab)}
+                type={this.hashToAggregationTypeMap.get(this.props.tab)!}
                 invocationStat={invocationStat}
               />
             ))}
@@ -724,13 +724,16 @@ export default class HistoryComponent extends React.Component<Props, State> {
             <div className="container narrow">
               <div className="empty-state history">
                 <h2>No workflow runs yet!</h2>
-                <p>
-                  Push commits or send pull requests to{" "}
-                  <a href={this.props.repo} target="_new" className="text-link">
-                    {format.formatGitUrl(this.props.repo)}
-                  </a>{" "}
-                  to trigger BuildBuddy workflows.
-                </p>
+                {this.props.repo && (
+                  <p>
+                    Push commits or send pull requests to{" "}
+                    <a href={this.props.repo} target="_new" className="text-link">
+                      {format.formatGitUrl(this.props.repo)}
+                    </a>{" "}
+                    to trigger BuildBuddy workflows.
+                  </p>
+                )}
+                {!this.props.repo && <p>No repository URL was specified.</p>}
                 <p>
                   By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to
                   your main branch and on pull request branches.

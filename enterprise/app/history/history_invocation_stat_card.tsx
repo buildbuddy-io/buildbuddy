@@ -6,7 +6,7 @@ import format from "../../../app/format/format";
 import { Clock, Hash, XCircle, PlayCircle, CheckCircle, Activity } from "lucide-react";
 
 interface Props {
-  invocationStat: invocation.IInvocationStat;
+  invocationStat: invocation.InvocationStat;
   type: invocation.AggType;
 }
 
@@ -99,7 +99,7 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
             </div>
             <div className="detail">
               <Clock className="icon" />
-              {format.durationUsec(this.props.invocationStat.totalBuildTimeUsec)} total
+              {format.durationUsec(this.props.invocationStat?.totalBuildTimeUsec)} total
             </div>
             <div className="detail">
               <Activity className="icon" />
