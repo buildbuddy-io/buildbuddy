@@ -4,7 +4,6 @@ go_library(
     name = "remotebazel",
     srcs = ["remotebazel.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/remotebazel",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/log",
@@ -32,3 +31,5 @@ go_library(
         "@org_golang_x_sys//unix",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

@@ -4,7 +4,6 @@ go_library(
     name = "picker",
     srcs = ["picker.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/picker",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
@@ -13,3 +12,5 @@ go_library(
         "@com_github_manifoldco_promptui//:promptui",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

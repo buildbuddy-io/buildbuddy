@@ -11,3 +11,5 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser/test_data",
     visibility = ["//visibility:public"],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])
