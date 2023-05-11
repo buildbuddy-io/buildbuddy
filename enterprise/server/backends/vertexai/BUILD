@@ -4,7 +4,6 @@ go_library(
     name = "vertexai",
     srcs = ["vertexai.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/vertexai",
-    visibility = ["//visibility:public"],
     deps = [
         "//server/util/log",
         "//server/util/status",
