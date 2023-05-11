@@ -106,10 +106,12 @@
   margin-bottom: 8px;
 }
 
-.workflows-page .workflow-dropdown-container {
+.workflows-page .workflow-buttons-container {
   margin-left: auto;
+}
+
+.workflows-page .workflow-button-container {
   position: relative;
-  align-self: start;
 }
 
 .workflows-page .upgrade-notice {
@@ -130,6 +132,42 @@
   height: 16px;
   align-self: center;
   margin-right: 8px;
+}
+
+.workflows-page .run-workflow-input {
+  padding: 12px;
+}
+
+.workflows-page .run-workflow-input .title {
+  font-weight: 600;
+  font-size: 15px;
+  background: white;
+  padding: 4px;
+}
+
+.workflows-page .run-workflow-input button {
+  margin-top: 8px;
+}
+
+.workflows-page .run-clean-container {
+  display: flex;
+  align-items: center;
+  padding: 8px 0px;
+}
+
+.workflows-page .run-clean-container span {
+  padding-left: 8px;
+}
+
+.action-error-hovercard {
+  width: 30%;
+  margin: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-size: 14px;
+  backdrop-filter: blur(3px);
 }
 
 /* CREATE WORKFLOW PAGE */

@@ -486,23 +486,17 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	if err != nil {
 		return nil, err
 	}
+	if user.GetGroupID() == "" {
+		return nil, status.InternalErrorf("authenticated user's group ID is empty")
+	}
 
 	wfs := s.env.GetWorkflowService()
 	requestCtx := requestcontext.ProtoRequestContextFromContext(ctx)
 
-	wf, err := wfs.GetWorkflowByGroupAndRepo(ctx, user.GetGroupID(), req.GetRepoUrl())
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that the legacy Workflow product"+
-				" is not supported for this API. See https://www.buildbuddy.io/docs/workflows-setup/ for more information"+
-				" on how to correctly setup Workflows.", req.GetRepoUrl())
-		}
-		return nil, err
-	}
-
+	wfID := wfs.GetLegacyWorkflowIDForGitRepository(user.GetGroupID(), req.GetRepoUrl())
 	r := &workflow.ExecuteWorkflowRequest{
 		RequestContext: requestCtx,
-		WorkflowId:     wf.WorkflowID,
+		WorkflowId:     wfID,
 		ActionNames:    req.GetActionNames(),
 		PushedRepoUrl:  req.GetRepoUrl(),
 		PushedBranch:   req.GetRef(),
@@ -513,6 +507,11 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	}
 	rsp, err := wfs.ExecuteWorkflow(ctx, r)
 	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that the legacy Workflow product"+
+				" is not supported for this API. See https://www.buildbuddy.io/docs/workflows-setup/ for more information"+
+				" on how to correctly setup Workflows.", req.GetRepoUrl())
+		}
 		return nil, err
 	}
 

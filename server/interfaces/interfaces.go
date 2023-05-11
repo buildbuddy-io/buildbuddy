@@ -470,7 +470,10 @@ type WorkflowService interface {
 	// WorkflowsPoolName returns the name of the executor pool to use for workflow actions.
 	WorkflowsPoolName() string
 
-	GetWorkflowByGroupAndRepo(ctx context.Context, groupID string, repoURL string) (*tables.Workflow, error)
+	// GetLegacyWorkflowIDForGitRepository generates an artificial workflow ID so that legacy Workflow structs
+	// can be created from GitRepositories to play nicely with the pre-existing architecture
+	// that expects the legacy format
+	GetLegacyWorkflowIDForGitRepository(groupID string, repoURL string) string
 }
 
 type GitHubApp interface {
