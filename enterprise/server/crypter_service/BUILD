@@ -4,7 +4,6 @@ go_library(
     name = "crypter_service",
     srcs = ["crypter_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:encryption_go_proto",
         "//proto:raft_go_proto",
