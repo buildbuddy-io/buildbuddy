@@ -96,9 +96,14 @@ message FrontendConfig {
   // Whether to show encryption settings.
   bool customer_managed_encryption_keys_enabled = 31;
 
+<<<<<<< HEAD
   // True if multiple suggestions providers are configured.
   bool multiple_suggestion_providers = 32;
 
   // Whether to allow filtering invocations, trends, etc. by a tag.
   bool tag_filter_enabled = 33;
+=======
+  // Whether to render tags in the app UI.
+  bool tags_ui_enabled = 32;
+>>>>>>> 9d179b18d (tagfiltersenabled -> tagsuienabled)
 }

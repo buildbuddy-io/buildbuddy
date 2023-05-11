@@ -167,7 +167,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		ExecutionSearchEnabled:               *executionSearchEnabled,
 		TrendsSummaryEnabled:                 *trendsSummaryEnabled,
 		CustomerManagedEncryptionKeysEnabled: *customerManagedEncryptionKeysEnabled,
-		TagFilterEnabled:                     *tagsUIEnabled,
+		TagsUiEnabled:                        *tagsUIEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

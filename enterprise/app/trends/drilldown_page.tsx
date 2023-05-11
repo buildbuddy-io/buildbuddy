@@ -595,7 +595,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         }
         return;
       case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
-        if (capabilities.config.tagFilterEnabled) {
+        if (capabilities.config.tagsUiEnabled) {
           this.navigateForBarClick("tag", e.activeLabel);
         }
         return;

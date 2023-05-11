@@ -146,7 +146,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.query.pattern = pattern;
     }
 
-    const tag = capabilities.config.tagFilterEnabled && this.props.search.get("tag");
+    const tag = capabilities.config.tagsUiEnabled && this.props.search.get("tag");
     if (tag) {
       request.query.tag = tag;
     }

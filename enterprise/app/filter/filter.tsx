@@ -132,7 +132,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(HOST_PARAM_NAME) ||
           search.get(COMMAND_PARAM_NAME) ||
           (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
-          (capabilities.config.tagFilterEnabled && search.get(TAG_PARAM_NAME)) ||
+          (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
@@ -143,7 +143,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       host: search.get(HOST_PARAM_NAME) || undefined,
       command: search.get(COMMAND_PARAM_NAME) || undefined,
       pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
-      tag: (capabilities.config.tagFilterEnabled && search.get(TAG_PARAM_NAME)) || undefined,
+      tag: (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) || undefined,
       minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
@@ -161,7 +161,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(HOST_PARAM_NAME) ||
           search.get(COMMAND_PARAM_NAME) ||
           (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
-          (capabilities.config.tagFilterEnabled && search.get(TAG_PARAM_NAME)) ||
+          (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
@@ -172,7 +172,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       host: search.get(HOST_PARAM_NAME) || undefined,
       command: search.get(COMMAND_PARAM_NAME) || undefined,
       pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
-      tag: (capabilities.config.tagFilterEnabled && search.get(TAG_PARAM_NAME)) || undefined,
+      tag: (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) || undefined,
       minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
@@ -345,7 +345,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const hostValue = this.props.search.get(HOST_PARAM_NAME) || "";
     const commandValue = this.props.search.get(COMMAND_PARAM_NAME) || "";
     const patternValue = (capabilities.config.patternFilterEnabled && this.props.search.get(PATTERN_PARAM_NAME)) || "";
-    const tagValue = (capabilities.config.tagFilterEnabled && this.props.search.get(TAG_PARAM_NAME)) || "";
+    const tagValue = (capabilities.config.tagsUiEnabled && this.props.search.get(TAG_PARAM_NAME)) || "";
     const minimumDurationValue = this.props.search.get(MINIMUM_DURATION_PARAM_NAME) || "";
     const maximumDurationValue = this.props.search.get(MAXIMUM_DURATION_PARAM_NAME) || "";
     const isFiltering = isAnyNonDateFilterSet(this.props.search);
@@ -436,7 +436,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 <LayoutGrid /> {patternValue}
               </span>
             )}
-            {capabilities.config.tagFilterEnabled && tagValue && (
+            {capabilities.config.tagsUiEnabled && tagValue && (
               <span className="advanced-badge">
                 <Tag /> {tagValue}
               </span>
@@ -548,7 +548,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                       </div>
                     </>
                   )}
-                  {capabilities.config.tagFilterEnabled && (
+                  {capabilities.config.tagsUiEnabled && (
                     <>
                       <div className="option-group-title">Tag</div>
                       <div className="option-group-input">

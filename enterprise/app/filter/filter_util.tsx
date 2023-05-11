@@ -82,7 +82,7 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     host: search.get(HOST_PARAM_NAME) || undefined,
     command: search.get(COMMAND_PARAM_NAME) || undefined,
     pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
-    tag: (capabilities.config.tagFilterEnabled && search.get(TAG_PARAM_NAME)) || undefined,
+    tag: (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) || undefined,
     minimumDuration: parseDuration(search.get(MINIMUM_DURATION_PARAM_NAME)),
     maximumDuration: parseDuration(search.get(MAXIMUM_DURATION_PARAM_NAME)),
 
