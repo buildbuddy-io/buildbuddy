@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -56,6 +57,9 @@ func main() {
 	}
 	promAPI := promapi.NewAPI(prometheusClient)
 
+	mu := &sync.Mutex{}
+	failedMetrics := make([]string, 0)
+
 	eg, gctx := errgroup.WithContext(context.Background())
 	for _, metric := range config.PrometheusMetrics {
 		metric := metric
@@ -65,9 +69,9 @@ func main() {
 				pollingIntervalSec = metric.PollingIntervalSeconds
 			}
 
-			maxUnhealthyCount := config.MaxUnhealthyCount
-			if metric.MaxUnhealthyCount != 0 {
-				maxUnhealthyCount = metric.MaxUnhealthyCount
+			maxUnhealthyCount := config.MaxMetricPollUnhealthyCount
+			if metric.MaxMetricPollUnhealthyCount != 0 {
+				maxUnhealthyCount = metric.MaxMetricPollUnhealthyCount
 			}
 
 			monitoringTimer := time.After(time.Duration(config.MonitoringTimeframeSeconds) * time.Second)
@@ -95,7 +99,18 @@ func main() {
 					}
 
 					if unhealthyCount >= maxUnhealthyCount {
-						return errors.New(fmt.Sprintf("%s metrics unhealthy.", metric.Name))
+						err = func() error {
+							log.Debugf("Metric %s has been consecutively unhealthy %d times. Marking as failed.", metric.Name, unhealthyCount)
+							mu.Lock()
+							defer mu.Unlock()
+
+							failedMetrics = append(failedMetrics, metric.Name)
+							if len(failedMetrics) >= config.MaxMetricFailureCount {
+								return errors.New(fmt.Sprintf("Metrics unhealthy: %v", failedMetrics))
+							}
+							return nil
+						}()
+						return err
 					}
 				}
 			}

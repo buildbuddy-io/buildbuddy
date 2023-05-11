@@ -8,9 +8,12 @@ type Config struct {
 	MonitoringTimeframeSeconds int `yaml:"monitoring_timeframe_seconds"`
 	// The default frequency with which we should poll each metric
 	PollingIntervalSeconds int `yaml:"polling_interval_seconds"`
-	// The default max number of times the metric can consecutively report as unhealthy before we should rollback
-	MaxUnhealthyCount int                `yaml:"max_unhealthy_count"`
-	PrometheusMetrics []PrometheusMetric `yaml:"prometheus_metrics"`
+	// The default max number of times a specific metric can consecutively report as unhealthy before it's marked as a failure
+	MaxMetricPollUnhealthyCount int `yaml:"max_metric_poll_unhealthy_count"`
+	// The number of 'failed' metrics before the canary should be rolled back
+	// A metric is considered 'failed' if it has consistently been reporting unhealthy for MaxMetricPollUnhealthyCount
+	MaxMetricFailureCount int                `yaml:"max_metric_failure_count"`
+	PrometheusMetrics     []PrometheusMetric `yaml:"prometheus_metrics"`
 }
 
 type PrometheusMetric struct {
@@ -19,7 +22,7 @@ type PrometheusMetric struct {
 	// Set to override the default polling interval
 	PollingIntervalSeconds int `yaml:"polling_interval_seconds"`
 	// Set to override the default unhealthy count
-	MaxUnhealthyCount int `yaml:"max_unhealthy_count"`
+	MaxMetricPollUnhealthyCount int `yaml:"max_metric_poll_unhealthy_count"`
 	// If the metric does not meet this health threshold, it is considered unhealthy
 	HealthThreshold HealthThreshold `yaml:"health_threshold"`
 	// Set if it's valid for the metric value to be 0 or missing
