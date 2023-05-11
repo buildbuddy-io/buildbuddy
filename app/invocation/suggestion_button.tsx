@@ -16,9 +16,11 @@ import InvocationModel from "./invocation_model";
 import Spinner from "../components/spinner/spinner";
 import { Bot, ChevronDown } from "lucide-react";
 import capabilities from "../capabilities/capabilities";
+import { User } from "../auth/user";
 
-export interface WorkflowRerunButtonProps {
+export interface SuggestionButtonProps {
   model: InvocationModel;
+  user: User;
 }
 
 type State = {
@@ -27,7 +29,7 @@ type State = {
   isLoading?: boolean;
 };
 
-export default class SuggestionButton extends React.Component<WorkflowRerunButtonProps, State> {
+export default class SuggestionButton extends React.Component<SuggestionButtonProps, State> {
   state: State = {};
 
   private inFlightRpc: CancelablePromise;
@@ -56,7 +58,7 @@ export default class SuggestionButton extends React.Component<WorkflowRerunButto
   }
 
   render() {
-    if (!capabilities.config.botSuggestionsEnabled || this.props.model.getStatus() != "Failed") {
+    if (!capabilities.config.botSuggestionsEnabled || !this.props.user || this.props.model.getStatus() != "Failed") {
       return <></>;
     }
 
