@@ -82,7 +82,7 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
 interface ExecutorSetupProps {
   user: User;
   executorKeys: api_key.IApiKey[];
-  executors: scheduler.GetExecutionNodesResponse.IExecutor[];
+  executors: scheduler.GetExecutionNodesResponse.Executor[];
   schedulerUri: string;
 }
 
@@ -144,18 +144,18 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
 }
 
 interface ExecutorsListProps {
-  executors: scheduler.GetExecutionNodesResponse.IExecutor[];
+  executors: scheduler.GetExecutionNodesResponse.Executor[];
 }
 
 class ExecutorsList extends React.Component<ExecutorsListProps> {
   render() {
-    let executorsByPool = new Map<string, scheduler.GetExecutionNodesResponse.IExecutor[]>();
+    let executorsByPool = new Map<string, scheduler.GetExecutionNodesResponse.Executor[]>();
     for (const e of this.props.executors) {
-      const key = e.node.os + "-" + e.node.arch + "-" + e.node.pool;
+      const key = (e.node?.os || "") + "-" + (e.node?.arch || "") + "-" + (e.node?.pool || "");
       if (!executorsByPool.has(key)) {
         executorsByPool.set(key, []);
       }
-      executorsByPool.get(key).push(e);
+      executorsByPool.get(key)!.push(e);
     }
     const keys = Array.from(executorsByPool.keys()).sort();
 
@@ -164,21 +164,27 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
         <div className="executor-cards">
           {keys
             .map((key) => executorsByPool.get(key))
-            .map((executors) => (
-              <>
-                <h2>
-                  {executors[0].node.os}/{executors[0].node.arch} {executors[0].node.pool || "Default Pool"}
-                </h2>
-                {executors.length == 1 && <p>There is 1 self-hosted executor in this pool.</p>}
-                {executors.length > 1 && <p>There are {executors.length} self-hosted executors in this pool.</p>}
-                {executors.length < 3 && (
-                  <p>For better performance and reliability, we suggest running a minimum of 3 executors per pool.</p>
-                )}
-                {executors.map((node) => (
-                  <ExecutorCardComponent executor={node} />
-                ))}
-              </>
-            ))}
+            .map((executors) => {
+              if (!executors || executors.length == 0) {
+                return null;
+              }
+              return (
+                <>
+                  <h2>
+                    {executors[0].node?.os || ""}/{executors[0].node?.arch || ""}{" "}
+                    {executors[0].node?.pool || "Default Pool"}
+                  </h2>
+                  {executors.length == 1 && <p>There is 1 self-hosted executor in this pool.</p>}
+                  {executors.length > 1 && <p>There are {executors.length} self-hosted executors in this pool.</p>}
+                  {executors.length < 3 && (
+                    <p>For better performance and reliability, we suggest running a minimum of 3 executors per pool.</p>
+                  )}
+                  {executors.map(
+                    (node) => node.node && <ExecutorCardComponent node={node.node} isDefault={node.isDefault} />
+                  )}
+                </>
+              );
+            })}
         </div>
       </>
     );
@@ -194,7 +200,7 @@ interface Props {
 
 interface State {
   userOwnedExecutorsSupported: boolean;
-  nodes: scheduler.GetExecutionNodesResponse.IExecutor[];
+  nodes: scheduler.GetExecutionNodesResponse.Executor[];
   executorKeys: api_key.IApiKey[];
   loading: FetchType[];
   schedulerUri: string;
@@ -211,7 +217,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     error: null,
   };
 
-  subscription: Subscription;
+  subscription?: Subscription;
 
   componentWillMount() {
     document.title = `Executors | BuildBuddy`;
@@ -287,7 +293,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
       request.protocol = window.location.protocol;
       const response = await rpcService.service.getBazelConfig(request);
       const schedulerUri = response.configOption.find((opt) => opt.flagName == "remote_executor");
-      this.setState({ schedulerUri: schedulerUri?.flagValue });
+      this.setState({ schedulerUri: schedulerUri?.flagValue || "" });
     } catch (e) {
       this.setState({ error: BuildBuddyError.parse(e) });
     } finally {

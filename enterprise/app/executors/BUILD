@@ -7,7 +7,6 @@ exports_files(["executors.css"])
 ts_library(
     name = "executors",
     srcs = ["executors.tsx"],
-    strict = False,
     deps = [
         "//app/auth:auth_service",
         "//app/components/banner",
@@ -30,7 +29,6 @@ ts_library(
 ts_library(
     name = "executor_card",
     srcs = ["executor_card.tsx"],
-    strict = False,
     deps = [
         "//app/format",
         "//proto:scheduler_ts_proto",
