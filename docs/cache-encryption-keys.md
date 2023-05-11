@@ -1,7 +1,7 @@
 ---
 id: cache-encryption-keys
-title: Customer Managed Encryption Keys
-sidebar_label: Customer Managed Encryption Keys
+title: Customer-managed Encryption Keys
+sidebar_label: Customer-managed Encryption Keys
 ---
 
 BuildBuddy allows you to provide a managed key to be used to encrypt cache artifacts at rest.
@@ -34,7 +34,7 @@ grant this AWS account access to the supplied key.
 
 ## Considerations
 
-- When enabling or disabling customer managed encryption keys, it may take up to 10 minutes for the change to propagate
+- When enabling or disabling customer-managed encryption keys, it may take up to 10 minutes for the change to propagate
   through the system. If there are active builds during this window, they may experience "not found" errors while the
   change propagates.
 
@@ -44,7 +44,7 @@ grant this AWS account access to the supplied key.
 - The key used for encryption and decryption may be cached in memory by the BuildBuddy infrastructure for up to 10
 - minutes for performance reasons.
 
-- The customer managed key may be rotated. During rotation, the old key material must remain accessible for at least 24
+- The customer-managed key may be rotated. During rotation, the old key material must remain accessible for at least 24
   hours.
 
 ## Implementation details
