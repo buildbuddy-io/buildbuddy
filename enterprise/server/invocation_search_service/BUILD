@@ -15,6 +15,8 @@ go_library(
         "//server/tables",
         "//server/util/alert",
         "//server/util/blocklist",
+        "//server/util/clickhouse",
+        "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/filter",
         "//server/util/git",
