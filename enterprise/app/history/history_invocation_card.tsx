@@ -21,7 +21,7 @@ import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 const durationRefreshIntervalMillis = 3000;
 
 interface Props {
-  invocation: invocation.IInvocation;
+  invocation: invocation.Invocation;
   onMouseOver?: any;
   onMouseOut?: any;
   className?: string;
@@ -66,35 +66,35 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleUserClicked(event: any, invocation: invocation.IInvocation) {
+  handleUserClicked(event: any, invocation: invocation.Invocation) {
     router.navigateToUserHistory(invocation.user);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleHostClicked(event: any, invocation: invocation.IInvocation) {
+  handleHostClicked(event: any, invocation: invocation.Invocation) {
     router.navigateToHostHistory(invocation.host);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleCommitClicked(event: any, invocation: invocation.IInvocation) {
+  handleCommitClicked(event: any, invocation: invocation.Invocation) {
     router.navigateToCommitHistory(invocation.commitSha);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleBranchClicked(event: any, invocation: invocation.IInvocation) {
+  handleBranchClicked(event: any, invocation: invocation.Invocation) {
     router.navigateToBranchHistory(invocation.branchName);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
-  handleRepoClicked(event: any, invocation: invocation.IInvocation) {
+  handleRepoClicked(event: any, invocation: invocation.Invocation) {
     router.navigateToRepoHistory(invocation.repoUrl);
     event.stopPropagation();
     event.preventDefault();
