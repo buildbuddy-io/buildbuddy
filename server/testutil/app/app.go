@@ -21,9 +21,10 @@ import (
 //
 // NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 type App struct {
-	HttpPort       int
-	MonitoringPort int
-	GRPCPort       int
+	HttpPort         int
+	MonitoringPort   int
+	GRPCPort         int
+	InternalGRPCPort int
 }
 
 // Run a local BuildBuddy server for the scope of the given test case.
@@ -32,9 +33,10 @@ type App struct {
 // paths of the BuildBuddy server binary and config file, respectively.
 func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath string) *App {
 	app := &App{
-		HttpPort:       testport.FindFree(t),
-		GRPCPort:       testport.FindFree(t),
-		MonitoringPort: testport.FindFree(t),
+		HttpPort:         testport.FindFree(t),
+		GRPCPort:         testport.FindFree(t),
+		InternalGRPCPort: testport.FindFree(t),
+		MonitoringPort:   testport.FindFree(t),
 	}
 	return RunWithApp(t, app, commandPath, commandArgs, configFilePath)
 
@@ -49,7 +51,7 @@ func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string
 		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
 		fmt.Sprintf("--port=%d", app.HttpPort),
 		fmt.Sprintf("--grpc_port=%d", app.GRPCPort),
-		fmt.Sprintf("--internal_grpc_port=%d", testport.FindFree(t)),
+		fmt.Sprintf("--internal_grpc_port=%d", app.InternalGRPCPort),
 		fmt.Sprintf("--monitoring_port=%d", app.MonitoringPort),
 		"--static_directory=static",
 		"--app_directory=/app",
@@ -78,6 +80,12 @@ func (a *App) HTTPURL() string {
 // GRPCAddress returns the gRPC address pointing to the app instance.
 func (a *App) GRPCAddress() string {
 	return fmt.Sprintf("grpc://localhost:%d", a.GRPCPort)
+}
+
+// InternalGRPCAddress returns the gRPC address pointing to the app's Internal
+// service.
+func (a *App) InternalGRPCAddress() string {
+	return fmt.Sprintf("grpc://localhost:%d", a.InternalGRPCPort)
 }
 
 // BESBazelFlags returns the Bazel flags required to upload build logs to the App.

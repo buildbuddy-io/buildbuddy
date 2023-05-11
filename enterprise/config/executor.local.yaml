@@ -5,4 +5,5 @@ executor:
   docker_inherit_user_ids: true
   enable_firecracker: true
   app_target: "grpc://localhost:1985"
+  app_internal_target: "grpc://localhost:1986"
   local_cache_size_bytes: 10000000000 # 10GB

@@ -1560,7 +1560,8 @@ func TestRedisRestart(t *testing.T) {
 
 	_ = testexecutor.Run(t,
 		"enterprise/server/cmd/executor/executor_/executor",
-		[]string{"--executor.app_target=" + app.GRPCAddress()})
+		[]string{"--executor.app_target=" + app.GRPCAddress(),
+			"--executor.app_internal_target=" + app.InternalGRPCAddress()})
 
 	ctx := context.Background()
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)

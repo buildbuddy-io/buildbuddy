@@ -60,7 +60,7 @@ import (
 
 var (
 	appTarget                = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
-	appInternalTarget        = flag.String("executor.app_internal_target", "grpcs://app-internal-grpc.buildbuddy-internal.com", "The GRPC url to use to access the buildbuddy app's internal grpc service.")
+	appInternalTarget        = flag.String("executor.app_internal_target", "", "The GRPC url to use to access the buildbuddy app's internal grpc service.")
 	disableLocalCache        = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
 	localCacheDirectory      = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
 	localCacheSizeBytes      = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")

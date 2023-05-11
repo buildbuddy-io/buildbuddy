@@ -56,9 +56,10 @@ func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...
 
 func DefaultAppConfig(t *testing.T) *app.App {
 	return &app.App{
-		HttpPort:       testport.FindFree(t),
-		GRPCPort:       testport.FindFree(t),
-		MonitoringPort: testport.FindFree(t),
+		HttpPort:         testport.FindFree(t),
+		GRPCPort:         testport.FindFree(t),
+		InternalGRPCPort: testport.FindFree(t),
+		MonitoringPort:   testport.FindFree(t),
 	}
 }
 

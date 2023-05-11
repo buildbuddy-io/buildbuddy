@@ -1,4 +1,5 @@
 executor:
   app_target: "grpc://localhost:1985"
+  app_internal_target: "grpc://localhost:1986"
   root_directory: "/buildbuddy/remotebuilds/"
   local_cache_directory: "/buildbuddy/filecache"
