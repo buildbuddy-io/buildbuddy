@@ -106,10 +106,12 @@
   margin-bottom: 8px;
 }
 
-.workflows-page .workflow-dropdown-container {
+.workflows-page .workflow-buttons-container {
   margin-left: auto;
+}
+
+.workflows-page .workflow-button-container {
   position: relative;
-  align-self: start;
 }
 
 .workflows-page .upgrade-notice {

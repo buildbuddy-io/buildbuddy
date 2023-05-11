@@ -337,7 +337,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     this.props.onClickUnlinkItem(this.props.repoUrl);
   }
 
-  private onClickRunWorkflowMenuItem() {
+  private showRunWorkflowInput() {
     this.setState({ showRunWorkflowInput: true });
   }
 
@@ -427,28 +427,14 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
             </div>
           </div>
         </div>
-        <div className="workflow-item-column workflow-dropdown-container">
-          <div>
-            <OutlinedButton
-              title="Workflow options"
-              className="icon-button"
-              onClick={this.onClickMenuButton.bind(this)}>
-              <MoreVertical />
-            </OutlinedButton>
-            <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
-              <Menu className="workflow-dropdown-menu">
-                {this.props.webhookUrl && (
-                  <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
-                )}
-                <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
-                {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
-                {!this.props.webhookUrl && (
-                  <MenuItem
-                    onClick={this.onClickRunWorkflowMenuItem.bind(this)}
-                    disabled={this.state.isWorkflowRunning}>
-                    Run workflow
-                  </MenuItem>
-                )}
+        <div className="workflow-item-column workflow-buttons-container">
+          <div className="workflow-item-row">
+            {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
+            {!this.props.webhookUrl && (
+              <div className="workflow-button-container">
+                <OutlinedButton onClick={this.showRunWorkflowInput.bind(this)} disabled={this.state.isWorkflowRunning}>
+                  Run workflow
+                </OutlinedButton>
                 <Popup
                   isOpen={this.state.showRunWorkflowInput}
                   onRequestClose={this.onCloseMenu.bind(this)}
@@ -474,8 +460,24 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                     Run workflow
                   </FilledButton>
                 </Popup>
-              </Menu>
-            </Popup>
+              </div>
+            )}
+            <div className="workflow-button-container">
+              <OutlinedButton
+                title="Workflow options"
+                className="icon-button"
+                onClick={this.onClickMenuButton.bind(this)}>
+                <MoreVertical />
+              </OutlinedButton>
+              <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
+                <Menu className="workflow-dropdown-menu">
+                  {this.props.webhookUrl && (
+                    <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
+                  )}
+                  <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
+                </Menu>
+              </Popup>
+            </div>
           </div>
         </div>
       </div>

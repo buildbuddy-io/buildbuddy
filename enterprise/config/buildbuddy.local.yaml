@@ -26,38 +26,5 @@ auth:
   #     client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
   #     client_secret: "${BB_DEV_OAUTH_CLIENT_SECRET}"
 github:
-  app:
-    enabled: true
-    public_link: "https://github.com/apps/buildbuddy-github-app-localhost"
-    id: "323314"
-    client_id: "Iv1.f7e16481e78f245e"
-    client_secret: "9d9eda6dbc38aedc90296213b6aecfdbe51399ca"
-    webhook_secret: "JwHjrvYwdpuibkLRWxdKWLgTmYaE94dxvTaCHu3o"
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      MIIEpAIBAAKCAQEA2Q7kA70z+piDbSZOtY98gTkO+MXkLX9PwvAFAKYoJ+sAUqiO
-      G2gBgM/QI9rF29k/+q02Fja+0rQkgjKLho5hbf4PiUzcY4FCwtyywPQkaGnHaREp
-      T5LZ+yMNnsQUvozCw9xYEhPCO9dUyyNViBLE97gQmXrkdP1FDKepp6rXOrqa51BL
-      mNzGyo7uFyYL0GPChs1AQget7NE5809gWAkOyKwJqrAbnL94PZ8wDIiEc3z96gcd
-      ApBtGaIVvqRSDd0f6m8Yyu2Eyzx9APALBNBukSKoKsjuZEfkT/es39peLB8U9HV/
-      EzwrUO6clEZmUn9501B186wZzhDUKqvB+b1EXwIDAQABAoIBAQCiJFl34ZI+lEc4
-      9fC9992Nuk3Q0CLPSdcPS7Sw823zw7yOApOFLYBR9OsKnZZH0FXWsCVDGsoZI7BS
-      AefwL9PgEnUQn3XSbvCsF6kAMmAwDzSC6+rsIkrrKxg1jUvhu8yR+rtfZZsmkIgq
-      5s4xw7OXSMw9mmumaLt35Jb7RMdaekIfbF/Qg3qQGAAboVgfPRL7TzyI4/HeLgMf
-      PzCGlcBX979Z+L8cAE0UTl8hJkLpW86Oi2mjH+7dqtwo4aEgqHvWglMBTnXwTWKd
-      K7axEFDu8PPXVHmgCi/sgl+Lw7g3r/VQwx7wuSzYUgZ6OQHg69eN2s601slMxHvh
-      lh9omVIhAoGBAPj/R4S0jzMtfIzg1BSZucsLADqjLk1iF2kqShDtaFacV0b0JoZ9
-      aXGbamebFQfhMEkxGSXDBYH3sAQ1VM/DVxHkXj345WWTonZxzlG33C9JhZIE68xq
-      ryJvERD5OWDr5+H3UMge8mR/o4HQMDLa4F5HeRCZgu5qTsNevnsBh6StAoGBAN8p
-      qHA6pqp09gP8+tPsh1vcbLOALsQIH1FVPAeUQtnHAopatmFpjT2OzF6bYcUSJkLs
-      SnASKoC4hCQ3ZCoICrTG+DpUBYg/Ip4bw4P60blf6LT3nX+99syYPrXDg3R1XTh3
-      G02+bU5UTQOm069uQ0J7/rzD3cDiS4bsa8bHDSK7AoGBAKklgYf8wGqbs8hf0rJL
-      25K63mT3BTU8NXsTZ00oeYCcpA1nPeSOvVqXoSjQiPDZYNvXpqWoXc10XPX+5KZe
-      pH9bC0o+Eld2ex7LIMUSiVj2MO6IuUYcEuzpVkaZhwj4OIWgZBgOLctnicNdkeB6
-      H4DsPKmyHuem/+poKi2VVHfhAoGAG85vBHzqY3braJfPETT5sMKIcN1Z9mckr9e1
-      ASTCJ6yabm7bJswmIzN115v41LtsNQ6IP+qjjSJwpKqaOnqCCwB30ZzCi7WCNL00
-      4W8RTs3aiyIHZ/FdnSSjO7a+3HX7RZvhtRAzQn1Sk0/oNIXCr7gPh6nIKc6Ipqky
-      zLPkuR0CgYB/iJevcfdZPVhsIhUg4pevFK+NoK/MJ93Zg728YJzxN6OT9DZEf03m
-      Y0Siw4ieUdBg650x0CQs3gyU/r0L1GIKbN6XWb1itm0KwscCnHncskZFs9vCJoW4
-      9IY91cHnvJKl/jrU7C0XUJImc9ziGZHn5FqXVzB9fxq8B8hHfHiNcw==
-      -----END RSA PRIVATE KEY-----
+  client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
+  client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
