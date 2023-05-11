@@ -24,6 +24,7 @@ filegroup(
     srcs = [
         "LICENSE",
     ],
+    visibility = ["//visibility:public"],
 )
 
 config_setting(
