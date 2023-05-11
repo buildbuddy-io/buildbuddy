@@ -18,8 +18,6 @@ import (
 
 var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
-	// Temporary flag while the feature is being developed.
-	enableEncryptionSchema = flag.Bool("database.enable_encryption_schema", false, "If true, encryption related tables will be created.")
 )
 
 const (
@@ -1122,10 +1120,8 @@ func RegisterTables() {
 	registerTable("AK", &APIKey{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
-	if *enableEncryptionSchema {
-		registerTable("EK", &EncryptionKey{})
-		registerTable("EV", &EncryptionKeyVersion{})
-	}
+	registerTable("EK", &EncryptionKey{})
+	registerTable("EV", &EncryptionKeyVersion{})
 	registerTable("EX", &Execution{})
 	registerTable("GH", &GitHubAppInstallation{})
 	registerTable("GR", &Group{})

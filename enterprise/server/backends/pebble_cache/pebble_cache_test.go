@@ -1922,7 +1922,6 @@ func getCrypterEnv(t *testing.T) (*testenv.TestEnv, string) {
 	kmsDir := testfs.MakeTempDir(t)
 	masterKeyURI := generateKMSKey(t, kmsDir, "masterKey")
 
-	flags.Set(t, "database.enable_encryption_schema", true)
 	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
 	flags.Set(t, "keystore.master_key_uri", masterKeyURI)
 	env := testenv.GetTestEnv(t)

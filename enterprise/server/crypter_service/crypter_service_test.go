@@ -28,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
@@ -216,8 +215,6 @@ func createKey(t *testing.T, env environment.Env, clock clockwork.Clock, keyID, 
 
 func getEnv(t *testing.T) (*testenv.TestEnv, *fakeKMS) {
 	mrand.Seed(time.Now().UnixMicro())
-
-	flags.Set(t, "database.enable_encryption_schema", true)
 
 	kms := newFakeKMS(t)
 
