@@ -645,6 +645,7 @@ ts_library(
     name = "suggestion_button",
     srcs = ["suggestion_button.tsx"],
     deps = [
+        "//app/auth:user",
         "//app/capabilities",
         "//app/components/button",
         "//app/components/button:button_group",

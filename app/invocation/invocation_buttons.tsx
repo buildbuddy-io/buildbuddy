@@ -42,7 +42,7 @@ export default class InvocationButtons extends React.Component<InvocationButtons
         {showCancelButton && <InvocationCancelButton invocationId={this.props.invocationId} />}
         <InvocationCompareButton invocationId={this.props.invocationId} />
 
-        <SuggestionButton model={this.props.model} />
+        <SuggestionButton user={this.props.user} model={this.props.model} />
         <InvocationShareButton user={this.props.user} model={this.props.model} invocationId={this.props.invocationId} />
         <InvocationMenuComponent
           user={this.props.user}

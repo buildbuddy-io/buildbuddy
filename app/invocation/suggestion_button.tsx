@@ -20,19 +20,23 @@ import { User } from "../auth/user";
 
 export interface SuggestionButtonProps {
   model: InvocationModel;
-  user: User;
+  user: User | undefined;
 }
 
 type State = {
-  isMenuOpen?: boolean;
-  isDialogOpen?: boolean;
-  isLoading?: boolean;
+  isMenuOpen: boolean;
+  isDialogOpen: boolean;
+  isLoading: boolean;
 };
 
 export default class SuggestionButton extends React.Component<SuggestionButtonProps, State> {
-  state: State = {};
+  state: State = {
+    isMenuOpen: false,
+    isDialogOpen: false,
+    isLoading: false,
+  };
 
-  private inFlightRpc: CancelablePromise;
+  private inFlightRpc: CancelablePromise | undefined;
 
   private onOpenMenu() {
     this.setState({ isMenuOpen: true });
