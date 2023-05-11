@@ -4,7 +4,6 @@ go_library(
     name = "typescript",
     srcs = ["typescript.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix/typescript",
-    visibility = ["//visibility:public"],
     deps = [
         "@bazel_gazelle//config:go_default_library",
         "@bazel_gazelle//label:go_default_library",
@@ -16,3 +15,5 @@ go_library(
         "@com_github_smacker_go_tree_sitter//typescript/tsx",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

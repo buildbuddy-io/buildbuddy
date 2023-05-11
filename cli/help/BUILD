@@ -4,7 +4,6 @@ go_library(
     name = "help",
     srcs = ["help.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/help",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
@@ -12,3 +11,5 @@ go_library(
         "//cli/version",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

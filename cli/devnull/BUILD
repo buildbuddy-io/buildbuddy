@@ -4,9 +4,10 @@ go_library(
     name = "devnull",
     srcs = ["devnull.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/devnull",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:publish_build_event_go_proto",
         "//server/interfaces",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

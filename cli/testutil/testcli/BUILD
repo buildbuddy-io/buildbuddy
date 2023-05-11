@@ -15,3 +15,5 @@ go_library(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

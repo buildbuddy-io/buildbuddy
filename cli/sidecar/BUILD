@@ -4,7 +4,6 @@ go_library(
     name = "sidecar",
     srcs = ["sidecar.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/sidecar",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/log",
@@ -15,3 +14,5 @@ go_library(
         "@com_github_google_shlex//:shlex",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

@@ -5,5 +5,7 @@ alias(
 
 exports_files(
     srcs = ["install.sh"],
-    visibility = ["//visibility:public"],
 )
+
+# gazelle:default_visibility //cli:__subpackages__
+package(default_visibility = ["//cli:__subpackages__"])

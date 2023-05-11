@@ -4,7 +4,6 @@ go_library(
     name = "arg",
     srcs = ["arg.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/arg",
-    visibility = ["//visibility:public"],
 )
 
 go_test(
@@ -13,3 +12,5 @@ go_test(
     embed = [":arg"],
     deps = ["@com_github_stretchr_testify//assert"],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

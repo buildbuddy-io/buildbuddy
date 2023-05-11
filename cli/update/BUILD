@@ -12,7 +12,6 @@ go_library(
     srcs = ["update.go"],
     embedsrcs = ["install.sh"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/update",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
@@ -20,3 +19,5 @@ go_library(
         "//cli/workspace",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])
