@@ -37,16 +37,16 @@ var (
 )
 
 type InvocationSearchService struct {
-	env environment.Env
-	h   interfaces.DBHandle
-	oh  interfaces.OLAPDBHandle
+	env     environment.Env
+	dbh     interfaces.DBHandle
+	olapdbh interfaces.OLAPDBHandle
 }
 
 func NewInvocationSearchService(env environment.Env, h interfaces.DBHandle, oh interfaces.OLAPDBHandle) *InvocationSearchService {
 	return &InvocationSearchService{
-		env: env,
-		h:   h,
-		oh:  oh,
+		env:     env,
+		dbh:     h,
+		olapdbh: oh,
 	}
 }
 
@@ -58,8 +58,11 @@ func defaultSortParams() *inpb.InvocationSort {
 }
 
 // Clickhouse UUIDs are formatted without any dashes :(
-func fixUUID(uuid string) string {
-	return uuid[0:8] + "-" + uuid[8:12] + "-" + uuid[12:16] + "-" + uuid[16:20] + "-" + uuid[20:32]
+func fixUUID(uuid string) (string, error) {
+	if len(uuid) != 32 {
+		return "", status.InternalErrorf("Tried to fetch an invalid invocation ID %s", uuid)
+	}
+	return uuid[0:8] + "-" + uuid[8:12] + "-" + uuid[12:16] + "-" + uuid[16:20] + "-" + uuid[20:32], nil
 }
 
 func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, invocationIds []string, sort *inpb.InvocationSort) ([]*inpb.Invocation, error) {
@@ -74,7 +77,7 @@ func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, 
 
 	qStr, qArgs := q.Build()
 
-	rows, err := s.h.RawWithOptions(ctx, db.Opts().WithQueryName("hydrate_invocation_search"), qStr, qArgs...).Rows()
+	rows, err := s.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("hydrate_invocation_search"), qStr, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +86,7 @@ func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, 
 	out := make([]*tables.Invocation, 0)
 	for rows.Next() {
 		var ti tables.Invocation
-		if err := s.h.DB(ctx).ScanRows(rows, &ti); err != nil {
+		if err := s.dbh.DB(ctx).ScanRows(rows, &ti); err != nil {
 			return nil, err
 		}
 		out = append(out, &ti)
@@ -102,7 +105,7 @@ func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.oh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("clickhouse_search_invocations"), sql, args...).Rows()
+	rows, err := s.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("clickhouse_search_invocations"), sql, args...).Rows()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -110,10 +113,14 @@ func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.
 	tis := make([]string, 0)
 	for rows.Next() {
 		var ti schema.Invocation
-		if err := s.oh.DB(ctx).ScanRows(rows, &ti); err != nil {
+		if err := s.olapdbh.DB(ctx).ScanRows(rows, &ti); err != nil {
 			return nil, 0, err
 		}
-		tis = append(tis, fixUUID(ti.InvocationUUID))
+		fixedUUID, err := fixUUID(ti.InvocationUUID)
+		if err != nil {
+			return nil, 0, err
+		}
+		tis = append(tis, fixedUUID)
 	}
 
 	invocations, err := s.hydrateInvocationsFromDB(ctx, tis, req.GetSort())
@@ -130,7 +137,7 @@ func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.h.RawWithOptions(ctx, db.Opts().WithQueryName("search_invocations"), sql, args...).Rows()
+	rows, err := s.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("search_invocations"), sql, args...).Rows()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -138,7 +145,7 @@ func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *
 	tis := make([]*tables.Invocation, 0)
 	for rows.Next() {
 		var ti tables.Invocation
-		if err := s.h.DB(ctx).ScanRows(rows, &ti); err != nil {
+		if err := s.dbh.DB(ctx).ScanRows(rows, &ti); err != nil {
 			return nil, 0, err
 		}
 		tis = append(tis, &ti)
@@ -188,7 +195,7 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 }
 
 func (s *InvocationSearchService) shouldQueryClickhouse(req *inpb.SearchInvocationRequest) bool {
-	return s.oh != nil && *olapInvocationSearchEnabled && len(req.GetQuery().GetFilter()) > 0
+	return s.olapdbh != nil && *olapInvocationSearchEnabled && len(req.GetQuery().GetFilter()) > 0
 }
 
 func addOrderBy(sort *inpb.InvocationSort, q *query_builder.Query) {
