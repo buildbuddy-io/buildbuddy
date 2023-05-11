@@ -290,6 +290,10 @@ export default class InvocationModel {
     return this.invocations.find(() => true)?.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
   }
 
+  getTags() {
+    return this.invocations.find(() => true)?.tags || [];
+  }
+
   booleanCommandLineOption(name: string, defaultValue = false): boolean {
     const rawVal = this.optionsMap.get(name);
     if (rawVal === undefined) return defaultValue;

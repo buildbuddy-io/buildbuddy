@@ -267,6 +267,9 @@ message InvocationQuery {
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 15;
+
+  // A plaintext tag for the targets built (exact match). Ex: "my-cool-tag"
+  string tag = 16;
 }
 
 message InvocationSort {
@@ -404,6 +407,9 @@ message InvocationStatQuery {
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 13;
+
+  // A plaintext tag for the targets built (exact match). Ex: "my-cool-tag"
+  string tag = 14;
 }
 
 message GetInvocationStatRequest {

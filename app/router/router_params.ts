@@ -15,6 +15,7 @@ export const COMMIT_PARAM_NAME = "commit";
 export const HOST_PARAM_NAME = "host";
 export const COMMAND_PARAM_NAME = "command";
 export const PATTERN_PARAM_NAME = "pattern";
+export const TAG_PARAM_NAME = "tag";
 export const MINIMUM_DURATION_PARAM_NAME = "min-dur";
 export const MAXIMUM_DURATION_PARAM_NAME = "max-dur";
 
@@ -36,6 +37,7 @@ export const GLOBAL_FILTER_PARAM_NAMES = [
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
   PATTERN_PARAM_NAME,
+  TAG_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
 ];

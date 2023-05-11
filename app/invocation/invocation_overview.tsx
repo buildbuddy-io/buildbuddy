@@ -12,6 +12,7 @@ import {
   HardDrive,
   LayoutGrid,
   Link as LinkIcon,
+  Tag,
   Target,
   User as UserIcon,
   Wrench,
@@ -63,6 +64,10 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
       return;
     }
     router.navigateToSetup();
+  }
+
+  handleTagClicked(tag: string) {
+    router.navigateToTagHistory(tag);
   }
 
   handleFetchesClicked() {
@@ -238,6 +243,12 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               <LinkIcon className="icon" />
               {link.linkText}
             </a>
+          ))}
+          {this.props.model.getTags().map((tag) => (
+            <div className="detail clickable" onClick={this.handleTagClicked.bind(this, tag.name)}>
+              <Tag className="icon" />
+              {tag.name}
+            </div>
           ))}
         </div>
       </div>

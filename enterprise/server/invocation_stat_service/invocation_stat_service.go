@@ -173,6 +173,12 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 		q.AddWhereClause("pattern = ?", pattern)
 	}
 
+	// XXX: Do right thing in sql case
+	// XXX: Don't do executions yet...
+	if tag := tq.GetTag(); tag != "" {
+		q.AddWhereClause("has(tags, ?)", tag)
+	}
+
 	if commitSHA := tq.GetCommitSha(); commitSHA != "" {
 		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
@@ -802,6 +808,11 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	if pattern := req.GetQuery().GetPattern(); pattern != "" {
 		q.AddWhereClause("pattern = ?", pattern)
+	}
+
+	// XXX: Do right thing in sql case.
+	if tag := req.GetQuery().GetTag(); tag != "" {
+		q.AddWhereClause("has(tags, ?)", tag)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {

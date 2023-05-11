@@ -195,7 +195,7 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 }
 
 func (s *InvocationSearchService) shouldQueryClickhouse(req *inpb.SearchInvocationRequest) bool {
-	return s.olapdbh != nil && *olapInvocationSearchEnabled && len(req.GetQuery().GetFilter()) > 0
+	return s.olapdbh != nil && *olapInvocationSearchEnabled && (req.GetQuery().GetTag() != "" || len(req.GetQuery().GetFilter()) > 0)
 }
 
 func addOrderBy(sort *inpb.InvocationSort, q *query_builder.Query) {
@@ -292,6 +292,15 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	}
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
 		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
+	}
+	if tag := req.GetQuery().GetTag(); tag != "" {
+		if s.shouldQueryClickhouse(req) {
+			q.AddWhereClause("has(i.tags, ?)", tag)
+		} else if s.h.DB(ctx).Dialector.Name() == "mysql" {
+			q.AddWhereClause("FIND_IN_SET(?, i.tags)", tag)
+		} else {
+			q.AddWhereClause("i.tags LIKE ?", "%"+strings.ReplaceAll(tag, "%", "\\%")+"%")
+		}
 	}
 
 	statusClauses := query_builder.OrClauses{}

@@ -8,6 +8,7 @@ import {
   HelpCircle,
   LayoutGrid,
   PlayCircle,
+  Tag,
   User,
   Wrench,
   XCircle,
@@ -185,6 +186,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
 
   render() {
     const roleLabel = format.formatRole(this.props.invocation.role);
+    const tags = (this.props.invocation.tags || []).map((t) => t.name).join(", ");
 
     return (
       <div
@@ -271,6 +273,12 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                 }}>
                 <GitBranch className="icon" />
                 {this.props.invocation.branchName}
+              </div>
+            )}
+            {tags && (
+              <div className="detail clickable">
+                <Tag className="icon" />
+                {tags}
               </div>
             )}
             {!this.props.hover && this.props.invocation.commitSha && (

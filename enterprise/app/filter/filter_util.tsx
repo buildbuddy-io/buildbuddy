@@ -19,6 +19,7 @@ import {
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
   PATTERN_PARAM_NAME,
+  TAG_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
@@ -56,6 +57,7 @@ export interface ProtoFilterParams {
   host?: string;
   command?: string;
   pattern?: string;
+  tag?: string;
   minimumDuration?: google_duration.protobuf.Duration;
   maximumDuration?: google_duration.protobuf.Duration;
 
@@ -80,6 +82,7 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     host: search.get(HOST_PARAM_NAME) || undefined,
     command: search.get(COMMAND_PARAM_NAME) || undefined,
     pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
+    tag: (capabilities.config.tagFilterEnabled && search.get(TAG_PARAM_NAME)) || undefined,
     minimumDuration: parseDuration(search.get(MINIMUM_DURATION_PARAM_NAME)),
     maximumDuration: parseDuration(search.get(MAXIMUM_DURATION_PARAM_NAME)),
 
@@ -184,6 +187,7 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
       search.get(HOST_PARAM_NAME) ||
       search.get(COMMAND_PARAM_NAME) ||
       search.get(PATTERN_PARAM_NAME) ||
+      search.get(TAG_PARAM_NAME) ||
       search.get(MINIMUM_DURATION_PARAM_NAME) ||
       search.get(MAXIMUM_DURATION_PARAM_NAME)
   );

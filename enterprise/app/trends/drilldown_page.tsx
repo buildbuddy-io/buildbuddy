@@ -285,6 +285,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
+      tag: filterParams.tag,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -363,6 +364,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         commitSha: filterParams.commit,
         command: filterParams.command,
         pattern: filterParams.pattern,
+        tag: filterParams.tag,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
         groupId: groupId,
@@ -416,6 +418,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
+      tag: filterParams.tag,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -573,6 +576,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           this.navigateForBarClick("pattern", e.activeLabel);
         }
         return;
+      case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
+        if (capabilities.config.tagFilterEnabled) {
+          this.navigateForBarClick("tag", e.activeLabel);
+        }
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
@@ -596,6 +604,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "branch_name";
       case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         return "pattern";
+      case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
+        return "tag";
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
         return "worker (execution)";
       default:
