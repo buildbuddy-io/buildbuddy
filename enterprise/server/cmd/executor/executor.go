@@ -117,7 +117,7 @@ func InitializeInternalClients(internalTarget string, realEnv *real_environment.
 		return
 	}
 	log.Infof("Connecting to cache target: %s", internalTarget)
-	addHealthCheck(conn, false /*=required*/, "grpc_internal_services_connection", realEnv.GetHealthChecker())
+	addHealthCheck(conn, true /*=required*/, "grpc_internal_services_connection", realEnv.GetHealthChecker())
 	realEnv.SetSociArtifactStoreClient(socipb.NewSociArtifactStoreClient(conn))
 }
 
