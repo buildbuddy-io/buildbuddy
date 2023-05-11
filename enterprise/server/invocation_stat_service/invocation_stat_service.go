@@ -147,7 +147,7 @@ func flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext, lookbackWindowDays int32) error {
+func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext, lookbackWindowDays int32) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
@@ -173,10 +173,13 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 		q.AddWhereClause("pattern = ?", pattern)
 	}
 
-	// XXX: Do right thing in sql case
 	// XXX: Don't do executions yet...
 	if tag := tq.GetTag(); tag != "" {
-		q.AddWhereClause("has(tags, ?)", tag)
+		if i.isOLAPDBEnabled() {
+			q.AddWhereClause("has(tags, ?)", tag)
+		} else {
+			return status.InvalidArgumentError("Tag filtering isn't supported without an OLAP DB.")
+		}
 	}
 
 	if commitSHA := tq.GetCommitSha(); commitSHA != "" {
@@ -260,7 +263,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
     `)
 
 	reqCtx := req.GetRequestContext()
-	if err := addWhereClauses(q, req.GetQuery(), reqCtx, 0); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx, 0); err != nil {
 		return nil, err
 	}
 	qStr, qArgs := q.Build()
@@ -276,7 +279,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
-	if err := addWhereClauses(q, req.GetQuery(), reqCtx, req.GetLookbackWindowDays()); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx, req.GetLookbackWindowDays()); err != nil {
 		return nil, err
 	}
 	q.SetGroupBy("name")
@@ -351,13 +354,14 @@ func getQueryWithFlattenedArray(innerQuery string) string {
 }
 
 func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb.GetTrendRequest) ([]*stpb.ExecutionStat, error) {
-	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled {
+	// TODO(jdhollen): support tags in execution trends.
+	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled || req.GetQuery().GetTag() != "" {
 		return nil, nil
 	}
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getExecutionTrendQuery(reqCtx.GetTimezoneOffsetMinutes()))
-	if err := addWhereClauses(q, req.GetQuery(), req.GetRequestContext(), req.GetLookbackWindowDays()); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), req.GetRequestContext(), req.GetLookbackWindowDays()); err != nil {
 		return nil, err
 	}
 	q.SetGroupBy("name")
@@ -646,9 +650,9 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 		MetricArrayStr:         metricArrayStr}, nil
 }
 
-func getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
+func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
 	placeholderQuery := query_builder.NewQuery("")
-	if err := addWhereClauses(placeholderQuery, q, reqCtx, 0); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, q, reqCtx, 0); err != nil {
 		return "", nil, err
 	}
 	if m.GetInvocation() == sfpb.InvocationMetricType_DURATION_USEC_INVOCATION_METRIC {
@@ -676,7 +680,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
-	whereClauseStr, whereClauseArgs, err := getWhereClauseForHeatmapQuery(req.GetMetric(), req.GetQuery(), req.GetRequestContext())
+	whereClauseStr, whereClauseArgs, err := i.getWhereClauseForHeatmapQuery(req.GetMetric(), req.GetQuery(), req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
@@ -810,9 +814,12 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("pattern = ?", pattern)
 	}
 
-	// XXX: Do right thing in sql case.
 	if tag := req.GetQuery().GetTag(); tag != "" {
-		q.AddWhereClause("has(tags, ?)", tag)
+		if i.isOLAPDBEnabled() {
+			q.AddWhereClause("has(tags, ?)", tag)
+		} else {
+			return nil, status.InvalidArgumentError("Tag filtering isn't supported without an OLAP DB.")
+		}
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
@@ -952,7 +959,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0); err != nil {
 		return "", nil, err
 	}
 

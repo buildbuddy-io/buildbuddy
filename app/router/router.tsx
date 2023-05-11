@@ -192,7 +192,6 @@ class Router {
   }
 
   navigateToTagHistory(tag: string) {
-    // XXX
     this.navigateTo(Path.home + "?tag=" + tag);
   }
 

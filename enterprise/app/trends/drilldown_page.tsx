@@ -24,6 +24,7 @@ import { User } from "../../../app/auth/user";
 import Select, { Option } from "../../../app/components/select/select";
 import router from "../../../app/router/router";
 import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
+import Banner from "../../../app/components/banner/banner";
 
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
@@ -111,6 +112,7 @@ type EventData = {
 };
 
 interface State {
+  unsupported: boolean;
   loading: boolean;
   loadingDrilldowns: boolean;
   drilldownsFailed: boolean;
@@ -198,6 +200,7 @@ const METRIC_OPTIONS: MetricOption[] = [
 
 export default class DrilldownPageComponent extends React.Component<Props, State> {
   state: State = {
+    unsupported: false,
     loading: false,
     loadingDrilldowns: false,
     drilldownsFailed: false,
@@ -291,6 +294,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
     });
+
+    // TODO(jdhollen): Support tags on executions.
+    if (isExecutionMetric(this.selectedMetric.metric) && drilldownRequest.query.tag) {
+      drilldownRequest.query.tag = undefined;
+    }
+
     this.roundDateRangesAndAddZoomFiltersToQuery(drilldownRequest.query);
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
@@ -313,6 +322,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       eventData: undefined,
     });
     const filterParams = getProtoFilterParams(this.props.search);
+    // TODO(jdhollen): Support tags on executions.
     let request = new execution_stats.SearchExecutionRequest({
       query: new execution_stats.ExecutionQuery({
         invocationHost: filterParams.host,
@@ -403,7 +413,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   fetch() {
     const filterParams = getProtoFilterParams(this.props.search);
-    this.setState({ loading: true, heatmapData: undefined, drilldownData: undefined, eventData: undefined });
+    this.setState({
+      loading: true,
+      unsupported: false,
+      heatmapData: undefined,
+      drilldownData: undefined,
+      eventData: undefined,
+    });
 
     // Build request...
     const heatmapRequest = stats.GetStatHeatmapRequest.create({});
@@ -427,6 +443,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       status: filterParams.status,
     });
     this.roundDateRangesAndAddZoomFiltersToQuery(heatmapRequest.query);
+
+    // TODO(jdhollen): Support tags on executions.
+    if (isExecution && heatmapRequest.query.tag) {
+      heatmapRequest.query.tag = undefined;
+      this.setState({ unsupported: true });
+    }
 
     rpcService.service
       .getStatHeatmap(heatmapRequest)
@@ -768,6 +790,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           {this.renderZoomChip()}
         </div>
         {this.state.loading && <div className="loading"></div>}
+        {this.state.unsupported && (
+          <Banner type="warning" className="drilldown-page-warning-section">
+            Filtering executions by tag is not supported yet. Check back soon!
+          </Banner>
+        )}
         {!this.state.loading && (
           <>
             {this.state.heatmapData && (
