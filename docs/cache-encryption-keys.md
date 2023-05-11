@@ -6,7 +6,7 @@ sidebar_label: Customer Managed Encryption Keys
 
 BuildBuddy allows you to provide a managed key to be used to encrypt cache artifacts at rest.
 
-BuildBuddy currently support encryption keys stored in Google Cloud Platform (GCP) KMS or Amazon Web Services (AWS) KMS.
+BuildBuddy currently supports encryption keys stored in Google Cloud Platform (GCP) KMS or Amazon Web Services (AWS) KMS.
 
 To get started, open the organization settings page and navigate to the "Encryption keys" tab.
 
