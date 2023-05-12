@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -101,13 +104,15 @@ func main() {
 
 					if unhealthyCount >= maxUnhealthyCount {
 						err = func() error {
-							log.Debugf("Metric %s has been consecutively unhealthy %d times. Marking as failed.", metric.Name, unhealthyCount)
+							log.Warningf("Metric %s has been consecutively unhealthy %d times. Marking as failed.", metric.Name, unhealthyCount)
+							sendMetricUnhealthySlack(metric.Name, metric.IsSecondaryMetric, config.MaxSecondaryMetricFailureCount)
+
 							mu.Lock()
 							defer mu.Unlock()
 
 							failedMetrics = append(failedMetrics, metric.Name)
 							if !metric.IsSecondaryMetric || len(failedMetrics) >= config.MaxSecondaryMetricFailureCount {
-								failedMetricsStr := strings.Join(failedMetrics, ",")
+								failedMetricsStr := strings.Join(failedMetrics, ", ")
 								return errors.New(fmt.Sprintf("Metrics unhealthy: %s", failedMetricsStr))
 							}
 							return nil
@@ -217,4 +222,76 @@ func relativeRangeMetricHealthy(promAPI promapi.API, metricName string, metricVa
 		return absPercentDiff < within.Value, nil
 	}
 	return false, status.InvalidArgumentErrorf("must specify a Within field for relative range thresholds")
+}
+
+type AttachmentBlock struct {
+	Blocks []SlackBlock `json:"blocks"`
+	Color  string       `json:"color"`
+}
+
+type SlackBlock struct {
+	Type string    `json:"type"`
+	Text TextBlock `json:"text"`
+}
+
+type TextBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func sendMetricUnhealthySlack(metric string, isSecondaryMetric bool, maxSecondaryMetricFailureCount int) {
+	slackWebhookURL := os.Getenv("SLACK_WEBHOOK")
+	if slackWebhookURL == "" {
+		log.Warningf("No slack webhook set. Cannot send warning messages.")
+		return
+	}
+
+	msg := fmt.Sprintf("The metric `%s` is unhealthy.", metric)
+	if isSecondaryMetric {
+		msg += fmt.Sprintf(" It is a secondary metric, so we will only rollback if %d secondary metrics report unhealthy.", maxSecondaryMetricFailureCount)
+	} else {
+		msg += " Rolling back."
+	}
+
+	data := map[string][]AttachmentBlock{
+		"attachments": {
+			{
+				Color: "#ad1411",
+				Blocks: []SlackBlock{
+					{
+						Type: "section",
+						Text: TextBlock{
+							Type: "mrkdwn",
+							Text: msg,
+						},
+					},
+				},
+			},
+		},
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		log.Errorf("Error marshalling data: %s", err)
+		return
+	}
+
+	req, err := http.NewRequest("POST", slackWebhookURL, bytes.NewBuffer(payload))
+	if err != nil {
+		log.Errorf("Error creating request: %s", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Errorf("Error making request: %s", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Errorf("Error sending data to slack: %s", resp.Status)
+		return
+	}
 }
