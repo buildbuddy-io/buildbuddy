@@ -7,3 +7,5 @@ go_library(
     visibility = ["//visibility:public"],
     deps = ["//cli/arg"],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])
