@@ -168,7 +168,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 			),
 		)
 
-		initializeInternalClientsOrDie(*appInternalTarget, env)
+		initializeInternalClientsOrDie(env, *appInternalTarget)
 	}
 	return &Provider{
 		env:                   env,
