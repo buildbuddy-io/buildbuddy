@@ -59,10 +59,7 @@ var (
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
-	// Currently, the app_internal target is only used for the
-	// SociArtifactStore, so its definition and use is restricted to this file.
-	// It should be moved if/when there are other uses.
-	appInternalTarget = flag.String("executor.app_internal_target", "", "The GRPC url to use to access the buildbuddy app's internal grpc service.")
+	sociArtifactStoreTarget = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -169,7 +166,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		)
 	}
 	if *imageStreamingEnabled {
-		intializeSociArtifactStoreClientOrDie(env, *appInternalTarget)
+		intializeSociArtifactStoreClientOrDie(env, *sociArtifactStoreTarget)
 	}
 	return &Provider{
 		env:                   env,
@@ -183,12 +180,12 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 func intializeSociArtifactStoreClientOrDie(env environment.Env, target string) {
 	conn, err := grpc_client.DialTarget(target)
 	if err != nil {
-		log.Fatalf("Unable to connect to app internal grpc target '%s': %s", target, err)
+		log.Fatalf("Unable to connect to soci artifact store grpc target '%s': %s", target, err)
 		return
 	}
 	log.Infof("Connecting to app internal target: %s", target)
 	env.GetHealthChecker().AddHealthCheck(
-		"grpc_app_internal_connection", interfaces.CheckerFunc(
+		"grpc_soci_artifact_store_connection", interfaces.CheckerFunc(
 			func(ctx context.Context) error {
 				connState := conn.GetState()
 				if connState == connectivity.Ready {

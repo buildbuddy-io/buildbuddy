@@ -49,7 +49,6 @@ cache:
   max_size_bytes: 1000000000  # 1 GB
 executor:
   app_target: "grpc://localhost:1985"
-  app_internal_target: "grpc://localhost:1986"
   local_cache_size_bytes: 1000000000  # 1GB
   # Guarantee that we can fit at least one workflow task.
   # If we don't actually have the memory, we'll OOM, which is OK
