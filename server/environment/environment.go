@@ -157,4 +157,5 @@ type Env interface {
 	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
 	SetSociArtifactStoreServer(socipb.SociArtifactStoreServer)
 	GetSociArtifactStoreClient() socipb.SociArtifactStoreClient
+	SetSociArtifactStoreClient(socipb.SociArtifactStoreClient)
 }

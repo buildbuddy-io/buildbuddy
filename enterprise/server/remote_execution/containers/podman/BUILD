@@ -21,6 +21,7 @@ go_library(
         "//server/util/background",
         "//server/util/disk",
         "//server/util/flagutil",
+        "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/networking",
         "//server/util/prefix",
@@ -28,6 +29,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@com_github_opencontainers_go_digest//:go-digest",
+        "@org_golang_google_grpc//connectivity",
         "@org_golang_google_protobuf//proto",
     ],
 )

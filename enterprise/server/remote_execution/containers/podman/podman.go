@@ -27,12 +27,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/protobuf/proto"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -56,6 +58,11 @@ var (
 	streamableImages      = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
+
+	// Currently, the app_internal target is only used for the
+	// SociArtifactStore, so it's definition and use is restricted to this
+	// file. It should be moved if/when there are other uses.
+	appInternalTarget = flag.String("executor.app_internal_target", "", "The GRPC url to use to access the buildbuddy app's internal grpc service.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -160,6 +167,8 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 				},
 			),
 		)
+
+		initializeInternalClientsOrDie(*appInternalTarget, env)
 	}
 	return &Provider{
 		env:                   env,
@@ -168,6 +177,30 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		imageStreamingEnabled: *imageStreamingEnabled,
 		buildRoot:             buildRoot,
 	}, nil
+}
+
+func initializeInternalClientsOrDie(env environment.Env, target string) {
+	conn, err := grpc_client.DialTarget(target)
+	if err != nil {
+		log.Fatalf("Unable to connect to app internal grpc target '%s': %s", target, err)
+		return
+	}
+	log.Infof("Connecting to app internal target: %s", target)
+	env.GetHealthChecker().AddHealthCheck(
+		"grpc_app_internal_connection", interfaces.CheckerFunc(
+			func(ctx context.Context) error {
+				connState := conn.GetState()
+				if connState == connectivity.Ready {
+					return nil
+				} else if connState == connectivity.Idle {
+					conn.Connect()
+					return nil
+				}
+				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
+			},
+		),
+	)
+	env.SetSociArtifactStoreClient(socipb.NewSociArtifactStoreClient(conn))
 }
 
 func (p *Provider) NewContainer(ctx context.Context, image string, options *PodmanOptions) (container.CommandContainer, error) {
