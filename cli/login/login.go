@@ -53,6 +53,20 @@ func HandleLogin(args []string) (exitCode int, err error) {
 	return 0, nil
 }
 
+func HandleLogout(args []string) (exitCode int, err error) {
+	if arg.GetCommand(args) != "logout" {
+		return -1, nil
+	}
+
+	if err := storage.WriteRepoConfig(apiKeyRepoSetting, ""); err != nil {
+		return -1, fmt.Errorf("failed to clear api key from local .git/config: %s", err)
+	}
+
+	log.Printf("You are now logged out!")
+
+	return 0, nil
+}
+
 func openInBrowser(url string) error {
 	cmd := "open"
 	if runtime.GOOS == "linux" {

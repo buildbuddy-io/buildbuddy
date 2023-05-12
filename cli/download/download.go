@@ -108,7 +108,7 @@ func downloadFile(uri string) error {
 
 	ctx := context.Background()
 	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", strings.TrimSpace(apiKey))
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
 	wc, err := getOutput()
