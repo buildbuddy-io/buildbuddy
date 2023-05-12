@@ -68,8 +68,8 @@ message TrendQuery {
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 15;
 
-  // A plaintext tag for the targets built (exact match). Ex: "my-cool-tag"
-  string tag = 16;
+  // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
+  repeated string tags = 16;
 }
 
 message TrendStat {

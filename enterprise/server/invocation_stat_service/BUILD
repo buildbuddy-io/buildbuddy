@@ -13,6 +13,7 @@ go_library(
         "//proto:invocation_status_go_proto",
         "//proto:stat_filter_go_proto",
         "//proto:stats_go_proto",
+        "//server/build_event_protocol/invocation_format",
         "//server/environment",
         "//server/interfaces",
         "//server/util/clickhouse",

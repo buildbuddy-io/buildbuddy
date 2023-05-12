@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -173,9 +174,10 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		q.AddWhereClause("pattern = ?", pattern)
 	}
 
-	if tag := tq.GetTag(); tag != "" {
+	if tags := tq.GetTags(); len(tags) > 0 {
 		if i.isOLAPDBEnabled() {
-			q.AddWhereClause("has(tags, ?)", tag)
+			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
+			q.AddWhereClause(clause, args...)
 		} else {
 			return status.InvalidArgumentError("Tag filtering isn't supported without an OLAP DB.")
 		}
@@ -354,7 +356,7 @@ func getQueryWithFlattenedArray(innerQuery string) string {
 
 func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb.GetTrendRequest) ([]*stpb.ExecutionStat, error) {
 	// TODO(jdhollen): support tags in execution trends.
-	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled || req.GetQuery().GetTag() != "" {
+	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled || len(req.GetQuery().GetTags()) > 0 {
 		return nil, nil
 	}
 	reqCtx := req.GetRequestContext()
@@ -813,9 +815,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("pattern = ?", pattern)
 	}
 
-	if tag := req.GetQuery().GetTag(); tag != "" {
+	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
 		if i.isOLAPDBEnabled() {
-			q.AddWhereClause("has(tags, ?)", tag)
+			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
+			q.AddWhereClause(clause, args...)
 		} else {
 			return nil, status.InvalidArgumentError("Tag filtering isn't supported without an OLAP DB.")
 		}

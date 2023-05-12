@@ -289,7 +289,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       command: filterParams.command,
       pattern: filterParams.pattern,
       // TODO(jdhollen): Support tags on executions.
-      tag: isExecutionMetric(this.selectedMetric.metric) ? undefined : filterParams.tag,
+      tags: isExecutionMetric(this.selectedMetric.metric) ? undefined : filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -369,7 +369,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         commitSha: filterParams.commit,
         command: filterParams.command,
         pattern: filterParams.pattern,
-        tag: filterParams.tag,
+        tags: filterParams.tags,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
         groupId: groupId,
@@ -422,7 +422,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     const isExecution = isExecutionMetric(heatmapRequest.metric);
 
     // TODO(jdhollen): Support tags on executions.
-    if (isExecution && filterParams.tag) {
+    if (isExecution && filterParams.tags) {
       this.setState({ unsupported: true });
     }
 
@@ -435,7 +435,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       command: filterParams.command,
       pattern: filterParams.pattern,
       // TODO(jdhollen): Support tags on executions.
-      tag: isExecution ? undefined : filterParams.tag,
+      tags: isExecution ? undefined : filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
