@@ -40,6 +40,7 @@ This is a unique opportunity to shape the future of how engineers build and test
 - Siggi Simonarson - GitHub: @siggisim, Twitter: @siggi
 - Brandon Duffany - GitHub: @bduffany, Twitter: @brandon_duffany
 - Vadim Berezniker - GitHub: @vadimberezniker
+- And the rest of the [team here](/team)
 
 ## What's it like to work at BuildBuddy?
 
@@ -49,6 +50,7 @@ This is a unique opportunity to shape the future of how engineers build and test
 - We treat our coworkers well, and offer platinum health benefits at no cost to employees
 - We offer generous equity & comp packages, and reward those that help the company grow
 - We work remotely, but are loosely based out of the San Francisco Bay Area
+- We get together in-person about twice a year for a company-wide offsite
 
 ## Apply now
 
