@@ -2,11 +2,15 @@ package fix
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
+
+	buildifier "github.com/bazelbuild/buildtools/buildifier"
 )
 
 func HandleFix(args []string) (exitCode int, err error) {
@@ -30,5 +34,37 @@ func HandleFix(args []string) (exitCode int, err error) {
 	os.Args = args
 	gazelle.Run()
 
+	err = walk()
+	if err != nil {
+		log.Printf("Error fixing: %+v", err)
+	}
 	return 0, nil
+}
+
+func walk() error {
+	return filepath.Walk(".",
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+			fileName := filepath.Base(path)
+			fileNameRoot := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+			if fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE" {
+				return nil
+			}
+			runBuildifier(fileToFormat)
+			return nil
+		})
+}
+
+func runBuildifier(path string) {
+	originalArgs := os.Args
+	defer func() {
+		os.Args = originalArgs
+	}()
+	os.Args = []string{"buildifier", path}
+	buildifier.Run()
 }
