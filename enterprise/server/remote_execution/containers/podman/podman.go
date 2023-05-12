@@ -167,7 +167,8 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 				},
 			),
 		)
-
+	}
+	if *imageStreamingEnabled {
 		initializeInternalClientsOrDie(env, *appInternalTarget)
 	}
 	return &Provider{
