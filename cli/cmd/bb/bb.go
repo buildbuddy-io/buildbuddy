@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
@@ -90,6 +91,10 @@ func run() (exitCode int, err error) {
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
+	exitCode, err = ask.HandleAsk(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
 	exitCode, err = download.HandleDownload(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
@@ -168,6 +173,9 @@ func run() (exitCode int, err error) {
 			return -1, err
 		}
 	}
+
+	// For the ask command, we want to save some flags from the most recent invocation.
+	args = ask.SaveFlags(args)
 
 	// Note: sidecar is configured after pre-bazel plugins, since pre-bazel
 	// plugins may change the value of bes_backend, remote_cache,

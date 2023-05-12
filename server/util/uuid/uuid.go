@@ -149,3 +149,7 @@ func GetFailsafeHostID() string {
 	})
 	return failsafeID
 }
+
+func New() string {
+	return guuid.New().String()
+}

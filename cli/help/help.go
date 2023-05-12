@@ -121,6 +121,7 @@ func printBBCommands() {
 		{"remote", "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service."},
 		{"update", "Updates the bb CLI to the latest version."},
 		{"upload", "Uploads files to the remote cache."},
+		{"ask|wtf|huh", "Ask for suggestions about your last invocation."},
 	}
 	fmt.Println("bb commands:")
 	for _, row := range columns {

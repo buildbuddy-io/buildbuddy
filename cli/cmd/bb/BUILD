@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//cli/analyze",
         "//cli/arg",
+        "//cli/ask",
         "//cli/bazelisk",
         "//cli/cmd/sidecar",
         "//cli/download",
