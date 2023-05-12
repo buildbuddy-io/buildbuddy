@@ -131,7 +131,7 @@ func runSociStore(ctx context.Context) {
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if *imageStreamingEnabled || len(*streamableImages) > 0 {
-		//go runSociStore(env.GetServerContext())
+		go runSociStore(env.GetServerContext())
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
