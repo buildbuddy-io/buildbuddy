@@ -191,6 +191,10 @@ class Router {
     this.navigateTo(Path.commitHistoryPath + commit);
   }
 
+  navigateToTagHistory(tag: string) {
+    this.navigateTo(Path.home + "?tag=" + tag);
+  }
+
   navigateToCreateOrg() {
     if (!capabilities.createOrg) {
       window.open("https://buildbuddy.typeform.com/to/PFjD5A", "_blank");

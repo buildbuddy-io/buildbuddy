@@ -19,6 +19,7 @@ import {
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
   PATTERN_PARAM_NAME,
+  TAG_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
@@ -56,6 +57,7 @@ export interface ProtoFilterParams {
   host?: string;
   command?: string;
   pattern?: string;
+  tags?: string[];
   minimumDuration?: google_duration.protobuf.Duration;
   maximumDuration?: google_duration.protobuf.Duration;
 
@@ -64,6 +66,16 @@ export interface ProtoFilterParams {
 }
 
 export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
+
+function splitAndTrimTags(param: string | null): string[] {
+  if (!param) {
+    return [];
+  }
+  return param
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s);
+}
 
 export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams {
   const endDate = getEndDate(search);
@@ -80,6 +92,7 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     host: search.get(HOST_PARAM_NAME) || undefined,
     command: search.get(COMMAND_PARAM_NAME) || undefined,
     pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
+    tags: (capabilities.config.tagsUiEnabled && splitAndTrimTags(search.get(TAG_PARAM_NAME))) || undefined,
     minimumDuration: parseDuration(search.get(MINIMUM_DURATION_PARAM_NAME)),
     maximumDuration: parseDuration(search.get(MAXIMUM_DURATION_PARAM_NAME)),
 
@@ -184,6 +197,7 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
       search.get(HOST_PARAM_NAME) ||
       search.get(COMMAND_PARAM_NAME) ||
       search.get(PATTERN_PARAM_NAME) ||
+      (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
       search.get(MINIMUM_DURATION_PARAM_NAME) ||
       search.get(MAXIMUM_DURATION_PARAM_NAME)
   );

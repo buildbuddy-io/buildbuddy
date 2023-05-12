@@ -44,6 +44,7 @@ var (
 	executionSearchEnabled               = flag.Bool("app.execution_search_enabled", true, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
 	trendsSummaryEnabled                 = flag.Bool("app.trends_summary_enabled", false, "If set, show the new 'summary' section at the top of the trends UI.")
 	customerManagedEncryptionKeysEnabled = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
+	tagsUIEnabled                        = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -166,6 +167,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		ExecutionSearchEnabled:               *executionSearchEnabled,
 		TrendsSummaryEnabled:                 *trendsSummaryEnabled,
 		CustomerManagedEncryptionKeysEnabled: *customerManagedEncryptionKeysEnabled,
+		TagsUiEnabled:                        *tagsUIEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

@@ -72,6 +72,11 @@
   fill: #ddd;
 }
 
+.drilldown-page-warning-section {
+  display: inline-block;
+  margin: 0 0 16px;
+}
+
 .drilldown-page-dd-chart {
   display: inline-block;
 }

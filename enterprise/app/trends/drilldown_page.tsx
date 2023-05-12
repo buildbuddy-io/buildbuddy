@@ -6,6 +6,7 @@ import { X, ZoomIn } from "lucide-react";
 import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import HistoryInvocationCardComponent from "../../app/history/history_invocation_card";
@@ -111,6 +112,7 @@ type EventData = {
 };
 
 interface State {
+  unsupported: boolean;
   loading: boolean;
   loadingDrilldowns: boolean;
   drilldownsFailed: boolean;
@@ -198,6 +200,7 @@ const METRIC_OPTIONS: MetricOption[] = [
 
 export default class DrilldownPageComponent extends React.Component<Props, State> {
   state: State = {
+    unsupported: false,
     loading: false,
     loadingDrilldowns: false,
     drilldownsFailed: false,
@@ -285,6 +288,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
+      // TODO(jdhollen): Support tags on executions.
+      tags: isExecutionMetric(this.selectedMetric.metric) ? undefined : filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -312,6 +317,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       eventData: undefined,
     });
     const filterParams = getProtoFilterParams(this.props.search);
+    // TODO(jdhollen): Support tags on executions.
     let request = new execution_stats.SearchExecutionRequest({
       query: new execution_stats.ExecutionQuery({
         invocationHost: filterParams.host,
@@ -363,6 +369,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         commitSha: filterParams.commit,
         command: filterParams.command,
         pattern: filterParams.pattern,
+        tags: filterParams.tags,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
         groupId: groupId,
@@ -401,12 +408,23 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   fetch() {
     const filterParams = getProtoFilterParams(this.props.search);
-    this.setState({ loading: true, heatmapData: undefined, drilldownData: undefined, eventData: undefined });
+    this.setState({
+      loading: true,
+      unsupported: false,
+      heatmapData: undefined,
+      drilldownData: undefined,
+      eventData: undefined,
+    });
 
     // Build request...
     const heatmapRequest = stats.GetStatHeatmapRequest.create({});
     heatmapRequest.metric = this.selectedMetric.metric;
     const isExecution = isExecutionMetric(heatmapRequest.metric);
+
+    // TODO(jdhollen): Support tags on executions.
+    if (isExecution && filterParams.tags) {
+      this.setState({ unsupported: true });
+    }
 
     heatmapRequest.query = new stats.TrendQuery({
       host: filterParams.host,
@@ -416,6 +434,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
+      // TODO(jdhollen): Support tags on executions.
+      tags: isExecution ? undefined : filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -573,6 +593,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           this.navigateForBarClick("pattern", e.activeLabel);
         }
         return;
+      case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
+        if (capabilities.config.tagsUiEnabled) {
+          this.navigateForBarClick("tag", e.activeLabel);
+        }
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
@@ -596,6 +621,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "branch_name";
       case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         return "pattern";
+      case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
+        return "tag";
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
         return "worker (execution)";
       default:
@@ -758,6 +785,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           {this.renderZoomChip()}
         </div>
         {this.state.loading && <div className="loading"></div>}
+        {this.state.unsupported && (
+          <Banner type="warning" className="drilldown-page-warning-section">
+            Filtering executions by tag is not supported yet. Check back soon!
+          </Banner>
+        )}
         {!this.state.loading && (
           <>
             {this.state.heatmapData && (

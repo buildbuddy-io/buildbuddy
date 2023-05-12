@@ -398,6 +398,7 @@ ts_library(
     srcs = ["invocation_model.tsx"],
     strict = False,
     deps = [
+        "//app/capabilities",
         "//app/favicon",
         "//app/format",
         "//app/service:rpc_service",

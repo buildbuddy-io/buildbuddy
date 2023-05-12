@@ -17,6 +17,7 @@ import {
   HardDrive,
   LayoutGrid,
   Wrench,
+  Tag,
   SortAsc,
   SortDesc,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import {
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
   PATTERN_PARAM_NAME,
+  TAG_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
@@ -81,6 +83,7 @@ interface State {
   host?: string;
   command?: string;
   pattern?: string;
+  tag?: string;
   minimumDuration?: number;
   maximumDuration?: number;
 
@@ -129,6 +132,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(HOST_PARAM_NAME) ||
           search.get(COMMAND_PARAM_NAME) ||
           (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
+          (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
@@ -139,6 +143,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       host: search.get(HOST_PARAM_NAME) || undefined,
       command: search.get(COMMAND_PARAM_NAME) || undefined,
       pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
+      tag: (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) || undefined,
       minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
@@ -156,6 +161,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(HOST_PARAM_NAME) ||
           search.get(COMMAND_PARAM_NAME) ||
           (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
+          (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
@@ -166,6 +172,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       host: search.get(HOST_PARAM_NAME) || undefined,
       command: search.get(COMMAND_PARAM_NAME) || undefined,
       pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
+      tag: (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) || undefined,
       minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
@@ -216,6 +223,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [HOST_PARAM_NAME]: "",
       [COMMAND_PARAM_NAME]: "",
       [PATTERN_PARAM_NAME]: "",
+      [TAG_PARAM_NAME]: "",
       [MINIMUM_DURATION_PARAM_NAME]: "",
       [MAXIMUM_DURATION_PARAM_NAME]: "",
     });
@@ -301,6 +309,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [HOST_PARAM_NAME]: this.state.host || "",
       [COMMAND_PARAM_NAME]: this.state.command || "",
       [PATTERN_PARAM_NAME]: this.state.pattern || "",
+      [TAG_PARAM_NAME]: this.state.tag || "",
       [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration?.toString() || "",
       [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration?.toString() || "",
     });
@@ -336,6 +345,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const hostValue = this.props.search.get(HOST_PARAM_NAME) || "";
     const commandValue = this.props.search.get(COMMAND_PARAM_NAME) || "";
     const patternValue = (capabilities.config.patternFilterEnabled && this.props.search.get(PATTERN_PARAM_NAME)) || "";
+    const tagValue = (capabilities.config.tagsUiEnabled && this.props.search.get(TAG_PARAM_NAME)) || "";
     const minimumDurationValue = this.props.search.get(MINIMUM_DURATION_PARAM_NAME) || "";
     const maximumDurationValue = this.props.search.get(MAXIMUM_DURATION_PARAM_NAME) || "";
     const isFiltering = isAnyNonDateFilterSet(this.props.search);
@@ -424,6 +434,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             {capabilities.config.patternFilterEnabled && patternValue && (
               <span className="advanced-badge">
                 <LayoutGrid /> {patternValue}
+              </span>
+            )}
+            {capabilities.config.tagsUiEnabled && tagValue && (
+              <span className="advanced-badge">
+                <Tag /> {tagValue}
               </span>
             )}
             {(minimumDurationValue || maximumDurationValue) && (
@@ -529,6 +544,18 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                           placeholder={"e.g. //foo/..."}
                           value={this.state.pattern}
                           onChange={(e) => this.setState({ pattern: e.target.value })}
+                        />
+                      </div>
+                    </>
+                  )}
+                  {capabilities.config.tagsUiEnabled && (
+                    <>
+                      <div className="option-group-title">Tag</div>
+                      <div className="option-group-input">
+                        <TextInput
+                          placeholder={"e.g. coverage-build"}
+                          value={this.state.tag}
+                          onChange={(e) => this.setState({ tag: e.target.value })}
                         />
                       </div>
                     </>

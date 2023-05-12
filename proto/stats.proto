@@ -67,6 +67,9 @@ message TrendQuery {
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 15;
+
+  // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
+  repeated string tags = 16;
 }
 
 message TrendStat {
@@ -226,6 +229,7 @@ enum DrilldownType {
   BRANCH_DRILLDOWN_TYPE = 7;
   PATTERN_DRILLDOWN_TYPE = 8;
   WORKER_DRILLDOWN_TYPE = 9;
+  TAG_DRILLDOWN_TYPE = 10;
 }
 
 message DrilldownChart {

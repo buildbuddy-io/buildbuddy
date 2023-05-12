@@ -86,3 +86,13 @@ func ConvertDbTagsToOlap(tags string) []string {
 	}
 	return strings.Split(tags, ",")
 }
+
+func GetTagsAsClickhouseWhereClause(fieldName string, tags []string) (string, []interface{}) {
+	outStrings := []string{}
+	outArgs := []interface{}{}
+	for _, tag := range tags {
+		outStrings = append(outStrings, "?")
+		outArgs = append(outArgs, tag)
+	}
+	return fmt.Sprintf("hasAll(%s, [%s])", fieldName, strings.Join(outStrings, ",")), outArgs
+}

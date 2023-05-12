@@ -98,4 +98,7 @@ message FrontendConfig {
 
   // True if multiple suggestions providers are configured.
   bool multiple_suggestion_providers = 32;
+
+  // Whether to allow filtering invocations, trends, etc. by a tag.
+  bool tags_ui_enabled = 33;
 }

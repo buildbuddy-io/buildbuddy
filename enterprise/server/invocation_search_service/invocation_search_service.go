@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -195,7 +196,7 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 }
 
 func (s *InvocationSearchService) shouldQueryClickhouse(req *inpb.SearchInvocationRequest) bool {
-	return s.olapdbh != nil && *olapInvocationSearchEnabled && len(req.GetQuery().GetFilter()) > 0
+	return s.olapdbh != nil && *olapInvocationSearchEnabled && (len(req.GetQuery().GetTags()) > 0 || len(req.GetQuery().GetFilter()) > 0)
 }
 
 func addOrderBy(sort *inpb.InvocationSort, q *query_builder.Query) {
@@ -292,6 +293,20 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	}
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
 		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
+	}
+	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
+		if s.shouldQueryClickhouse(req) {
+			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("i.tags", tags)
+			q.AddWhereClause(clause, args...)
+		} else if s.dbh.DB(ctx).Dialector.Name() == "mysql" {
+			for _, tag := range tags {
+				q.AddWhereClause("FIND_IN_SET(?, i.tags)", tag)
+			}
+		} else {
+			for _, tag := range tags {
+				q.AddWhereClause("i.tags LIKE ?", "%"+strings.ReplaceAll(tag, "%", "\\%")+"%")
+			}
+		}
 	}
 
 	statusClauses := query_builder.OrClauses{}

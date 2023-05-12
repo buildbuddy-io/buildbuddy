@@ -15,6 +15,7 @@ import format from "../format/format";
 import { formatDate } from "../format/format";
 import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
 import rpcService from "../service/rpc_service";
+import capabilities from "../capabilities/capabilities";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
@@ -288,6 +289,10 @@ export default class InvocationModel {
 
   getHost() {
     return this.invocations.find(() => true)?.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+  }
+
+  getTags(): invocation.Invocation.Tag[] {
+    return (capabilities.config.tagsUiEnabled && this.invocations.find(() => true)?.tags) || [];
   }
 
   booleanCommandLineOption(name: string, defaultValue = false): boolean {
