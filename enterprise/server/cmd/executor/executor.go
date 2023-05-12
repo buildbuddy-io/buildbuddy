@@ -53,14 +53,12 @@ import (
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
 	appTarget                = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
-	appInternalTarget        = flag.String("executor.app_internal_target", "", "The GRPC url to use to access the buildbuddy app's internal grpc service.")
 	disableLocalCache        = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
 	localCacheDirectory      = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
 	localCacheSizeBytes      = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
@@ -102,29 +100,9 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 		}
 		log.Infof("Connecting to cache target: %s", cacheTarget)
 	}
-	addHealthCheck(conn, "grpc_cache_connection", realEnv.GetHealthChecker())
 
-	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-	realEnv.SetActionCacheClient(repb.NewActionCacheClient(conn))
-	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
-}
-
-func initializeInternalClientsOrDie(internalTarget string, realEnv *real_environment.RealEnv) {
-	conn, err := grpc_client.DialTarget(internalTarget)
-	if err != nil {
-		log.Fatalf("Unable to connect to app internal grpc target '%s': %s", internalTarget, err)
-		return
-	}
-	log.Infof("Connecting to cache target: %s", internalTarget)
-	addHealthCheck(conn, "grpc_internal_services_connection", realEnv.GetHealthChecker())
-	realEnv.SetSociArtifactStoreClient(socipb.NewSociArtifactStoreClient(conn))
-}
-
-// Adds a healthchecker to the provided connection.
-func addHealthCheck(conn *grpc.ClientConn, healthCheckName string, healthChecker interfaces.HealthChecker) {
-	healthChecker.AddHealthCheck(
-		healthCheckName, interfaces.CheckerFunc(
+	realEnv.GetHealthChecker().AddHealthCheck(
+		"grpc_cache_connection", interfaces.CheckerFunc(
 			func(ctx context.Context) error {
 				connState := conn.GetState()
 				if connState == connectivity.Ready {
@@ -137,6 +115,11 @@ func addHealthCheck(conn *grpc.ClientConn, healthCheckName string, healthChecker
 			},
 		),
 	)
+
+	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	realEnv.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 }
 
 func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) environment.Env {
@@ -190,15 +173,25 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 		}
 	}
 
-	initializeInternalClientsOrDie(*appInternalTarget, realEnv)
-
 	conn, err := grpc_client.DialTarget(*appTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to app '%s': %s", *appTarget, err)
 	}
 	log.Infof("Connecting to app target: %s", *appTarget)
 
-	addHealthCheck(conn, "grpc_app_connection", realEnv.GetHealthChecker())
+	realEnv.GetHealthChecker().AddHealthCheck(
+		"grpc_app_connection", interfaces.CheckerFunc(
+			func(ctx context.Context) error {
+				connState := conn.GetState()
+				if connState == connectivity.Ready {
+					return nil
+				} else if connState == connectivity.Idle {
+					conn.Connect()
+				}
+				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
+			},
+		),
+	)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 
