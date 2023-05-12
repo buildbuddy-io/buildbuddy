@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
+	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
@@ -51,6 +52,9 @@ func run() (exitCode int, err error) {
 	// Handle global args that don't apply to any specific subcommand
 	// (--verbose, etc.)
 	args := log.Configure(os.Args[1:])
+
+	// Expand command shortcuts like b=>build, t=>test, etc.
+	args = shortcuts.HandleShortcuts(args)
 
 	// Show help if applicable.
 	exitCode, err = help.HandleHelp(args)
