@@ -55,7 +55,7 @@ func walk() error {
 			if fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE" {
 				return nil
 			}
-			runBuildifier(fileToFormat)
+			runBuildifier(path)
 			return nil
 		})
 }
