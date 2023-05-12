@@ -169,7 +169,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		)
 	}
 	if *imageStreamingEnabled {
-		initializeInternalClientsOrDie(env, *appInternalTarget)
+		intializeSociArtifactStoreClientOrDie(env, *appInternalTarget)
 	}
 	return &Provider{
 		env:                   env,
@@ -180,7 +180,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 	}, nil
 }
 
-func initializeInternalClientsOrDie(env environment.Env, target string) {
+func intializeSociArtifactStoreClientOrDie(env environment.Env, target string) {
 	conn, err := grpc_client.DialTarget(target)
 	if err != nil {
 		log.Fatalf("Unable to connect to app internal grpc target '%s': %s", target, err)
