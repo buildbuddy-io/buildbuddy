@@ -10,7 +10,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc/metadata"
 
@@ -30,7 +32,7 @@ const (
 
 var (
 	usage = `
-usage: bb ` + flags.Name() + ` [--openai]
+usage: bb ` + flags.Name() + ` [--openai|-o]
 
 Asks for suggestions about the previous invocation.
 `
@@ -46,7 +48,7 @@ func HandleAsk(args []string) (int, error) {
 		log.Debugf("Unexpected flag: %s", args[0])
 		return 1, nil
 	}
-
+	flags.BoolVar(openai, "o", *openai, "alias for --openai")
 	if err := arg.ParseFlagSet(flags, args[idx+1:]); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
@@ -131,11 +133,15 @@ func saveFlag(args []string, flag, backup string) []string {
 }
 
 func getPreviousFlagPath(flagName string) string {
+	workspaceDir, err := workspace.Path()
+	if err != nil {
+		return ""
+	}
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return ""
 	}
-	return dir + "/last_bb_" + flagName + ".txt"
+	return dir + "/last_bb_" + flagName + "-" + hash.String(workspaceDir) + ".txt"
 }
 
 func getPreviousFlag(flag string) (string, error) {
