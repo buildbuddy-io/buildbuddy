@@ -60,8 +60,8 @@ var (
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
 	// Currently, the app_internal target is only used for the
-	// SociArtifactStore, so it's definition and use is restricted to this
-	// file. It should be moved if/when there are other uses.
+	// SociArtifactStore, so its definition and use is restricted to this file.
+	// It should be moved if/when there are other uses.
 	appInternalTarget = flag.String("executor.app_internal_target", "", "The GRPC url to use to access the buildbuddy app's internal grpc service.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
