@@ -10,10 +10,10 @@ type Config struct {
 	PollingIntervalSeconds int `yaml:"polling_interval_seconds"`
 	// The default max number of times a specific metric can consecutively report as unhealthy before it's marked as a failure
 	MaxMetricPollUnhealthyCount int `yaml:"max_metric_poll_unhealthy_count"`
-	// The number of 'failed' metrics before the canary should be rolled back
+	// The number of 'failed' secondary metrics before the canary should be rolled back
 	// A metric is considered 'failed' if it has consistently been reporting unhealthy for MaxMetricPollUnhealthyCount
-	MaxMetricFailureCount int                `yaml:"max_metric_failure_count"`
-	PrometheusMetrics     []PrometheusMetric `yaml:"prometheus_metrics"`
+	MaxSecondaryMetricFailureCount int                `yaml:"max_secondary_metric_failure_count"`
+	PrometheusMetrics              []PrometheusMetric `yaml:"prometheus_metrics"`
 }
 
 type PrometheusMetric struct {
@@ -28,6 +28,11 @@ type PrometheusMetric struct {
 	// Set if it's valid for the metric value to be 0 or missing
 	// Ex. For error log count or invocation failure rate, at any given time the value can be 0
 	IsMissingDataValid bool `yaml:"is_missing_data_valid"`
+	// Primary metric failure should immediately result in a rollback
+	// If a secondary metric fails, it should only result in a rollback if several other secondary metrics
+	// are also failing (configurable by MaxSecondaryMetricFailureCount). This is intended to reduce unnecessary
+	// rollbacks from spiky secondary metrics
+	IsSecondaryMetric bool `yaml:"is_secondary_metric"`
 }
 
 // Exactly one field should be set in the HealthThreshold

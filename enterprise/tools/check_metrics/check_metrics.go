@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,8 +106,9 @@ func main() {
 							defer mu.Unlock()
 
 							failedMetrics = append(failedMetrics, metric.Name)
-							if len(failedMetrics) >= config.MaxMetricFailureCount {
-								return errors.New(fmt.Sprintf("Metrics unhealthy: %v", failedMetrics))
+							if !metric.IsSecondaryMetric || len(failedMetrics) >= config.MaxSecondaryMetricFailureCount {
+								failedMetricsStr := strings.Join(failedMetrics, ",")
+								return errors.New(fmt.Sprintf("Metrics unhealthy: %s", failedMetricsStr))
 							}
 							return nil
 						}()
