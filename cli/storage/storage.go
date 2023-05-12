@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
@@ -88,7 +89,13 @@ func ReadRepoConfig(key string) (string, error) {
 		}
 		return "", fmt.Errorf("failed to read %q from .git/config: %s", fullKey, msg)
 	}
-	return stdout.String(), nil
+
+	out := strings.TrimSpace(stdout.String())
+	if out == "" {
+		return out, fmt.Errorf("empty value for %s", key)
+	}
+
+	return out, nil
 }
 
 // WriteRepoConfig writes a repository-local configuration setting.

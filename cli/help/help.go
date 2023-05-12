@@ -116,6 +116,7 @@ func printBBCommands() {
 		{"download", "Downloads artifacts from a remote cache."},
 		{"install", "Installs a bb plugin (https://buildbuddy.io/plugins)."},
 		{"login", "Configures bb commands to use your BuildBuddy API key."},
+		{"logout", "Configures bb commands to no longer use your saved API key."},
 		{"print", "Displays various log file types written by bazel."},
 		{"remote", "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service."},
 		{"update", "Updates the bb CLI to the latest version."},

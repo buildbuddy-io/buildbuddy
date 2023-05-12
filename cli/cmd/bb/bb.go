@@ -82,6 +82,10 @@ func run() (exitCode int, err error) {
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
+	exitCode, err = login.HandleLogout(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
 	exitCode, err = fix.HandleFix(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
