@@ -156,6 +156,4 @@ type Env interface {
 	SetCrypter(crypter interfaces.Crypter)
 	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
 	SetSociArtifactStoreServer(socipb.SociArtifactStoreServer)
-	GetSociArtifactStoreClient() socipb.SociArtifactStoreClient
-	SetSociArtifactStoreClient(socipb.SociArtifactStoreClient)
 }

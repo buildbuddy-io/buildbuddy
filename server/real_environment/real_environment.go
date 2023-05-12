@@ -603,10 +603,3 @@ func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
 func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
 	r.sociArtifactStoreServer = s
 }
-
-func (r *RealEnv) GetSociArtifactStoreClient() socipb.SociArtifactStoreClient {
-	return r.sociArtifactStoreClient
-}
-func (r *RealEnv) SetSociArtifactStoreClient(c socipb.SociArtifactStoreClient) {
-	r.sociArtifactStoreClient = c
-}

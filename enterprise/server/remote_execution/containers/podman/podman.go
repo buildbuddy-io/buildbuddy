@@ -105,11 +105,11 @@ type pullStatus struct {
 }
 
 type Provider struct {
-	env                   environment.Env
-	imageCacheAuth        *container.ImageCacheAuthenticator
-	buildRoot             string
-	streamableImages      []string
-	imageStreamingEnabled bool
+	env                     environment.Env
+	imageCacheAuth          *container.ImageCacheAuthenticator
+	buildRoot               string
+	streamableImages        []string
+	sociArtifactStoreClient socipb.SociArtifactStoreClient
 }
 
 func runSociStore(ctx context.Context) {
@@ -131,7 +131,7 @@ func runSociStore(ctx context.Context) {
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if *imageStreamingEnabled || len(*streamableImages) > 0 {
-		go runSociStore(env.GetServerContext())
+		//go runSociStore(env.GetServerContext())
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
@@ -165,23 +165,27 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 			),
 		)
 	}
+	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
 	if *imageStreamingEnabled {
-		intializeSociArtifactStoreClientOrDie(env, *sociArtifactStoreTarget)
+		var err error
+		sociArtifactStoreClient, err = intializeSociArtifactStoreClient(env, *sociArtifactStoreTarget)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &Provider{
-		env:                   env,
-		imageCacheAuth:        imageCacheAuthenticator,
-		streamableImages:      *streamableImages,
-		imageStreamingEnabled: *imageStreamingEnabled,
-		buildRoot:             buildRoot,
+		env:                     env,
+		imageCacheAuth:          imageCacheAuthenticator,
+		streamableImages:        *streamableImages,
+		sociArtifactStoreClient: sociArtifactStoreClient,
+		buildRoot:               buildRoot,
 	}, nil
 }
 
-func intializeSociArtifactStoreClientOrDie(env environment.Env, target string) {
+func intializeSociArtifactStoreClient(env environment.Env, target string) (socipb.SociArtifactStoreClient, error) {
 	conn, err := grpc_client.DialTarget(target)
 	if err != nil {
-		log.Fatalf("Unable to connect to soci artifact store grpc target '%s': %s", target, err)
-		return
+		return nil, err
 	}
 	log.Infof("Connecting to app internal target: %s", target)
 	env.GetHealthChecker().AddHealthCheck(
@@ -198,7 +202,7 @@ func intializeSociArtifactStoreClientOrDie(env environment.Env, target string) {
 			},
 		),
 	)
-	env.SetSociArtifactStoreClient(socipb.NewSociArtifactStoreClient(conn))
+	return socipb.NewSociArtifactStoreClient(conn), nil
 }
 
 func (p *Provider) NewContainer(ctx context.Context, image string, options *PodmanOptions) (container.CommandContainer, error) {
@@ -215,17 +219,17 @@ func (p *Provider) NewContainer(ctx context.Context, image string, options *Podm
 		}
 	}
 	return &podmanCommandContainer{
-		env:                   p.env,
-		imageCacheAuth:        p.imageCacheAuth,
-		image:                 image,
-		imageStreamingEnabled: *imageStreamingEnabled || imageIsStreamable,
+		env:            p.env,
+		imageCacheAuth: p.imageCacheAuth,
+		image:          image,
 
-		// When image streaming is enabled for all images, pull soci artifacts
-		// from the app instead of from the container registry, which is how
-		// per-image streaming works.
-		pullSociArtifactsFromApp: p.imageStreamingEnabled,
-		buildRoot:                p.buildRoot,
-		options:                  options,
+		// The nil-ness of sociArtifactStoreClient acts as a boolean
+		// controlling global image streaming.
+		imageStreamingEnabled:   *imageStreamingEnabled || p.sociArtifactStoreClient != nil,
+		sociArtifactStoreClient: p.sociArtifactStoreClient,
+
+		buildRoot: p.buildRoot,
+		options:   options,
 	}, nil
 }
 
@@ -253,8 +257,8 @@ type podmanCommandContainer struct {
 	buildRoot string
 	workDir   string
 
-	imageStreamingEnabled    bool
-	pullSociArtifactsFromApp bool
+	imageStreamingEnabled   bool
+	sociArtifactStoreClient socipb.SociArtifactStoreClient
 
 	options *PodmanOptions
 
@@ -526,7 +530,7 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	if *imageStreamingEnabled && c.pullSociArtifactsFromApp {
+	if *imageStreamingEnabled && c.sociArtifactStoreClient != nil {
 		if err := c.getSociArtifacts(ctx, creds); err != nil {
 			return err
 		}
@@ -559,7 +563,7 @@ func (c *podmanCommandContainer) getSociArtifacts(ctx context.Context, creds con
 			// https://github.com/opencontainers/image-spec/blob/v1.0.0/image-index.md
 		},
 	}
-	resp, err := c.env.GetSociArtifactStoreClient().GetArtifacts(ctx, &req)
+	resp, err := c.sociArtifactStoreClient.GetArtifacts(ctx, &req)
 	if err != nil {
 		return err
 	}
