@@ -1099,6 +1099,7 @@ type ExecutionCollector interface {
 // SuggestionService enables fetching of suggestions.
 type SuggestionService interface {
 	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
+	MultipleProvidersConfigured() bool
 }
 
 type Encryptor interface {

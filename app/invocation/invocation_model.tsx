@@ -641,10 +641,13 @@ export default class InvocationModel {
     return this.invocations[0]?.hasChunkedEventLogs || false;
   }
 
-  async fetchSuggestions() {
+  fetchSuggestions(service: string) {
     let req = new suggestion.GetSuggestionRequest();
+    if (service == "openai") {
+      req.service = suggestion.SuggestionService.OPENAI;
+    }
     req.invocationId = this.getId();
-    await rpcService.service
+    return rpcService.service
       .getSuggestion(req)
       .then((res) => {
         this.botSuggestions = res.suggestion;

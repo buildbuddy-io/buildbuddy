@@ -162,6 +162,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		TrendsHeatmapEnabled:                 iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:                 *patternFilterEnabled,
 		BotSuggestionsEnabled:                env.GetSuggestionService() != nil,
+		MultipleSuggestionProviders:          env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
 		ExecutionSearchEnabled:               *executionSearchEnabled,
 		TrendsSummaryEnabled:                 *trendsSummaryEnabled,
 		CustomerManagedEncryptionKeysEnabled: *customerManagedEncryptionKeysEnabled,
