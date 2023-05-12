@@ -51,8 +51,10 @@ func walk() error {
 				return nil
 			}
 			fileName := filepath.Base(path)
-			fileNameRoot := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-			if fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE" {
+			fileExt := filepath.Ext(fileName)
+			fileNameRoot := strings.TrimSuffix(fileName, fileExt)
+			if (fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE") ||
+				(fileExt != "" && fileExt != ".bazel") {
 				return nil
 			}
 			runBuildifier(path)
