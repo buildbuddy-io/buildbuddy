@@ -35,6 +35,12 @@ var (
 	configPath = flag.String("config_path", "config.yaml", "Path to config file.")
 )
 
+type metricStatus struct {
+	name                      string
+	isSecondaryMetric         bool
+	consecutiveUnhealthyCount int
+}
+
 // This script is intended to compare system health for a canary that has been deployed to the rest of the apps
 // If the metrics are healthy, this script will return exit code 0 indicating that the rollout should proceed
 // If the metrics are not healthy for the specified amount of time, the script will return an exit code indicating
@@ -63,9 +69,16 @@ func main() {
 
 	mu := &sync.Mutex{}
 	failedMetrics := make([]string, 0)
+	metricStatuses := make([]*metricStatus, 0, len(config.PrometheusMetrics))
 
 	eg, gctx := errgroup.WithContext(context.Background())
 	for _, metric := range config.PrometheusMetrics {
+		status := &metricStatus{
+			name:              metric.Name,
+			isSecondaryMetric: metric.IsSecondaryMetric,
+		}
+		metricStatuses = append(metricStatuses, status)
+
 		metric := metric
 		eg.Go(func() error {
 			pollingIntervalSec := config.PollingIntervalSeconds
@@ -82,7 +95,6 @@ func main() {
 			monitoringTicker := time.NewTicker(time.Duration(pollingIntervalSec) * time.Second)
 			defer monitoringTicker.Stop()
 
-			unhealthyCount := 0
 			for {
 				select {
 				case <-gctx.Done():
@@ -96,28 +108,24 @@ func main() {
 					}
 
 					if healthy {
-						unhealthyCount = 0
+						status.consecutiveUnhealthyCount = 0
 					} else {
-						unhealthyCount++
-						log.Debugf("Metric %s is unhealthy, increasing unhealthy count to %d", metric.Name, unhealthyCount)
+						status.consecutiveUnhealthyCount++
+						log.Debugf("Metric %s is unhealthy, increasing unhealthy count to %d", metric.Name, status.consecutiveUnhealthyCount)
 					}
 
-					if unhealthyCount >= maxUnhealthyCount {
-						err = func() error {
-							log.Warningf("Metric %s has been consecutively unhealthy %d times. Marking as failed.", metric.Name, unhealthyCount)
-							sendMetricUnhealthySlack(metric.Name, metric.IsSecondaryMetric, config.MaxSecondaryMetricFailureCount)
+					if status.consecutiveUnhealthyCount >= maxUnhealthyCount {
+						log.Warningf("Metric %s has been consecutively unhealthy %d times. Marking as failed.", metric.Name, status.consecutiveUnhealthyCount)
 
-							mu.Lock()
-							defer mu.Unlock()
+						mu.Lock()
+						failedMetrics = append(failedMetrics, metric.Name)
+						mu.Unlock()
 
-							failedMetrics = append(failedMetrics, metric.Name)
-							if !metric.IsSecondaryMetric || len(failedMetrics) >= config.MaxSecondaryMetricFailureCount {
-								failedMetricsStr := strings.Join(failedMetrics, ", ")
-								return errors.New(fmt.Sprintf("Metrics unhealthy: %s", failedMetricsStr))
-							}
-							return nil
-						}()
-						return err
+						if !metric.IsSecondaryMetric || len(failedMetrics) >= config.MaxSecondaryMetricFailureCount {
+							failedMetricsStr := strings.Join(failedMetrics, ", ")
+							return errors.New(fmt.Sprintf("Metrics unhealthy: %s", failedMetricsStr))
+						}
+						return nil
 					}
 				}
 			}
@@ -125,7 +133,11 @@ func main() {
 	}
 
 	err = eg.Wait()
-	if err != nil {
+
+	triggeredRollback := err != nil
+	sendMetricOverview(metricStatuses, triggeredRollback, config.MaxMetricPollUnhealthyCount, config.MaxSecondaryMetricFailureCount)
+
+	if triggeredRollback {
 		log.Fatalf("Exiting metrics script: %s", err)
 	}
 
@@ -239,25 +251,55 @@ type TextBlock struct {
 	Text string `json:"text"`
 }
 
-func sendMetricUnhealthySlack(metric string, isSecondaryMetric bool, maxSecondaryMetricFailureCount int) {
+func sendMetricOverview(metricStatuses []*metricStatus, triggeredRollback bool, maxPollUnhealthyCount int, maxSecondaryMetricFailureCount int) {
 	slackWebhookURL := os.Getenv("SLACK_WEBHOOK")
 	if slackWebhookURL == "" {
-		log.Warningf("No slack webhook set. Cannot send warning messages.")
+		log.Errorf("No slack webhook set. Cannot send warning messages.")
 		return
 	}
 
-	msg := fmt.Sprintf("The metric `%s` is unhealthy.", metric)
-	if isSecondaryMetric {
-		msg += fmt.Sprintf(" It is a secondary metric, so we will only rollback if %d secondary metrics report unhealthy.", maxSecondaryMetricFailureCount)
-	} else {
-		msg += " Rolling back."
+	msg := ""
+	for _, m := range metricStatuses {
+		metricLabel := fmt.Sprintf("`%s`", m.name)
+		if m.isSecondaryMetric {
+			metricLabel += " _(Secondary metric)_"
+		}
+
+		statusLabel := "Healthy"
+		if m.consecutiveUnhealthyCount > 0 {
+			statusLabel = fmt.Sprintf("Last %d consecutive polls were unhealthy", m.consecutiveUnhealthyCount)
+		}
+
+		metricOverview := fmt.Sprintf("%s: %s\n", metricLabel, statusLabel)
+
+		if m.consecutiveUnhealthyCount > 0 {
+			// Display unhealthy metrics at the top of the message
+			msg = metricOverview + msg
+		} else {
+			msg += metricOverview
+		}
+	}
+
+	msgColor := "#36a64f" // Green
+	if triggeredRollback {
+		msgColor = "#ad1411" // Red
+		msg += fmt.Sprintf("\nIf a metric consecutively polls as unhealthy %d times, it is considered a failure.\n"+
+			"If a primary metric fails, it will trigger a rollback immediately.\n%d secondary metrics must fail to trigger"+
+			" a rollback.", maxPollUnhealthyCount, maxSecondaryMetricFailureCount)
 	}
 
 	data := map[string][]AttachmentBlock{
 		"attachments": {
 			{
-				Color: "#ad1411",
+				Color: msgColor,
 				Blocks: []SlackBlock{
+					{
+						Type: "section",
+						Text: TextBlock{
+							Type: "mrkdwn",
+							Text: "*Canary metric overview:*",
+						},
+					},
 					{
 						Type: "section",
 						Text: TextBlock{
