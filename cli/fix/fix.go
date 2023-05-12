@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
-
 	buildifier "github.com/bazelbuild/buildtools/buildifier"
 )
 
