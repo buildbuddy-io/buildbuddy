@@ -16,6 +16,7 @@ message StoredInvocation {
   string command = 9;
   int64 invocation_status = 10;
   bool success = 11;
+  string tags = 12;
 }
 
 // Proto representation of the InvocationExecution. Only used in backends.

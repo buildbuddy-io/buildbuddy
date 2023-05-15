@@ -1440,5 +1440,6 @@ func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 		Command:          inv.Command,
 		InvocationStatus: inv.InvocationStatus,
 		Success:          inv.Success,
+		Tags:             inv.Tags,
 	}
 }
