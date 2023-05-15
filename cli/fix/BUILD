@@ -4,10 +4,12 @@ go_library(
     name = "fix",
     srcs = ["fix.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix",
+    # keep
     deps = [
         ":gazelle",
         "//cli/arg",
         "//cli/log",
+        "@com_github_bazelbuild_buildtools//buildifier:go_default_library",
     ],
 )
 

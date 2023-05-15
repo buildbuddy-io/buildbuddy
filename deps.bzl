@@ -330,6 +330,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_buildtools",
         importpath = "github.com/bazelbuild/buildtools",
+        patch_args = ["-p1"],
+        patch_tool = "patch --ignore-whitespace",
+        patches = ["//buildpatches:buildifier.patch"],
         sum = "h1:DraHsDqTYhf6w1369EEdFyA5hjJnGX88xNJRv1+20E0=",
         version = "v0.0.0-20230111132423-06e8e2436a75",
     )
