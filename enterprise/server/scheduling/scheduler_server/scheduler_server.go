@@ -151,6 +151,9 @@ var (
 		else 
 			return 0 
 		end`)
+
+	// Valid pool names in the shared executor pool
+	validSharedPoolNames = []string{"", "workflows"}
 )
 
 func init() {
@@ -900,12 +903,13 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 	}
 
 	if !s.enableUserOwnedExecutors {
-		return &interfaces.PoolInfo{Name: sharedPoolName}, nil
+		// If user-owned executors are not enabled, we do not need to add group ID as part of the executor key
+		return getSharedPoolInfo(sharedPoolName, false /* includeGroupID */)
 	}
 
-	sharedPool := &interfaces.PoolInfo{
-		GroupID: *sharedExecutorPoolGroupID,
-		Name:    sharedPoolName,
+	sharedPool, err := getSharedPoolInfo(sharedPoolName, true /* includeGroupID */)
+	if err != nil {
+		return nil, err
 	}
 
 	// Linux workflows use shared executors unless self_hosted is set.
@@ -941,6 +945,28 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 		return selfHostedPool, nil
 	}
 	return sharedPool, nil
+}
+
+func getSharedPoolInfo(poolName string, includeGroupID bool) (*interfaces.PoolInfo, error) {
+	if !contains(validSharedPoolNames, poolName) {
+		return nil, status.InvalidArgumentErrorf("%s is not a valid pool name for the shared executor pool")
+	}
+	info := &interfaces.PoolInfo{
+		Name: poolName,
+	}
+	if includeGroupID {
+		info.GroupID = *sharedExecutorPoolGroupID
+	}
+	return info, nil
+}
+
+func contains(s []string, target string) bool {
+	for _, elem := range s {
+		if elem == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
