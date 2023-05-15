@@ -28,6 +28,9 @@ import (
 const (
 	// This exit code is returned if the metrics look unhealthy and the rollout should proceed
 	metricsHealthyExitCode = 0
+
+	greenColor = "#36a64f"
+	redColor   = "#ad1411"
 )
 
 var (
@@ -37,7 +40,7 @@ var (
 
 type metricStatus struct {
 	name                      string
-	isSecondaryMetric         bool
+	secondary                 bool
 	consecutiveUnhealthyCount int
 }
 
@@ -74,8 +77,8 @@ func main() {
 	eg, gctx := errgroup.WithContext(context.Background())
 	for _, metric := range config.PrometheusMetrics {
 		status := &metricStatus{
-			name:              metric.Name,
-			isSecondaryMetric: metric.IsSecondaryMetric,
+			name:      metric.Name,
+			secondary: metric.Secondary,
 		}
 		metricStatuses = append(metricStatuses, status)
 
@@ -121,7 +124,7 @@ func main() {
 						failedMetrics = append(failedMetrics, metric.Name)
 						mu.Unlock()
 
-						if !metric.IsSecondaryMetric || len(failedMetrics) >= config.MaxSecondaryMetricFailureCount {
+						if !metric.Secondary || len(failedMetrics) >= config.MaxSecondaryMetricFailureCount {
 							failedMetricsStr := strings.Join(failedMetrics, ", ")
 							return errors.New(fmt.Sprintf("Metrics unhealthy: %s", failedMetricsStr))
 						}
@@ -261,7 +264,7 @@ func sendMetricOverview(metricStatuses []*metricStatus, triggeredRollback bool, 
 	msg := ""
 	for _, m := range metricStatuses {
 		metricLabel := fmt.Sprintf("`%s`", m.name)
-		if m.isSecondaryMetric {
+		if m.secondary {
 			metricLabel += " _(Secondary metric)_"
 		}
 
@@ -280,9 +283,9 @@ func sendMetricOverview(metricStatuses []*metricStatus, triggeredRollback bool, 
 		}
 	}
 
-	msgColor := "#36a64f" // Green
+	msgColor := greenColor
 	if triggeredRollback {
-		msgColor = "#ad1411" // Red
+		msgColor = redColor
 		msg += fmt.Sprintf("\nIf a metric consecutively polls as unhealthy %d times, it is considered a failure.\n"+
 			"If a primary metric fails, it will trigger a rollback immediately.\n%d secondary metrics must fail to trigger"+
 			" a rollback.", maxPollUnhealthyCount, maxSecondaryMetricFailureCount)

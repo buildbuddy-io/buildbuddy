@@ -32,7 +32,7 @@ type PrometheusMetric struct {
 	// If a secondary metric fails, it should only result in a rollback if several other secondary metrics
 	// are also failing (configurable by MaxSecondaryMetricFailureCount). This is intended to reduce unnecessary
 	// rollbacks from spiky secondary metrics
-	IsSecondaryMetric bool `yaml:"is_secondary_metric"`
+	Secondary bool `yaml:"secondary"`
 }
 
 // Exactly one field should be set in the HealthThreshold
