@@ -202,6 +202,8 @@ func ResolveVersion() (string, error) {
 		}
 		if len(parts) > 0 {
 			rawVersion = parts[0]
+		} else {
+			rawVersion = "latest"
 		}
 	}
 
