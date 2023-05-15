@@ -306,7 +306,7 @@ type CommandLineSchema struct {
 
 // GetCommandLineSchema returns the effective CommandLineSchemas for the given
 // command line.
-func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc) (*CommandLineSchema, error) {
+func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
 	startupHelp, err := bazelHelp("startup_options")
 	if err != nil {
 		return nil, err
@@ -317,6 +317,9 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc) (*CommandLineS
 	bazelCommands, err := BazelCommands()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list bazel commands: %s", err)
+	}
+	if onlyStartupOptions {
+		return schema, nil
 	}
 	// Iterate through the args, looking for the bazel command. Note, we don't
 	// use "arg.GetCommand()" here since it may be ambiguous whether a token not
@@ -353,12 +356,16 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc) (*CommandLineS
 	return schema, nil
 }
 
-func CanonicalizeArgs(args []string) ([]string, error) {
-	return canonicalizeArgs(args, runBazelHelpWithCache)
+func CanonicalizeStartupArgs(args []string) ([]string, error) {
+	return canonicalizeArgs(args, runBazelHelpWithCache, true)
 }
 
-func canonicalizeArgs(args []string, help BazelHelpFunc) ([]string, error) {
-	schema, err := getCommandLineSchema(args, help)
+func CanonicalizeArgs(args []string) ([]string, error) {
+	return canonicalizeArgs(args, runBazelHelpWithCache, false)
+}
+
+func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool) ([]string, error) {
+	schema, err := getCommandLineSchema(args, help, onlyStartupOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -385,6 +392,9 @@ func canonicalizeArgs(args []string, help BazelHelpFunc) ([]string, error) {
 		}
 		options = append(options, option)
 		if token == schema.Command {
+			if onlyStartupOptions {
+				return append(out, args[i:]...), nil
+			}
 			// When we see the bazel command token, switch to parsing command
 			// options instead of startup options.
 			optionSet = schema.CommandOptions

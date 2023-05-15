@@ -25,6 +25,7 @@ go_library(
         "//cli/plugin",
         "//cli/printlog",
         "//cli/remotebazel",
+        "//cli/shortcuts",
         "//cli/sidecar",
         "//cli/tooltag",
         "//cli/update",
