@@ -20,6 +20,15 @@ interface State {
   loading: boolean;
 }
 
+export function testLogFallbackParams(invocationId: string, target: string) {
+  const params: Record<string, string> = {
+    invocation_id: invocationId,
+    artifact: "test_log",
+    name: target.replace(":", "/:") + "/test.log",
+  };
+  return params;
+}
+
 export default class TargetTestLogCardComponent extends React.Component<Props, State> {
   state: State = {
     testLog: "",
@@ -35,15 +44,6 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
     if (this.props.testResult !== prevProps.testResult) {
       this.fetchTestLog();
     }
-  }
-
-  testLogFallbackParams(invocationId: string, name: string) {
-    const params: Record<string, string> = {
-      invocation_id: invocationId,
-      artifact: "test_log",
-      name: name,
-    };
-    return params;
   }
 
   fetchTestLog() {
@@ -66,7 +66,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
         testLogUrl,
         this.props.invocationId,
         undefined,
-        this.testLogFallbackParams(this.props.invocationId, "test.log")
+        testLogFallbackParams(this.props.invocationId, this.props.testResult.buildEvent.id.testResult.label)
       )
       .then((contents: string) => {
         this.setState({ testLog: contents, loading: false });

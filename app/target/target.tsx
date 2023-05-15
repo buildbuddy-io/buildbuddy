@@ -302,6 +302,7 @@ export default class TargetComponent extends React.Component<Props> {
               name={"Target outputs"}
               invocationId={this.props.invocationId}
               files={this.props.files as build_event_stream.File[]}
+              targetLabel={this.props.targetLabel}
             />
           )}
           {resultEvents
@@ -315,6 +316,7 @@ export default class TargetComponent extends React.Component<Props> {
                   name={this.generateRunName(result.buildEvent?.id?.testResult ?? {})}
                   invocationId={this.props.invocationId}
                   files={result.buildEvent!.testResult!.testActionOutput as build_event_stream.File[]}
+                  targetLabel={this.props.targetLabel}
                 />
               </div>
             ))}

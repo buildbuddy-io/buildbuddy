@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 
@@ -1213,6 +1214,14 @@ func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Reque
 		} else {
 			q := fallback.Query()
 			q.Del("with_fallback") // Only fall back once.
+			if q.Get("artifact") != "" && q.Get("name") == "" && params.Get("bytestream_url") != "" {
+				u, err := url.Parse(params.Get("bytestream_url"))
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Fallback to artifact with empty name is only valid when falling back from a valid bytestream_url, but an error occurred when parsing bytestream_url: %s", err), http.StatusBadRequest)
+					return
+				}
+				q.Set("name", u.Path)
+			}
 			s.serveUsingParams(w, r, q)
 		}
 	}
@@ -1234,7 +1243,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
 		}
 	}
-	switch params.Get("artifact") {
+	switch artifact := params.Get("artifact"); artifact {
 	case "buildlog":
 		attempt, err := strconv.ParseUint(params.Get("attempt"), 10, 64)
 		if err != nil {
@@ -1269,14 +1278,18 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			w.Header().Set("Content-Encoding", "gzip")
 		}
 		w.Write(b)
+	case "test_coverage":
+		fallthrough
+	case "test_xml":
+		fallthrough
 	case "test_log":
 		name := params.Get("name")
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/test_log/"+name)
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/test_data/"+name)
 		if err != nil {
-			log.Warningf("Error serving test log '%s' for invocation %s: %s", name, iid, err)
+			log.Warningf("Error serving test artifact '%s' for invocation %s: %s", name, iid, err)
 			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
 		}
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", name))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", path.Base(name)))
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Write(b)
 	default:

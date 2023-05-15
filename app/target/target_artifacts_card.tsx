@@ -5,11 +5,15 @@ import { zip } from "../../proto/zip_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
+import { testLogFallbackParams } from "./target_test_log_card";
+import { testXMLFallbackParams } from "./target_test_document_card";
+import { testCoverageFallbackParams } from "./target_test_coverage_card";
 
 interface Props {
   name: string;
   files: build_event_stream.File[];
   invocationId: string;
+  targetLabel: string;
 }
 
 interface State {
@@ -23,6 +27,16 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
   state: State = {
     loading: false,
   };
+
+  fallbackParamsFunctions: Record<string, () => Record<string, string>> = {
+    "test.log": () => testLogFallbackParams(this.props.invocationId, this.props.targetLabel),
+    "test.xml": () => testXMLFallbackParams(this.props.invocationId, this.props.targetLabel),
+    "test.lcov": () => testXMLFallbackParams(this.props.invocationId, this.props.targetLabel),
+  };
+
+  getFallbackParams(outputFilename: string): Record<string, string> {
+    return this.fallbackParamsFunctions[outputFilename]?.apply(undefined);
+  }
 
   componentDidMount() {
     this.maybeFetchOutputManifest();
@@ -77,6 +91,19 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     });
   }
 
+  makeArtifactViewUri(baseUri: string, outputFilename: string): string {
+    let params: Record<string, string> = {
+      bytestream_url: baseUri,
+      invocation_id: this.props.invocationId,
+      filename: outputFilename,
+    };
+    let fallbackParams = this.getFallbackParams(outputFilename);
+    if (fallbackParams) {
+      params.with_fallback = `?${new URLSearchParams(fallbackParams).toString()}`;
+    }
+    return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}`;
+  }
+
   handleArtifactClicked(outputUri: string, outputFilename: string, event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
     if (!outputUri) return false;
@@ -84,7 +111,12 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
-      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.invocationId);
+      rpcService.downloadBytestreamFile(
+        outputFilename,
+        outputUri,
+        this.props.invocationId,
+        this.getFallbackParams(outputFilename)
+      );
     }
     return false;
   }
@@ -130,11 +162,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                     {output.name}
                   </a>
                   {output.uri?.startsWith("bytestream://") && (
-                    <a
-                      className="artifact-view"
-                      href={`/code/buildbuddy-io/buildbuddy/?bytestream_url=${encodeURIComponent(
-                        output.uri
-                      )}&invocation_id=${this.props.invocationId}&filename=${output.name}`}>
+                    <a className="artifact-view" href={this.makeArtifactViewUri(output.uri, output.name)}>
                       <FileCode /> View
                     </a>
                   )}

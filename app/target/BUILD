@@ -48,6 +48,9 @@ ts_library(
     deps = [
         "//app/capabilities",
         "//app/service:rpc_service",
+        "//app/target:target_test_coverage_card",
+        "//app/target:target_test_document_card",
+        "//app/target:target_test_log_card",
         "//proto:build_event_stream_ts_proto",
         "//proto:zip_ts_proto",
         "@npm//@types/react",

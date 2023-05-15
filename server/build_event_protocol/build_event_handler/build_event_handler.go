@@ -93,6 +93,14 @@ var (
 			"local cache stats to the backing storage, before finalizing stats in the DB.")
 )
 
+var testArtifactsToPersist = map[string]struct{}{
+	"test.log":  {},
+	"test.xml":  {},
+	"test.lcov": {},
+}
+
+const artifactsPath = "/artifacts/"
+
 type BuildEventHandler struct {
 	env              environment.Env
 	statsRecorder    *statsRecorder
@@ -408,35 +416,40 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	default:
 		alert.UnexpectedEvent(
 			"webhook_channel_buffer_full",
-			"Failed to notify webhook: channel buffer is full")
+			"Failed to notify webhook: channel buffer is full",
+		)
 	}
 
+	if auth := r.env.GetAuthenticator(); auth != nil {
+		ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
+	}
 	for path, uri := range task.artifactsToPersist {
 		if uri == nil {
 			// no artifact exists to persist
 			continue
 		}
-		path = task.invocationJWT.id + "/artifacts/" + path
-		if auth := r.env.GetAuthenticator(); auth != nil {
-			ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
-		}
-		w, err := r.env.GetBlobstore().Writer(ctx, path)
-		if err != nil {
-			log.CtxErrorf(ctx, "Failed to open writer to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
-			continue
-		}
-		if err := bytestream.StreamBytestreamFile(ctx, r.env, uri, w); err != nil {
-			log.CtxErrorf(ctx, "Failed to stream to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
-			w.Close()
-			continue
-		}
-		if err := w.Commit(); err != nil {
-			log.CtxErrorf(ctx, "Failed to commit to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
-			w.Close()
-			continue
-		}
-		if err := w.Close(); err != nil {
-			log.CtxErrorf(ctx, "Failed to close blobstore writer for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
+		switch uri.Scheme {
+		case "":
+			switch uri.Path {
+			case "//test_data/":
+				// TODO (zoey): Switch to streaming build events to avoid loading the whole BES into memory
+				inv, err := LookupInvocation(r.env, ctx, task.invocationJWT.id)
+				if err != nil {
+					log.CtxErrorf(ctx, "LookupInvocation failed when attempting to persist test logs: %s", err)
+					continue
+				}
+				persistTestDataForInvocation(ctx, r.env, inv, path)
+			default:
+				log.CtxErrorf(ctx, "Unsupported artifact(s) to persist %s.", uri.Path)
+			}
+		case "bytestream":
+			fullPath := task.invocationJWT.id + artifactsPath + path
+			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
+				log.CtxError(ctx, err.Error())
+				continue
+			}
+		default:
+			log.CtxErrorf(ctx, "Unsupported scheme to support artifact: %s", uri.Path)
 		}
 	}
 }
@@ -462,6 +475,82 @@ func (r *statsRecorder) Stop() {
 	}
 
 	close(r.onStatsRecorded)
+}
+
+func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, path string) error {
+	w, err := env.GetBlobstore().Writer(ctx, path)
+	if err != nil {
+		return status.WrapErrorf(
+			err,
+			"Failed to open writer to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := bytestream.StreamBytestreamFile(ctx, env, uri, w); err != nil {
+		w.Close()
+		return status.WrapErrorf(
+			err,
+			"Failed to stream to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := w.Commit(); err != nil {
+		w.Close()
+		return status.WrapErrorf(
+			err,
+			"Failed to commit to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := w.Close(); err != nil {
+		return status.WrapErrorf(
+			err,
+			"Failed to close blobstore writer for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	return nil
+}
+
+func persistTestDataForInvocation(ctx context.Context, env environment.Env, inv *inpb.Invocation, path string) {
+	for _, e := range inv.GetEvent() {
+		p, ok := e.BuildEvent.Payload.(*build_event_stream.BuildEvent_TestResult)
+		if !ok {
+			continue
+		}
+		for _, f := range p.TestResult.TestActionOutput {
+			resultURI, err := url.Parse(f.GetUri())
+			if err != nil {
+				log.Errorf("Error parsing URI for test result: %s", f.GetUri())
+				continue
+			}
+			if resultURI.Scheme != "bytestream" {
+				continue
+			}
+			if _, ok := testArtifactsToPersist[f.Name]; !ok {
+				continue
+			}
+			target := strings.TrimPrefix(e.BuildEvent.Id.GetTestResult().Label, "//")
+			if i := strings.LastIndex(target, ":"); i != -1 {
+				target = target[:i] + "/" + target[i:]
+			}
+			fullPath := inv.GetInvocationId() + artifactsPath + path + target + "/" + f.Name
+			if err := persistArtifact(ctx, env, resultURI, fullPath); err != nil {
+				log.Errorf(
+					"Error persisting '%s' for target '%s' for invocation %s: %s",
+					f.Name,
+					e.BuildEvent.Id.GetTestResult().Label,
+					inv.GetInvocationId(),
+					err.Error(),
+				)
+				continue
+			}
+		}
+	}
 }
 
 type notifyWebhookTask struct {
@@ -757,6 +846,9 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	artifactsToPersist := make(map[string]*url.URL, 0)
 	if e.beValues.ProfileURI() != nil && e.beValues.ProfileURI().Scheme == "bytestream" {
 		artifactsToPersist["timing_profile/"+e.beValues.ProfileName()] = e.beValues.ProfileURI()
+	}
+	if e.beValues.HasTestData() {
+		artifactsToPersist["test_data/"] = &url.URL{Path: "//test_data/"}
 	}
 
 	e.statsRecorder.Enqueue(

@@ -120,6 +120,17 @@ export default class CodeComponent extends React.Component<Props, State> {
     return Boolean(this.props.search.get("bytestream_url")) || Boolean(this.props.search.get("lcov"));
   }
 
+  getFallbackParams(fallback: string | null): Record<string, string> | undefined {
+    if (!fallback) {
+      return undefined;
+    }
+    let fallbackParams: Record<string, string> = {};
+    for (const [key, value] of new URLSearchParams(fallback)) {
+      fallbackParams[key] = value;
+    }
+    return fallbackParams;
+  }
+
   componentDidMount() {
     if (!this.currentRepo() && !this.isSingleFile()) {
       return;
@@ -137,9 +148,16 @@ export default class CodeComponent extends React.Component<Props, State> {
     const invocationID = this.props.search.get("invocation_id") || "";
     let filename = this.props.search.get("filename");
     if (this.isSingleFile() && bytestreamURL) {
-      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result: any) => {
-        this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
-      });
+      rpcService
+        .fetchBytestreamFile(
+          bytestreamURL,
+          invocationID,
+          "text",
+          this.getFallbackParams(this.props.search.get("with_fallback"))
+        )
+        .then((result: any) => {
+          this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
+        });
       return;
     }
 
@@ -767,7 +785,12 @@ export default class CodeComponent extends React.Component<Props, State> {
                   if (!bsUrl || !invocationId) {
                     return;
                   }
-                  rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
+                  rpcService.downloadBytestreamFile(
+                    this.props.search.get("filename") || "",
+                    bsUrl,
+                    invocationId,
+                    this.getFallbackParams(this.props.search.get("with_fallback"))
+                  );
                 }}>
                 <Download /> Download File
               </OutlinedButton>

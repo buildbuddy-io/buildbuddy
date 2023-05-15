@@ -75,8 +75,15 @@ class RpcService {
     window.open(this.getDownloadUrl(params));
   }
 
-  downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
-    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename }));
+  downloadBytestreamFile(
+    filename: string,
+    bytestreamURL: string,
+    invocationId: string,
+    fallbackParams?: Record<string, string> | undefined
+  ) {
+    let fallback = "";
+    if (fallbackParams) fallback = `?${new URLSearchParams(fallbackParams)?.toString()}`;
+    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename, fallback: fallback }));
   }
 
   downloadBytestreamZipFile(filename: string, bytestreamURL: string, zip: string, invocationId: string) {
@@ -87,7 +94,7 @@ class RpcService {
     bytestreamURL: string,
     invocationId: string,
     responseType?: "arraybuffer" | "json" | "text" | undefined,
-    fallbackParams?: Record<string, string>
+    fallbackParams?: Record<string, string> | undefined
   ): Promise<string> {
     let fallback = "";
     if (fallbackParams) fallback = `?${new URLSearchParams(fallbackParams)?.toString()}`;
