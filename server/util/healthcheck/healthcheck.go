@@ -50,6 +50,10 @@ type HealthChecker struct {
 	shuttingDown  bool
 }
 
+// Creates a new health checker function that checks the provided GRPC client
+// connection, returning: no error (healthy) when the connection is ready or
+// idle, and unhealthy otherwise. If the connection is idle when the health
+// checker runs, the health checker attempts to reconnect it.
 func NewGRPCHealthCheck(conn *grpc.ClientConn) interfaces.CheckerFunc {
 	return interfaces.CheckerFunc(
 		func(ctx context.Context) error {
