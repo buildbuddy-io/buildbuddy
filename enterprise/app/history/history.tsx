@@ -241,11 +241,13 @@ export default class HistoryComponent extends React.Component<Props, State> {
     handles.push(
       shortcuts.register(KeyCombo.j, () => {
         this.selectNextInvocation();
+        focus();
       })
     );
     handles.push(
       shortcuts.register(KeyCombo.k, () => {
         this.selectPreviousInvocation();
+        focus();
       })
     );
     handles.push(
@@ -268,6 +270,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
       selectedInvocationIndex: newInvocationIndex,
       selectedInvocationId: newInvocationId,
     });
+    const elements = document.getElementsByClassName("selected-keyboard-shortcuts");
+    if (elements.length == 1) {
+      (elements[0] as HTMLElement).focus()
+    }
   }
 
   selectPreviousInvocation() {
@@ -280,6 +286,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
       selectedInvocationIndex: newInvocationIndex,
       selectedInvocationId: newInvocationId,
     });
+    const elements = document.getElementsByClassName("selected-keyboard-shortcuts");
+    if (elements.length == 1) {
+      (elements[0] as HTMLElement).focus()
+    }
   }
 
   selectInvocation(invocationId: string) {
