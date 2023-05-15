@@ -47,6 +47,7 @@ go_test(
     embed = [":scheduler_server"],
     deps = [
         "//enterprise/server/testutil/enterprise_testenv",
+        "//enterprise/server/workflow/service",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/util/testing/flags",

@@ -151,9 +151,6 @@ var (
 		else 
 			return 0 
 		end`)
-
-	// Valid pool names in the shared executor pool
-	validSharedPoolNames = []string{"", "workflows"}
 )
 
 func init() {
@@ -904,10 +901,10 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 
 	if !s.enableUserOwnedExecutors {
 		// If user-owned executors are not enabled, we do not need to add group ID as part of the executor key
-		return getSharedPoolInfo(sharedPoolName, false /* includeGroupID */)
+		return getSharedPoolInfo(s.env, sharedPoolName, false /* includeGroupID */)
 	}
 
-	sharedPool, err := getSharedPoolInfo(sharedPoolName, true /* includeGroupID */)
+	sharedPool, err := getSharedPoolInfo(s.env, sharedPoolName, true /* includeGroupID */)
 	if err != nil {
 		return nil, err
 	}
@@ -947,10 +944,15 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 	return sharedPool, nil
 }
 
-func getSharedPoolInfo(poolName string, includeGroupID bool) (*interfaces.PoolInfo, error) {
-	if !contains(validSharedPoolNames, poolName) {
-		return nil, status.InvalidArgumentErrorf("%s is not a valid pool name for the shared executor pool")
+func getSharedPoolInfo(env environment.Env, poolName string, includeGroupID bool) (*interfaces.PoolInfo, error) {
+	validSharedPoolNames := []string{*defaultPoolName}
+	if env.GetWorkflowService() != nil {
+		validSharedPoolNames = append(validSharedPoolNames, env.GetWorkflowService().WorkflowsPoolName())
 	}
+	if !contains(validSharedPoolNames, poolName) {
+		return nil, status.InvalidArgumentErrorf("%s is not a valid pool name for the shared executor pool", poolName)
+	}
+
 	info := &interfaces.PoolInfo{
 		Name: poolName,
 	}
