@@ -1589,6 +1589,7 @@ func writeBazelrc(path, invocationID string) error {
 	defer f.Close()
 
 	lines := []string{
+		"build --build_metadata=ROLE=CI",
 		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
 		// for the outer (workflow) invocation.
@@ -1607,11 +1608,9 @@ func writeBazelrc(path, invocationID string) error {
 	if *workflowID != "" {
 		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)
 	}
-	if *prNumber == 0 {
-		lines = append(lines, "build --build_metadata=ROLE=CI")
-	} else {
-		lines = append(lines, "build --build_metadata=ROLE=PR")
+	if *prNumber != 0 {
 		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
+		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
 	}
 	if *pushedRepoURL != *targetRepoURL {
 		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)

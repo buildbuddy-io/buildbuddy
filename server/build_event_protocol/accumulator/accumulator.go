@@ -25,6 +25,7 @@ const (
 	workflowIDFieldName                   = "workflowID"
 	actionNameFieldName                   = "actionName"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
+	disableTargetTrackingFieldName        = "disableTargetTracking"
 )
 
 var (
@@ -33,6 +34,7 @@ var (
 		"COMMIT_SHA":                      commitSHAFieldName,
 		"ROLE":                            roleFieldName,
 		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
+		"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
 	}
 )
 
@@ -46,6 +48,7 @@ type Accumulator interface {
 
 	StartTime() time.Time
 	DisableCommitStatusReporting() bool
+	DisableTargetTracking() bool
 	WorkflowID() string
 	ActionName() string
 	Pattern() string
@@ -173,6 +176,10 @@ func (v *BEValues) CommitSHA() string {
 
 func (v *BEValues) DisableCommitStatusReporting() bool {
 	return v.getBoolValue(disableCommitStatusReportingFieldName)
+}
+
+func (v *BEValues) DisableTargetTracking() bool {
+	return v.getBoolValue(disableTargetTrackingFieldName)
 }
 
 func (v *BEValues) Role() string {
