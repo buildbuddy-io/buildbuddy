@@ -103,6 +103,10 @@ func (a *fakeAccumulator) DisableCommitStatusReporting() bool {
 	return false
 }
 
+func (a *fakeAccumulator) DisableTargetTracking() bool {
+	return false
+}
+
 func (a *fakeAccumulator) Pattern() string {
 	return ""
 }
