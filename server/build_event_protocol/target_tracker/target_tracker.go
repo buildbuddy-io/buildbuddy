@@ -412,6 +412,10 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not a CI build", t.invocationID())
 		return
 	}
+	if t.buildEventAccumulator.DisableTargetTracking() {
+		log.CtxDebugf(ctx, "Not tracking targets for %q because DISABLE_TARGET_TRACKING is set", t.invocationID())
+		return
+	}
 	permissions, err := t.permissionsFromContext(ctx)
 	if err != nil {
 		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
@@ -430,6 +434,10 @@ func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_
 	}
 	if t.buildEventAccumulator.Role() != "CI" {
 		log.CtxDebugf(ctx, "Not tracking target statuses for %q because it's not a CI build", t.invocationID())
+		return
+	}
+	if t.buildEventAccumulator.DisableTargetTracking() {
+		log.CtxDebugf(ctx, "Not tracking targets for %q because DISABLE_TARGET_TRACKING is set", t.invocationID())
 		return
 	}
 	permissions, err := t.permissionsFromContext(ctx)

@@ -1610,7 +1610,8 @@ func writeBazelrc(path, invocationID string) error {
 	if *prNumber == 0 {
 		lines = append(lines, "build --build_metadata=ROLE=CI")
 	} else {
-		lines = append(lines, "build --build_metadata=ROLE=PR")
+		lines = append(lines, "build --build_metadata=ROLE=CI")
+		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
 		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
 	}
 	if *pushedRepoURL != *targetRepoURL {
