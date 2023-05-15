@@ -891,27 +891,14 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 }
 
 func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, useSelfHosted bool) (*interfaces.PoolInfo, error) {
-	// Note: The defaultPoolName flag only applies to the shared executor pool.
-	// The pool name for self-hosted pools is always determined directly from
-	// platform props.
-	sharedPoolName := requestedPool
-	if sharedPoolName == "" {
-		sharedPoolName = *defaultPoolName
-	}
-
 	if !s.enableUserOwnedExecutors {
 		// If user-owned executors are not enabled, we do not need to add group ID as part of the executor key
-		return getSharedPoolInfo(s.env, sharedPoolName, false /* includeGroupID */)
-	}
-
-	sharedPool, err := getSharedPoolInfo(s.env, sharedPoolName, true /* includeGroupID */)
-	if err != nil {
-		return nil, err
+		return getSharedPoolInfo(s.env, requestedPool, false /* includeGroupID */)
 	}
 
 	// Linux workflows use shared executors unless self_hosted is set.
 	if os == platform.LinuxOperatingSystemName && workflowID != "" && !useSelfHosted {
-		return sharedPool, nil
+		return getSharedPoolInfo(s.env, requestedPool, true /* includeGroupID */)
 	}
 
 	user, err := perms.AuthenticatedUser(ctx, s.env)
@@ -923,7 +910,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 			if useSelfHosted {
 				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
 			}
-			return sharedPool, nil
+			return getSharedPoolInfo(s.env, requestedPool, true /* includeGroupID */)
 		}
 		return nil, err
 	}
@@ -941,20 +928,25 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 	if useSelfHosted {
 		return selfHostedPool, nil
 	}
-	return sharedPool, nil
+	return getSharedPoolInfo(s.env, requestedPool, true /* includeGroupID */)
 }
 
-func getSharedPoolInfo(env environment.Env, poolName string, includeGroupID bool) (*interfaces.PoolInfo, error) {
+func getSharedPoolInfo(env environment.Env, requestedPoolName string, includeGroupID bool) (*interfaces.PoolInfo, error) {
+	sharedPoolName := requestedPoolName
+	if sharedPoolName == "" {
+		sharedPoolName = *defaultPoolName
+	}
+
 	validSharedPoolNames := []string{*defaultPoolName}
 	if env.GetWorkflowService() != nil {
 		validSharedPoolNames = append(validSharedPoolNames, env.GetWorkflowService().WorkflowsPoolName())
 	}
-	if !contains(validSharedPoolNames, poolName) {
-		return nil, status.InvalidArgumentErrorf("%s is not a valid pool name for the shared executor pool", poolName)
+	if !contains(validSharedPoolNames, sharedPoolName) {
+		return nil, status.InvalidArgumentErrorf("%s is not a valid pool name for the shared executor pool", sharedPoolName)
 	}
 
 	info := &interfaces.PoolInfo{
-		Name: poolName,
+		Name: sharedPoolName,
 	}
 	if includeGroupID {
 		info.GroupID = *sharedExecutorPoolGroupID

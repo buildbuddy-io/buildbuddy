@@ -130,10 +130,10 @@ func TestGetPoolInfo_SelfHostedNoAuth(t *testing.T) {
 
 func TestGetPoolInfo_SelfHosted(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, true, "user1")
-	p, err := s.GetPoolInfo(ctx, "linux", "", "" /*=workflowID*/, true)
+	p, err := s.GetPoolInfo(ctx, "linux", "my-pool", "" /*=workflowID*/, true)
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
-	require.Equal(t, "", p.Name)
+	require.Equal(t, "my-pool", p.Name)
 
 	// Linux workflows should respect useSelfHosted bool.
 	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, false)
