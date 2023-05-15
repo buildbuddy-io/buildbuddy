@@ -82,3 +82,25 @@ func TestGetTargets(t *testing.T) {
 	targets = GetTargets(args)
 	assert.Equal(t, []string{}, targets)
 }
+
+func TestGetCommand(t *testing.T) {
+	args := []string{}
+	command, index := GetCommandAndIndex(args)
+	assert.Equal(t, "", command)
+	assert.Equal(t, -1, index)
+
+	args = []string{"command"}
+	command, index = GetCommandAndIndex(args)
+	assert.Equal(t, "command", command)
+	assert.Equal(t, 0, index)
+
+	args = []string{"command", "notcommand"}
+	command, index = GetCommandAndIndex(args)
+	assert.Equal(t, "command", command)
+	assert.Equal(t, 0, index)
+
+	args = []string{"--ouput_base=notcommand", "command", "--foo", "bar", "baz"}
+	command, index = GetCommandAndIndex(args)
+	assert.Equal(t, "command", command)
+	assert.Equal(t, 1, index)
+}
