@@ -226,7 +226,7 @@ func setBazelVersionImpl() error {
 
 	ws, err := workspace.Path()
 	if err != nil {
-		return err
+		return os.Setenv("USE_BAZEL_VERSION", "latest")
 	}
 	parts, err := ParseVersionDotfile(filepath.Join(ws, ".bazelversion"))
 	if err != nil && !os.IsNotExist(err) {

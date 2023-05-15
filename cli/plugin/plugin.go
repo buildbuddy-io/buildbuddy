@@ -432,7 +432,9 @@ func LoadAll(tempDir string) ([]*Plugin, error) {
 
 	ws, err := workspace.Path()
 	if err != nil {
-		return nil, err
+		// If we can't find a workspace file, don't load plugins as we won't
+		// be able to find the buildbuddy.yaml file that defines them.
+		return nil, nil
 	}
 	return loadAll(ws, tempDir)
 }
@@ -479,11 +481,10 @@ func getConfiguredPlugins(workspaceDir string) ([]*Plugin, error) {
 // PrepareEnv sets environment variables for use in plugins.
 func PrepareEnv() error {
 	ws, err := workspace.Path()
-	if err != nil {
-		return err
-	}
-	if err := os.Setenv("BUILD_WORKSPACE_DIRECTORY", ws); err != nil {
-		return err
+	if err == nil {
+		if err := os.Setenv("BUILD_WORKSPACE_DIRECTORY", ws); err != nil {
+			return err
+		}
 	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
