@@ -78,24 +78,6 @@ var (
 		`$`)
 
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
-
-	// A hardcoded list of Bazel startup args that take non-boolean values.
-	// Grabbed from the output of `bazel help startup_options` of Bazel 6.1.2.
-	// These shouldn't change often.
-	defaultStartupArgs = `
-		--bazelrc (a string; default: see description)
-		--connect_timeout_secs (an integer; default: "30")
-		--failure_detail_out (a path; default: see description)
-		--io_nice_level (an integer; default: "-1")
-		--local_startup_timeout_secs (an integer; default: "120")
-		--macos_qos_class (a string; default: "default")
-		--max_idle_secs (an integer; default: "10800")
-		--output_base (a path; default: see description)
-		--output_user_root (a path; default: see description)
-		--server_jvm_out (a path; default: see description)
-		--host_jvm_args (a string; may be used multiple times)
-		--host_jvm_profile (a string; default: "")
-		--server_javabase (a string; default: "")`
 )
 
 // OptionSet contains a set of Option schemas, indexed for ease of parsing.
@@ -324,7 +306,7 @@ type CommandLineSchema struct {
 
 // GetCommandLineSchema returns the effective CommandLineSchemas for the given
 // command line.
-func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc) (*CommandLineSchema, error) {
+func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
 	startupHelp, err := bazelHelp("startup_options")
 	if err != nil {
 		return nil, err
@@ -335,6 +317,9 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc) (*CommandLineS
 	bazelCommands, err := BazelCommands()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list bazel commands: %s", err)
+	}
+	if onlyStartupOptions {
+		return schema, nil
 	}
 	// Iterate through the args, looking for the bazel command. Note, we don't
 	// use "arg.GetCommand()" here since it may be ambiguous whether a token not
@@ -372,9 +357,7 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc) (*CommandLineS
 }
 
 func CanonicalizeStartupArgs(args []string) ([]string, error) {
-	return canonicalizeArgs(args, func(topic string) (string, error) {
-		return defaultStartupArgs, nil
-	}, true)
+	return canonicalizeArgs(args, runBazelHelpWithCache, true)
 }
 
 func CanonicalizeArgs(args []string) ([]string, error) {
@@ -382,7 +365,7 @@ func CanonicalizeArgs(args []string) ([]string, error) {
 }
 
 func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool) ([]string, error) {
-	schema, err := getCommandLineSchema(args, help)
+	schema, err := getCommandLineSchema(args, help, onlyStartupOptions)
 	if err != nil {
 		return nil, err
 	}

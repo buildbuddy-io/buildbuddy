@@ -342,9 +342,7 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 		"--remote_header", "x-buildbuddy-bar=2",
 	}
 
-	canonicalArgs, err := canonicalizeArgs(args, func(topic string) (string, error) {
-		return defaultStartupArgs, nil
-	}, true)
+	canonicalArgs, err := canonicalizeArgs(args, staticHelpFromTestData, true)
 
 	require.NoError(t, err)
 	expectedCanonicalArgs := []string{
