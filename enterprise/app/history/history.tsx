@@ -272,7 +272,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
     });
     const elements = document.getElementsByClassName("selected-keyboard-shortcuts");
     if (elements.length == 1) {
-      (elements[0] as HTMLElement).focus()
+      (elements[0] as HTMLElement).focus();
     }
   }
 
@@ -288,7 +288,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
     });
     const elements = document.getElementsByClassName("selected-keyboard-shortcuts");
     if (elements.length == 1) {
-      (elements[0] as HTMLElement).focus()
+      (elements[0] as HTMLElement).focus();
     }
   }
 
