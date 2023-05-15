@@ -170,7 +170,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
-		clause, args := invocation_format.GetTagsAsClickhouseWhereClause("i.tags", tags)
+		clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
 		q.AddWhereClause(clause, args...)
 	}
 
