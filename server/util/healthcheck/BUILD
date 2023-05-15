@@ -11,6 +11,8 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//connectivity",
         "@org_golang_x_sync//errgroup",
     ],
 )

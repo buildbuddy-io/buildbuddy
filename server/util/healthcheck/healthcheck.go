@@ -16,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 )
@@ -46,6 +48,21 @@ type HealthChecker struct {
 	mu            sync.RWMutex // protects: readyToServe, shuttingDown
 	readyToServe  bool
 	shuttingDown  bool
+}
+
+func NewGRPCHealthCheck(conn *grpc.ClientConn) interfaces.CheckerFunc {
+	return interfaces.CheckerFunc(
+		func(ctx context.Context) error {
+			connState := conn.GetState()
+			if connState == connectivity.Ready {
+				return nil
+			} else if connState == connectivity.Idle {
+				conn.Connect()
+				return nil
+			}
+			return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
+		},
+	)
 }
 
 func NewHealthChecker(serverType string) *HealthChecker {

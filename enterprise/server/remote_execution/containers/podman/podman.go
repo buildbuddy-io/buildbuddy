@@ -28,13 +28,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/protobuf/proto"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -189,19 +189,7 @@ func intializeSociArtifactStoreClient(env environment.Env, target string) (socip
 	}
 	log.Infof("Connecting to app internal target: %s", target)
 	env.GetHealthChecker().AddHealthCheck(
-		"grpc_soci_artifact_store_connection", interfaces.CheckerFunc(
-			func(ctx context.Context) error {
-				connState := conn.GetState()
-				if connState == connectivity.Ready {
-					return nil
-				} else if connState == connectivity.Idle {
-					conn.Connect()
-					return nil
-				}
-				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
-			},
-		),
-	)
+		"grpc_soci_artifact_store_connection", healthcheck.NewGRPCHealthCheck(conn))
 	return socipb.NewSociArtifactStoreClient(conn), nil
 }
 
