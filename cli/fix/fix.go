@@ -41,12 +41,12 @@ func HandleFix(args []string) (exitCode int, err error) {
 }
 
 func walk() error {
-	return filepath.Walk(".",
-		func(path string, info os.FileInfo, err error) error {
+	return filepath.WalkDir(".",
+		func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if info.IsDir() {
+			if d.IsDir() {
 				return nil
 			}
 			fileName := filepath.Base(path)
