@@ -11,7 +11,9 @@ go_library(
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/remote_cache/digest",
         "//server/util/hash",
+        "//server/util/perms",
         "//server/util/status",
         "@org_golang_google_protobuf//proto",
     ],
@@ -23,6 +25,7 @@ go_test(
     deps = [
         ":snaploader",
         "//enterprise/server/remote_execution/filecache",
+        "//proto:remote_execution_go_proto",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//require",

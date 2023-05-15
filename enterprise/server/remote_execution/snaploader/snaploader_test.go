@@ -13,6 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 func TestPackAndUnpack(t *testing.T) {
@@ -32,13 +34,17 @@ func TestPackAndUnpack(t *testing.T) {
 	// keys.
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
-	keyA := snaploader.NewKey("vm-config-hash-A", "runner-A")
+	taskA := &repb.ExecutionTask{}
+	keyA, err := snaploader.NewKey(taskA, "vm-config-hash-A", "runner-A")
+	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDir)
 	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
 	require.NoError(t, err)
 
 	require.NoError(t, err)
-	keyB := snaploader.NewKey("vm-config-hash-B", "runner-B")
+	taskB := &repb.ExecutionTask{}
+	keyB, err := snaploader.NewKey(taskB, "vm-config-hash-B", "runner-B")
+	require.NoError(t, err)
 	optsB := makeFakeSnapshot(t, workDir)
 	snapB, err := loader.CacheSnapshot(ctx, keyB, optsB)
 	require.NoError(t, err)
