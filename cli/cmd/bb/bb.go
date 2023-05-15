@@ -53,6 +53,12 @@ func run() (exitCode int, err error) {
 	// (--verbose, etc.)
 	args := log.Configure(os.Args[1:])
 
+	// Make sure startup args are always in the format --foo=bar.
+	args, err = parser.CanonicalizeStartupArgs(args)
+	if err != nil {
+		return -1, err
+	}
+
 	// Expand command shortcuts like b=>build, t=>test, etc.
 	args = shortcuts.HandleShortcuts(args)
 
