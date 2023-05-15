@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,18 +21,27 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/protobuf/proto"
 
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	godigest "github.com/opencontainers/go-digest"
 )
 
 var (
@@ -42,9 +52,14 @@ var (
 
 	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
 	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
-	// TODO(iain): switch to boolean flag once image streaming supports all container images.
-	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of images that can be streamed by podman.")
-	pullTimeout      = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
+
+	// TODO(iain): delete the streamableImages flag
+	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all podman images are streamed using soci artifacts generated and stored in the apps.")
+	streamableImages      = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
+
+	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
+
+	sociArtifactStoreTarget = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -75,6 +90,12 @@ const (
 	// argument to podman to enable the use of the soci store for streaming
 	enableStreamingStoreArg = "--storage-opt=additionallayerstore=/var/lib/soci-store/store:ref"
 
+	// The directory where soci artifact blobs are stored
+	sociBlobDirectory = "/var/lib/soci-snapshotter-grpc/content/blobs/sha256/"
+
+	// The directory whre soci indexes are stored
+	sociIndexDirectory = "/var/lib/soci-snapshotter-grpc/indexes/"
+
 	sociStorePath = "/var/lib/soci-store/store"
 )
 
@@ -84,17 +105,17 @@ type pullStatus struct {
 }
 
 type Provider struct {
-	env              environment.Env
-	imageCacheAuth   *container.ImageCacheAuthenticator
-	buildRoot        string
-	streamableImages []string
+	env                     environment.Env
+	imageCacheAuth          *container.ImageCacheAuthenticator
+	buildRoot               string
+	streamableImages        []string
+	sociArtifactStoreClient socipb.SociArtifactStoreClient
 }
 
 func runSociStore(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
-		sociStoreDir := sociStorePath
-		cmd := exec.CommandContext(ctx, "soci-store", sociStoreDir)
+		cmd := exec.CommandContext(ctx, "soci-store", sociStorePath)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
@@ -109,7 +130,7 @@ func runSociStore(ctx context.Context) {
 }
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
-	if len(*streamableImages) > 0 {
+	if *imageStreamingEnabled || len(*streamableImages) > 0 {
 		go runSociStore(env.GetServerContext())
 
 		// Configures podman to check soci store for image data.
@@ -144,13 +165,44 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 			),
 		)
 	}
-
+	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
+	if *imageStreamingEnabled {
+		var err error
+		sociArtifactStoreClient, err = intializeSociArtifactStoreClient(env, *sociArtifactStoreTarget)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Provider{
-		env:              env,
-		imageCacheAuth:   imageCacheAuthenticator,
-		streamableImages: *streamableImages,
-		buildRoot:        buildRoot,
+		env:                     env,
+		imageCacheAuth:          imageCacheAuthenticator,
+		streamableImages:        *streamableImages,
+		sociArtifactStoreClient: sociArtifactStoreClient,
+		buildRoot:               buildRoot,
 	}, nil
+}
+
+func intializeSociArtifactStoreClient(env environment.Env, target string) (socipb.SociArtifactStoreClient, error) {
+	conn, err := grpc_client.DialTarget(target)
+	if err != nil {
+		return nil, err
+	}
+	log.Infof("Connecting to app internal target: %s", target)
+	env.GetHealthChecker().AddHealthCheck(
+		"grpc_soci_artifact_store_connection", interfaces.CheckerFunc(
+			func(ctx context.Context) error {
+				connState := conn.GetState()
+				if connState == connectivity.Ready {
+					return nil
+				} else if connState == connectivity.Idle {
+					conn.Connect()
+					return nil
+				}
+				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
+			},
+		),
+	)
+	return socipb.NewSociArtifactStoreClient(conn), nil
 }
 
 func (p *Provider) NewContainer(ctx context.Context, image string, options *PodmanOptions) (container.CommandContainer, error) {
@@ -167,12 +219,17 @@ func (p *Provider) NewContainer(ctx context.Context, image string, options *Podm
 		}
 	}
 	return &podmanCommandContainer{
-		env:                   p.env,
-		imageCacheAuth:        p.imageCacheAuth,
-		image:                 image,
-		imageStreamingEnabled: imageIsStreamable,
-		buildRoot:             p.buildRoot,
-		options:               options,
+		env:            p.env,
+		imageCacheAuth: p.imageCacheAuth,
+		image:          image,
+
+		// The nil-ness of sociArtifactStoreClient acts as a boolean
+		// controlling global image streaming.
+		imageStreamingEnabled:   *imageStreamingEnabled || p.sociArtifactStoreClient != nil,
+		sociArtifactStoreClient: p.sociArtifactStoreClient,
+
+		buildRoot: p.buildRoot,
+		options:   options,
 	}, nil
 }
 
@@ -200,7 +257,8 @@ type podmanCommandContainer struct {
 	buildRoot string
 	workDir   string
 
-	imageStreamingEnabled bool
+	imageStreamingEnabled   bool
+	sociArtifactStoreClient socipb.SociArtifactStoreClient
 
 	options *PodmanOptions
 
@@ -472,11 +530,77 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+	if *imageStreamingEnabled && c.sociArtifactStoreClient != nil {
+		if err := c.getSociArtifacts(ctx, creds); err != nil {
+			return err
+		}
+	}
 	if err := c.pullImage(ctx, creds); err != nil {
 		return err
 	}
 	ps.pulled = true
 	return nil
+}
+
+func (c *podmanCommandContainer) getSociArtifacts(ctx context.Context, creds container.PullCredentials) error {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
+	if err != nil {
+		return err
+	}
+	if err = os.MkdirAll(sociBlobDirectory, 0644); err != nil {
+		return err
+	}
+	req := socipb.GetArtifactsRequest{
+		Image: c.image,
+		Credentials: &rgpb.Credentials{
+			Username: creds.Username,
+			Password: creds.Password,
+		},
+		Platform: &rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+			// TODO: support CPU variants. Details here:
+			// https://github.com/opencontainers/image-spec/blob/v1.0.0/image-index.md
+		},
+	}
+	resp, err := c.sociArtifactStoreClient.GetArtifacts(ctx, &req)
+	if err != nil {
+		return err
+	}
+	for _, artifact := range resp.Artifacts {
+		if artifact.Type == socipb.Type_UNKNOWN_TYPE {
+			return status.InternalErrorf("SociArtifactStore returned unknown artifact with hash %s" + artifact.Digest.Hash)
+		} else if artifact.Type == socipb.Type_SOCI_INDEX {
+			// Write the index file, this is what the snapshotter uses to
+			// associate the requested image with its soci index.
+			if err = os.MkdirAll(sociIndexDirectory, 0644); err != nil {
+				return err
+			}
+			sociIndexDigest := godigest.NewDigestFromEncoded(godigest.SHA256, artifact.Digest.Hash)
+			imageDigest := godigest.NewDigestFromEncoded(godigest.SHA256, resp.ImageId)
+			if err = os.WriteFile(sociIndex(imageDigest), []byte(sociIndexDigest.String()), 0644); err != nil {
+				return err
+			}
+		}
+		blobFile, err := os.Create(sociBlob(artifact.Digest))
+		defer blobFile.Close()
+		if err != nil {
+			return err
+		}
+		resourceName := digest.NewResourceName(artifact.Digest, "" /*=instanceName -- not used */, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		if err = cachetools.GetBlob(ctx, c.env.GetByteStreamClient(), resourceName, blobFile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sociIndex(digest godigest.Digest) string {
+	return sociIndexDirectory + digest.Encoded()
+}
+
+func sociBlob(digest *repb.Digest) string {
+	return sociBlobDirectory + digest.Hash
 }
 
 // cidFilePath returns the path to the container's cidfile. Podman will write
