@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -46,7 +45,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/test/bufconn"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
@@ -102,19 +100,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	}
 
 	realEnv.GetHealthChecker().AddHealthCheck(
-		"grpc_cache_connection", interfaces.CheckerFunc(
-			func(ctx context.Context) error {
-				connState := conn.GetState()
-				if connState == connectivity.Ready {
-					return nil
-				} else if connState == connectivity.Idle {
-					conn.Connect()
-					return nil
-				}
-				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
-			},
-		),
-	)
+		"grpc_cache_connection", healthcheck.NewGRPCHealthCheck(conn))
 
 	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -180,18 +166,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 	log.Infof("Connecting to app target: %s", *appTarget)
 
 	realEnv.GetHealthChecker().AddHealthCheck(
-		"grpc_app_connection", interfaces.CheckerFunc(
-			func(ctx context.Context) error {
-				connState := conn.GetState()
-				if connState == connectivity.Ready {
-					return nil
-				} else if connState == connectivity.Idle {
-					conn.Connect()
-				}
-				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
-			},
-		),
-	)
+		"grpc_app_connection", healthcheck.NewGRPCHealthCheck(conn))
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 
