@@ -168,8 +168,11 @@ const (
 
 	APIKeyLookupStatus = "status"
 
+	/// Pebble DB compaction type.
 	CompactionType = "compaction_type"
-	PebbleLevel    = "level"
+
+	/// Pebble DB level number.
+	PebbleLevel = "level"
 )
 
 const (
