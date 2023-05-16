@@ -17,15 +17,6 @@ interface State {
   cacheEnabled: boolean;
 }
 
-export function testXMLFallbackParams(invocationId: string, target: string) {
-  const params: Record<string, string> = {
-    invocation_id: invocationId,
-    artifact: "test_action_outputs",
-    name: target.replace(":", "/:") + "/test.xml",
-  };
-  return params;
-}
-
 export default class TargetTestDocumentCardComponent extends React.Component<Props> {
   state: State = {
     testLog: "",
@@ -58,12 +49,7 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
     }
 
     rpcService
-      .fetchBytestreamFile(
-        testXMLUrl,
-        this.props.invocationId,
-        undefined,
-        testXMLFallbackParams(this.props.invocationId, this.props.testResult.buildEvent.id.testResult.label)
-      )
+      .fetchBytestreamFile(testXMLUrl, this.props.invocationId, undefined)
       .then((contents: string) => {
         let parser = new DOMParser();
         let xmlDoc = parser.parseFromString(contents, "text/xml");

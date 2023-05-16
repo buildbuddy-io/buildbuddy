@@ -49,11 +49,7 @@ class RpcService {
     return `/file/download?${new URLSearchParams(params)}`;
   }
 
-  getBytestreamUrl(
-    bytestreamURL: string,
-    invocationId: string,
-    { filename = "", zip = "", fallback = "" } = {}
-  ): string {
+  getBytestreamUrl(bytestreamURL: string, invocationId: string, { filename = "", zip = "" } = {}): string {
     const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
     const params: Record<string, string> = {
       bytestream_url: bytestreamURL,
@@ -62,7 +58,6 @@ class RpcService {
     };
     if (filename) params.filename = filename;
     if (zip) params.z = zip;
-    if (fallback) params.with_fallback = fallback;
     return this.getDownloadUrl(params);
   }
 
@@ -75,15 +70,8 @@ class RpcService {
     window.open(this.getDownloadUrl(params));
   }
 
-  downloadBytestreamFile(
-    filename: string,
-    bytestreamURL: string,
-    invocationId: string,
-    fallbackParams?: Record<string, string> | undefined
-  ) {
-    let fallback = "";
-    if (fallbackParams) fallback = `?${new URLSearchParams(fallbackParams)?.toString()}`;
-    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename, fallback: fallback }));
+  downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
+    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename }));
   }
 
   downloadBytestreamZipFile(filename: string, bytestreamURL: string, zip: string, invocationId: string) {
@@ -93,15 +81,9 @@ class RpcService {
   fetchBytestreamFile(
     bytestreamURL: string,
     invocationId: string,
-    responseType?: "arraybuffer" | "json" | "text" | undefined,
-    fallbackParams?: Record<string, string> | undefined
-  ): Promise<string> {
-    let fallback = "";
-    if (fallbackParams) fallback = `?${new URLSearchParams(fallbackParams)?.toString()}`;
-    return this.fetchFile(
-      this.getBytestreamUrl(bytestreamURL, invocationId, { fallback: fallback }),
-      responseType || ""
-    );
+    responseType?: "arraybuffer" | "json" | "text" | undefined
+  ) {
+    return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId), responseType || "");
   }
 
   fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | ""): Promise<string> {

@@ -5,15 +5,11 @@ import { zip } from "../../proto/zip_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
-import { testLogFallbackParams } from "./target_test_log_card";
-import { testXMLFallbackParams } from "./target_test_document_card";
-import { testCoverageFallbackParams } from "./target_test_coverage_card";
 
 interface Props {
   name: string;
   files: build_event_stream.File[];
   invocationId: string;
-  targetLabel: string;
 }
 
 interface State {
@@ -27,16 +23,6 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
   state: State = {
     loading: false,
   };
-
-  fallbackParamsFunctions: Record<string, () => Record<string, string>> = {
-    "test.log": () => testLogFallbackParams(this.props.invocationId, this.props.targetLabel),
-    "test.xml": () => testXMLFallbackParams(this.props.invocationId, this.props.targetLabel),
-    "test.lcov": () => testXMLFallbackParams(this.props.invocationId, this.props.targetLabel),
-  };
-
-  getFallbackParams(outputFilename: string): Record<string, string> {
-    return this.fallbackParamsFunctions[outputFilename]?.apply(undefined);
-  }
 
   componentDidMount() {
     this.maybeFetchOutputManifest();
@@ -97,10 +83,6 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       invocation_id: this.props.invocationId,
       filename: outputFilename,
     };
-    let fallbackParams = this.getFallbackParams(outputFilename);
-    if (fallbackParams) {
-      params.with_fallback = `?${new URLSearchParams(fallbackParams).toString()}`;
-    }
     return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}`;
   }
 
@@ -111,12 +93,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
-      rpcService.downloadBytestreamFile(
-        outputFilename,
-        outputUri,
-        this.props.invocationId,
-        this.getFallbackParams(outputFilename)
-      );
+      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.invocationId);
     }
     return false;
   }

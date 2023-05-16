@@ -1205,24 +1205,10 @@ func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Reque
 			http.Error(w, err.Error(), code)
 			return
 		}
-		// Attempt to fall back gracefully if the specified file is not found and
-		// a fallback is specified.
-		if fallback, parseErr := url.Parse(params.Get("with_fallback")); parseErr != nil {
-			http.Error(w, parseErr.Error(), http.StatusBadRequest)
-		} else if fallback.RawQuery == "" {
-			http.Error(w, fmt.Sprintf("Fallback without query is invalid: %v", fallback), http.StatusBadRequest)
-		} else {
-			q := fallback.Query()
-			q.Del("with_fallback") // Only fall back once.
-			if q.Get("artifact") != "" && q.Get("name") == "" && params.Get("bytestream_url") != "" {
-				u, err := url.Parse(params.Get("bytestream_url"))
-				if err != nil {
-					http.Error(w, fmt.Sprintf("Fallback to artifact with empty name is only valid when falling back from a valid bytestream_url, but an error occurred when parsing bytestream_url: %s", err), http.StatusBadRequest)
-					return
-				}
-				q.Set("name", u.Path)
-			}
-			s.serveUsingParams(w, r, q)
+		// Attempt to fall back gracefully if the specified file is not found
+		code, err = s.serveArtifact(r.Context(), w, params)
+		if err != nil {
+			http.Error(w, err.Error(), code)
 		}
 	}
 }
@@ -1265,28 +1251,23 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
-	case "timing_profile":
-		name := params.Get("name")
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "timing_profile", name))
+	case "cache":
+		fallthrough
+	case "": // fallback for cache artifact
+		lookup, err := parseByteStreamURL(params.Get("bytestream_url"), params.Get("filename"))
 		if err != nil {
-			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", name, iid, err)
+			return http.StatusBadRequest, status.FailedPreconditionErrorf("Could not parse bytestream_url '%s' for cache artifact.", params.Get("bytestream_url"))
+		}
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "cache", lookup.URL.Path))
+		if err != nil {
+			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", lookup.Filename, iid, err)
 			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
 		}
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", name))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 		w.Header().Set("Content-Type", "application/octet-stream")
-		if strings.HasSuffix(name, ".gz") {
+		if strings.HasSuffix(lookup.Filename, ".gz") {
 			w.Header().Set("Content-Encoding", "gzip")
 		}
-		w.Write(b)
-	case "test_action_outputs":
-		name := params.Get("name")
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "test_action_outputs", name))
-		if err != nil {
-			log.Warningf("Error serving test artifact '%s' for invocation %s: %s", name, iid, err)
-			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
-		}
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", path.Base(name)))
-		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Write(b)
 	default:
 		return http.StatusBadRequest, status.FailedPreconditionErrorf("Unrecognized artifact \"%s\" requested.", params.Get("artifact"))

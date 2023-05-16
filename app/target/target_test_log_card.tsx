@@ -20,15 +20,6 @@ interface State {
   loading: boolean;
 }
 
-export function testLogFallbackParams(invocationId: string, target: string) {
-  const params: Record<string, string> = {
-    invocation_id: invocationId,
-    artifact: "test_action_outputs",
-    name: target.replace(":", "/:") + "/test.log",
-  };
-  return params;
-}
-
 export default class TargetTestLogCardComponent extends React.Component<Props, State> {
   state: State = {
     testLog: "",
@@ -62,12 +53,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
 
     this.setState({ loading: true });
     rpcService
-      .fetchBytestreamFile(
-        testLogUrl,
-        this.props.invocationId,
-        undefined,
-        testLogFallbackParams(this.props.invocationId, this.props.testResult.buildEvent.id.testResult.label)
-      )
+      .fetchBytestreamFile(testLogUrl, this.props.invocationId, undefined)
       .then((contents: string) => {
         this.setState({ testLog: contents, loading: false });
       })

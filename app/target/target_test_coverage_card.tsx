@@ -17,15 +17,6 @@ interface State {
   lcov: any[];
 }
 
-export function testCoverageFallbackParams(invocationId: string, target: string) {
-  const params: Record<string, string> = {
-    invocation_id: invocationId,
-    artifact: "test_action_outputs",
-    name: target.replace(":", "/:") + "/test.lcov",
-  };
-  return params;
-}
-
 export default class TargetTestCoverageCardComponent extends React.Component<Props> {
   state: State = {
     lcov: [],
@@ -57,12 +48,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
     }
 
     rpcService
-      .fetchBytestreamFile(
-        testCoverageUrl,
-        this.props.model.getId(),
-        undefined,
-        testCoverageFallbackParams(this.props.model.getId(), this.props.testResult.buildEvent.id.testResult.label)
-      )
+      .fetchBytestreamFile(testCoverageUrl, this.props.model.getId(), undefined)
       .then((contents: string) => {
         this.setState({ lcov: parseLcov(contents) });
       })

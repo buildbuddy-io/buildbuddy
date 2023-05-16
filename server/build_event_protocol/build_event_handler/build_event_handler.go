@@ -94,16 +94,10 @@ var (
 			"local cache stats to the backing storage, before finalizing stats in the DB.")
 )
 
-var testActionOutputs = map[string]struct{}{
-	"test.log":  {},
-	"test.xml":  {},
-	"test.lcov": {},
-}
-
-const artifactsBucket = "artifacts"
+var cacheArtifactsBucket = path.Join("artifacts", "cache")
 
 type PersistArtifacts struct {
-	PathFromURI       map[string]*url.URL
+	URIs              []*url.URL
 	TestActionOutputs bool
 }
 
@@ -435,9 +429,9 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		if err != nil {
 			log.CtxErrorf(ctx, "LookupInvocation failed when attempting to persist test logs: %s", err)
 		}
-		persistTestDataForInvocation(ctx, r.env, inv, "test_action_outputs")
+		persistTestActionOutputs(ctx, r.env, inv, "test_action_outputs")
 	}
-	for subpath, uri := range task.persist.PathFromURI {
+	for _, uri := range task.persist.URIs {
 		if uri == nil {
 			// no artifact exists to persist
 			continue
@@ -446,7 +440,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			log.CtxErrorf(ctx, "Unsupported scheme to persist artifact: %s", uri.Path)
 			continue
 		}
-		fullPath := path.Join(task.invocationJWT.id, artifactsBucket, subpath)
+		fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBucket, uri.Path)
 		if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
 			log.CtxError(ctx, err.Error())
 		}
@@ -515,7 +509,7 @@ func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, pat
 	return nil
 }
 
-func persistTestDataForInvocation(ctx context.Context, env environment.Env, inv *inpb.Invocation, subpath string) {
+func persistTestActionOutputs(ctx context.Context, env environment.Env, inv *inpb.Invocation, subpath string) {
 	for _, e := range inv.GetEvent() {
 		p, ok := e.BuildEvent.Payload.(*build_event_stream.BuildEvent_TestResult)
 		if !ok {
@@ -530,14 +524,7 @@ func persistTestDataForInvocation(ctx context.Context, env environment.Env, inv 
 			if resultURI.Scheme != "bytestream" {
 				continue
 			}
-			if _, ok := testActionOutputs[f.Name]; !ok {
-				continue
-			}
-			target := strings.TrimPrefix(e.BuildEvent.Id.GetTestResult().Label, "//")
-			if i := strings.LastIndex(target, ":"); i != -1 {
-				target = target[:i] + "/" + target[i:]
-			}
-			fullPath := path.Join(inv.GetInvocationId(), artifactsBucket, subpath, target, f.Name)
+			fullPath := path.Join(inv.GetInvocationId(), cacheArtifactsBucket, resultURI.Path)
 			if err := persistArtifact(ctx, env, resultURI, fullPath); err != nil {
 				log.Errorf(
 					"Error persisting '%s' for target '%s' for invocation %s: %s",
@@ -843,11 +830,11 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	persist := &PersistArtifacts{
-		PathFromURI:       make(map[string]*url.URL, 0),
-		TestActionOutputs: e.beValues.HasTestActionOutputs(),
+		URIs:              make([]*url.URL, 0),
+		TestActionOutputs: e.beValues.HasBytestreamTestActionOutputs(),
 	}
-	if e.beValues.ProfileURI() != nil && e.beValues.ProfileURI().Scheme == "bytestream" {
-		persist.PathFromURI["timing_profile/"+e.beValues.ProfileName()] = e.beValues.ProfileURI()
+	if e.beValues.BytestreamProfileURI() != nil {
+		persist.URIs = append(persist.URIs, e.beValues.BytestreamProfileURI())
 	}
 
 	e.statsRecorder.Enqueue(
