@@ -325,7 +325,7 @@ type FirecrackerContainer struct {
 	cancelVmCtx context.CancelFunc
 }
 
-func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
 	vmLog, err := NewVMLog(vmLogTailBufSize)
 	if err != nil {
 		return nil, err
@@ -391,7 +391,10 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	if err != nil {
 		return nil, status.InternalErrorf("failed to marshal VMConfiguration: %s", err)
 	}
-	c.snapshotKey = snaploader.NewKey(cd.GetHash(), c.id)
+	c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), c.id)
+	if err != nil {
+		return nil, status.WrapError(err, "failed to compute snapshot key")
+	}
 
 	return c, nil
 }
