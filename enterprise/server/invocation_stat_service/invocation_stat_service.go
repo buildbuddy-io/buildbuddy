@@ -817,7 +817,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
 		if i.isOLAPDBEnabled() {
-			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
+			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tag", tags)
 			q.AddWhereClause(clause, args...)
 		} else {
 			return nil, status.InvalidArgumentError("Tag filtering isn't supported without an OLAP DB.")
@@ -904,6 +904,8 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 	for i, f := range drilldownFields {
 		if f != col {
 			queryFields[i] = "NULL as gorm_" + f
+		} else if col == "tag" {
+			queryFields[i] = "arrayJoin(tags) as gorm_tag"
 		} else {
 			queryFields[i] = f + " as gorm_" + f
 		}
@@ -925,6 +927,7 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 				FROM "%s" %s)`,
 			nulledOutFieldList, drilldown, drilldown, table, where), args
 	}
+	col = "gorm_" + col
 
 	return fmt.Sprintf(`
 		(SELECT %s, 1 AS totals_first, count(*) AS total, countIf(%s) AS selection,
@@ -955,7 +958,7 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
 // from Altinity is supposed to be 2023-02-15.
 func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
-	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
+	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha", "tag"}
 	if req.GetDrilldownMetric().Execution != nil {
 		drilldownFields = append(drilldownFields, "worker")
 	}
@@ -1054,6 +1057,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		GormCommitSHA  *string
 		GormPattern    *string
 		GormWorker     *string
+		GormTag        *string
 		Selection      int64
 		Inverse        int64
 	}
@@ -1090,6 +1094,8 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, stpb.DrilldownType_PATTERN_DRILLDOWN_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormWorker != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_WORKER_DRILLDOWN_TYPE, stat.GormWorker, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormTag != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_TAG_DRILLDOWN_TYPE, stat.GormTag, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
 			// The above clauses represent all of the GROUP BY options we have in our
 			// query, and we deliberately constructed the query so that the total row
