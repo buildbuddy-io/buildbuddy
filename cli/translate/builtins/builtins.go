@@ -131,7 +131,7 @@ var AllGlobals = []string{
 	"zip",
 }
 
-var BuildGlobals = []string{
+var BuildGlobals = append(AllGlobals,
 	"depset",
 	"existing_rule",
 	"existing_rules",
@@ -143,9 +143,9 @@ var BuildGlobals = []string{
 	"repository_name",
 	"select",
 	"subpackages",
-}
+)
 
-var BzlGlobal = []string{
+var BzlGlobal = append(AllGlobals,
 	"analysis_test_transition",
 	"aspect",
 	"configuration_field",
@@ -158,4 +158,4 @@ var BzlGlobal = []string{
 	"select",
 	"tag_class",
 	"visiblity",
-}
+)
