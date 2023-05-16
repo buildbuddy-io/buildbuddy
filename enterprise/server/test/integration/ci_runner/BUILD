@@ -20,6 +20,7 @@ go_test(
     deps = [
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/testutil/app",

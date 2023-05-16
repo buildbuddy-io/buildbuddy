@@ -449,14 +449,6 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 func main() {
 	if err := run(); err != nil {
 		if result, ok := err.(*actionResult); ok {
-
-			// If this is a workflow, kill-signal the current process on certain exit
-			// codes (rather than exiting) so that the workflow action is
-			// retried.
-			if *workflowID != "" && result.exitCode == bazelLocalEnvironmentalErrorExitCode {
-				syscall.Kill(0, syscall.SIGKILL)
-			}
-
 			os.Exit(result.exitCode)
 		}
 		log.Errorf("%s", err)
@@ -869,6 +861,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+		}
+
+		// If this is a workflow, kill-signal the current process on certain
+		// exit codes (rather than exiting) so that the workflow action is
+		// retried. Note that we do this immediately after the Bazel command is
+		// completed so that the outer workflow invocation gets disconnected
+		// rather than finishing with an error.
+		if *workflowID != "" && exitCode == bazelLocalEnvironmentalErrorExitCode {
+			syscall.Kill(os.Getpid(), syscall.SIGKILL)
 		}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
