@@ -179,6 +179,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		Command:                            inv.GetCommand(),
 		Success:                            inv.GetSuccess(),
 		InvocationStatus:                   inv.GetInvocationStatus(),
+		Tags:                               []string{},
 	}
 }
 
