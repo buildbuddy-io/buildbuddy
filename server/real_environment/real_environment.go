@@ -3,6 +3,7 @@ package real_environment
 import (
 	"context"
 	"io/fs"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -83,6 +84,7 @@ type RealEnv struct {
 	fileResolver                     fs.FS
 	internalHTTPMux                  interfaces.HttpServeMux
 	mux                              interfaces.HttpServeMux
+	httpServerWaitGroup              *sync.WaitGroup
 	listenAddr                       string
 	buildbuddyServer                 interfaces.BuildBuddyServer
 	sslService                       interfaces.SSLService
@@ -110,9 +112,10 @@ type RealEnv struct {
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 	return &RealEnv{
-		healthChecker:    h,
-		serverContext:    context.Background(),
-		executionClients: make(map[string]*executionClientConfig, 0),
+		healthChecker:       h,
+		serverContext:       context.Background(),
+		executionClients:    make(map[string]*executionClientConfig, 0),
+		httpServerWaitGroup: &sync.WaitGroup{},
 	}
 }
 
@@ -422,6 +425,10 @@ func (r *RealEnv) GetMux() interfaces.HttpServeMux {
 
 func (r *RealEnv) SetMux(mux interfaces.HttpServeMux) {
 	r.mux = mux
+}
+
+func (r *RealEnv) GetHTTPServerWaitGroup() *sync.WaitGroup {
+	return r.httpServerWaitGroup
 }
 
 func (r *RealEnv) GetInternalHTTPMux() interfaces.HttpServeMux {
