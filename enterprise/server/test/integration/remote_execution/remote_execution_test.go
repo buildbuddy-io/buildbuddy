@@ -497,9 +497,16 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 
+	// Enable user owned executors for custom executor pool name
+	flags.Set(t, "remote_execution.enable_user_owned_executors", true)
+	flags.Set(t, "remote_execution.require_executor_authorization", true)
+
 	rbe.AddBuildBuddyServers(3)
 	for i := 0; i < 5; i++ {
-		rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
+		rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+			Pool:   "foo",
+			APIKey: rbe.APIKey1,
+		})
 	}
 
 	platform := &repb.Platform{
@@ -509,6 +516,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
+			{Name: "use-self-hosted-executors", Value: "true"},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{
@@ -555,17 +563,27 @@ func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
 func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
+	// Enable user owned executors for custom executor pool name
+	flags.Set(t, "remote_execution.enable_user_owned_executors", true)
+	flags.Set(t, "remote_execution.require_executor_authorization", true)
+
 	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "FOO"})
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+		Pool:   "FOO",
+		APIKey: rbe.APIKey1,
+	})
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "Foo"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
+			{Name: "use-self-hosted-executors", Value: "true"},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{}
+	opts := &rbetest.ExecuteOpts{
+		APIKey: rbe.APIKey1,
+	}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
@@ -582,8 +600,16 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 
 func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
+
+	// Enable user owned executors for custom executor pool name
+	flags.Set(t, "remote_execution.enable_user_owned_executors", true)
+	flags.Set(t, "remote_execution.require_executor_authorization", true)
+
 	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "bar"})
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+		Pool:   "bar",
+		APIKey: rbe.APIKey1,
+	})
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	platform := &repb.Platform{
@@ -591,9 +617,12 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 			{Name: "Pool", Value: "foo"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
+			{Name: "use-self-hosted-executors", Value: "true"},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{}
+	opts := &rbetest.ExecuteOpts{
+		APIKey: rbe.APIKey1,
+	}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
@@ -613,19 +642,28 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
+	// Enable user owned executors for custom executor pool name
+	flags.Set(t, "remote_execution.enable_user_owned_executors", true)
+	flags.Set(t, "remote_execution.require_executor_authorization", true)
+
 	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+		Pool:   "foo",
+		APIKey: rbe.APIKey1,
+	})
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
+			{Name: "use-self-hosted-executors", Value: "true"},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{
 		RemoteHeaders: map[string]string{
 			"x-buildbuddy-platform.pool": "foo",
 		},
+		APIKey: rbe.APIKey1,
 	}
 
 	cmd := rbe.Execute(&repb.Command{
