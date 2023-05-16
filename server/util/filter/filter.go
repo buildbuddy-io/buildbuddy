@@ -12,7 +12,7 @@ func executionMetricToDbField(m stat_filter.ExecutionMetricType, paramPrefix str
 	case stat_filter.ExecutionMetricType_UPDATED_AT_USEC_EXECUTION_METRIC:
 		return paramPrefix + "updated_at_usec", nil
 	case stat_filter.ExecutionMetricType_QUEUE_TIME_USEC_EXECUTION_METRIC:
-		return fmt.Sprintf("(%sworker_start_timestamp_usec - %squeued_timestamp_usec)", paramPrefix, paramPrefix), nil
+		return fmt.Sprintf("IF(%sworker_start_timestamp_usec < %squeued_timestamp_usec, 0, (%sworker_start_timestamp_usec - %squeued_timestamp_usec))", paramPrefix, paramPrefix, paramPrefix, paramPrefix), nil
 	case stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
 		return fmt.Sprintf("(%sinput_fetch_completed_timestamp_usec - %sinput_fetch_start_timestamp_usec)", paramPrefix, paramPrefix), nil
 	case stat_filter.ExecutionMetricType_REAL_EXECUTION_TIME_EXECUTION_METRIC:
