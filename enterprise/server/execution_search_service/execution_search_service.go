@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -167,6 +168,10 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	}
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
 		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
+	}
+	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
+		clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
+		q.AddWhereClause(clause, args...)
 	}
 
 	statusClauses := query_builder.OrClauses{}

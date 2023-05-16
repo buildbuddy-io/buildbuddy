@@ -166,6 +166,9 @@ message ExecutionQuery {
 
   // Stat filters (duration_usec, queue_time_usec, etc.)
   repeated stat_filter.StatFilter filter = 12;
+
+  // Plaintext tags for the invocation (exact match). Ex: "my-cool-tag"
+  repeated string tags = 13;
 }
 
 // Searches executions data for all matching executions.  This request is

@@ -355,8 +355,7 @@ func getQueryWithFlattenedArray(innerQuery string) string {
 }
 
 func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb.GetTrendRequest) ([]*stpb.ExecutionStat, error) {
-	// TODO(jdhollen): support tags in execution trends.
-	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled || len(req.GetQuery().GetTags()) > 0 {
+	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled {
 		return nil, nil
 	}
 	reqCtx := req.GetRequestContext()

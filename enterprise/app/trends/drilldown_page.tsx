@@ -112,7 +112,6 @@ type EventData = {
 };
 
 interface State {
-  unsupported: boolean;
   loading: boolean;
   loadingDrilldowns: boolean;
   drilldownsFailed: boolean;
@@ -200,7 +199,6 @@ const METRIC_OPTIONS: MetricOption[] = [
 
 export default class DrilldownPageComponent extends React.Component<Props, State> {
   state: State = {
-    unsupported: false,
     loading: false,
     loadingDrilldowns: false,
     drilldownsFailed: false,
@@ -288,8 +286,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
-      // TODO(jdhollen): Support tags on executions.
-      tags: isExecutionMetric(this.selectedMetric.metric) ? undefined : filterParams.tags,
+      tags: filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -317,7 +314,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       eventData: undefined,
     });
     const filterParams = getProtoFilterParams(this.props.search);
-    // TODO(jdhollen): Support tags on executions.
     let request = new execution_stats.SearchExecutionRequest({
       query: new execution_stats.ExecutionQuery({
         invocationHost: filterParams.host,
@@ -327,6 +323,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         commitSha: filterParams.commit,
         command: filterParams.command,
         pattern: filterParams.pattern,
+        tags: filterParams.tags,
         role: filterParams.role || [],
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
@@ -410,7 +407,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     const filterParams = getProtoFilterParams(this.props.search);
     this.setState({
       loading: true,
-      unsupported: false,
       heatmapData: undefined,
       drilldownData: undefined,
       eventData: undefined,
@@ -421,11 +417,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     heatmapRequest.metric = this.selectedMetric.metric;
     const isExecution = isExecutionMetric(heatmapRequest.metric);
 
-    // TODO(jdhollen): Support tags on executions.
-    if (isExecution && filterParams.tags && filterParams.tags.length > 0) {
-      this.setState({ unsupported: true });
-    }
-
     heatmapRequest.query = new stats.TrendQuery({
       host: filterParams.host,
       user: filterParams.user,
@@ -434,8 +425,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
-      // TODO(jdhollen): Support tags on executions.
-      tags: isExecution ? undefined : filterParams.tags,
+      tags: filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -785,11 +775,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           {this.renderZoomChip()}
         </div>
         {this.state.loading && <div className="loading"></div>}
-        {this.state.unsupported && (
-          <Banner type="warning" className="drilldown-page-warning-section">
-            Filtering executions by tag is not supported yet. Check back soon!
-          </Banner>
-        )}
         {!this.state.loading && (
           <>
             {this.state.heatmapData && (

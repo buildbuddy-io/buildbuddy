@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -179,7 +180,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		Command:                            inv.GetCommand(),
 		Success:                            inv.GetSuccess(),
 		InvocationStatus:                   inv.GetInvocationStatus(),
-		Tags:                               []string{},
+		Tags:                               invocation_format.ConvertDbTagsToOlap(inv.GetTags()),
 	}
 }
 
