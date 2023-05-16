@@ -20,7 +20,7 @@ interface State {
 export function testXMLFallbackParams(invocationId: string, target: string) {
   const params: Record<string, string> = {
     invocation_id: invocationId,
-    artifact: "test_xml",
+    artifact: "test_action_outputs",
     name: target.replace(":", "/:") + "/test.xml",
   };
   return params;

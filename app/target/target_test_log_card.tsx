@@ -23,7 +23,7 @@ interface State {
 export function testLogFallbackParams(invocationId: string, target: string) {
   const params: Record<string, string> = {
     invocation_id: invocationId,
-    artifact: "test_log",
+    artifact: "test_action_outputs",
     name: target.replace(":", "/:") + "/test.log",
   };
   return params;

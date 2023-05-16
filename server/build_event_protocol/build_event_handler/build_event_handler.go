@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,13 +94,18 @@ var (
 			"local cache stats to the backing storage, before finalizing stats in the DB.")
 )
 
-var testArtifactsToPersist = map[string]struct{}{
+var testActionOutputs = map[string]struct{}{
 	"test.log":  {},
 	"test.xml":  {},
 	"test.lcov": {},
 }
 
-const artifactsPath = "/artifacts/"
+const artifactsBucket = "artifacts"
+
+type PersistArtifacts struct {
+	PathFromURI       map[string]*url.URL
+	TestActionOutputs bool
+}
 
 type BuildEventHandler struct {
 	env              environment.Env
@@ -200,9 +206,9 @@ type recordStatsTask struct {
 	createdAt time.Time
 	// files contains a mapping of file digests to file name metadata for files
 	// referenced in the BEP.
-	files              map[string]*build_event_stream.File
-	artifactsToPersist map[string]*url.URL
-	invocationStatus   inspb.InvocationStatus
+	files            map[string]*build_event_stream.File
+	persist          *PersistArtifacts
+	invocationStatus inspb.InvocationStatus
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -232,7 +238,7 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 
 // Enqueue enqueues a task for the given invocation's stats to be recorded
 // once they are available.
-func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation, artifactsToPersist map[string]*url.URL) {
+func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation, persist *PersistArtifacts) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -253,10 +259,10 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 			attempt: invocation.Attempt,
 			jwt:     jwt,
 		},
-		createdAt:          time.Now(),
-		files:              scorecard.ExtractFiles(invocation),
-		invocationStatus:   invocation.GetInvocationStatus(),
-		artifactsToPersist: artifactsToPersist,
+		createdAt:        time.Now(),
+		files:            scorecard.ExtractFiles(invocation),
+		invocationStatus: invocation.GetInvocationStatus(),
+		persist:          persist,
 	}
 	select {
 	case r.tasks <- req:
@@ -423,33 +429,26 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	if auth := r.env.GetAuthenticator(); auth != nil {
 		ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
 	}
-	for path, uri := range task.artifactsToPersist {
+	if task.persist.TestActionOutputs {
+		// TODO (zoey): Switch to streaming build events to avoid loading the whole BES into memory
+		inv, err := LookupInvocation(r.env, ctx, task.invocationJWT.id)
+		if err != nil {
+			log.CtxErrorf(ctx, "LookupInvocation failed when attempting to persist test logs: %s", err)
+		}
+		persistTestDataForInvocation(ctx, r.env, inv, "test_action_outputs")
+	}
+	for subpath, uri := range task.persist.PathFromURI {
 		if uri == nil {
 			// no artifact exists to persist
 			continue
 		}
-		switch uri.Scheme {
-		case "":
-			switch uri.Path {
-			case "//test_data/":
-				// TODO (zoey): Switch to streaming build events to avoid loading the whole BES into memory
-				inv, err := LookupInvocation(r.env, ctx, task.invocationJWT.id)
-				if err != nil {
-					log.CtxErrorf(ctx, "LookupInvocation failed when attempting to persist test logs: %s", err)
-					continue
-				}
-				persistTestDataForInvocation(ctx, r.env, inv, path)
-			default:
-				log.CtxErrorf(ctx, "Unsupported artifact(s) to persist %s.", uri.Path)
-			}
-		case "bytestream":
-			fullPath := task.invocationJWT.id + artifactsPath + path
-			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
-				log.CtxError(ctx, err.Error())
-				continue
-			}
-		default:
-			log.CtxErrorf(ctx, "Unsupported scheme to support artifact: %s", uri.Path)
+		if uri.Scheme != "bytestream" {
+			log.CtxErrorf(ctx, "Unsupported scheme to persist artifact: %s", uri.Path)
+			continue
+		}
+		fullPath := path.Join(task.invocationJWT.id, artifactsBucket, subpath)
+		if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
+			log.CtxError(ctx, err.Error())
 		}
 	}
 }
@@ -516,7 +515,7 @@ func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, pat
 	return nil
 }
 
-func persistTestDataForInvocation(ctx context.Context, env environment.Env, inv *inpb.Invocation, path string) {
+func persistTestDataForInvocation(ctx context.Context, env environment.Env, inv *inpb.Invocation, subpath string) {
 	for _, e := range inv.GetEvent() {
 		p, ok := e.BuildEvent.Payload.(*build_event_stream.BuildEvent_TestResult)
 		if !ok {
@@ -531,14 +530,14 @@ func persistTestDataForInvocation(ctx context.Context, env environment.Env, inv 
 			if resultURI.Scheme != "bytestream" {
 				continue
 			}
-			if _, ok := testArtifactsToPersist[f.Name]; !ok {
+			if _, ok := testActionOutputs[f.Name]; !ok {
 				continue
 			}
 			target := strings.TrimPrefix(e.BuildEvent.Id.GetTestResult().Label, "//")
 			if i := strings.LastIndex(target, ":"); i != -1 {
 				target = target[:i] + "/" + target[i:]
 			}
-			fullPath := inv.GetInvocationId() + artifactsPath + path + target + "/" + f.Name
+			fullPath := path.Join(inv.GetInvocationId(), artifactsBucket, subpath, target, f.Name)
 			if err := persistArtifact(ctx, env, resultURI, fullPath); err != nil {
 				log.Errorf(
 					"Error persisting '%s' for target '%s' for invocation %s: %s",
@@ -843,18 +842,18 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
-	artifactsToPersist := make(map[string]*url.URL, 0)
-	if e.beValues.ProfileURI() != nil && e.beValues.ProfileURI().Scheme == "bytestream" {
-		artifactsToPersist["timing_profile/"+e.beValues.ProfileName()] = e.beValues.ProfileURI()
+	persist := &PersistArtifacts{
+		PathFromURI:       make(map[string]*url.URL, 0),
+		TestActionOutputs: e.beValues.HasTestActionOutputs(),
 	}
-	if e.beValues.HasTestData() {
-		artifactsToPersist["test_data/"] = &url.URL{Path: "//test_data/"}
+	if e.beValues.ProfileURI() != nil && e.beValues.ProfileURI().Scheme == "bytestream" {
+		persist.PathFromURI["timing_profile/"+e.beValues.ProfileName()] = e.beValues.ProfileURI()
 	}
 
 	e.statsRecorder.Enqueue(
 		ctx,
 		invocation,
-		artifactsToPersist,
+		persist,
 	)
 	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil

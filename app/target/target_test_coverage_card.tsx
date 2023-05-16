@@ -20,7 +20,7 @@ interface State {
 export function testCoverageFallbackParams(invocationId: string, target: string) {
   const params: Record<string, string> = {
     invocation_id: invocationId,
-    artifact: "test_coverage",
+    artifact: "test_action_outputs",
     name: target.replace(":", "/:") + "/test.lcov",
   };
   return params;
@@ -42,23 +42,23 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
   }
 
   fetchTestCoverage() {
-    let testXMLUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
+    let testCoverageUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
-    if (!testXMLUrl) {
+    if (!testCoverageUrl) {
       this.setState({ lcov: null });
       return;
     }
 
-    if (!testXMLUrl.startsWith("bytestream://")) {
+    if (!testCoverageUrl.startsWith("bytestream://")) {
       this.setState({ lcov: null });
       return;
     }
 
     rpcService
       .fetchBytestreamFile(
-        testXMLUrl,
+        testCoverageUrl,
         this.props.model.getId(),
         undefined,
         testCoverageFallbackParams(this.props.model.getId(), this.props.testResult.buildEvent.id.testResult.label)
@@ -74,12 +74,12 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
   }
 
   render() {
-    let testXMLUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
+    let testCoverageUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
     let error = undefined;
-    if (!testXMLUrl) {
+    if (!testCoverageUrl) {
       error = (
         <>
           To see test coverage data, run{" "}
@@ -90,7 +90,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       );
     }
 
-    if (testXMLUrl && !testXMLUrl.startsWith("bytestream://")) {
+    if (testCoverageUrl && !testCoverageUrl.startsWith("bytestream://")) {
       error = <>To see test coverage data, enable remote caching.</>;
     }
 
@@ -120,7 +120,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
                           repoPath
                             ? `${repoPath}${
                                 record.sourceFile
-                              }?lcov=${testXMLUrl}&invocation_id=${this.props.model.getId()}&commit=${this.props.model.getCommit()}`
+                              }?lcov=${testCoverageUrl}&invocation_id=${this.props.model.getId()}&commit=${this.props.model.getCommit()}`
                             : "#"
                         }>
                         <span className="coverage-source">{record.sourceFile}</span>:{" "}

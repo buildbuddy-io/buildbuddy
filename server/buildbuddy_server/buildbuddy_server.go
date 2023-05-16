@@ -1267,7 +1267,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		}
 	case "timing_profile":
 		name := params.Get("name")
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/timing_profile/"+name)
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "timing_profile", name))
 		if err != nil {
 			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", name, iid, err)
 			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
@@ -1278,13 +1278,9 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			w.Header().Set("Content-Encoding", "gzip")
 		}
 		w.Write(b)
-	case "test_coverage":
-		fallthrough
-	case "test_xml":
-		fallthrough
-	case "test_log":
+	case "test_action_outputs":
 		name := params.Get("name")
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/test_data/"+name)
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "test_action_outputs", name))
 		if err != nil {
 			log.Warningf("Error serving test artifact '%s' for invocation %s: %s", name, iid, err)
 			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")

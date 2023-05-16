@@ -82,7 +82,7 @@ type BEValues struct {
 	buildStartTime          time.Time
 	profileURI              *url.URL
 	profileName             string
-	hasTestData             bool
+	hasTestActionOutputs    bool
 
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
@@ -134,10 +134,10 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 	case *build_event_stream.BuildEvent_TestResult:
 		for _, f := range p.TestResult.TestActionOutput {
 			if f.GetName() == "test.log" || f.GetName() == "test.xml" || f.GetName() == "test.lcov" {
-				if _, err := url.Parse(f.GetUri()); err != nil {
+				if u, err := url.Parse(f.GetUri()); err != nil {
 					log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
-				} else {
-					v.hasTestData = true
+				} else if u.Scheme == "bytestream" {
+					v.hasTestActionOutputs = true
 				}
 			}
 		}
@@ -229,8 +229,8 @@ func (v *BEValues) ProfileName() string {
 	return v.profileName
 }
 
-func (v *BEValues) HasTestData() bool {
-	return v.hasTestData
+func (v *BEValues) HasTestActionOutputs() bool {
+	return v.hasTestActionOutputs
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
