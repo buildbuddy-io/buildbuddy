@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/translate"
 
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
 	buildifier "github.com/bazelbuild/buildtools/buildifier"
@@ -50,13 +51,18 @@ func walk() error {
 				return nil
 			}
 			fileName := filepath.Base(path)
-			fileExt := filepath.Ext(fileName)
-			fileNameRoot := strings.TrimSuffix(fileName, fileExt)
-			if (fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE") ||
-				(fileExt != "" && fileExt != ".bazel") {
+			fileNameRoot := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+			if fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE" {
 				return nil
 			}
-			runBuildifier(path)
+			fileToFormat, err := translate.Translate(path)
+			if err != nil {
+				return err
+			}
+			if fileToFormat == "" {
+				return nil
+			}
+			runBuildifier(fileToFormat)
 			return nil
 		})
 }
