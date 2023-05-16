@@ -38,6 +38,7 @@ var (
 	invocationPercentilesEnabled   = flag.Bool("app.enable_invocation_stat_percentiles", true, "If enabled, provide percentile breakdowns for invocation stats in GetTrendResponse")
 	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", true, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
+	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
 )
 
 type InvocationStatService struct {
@@ -958,7 +959,10 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
 // from Altinity is supposed to be 2023-02-15.
 func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
-	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha", "tag"}
+	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
+	if *tagsInDrilldowns {
+		drilldownFields = append(drilldownFields, "tag")
+	}
 	if req.GetDrilldownMetric().Execution != nil {
 		drilldownFields = append(drilldownFields, "worker")
 	}
