@@ -48,7 +48,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
     }
 
     rpcService
-      .fetchBytestreamFile(testCoverageUrl, this.props.model.getId(), undefined)
+      .fetchBytestreamFile(testCoverageUrl, this.props.model.getId())
       .then((contents: string) => {
         this.setState({ lcov: parseLcov(contents) });
       })

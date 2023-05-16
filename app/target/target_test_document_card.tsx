@@ -49,7 +49,7 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
     }
 
     rpcService
-      .fetchBytestreamFile(testXMLUrl, this.props.invocationId, undefined)
+      .fetchBytestreamFile(testXMLUrl, this.props.invocationId)
       .then((contents: string) => {
         let parser = new DOMParser();
         let xmlDoc = parser.parseFromString(contents, "text/xml");

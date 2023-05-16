@@ -53,7 +53,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
 
     this.setState({ loading: true });
     rpcService
-      .fetchBytestreamFile(testLogUrl, this.props.invocationId, undefined)
+      .fetchBytestreamFile(testLogUrl, this.props.invocationId)
       .then((contents: string) => {
         this.setState({ testLog: contents, loading: false });
       })
