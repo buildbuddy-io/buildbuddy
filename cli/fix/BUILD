@@ -9,6 +9,7 @@ go_library(
         ":gazelle",
         "//cli/arg",
         "//cli/log",
+        "//cli/translate",
         "@com_github_bazelbuild_buildtools//buildifier:go_default_library",
     ],
 )
