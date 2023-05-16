@@ -685,20 +685,31 @@ func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
 	}
 	rbe := rbetest.NewRBETestEnv(t)
 
+	// Enable user owned executors for custom executor pool name
+	flags.Set(t, "remote_execution.enable_user_owned_executors", true)
+	flags.Set(t, "remote_execution.require_executor_authorization", true)
+
 	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+		Pool:   "foo",
+		APIKey: rbe.APIKey1,
+	})
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "FoO"},
 			{Name: "OSFamily", Value: "LiNuX"},
 			{Name: "Arch", Value: "AmD64"},
+			{Name: "use-self-hosted-executors", Value: "true"},
 		},
 	}
 
+	opts := &rbetest.ExecuteOpts{
+		APIKey: rbe.APIKey1,
+	}
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"pwd"},
 		Platform:  platform,
-	}, &rbetest.ExecuteOpts{})
+	}, opts)
 	res := cmd.Wait()
 
 	require.Equal(t, 0, res.ExitCode)
