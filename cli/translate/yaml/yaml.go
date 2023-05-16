@@ -52,7 +52,6 @@ func (y *yamlTranslator) translateRule(m yaml.MapSlice) string {
 	s := ""
 	for _, i := range m {
 		ruleName := i.Key.(string)
-		translatedValue := y.translateValue(i.Value, ruleName)
 		switch ruleName {
 		case "load":
 			if load, ok := i.Value.(yaml.MapSlice); ok {
@@ -75,6 +74,7 @@ func (y *yamlTranslator) translateRule(m yaml.MapSlice) string {
 				log.Printf("raw: value must be a string")
 			}
 		default:
+			translatedValue := y.translateValue(i.Value, ruleName)
 			s = s + translatedValue + newLineSeparator
 		}
 	}
