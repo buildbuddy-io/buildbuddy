@@ -199,6 +199,7 @@ type Execution struct {
 	Command          string
 	InvocationStatus int64
 	Success          bool
+	Tags             []string `gorm:"type:Array(String);"`
 }
 
 func (e *Execution) TableName() string {
@@ -234,6 +235,7 @@ func (e *Execution) AdditionalFields() []string {
 		"InvocationStatus",
 		"Success",
 		"InvocationLinkType",
+		"Tags",
 	}
 }
 
