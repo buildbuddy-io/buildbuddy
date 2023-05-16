@@ -422,7 +422,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     const isExecution = isExecutionMetric(heatmapRequest.metric);
 
     // TODO(jdhollen): Support tags on executions.
-    if (isExecution && filterParams.tags && filterParams.tags.length > 0) {
+    if (isExecution && filterParams.tags?.length > 0) {
       this.setState({ unsupported: true });
     }
 
