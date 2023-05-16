@@ -817,7 +817,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
 		if i.isOLAPDBEnabled() {
-			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tag", tags)
+			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
 			q.AddWhereClause(clause, args...)
 		} else {
 			return nil, status.InvalidArgumentError("Tag filtering isn't supported without an OLAP DB.")
