@@ -435,6 +435,10 @@ export default class InvocationModel {
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
 
+  getToolTag() {
+    return this.optionsParsed.toolTag;
+  }
+
   getPattern() {
     return this.getAllPatterns(3);
   }
