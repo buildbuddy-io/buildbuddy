@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
@@ -90,6 +91,10 @@ const (
 
 	// How long to wait before giving up on processing a webhook payload.
 	webhookWorkerTimeout = 30 * time.Second
+
+	// How many times to retry workflow execution if it fails due to a transient
+	// error.
+	executeWorkflowMaxRetries = 4
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -567,7 +572,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			// The workflow execution is trusted since we're authenticated as a member of
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
-			executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
+			executionID, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
 			if err != nil {
 				log.CtxWarningf(ctx, "Could not execute workflow action %s: %s", req.GetActionName(), err)
 				return
@@ -1169,19 +1174,8 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-
-			_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
-			if err == ApprovalRequired {
-				log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
-				if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
-					log.CtxWarningf(ctx, "Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
-				}
-				return
-			}
-			if err != nil {
-				// TODO: Create a UI for these errors instead of just logging on the
-				// server.
-				log.CtxWarningf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
+			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/); err != nil {
+				log.CtxErrorf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
 			}
 		}()
 	}
@@ -1189,8 +1183,35 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	return nil
 }
 
-// starts a CI runner execution and returns the execution ID.
-func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string) (string, error) {
+// Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
+func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string) (string, error) {
+	opts := retry.DefaultOptions()
+	opts.MaxRetries = executeWorkflowMaxRetries
+	r := retry.New(ctx, opts)
+	var lastErr error
+	for r.Next() {
+		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
+		if err == ApprovalRequired {
+			log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
+			if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
+				log.CtxErrorf(ctx, "Failed to create 'approval required' status: %s", err)
+			}
+			return "", nil
+		}
+		if err != nil {
+			// TODO: Create a UI for these errors instead of just logging on the
+			// server.
+			log.CtxWarningf(ctx, "Failed to execute workflow action %q: %s", action.Name, err)
+			lastErr = err
+			continue // retry
+		}
+
+		return executionID, nil
+	}
+	return "", lastErr
+}
+
+func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string) (string, error) {
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env)
 	if err != nil {
