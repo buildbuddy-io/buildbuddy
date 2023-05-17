@@ -250,11 +250,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
         focus();
       })
     );
-    handles.push(
-      shortcuts.register(KeyCombo.enter, () => {
-        this.navigateToSelectedInvocation();
-      })
-    );
     this.setState({
       keyboardShortcutHandles: handles,
     });
@@ -272,7 +267,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
     });
     const elements = document.getElementsByClassName("selected-keyboard-shortcuts");
     if (elements.length == 1) {
-      (elements[0] as HTMLElement).focus();
+      (document.querySelector('a:has(.selected-keyboard-shortcuts)') as HTMLElement|null)?.focus();
     }
   }
 
