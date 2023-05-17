@@ -22,6 +22,9 @@ func (c *nullEventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRe
 func (c *nullEventChannel) GetNumDroppedEvents() uint64 {
 	return 0
 }
+func (c *nullEventChannel) GetInitialSequenceNumber() int64 {
+	return 1
+}
 func (c *nullEventChannel) Close() {}
 
 func (c *nullEventChannel) Context() context.Context {

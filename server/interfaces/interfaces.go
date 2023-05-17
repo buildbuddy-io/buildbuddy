@@ -191,6 +191,7 @@ type BuildEventChannel interface {
 	FinalizeInvocation(iid string) error
 	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
 	GetNumDroppedEvents() uint64
+	GetInitialSequenceNumber() int64
 	Close()
 }
 

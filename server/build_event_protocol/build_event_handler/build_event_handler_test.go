@@ -532,7 +532,7 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), testInvocationID, 2)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
