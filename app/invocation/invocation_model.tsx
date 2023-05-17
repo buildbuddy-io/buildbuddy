@@ -436,7 +436,7 @@ export default class InvocationModel {
   }
 
   getToolTag() {
-    return this.optionsParsed.toolTag;
+    return this.optionsParsed?.toolTag;
   }
 
   getPattern() {
