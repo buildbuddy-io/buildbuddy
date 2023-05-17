@@ -679,6 +679,105 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 	require.Equal(t, 0, res.ExitCode)
 }
 
+func TestExecutorPool_SharedPoolGroupWithPrivatePools(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	// Enable user owned executors
+	flags.Set(t, "remote_execution.enable_user_owned_executors", true)
+	flags.Set(t, "remote_execution.require_executor_authorization", true)
+
+	flags.Set(t, "remote_execution.shared_executor_pool_group_id", rbe.GroupID1)
+	flags.Set(t, "remote_execution.default_pool_name", "shared-pool")
+
+	rbe.AddBuildBuddyServer()
+
+	// The group that owns the shared executor pool has one shared pool and one private pool
+	// (only users authenticated to that group can use it)
+	pools := []string{"private-pool", "shared-pool"}
+	for _, pool := range pools {
+		rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+			Pool:   pool,
+			APIKey: rbe.APIKey1,
+		})
+	}
+
+	// Test that the group that owns the shared executor pool can execute in both pools
+	for _, pool := range pools {
+		platform := &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "Pool", Value: pool},
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
+			},
+		}
+
+		// In order to use the private pool, they will need to access it as a self-hosted executor
+		if pool == "private-pool" {
+			platform.Properties = append(platform.Properties, &repb.Platform_Property{Name: "use-self-hosted-executors", Value: "true"})
+		}
+
+		opts := &rbetest.ExecuteOpts{
+			APIKey: rbe.APIKey1,
+		}
+
+		cmd := rbe.Execute(&repb.Command{
+			Arguments: []string{
+				"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
+			},
+			Platform:          platform,
+			OutputDirectories: []string{"output_dir"},
+			OutputFiles:       []string{"output.txt"},
+		}, opts)
+		res := cmd.Wait()
+
+		require.Equal(t, 0, res.ExitCode)
+	}
+
+	// Test that an anonymous user can use the shared pool
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "Pool", Value: "shared-pool"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	opts := &rbetest.ExecuteOpts{}
+
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{
+			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
+		},
+		Platform:          platform,
+		OutputDirectories: []string{"output_dir"},
+		OutputFiles:       []string{"output.txt"},
+	}, opts)
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+
+	// Test that an anonymous user cannot use the private pool
+	platform = &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "Pool", Value: "private-pool"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	opts = &rbetest.ExecuteOpts{}
+
+	cmd = rbe.Execute(&repb.Command{
+		Arguments: []string{
+			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
+		},
+		Platform:          platform,
+		OutputDirectories: []string{"output_dir"},
+		OutputFiles:       []string{"output.txt"},
+	}, opts)
+	err := cmd.MustFailToStart()
+
+	require.Contains(t, err.Error(), "private-pool is not a valid pool name for the shared executor pool")
+}
+
 func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skipf("Test assumed running on linux")
