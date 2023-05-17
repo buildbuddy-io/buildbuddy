@@ -57,7 +57,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 57
+            "y": 105
           },
           "hiddenSeries": false,
           "id": 21,
@@ -162,7 +162,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 112
           },
           "hiddenSeries": false,
           "id": 932,
@@ -278,7 +278,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 58
+            "y": 106
           },
           "hiddenSeries": false,
           "id": 348,
@@ -366,7 +366,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 58
+            "y": 106
           },
           "hiddenSeries": false,
           "id": 804,
@@ -486,7 +486,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 35
+            "y": 83
           },
           "hiddenSeries": false,
           "id": 13,
@@ -577,7 +577,7 @@
             "h": 8,
             "w": 10,
             "x": 9,
-            "y": 35
+            "y": 83
           },
           "hiddenSeries": false,
           "id": 25,
@@ -671,7 +671,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 43
+            "y": 91
           },
           "hiddenSeries": false,
           "id": 1232,
@@ -785,7 +785,7 @@
             "h": 8,
             "w": 12,
             "x": 9,
-            "y": 43
+            "y": 91
           },
           "hiddenSeries": false,
           "id": 65,
@@ -945,7 +945,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 60
+            "y": 108
           },
           "id": 1182,
           "options": {
@@ -1035,7 +1035,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 60
+            "y": 108
           },
           "id": 1186,
           "options": {
@@ -1124,7 +1124,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 68
+            "y": 116
           },
           "id": 1183,
           "options": {
@@ -1214,7 +1214,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 68
+            "y": 116
           },
           "id": 1187,
           "options": {
@@ -1303,7 +1303,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 76
+            "y": 124
           },
           "id": 1184,
           "options": {
@@ -1393,7 +1393,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 76
+            "y": 124
           },
           "id": 1188,
           "options": {
@@ -1465,7 +1465,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 61
+            "y": 109
           },
           "hiddenSeries": false,
           "id": 230,
@@ -1554,7 +1554,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 61
+            "y": 109
           },
           "hiddenSeries": false,
           "id": 310,
@@ -1653,7 +1653,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 69
+            "y": 117
           },
           "hiddenSeries": false,
           "id": 312,
@@ -1770,7 +1770,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 71
+            "y": 119
           },
           "hiddenSeries": false,
           "id": 254,
@@ -1866,7 +1866,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 71
+            "y": 119
           },
           "hiddenSeries": false,
           "id": 251,
@@ -1991,7 +1991,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 79
+            "y": 127
           },
           "hiddenSeries": false,
           "id": 250,
@@ -2117,7 +2117,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 79
+            "y": 127
           },
           "hiddenSeries": false,
           "id": 252,
@@ -2243,7 +2243,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 87
+            "y": 135
           },
           "hiddenSeries": false,
           "id": 253,
@@ -2397,7 +2397,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 63
+            "y": 111
           },
           "hiddenSeries": false,
           "id": 1506,
@@ -2528,7 +2528,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 63
+            "y": 111
           },
           "hiddenSeries": false,
           "id": 1507,
@@ -2701,7 +2701,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 71
+            "y": 119
           },
           "id": 1509,
           "options": {
@@ -2791,7 +2791,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 71
+            "y": 119
           },
           "id": 1586,
           "options": {
@@ -2893,7 +2893,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 79
+            "y": 127
           },
           "id": 1663,
           "options": {
@@ -2983,7 +2983,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 79
+            "y": 127
           },
           "id": 1740,
           "options": {
@@ -3073,7 +3073,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 87
+            "y": 135
           },
           "id": 1816,
           "options": {
@@ -3163,7 +3163,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 87
+            "y": 135
           },
           "id": 1893,
           "options": {
@@ -3253,7 +3253,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 95
+            "y": 143
           },
           "id": 1970,
           "options": {
@@ -3351,7 +3351,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 8
+            "y": 56
           },
           "hiddenSeries": false,
           "id": 17,
@@ -3442,7 +3442,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 8
+            "y": 56
           },
           "hiddenSeries": false,
           "id": 19,
@@ -3535,7 +3535,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 16
+            "y": 64
           },
           "hiddenSeries": false,
           "id": 4,
@@ -3645,7 +3645,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 16
+            "y": 64
           },
           "hiddenSeries": false,
           "id": 9,
@@ -3738,7 +3738,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 73
           },
           "hiddenSeries": false,
           "id": 646,
@@ -3870,7 +3870,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 25
+            "y": 73
           },
           "id": 1254,
           "options": {
@@ -3938,7 +3938,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 33
+            "y": 81
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -4084,7 +4084,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 33
+            "y": 81
           },
           "id": 1338,
           "options": {
@@ -4177,7 +4177,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 41
+            "y": 89
           },
           "id": 2135,
           "options": {
@@ -4272,7 +4272,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 41
+            "y": 89
           },
           "id": 2182,
           "options": {
@@ -4392,7 +4392,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 9
+            "y": 57
           },
           "id": 2370,
           "options": {
@@ -4462,7 +4462,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 9
+            "y": 57
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -4560,7 +4560,7 @@
         "x": 0,
         "y": 11
       },
-      "id": 3104,
+      "id": 3680,
       "panels": [
         {
           "datasource": {
@@ -4623,6 +4623,1481 @@
             "w": 12,
             "x": 0,
             "y": 12
+          },
+          "id": 3763,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\"}[1m])) by (compaction_type)\n",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Compaction rate (by type)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "in progress (count)"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "none"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "marked files"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "none"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 12
+          },
+          "id": 3846,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\"})",
+              "legendFormat": "estimated debt",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\",app=\"buildbuddy-app\"})",
+              "hide": false,
+              "legendFormat": "in progress (bytes)",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\",app=\"buildbuddy-app\"})",
+              "hide": false,
+              "legendFormat": "in progress (count)",
+              "range": true,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\",app=\"buildbuddy-app\"})",
+              "hide": false,
+              "legendFormat": "marked files",
+              "range": true,
+              "refId": "D"
+            }
+          ],
+          "title": "Compaction state",
+          "type": "timeseries"
+        }
+      ],
+      "title": "Remote cache pebble",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 4996,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 13
+          },
+          "id": 3929,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\"}) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Number files (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 13
+          },
+          "id": 4011,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\"}) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Size (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 21
+          },
+          "id": 4093,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\"}) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Compaction score (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 21
+          },
+          "id": 4175,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Bytes in (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 29
+          },
+          "id": 4257,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Bytes ingested (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 29
+          },
+          "id": 4339,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Bytes moved (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 37
+          },
+          "id": 4421,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Bytes read (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 37
+          },
+          "id": 4503,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Bytes compacted (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 45
+          },
+          "id": 4585,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Bytes flushed (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 45
+          },
+          "id": 4667,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_tables_compacted_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Tables compacted (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 53
+          },
+          "id": 4749,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_tables_flushed_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Tables flushed (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 53
+          },
+          "id": 4831,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_tables_ingested_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Tables ingested (by level)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 61
+          },
+          "id": 4913,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_tables_moved_count{region=\"${region}\"}[1m])) by (level)",
+              "legendFormat": "{{level}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Tables moved (by level)",
+          "type": "timeseries"
+        }
+      ],
+      "title": "Remote cache pebble levels",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 3104,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 60
           },
           "id": 3187,
           "options": {
@@ -4725,7 +6200,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 12
+            "y": 60
           },
           "id": 3269,
           "options": {
@@ -4840,7 +6315,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 20
+            "y": 68
           },
           "id": 3433,
           "options": {
@@ -4907,7 +6382,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 20
+            "y": 68
           },
           "id": 3597,
           "options": {
@@ -4976,7 +6451,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 14
       },
       "id": 264,
       "panels": [
@@ -5004,7 +6479,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 66
+            "y": 114
           },
           "hiddenSeries": false,
           "id": 274,
@@ -5123,7 +6598,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 66
+            "y": 114
           },
           "hiddenSeries": false,
           "id": 276,
@@ -5220,7 +6695,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 74
+            "y": 122
           },
           "hiddenSeries": false,
           "id": 290,
@@ -5317,7 +6792,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 74
+            "y": 122
           },
           "hiddenSeries": false,
           "id": 292,
@@ -5414,7 +6889,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 82
+            "y": 130
           },
           "hiddenSeries": false,
           "id": 278,
@@ -5511,7 +6986,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 82
+            "y": 130
           },
           "hiddenSeries": false,
           "id": 280,
@@ -5609,7 +7084,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 17
       },
       "id": 38,
       "panels": [
@@ -5629,7 +7104,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 45
+            "y": 93
           },
           "hiddenSeries": false,
           "id": 40,
@@ -5734,7 +7209,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 58
+            "y": 106
           },
           "hiddenSeries": false,
           "id": 76,
@@ -5829,7 +7304,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 72
+            "y": 120
           },
           "hiddenSeries": false,
           "id": 42,
@@ -5921,7 +7396,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 72
+            "y": 120
           },
           "hiddenSeries": false,
           "id": 46,
@@ -6013,7 +7488,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 80
+            "y": 128
           },
           "hiddenSeries": false,
           "id": 44,
@@ -6110,7 +7585,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 18
       },
       "id": 458,
       "panels": [
@@ -6142,7 +7617,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 68
+            "y": 116
           },
           "hiddenSeries": false,
           "id": 498,
@@ -6242,7 +7717,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 68
+            "y": 116
           },
           "hiddenSeries": false,
           "id": 542,
@@ -6331,7 +7806,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 77
+            "y": 125
           },
           "hiddenSeries": false,
           "hideTimeOverride": true,
@@ -6436,7 +7911,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 86
+            "y": 134
           },
           "hiddenSeries": false,
           "id": 496,
@@ -6541,7 +8016,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 96
+            "y": 144
           },
           "hiddenSeries": false,
           "id": 500,
@@ -6646,7 +8121,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 96
+            "y": 144
           },
           "hiddenSeries": false,
           "id": 504,
@@ -6750,7 +8225,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 19
       },
       "id": 48,
       "panels": [
@@ -6775,7 +8250,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 150
+            "y": 198
           },
           "hiddenSeries": false,
           "id": 50,
@@ -6872,7 +8347,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 150
+            "y": 198
           },
           "hiddenSeries": false,
           "id": 53,
@@ -6968,7 +8443,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 158
+            "y": 206
           },
           "hiddenSeries": false,
           "id": 51,
@@ -7065,7 +8540,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 158
+            "y": 206
           },
           "hiddenSeries": false,
           "id": 55,
@@ -7162,7 +8637,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 20
       },
       "id": 384,
       "panels": [
@@ -7181,7 +8656,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 112
           },
           "hiddenSeries": false,
           "id": 742,
@@ -7270,7 +8745,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 64
+            "y": 112
           },
           "hiddenSeries": false,
           "id": 422,
@@ -7358,7 +8833,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 72
+            "y": 120
           },
           "hiddenSeries": false,
           "id": 420,
@@ -7537,7 +9012,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 72
+            "y": 120
           },
           "id": 1223,
           "options": {
@@ -7703,7 +9178,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 80
+            "y": 128
           },
           "id": 1224,
           "options": {
@@ -7756,7 +9231,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 21
       },
       "id": 107,
       "panels": [
@@ -7783,7 +9258,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 167
+            "y": 215
           },
           "hiddenSeries": false,
           "id": 122,
@@ -7878,7 +9353,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 167
+            "y": 215
           },
           "hiddenSeries": false,
           "id": 116,
@@ -7977,7 +9452,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 175
+            "y": 223
           },
           "hiddenSeries": false,
           "id": 112,
@@ -8079,7 +9554,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 175
+            "y": 223
           },
           "hiddenSeries": false,
           "id": 120,
@@ -8179,7 +9654,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 183
+            "y": 231
           },
           "hiddenSeries": false,
           "id": 118,
@@ -8274,7 +9749,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 183
+            "y": 231
           },
           "hiddenSeries": false,
           "id": 124,
@@ -8371,7 +9846,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 22
       },
       "id": 28,
       "panels": [
@@ -8393,7 +9868,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 113
           },
           "hiddenSeries": false,
           "id": 190,
@@ -8498,7 +9973,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 65
+            "y": 113
           },
           "hiddenSeries": false,
           "id": 159,
@@ -8619,7 +10094,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 121
           },
           "hiddenSeries": false,
           "id": 210,
@@ -8754,7 +10229,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 121
           },
           "id": 1209,
           "options": {
@@ -8844,7 +10319,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 129
           },
           "id": 31,
           "options": {
@@ -8892,7 +10367,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 81
+            "y": 129
           },
           "hiddenSeries": false,
           "id": 178,
@@ -9037,7 +10512,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 89
+            "y": 137
           },
           "id": 1216,
           "options": {
@@ -9162,7 +10637,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 89
+            "y": 137
           },
           "id": 1231,
           "options": {
@@ -9244,7 +10719,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 97
+            "y": 145
           },
           "hiddenSeries": false,
           "id": 33,
@@ -9335,7 +10810,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 97
+            "y": 145
           },
           "hiddenSeries": false,
           "id": 35,
@@ -9424,7 +10899,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 105
+            "y": 153
           },
           "hiddenSeries": false,
           "id": 129,
@@ -9516,7 +10991,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 105
+            "y": 153
           },
           "hiddenSeries": false,
           "id": 102,
@@ -9653,7 +11128,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 113
+            "y": 161
           },
           "id": 1195,
           "options": {
@@ -9698,7 +11173,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 113
+            "y": 161
           },
           "hiddenSeries": false,
           "id": 180,
@@ -9836,7 +11311,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 121
+            "y": 169
           },
           "id": 1202,
           "options": {
@@ -9990,7 +11465,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 121
+            "y": 169
           },
           "id": 1196,
           "options": {
@@ -10046,7 +11521,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 25
       },
       "id": 83,
       "panels": [
@@ -10066,7 +11541,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 79
+            "y": 127
           },
           "hiddenSeries": false,
           "id": 85,
@@ -10164,7 +11639,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 79
+            "y": 127
           },
           "hiddenSeries": false,
           "id": 87,
@@ -10256,7 +11731,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 88
+            "y": 136
           },
           "hiddenSeries": false,
           "id": 91,
@@ -10347,7 +11822,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 88
+            "y": 136
           },
           "hiddenSeries": false,
           "id": 93,
@@ -10448,7 +11923,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 29
       },
       "id": 71,
       "panels": [
@@ -10484,7 +11959,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 77
+            "y": 125
           },
           "hiddenSeries": false,
           "id": 73,
@@ -10577,7 +12052,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 77
+            "y": 125
           },
           "hiddenSeries": false,
           "id": 79,
@@ -10713,7 +12188,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 86
+            "y": 134
           },
           "id": 2087,
           "options": {
@@ -10809,7 +12284,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 86
+            "y": 134
           },
           "id": 2039,
           "options": {
@@ -10878,7 +12353,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 30
       },
       "id": 1088,
       "panels": [
@@ -10942,7 +12417,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 74
+            "y": 122
           },
           "id": 1127,
           "options": {
@@ -11033,7 +12508,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 74
+            "y": 122
           },
           "id": 1166,
           "options": {
@@ -11135,7 +12610,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 82
+            "y": 130
           },
           "id": 1168,
           "options": {
@@ -11201,7 +12676,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 34
       },
       "id": 962,
       "panels": [
@@ -11298,7 +12773,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 75
+            "y": 123
           },
           "id": 992,
           "options": {
@@ -11401,7 +12876,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 35
       },
       "id": 1975,
       "panels": [
@@ -11541,7 +13016,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 76
+            "y": 124
           },
           "id": 1257,
           "maxPerRow": 2,
@@ -11647,7 +13122,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 36
       },
       "id": 1988,
       "panels": [
@@ -11712,7 +13187,7 @@
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 134
+            "y": 182
           },
           "id": 1991,
           "options": {
@@ -11768,7 +13243,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 37
       },
       "id": 1983,
       "panels": [
@@ -11865,7 +13340,7 @@
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 135
+            "y": 183
           },
           "id": 1261,
           "options": {
@@ -11933,7 +13408,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 38
       },
       "id": 8,
       "panels": [
@@ -11955,7 +13430,7 @@
             "h": 10,
             "w": 12,
             "x": 0,
-            "y": 136
+            "y": 184
           },
           "hiddenSeries": false,
           "id": 2,
@@ -12068,7 +13543,7 @@
             "h": 10,
             "w": 12,
             "x": 12,
-            "y": 136
+            "y": 184
           },
           "hiddenSeries": false,
           "id": 578,
@@ -12202,7 +13677,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 146
+            "y": 194
           },
           "id": 1239,
           "options": {
@@ -12256,7 +13731,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 39
       },
       "id": 1346,
       "panels": [
@@ -12276,7 +13751,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 65
+            "y": 113
           },
           "hiddenSeries": false,
           "id": 2556,
@@ -12383,7 +13858,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 78
+            "y": 126
           },
           "hiddenSeries": false,
           "id": 2840,
@@ -12482,7 +13957,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 92
+            "y": 140
           },
           "hiddenSeries": false,
           "id": 2890,
@@ -12576,7 +14051,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 92
+            "y": 140
           },
           "hiddenSeries": false,
           "id": 2940,
@@ -12714,7 +14189,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 100
+            "y": 148
           },
           "id": 1353,
           "links": [
