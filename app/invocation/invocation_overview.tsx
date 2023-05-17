@@ -18,6 +18,7 @@ import {
   Wrench,
   Zap,
   GitPullRequest,
+  Terminal,
 } from "lucide-react";
 import React from "react";
 import { User } from "../auth/auth_service";
@@ -141,6 +142,12 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <Wrench className="icon" />
             {this.props.model.getTool()}
           </div>
+          {this.props.model.getToolTag() && (
+            <div className="detail">
+              <Terminal className="icon" />
+              {this.props.model.getToolTag()}
+            </div>
+          )}
           {isBazelInvocation && (
             <div className="detail" title={this.props.model.getAllPatterns()}>
               <LayoutGrid className="icon" />
