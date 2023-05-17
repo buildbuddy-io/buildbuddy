@@ -92,7 +92,7 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
                           <div className="test-case-message">
                             {child.getAttribute("message")} {child.getAttribute("type")}
                           </div>
-                          {child.textContent?.trim() && (
+                          {!!child.textContent?.trim() && (
                             <TerminalComponent
                               value={child.textContent
                                 .replaceAll(`�[`, `\u001b[`)
