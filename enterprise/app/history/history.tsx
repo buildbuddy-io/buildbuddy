@@ -267,7 +267,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
     });
     const elements = document.getElementsByClassName("selected-keyboard-shortcuts");
     if (elements.length == 1) {
-      (document.querySelector('a:has(.selected-keyboard-shortcuts)') as HTMLElement|null)?.focus();
+      (document.querySelector("a:has(.selected-keyboard-shortcuts)") as HTMLElement | null)?.focus();
     }
   }
 
