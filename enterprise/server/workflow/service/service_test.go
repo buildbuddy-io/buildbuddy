@@ -68,6 +68,26 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	te.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
+
+	execClient := NewFakeExecutionClient()
+	te.SetRemoteExecutionClient(execClient)
+	t.Cleanup(func() {
+		// Shut down to make sure the workflow task queue is drained.
+		te.GetHealthChecker().Shutdown()
+		te.GetHealthChecker().WaitForGracefulShutdown()
+
+		// Once the shut down completes, the workflow background workers should
+		// have all exited and no more workflows can be started. At this point,
+		// assert that we have called NextExecuteRequest() exactly once for each
+		// started execution.
+		close(execClient.executeRequests)
+		for r := range execClient.executeRequests {
+			require.FailNowf(t,
+				"got unexpected ExecuteRequest. If this is actually expected, make sure to call NextExecuteRequest() in the test to inspect all started executions.",
+				"request: %+v", r)
+		}
+	})
+
 	return te
 }
 
@@ -150,7 +170,7 @@ func envVars(cmd *repb.Command) map[string]string {
 
 type fakeExecutionClient struct {
 	repb.ExecutionClient
-	ExecuteRequests []*executeRequest
+	executeRequests chan *executeRequest
 }
 
 type executeRequest struct {
@@ -158,13 +178,23 @@ type executeRequest struct {
 	Payload  *repb.ExecuteRequest
 }
 
+func NewFakeExecutionClient() *fakeExecutionClient {
+	return &fakeExecutionClient{
+		executeRequests: make(chan *executeRequest, 100),
+	}
+}
+
 func (c *fakeExecutionClient) Execute(ctx context.Context, req *repb.ExecuteRequest, opts ...grpc.CallOption) (repb.Execution_ExecuteClient, error) {
 	md, _ := metadata.FromOutgoingContext(ctx)
-	c.ExecuteRequests = append(c.ExecuteRequests, &executeRequest{
+	c.executeRequests <- &executeRequest{
 		Metadata: md,
 		Payload:  req,
-	})
+	}
 	return &fakeExecuteStream{}, nil
+}
+
+func (c *fakeExecutionClient) NextExecuteRequest() *executeRequest {
+	return <-c.executeRequests
 }
 
 type fakeExecuteStream struct{ grpc.ClientStream }
@@ -390,7 +420,7 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 	ctx, uid, gid := authenticate(t, ctx, te)
-	execClient := &fakeExecutionClient{}
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
 	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
@@ -421,15 +451,15 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 
 	pingWebhook(t, webhookURL)
 
-	require.Len(t, execClient.ExecuteRequests, 1, "expected one workflow execution to be started")
-	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0].Payload)
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
 	assert.NotContains(t,
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.NotContains(t,
-		execClient.ExecuteRequests[0].Metadata,
+		execReq.Metadata,
 		"x-buildbuddy-platform.env-overrides",
 		"untrusted workflow should not have remote_header env vars")
 }
@@ -438,7 +468,7 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 	ctx, uid, gid := authenticate(t, ctx, te)
-	execClient := &fakeExecutionClient{}
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
 	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
@@ -469,8 +499,8 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 
 	pingWebhook(t, webhookURL)
 
-	require.Len(t, execClient.ExecuteRequests, 1, "expected one workflow execution to be started")
-	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0].Payload)
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
 	assert.NotContains(t,
@@ -478,7 +508,7 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
-		execClient.ExecuteRequests[0].Metadata["x-buildbuddy-platform.env-overrides"],
+		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
 
@@ -486,7 +516,7 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	ctx := context.Background()
 	te := newTestEnv(t)
 	ctx, uid, gid := authenticate(t, ctx, te)
-	execClient := &fakeExecutionClient{}
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
 	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
@@ -518,8 +548,8 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 
 	pingWebhook(t, webhookURL)
 
-	require.Len(t, execClient.ExecuteRequests, 1, "expected one workflow execution to be started")
-	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0].Payload)
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
 	assert.NotContains(t,
@@ -527,7 +557,7 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
-		execClient.ExecuteRequests[0].Metadata["x-buildbuddy-platform.env-overrides"],
+		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
 
@@ -535,7 +565,7 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 	ctx, uid, gid := authenticate(t, ctx, te)
-	execClient := &fakeExecutionClient{}
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
 	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
@@ -566,15 +596,13 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
 	pingWebhook(t, webhookURL)
-
-	require.Len(t, execClient.ExecuteRequests, 0, "expected no workflow executions to be started")
 }
 
 func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 	ctx, uid, gid := authenticate(t, ctx, te)
-	execClient := &fakeExecutionClient{}
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
 	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
@@ -605,15 +633,13 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
 	pingWebhook(t, webhookURL)
-
-	require.Len(t, execClient.ExecuteRequests, 0, "expected no workflow executions to be started")
 }
 
 func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 	ctx, uid, gid := authenticate(t, ctx, te)
-	execClient := &fakeExecutionClient{}
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
 	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
@@ -643,8 +669,8 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 
 	pingWebhook(t, webhookURL)
 
-	require.Len(t, execClient.ExecuteRequests, 1, "expected one workflow execution to be started")
-	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0].Payload)
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
 	assert.NotContains(t,
@@ -652,6 +678,6 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
-		execClient.ExecuteRequests[0].Metadata["x-buildbuddy-platform.env-overrides"],
+		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }

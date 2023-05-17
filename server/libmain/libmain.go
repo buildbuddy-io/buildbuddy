@@ -395,7 +395,9 @@ func StartAndRunServices(env environment.Env) {
 		Handler: env.GetMux(),
 	}
 
+	env.GetHTTPServerWaitGroup().Add(1)
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		defer env.GetHTTPServerWaitGroup().Done()
 		err := server.Shutdown(ctx)
 		return err
 	})

@@ -32,6 +32,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -77,6 +79,17 @@ const (
 	// A workflow ID prefix that identifies a Workflow as being a
 	// "synthetic" workflow adapted from a GitRepository.
 	repoWorkflowIDPrefix = "WF#GitRepository"
+
+	// Number of workers to work on processing webhook events in the background.
+	webhookWorkerCount = 64
+
+	// Max number of webhook payloads to buffer in memory. We expect some events
+	// to occasionally be buffered during transient spikes in CAS or Execution
+	// service latency.
+	webhookWorkerTaskQueueSize = 100
+
+	// How long to wait before giving up on processing a webhook payload.
+	webhookWorkerTimeout = 30 * time.Second
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -108,13 +121,86 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(keys, "|"))))
 }
 
+// startWorkflowTask represents a workflow to be started in the background in
+// response to a webhook event. This is done in the background to avoid timeouts
+// in the HTTP response to the webhook sender, in particular when there are
+// spikes in CAS or Execution service latency.
+type startWorkflowTask struct {
+	ctx         context.Context
+	gitProvider interfaces.GitProvider
+	webhookData *interfaces.WebhookData
+	workflow    *tables.Workflow
+}
+
 type workflowService struct {
 	env environment.Env
+
+	wg    sync.WaitGroup
+	tasks chan *startWorkflowTask
 }
 
 func NewWorkflowService(env environment.Env) *workflowService {
-	return &workflowService{
-		env: env,
+	ws := &workflowService{
+		env:   env,
+		tasks: make(chan *startWorkflowTask, webhookWorkerTaskQueueSize),
+	}
+	ws.startBackgroundWorkers()
+	return ws
+}
+
+func (ws *workflowService) startBackgroundWorkers() {
+	for i := 0; i < webhookWorkerCount; i++ {
+		ws.wg.Add(1)
+		go func() {
+			defer ws.wg.Done()
+
+			for task := range ws.tasks {
+				ws.runStartWorkflowTask(task)
+			}
+		}()
+	}
+	ws.env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		// Wait until the HTTP server shuts down to ensure that all in-flight
+		// webhook requests are done being handled and that no further HTTP
+		// webhook requests will come in.
+		ws.env.GetHTTPServerWaitGroup().Wait()
+		// Now that all in-flight HTTP requests have completed, it is safe to
+		// close the tasks channel. Once we do this, the background workers
+		// should exit as soon as they drain and execute the remaining tasks in
+		// the channel.
+		close(ws.tasks)
+		// Wait for all workers to exit.
+		ws.wg.Wait()
+		return nil
+	})
+}
+
+func (ws *workflowService) enqueueStartWorkflowTask(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow) error {
+	t := &startWorkflowTask{
+		ctx:         ctx,
+		gitProvider: gitProvider,
+		webhookData: wd,
+		workflow:    wf,
+	}
+	select {
+	case ws.tasks <- t:
+		return nil
+	default:
+		alert.UnexpectedEvent(
+			"workflow_task_queue_full",
+			"Workflows are not being triggered due to the task queue being full. This may be due to elevated CAS or Execution service latency.")
+		return status.ResourceExhaustedError("workflow task queue is full")
+	}
+}
+
+func (ws *workflowService) runStartWorkflowTask(task *startWorkflowTask) {
+	// Keep the existing context values from the client but set a new timeout
+	// since the HTTP request has already completed at this point.
+	ctx, cancel := background.ExtendContextForFinalization(task.ctx, webhookWorkerTimeout)
+	defer cancel()
+
+	if err := ws.startWorkflow(ctx, task.gitProvider, task.webhookData, task.workflow); err != nil {
+		log.Errorf("Failed to start workflow in the background: %s", err)
 	}
 }
 
@@ -1005,7 +1091,7 @@ func (ws *workflowService) HandleRepositoryEvent(ctx context.Context, repo *tabl
 		return err
 	}
 	wf := ws.gitRepositoryWorkflow(repo, accessToken).Workflow
-	return ws.startWorkflow(ctx, provider, wd, wf)
+	return ws.enqueueStartWorkflowTask(ctx, provider, wd, wf)
 }
 
 func (ws *workflowService) startLegacyWorkflow(ctx context.Context, webhookID string, r *http.Request) error {
@@ -1028,7 +1114,7 @@ func (ws *workflowService) startLegacyWorkflow(ctx context.Context, webhookID st
 	if err != nil {
 		return status.WrapErrorf(err, "failed to lookup workflow for webhook ID %q", webhookID)
 	}
-	return ws.startWorkflow(ctx, gitProvider, wd, wf)
+	return ws.enqueueStartWorkflowTask(ctx, gitProvider, wd, wf)
 }
 
 func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow) error {
@@ -1064,8 +1150,9 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	if err != nil {
 		return err
 	}
-	var actionsStarted []*config.Action
+	var wg sync.WaitGroup
 	for _, action := range cfg.Actions {
+		action := action
 		if !config.MatchesAnyTrigger(action, wd.EventName, wd.TargetBranch) {
 			jt, _ := json.Marshal(action.Triggers)
 			log.CtxDebugf(ctx, "Action %s not matched, triggers=%s", action.Name, string(jt))
@@ -1076,22 +1163,29 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 			return err
 		}
 		invocationID := invocationUUID.String()
-		_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
-		if err != nil {
+
+		// Start executions in parallel to help reduce workflow start latency
+		// for repos with lots of workflow actions.
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
 			if err == ApprovalRequired {
 				log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
 				if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
 					log.CtxWarningf(ctx, "Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
 				}
-				continue
+				return
 			}
-			// TODO: Create a UI for these errors instead of just logging on the
-			// server.
-			log.CtxWarningf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
-		}
-		actionsStarted = append(actionsStarted, action)
+			if err != nil {
+				// TODO: Create a UI for these errors instead of just logging on the
+				// server.
+				log.CtxWarningf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
+			}
+		}()
 	}
-	log.CtxInfof(ctx, "Started %d workflow action(s)", len(actionsStarted))
+	wg.Wait()
 	return nil
 }
 
