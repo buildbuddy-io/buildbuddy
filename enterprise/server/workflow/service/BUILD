@@ -37,6 +37,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/query_builder",
         "//server/util/random",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_google_go_github_v43//github",
         "@com_github_google_uuid//:uuid",
