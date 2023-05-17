@@ -27,6 +27,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/tables",
+        "//server/util/alert",
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/db",

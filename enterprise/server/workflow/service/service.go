@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -82,9 +83,10 @@ const (
 	// Number of workers to work on processing webhook events in the background.
 	webhookWorkerCount = 64
 
-	// Max number of webhook payloads to buffer in memory. This is intentionally
-	// large to help deal with spikes in cache write latency.
-	webhookWorkerTaskQueueSize = 2000
+	// Max number of webhook payloads to buffer in memory. We expect some events
+	// to occasionally be buffered during transient spikes in CAS or Execution
+	// service latency.
+	webhookWorkerTaskQueueSize = 100
 
 	// How long to wait before giving up on processing a webhook payload.
 	webhookWorkerTimeout = 30 * time.Second
@@ -184,6 +186,9 @@ func (ws *workflowService) enqueueStartWorkflowTask(ctx context.Context, gitProv
 	case ws.tasks <- t:
 		return nil
 	default:
+		alert.UnexpectedEvent(
+			"workflow_task_queue_full",
+			"Workflows are not being triggered due to the task queue being full. This may be due to elevated CAS or Execution service latency.")
 		return status.ResourceExhaustedError("workflow task queue is full")
 	}
 }
@@ -1166,14 +1171,14 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 			defer wg.Done()
 
 			_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
-			if err != nil {
-				if err == ApprovalRequired {
-					log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
-					if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
-						log.CtxWarningf(ctx, "Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
-					}
-					return
+			if err == ApprovalRequired {
+				log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
+				if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
+					log.CtxWarningf(ctx, "Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
 				}
+				return
+			}
+			if err != nil {
 				// TODO: Create a UI for these errors instead of just logging on the
 				// server.
 				log.CtxWarningf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
