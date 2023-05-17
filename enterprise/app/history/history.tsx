@@ -666,24 +666,14 @@ export default class HistoryComponent extends React.Component<Props, State> {
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
             {this.state.invocations?.map((invocation) => (
-              <a
-                href={`/invocation/${invocation.invocationId}`}
-                onClick={(e) => {
-                  // TODO(siggisim): Switch this to using the <Link> component
-                  if (e.metaKey || e.ctrlKey) {
-                    return;
-                  }
-                  e.preventDefault();
-                }}>
-                <HistoryInvocationCardComponent
-                  className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
-                  onMouseOver={this.handleMouseOver.bind(this, invocation)}
-                  onMouseOut={this.handleMouseOut.bind(this, invocation)}
-                  invocation={invocation}
-                  isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
-                  isSelectedWithKeyboard={invocation.invocationId === this.state.selectedInvocationId}
-                />
-              </a>
+              <HistoryInvocationCardComponent
+                className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
+                onMouseOver={this.handleMouseOver.bind(this, invocation)}
+                onMouseOut={this.handleMouseOut.bind(this, invocation)}
+                invocation={invocation}
+                isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
+                isSelectedWithKeyboard={invocation.invocationId === this.state.selectedInvocationId}
+              />
             ))}
             {this.state.pageToken && (
               <button
