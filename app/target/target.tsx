@@ -26,11 +26,11 @@ interface Props {
   model: InvocationModel;
 
   files: build_event_stream.IFile[];
-  configuredEvent: invocation.InvocationEvent;
-  completedEvent: invocation.InvocationEvent;
-  skippedEvent: invocation.InvocationEvent;
+  configuredEvent?: invocation.InvocationEvent;
+  completedEvent?: invocation.InvocationEvent;
+  skippedEvent?: invocation.InvocationEvent;
   testResultEvents: invocation.InvocationEvent[];
-  testSummaryEvent: invocation.InvocationEvent;
+  testSummaryEvent?: invocation.InvocationEvent;
   actionEvents: invocation.InvocationEvent[];
   dark: boolean;
 }

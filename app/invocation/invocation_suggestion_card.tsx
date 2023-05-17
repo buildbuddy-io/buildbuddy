@@ -412,6 +412,7 @@ const matchers: SuggestionMatcher[] = [
     // with min Bazel version check once issues are fixed.
     return null;
 
+    /* No clue why, but strict TS gets broken by dead code, so this is commented out.
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
 
@@ -436,6 +437,7 @@ const matchers: SuggestionMatcher[] = [
         </>
       ),
     };
+    */
   },
   // Suggest configuring metadata to enable test grid
   ({ model }) => {
@@ -478,7 +480,7 @@ export function getSuggestions({
 }: {
   model: InvocationModel;
   buildLogs: string;
-  user: User;
+  user?: User;
 }): Suggestion[] {
   if (!buildLogs || !model || !user) return [];
 
@@ -530,7 +532,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
         {suggestions.map((suggestion) => (
           <SuggestionComponent suggestion={suggestion} />
         ))}
-        {this.props.user.canCall("updateGroup") && (
+        {this.props.user?.canCall("updateGroup") && (
           <TextLink className="settings-link" href="/settings/org/details">
             Suggestion settings
           </TextLink>

@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "invocation",
     srcs = ["invocation.tsx"],
-    strict = False,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -515,7 +514,6 @@ ts_library(
 ts_library(
     name = "invocation_suggestion_card",
     srcs = ["invocation_suggestion_card.tsx"],
-    strict = False,
     deps = [
         "//app/auth:user",
         "//app/capabilities",
@@ -610,7 +608,6 @@ ts_library(
 ts_library(
     name = "workflow_rerun_button",
     srcs = ["workflow_rerun_button.tsx"],
-    strict = False,
     deps = [
         "//app/components/button",
         "//app/components/button:button_group",
