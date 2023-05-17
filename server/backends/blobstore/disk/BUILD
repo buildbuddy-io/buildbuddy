@@ -21,6 +21,7 @@ go_test(
     embed = [":disk"],
     deps = [
         "//server/backends/blobstore/util",
+        "//server/interfaces",
         "@com_github_stretchr_testify//require",
     ],
 )
