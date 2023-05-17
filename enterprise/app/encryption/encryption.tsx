@@ -14,6 +14,7 @@ import FilledButton, { OutlinedButton } from "../../../app/components/button/but
 import { BuildBuddyError } from "../../../app/util/errors";
 import error_service from "../../../app/errors/error_service";
 import TextInput from "../../../app/components/input/input";
+import Link from "../../../app/components/link/link";
 
 interface State {
   encryptionEnabled: boolean;
@@ -70,6 +71,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
       this.setState({
         encryptionEnabled: response.enabled,
         supportedKMS: response.supportedKms,
+        selectedKMS: response.supportedKms[0],
       });
     } catch (e) {
       error_service.handleError(BuildBuddyError.parse(e));
@@ -150,7 +152,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
   private kmsName(kms: encryption.KMS) {
     switch (kms) {
       case encryption.KMS.LOCAL_INSECURE:
-        return "Local Insecure KMS (non-production use)";
+        return "Local KMS";
       case encryption.KMS.GCP:
         return "Google Cloud Platform KMS";
       case encryption.KMS.AWS:
@@ -298,16 +300,16 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     }
   }
 
-  private renderKMSOptions(kms: encryption.KMS) {
+  private renderKMSTabs(options: encryption.KMS[], selected: encryption.KMS) {
     return (
-      <div className="kms-config-row">
-        <div>
-          <label className="kms-title">
-            <input type="radio" checked={this.state.selectedKMS == kms} onChange={this.onSelectKMS.bind(this, kms)} />
+      <div className="kms-tabs">
+        {options.map((kms, idx) => (
+          <Link
+            className={`kms-tab ${selected === kms ? "active-tab" : ""}`}
+            onClick={this.onSelectKMS.bind(this, kms)}>
             {this.kmsName(kms)}
-          </label>
-          {this.state.selectedKMS == kms && <div className="kms-fields">{this.renderKMSFields(kms)}</div>}
-        </div>
+          </Link>
+        ))}
       </div>
     );
   }
@@ -363,7 +365,10 @@ export default class EncryptionComponent extends React.Component<{}, State> {
               managed by a supported Key Management System.
             </p>
             <form className="kms-form">
-              {this.state.supportedKMS.map((kms: encryption.KMS) => this.renderKMSOptions(kms))}
+              {this.renderKMSTabs(this.state.supportedKMS, this.state.selectedKMS)}
+              {this.state.selectedKMS != encryption.KMS.UNKNOWN_KMS && (
+                <div className="kms-fields">{this.renderKMSFields(this.state.selectedKMS)}</div>
+              )}
               <FilledButton
                 disabled={this.state.selectedKMS == encryption.KMS.UNKNOWN_KMS || this.state.isEnablingInProgress}
                 onClick={this.onClickEnable.bind(this)}>
