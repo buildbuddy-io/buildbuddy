@@ -1,0 +1,3 @@
+This image is used as the base for remote executors that support bare execution. It is built on top of
+the 'executor_image', and also includes the 'build-essential' package which includes GCC and is needed to
+execute Bazel builds.

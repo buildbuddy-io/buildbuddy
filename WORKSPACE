@@ -244,6 +244,12 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "executor_image_bare",
+    dockerfile = "//dockerfiles/executor_image_bare:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
     name = "nonroot_user_image",
     dockerfile = "//dockerfiles/test_images/nonroot_user_image:Dockerfile",
     visibility = ["//visibility:public"],

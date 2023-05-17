@@ -111,6 +111,24 @@ container_image(
     visibility = ["//visibility:public"],
 )
 
+container_image(
+    name = "bare_image",
+    base = "@executor_image_bare//image:dockerfile_image.tar",
+    layers = [":executor_tools"],
+    symlinks = {
+        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
+    },
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+go_image(
+    name = "executor_image_bare",
+    base = ":bare_image",
+    binary = ":executor",
+    tags = ["manual"],
+)
+
 # Build a docker image similar to the go_binary above, but use the "go_image"
 # rule from @io_bazel_rules_docker instead, which creates a docker image.
 #
