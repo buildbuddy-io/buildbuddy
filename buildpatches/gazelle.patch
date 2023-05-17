@@ -39,4 +39,19 @@ index 9ed4db9..69db844 100644
 +    visibility = ["//visibility:public"],
      deps = ["@com_github_bazelbuild_buildtools//build:go_default_library"],
  )
+
+diff --git a/internal/go_repository.bzl b/internal/go_repository.bzl
+index 48fc181..17d8314 100644
+--- a/internal/go_repository.bzl
++++ b/internal/go_repository.bzl
+@@ -246,6 +246,10 @@ def _go_repository_impl(ctx):
+         # Override external GO111MODULE, because it is needed by module mode, no-op in repository mode
+         fetch_repo_env["GO111MODULE"] = "on"
  
++        # BuildBuddy only
++        # provide more verbose outputs when binary crashed
++        fetch_repo_env["GOTRACEBACK"] = "crash"
++
+         result = env_execute(
+             ctx,
+             [fetch_repo] + fetch_repo_args,
