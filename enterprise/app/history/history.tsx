@@ -640,7 +640,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
               </div>
             )}
           </div>
-          {this.state.invocations?.length && (
+          {this.state.invocations && this.state.invocations.length > 0 && (
             <div className="container nopadding-dense">
               <div className={`grid ${this.state.invocations.length < 20 ? "grid-grow" : ""}`}>
                 {this.state.invocations.map((invocation) => (
