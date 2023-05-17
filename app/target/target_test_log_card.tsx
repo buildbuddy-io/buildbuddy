@@ -38,7 +38,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
   }
 
   fetchTestLog() {
-    let testLogUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find(
+    let testLogUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.log"
     )?.uri;
 
@@ -65,7 +65,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
       });
   }
 
-  getStatusTitle(status: build_event_stream.TestStatus) {
+  getStatusTitle(status?: build_event_stream.TestStatus) {
     switch (status) {
       case build_event_stream.TestStatus.PASSED:
         return "Passed";
@@ -88,7 +88,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
     }
   }
 
-  getStatusClass(status: build_event_stream.TestStatus) {
+  getStatusClass(status?: build_event_stream.TestStatus) {
     switch (status) {
       case build_event_stream.TestStatus.PASSED:
         return "card-success";
@@ -101,7 +101,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
     }
   }
 
-  getStatusIcon(status: build_event_stream.TestStatus) {
+  getStatusIcon(status?: build_event_stream.TestStatus) {
     switch (status) {
       case build_event_stream.TestStatus.PASSED:
         return <CheckCircle className="icon green" />;
@@ -116,33 +116,33 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
 
   render() {
     const title = <div className="title">Test log</div>;
-    const strategy = this.props.testResult.buildEvent.testResult.executionInfo?.strategy;
+    const strategy = this.props.testResult.buildEvent?.testResult?.executionInfo?.strategy;
     return (
       <>
-        <div className={`card ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
-          {this.getStatusIcon(this.props.testResult.buildEvent.testResult.status)}
+        <div className={`card ${this.getStatusClass(this.props.testResult.buildEvent?.testResult?.status)}`}>
+          {this.getStatusIcon(this.props.testResult.buildEvent?.testResult?.status)}
           <div className="content">
             <div className="title">
-              {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
+              {this.getStatusTitle(this.props.testResult.buildEvent?.testResult?.status)} in{" "}
               {format.durationMillis(
                 durationToMillisWithFallback(
-                  this.props.testResult.buildEvent.testResult.testAttemptDuration,
-                  this.props.testResult.buildEvent.testResult.testAttemptDurationMillis
+                  this.props.testResult.buildEvent?.testResult?.testAttemptDuration,
+                  this.props.testResult.buildEvent?.testResult?.testAttemptDurationMillis ?? 0
                 )
               )}
               {strategy && <> ({strategy})</>}
             </div>
             <div className="subtitle">
-              On Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
-              {this.props.testResult.buildEvent.id.testResult.run}, Attempt{" "}
-              {this.props.testResult.buildEvent.id.testResult.attempt})
+              On Shard {this.props.testResult.buildEvent?.id?.testResult?.shard ?? 0} (Run{" "}
+              {this.props.testResult.buildEvent?.id?.testResult?.run ?? 0}, Attempt{" "}
+              {this.props.testResult.buildEvent?.id?.testResult?.attempt ?? 0})
             </div>
           </div>
         </div>
         <div
           className={`card ${
             this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")
-          } ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
+          } ${this.getStatusClass(this.props.testResult.buildEvent?.testResult?.status)}`}>
           <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
           <div className="content">
             {!this.state.cacheEnabled && (

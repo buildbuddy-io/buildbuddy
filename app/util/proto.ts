@@ -46,7 +46,7 @@ export function secondsToDuration(seconds: number): google_duration.protobuf.IDu
  * protos that have been migrated to use the `Timestamp` API.
  */
 export function timestampToDateWithFallback(
-  timestamp: google_timestamp.protobuf.ITimestamp,
+  timestamp: google_timestamp.protobuf.ITimestamp | null | undefined,
   timestampMillisFallback: number | Long
 ): Date {
   if (timestamp) return timestampToDate(timestamp);
@@ -60,7 +60,7 @@ export function timestampToDateWithFallback(
  * migrated to use the `Duration` API.
  */
 export function durationToMillisWithFallback(
-  duration: google_duration.protobuf.IDuration,
+  duration: google_duration.protobuf.IDuration | null | undefined,
   fallbackMillis: number | Long
 ): number {
   if (duration) return durationToMillis(duration);
