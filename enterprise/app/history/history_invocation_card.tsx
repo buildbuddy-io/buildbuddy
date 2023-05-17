@@ -16,6 +16,7 @@ import {
 import React from "react";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
+import Link from "../../../app/components/link/link";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 
@@ -56,14 +57,6 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
 
   componentWillUnmount() {
     window.clearInterval(this.interval);
-  }
-
-  handleInvocationClicked(e: any) {
-    // TODO(siggisim): Switch this to using the <Link> component
-    if (e.metaKey || e.ctrlKey) {
-      return;
-    }
-    router.navigateToInvocation(this.props.invocation.invocationId);
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
@@ -189,9 +182,9 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
     const tags = (this.props.invocation.tags || []).map((t) => t.name).join(", ");
 
     return (
-      <div
+      <Link
         key={this.props.invocation.invocationId}
-        onClick={this.handleInvocationClicked.bind(this, event)}
+        href={`/invocation/${this.props.invocation.invocationId}`}
         onMouseOver={this.props.onMouseOver}
         onMouseOut={this.props.onMouseOut}
         className={`clickable card history-invocation-card
@@ -293,7 +286,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
             )}
           </div>
         </div>
-      </div>
+      </Link>
     );
   }
 }
