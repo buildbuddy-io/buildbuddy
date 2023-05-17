@@ -56,7 +56,7 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
     let testCases = Array.from(this.props.testSuite.getElementsByTagName("testcase")).filter(
       (testCase) =>
         (!this.props.tagName && testCase.children.length == 0) ||
-        testCase.getElementsByTagName(this.props.tagName).length > 0
+        (this.props.tagName && testCase.getElementsByTagName(this.props.tagName).length > 0)
     );
     return (
       testCases.length > 0 && (
@@ -68,8 +68,8 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
               {testCases.length} {testCases.length == 1 ? "test" : "tests"} {this.getStatusTitle()} in{" "}
               {format.durationMillis(
                 durationToMillisWithFallback(
-                  this.props.testResult.buildEvent.testResult.testAttemptDuration,
-                  this.props.testResult.buildEvent.testResult.testAttemptDurationMillis
+                  this.props.testResult.buildEvent?.testResult?.testAttemptDuration,
+                  this.props.testResult.buildEvent?.testResult?.testAttemptDurationMillis || 0
                 )
               )}
             </div>
@@ -92,7 +92,7 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
                           <div className="test-case-message">
                             {child.getAttribute("message")} {child.getAttribute("type")}
                           </div>
-                          {Boolean(child.textContent?.trim()) && (
+                          {child.textContent?.trim() && (
                             <TerminalComponent
                               value={child.textContent
                                 .replaceAll(`�[`, `\u001b[`)

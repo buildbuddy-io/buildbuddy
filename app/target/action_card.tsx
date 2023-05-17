@@ -169,7 +169,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
           </div>
         )}
 
-        <div className={`card ${this.props.action.buildEvent.action.success ? "card-success" : "card-failure"}`}>
+        <div className={`card ${this.props.action.buildEvent?.action?.success ? "card-success" : "card-failure"}`}>
           <PlayCircle className="icon" />
           <div className="content">
             <div className="title">{this.props.action?.buildEvent?.action?.label}</div>

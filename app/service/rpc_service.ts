@@ -88,7 +88,7 @@ class RpcService {
     invocationId: string,
     responseType?: "arraybuffer" | "json" | "text" | undefined,
     fallbackParams?: Record<string, string>
-  ) {
+  ): Promise<string> {
     let fallback = "";
     if (fallbackParams) fallback = `?${new URLSearchParams(fallbackParams)?.toString()}`;
     return this.fetchFile(
@@ -97,7 +97,7 @@ class RpcService {
     );
   }
 
-  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {
+  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | ""): Promise<string> {
     return new Promise((resolve, reject) => {
       var request = new XMLHttpRequest();
       request.responseType = responseType;

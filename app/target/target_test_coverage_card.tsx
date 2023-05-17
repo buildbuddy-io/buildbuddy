@@ -33,7 +33,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
   }
 
   fetchTestXML() {
-    let testXMLUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find(
+    let testXMLUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
@@ -60,7 +60,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
   }
 
   render() {
-    let testXMLUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find(
+    let testXMLUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
