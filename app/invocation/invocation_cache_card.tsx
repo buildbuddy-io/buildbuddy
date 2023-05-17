@@ -26,7 +26,7 @@ export default class CacheCardComponent extends React.Component<Props> {
           {!hasCacheStats && (
             <div className="no-cache-stats">Cache stats only available when using BuildBuddy cache.</div>
           )}
-          {this.props.model.cacheStats.length && (
+          {Boolean(this.props.model.cacheStats.length) && (
             <div className="details">
               {hasCacheStats && !this.props.model.hasCacheWriteCapability() && (
                 <div className="cache-details">
