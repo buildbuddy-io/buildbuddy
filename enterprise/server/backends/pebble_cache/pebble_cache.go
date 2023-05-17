@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -197,6 +198,8 @@ type PebbleCache struct {
 	bufferPool *bytebufferpool.Pool
 
 	minBytesAutoZstdCompression int64
+
+	oldMetrics pebble.Metrics
 }
 
 type keyMigrator interface {
@@ -2425,6 +2428,57 @@ func (p *PebbleCache) periodicFlushPartitionMetadata(quitChan chan struct{}) {
 	}
 }
 
+func (p *PebbleCache) updatePebbleMetrics() error {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	m := db.Metrics()
+	om := p.oldMetrics
+
+	// Compaction related metrics.
+	incCompactionMetric := func(compactionType string, oldValue, newValue int64) {
+		lbls := prometheus.Labels{metrics.CompactionType: compactionType}
+		metrics.PebbleCachePebbleCompactCount.With(lbls).Add(float64(newValue - oldValue))
+	}
+	incCompactionMetric("default", om.Compact.DefaultCount, m.Compact.DefaultCount)
+	incCompactionMetric("delete_only", om.Compact.DeleteOnlyCount, m.Compact.DeleteOnlyCount)
+	incCompactionMetric("elision_only", om.Compact.ElisionOnlyCount, m.Compact.ElisionOnlyCount)
+	incCompactionMetric("move", om.Compact.MoveCount, m.Compact.MoveCount)
+	incCompactionMetric("read", om.Compact.ReadCount, m.Compact.ReadCount)
+	incCompactionMetric("rewrite", om.Compact.RewriteCount, m.Compact.RewriteCount)
+	metrics.PebbleCachePebbleCompactEstimatedDebtBytes.Set(float64(m.Compact.EstimatedDebt))
+	metrics.PebbleCachePebbleCompactInProgressBytes.Set(float64(m.Compact.InProgressBytes))
+	metrics.PebbleCachePebbleCompactInProgress.Set(float64(m.Compact.NumInProgress))
+	metrics.PebbleCachePebbleCompactMarkedFiles.Set(float64(m.Compact.MarkedFiles))
+
+	// Level metrics.
+	for i, l := range m.Levels {
+		ol := om.Levels[i]
+		lbls := prometheus.Labels{metrics.PebbleLevel: strconv.Itoa(i)}
+		metrics.PebbleCachePebbleLevelSublevels.With(lbls).Set(float64(l.Sublevels))
+		metrics.PebbleCachePebbleLevelNumFiles.With(lbls).Set(float64(l.NumFiles))
+		metrics.PebbleCachePebbleLevelSizeBytes.With(lbls).Set(float64(l.Size))
+		metrics.PebbleCachePebbleLevelScore.With(lbls).Set(l.Score)
+		metrics.PebbleCachePebbleLevelBytesInCount.With(lbls).Add(float64(l.BytesIn - ol.BytesIn))
+		metrics.PebbleCachePebbleLevelBytesIngestedCount.With(lbls).Add(float64(l.BytesIngested - ol.BytesIngested))
+		metrics.PebbleCachePebbleLevelBytesMovedCount.With(lbls).Add(float64(l.BytesMoved - ol.BytesMoved))
+		metrics.PebbleCachePebbleLevelBytesReadCount.With(lbls).Add(float64(l.BytesRead - ol.BytesRead))
+		metrics.PebbleCachePebbleLevelBytesCompactedCount.With(lbls).Add(float64(l.BytesCompacted - ol.BytesCompacted))
+		metrics.PebbleCachePebbleLevelBytesFlushedCount.With(lbls).Add(float64(l.BytesFlushed - ol.BytesFlushed))
+		metrics.PebbleCachePebbleLevelTablesCompactedCount.With(lbls).Add(float64(l.TablesCompacted - ol.TablesCompacted))
+		metrics.PebbleCachePebbleLevelTablesFlushedCount.With(lbls).Add(float64(l.TablesFlushed - ol.TablesFlushed))
+		metrics.PebbleCachePebbleLevelTablesIngestedCount.With(lbls).Add(float64(l.TablesIngested - ol.TablesIngested))
+		metrics.PebbleCachePebbleLevelTablesMovedCount.With(lbls).Add(float64(l.TablesMoved - ol.TablesMoved))
+	}
+
+	p.oldMetrics = *m
+
+	return nil
+}
+
 func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 	evictors := make([]*partitionEvictor, len(p.evictors))
 	p.statusMu.Lock()
@@ -2445,6 +2499,10 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 
 			for _, e := range evictors {
 				e.updateMetrics()
+			}
+
+			if err := p.updatePebbleMetrics(); err != nil {
+				log.Warningf("could not update pebble metrics: %s", err)
 			}
 		}
 	}

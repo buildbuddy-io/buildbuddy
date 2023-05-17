@@ -153,7 +153,6 @@ const (
 
 	/// The ID of a raft nodehost.
 	RaftNodeHostIDLabel = "node_host_id"
-
 	/// The range ID of a raft region.
 	RaftRangeIDLabel = "range_id"
 
@@ -167,6 +166,12 @@ const (
 	VersionLabel = "version"
 
 	APIKeyLookupStatus = "status"
+
+	/// Pebble DB compaction type.
+	CompactionType = "compaction_type"
+
+	/// Pebble DB level number.
+	PebbleLevel = "level"
 )
 
 const (
@@ -1811,6 +1816,169 @@ var (
 		Name:      "key_last_encryption_age_msec",
 		Buckets:   exponentialBucketRange(float64(1*time.Hour.Milliseconds()), float64(7*24*time.Hour.Milliseconds()), 4),
 		Help:      "Age of encrypted keys (i.e. how long it has been since the keys were re-encrypted).",
+	})
+
+	PebbleCachePebbleCompactCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_count",
+		Help:      "Number of compactions performed by the underlying Pebble database.",
+	}, []string{
+		CompactionType,
+	})
+
+	PebbleCachePebbleCompactEstimatedDebtBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_estimated_debt_bytes",
+		Help:      "Estimated number of bytes that need to be compacted for the LMS to reach a stable state.",
+	})
+
+	PebbleCachePebbleCompactInProgressBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_in_progress_bytes",
+		Help:      "Number of bytes present in sstables being written by in-progress compactions.",
+	})
+
+	PebbleCachePebbleCompactInProgress = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_in_progress",
+		Help:      "Number of compactions that are in-progress",
+	})
+
+	PebbleCachePebbleCompactMarkedFiles = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_marked_files",
+		Help:      "Count of files that are marked for compaction.",
+	})
+
+	PebbleCachePebbleLevelSublevels = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_sublevels",
+		Help:      "Number of sublevels within the level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelNumFiles = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_num_files",
+		Help:      "The total number of files in the level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_size_bytes",
+		Help:      "The total size in bytes of the files in the level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelScore = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_score",
+		Help:      "The level's compaction score.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesInCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_in_count",
+		Help:      "The number of incoming bytes from other levels read during compactions. This excludes bytes moved and bytes ingested. For L0 this is the bytes written to the WAL.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesIngestedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_ingested_count",
+		Help:      "The number of bytes ingested.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesMovedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_moved_count",
+		Help:      "The number of bytes moved into the level by a move compaction.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_read_count",
+		Help:      "The number of bytes read for compactions at the level. This includes bytes read from other levels (BytesIn), as well as bytes read for the level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesCompactedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_compacted_count",
+		Help:      "The number of bytes written during compactions.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesFlushedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_flushed_count",
+		Help:      "The number of bytes written during flushes.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelTablesCompactedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_tables_compacted_count",
+		Help:      "The number of sstables compacted to this level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelTablesFlushedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_tables_flushed_count",
+		Help:      "The number of sstables flushed to this level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelTablesIngestedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_tables_ingested_count",
+		Help:      "The number of sstables ingested into this level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelTablesMovedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_tables_moved_count",
+		Help:      "The number of sstables ingested into to this level.",
+	}, []string{
+		PebbleLevel,
 	})
 )
 
