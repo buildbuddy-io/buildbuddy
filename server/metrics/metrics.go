@@ -153,7 +153,6 @@ const (
 
 	/// The ID of a raft nodehost.
 	RaftNodeHostIDLabel = "node_host_id"
-
 	/// The range ID of a raft region.
 	RaftRangeIDLabel = "range_id"
 
@@ -1968,7 +1967,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_pebble_level_bytes_tables_ingested_count",
-		Help:      "The number of sstables ingested into to this level.",
+		Help:      "The number of sstables ingested into this level.",
 	}, []string{
 		PebbleLevel,
 	})
