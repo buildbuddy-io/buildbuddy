@@ -176,7 +176,7 @@ type PebbleCache struct {
 	migrators    []keyMigrator
 
 	env    environment.Env
-	db     *pebble.DB
+	db     pebbleutil.IPebbleDB
 	leaser pebbleutil.Leaser
 	locker lockmap.Locker
 	clock  clockwork.Clock
@@ -370,7 +370,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		pebbleOptions.Cache = c
 	}
 
-	db, err := pebble.Open(opts.RootDirectory, pebbleOptions)
+	db, err := pebbleutil.Open(opts.RootDirectory, pebbleOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -1254,7 +1254,7 @@ func (p *PebbleCache) blobDir() string {
 	return filePath
 }
 
-func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter *pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
+func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebbleutil.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
 	fileMetadata := &rfpb.FileMetadata{}
 	var lastErr error
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
@@ -1270,14 +1270,14 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter *pe
 	return nil, -1, lastErr
 }
 
-func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter *pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
+func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebbleutil.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
 	md, _, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
 	return md, err
 }
 
 // iterHasKey returns a bool indicating if the provided iterator has the
 // exact key specified.
-func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey) (bool, error) {
+func (p *PebbleCache) iterHasKey(iter pebbleutil.Iterator, key filestore.PebbleKey) (bool, error) {
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
@@ -1290,7 +1290,7 @@ func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey)
 	return false, nil
 }
 
-func readFileMetadata(reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
+func readFileMetadata(reader pebbleutil.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
 	buf, err := pebbleutil.GetCopy(reader, keyBytes)
 	if err != nil {
@@ -2537,7 +2537,7 @@ type readCloser struct {
 	io.Closer
 }
 
-func (p *PebbleCache) reader(ctx context.Context, iter *pebble.Iterator, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) reader(ctx context.Context, iter pebbleutil.Iterator, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err

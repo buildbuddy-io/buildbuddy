@@ -7,6 +7,10 @@ import (
 	"io"
 	"runtime"
 	"sync"
+	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -19,20 +23,367 @@ var (
 	warnAboutLeaks = flag.Bool("cache.pebble.warn_about_leaks", true, "If set, warn about leaked DB handles")
 )
 
+type Iterator interface {
+	io.Closer
+
+	// First moves the iterator the the first key/value pair. Returns true if the
+	// iterator is pointing at a valid entry and false otherwise.
+	First() bool
+
+	// Valid returns true if the iterator is positioned at a valid key/value pair
+	// and false otherwise.
+	Valid() bool
+
+	// Next moves the iterator to the next key/value pair. Returns true if the
+	// iterator is pointing at a valid entry and false otherwise.
+	Next() bool
+
+	// SeekGE moves the iterator to the first key/value pair whose key is greater
+	// than or equal to the given key. Returns true if the iterator is pointing at
+	// a valid entry and false otherwise.
+	SeekGE(key []byte) bool
+
+	// SeekLT moves the iterator to the last key/value pair whose key is less than
+	// the given key. Returns true if the iterator is pointing at a valid entry and
+	// false otherwise.
+	SeekLT(key []byte) bool
+
+	// Key returns the key of the current key/value pair, or nil if done. The
+	// caller should not modify the contents of the returned slice, and its
+	// contents may change on the next call to Next.
+	Key() []byte
+
+	// Value returns the value of the current key/value pair, or nil if done. The
+	// caller should not modify the contents of the returned slice, and its
+	// contents may change on the next call to Next.
+	Value() []byte
+}
+
+type Reader interface {
+	// Get gets the value for the given key. It returns ErrNotFound if the DB
+	// does not contain the key.
+	//
+	// The caller should not modify the contents of the returned slice, but it is
+	// safe to modify the contents of the argument after Get returns. The
+	// returned slice will remain valid until the returned Closer is closed. On
+	// success, the caller MUST call closer.Close() or a memory leak will occur.
+	Get(key []byte) (value []byte, closer io.Closer, err error)
+
+	// NewIter returns an iterator that is unpositioned (Iterator.Valid() will
+	// return false). The iterator can be positioned via a call to SeekGE,
+	// SeekLT, First or Last.
+	NewIter(o *pebble.IterOptions) Iterator
+}
+
+type Writer interface {
+	// Apply the operations contained in the batch to the DB.
+	//
+	// It is safe to modify the contents of the arguments after Apply returns.
+	Apply(batch Batch, o *pebble.WriteOptions) error
+
+	// Set sets the value for the given key. It overwrites any previous value
+	// for that key; a DB is not a multi-map.
+	//
+	// It is safe to modify the contents of the arguments after Set returns.
+	Set(key, value []byte, o *pebble.WriteOptions) error
+
+	// Delete deletes the value for the given key. Deletes are blind all will
+	// succeed even if the given key does not exist.
+	//
+	// It is safe to modify the contents of the arguments after Delete returns.
+	Delete(key []byte, o *pebble.WriteOptions) error
+
+	// DeleteRange deletes all of the point keys (and values) in the range
+	// [start,end) (inclusive on start, exclusive on end). DeleteRange does NOT
+	// delete overlapping range keys (eg, keys set via RangeKeySet).
+	//
+	// It is safe to modify the contents of the arguments after DeleteRange
+	// returns.
+	DeleteRange(start, end []byte, o *pebble.WriteOptions) error
+
+	// LogData adds the specified to the batch. The data will be written to the
+	// WAL, but not added to memtables or sstables. Log data is never indexed,
+	// which makes it useful for testing WAL performance.
+	//
+	// It is safe to modify the contents of the argument after LogData returns.
+	LogData(data []byte, opts *pebble.WriteOptions) error
+}
+
+type Batch interface {
+	io.Closer
+	Reader
+	Writer
+
+	// Commit applies the batch to its parent writer.
+	Commit(o *pebble.WriteOptions) error
+
+	// Count returns the count of memtable-modifying operations in this batch. All
+	// operations with the except of LogData increment this count.
+	Count() uint32
+}
+
 // IPebbleDB is an interface the covers the methods on a pebble.DB used by our
 // code. An interface is required so that the DB leaser can return a pebble.DB
 // embedded in a struct that implements this interface.
 type IPebbleDB interface {
-	pebble.Reader
-	pebble.Writer
+	Reader
+	Writer
 	io.Closer
 
 	EstimateDiskUsage(start, end []byte) (uint64, error)
 	Flush() error
 	Metrics() *pebble.Metrics
-	NewBatch() *pebble.Batch
-	NewIndexedBatch() *pebble.Batch
+	NewBatch() Batch
+	NewIndexedBatch() Batch
 	NewSnapshot() *pebble.Snapshot
+
+	// Compact the specified range of keys in the database.
+	Compact(start, end []byte, parallelize bool) error
+
+	// Checkpoint constructs a snapshot of the DB instance in the specified
+	// directory. The WAL, MANIFEST, OPTIONS, and sstables will be copied into the
+	// snapshot. Hard links will be used when possible. Beware of the significant
+	// space overhead for a checkpoint if hard links are disabled. Also beware that
+	// even if hard links are used, the space overhead for the checkpoint will
+	// increase over time as the DB performs compactions.
+	Checkpoint(destDir string, opts ...pebble.CheckpointOption) error
+}
+
+type instrumentedIter struct {
+	db *instrumentedDB
+
+	iter *pebble.Iterator
+}
+
+func (i *instrumentedIter) Close() error {
+	return i.iter.Close()
+}
+
+func (i *instrumentedIter) First() bool {
+	t := i.db.iterFirstMetrics.Track()
+	defer t.Done()
+	return i.iter.First()
+}
+
+func (i *instrumentedIter) Valid() bool {
+	return i.iter.Valid()
+}
+
+func (i *instrumentedIter) Next() bool {
+	t := i.db.iterNextMetrics.Track()
+	defer t.Done()
+	return i.iter.Next()
+}
+
+func (i *instrumentedIter) SeekGE(key []byte) bool {
+	t := i.db.iterSeekGEMetrics.Track()
+	defer t.Done()
+	return i.iter.SeekGE(key)
+}
+
+func (i *instrumentedIter) SeekLT(key []byte) bool {
+	t := i.db.iterSeekLTMetrics.Track()
+	defer t.Done()
+	return i.iter.SeekLT(key)
+}
+
+func (i *instrumentedIter) Key() []byte {
+	return i.iter.Key()
+}
+
+func (i *instrumentedIter) Value() []byte {
+	return i.iter.Value()
+}
+
+type instrumentedBatch struct {
+	pebble.Writer
+
+	batch *pebble.Batch
+	db    *instrumentedDB
+}
+
+func (ib *instrumentedBatch) Close() error {
+	return ib.batch.Close()
+}
+
+func (ib *instrumentedBatch) Get(key []byte) (value []byte, closer io.Closer, err error) {
+	t := ib.db.batchGetMetrics.Track()
+	defer t.Done()
+	return ib.batch.Get(key)
+}
+
+func (ib *instrumentedBatch) Commit(o *pebble.WriteOptions) error {
+	t := ib.db.batchCommitMetrics.Track()
+	defer t.Done()
+	return ib.batch.Commit(o)
+}
+
+func (ib *instrumentedBatch) Count() uint32 {
+	return ib.batch.Count()
+}
+
+func (ib *instrumentedBatch) NewIter(o *pebble.IterOptions) Iterator {
+	iter := ib.batch.NewIter(o)
+	return &instrumentedIter{ib.db, iter}
+}
+
+func (ib *instrumentedBatch) Apply(batch Batch, opts *pebble.WriteOptions) error {
+	return ib.batch.Apply(batch.(*instrumentedBatch).batch, opts)
+}
+
+type opMetrics struct {
+	count prometheus.Counter
+	hist  prometheus.Observer
+}
+
+type opTracker struct {
+	hist  prometheus.Observer
+	start time.Time
+}
+
+func (ot *opTracker) Done() {
+	ot.hist.Observe(float64(time.Now().Sub(ot.start).Microseconds()))
+}
+
+func (om *opMetrics) Track() opTracker {
+	om.count.Inc()
+	return opTracker{hist: om.hist, start: time.Now()}
+}
+
+type instrumentedDB struct {
+	db *pebble.DB
+
+	iterFirstMetrics  *opMetrics
+	iterNextMetrics   *opMetrics
+	iterSeekGEMetrics *opMetrics
+	iterSeekLTMetrics *opMetrics
+
+	dbApplyMetrics       *opMetrics
+	dbGetMetrics         *opMetrics
+	dbSetMetrics         *opMetrics
+	dbDeleteMetrics      *opMetrics
+	dbDeleteRangeMetrics *opMetrics
+	dbLogDataMetrics     *opMetrics
+	dbFlushMetrics       *opMetrics
+	dbCheckpointMetrics  *opMetrics
+
+	batchGetMetrics    *opMetrics
+	batchCommitMetrics *opMetrics
+}
+
+func (idb *instrumentedDB) Get(key []byte) (value []byte, closer io.Closer, err error) {
+	t := idb.dbGetMetrics.Track()
+	defer t.Done()
+	return idb.db.Get(key)
+}
+
+func (idb *instrumentedDB) Set(key, value []byte, o *pebble.WriteOptions) error {
+	t := idb.dbSetMetrics.Track()
+	defer t.Done()
+	return idb.db.Set(key, value, o)
+}
+
+func (idb *instrumentedDB) Delete(key []byte, o *pebble.WriteOptions) error {
+	t := idb.dbDeleteMetrics.Track()
+	defer t.Done()
+	return idb.db.Delete(key, o)
+}
+
+func (idb *instrumentedDB) DeleteRange(start, end []byte, o *pebble.WriteOptions) error {
+	t := idb.dbDeleteRangeMetrics.Track()
+	defer t.Done()
+	return idb.db.DeleteRange(start, end, o)
+}
+
+func (idb *instrumentedDB) LogData(data []byte, opts *pebble.WriteOptions) error {
+	t := idb.dbLogDataMetrics.Track()
+	defer t.Done()
+	return idb.db.LogData(data, opts)
+}
+
+func (idb *instrumentedDB) Close() error {
+	return idb.db.Close()
+}
+
+func (idb *instrumentedDB) EstimateDiskUsage(start, end []byte) (uint64, error) {
+	return idb.db.EstimateDiskUsage(start, end)
+}
+
+func (idb *instrumentedDB) Flush() error {
+	t := idb.dbFlushMetrics.Track()
+	defer t.Done()
+	return idb.db.Flush()
+}
+
+func (idb *instrumentedDB) Metrics() *pebble.Metrics {
+	return idb.db.Metrics()
+}
+
+func (idb *instrumentedDB) NewSnapshot() *pebble.Snapshot {
+	return idb.db.NewSnapshot()
+}
+
+func (idb *instrumentedDB) Compact(start, end []byte, parallelize bool) error {
+	return idb.db.Compact(start, end, parallelize)
+}
+
+func (idb *instrumentedDB) Checkpoint(destDir string, opts ...pebble.CheckpointOption) error {
+	t := idb.dbCheckpointMetrics.Track()
+	defer t.Done()
+	return idb.db.Checkpoint(destDir, opts...)
+}
+
+func (idb *instrumentedDB) Apply(batch Batch, opts *pebble.WriteOptions) error {
+	t := idb.dbApplyMetrics.Track()
+	defer t.Done()
+	return idb.db.Apply(batch.(*instrumentedBatch).batch, opts)
+}
+
+func (idb *instrumentedDB) NewIter(o *pebble.IterOptions) Iterator {
+	iter := idb.db.NewIter(o)
+	return &instrumentedIter{idb, iter}
+}
+
+func (idb *instrumentedDB) NewBatch() Batch {
+	batch := idb.db.NewBatch()
+	return &instrumentedBatch{batch, batch, idb}
+}
+
+func (idb *instrumentedDB) NewIndexedBatch() Batch {
+	batch := idb.db.NewIndexedBatch()
+	return &instrumentedBatch{batch, batch, idb}
+}
+
+func Open(dbDir string, options *pebble.Options) (IPebbleDB, error) {
+	db, err := pebble.Open(dbDir, options)
+	if err != nil {
+		return nil, err
+	}
+
+	opMetrics := func(op string) *opMetrics {
+		return &opMetrics{
+			count: metrics.PebbleCachePebbleOpCount.With(prometheus.Labels{metrics.PebbleOperation: op}),
+			hist:  metrics.PebbleCachePebbleOpLatencyUsec.With(prometheus.Labels{metrics.PebbleOperation: op}),
+		}
+	}
+	idb := &instrumentedDB{
+		db:                   db,
+		iterFirstMetrics:     opMetrics("iter_first"),
+		iterNextMetrics:      opMetrics("iter_next"),
+		iterSeekGEMetrics:    opMetrics("iter_seek_ge"),
+		iterSeekLTMetrics:    opMetrics("iter_seek_lt"),
+		dbApplyMetrics:       opMetrics("apply"),
+		dbGetMetrics:         opMetrics("get"),
+		dbSetMetrics:         opMetrics("set"),
+		dbDeleteMetrics:      opMetrics("delete"),
+		dbDeleteRangeMetrics: opMetrics("delete_range"),
+		dbLogDataMetrics:     opMetrics("log_data"),
+		dbFlushMetrics:       opMetrics("flush"),
+		dbCheckpointMetrics:  opMetrics("checkpoint"),
+		batchGetMetrics:      opMetrics("batch_get"),
+		batchCommitMetrics:   opMetrics("batch_commit"),
+	}
+	return idb, err
 }
 
 // Leaser is an interface implemented by the leaser that allows clients to get
@@ -45,7 +396,7 @@ type Leaser interface {
 }
 
 type leaser struct {
-	db        *pebble.DB
+	db        IPebbleDB
 	waiters   sync.WaitGroup
 	closedMu  sync.Mutex // PROTECTS(closed)
 	closed    bool
@@ -66,7 +417,7 @@ type leaser struct {
 // Additionally, if AcquireSplitLock() is called, the leaser will wait for all
 // all handles to be returned and prevent prevent additional handles from being
 // leased until ReleaseSplitLock() is called.
-func NewDBLeaser(db *pebble.DB) Leaser {
+func NewDBLeaser(db IPebbleDB) Leaser {
 	return &leaser{
 		db:        db,
 		waiters:   sync.WaitGroup{},
@@ -156,7 +507,7 @@ func (r *refCounter) Close() error {
 }
 
 type refCountedDB struct {
-	*pebble.DB
+	IPebbleDB
 	*refCounter
 }
 
@@ -214,7 +565,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func GetCopy(b pebble.Reader, key []byte) ([]byte, error) {
+func GetCopy(b Reader, key []byte) ([]byte, error) {
 	buf, closer, err := b.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
@@ -233,7 +584,7 @@ func GetCopy(b pebble.Reader, key []byte) ([]byte, error) {
 	return val, nil
 }
 
-func LookupProto(iter *pebble.Iterator, key []byte, pb proto.Message) error {
+func LookupProto(iter Iterator, key []byte, pb proto.Message) error {
 	if !iter.SeekGE(key) || bytes.Compare(iter.Key(), key) != 0 {
 		return status.NotFoundErrorf("key %q not found", key)
 	}
