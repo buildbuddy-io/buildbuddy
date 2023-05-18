@@ -1517,14 +1517,13 @@ var (
 		EventName,
 	})
 
-	HealthCheckStatusCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	HealthCheck = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "health_check",
-		Name:      "status_count",
-		Help:      "Counter for health checks reporting healthy vs unhealthy.",
+		Name:      "status",
+		Help:      "Health check status.",
 	}, []string{
 		HealthCheckName,
-		StatusHumanReadableLabel,
 	})
 
 	RPCsHandledTotalByQuotaKey = promauto.NewCounterVec(prometheus.CounterOpts{

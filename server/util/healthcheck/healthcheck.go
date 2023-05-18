@@ -205,16 +205,14 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 			statusDataMu.Unlock()
 
 			if err != nil {
-				metrics.HealthCheckStatusCount.With(prometheus.Labels{
-					metrics.HealthCheckName:          name,
-					metrics.StatusHumanReadableLabel: "unhealthy",
+				metrics.HealthCheck.With(prometheus.Labels{
+					metrics.HealthCheckName: name,
 				}).Inc()
 				return status.UnavailableErrorf("Service %s is unhealthy: %s", name, err)
 			}
 
-			metrics.HealthCheckStatusCount.With(prometheus.Labels{
-				metrics.HealthCheckName:          name,
-				metrics.StatusHumanReadableLabel: "healthy",
+			metrics.HealthCheck.With(prometheus.Labels{
+				metrics.HealthCheckName: name,
 			}).Inc()
 			return nil
 		})
