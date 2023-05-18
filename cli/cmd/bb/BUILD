@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/bb",
     visibility = ["//visibility:private"],
     deps = [
+        "//cli/add",
         "//cli/analyze",
         "//cli/arg",
         "//cli/ask",
