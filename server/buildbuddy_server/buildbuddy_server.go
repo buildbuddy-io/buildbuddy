@@ -1185,10 +1185,7 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 // them up from our cache servers using the bytestream API or pulling them
 // from blobstore.
 func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.serveUsingParams(w, r, r.URL.Query())
-}
-
-func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Request, params url.Values) {
+	params := r.URL.Query()
 	var code int
 	var err error
 	if params.Get("artifact") != "" {
@@ -1196,20 +1193,16 @@ func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Reque
 	} else if params.Get("bytestream_url") != "" {
 		// bytestream request
 		code, err = s.serveBytestream(r.Context(), w, params)
+		if err != nil && code == http.StatusNotFound {
+			// Fall back to blobstore if object is not in cache
+			code, err = s.serveArtifact(r.Context(), w, params)
+		}
 	} else {
-		http.Error(w, `One of "artifact" or "bytestream_url" query param is required`, http.StatusBadRequest)
-		return
+		code = http.StatusBadRequest
+		err = status.FailedPreconditionError(`One of "artifact" or "bytestream_url" query param is required`)
 	}
 	if err != nil {
-		if code != http.StatusNotFound {
-			http.Error(w, err.Error(), code)
-			return
-		}
-		// Attempt to fall back gracefully if the specified file is not found
-		code, err = s.serveArtifact(r.Context(), w, params)
-		if err != nil {
-			http.Error(w, err.Error(), code)
-		}
+		http.Error(w, err.Error(), code)
 	}
 }
 
@@ -1251,8 +1244,6 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
-	case "cache":
-		fallthrough
 	case "": // fallback for cache artifact
 		lookup, err := parseByteStreamURL(params.Get("bytestream_url"), params.Get("filename"))
 		if err != nil {

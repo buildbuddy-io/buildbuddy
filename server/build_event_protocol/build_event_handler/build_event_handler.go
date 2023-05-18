@@ -94,7 +94,7 @@ var (
 			"local cache stats to the backing storage, before finalizing stats in the DB.")
 )
 
-var cacheArtifactsBucket = path.Join("artifacts", "cache")
+var cacheArtifactsBlobstorePath = path.Join("artifacts", "cache")
 
 type PersistArtifacts struct {
 	URIs              []*url.URL
@@ -440,7 +440,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			log.CtxErrorf(ctx, "Unsupported scheme to persist artifact: %s", uri.Path)
 			continue
 		}
-		fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBucket, uri.Path)
+		fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
 		if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
 			log.CtxError(ctx, err.Error())
 		}
@@ -524,7 +524,7 @@ func persistTestActionOutputs(ctx context.Context, env environment.Env, inv *inp
 			if resultURI.Scheme != "bytestream" {
 				continue
 			}
-			fullPath := path.Join(inv.GetInvocationId(), cacheArtifactsBucket, resultURI.Path)
+			fullPath := path.Join(inv.GetInvocationId(), cacheArtifactsBlobstorePath, resultURI.Path)
 			if err := persistArtifact(ctx, env, resultURI, fullPath); err != nil {
 				log.Errorf(
 					"Error persisting '%s' for target '%s' for invocation %s: %s",
