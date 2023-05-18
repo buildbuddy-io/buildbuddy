@@ -102,6 +102,7 @@ func HandleAdd(args []string) (int, error) {
 	return 0, nil
 }
 
+// TODO(siggisim): Support specifying a version.
 func fetchModuleOrDisambiguate(module string) (string, *RegistryResponse, error) {
 	res, err := fetch(module)
 	if err != nil {
