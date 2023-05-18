@@ -31,6 +31,7 @@ import (
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
 	"gorm.io/driver/mysql"
+	_ "gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 
 	// Allow for "cloudsql" type connections that support workload identity.
@@ -44,6 +45,7 @@ import (
 
 	awssession "github.com/aws/aws-sdk-go/aws/session"
 	gomysql "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	gosqlite "github.com/mattn/go-sqlite3"
 )
 
