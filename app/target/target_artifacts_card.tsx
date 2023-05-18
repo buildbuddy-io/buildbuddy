@@ -77,6 +77,15 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     });
   }
 
+  makeArtifactViewUri(baseUri: string, outputFilename: string): string {
+    let params: Record<string, string> = {
+      bytestream_url: baseUri,
+      invocation_id: this.props.invocationId,
+      filename: outputFilename,
+    };
+    return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}`;
+  }
+
   handleArtifactClicked(outputUri: string, outputFilename: string, event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
     if (!outputUri) return false;
@@ -130,11 +139,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                     {output.name}
                   </a>
                   {output.uri?.startsWith("bytestream://") && (
-                    <a
-                      className="artifact-view"
-                      href={`/code/buildbuddy-io/buildbuddy/?bytestream_url=${encodeURIComponent(
-                        output.uri
-                      )}&invocation_id=${this.props.invocationId}&filename=${output.name}`}>
+                    <a className="artifact-view" href={this.makeArtifactViewUri(output.uri, output.name)}>
                       <FileCode /> View
                     </a>
                   )}

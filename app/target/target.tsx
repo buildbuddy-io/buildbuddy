@@ -314,7 +314,7 @@ export default class TargetComponent extends React.Component<Props> {
                 <TargetArtifactsCardComponent
                   name={this.generateRunName(result.buildEvent?.id?.testResult ?? {})}
                   invocationId={this.props.invocationId}
-                  files={result.buildEvent!.testResult!.testActionOutput as build_event_stream.File[]}
+                  files={result.buildEvent?.testResult?.testActionOutput as build_event_stream.File[]}
                 />
               </div>
             ))}

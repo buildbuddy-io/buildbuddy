@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 
@@ -1184,10 +1185,7 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 // them up from our cache servers using the bytestream API or pulling them
 // from blobstore.
 func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.serveUsingParams(w, r, r.URL.Query())
-}
-
-func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Request, params url.Values) {
+	params := r.URL.Query()
 	var code int
 	var err error
 	if params.Get("artifact") != "" {
@@ -1195,26 +1193,16 @@ func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Reque
 	} else if params.Get("bytestream_url") != "" {
 		// bytestream request
 		code, err = s.serveBytestream(r.Context(), w, params)
+		if err != nil && code == http.StatusNotFound {
+			// Fall back to blobstore if object is not in cache
+			code, err = s.serveArtifact(r.Context(), w, params)
+		}
 	} else {
-		http.Error(w, `One of "artifact" or "bytestream_url" query param is required`, http.StatusBadRequest)
-		return
+		code = http.StatusBadRequest
+		err = status.FailedPreconditionError(`One of "artifact" or "bytestream_url" query param is required`)
 	}
 	if err != nil {
-		if code != http.StatusNotFound {
-			http.Error(w, err.Error(), code)
-			return
-		}
-		// Attempt to fall back gracefully if the specified file is not found and
-		// a fallback is specified.
-		if fallback, parseErr := url.Parse(params.Get("with_fallback")); parseErr != nil {
-			http.Error(w, parseErr.Error(), http.StatusBadRequest)
-		} else if fallback.RawQuery == "" {
-			http.Error(w, fmt.Sprintf("Fallback without query is invalid: %v", fallback), http.StatusBadRequest)
-		} else {
-			q := fallback.Query()
-			q.Del("with_fallback") // Only fall back once.
-			s.serveUsingParams(w, r, q)
-		}
+		http.Error(w, err.Error(), code)
 	}
 }
 
@@ -1234,7 +1222,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
 		}
 	}
-	switch params.Get("artifact") {
+	switch artifact := params.Get("artifact"); artifact {
 	case "buildlog":
 		attempt, err := strconv.ParseUint(params.Get("attempt"), 10, 64)
 		if err != nil {
@@ -1256,16 +1244,19 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
-	case "timing_profile":
-		name := params.Get("name")
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/timing_profile/"+name)
+	case "": // fallback for cache artifact
+		lookup, err := parseByteStreamURL(params.Get("bytestream_url"), params.Get("filename"))
 		if err != nil {
-			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", name, iid, err)
+			return http.StatusBadRequest, status.FailedPreconditionErrorf("Could not parse bytestream_url '%s' for cache artifact.", params.Get("bytestream_url"))
+		}
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "cache", lookup.URL.Path))
+		if err != nil {
+			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", lookup.Filename, iid, err)
 			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
 		}
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", name))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 		w.Header().Set("Content-Type", "application/octet-stream")
-		if strings.HasSuffix(name, ".gz") {
+		if strings.HasSuffix(lookup.Filename, ".gz") {
 			w.Header().Set("Content-Encoding", "gzip")
 		}
 		w.Write(b)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -92,6 +93,13 @@ var (
 		"The time allowed for all metrics collectors across all apps to flush their "+
 			"local cache stats to the backing storage, before finalizing stats in the DB.")
 )
+
+var cacheArtifactsBlobstorePath = path.Join("artifacts", "cache")
+
+type PersistArtifacts struct {
+	URIs              []*url.URL
+	TestActionOutputs bool
+}
 
 type BuildEventHandler struct {
 	env              environment.Env
@@ -192,9 +200,9 @@ type recordStatsTask struct {
 	createdAt time.Time
 	// files contains a mapping of file digests to file name metadata for files
 	// referenced in the BEP.
-	files              map[string]*build_event_stream.File
-	artifactsToPersist map[string]*url.URL
-	invocationStatus   inspb.InvocationStatus
+	files            map[string]*build_event_stream.File
+	persist          *PersistArtifacts
+	invocationStatus inspb.InvocationStatus
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -224,7 +232,7 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 
 // Enqueue enqueues a task for the given invocation's stats to be recorded
 // once they are available.
-func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation, artifactsToPersist map[string]*url.URL) {
+func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation, persist *PersistArtifacts) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -245,10 +253,10 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 			attempt: invocation.Attempt,
 			jwt:     jwt,
 		},
-		createdAt:          time.Now(),
-		files:              scorecard.ExtractFiles(invocation),
-		invocationStatus:   invocation.GetInvocationStatus(),
-		artifactsToPersist: artifactsToPersist,
+		createdAt:        time.Now(),
+		files:            scorecard.ExtractFiles(invocation),
+		invocationStatus: invocation.GetInvocationStatus(),
+		persist:          persist,
 	}
 	select {
 	case r.tasks <- req:
@@ -408,35 +416,33 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	default:
 		alert.UnexpectedEvent(
 			"webhook_channel_buffer_full",
-			"Failed to notify webhook: channel buffer is full")
+			"Failed to notify webhook: channel buffer is full",
+		)
 	}
 
-	for path, uri := range task.artifactsToPersist {
+	if auth := r.env.GetAuthenticator(); auth != nil {
+		ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
+	}
+	if task.persist.TestActionOutputs {
+		// TODO (zoey): Switch to streaming build events to avoid loading the whole BES into memory
+		inv, err := LookupInvocation(r.env, ctx, task.invocationJWT.id)
+		if err != nil {
+			log.CtxErrorf(ctx, "LookupInvocation failed when attempting to persist test logs: %s", err)
+		}
+		persistTestActionOutputs(ctx, r.env, inv, "test_action_outputs")
+	}
+	for _, uri := range task.persist.URIs {
 		if uri == nil {
 			// no artifact exists to persist
 			continue
 		}
-		path = task.invocationJWT.id + "/artifacts/" + path
-		if auth := r.env.GetAuthenticator(); auth != nil {
-			ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
-		}
-		w, err := r.env.GetBlobstore().Writer(ctx, path)
-		if err != nil {
-			log.CtxErrorf(ctx, "Failed to open writer to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
+		if uri.Scheme != "bytestream" {
+			log.CtxErrorf(ctx, "Unsupported scheme to persist artifact: %s", uri.Path)
 			continue
 		}
-		if err := bytestream.StreamBytestreamFile(ctx, r.env, uri, w); err != nil {
-			log.CtxErrorf(ctx, "Failed to stream to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
-			w.Close()
-			continue
-		}
-		if err := w.Commit(); err != nil {
-			log.CtxErrorf(ctx, "Failed to commit to blobstore for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
-			w.Close()
-			continue
-		}
-		if err := w.Close(); err != nil {
-			log.CtxErrorf(ctx, "Failed to close blobstore writer for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
+		fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
+		if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
+			log.CtxError(ctx, err.Error())
 		}
 	}
 }
@@ -462,6 +468,75 @@ func (r *statsRecorder) Stop() {
 	}
 
 	close(r.onStatsRecorded)
+}
+
+func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, path string) error {
+	w, err := env.GetBlobstore().Writer(ctx, path)
+	if err != nil {
+		return status.WrapErrorf(
+			err,
+			"Failed to open writer to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := bytestream.StreamBytestreamFile(ctx, env, uri, w); err != nil {
+		w.Close()
+		return status.WrapErrorf(
+			err,
+			"Failed to stream to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := w.Commit(); err != nil {
+		w.Close()
+		return status.WrapErrorf(
+			err,
+			"Failed to commit to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := w.Close(); err != nil {
+		return status.WrapErrorf(
+			err,
+			"Failed to close blobstore writer for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	return nil
+}
+
+func persistTestActionOutputs(ctx context.Context, env environment.Env, inv *inpb.Invocation, subpath string) {
+	for _, e := range inv.GetEvent() {
+		p, ok := e.BuildEvent.Payload.(*build_event_stream.BuildEvent_TestResult)
+		if !ok {
+			continue
+		}
+		for _, f := range p.TestResult.TestActionOutput {
+			resultURI, err := url.Parse(f.GetUri())
+			if err != nil {
+				log.Errorf("Error parsing URI for test result: %s", f.GetUri())
+				continue
+			}
+			if resultURI.Scheme != "bytestream" {
+				continue
+			}
+			fullPath := path.Join(inv.GetInvocationId(), cacheArtifactsBlobstorePath, resultURI.Path)
+			if err := persistArtifact(ctx, env, resultURI, fullPath); err != nil {
+				log.Errorf(
+					"Error persisting '%s' for target '%s' for invocation %s: %s",
+					f.Name,
+					e.BuildEvent.Id.GetTestResult().Label,
+					inv.GetInvocationId(),
+					err.Error(),
+				)
+				continue
+			}
+		}
+	}
 }
 
 type notifyWebhookTask struct {
@@ -754,15 +829,18 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
-	artifactsToPersist := make(map[string]*url.URL, 0)
-	if e.beValues.ProfileURI() != nil && e.beValues.ProfileURI().Scheme == "bytestream" {
-		artifactsToPersist["timing_profile/"+e.beValues.ProfileName()] = e.beValues.ProfileURI()
+	persist := &PersistArtifacts{
+		URIs:              make([]*url.URL, 0),
+		TestActionOutputs: e.beValues.HasBytestreamTestActionOutputs(),
+	}
+	if e.beValues.BytestreamProfileURI() != nil {
+		persist.URIs = append(persist.URIs, e.beValues.BytestreamProfileURI())
 	}
 
 	e.statsRecorder.Enqueue(
 		ctx,
 		invocation,
-		artifactsToPersist,
+		persist,
 	)
 	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil

@@ -75,13 +75,14 @@ type Accumulator interface {
 // memory for the life of the stream, so it should not save every single event
 // in full (that data lives in blobstore).
 type BEValues struct {
-	valuesMap               map[string]string
-	sawWorkspaceStatusEvent bool
-	sawBuildMetadataEvent   bool
-	sawFinishedEvent        bool
-	buildStartTime          time.Time
-	profileURI              *url.URL
-	profileName             string
+	valuesMap                      map[string]string
+	sawWorkspaceStatusEvent        bool
+	sawBuildMetadataEvent          bool
+	sawFinishedEvent               bool
+	buildStartTime                 time.Time
+	bytestreamProfileURI           *url.URL
+	profileName                    string
+	hasBytestreamTestActionOutputs bool
 
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
@@ -123,11 +124,18 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 			if uri := toolLog.GetUri(); uri != "" {
 				if url, err := url.Parse(uri); err != nil {
 					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
-				} else {
-					v.profileURI = url
-					v.profileName = toolLog.Name
+				} else if url.Scheme == "bytestream" {
+					v.bytestreamProfileURI = url
 				}
 				break
+			}
+		}
+	case *build_event_stream.BuildEvent_TestResult:
+		for _, f := range p.TestResult.TestActionOutput {
+			if u, err := url.Parse(f.GetUri()); err != nil {
+				log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
+			} else if u.Scheme == "bytestream" {
+				v.hasBytestreamTestActionOutputs = true
 			}
 		}
 	}
@@ -210,12 +218,12 @@ func (v *BEValues) BuildFinished() bool {
 	return v.sawFinishedEvent
 }
 
-func (v *BEValues) ProfileURI() *url.URL {
-	return v.profileURI
+func (v *BEValues) BytestreamProfileURI() *url.URL {
+	return v.bytestreamProfileURI
 }
 
-func (v *BEValues) ProfileName() string {
-	return v.profileName
+func (v *BEValues) HasBytestreamTestActionOutputs() bool {
+	return v.hasBytestreamTestActionOutputs
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
