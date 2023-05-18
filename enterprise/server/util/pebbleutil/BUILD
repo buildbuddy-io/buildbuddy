@@ -8,9 +8,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil",
     deps = [
         "//server/interfaces",
+        "//server/metrics",
         "//server/util/log",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
     ],
 )

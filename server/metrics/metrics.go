@@ -172,6 +172,9 @@ const (
 
 	/// Pebble DB level number.
 	PebbleLevel = "level"
+
+	/// Pebble DB operation type.
+	PebbleOperation = "pebble_op"
 )
 
 const (
@@ -1979,6 +1982,25 @@ var (
 		Help:      "The number of sstables ingested into to this level.",
 	}, []string{
 		PebbleLevel,
+	})
+
+	PebbleCachePebbleOpCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_op_count",
+		Help:      "The number of operations performed against the pebble database.",
+	}, []string{
+		PebbleOperation,
+	})
+
+	PebbleCachePebbleOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_op_latency_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 30*time.Second, 10),
+		Help:      "The latency of operations performed against the pebble database, in microseconds.",
+	}, []string{
+		PebbleOperation,
 	})
 )
 
