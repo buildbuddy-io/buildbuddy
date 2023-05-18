@@ -13,7 +13,7 @@ import (
 
 func TestCloseLeasedDB(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, &pebble.Options{})
+	db, err := pebbleutil.Open(rootDir, &pebble.Options{})
 	require.NoError(t, err)
 
 	leaser := pebbleutil.NewDBLeaser(db)
