@@ -207,13 +207,13 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 			if err != nil {
 				metrics.HealthCheck.With(prometheus.Labels{
 					metrics.HealthCheckName: name,
-				}).Inc()
+				}).Set(0)
 				return status.UnavailableErrorf("Service %s is unhealthy: %s", name, err)
 			}
 
 			metrics.HealthCheck.With(prometheus.Labels{
 				metrics.HealthCheckName: name,
-			}).Inc()
+			}).Set(1)
 			return nil
 		})
 	}
