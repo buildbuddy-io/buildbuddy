@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
-        "//enterprise/server/util/pebbleutil",
+        "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -29,7 +29,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
-        "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_docker_go_units//:go-units",
         "@com_github_elastic_gosigar//:gosigar",
         "@com_github_jonboulle_clockwork//:clockwork",

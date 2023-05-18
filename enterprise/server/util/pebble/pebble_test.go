@@ -1,22 +1,21 @@
-package pebbleutil_test
+package pebble_test
 
 import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
 
 func TestCloseLeasedDB(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	db, err := pebbleutil.Open(rootDir, &pebble.Options{})
+	db, err := pebble.Open(rootDir, &pebble.Options{})
 	require.NoError(t, err)
 
-	leaser := pebbleutil.NewDBLeaser(db)
+	leaser := pebble.NewDBLeaser(db)
 	require.NotNil(t, leaser)
 
 	var leaserCloseTime time.Time
