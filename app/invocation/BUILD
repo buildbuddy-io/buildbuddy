@@ -68,6 +68,7 @@ ts_library(
         "//app/components/tooltip",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:invocation_execution_util",
         "//app/invocation:invocation_model",
         "//app/router",
         "//app/service:rpc_service",
