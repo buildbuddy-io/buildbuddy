@@ -80,7 +80,7 @@ func JoinTags(tags []*invocation.Invocation_Tag) (string, error) {
 // This *does not* trim whitespace and therefore must not be used for
 // general-purpose conversion--it's taking a shortcut because we trust that the
 // DB already has properly-trimmed tags.
-func ConvertDbTagsToOlap(tags string) []string {
+func ConvertDBTagsToOLAP(tags string) []string {
 	if len(tags) == 0 {
 		return []string{}
 	}
