@@ -69,6 +69,11 @@ go_test(
     name = "firecracker_test",
     timeout = "long",
     srcs = ["firecracker_test.go"],
+    exec_properties = {
+        "Pool": "bare",
+        "use-self-hosted-executor": "true",
+        "container-image": "none",
+    },
     tags = [
         "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
         "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
