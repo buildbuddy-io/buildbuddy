@@ -1481,6 +1481,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		TotalDownloadUsec:                 i.TotalDownloadUsec,
 		TotalUploadUsec:                   i.TotalUploadUsec,
 		TotalCachedActionExecUsec:         i.TotalCachedActionExecUsec,
+		TotalUncachedActionExecUsec:       i.TotalUncachedActionExecUsec,
 		DownloadThroughputBytesPerSecond:  i.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:    i.UploadThroughputBytesPerSecond,
 	}
