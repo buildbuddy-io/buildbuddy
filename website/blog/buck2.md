@@ -13,29 +13,29 @@ tags: [buck2, engineering]
 
 # Buck2 unboxing
 
-Recently Meta has announced the official release of Buck2, their official build tool that was rewritten in Rust.
+Recently Meta announced the release of Buck2, their official build tool that was rewritten in Rust.
 I got a chance to try it and integrate it with BuildBuddy's Remote Cache and Remote Build Execution offerings.
 
 ![](../static/img/blog/buck2.jpg)
 
-Here is the initial impression I have after a week of using Buck2.
+Here are the initial impressions I have after a week of using Buck2.
 
 <!-- truncate -->
 
 ## Overview
 
-Similar to Buck(1) and Bazel, Buck2 is a [artifact-based](https://bazel.build/basics/artifact-based-builds) build tool that operates on a large graph of dependencies.
+Similar to Buck(1) and Bazel, Buck2 is an [artifact-based](https://bazel.build/basics/artifact-based-builds) build tool that operates on a large graph of dependencies.
 
 Buck2 was rewritten from scratch in Rust while providing many backward compatibility features with Buck(1).
-In the [official website of Buck2](https://buck2.build/docs/why/), Meta touted it to be:
+On the [official website of Buck2](https://buck2.build/docs/why/), Meta touted it to be:
 
 1. Remote Execution first
 2. Dynamic graph computation engine
-3. A single build phases
+3. A single build phase
 
 So how true are these claims?
 Is Buck2 going to replace Bazel?
-Is this the right tool for your need?
+Is this the right tool for your needs?
 
 Let's dive in!
 
@@ -44,8 +44,8 @@ Let's dive in!
 #### Incredible CLI UX
 
 Right out of the box, Buck2 feels incredibly responsive.
-The command line is ridiculously fast compared to the existing Bazel 6.2.0.
-Here, we are using [Hyperfine](https://github.com/sharkdp/hyperfine) to benchmark the 2 build tools.
+The command line is ridiculously fast compared to Bazel 6.2.0.
+Here, we are using [Hyperfine](https://github.com/sharkdp/hyperfine) to benchmark the two build tools.
 
 ```bash
 > hyperfine 'buck2 --version' --shell=none --warmup 3 --runs 20
@@ -159,7 +159,7 @@ OPTIONS:
             = more info about errors; 3 = more info about everything [default: 1]
 ```
 
-The build progress library was custom-made for Buck2 and could sort and color-code slower actions.
+The build progress library was custom-made for Buck2 and can sort and color-code slower actions.
 Here is a quick sped up demo:
 
 ![](../static/img/blog/buck2-success.gif)
@@ -258,11 +258,11 @@ Our setup is a build graph composed of 4 stages:
 
 - Stage 3: Concat all "z" targets (1 build target)
 
-- Stage 4: validate stage 3 output with a test (1 test target)
+- Stage 4: Validate stage 3 output with a test (1 test target)
 
 Before each action, we sleep a random duration between 0 and 4 seconds to make the simulation a bit closer to real-world build.
 
-We also inject this sleep value into our test to help validate testing features down the line.
+We also inject this sleep value into our test to help validate testing features down the line:
 
 ```bash
 > cat test.sh
@@ -280,10 +280,10 @@ else
 fi
 ```
 
-With a total of 2002 user-defined targets and 4 stages, assuming a perfect concurrency,
-that should only result in a worst-case 16 seconds, average 8 seconds sleep overhead.
+With a total of 2002 user-defined targets and 4 stages, assuming perfect concurrency,
+it should result in a worst-case 16 seconds, average 8 seconds, sleep overhead.
 
-Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compares.
+Let's use Bazel's latest release, 6.2.0, as our baseline and see how Buck2 compares.
 
 1. Local Execution
 
@@ -295,10 +295,10 @@ Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compare
    build:local --local_ram_resources='HOST_RAM*2.0'
    ```
 
-   Worth to note that Bazel executes actions in a sandbox by default, so `--strategy=local` is used here to explicitly disable sandboxing.
+   It's worth noting that Bazel executes actions in a sandbox by default, so `--strategy=local` is used here to explicitly disable sandboxing.
    Bazel would also use your CPU and RAM to estimate the maximum concurrency for your machine, here we also override it with `--jobs=200`
    and trick Bazel into thinking that we have way more CPU and RAM than we have.
-   This allows us to hit the 200 concurrent actions mark.
+   This allows us to hit the 200 concurrent actions mark:
 
    ```bash
    > hyperfine --prepare 'bazel clean' --warmup 1 'bazel test --config=local //...'
@@ -307,7 +307,7 @@ Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compare
      Range (min … max):   65.179 s … 66.310 s    10 runs
    ```
 
-   To ensure fairness, we also set Buck2 execution concurrency to the same value as Bazel.
+   To ensure fairness, we also set Buck2 execution concurrency to the same value as Bazel:
 
    ```bash
    > tail -2 .buckconfig
@@ -315,7 +315,7 @@ Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compare
    threads = 200
    ```
 
-   Here, BUCK starlark API does slightly differ from Bazel so some small modifications were needed.
+   Here, Buck's Starlark API differs slightly from Bazel's, so some small modifications were needed.
    For example:
 
    ```diff
@@ -347,7 +347,7 @@ Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compare
 
 2. Remote Execution
 
-   Using BuildBuddy as the RBE backend should be as simple as copying the configurations from the website.
+   Using BuildBuddy as the RBE backend should be as simple as copying the configurations from the website:
 
    ```
    build:remote --jobs=600
@@ -360,7 +360,7 @@ Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compare
    build:remote --remote_header=x-buildbuddy-api-key=<redacted>
    ```
 
-   With that set, let's check the result
+   With that set, let's check the result:
 
    ```bash
    # With remote cache
@@ -382,7 +382,7 @@ Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compare
    ```
 
    17 seconds is amazing compared to the local execution time of 74 seconds.
-   It's a 73% time saved!
+   It's 73% faster!
 
    But what about Buck2?
    Well setting it up is as simple as copying the provided configurations in [Buck2's BuildBuddy Example](https://github.com/facebook/buck2/tree/main/examples/remote_execution/buildbuddy)
@@ -398,7 +398,7 @@ Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compare
    http_headers = x-buildbuddy-api-key:<redacted>
    ```
 
-   Let's run it.
+   Let's run it:
 
    ```bash
    # With remote cache
@@ -420,7 +420,7 @@ Let's use Bazel latest release, 6.2.0, as our baseline and see how Buck2 compare
    so I did apply a workaround by invalidating all the `x` and `y` actions with a random value instead.
 
    Regardless to say, the performance was very impressive.
-   The Remote Build Execution client of Buck2 is not as configurable as Bazel so it was harder to tune.
+   The Remote Build Execution client of Buck2 is not as configurable as Bazel, so it was harder to tune.
    I expect it will make builds perform much better in the future.
 
 #### Easy to contribute
@@ -429,13 +429,13 @@ Seriously, Buck2 code base is a blast to work with.
 Unlike Bazel, which was written in a mix of C++ and Java using Google's homegrown frameworks,
 Buck2 was built with a single language: Rust!
 
-Not only that the code base could be built using Buck2, but it could also be built using Cargo and
-is completely compatible with Rust Analyzer(Rust's Language Server).
+Not only can the code base be built using Buck2, but it could also be built using Cargo, and
+is completely compatible with Rust Analyzer (Rust's Language Server).
 It has been a long time since I could open the code base of a build tool and have "Go to definitions"
 and "Find references" work out of the box.
 
 The Buck2 team in Meta has been quite engaging thus far.
-It often takes them less than a week to response to my Github Issues / Pull Requests.
+It often takes them less than a week to respond to my GitHub Issues / Pull Requests.
 And most of the time, I get a response within a day.
 
 Diving into Buck2 and its Rust code base is... addictive to me. 😅
@@ -454,9 +454,9 @@ describes multiple phases and stages inside a typical build.
 
 ![](../static/img/blog/buck2_architecture.png)
 
-There seems to be 5 Phases acting as transitions between 5 states of Buck2 dynamic build graph, Dice.
+There seems to be 5 Phases acting as transitions between 5 states of Buck2 dynamic build graph, [DICE](https://github.com/facebook/buck2/tree/main/dice).
 
-The good thing about Buck2 is that non of these phases are "blocking" and thus, multiple targets could
+The good thing about Buck2 is that none of these phases are "blocking", and thus multiple targets could
 transition through different states in great parallelization. Bazel is also trying to work toward this
 setup with the recently announced [SkyMeld project](https://www.youtube.com/watch?v=IEJLHNNRP9U&list=PLxNYxgaZ8RsdH4GCIZ69dzxQCOPyuNlpF&index=10).
 
@@ -465,7 +465,7 @@ setup with the recently announced [SkyMeld project](https://www.youtube.com/watc
 First of all, because Buck2 does not implement Bazel's Build Event Stream protocol (not part of Remote Execution API),
 we are not able to integrate with it to display your test results and provide you with sweet cache hit/miss analysis as we have with Bazel.
 
-Buck2 does come with a proto-defined set of BuckEvent data.
+Buck2 does come with a proto-defined set of `BuckEvent` data.
 Currently, these log-like data are stored locally under `buck-out/log` and could be interacted with using troubleshooting commands such as `buck2 what-failed`.
 
 Internally in Meta, these log data are sent to their [message queue system Scribe](https://engineering.fb.com/2019/10/07/data-infrastructure/scribe/) using Thrift RPC, which is consumed by their Telemetry Data platform [Scuba](https://research.facebook.com/publications/scuba-diving-into-data-at-facebook/).
@@ -473,7 +473,7 @@ However, there is no open-source implementation equivalent and I created [buck2/
 
 #### No Repository Phase
 
-In Bazel, external dependencies to the build is prepared before build execution happens in the "Repository Phase".
+In Bazel, external dependencies to the build are prepared before build execution happens, in the "Repository Phase".
 
 Buck2 is touted to be a single phases build tool, so how does it manage 3rd party dependencies then?
 Currently, there are only a limited set of options:
@@ -485,21 +485,21 @@ Currently, there are only a limited set of options:
 
 2. Vendor
    Since the majority of Buck2 is written in Rust, the companion tool **Reindeer** helps you vendor all
-   Cargo external packages into the repository and set up appropriate BUCK files for them.
-   This is not a problem for Meta internally as their custom monorepo and virtual file system [Sapling](https://sapling-scm.com/),
+   Cargo external packages into the repository and set up appropriate `BUCK` files for them.
+   This is not a problem for Meta internally, with their custom monorepo and virtual file system [Sapling](https://sapling-scm.com/),
    but it should be a huge problem for Git repos and code review systems in the open-source world.
 
 3. Anon target and dynamic outputs
    Although there is no repository phase, you could still define `http_archive` to have external downloads happen during Buck2 build execution.
    However, you will not be able to export build targets out of these newly downloaded archives easily.
-   Instead of the Bazel approach which let you run some commands to generate BUILD files,
+   Instead of the Bazel approach which lets you run some commands to generate `BUILD` files,
    Buck2 provides the complicated anon target, sub-targets, and dynamic outputs APIs in Starlark for you to accomplish the same thing.
-   However, there are very limited documentation and examples of how these APIs work.
+   However, there is very limited documentation and examples of how these APIs work.
 
 #### Complicated testing abstraction
 
-Unlink Bazel which treats tests as another build action to be executed at the end of the graph,
-Buck2 took this to a whole new level by introducing a new RPC to integrate Buck2 with their internal testing platform [TPX](https://buck2.build/docs/rule_authors/test_execution/)
+Unlike Bazel, which treats tests as another build action to be executed at the end of the graph,
+Buck2 took this to a whole new level by introducing a new RPC to integrate Buck2 with their internal testing platform [TPX](https://buck2.build/docs/rule_authors/test_execution/).
 
 Because TPX is in charge of coordinating test executions on various platforms and collecting related test outputs data,
 the set of APIs that define integration between Buck2 and TPX is also quite featureful.
@@ -511,19 +511,19 @@ Because of this reason, there is no test caching in Buck2 by default as the test
 
 There are several pain points I experienced while testing out Buck2. They range from small annoyances to rendering the tool completely un-usable 😓:
 
-- `http_archive` does not work from within anon target. Fixed in [buck2/commit/370cd4d](https://github.com/facebook/buck2-prelude/commit/370cd4d8b2cd002e0f794b91520febcab289b7d0)
+- `http_archive` does not work from within anon target. Fixed in [buck2/commit/370cd4d](https://github.com/facebook/buck2-prelude/commit/370cd4d8b2cd002e0f794b91520febcab289b7d0).
 
-- All Go rules are not usable without a standard library to compile/link against. Reported in [buck2/issue/240](https://github.com/facebook/buck2/issues/240)
+- All Go rules are not usable without a standard library to compile/link against. Reported in [buck2/issue/240](https://github.com/facebook/buck2/issues/240).
 
-- Lack of documentation for `.buckconfig` keys and default values. Reported in [buck2/issue/152](https://github.com/facebook/buck2/issues/152)
+- Lack of documentation for `.buckconfig` keys and default values. Reported in [buck2/issue/152](https://github.com/facebook/buck2/issues/152).
 
-- No local cache for external downloads (leading to re-download happening on a Buck Daemon reset). Reported in [buck2/issue/246](https://github.com/facebook/buck2/issues/246)
+- No local cache for external downloads (leading to re-download happening on a Buck Daemon reset). Reported in [buck2/issue/246](https://github.com/facebook/buck2/issues/246).
 
-- Terminal UI reported the wrong value for actions counts. Reported in [buck2/issue/251](https://github.com/facebook/buck2/issues/251)
+- Terminal UI reported the wrong value for actions counts. Reported in [buck2/issue/251](https://github.com/facebook/buck2/issues/251).
 
-- Remote Execution does not have symlinks support [buck2/issue/222](https://github.com/facebook/buck2/issues/222)
+- Remote Execution does not have symlinks support [buck2/issue/222](https://github.com/facebook/buck2/issues/222).
 
-- Simply crash and not usable [buck2/issue/257](https://github.com/facebook/buck2/issues/257) but fixed with [buck2/commit/7947156](https://github.com/facebook/buck2/commit/79471567dd5e05f4035515c697e3fb9ef78622ac)
+- Simply crash and not usable [buck2/issue/257](https://github.com/facebook/buck2/issues/257), but fixed with [buck2/commit/7947156](https://github.com/facebook/buck2/commit/79471567dd5e05f4035515c697e3fb9ef78622ac).
 
 ## The verdict
 
@@ -554,10 +554,10 @@ I would say _not yet_!
 
 - Users are expected to be hands-on with the code base. If you don't know Rust... well you better learn it first.
 
-- Lack of build rules and toolings for typical use cases: building a container image, a typescript project, a go binary... is not possible just yet.
+- Lack of build rules and toolings for typical use cases: building a container image, a typescript project, a go binary... are not possible just yet.
 
 My conclusion is that Buck2 is exciting!
-However, today, it's still young and early to replace typical enterprise use cases.
+However, today, it's still young and too early to replace typical enterprise use cases.
 I hope the current excitement could grow a community and ecosystem around Buck2 sustainably to further drive the tool to maturity.
 
 In the meantime, I have created a repository to collect [all Buck2-related resources here](https://github.com/sluongng/awesome-buck2).
