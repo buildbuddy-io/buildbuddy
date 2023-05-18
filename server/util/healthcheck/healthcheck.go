@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -203,8 +205,17 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 			statusDataMu.Unlock()
 
 			if err != nil {
+				metrics.HealthCheckStatusCount.With(prometheus.Labels{
+					metrics.HealthCheckName:          name,
+					metrics.StatusHumanReadableLabel: "unhealthy",
+				}).Inc()
 				return status.UnavailableErrorf("Service %s is unhealthy: %s", name, err)
 			}
+
+			metrics.HealthCheckStatusCount.With(prometheus.Labels{
+				metrics.HealthCheckName:          name,
+				metrics.StatusHumanReadableLabel: "healthy",
+			}).Inc()
 			return nil
 		})
 	}

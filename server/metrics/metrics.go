@@ -175,6 +175,9 @@ const (
 
 	/// Pebble DB operation type.
 	PebbleOperation = "pebble_op"
+
+	// Name of service the health check is running for (Ex "distributed_cache" or "sql_primary").
+	HealthCheckName = "health_check_name"
 )
 
 const (
@@ -1512,6 +1515,16 @@ var (
 		Help:      "Counter for unexpected events.",
 	}, []string{
 		EventName,
+	})
+
+	HealthCheckStatusCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "health_check",
+		Name:      "status_count",
+		Help:      "Counter for health checks reporting healthy vs unhealthy.",
+	}, []string{
+		HealthCheckName,
+		StatusHumanReadableLabel,
 	})
 
 	RPCsHandledTotalByQuotaKey = promauto.NewCounterVec(prometheus.CounterOpts{
