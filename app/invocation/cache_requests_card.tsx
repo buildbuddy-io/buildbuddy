@@ -15,7 +15,6 @@ import Button, { OutlinedButton } from "../components/button/button";
 import Spinner from "../components/spinner/spinner";
 import Select, { Option } from "../components/select/select";
 import { FilterInput } from "../components/filter_input/filter_input";
-
 import * as format from "../format/format";
 import * as proto from "../util/proto";
 import { google as google_field_mask } from "../../proto/field_mask_ts_proto";
