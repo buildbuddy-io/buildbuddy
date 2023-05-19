@@ -186,7 +186,7 @@ func (s *sqliteDSNFormatter) SetPassword(pw string) {
 	s.password = pw
 }
 
-func(s *sqliteDSNFormatter) Clone() dsnFormatter {
+func (s *sqliteDSNFormatter) Clone() dsnFormatter {
 	c := *s
 	return &c
 }
@@ -222,7 +222,7 @@ func (m *mysqlDSNFormatter) SetPassword(pw string) {
 	m.cfg.Passwd = pw
 }
 
-func(m *mysqlDSNFormatter) Clone() dsnFormatter {
+func (m *mysqlDSNFormatter) Clone() dsnFormatter {
 	return &mysqlDSNFormatter{cfg: m.cfg.Clone()}
 }
 
