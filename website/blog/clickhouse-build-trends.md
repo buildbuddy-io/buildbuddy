@@ -25,6 +25,8 @@ time, your build might have some non-deterministic build actions that could be
 improved, or some newly introduced dependencies that result in more frequent
 cache invalidations.
 
+<!-- truncate -->
+
 When we first created the Trends page, we used MySQL queries to aggregate
 build stats and generate the data we wanted to display. For a time this worked
 well, but we quickly ran into performance issues for customers that had very
