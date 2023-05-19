@@ -37,7 +37,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
-    if (!testCoverageUrl) {
+    if (!testCoverageUrl || !this.props.model.getId()) {
       this.setState({ lcov: null });
       return;
     }
@@ -47,8 +47,14 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       return;
     }
 
+    const invocationId = this.props.model.getId();
+    if (!invocationId) {
+      this.setState({ lcov: null });
+      return;
+    }
+
     rpcService
-      .fetchBytestreamFile(testCoverageUrl, this.props.model.getId())
+      .fetchBytestreamFile(testCoverageUrl, invocationId)
       .then((contents: string) => {
         this.setState({ lcov: parseLcov(contents) });
       })

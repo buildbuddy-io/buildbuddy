@@ -399,7 +399,6 @@ ts_library(
 ts_library(
     name = "invocation_model",
     srcs = ["invocation_model.tsx"],
-    strict = False,
     deps = [
         "//app/capabilities",
         "//app/favicon",
