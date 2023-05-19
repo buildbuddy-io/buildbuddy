@@ -245,7 +245,7 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "fill": 1,
+          "fill": 0,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
