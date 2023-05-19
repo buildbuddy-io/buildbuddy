@@ -30,7 +30,7 @@ var (
 
 	target     = flag.String("target", "", "Cache grpc target, such as grpcs://remote.buildbuddy.io")
 	blobDigest = flag.String("digest", "", "Digest of the blob to fetch, in HASH/SIZE format.")
-	blobType   = flag.String("type", "", "Type of blob to inspect: Action, ActionResult, Command, file, stdout, stderr")
+	blobType   = flag.String("type", "", "Type of blob to inspect: Action, ActionResult, Command, Tree, file, stdout, stderr")
 
 	// Optional flags:
 
@@ -176,7 +176,7 @@ func main() {
 	case "Command":
 		msg = &repb.Command{}
 	default:
-		log.Fatalf(`Invalid --type: %q (allowed values: Action, ActionResult, Command, file, stderr, stdout)`, *blobType)
+		log.Fatalf(`Invalid --type: %q (allowed values: Action, ActionResult, Command, Tree, file, stderr, stdout)`, *blobType)
 	}
 	if err := cachetools.GetBlobAsProto(ctx, bsClient, ind, msg); err != nil {
 		log.Fatal(err.Error())

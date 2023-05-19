@@ -59,6 +59,7 @@ ts_library(
     srcs = ["cache_requests_card.tsx"],
     strict = False,
     deps = [
+        "//app/capabilities",
         "//app/components/button",
         "//app/components/digest",
         "//app/components/filter_input",
@@ -68,6 +69,7 @@ ts_library(
         "//app/components/tooltip",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:invocation_execution_util",
         "//app/invocation:invocation_model",
         "//app/router",
         "//app/service:rpc_service",
@@ -77,6 +79,7 @@ ts_library(
         "//proto:field_mask_ts_proto",
         "//proto:invocation_status_ts_proto",
         "//proto:resource_ts_proto",
+        "//proto:timestamp_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
@@ -205,6 +208,7 @@ ts_library(
     name = "invocation_cache_card",
     srcs = ["invocation_cache_card.tsx"],
     deps = [
+        "//app/capabilities",
         "//app/format",
         "//app/invocation:invocation_model",
         "@npm//@types/react",

@@ -140,6 +140,10 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section-title">Tool</div>
               <div>{this.props.model.getTool()}</div>
             </div>
+            <div className="invocation-section">
+              <div className="invocation-section-title">Tool tag</div>
+              <div>{this.props.model.getToolTag()}</div>
+            </div>
             {isBazelInvocation && (
               <>
                 <div className="invocation-section">

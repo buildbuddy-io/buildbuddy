@@ -482,6 +482,9 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName 
 	// Fetch the "Directory" object which enumerates all the blobs in the directory
 	blob, err := s.cache.Get(ctx, dirName.ToProto())
 	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, digest.MissingDigestError(dirName.GetDigest())
+		}
 		return nil, err
 	}
 

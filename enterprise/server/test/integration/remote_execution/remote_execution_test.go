@@ -1523,7 +1523,7 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	}, &rbetest.ExecuteOpts{SimulateMissingDigest: true})
 	err := cmd.MustFailToStart()
 
-	require.Contains(t, err.Error(), "not found in cache")
+	require.True(t, status.IsFailedPreconditionError(err))
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	// NotFound errors should not be retried by the scheduler, since this test
 	// is simulating a bazel task, and bazel will retry on its own.

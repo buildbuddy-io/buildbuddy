@@ -421,6 +421,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		DownloadOutputsOption:             ti.DownloadOutputsOption,
 		UploadLocalResultsEnabled:         ti.UploadLocalResultsEnabled,
 		RemoteExecutionEnabled:            ti.RemoteExecutionEnabled,
-		Tags:                              invocation_format.ConvertDbTagsToOlap(ti.Tags),
+		Tags:                              invocation_format.ConvertDBTagsToOLAP(ti.Tags),
 	}
 }

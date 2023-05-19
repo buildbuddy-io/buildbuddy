@@ -140,11 +140,9 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    patch_args = ["-p1"],
-    patches = ["//buildpatches:protobuf.patch"],
-    sha256 = "2118051b4fb3814d59d258533a4e35452934b1ddb41230261c9543384cbb4dfc",
-    strip_prefix = "protobuf-3.22.2",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.22.2.tar.gz"],
+    sha256 = "b29fc5fc13926f347b7a8b676ae1e63f7ccdb92c2fc8ca326bc3a883dcc168ac",
+    strip_prefix = "protobuf-23.0",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v23.0/protobuf-23.0.tar.gz"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")

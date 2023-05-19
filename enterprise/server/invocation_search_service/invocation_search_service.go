@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -56,14 +57,6 @@ func defaultSortParams() *inpb.InvocationSort {
 		SortField: inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD,
 		Ascending: false,
 	}
-}
-
-// Clickhouse UUIDs are formatted without any dashes :(
-func fixUUID(uuid string) (string, error) {
-	if len(uuid) != 32 {
-		return "", status.InternalErrorf("Tried to fetch an invalid invocation ID %s", uuid)
-	}
-	return uuid[0:8] + "-" + uuid[8:12] + "-" + uuid[12:16] + "-" + uuid[16:20] + "-" + uuid[20:32], nil
 }
 
 func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, invocationIds []string, sort *inpb.InvocationSort) ([]*inpb.Invocation, error) {
@@ -117,7 +110,7 @@ func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.
 		if err := s.olapdbh.DB(ctx).ScanRows(rows, &ti); err != nil {
 			return nil, 0, err
 		}
-		fixedUUID, err := fixUUID(ti.InvocationUUID)
+		fixedUUID, err := uuid.Base64StringToString(ti.InvocationUUID)
 		if err != nil {
 			return nil, 0, err
 		}

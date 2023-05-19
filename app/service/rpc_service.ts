@@ -49,11 +49,7 @@ class RpcService {
     return `/file/download?${new URLSearchParams(params)}`;
   }
 
-  getBytestreamUrl(
-    bytestreamURL: string,
-    invocationId: string,
-    { filename = "", zip = "", fallback = "" } = {}
-  ): string {
+  getBytestreamUrl(bytestreamURL: string, invocationId: string, { filename = "", zip = "" } = {}): string {
     const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
     const params: Record<string, string> = {
       bytestream_url: bytestreamURL,
@@ -62,7 +58,6 @@ class RpcService {
     };
     if (filename) params.filename = filename;
     if (zip) params.z = zip;
-    if (fallback) params.with_fallback = fallback;
     return this.getDownloadUrl(params);
   }
 
@@ -86,18 +81,12 @@ class RpcService {
   fetchBytestreamFile(
     bytestreamURL: string,
     invocationId: string,
-    responseType?: "arraybuffer" | "json" | "text" | undefined,
-    fallbackParams?: Record<string, string>
+    responseType?: "arraybuffer" | "json" | "text" | undefined
   ) {
-    let fallback = "";
-    if (fallbackParams) fallback = `?${new URLSearchParams(fallbackParams)?.toString()}`;
-    return this.fetchFile(
-      this.getBytestreamUrl(bytestreamURL, invocationId, { fallback: fallback }),
-      responseType || ""
-    );
+    return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId), responseType || "");
   }
 
-  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {
+  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | ""): Promise<string> {
     return new Promise((resolve, reject) => {
       var request = new XMLHttpRequest();
       request.responseType = responseType;

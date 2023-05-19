@@ -8,9 +8,11 @@ go_library(
     deps = [
         "//proto:health_go_proto",
         "//server/interfaces",
+        "//server/metrics",
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//connectivity",
         "@org_golang_x_sync//errgroup",

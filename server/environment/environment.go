@@ -3,6 +3,7 @@ package environment
 import (
 	"context"
 	"io/fs"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
@@ -112,6 +113,7 @@ type Env interface {
 	GetFileResolver() fs.FS
 	GetMux() interfaces.HttpServeMux
 	SetMux(interfaces.HttpServeMux)
+	GetHTTPServerWaitGroup() *sync.WaitGroup
 	GetInternalHTTPMux() interfaces.HttpServeMux
 	SetInternalHTTPMux(mux interfaces.HttpServeMux)
 	GetListenAddr() string

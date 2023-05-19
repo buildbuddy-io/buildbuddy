@@ -174,7 +174,7 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(util.BlobPath(blobName)),
+		Key:    aws.String(blobName),
 	})
 	spn.End()
 
@@ -203,7 +203,7 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressedData []byte) (int, error) {
 	uploadParams := &s3manager.UploadInput{
 		Bucket: a.bucket,
-		Key:    aws.String(util.BlobPath(blobName)),
+		Key:    aws.String(blobName),
 		Body:   bytes.NewReader(compressedData),
 	}
 	ctx, spn := tracing.StartSpan(ctx)
@@ -224,7 +224,7 @@ func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(util.BlobPath(blobName)),
+		Key:    aws.String(blobName),
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
@@ -242,7 +242,7 @@ func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	params := &s3.HeadObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(util.BlobPath(blobName)),
+		Key:    aws.String(blobName),
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
@@ -273,7 +273,7 @@ func (a *AwsS3BlobStore) Writer(ctx context.Context, blobName string) (interface
 			ctx,
 			&s3manager.UploadInput{
 				Bucket: a.bucket,
-				Key:    aws.String(util.BlobPath(blobName)),
+				Key:    aws.String(blobName),
 				Body:   pr,
 			},
 		)

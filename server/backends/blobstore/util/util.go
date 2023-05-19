@@ -3,21 +3,21 @@ package util
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 
 	gstatus "google.golang.org/grpc/status"
 )
 
-var (
-	pathPrefix = flag.String("storage.path_prefix", "", "The prefix directory to store all blobs in")
-)
+var pathPrefix = flag.String("storage.path_prefix", "", "The prefix directory to store all blobs in")
 
 func NewCompressWriter(w io.Writer) io.WriteCloser {
 	return gzip.NewWriter(w)
@@ -71,8 +71,47 @@ func Compress(in []byte) ([]byte, error) {
 	return io.ReadAll(&buf)
 }
 
-var BlobPath = func(blobName string) string {
-	return filepath.Join(*pathPrefix, blobName)
+// prefixBlobstore implements interfaces.Blobstore, is a wrapper around
+// an existing blobstore that prefixes all blob names with `storage.path_prefix`.
+type prefixBlobstore struct {
+	blobstore interfaces.Blobstore
+	prefix    string
+}
+
+func NewDefaultPrefixBlobstore(b interfaces.Blobstore) *prefixBlobstore {
+	return NewPrefixBlobstore(b, *pathPrefix)
+}
+
+// NewPrefixBlobstore returns a new prefixBlobstore that wraps the given
+// blobstore and prefixes all blob names with the given prefix.
+// Intent to support testing only, you probably want to use
+// NewDefaultPrefixBlobstore instead.
+func NewPrefixBlobstore(b interfaces.Blobstore, prefix string) *prefixBlobstore {
+	return &prefixBlobstore{b, prefix}
+}
+
+func (p *prefixBlobstore) blobPath(blobName string) string {
+	return filepath.Join(p.prefix, blobName)
+}
+
+func (p *prefixBlobstore) BlobExists(ctx context.Context, blobName string) (bool, error) {
+	return p.blobstore.BlobExists(ctx, p.blobPath(blobName))
+}
+
+func (p *prefixBlobstore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+	return p.blobstore.ReadBlob(ctx, p.blobPath(blobName))
+}
+
+func (p *prefixBlobstore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
+	return p.blobstore.WriteBlob(ctx, p.blobPath(blobName), data)
+}
+
+func (p *prefixBlobstore) DeleteBlob(ctx context.Context, blobName string) error {
+	return p.blobstore.DeleteBlob(ctx, p.blobPath(blobName))
+}
+
+func (p *prefixBlobstore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	return p.blobstore.Writer(ctx, p.blobPath(blobName))
 }
 
 func RecordWriteMetrics(typeLabel string, startTime time.Time, size int, err error) {

@@ -53,7 +53,7 @@ func (d *DiskBlobStore) blobPath(blobName string) (string, error) {
 	if strings.Contains(blobName, "..") {
 		return "", fmt.Errorf("blobName (%s) must not contain ../", blobName)
 	}
-	return filepath.Join(d.rootDir, util.BlobPath(blobName)), nil
+	return filepath.Join(d.rootDir, blobName), nil
 }
 
 func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {

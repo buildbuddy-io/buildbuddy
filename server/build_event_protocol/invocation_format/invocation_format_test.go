@@ -71,7 +71,7 @@ func TestJoinTags(t *testing.T) {
 	}
 }
 
-func TestConvertDbTagsToOlap(t *testing.T) {
+func TestConvertDBTagsToOLAP(t *testing.T) {
 	for _, testCase := range []struct {
 		input    string
 		expected []string
@@ -80,6 +80,6 @@ func TestConvertDbTagsToOlap(t *testing.T) {
 		{"beef, cheese,, ..", []string{"beef", " cheese", "", " .."}},
 		{"beef,cheese,ten dollars..,beer", []string{"beef", "cheese", "ten dollars..", "beer"}},
 	} {
-		assert.Equal(t, testCase.expected, invocation_format.ConvertDbTagsToOlap(testCase.input))
+		assert.Equal(t, testCase.expected, invocation_format.ConvertDBTagsToOLAP(testCase.input))
 	}
 }

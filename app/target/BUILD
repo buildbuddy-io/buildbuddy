@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "target",
     srcs = ["target.tsx"],
-    strict = False,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
@@ -31,7 +30,6 @@ ts_library(
 ts_library(
     name = "action_card",
     srcs = ["action_card.tsx"],
-    strict = False,
     deps = [
         "//app/docs:setup_code",
         "//app/format",
@@ -47,7 +45,6 @@ ts_library(
 ts_library(
     name = "target_artifacts_card",
     srcs = ["target_artifacts_card.tsx"],
-    strict = False,
     deps = [
         "//app/capabilities",
         "//app/service:rpc_service",
@@ -73,7 +70,6 @@ ts_library(
 ts_library(
     name = "target_test_cases_card",
     srcs = ["target_test_cases_card.tsx"],
-    strict = False,
     deps = [
         "//app/format",
         "//app/terminal",
@@ -88,7 +84,6 @@ ts_library(
 ts_library(
     name = "target_test_document_card",
     srcs = ["target_test_document_card.tsx"],
-    strict = False,
     deps = [
         "//app/service:rpc_service",
         "//app/target:target_log_card",
@@ -102,7 +97,6 @@ ts_library(
 ts_library(
     name = "target_test_log_card",
     srcs = ["target_test_log_card.tsx"],
-    strict = False,
     deps = [
         "//app/docs:setup_code",
         "//app/format",
@@ -120,7 +114,6 @@ ts_library(
 ts_library(
     name = "target_test_coverage_card",
     srcs = ["target_test_coverage_card.tsx"],
-    strict = False,
     deps = [
         "//app/format",
         "//app/invocation:invocation_model",
