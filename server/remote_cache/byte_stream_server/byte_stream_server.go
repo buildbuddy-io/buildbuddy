@@ -518,15 +518,15 @@ func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, e
 
 type Checksum struct {
 	digestFunction repb.DigestFunction_Value
-	hash         hash.Hash
-	bytesWritten int64
+	hash           hash.Hash
+	bytesWritten   int64
 }
 
 func NewChecksum(h hash.Hash, digestFunction repb.DigestFunction_Value) *Checksum {
 	return &Checksum{
 		digestFunction: digestFunction,
-		hash:         h,
-		bytesWritten: 0,
+		hash:           h,
+		bytesWritten:   0,
 	}
 }
 
