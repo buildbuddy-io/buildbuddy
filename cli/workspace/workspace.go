@@ -26,9 +26,9 @@ func Path() (string, error) {
 	return pathVal, pathErr
 }
 
-func Basename() (string, error) {
+func PathAndBasename() (string, string, error) {
 	_, _ = Path()
-	return basename, pathErr
+	return pathVal, basename, pathErr
 }
 
 func path() (string, string, error) {

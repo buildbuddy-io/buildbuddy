@@ -29,7 +29,7 @@ Adds the given dependency to your WORKSPACE file.
 	headerTemplate = "###### Begin auto-generated section for %s ######"
 	footerTemplate = "###### End auto-generated section for %s ######"
 
-	headerRegex = regexp.MustCompile("##### Begin auto-generated section for \\[https:\\/\\/registry\\.build\\/([^#]+)#([^\\]]+)")
+	headerRegex = regexp.MustCompile(`##### Begin auto-generated section for \[https://registry\.build/(.+?)@(.+?)\]`)
 )
 
 const (
@@ -73,7 +73,7 @@ func HandleAdd(args []string) (int, error) {
 		return 1, err
 	}
 
-	versionKey := fmt.Sprintf("[https://registry.build/%s#%s]", module, resp.LatestReleaseWithWorkspaceSnippet)
+	versionKey := fmt.Sprintf("[https://registry.build/%s@%s]", module, resp.LatestReleaseWithWorkspaceSnippet)
 
 	matches := headerRegex.FindAllStringSubmatch(string(contents), -1)
 	for _, m := range matches {
@@ -193,26 +193,31 @@ func showPicker(modules []Disambiguation) (string, error) {
 }
 
 func openOrCreateWorkspaceFile() (*os.File, error) {
-	backupFileName := "WORKSPACE.bazel"
-	workspacePath, err := workspace.Path()
+	workspacePath, basename, err := workspace.PathAndBasename()
 	if err != nil {
-		f, err := os.OpenFile(backupFileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+		workspacePath, basename, err = createWorkspaceFile()
 		if err != nil {
 			return nil, err
 		}
-		workspacePath, err = os.Getwd()
-		if err != nil {
-			return nil, err
-		}
-		f.WriteString(`workspace(name = "` + path.Base(workspacePath) + `")` + "\n")
-		f.Close()
 	}
-	workspaceName, err := workspace.Basename()
-	if err != nil {
-		workspaceName = backupFileName
-	}
+	return os.OpenFile(filepath.Join(workspacePath, basename), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+}
 
-	return os.OpenFile(filepath.Join(workspacePath, workspaceName), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+func createWorkspaceFile() (string, string, error) {
+	fileName := "WORKSPACE.bazel"
+	f, err := os.OpenFile(fileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	if err != nil {
+		return "", "", err
+	}
+	defer f.Close()
+	workspacePath, err := os.Getwd()
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := f.WriteString(`workspace(name = "` + path.Base(workspacePath) + `")` + "\n"); err != nil {
+		return "", "", err
+	}
+	return workspacePath, fileName, nil
 }
 
 type RegistryResponse struct {
