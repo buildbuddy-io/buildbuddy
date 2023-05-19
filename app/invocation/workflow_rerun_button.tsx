@@ -25,15 +25,19 @@ export interface WorkflowRerunButtonProps {
 }
 
 type State = {
-  isMenuOpen?: boolean;
-  isDialogOpen?: boolean;
-  isLoading?: boolean;
+  isMenuOpen: boolean;
+  isDialogOpen: boolean;
+  isLoading: boolean;
 };
 
 export default class WorkflowRerunButton extends React.Component<WorkflowRerunButtonProps, State> {
-  state: State = {};
+  state: State = {
+    isMenuOpen: false,
+    isDialogOpen: false,
+    isLoading: false,
+  };
 
-  private inFlightRpc: CancelablePromise;
+  private inFlightRpc?: CancelablePromise;
 
   private onOpenMenu() {
     this.setState({ isMenuOpen: true });

@@ -71,8 +71,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
     keyboardShortcutHandle: "",
   };
 
-  private timeoutRef: number;
-  private logsModel: InvocationLogsModel;
+  private timeoutRef: number = 0;
+  private logsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
 
@@ -163,16 +163,16 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (!this.state.model.hasChunkedEventLogs()) {
       // Use the inlined console buffer if this invocation was created before
       // log chunking existed.
-      return this.state.model.invocations[0]?.consoleBuffer;
+      return this.state.model.invocations[0]?.consoleBuffer ?? "";
     }
-    return this.logsModel.getLogs();
+    return this.logsModel?.getLogs() ?? "";
   }
 
   areBuildLogsLoading() {
     if (!this.state.model.hasChunkedEventLogs()) {
       return false;
     }
-    return this.logsModel.isFetching() && !this.logsModel.getLogs();
+    return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
   }
 
   render() {
@@ -197,12 +197,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
     let targetLabel = this.props.search.get("target");
     if (targetLabel) {
       let completed = this.state.model.completedMap.get(targetLabel);
-      let actionEvents =
-        completed?.buildEvent.children
+      let actionEvents: invocation.InvocationEvent[] =
+        completed?.buildEvent?.children
           .flatMap((child) =>
             this.state.model.actionMap
-              .get(child?.actionCompleted?.label)
-              ?.filter(
+              .get(child?.actionCompleted?.label ?? "")!
+              .filter(
                 (event) =>
                   event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
                   event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
@@ -215,11 +215,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           model={this.state.model}
           invocationId={this.props.invocationId}
           tab={this.props.tab}
-          files={this.state.model.getFiles(completed?.buildEvent)}
+          files={completed?.buildEvent ? this.state.model.getFiles(completed.buildEvent) ?? [] : []}
           configuredEvent={this.state.model.configuredMap.get(targetLabel)}
           skippedEvent={this.state.model.skippedMap.get(targetLabel)}
           completedEvent={completed}
-          testResultEvents={this.state.model.testResultMap.get(targetLabel)}
+          testResultEvents={this.state.model.testResultMap.get(targetLabel) ?? []}
           testSummaryEvent={this.state.model.testSummaryMap.get(targetLabel)}
           actionEvents={actionEvents}
           user={this.props.user}
@@ -280,7 +280,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
+          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted?.description && (
             <ErrorCardComponent model={this.state.model} />
           )}
 
@@ -295,7 +295,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <TargetsComponent
               model={this.state.model}
               mode="failing"
-              filter={this.props.search.get("targetFilter")}
+              filter={this.props.search.get("targetFilter") ?? ""}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
@@ -326,7 +326,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <TargetsComponent
               model={this.state.model}
               mode="passing"
-              filter={this.props.search.get("targetFilter")}
+              filter={this.props.search.get("targetFilter") ?? ""}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
@@ -350,7 +350,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
-              filter={this.props.search.get("artifactFilter")}
+              filter={this.props.search.get("artifactFilter") ?? ""}
               pageSize={activeTab ? largePageSize : smallPageSize}
             />
           )}
@@ -360,7 +360,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               model={this.state.model}
               inProgress={this.state.inProgress}
               search={this.props.search}
-              filter={this.props.search.get("executionFilter")}
+              filter={this.props.search.get("executionFilter") ?? ""}
             />
           )}
 
