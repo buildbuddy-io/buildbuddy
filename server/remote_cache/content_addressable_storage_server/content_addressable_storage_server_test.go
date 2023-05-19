@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -34,6 +35,7 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
@@ -617,4 +619,71 @@ func TestGetTreeCaching(t *testing.T) {
 
 	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
 	assert.Less(t, fetch2Time, fetch1Time/2)
+}
+
+func hasMissingDigestError(err error) bool {
+	st := gstatus.Convert(err)
+	for _, detail := range st.Details() {
+		switch detail.(type) {
+		case *errdetails.PreconditionFailure:
+			if pf, ok := detail.(*errdetails.PreconditionFailure); ok {
+				if len(pf.Violations) > 0 && pf.Violations[0].GetType() == "MISSING" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func TestGetTreeMissingRoot(t *testing.T) {
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Upload a dir containing fileCount files, and return the file
+	// names and directory digest.
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, _ := uploadDirWithFiles(2, 1)
+	child2Digest, _ := uploadDirWithFiles(2, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "child11",
+				Digest: child1Digest,
+			},
+			&repb.DirectoryNode{
+				Name:   "child2",
+				Digest: child2Digest,
+			},
+		},
+	}
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+	assert.Nil(t, err)
+
+	rootRN := digest.NewResourceName(rootDigest, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	require.NoError(t, te.GetCache().Delete(ctx, rootRN.ToProto()))
+
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
+		InstanceName: instanceName,
+		RootDigest:   rootDigest,
+	})
+	assert.Nil(t, err)
+
+	_, err = stream.Recv()
+	require.Error(t, err)
+	require.True(t, hasMissingDigestError(err))
 }
