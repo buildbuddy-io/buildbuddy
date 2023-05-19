@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/translate/js"
 	"github.com/buildbuddy-io/buildbuddy/cli/translate/yaml"
 )
 
@@ -14,6 +15,7 @@ type Translator interface {
 
 var (
 	translators = map[string]Translator{
+		".js":    js.New(),
 		".yaml":  yaml.New(),
 		".bazel": nil,
 		"":       nil,
