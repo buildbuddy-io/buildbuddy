@@ -308,7 +308,7 @@
       ],
       "thresholds": [],
       "timeRegions": [],
-      "title": "Healthcheck",
+      "title": "Healthcheck Success Rate",
       "tooltip": {
         "shared": true,
         "sort": 0,
