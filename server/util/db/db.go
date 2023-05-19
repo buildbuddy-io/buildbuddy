@@ -105,30 +105,9 @@ type dsnFormatter interface {
 func newDSNFormatter(ac *AdvancedConfig) (dsnFormatter, error) {
 	switch ac.Driver {
 	case mysqlDriver:
-		cfg := gomysql.NewConfig()
-		cfg.User = ac.Username
-		cfg.Passwd = ac.Password
-		cfg.Net = "tcp"
-		cfg.Addr = ac.Endpoint
-		cfg.DBName = ac.DBName
-		if ac.Params != "" {
-			pcfg, err := gomysql.ParseDSN("/_?" + ac.Params)
-			if err != nil {
-				return nil, status.FailedPreconditionErrorf("Params are invalid mysql connection params: %s", err)
-			}
-			cfg.Params = pcfg.Params
-		} else {
-			cfg.Params = make(map[string]string, 0)
-		}
-		return &mysqlDSNFormatter{cfg: cfg}, nil
+		return newMysqlDSNFormatter(ac)
 	case sqliteDriver:
-		return &sqliteDSNFormatter{
-			endpoint: ac.Endpoint,
-			username: ac.Username,
-			password: ac.Password,
-			dbName:   ac.DBName,
-			params:   ac.Params,
-		}, nil
+		return newSqliteDSNFormatter(ac)
 	default:
 		return nil, status.UnimplementedErrorf("newDSNFormatter does not support driver: %s", ac.Driver)
 	}
@@ -140,6 +119,16 @@ type sqliteDSNFormatter struct {
 	password string
 	dbName   string
 	params   string
+}
+
+func newSqliteDSNFormatter(ac *AdvancedConfig) (*sqliteDSNFormatter, error) {
+	return &sqliteDSNFormatter{
+		endpoint: ac.Endpoint,
+		username: ac.Username,
+		password: ac.Password,
+		dbName:   ac.DBName,
+		params:   ac.Params,
+	}, nil
 }
 
 func (s *sqliteDSNFormatter) AddParam(key, val string) {
@@ -193,6 +182,25 @@ func (s *sqliteDSNFormatter) Clone() dsnFormatter {
 
 type mysqlDSNFormatter struct {
 	cfg *gomysql.Config
+}
+
+func newMysqlDSNFormatter(ac *AdvancedConfig) (*mysqlDSNFormatter, error) {
+	cfg := gomysql.NewConfig()
+	cfg.User = ac.Username
+	cfg.Passwd = ac.Password
+	cfg.Net = "tcp"
+	cfg.Addr = ac.Endpoint
+	cfg.DBName = ac.DBName
+	if ac.Params != "" {
+		pcfg, err := gomysql.ParseDSN("/_?" + ac.Params)
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("Params are invalid mysql connection params: %s", err)
+		}
+		cfg.Params = pcfg.Params
+	} else {
+		cfg.Params = make(map[string]string, 0)
+	}
+	return &mysqlDSNFormatter{cfg: cfg}, nil
 }
 
 func (m *mysqlDSNFormatter) AddParam(key, val string) {
