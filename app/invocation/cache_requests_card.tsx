@@ -3,6 +3,7 @@ import router from "../router/router";
 import InvocationModel from "./invocation_model";
 import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
+import { google as google_ts } from "../../proto/timestamp_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
 import rpc_service from "../service/rpc_service";
@@ -19,6 +20,8 @@ import * as proto from "../util/proto";
 import { google as google_field_mask } from "../../proto/field_mask_ts_proto";
 import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 import { BuildBuddyError } from "../util/errors";
+import { subtractTimestamp } from "./invocation_execution_util";
+import capabilities from "../capabilities/capabilities";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -181,6 +184,26 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   private getActionUrl(digestHash: string) {
     return `/invocation/${this.props.model.getId()}?actionDigest=${digestHash}#action`;
+  }
+
+  private hasSavingsData(result: cache.ScoreCard.IResult): boolean {
+    return Boolean(result.executionStartTimestamp && result.executionCompletedTimestamp);
+  }
+
+  private renderSavingsString(result: cache.ScoreCard.IResult, compact: boolean = true) {
+    if (!this.hasSavingsData(result)) {
+      return "--";
+    }
+    const timestampUsec = subtractTimestamp(result.executionCompletedTimestamp!, result.executionStartTimestamp!);
+    if (compact) {
+      return format.compactDurationMillis(timestampUsec / 1000);
+    } else {
+      return format.durationUsec(timestampUsec);
+    }
+  }
+
+  private renderSavingsColumn(result: cache.ScoreCard.IResult) {
+    return <div className="duration-column">{this.renderSavingsString(result)}</div>;
   }
 
   private renderWaterfallBar(
@@ -373,6 +396,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           </div>
         )}
         <div className="duration-column">{format.compactDurationMillis(proto.durationToMillis(result.duration))}</div>
+        {capabilities.config.trendsSummaryEnabled && this.renderSavingsColumn(result)}
         {this.renderWaterfallBar(result, startTimeMillis, durationMillis)}
       </Tooltip>
     ));
@@ -475,6 +499,12 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         </>
         <>
           <b>Duration</b> <span>{format.durationMillis(proto.durationToMillis(result.duration))}</span>
+          {capabilities.config.trendsSummaryEnabled && this.hasSavingsData(result) && (
+            <>
+              <b>CPU saved by cache hit</b>
+              <span>{this.renderSavingsString(result, false)}</span>
+            </>
+          )}
         </>
         {lastAccessed ? (
           <>
@@ -543,6 +573,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <div className="digest-column">Digest (hash/size)</div>
             {this.isCompressedSizeColumnVisible() && <div className="compressed-size-column">Compression</div>}
             <div className="duration-column">Duration</div>
+            {capabilities.config.trendsSummaryEnabled && <div className="duration-column">Savings</div>}
             <div className="waterfall-column">Waterfall</div>
           </div>
           {groups === null && (

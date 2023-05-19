@@ -3,6 +3,7 @@ import InvocationModel from "./invocation_model";
 import format from "../format/format";
 import { PieChart as PieChartIcon, AlertCircle as AlertCircleIcon } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import capabilities from "../capabilities/capabilities";
 
 interface Props {
   model: InvocationModel;
@@ -35,8 +36,13 @@ export default class CacheCardComponent extends React.Component<Props> {
                 </div>
               )}
               {this.props.model.cacheStats.map((cacheStat) => {
-                let downloadThroughput = BITS_PER_BYTE * (+cacheStat.downloadThroughputBytesPerSecond / 1000000);
-                let uploadThroughput = BITS_PER_BYTE * (+cacheStat.uploadThroughputBytesPerSecond / 1000000);
+                const downloadThroughput = BITS_PER_BYTE * (+cacheStat.downloadThroughputBytesPerSecond / 1000000);
+                const uploadThroughput = BITS_PER_BYTE * (+cacheStat.uploadThroughputBytesPerSecond / 1000000);
+
+                const renderExecTime =
+                  +cacheStat.totalCachedActionExecUsec > 0 || +cacheStat.totalUncachedActionExecUsec > 0;
+                const cachedExecTime = format.durationUsec(cacheStat.totalCachedActionExecUsec);
+                const uncachedExecTime = format.durationUsec(cacheStat.totalUncachedActionExecUsec);
                 return (
                   <div debug-id="cache-sections" className="cache-sections">
                     <div className="cache-section">
@@ -119,6 +125,30 @@ export default class CacheCardComponent extends React.Component<Props> {
                         </div>
                       </div>
                     </div>
+                    {capabilities.config.trendsSummaryEnabled && renderExecTime && (
+                      <div className="cache-section">
+                        <div className="cache-title">CPU savings</div>
+                        <div className="cache-subtitle">Theoretical and actual CPU used</div>
+                        <div className="cache-chart">
+                          {this.drawChart(
+                            +cacheStat.totalCachedActionExecUsec,
+                            "#4CAF50",
+                            +cacheStat.totalUncachedActionExecUsec,
+                            "#f44336"
+                          )}
+                          <div>
+                            <div className="cache-chart-label">
+                              <span className="color-swatch cache-hit-color-swatch"></span>
+                              <span className="cache-stat">{cachedExecTime}</span> not executed
+                            </div>
+                            <div className="cache-chart-label">
+                              <span className="color-swatch cache-miss-color-swatch"></span>
+                              <span className="cache-stat">{uncachedExecTime}</span> executed
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
