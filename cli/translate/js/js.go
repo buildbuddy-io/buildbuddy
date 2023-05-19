@@ -17,7 +17,7 @@ var (
 	// Pattern to extract import statements of the form:
 	// import { foo, bar } from "//path/to/target"
 	pattern        = `import\s*{\s*([\w\s,"]+?)\s*}\s*from\s*"([^"]+)";`
-	replacePattern = `load("$2", "$1")`
+	replacePattern = `load("$2", "$1");`
 	regex          = regexp.MustCompile(pattern)
 
 	// Pattern to properly quote comma separated load statements
