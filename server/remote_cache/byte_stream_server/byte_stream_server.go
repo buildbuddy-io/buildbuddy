@@ -295,7 +295,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	ws.checksum = NewChecksum(hasher)
+	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
 	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
@@ -349,7 +349,7 @@ func (w *writeState) Flush() error {
 func (w *writeState) Commit() error {
 	// Verify the checksum. If it does not match, note that the cache writer is
 	// not committed, since that persists the file to cache.
-	if err := w.checksum.Check(w.resourceName.GetDigest()); err != nil {
+	if err := w.checksum.Check(w.resourceName); err != nil {
 		return err
 	}
 
@@ -517,14 +517,16 @@ func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, e
 }
 
 type Checksum struct {
-	hash         hash.Hash
-	bytesWritten int64
+	digestFunction repb.DigestFunction_Value
+	hash           hash.Hash
+	bytesWritten   int64
 }
 
-func NewChecksum(h hash.Hash) *Checksum {
+func NewChecksum(h hash.Hash, digestFunction repb.DigestFunction_Value) *Checksum {
 	return &Checksum{
-		hash:         h,
-		bytesWritten: 0,
+		digestFunction: digestFunction,
+		hash:           h,
+		bytesWritten:   0,
 	}
 }
 
@@ -542,10 +544,11 @@ func (s *Checksum) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *Checksum) Check(d *repb.Digest) error {
+func (s *Checksum) Check(r *digest.ResourceName) error {
+	d := r.GetDigest()
 	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
 	if computedDigest != d.GetHash() {
-		return status.DataLossErrorf("Uploaded bytes sha256 hash (%q) did not match digest (%q).", computedDigest, d.GetHash())
+		return status.DataLossErrorf("Hash of uploaded bytes %q [%s] did not match provided digest: %q [%s].", computedDigest, s.digestFunction, d.GetHash(), r.GetDigestFunction())
 	}
 	if s.BytesWritten() != d.GetSizeBytes() {
 		return status.DataLossErrorf("Uploaded bytes length (%d bytes) did not match digest (%d).", s.BytesWritten(), d.GetSizeBytes())
