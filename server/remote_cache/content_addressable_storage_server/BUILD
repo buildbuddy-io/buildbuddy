@@ -55,7 +55,9 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@go_googleapis//google/rpc:errdetails_go_proto",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
