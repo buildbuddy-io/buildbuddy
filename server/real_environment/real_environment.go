@@ -108,6 +108,7 @@ type RealEnv struct {
 	crypterService                   interfaces.Crypter
 	sociArtifactStoreServer          socipb.SociArtifactStoreServer
 	sociArtifactStoreClient          socipb.SociArtifactStoreClient
+	singleFlightDeduper              interfaces.SingleFlightDeduper
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -609,4 +610,11 @@ func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
 }
 func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
 	r.sociArtifactStoreServer = s
+}
+
+func (r *RealEnv) GetSingleFlightDeduper() interfaces.SingleFlightDeduper {
+	return r.singleFlightDeduper
+}
+func (r *RealEnv) SetSingleFlightDeduper(d interfaces.SingleFlightDeduper) {
+	r.singleFlightDeduper = d
 }
