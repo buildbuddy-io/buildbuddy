@@ -43,7 +43,7 @@ require (
 	github.com/creack/pty v1.1.17
 	github.com/crewjam/saml v0.4.13
 	github.com/docker/distribution v2.8.2+incompatible
-	github.com/docker/docker v23.0.1+incompatible
+	github.com/docker/docker v23.0.3+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/dop251/goja v0.0.0-20230427124612-428fc442ff5f
 	github.com/elastic/gosigar v0.11.0
