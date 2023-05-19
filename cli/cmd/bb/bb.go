@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
@@ -102,6 +103,10 @@ func run() (exitCode int, err error) {
 		return exitCode, err
 	}
 	exitCode, err = ask.HandleAsk(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = add.HandleAdd(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}

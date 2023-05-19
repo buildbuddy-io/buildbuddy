@@ -113,6 +113,7 @@ func printBBCommands() {
 	// names / descriptions from there.
 	columns := [][]string{
 		{"analyze", "Analyzes the dependency graph."},
+		{"add", "Adds a dependency to your WORKSPACE file."},
 		{"download", "Downloads artifacts from a remote cache."},
 		{"install", "Installs a bb plugin (https://buildbuddy.io/plugins)."},
 		{"login", "Configures bb commands to use your BuildBuddy API key."},
