@@ -20,7 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -28,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
@@ -95,8 +94,8 @@ type IStore interface {
 // to free up disk spaces.
 type Replica struct {
 	dbMu      sync.Mutex
-	rawDB     pebbleutil.IPebbleDB
-	rawLeaser pebbleutil.Leaser
+	rawDB     pebble.IPebbleDB
+	rawLeaser pebble.Leaser
 
 	rootDir   string
 	fileDir   string
@@ -168,13 +167,13 @@ func isFileRecordKey(keyBytes []byte) bool {
 	return false
 }
 
-func (sm *Replica) db() pebbleutil.IPebbleDB {
+func (sm *Replica) db() pebble.IPebbleDB {
 	sm.dbMu.Lock()
 	defer sm.dbMu.Unlock()
 	return sm.rawDB
 }
 
-func (sm *Replica) leaser() pebbleutil.Leaser {
+func (sm *Replica) leaser() pebble.Leaser {
 	sm.dbMu.Lock()
 	defer sm.dbMu.Unlock()
 	return sm.rawLeaser
@@ -274,7 +273,7 @@ func (sm *Replica) setRange(key, val []byte) error {
 	return nil
 }
 
-func (sm *Replica) rangeCheckedSet(wb pebbleutil.Batch, key, val []byte) error {
+func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RLock()
 	if !isLocalKey(key) {
 		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
@@ -370,7 +369,7 @@ const (
 	fileRecordDelete
 )
 
-func (sm *Replica) flushPartitionMetadatas(wb pebbleutil.Batch) error {
+func (sm *Replica) flushPartitionMetadatas(wb pebble.Batch) error {
 	sm.partitionMetadataMu.Lock()
 	defer sm.partitionMetadataMu.Unlock()
 	var cs rfpb.PartitionMetadatas
@@ -387,7 +386,7 @@ func (sm *Replica) flushPartitionMetadatas(wb pebbleutil.Batch) error {
 	return nil
 }
 
-func (sm *Replica) updatePartitionMetadata(wb pebbleutil.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+func (sm *Replica) updatePartitionMetadata(wb pebble.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
 	if fileMetadata == nil {
 		fileMetadata = &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(val, fileMetadata); err != nil {
@@ -422,7 +421,7 @@ func (sm *Replica) updatePartitionMetadata(wb pebbleutil.Batch, key, val []byte,
 	return nil
 }
 
-func (sm *Replica) updateAndFlushPartitionMetadatas(wb pebbleutil.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+func (sm *Replica) updateAndFlushPartitionMetadatas(wb pebble.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
 	if err := sm.updatePartitionMetadata(wb, key, val, fileMetadata, op); err != nil {
 		return err
 	}
@@ -436,24 +435,24 @@ func (sm *Replica) getDBDir() string {
 }
 
 type ReplicaReader interface {
-	pebbleutil.Reader
+	pebble.Reader
 	io.Closer
 }
 
 type ReplicaWriter interface {
-	pebbleutil.Writer
+	pebble.Writer
 	io.Closer
 
 	// Would prefer to just use pebble.Writer here but the interface offers
 	// no functionality for actually creating a new batch, so we amend it.
-	NewBatch() pebbleutil.Batch
-	NewIndexedBatch() pebbleutil.Batch
+	NewBatch() pebble.Batch
+	NewIndexedBatch() pebble.Batch
 	NewSnapshot() *pebble.Snapshot
 }
 
-func (sm *Replica) openDB() (pebbleutil.IPebbleDB, error) {
+func (sm *Replica) openDB() (pebble.IPebbleDB, error) {
 	dbDir := sm.getDBDir()
-	db, err := pebbleutil.Open(dbDir, &pebble.Options{})
+	db, err := pebble.Open(dbDir, &pebble.Options{})
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +462,7 @@ func (sm *Replica) openDB() (pebbleutil.IPebbleDB, error) {
 		sm.rawLeaser.Close()
 	}
 	sm.rawDB = db
-	sm.rawLeaser = pebbleutil.NewDBLeaser(db)
+	sm.rawLeaser = pebble.NewDBLeaser(db)
 	return db, nil
 }
 
@@ -512,7 +511,7 @@ func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
 	sm.setRange(constants.LocalRangeKey, buf)
 }
 
-func (sm *Replica) fileDelete(wb pebbleutil.Batch, req *rfpb.FileDeleteRequest) (*rfpb.FileDeleteResponse, error) {
+func (sm *Replica) fileDelete(wb pebble.Batch, req *rfpb.FileDeleteRequest) (*rfpb.FileDeleteResponse, error) {
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
@@ -541,7 +540,7 @@ func (sm *Replica) fileDelete(wb pebbleutil.Batch, req *rfpb.FileDeleteRequest) 
 	return &rfpb.FileDeleteResponse{}, nil
 }
 
-func (sm *Replica) deleteRange(wb pebbleutil.Batch, req *rfpb.DeleteRangeRequest) (*rfpb.DeleteRangeResponse, error) {
+func (sm *Replica) deleteRange(wb pebble.Batch, req *rfpb.DeleteRangeRequest) (*rfpb.DeleteRangeResponse, error) {
 	iter := wb.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(req.GetStart()),
 		UpperBound: keys.Key(req.GetEnd()),
@@ -571,7 +570,7 @@ func (sm *Replica) deleteRange(wb pebbleutil.Batch, req *rfpb.DeleteRangeRequest
 	return &rfpb.DeleteRangeResponse{}, nil
 }
 
-func (sm *Replica) fileUpdateMetadata(wb pebbleutil.Batch, req *rfpb.FileUpdateMetadataRequest) (*rfpb.FileUpdateMetadataResponse, error) {
+func (sm *Replica) fileUpdateMetadata(wb pebble.Batch, req *rfpb.FileUpdateMetadataRequest) (*rfpb.FileUpdateMetadataResponse, error) {
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
@@ -601,7 +600,7 @@ func (sm *Replica) fileUpdateMetadata(wb pebbleutil.Batch, req *rfpb.FileUpdateM
 	return &rfpb.FileUpdateMetadataResponse{}, nil
 }
 
-func (sm *Replica) directWrite(wb pebbleutil.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
+func (sm *Replica) directWrite(wb pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
 	err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
 	return &rfpb.DirectWriteResponse{}, err
@@ -621,11 +620,11 @@ func (sm *Replica) directRead(db ReplicaReader, req *rfpb.DirectReadRequest) (*r
 	return rsp, nil
 }
 
-func (sm *Replica) increment(wb pebbleutil.Batch, req *rfpb.IncrementRequest) (*rfpb.IncrementResponse, error) {
+func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb.IncrementResponse, error) {
 	if len(req.GetKey()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
 	}
-	buf, err := pebbleutil.GetCopy(wb, req.GetKey())
+	buf, err := pebble.GetCopy(wb, req.GetKey())
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			return nil, err
@@ -648,7 +647,7 @@ func (sm *Replica) increment(wb pebbleutil.Batch, req *rfpb.IncrementRequest) (*
 	}, nil
 }
 
-func (sm *Replica) cas(wb pebbleutil.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse, error) {
+func (sm *Replica) cas(wb pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse, error) {
 	kv := req.GetKv()
 	var buf []byte
 	var err error
@@ -706,7 +705,7 @@ func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
 		return err
 	}
 
-	return wb.Commit(&pebble.WriteOptions{Sync: true})
+	return wb.Commit(pebble.Sync)
 }
 
 func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResponse, error) {
@@ -763,7 +762,7 @@ func (sm *Replica) splitRelease(req *rfpb.SplitReleaseRequest) (*rfpb.SplitRelea
 	}
 
 	if wb.Count() > 0 {
-		if err := wb.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+		if err := wb.Commit(pebble.Sync); err != nil {
 			return nil, err
 		}
 	}
@@ -883,7 +882,7 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	return true
 }
 
-func (sm *Replica) printRange(r pebbleutil.Reader, iterOpts *pebble.IterOptions, tag string) {
+func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag string) {
 	iter := r.NewIter(iterOpts)
 	defer iter.Close()
 
@@ -986,7 +985,7 @@ func statusProto(err error) *statuspb.Status {
 	return s.Proto()
 }
 
-func (sm *Replica) handlePropose(wb pebbleutil.Batch, req *rfpb.RequestUnion, rsp *rfpb.ResponseUnion) {
+func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion, rsp *rfpb.ResponseUnion) {
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_DirectWrite:
 		r, err := sm.directWrite(wb, value.DirectWrite)
@@ -1069,9 +1068,9 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 	return rsp
 }
 
-func lookupFileMetadata(iter pebbleutil.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+func lookupFileMetadata(iter pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
-	if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
+	if err := pebble.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 		return nil, err
 	}
 	return fileMetadata, nil
@@ -1097,7 +1096,7 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 	return nil
 }
 
-func (sm *Replica) metadataForRecord(db pebbleutil.Reader, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
+func (sm *Replica) metadataForRecord(db pebble.Reader, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
 	fileMetadataKey, err := sm.fileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
@@ -1661,7 +1660,7 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 			return err
 		}
 	}
-	if err := db.Apply(wb, &pebble.WriteOptions{Sync: true}); err != nil {
+	if err := db.Apply(wb, pebble.Sync); err != nil {
 		return err
 	}
 	return nil
@@ -1849,7 +1848,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	return nil
 }
 
-func (sm *Replica) TestingDB() (pebbleutil.IPebbleDB, error) {
+func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
 	return sm.leaser().DB()
 }
 

@@ -1,4 +1,4 @@
-package pebbleutil
+package pebble
 
 import (
 	"bytes"
@@ -22,6 +22,18 @@ import (
 var (
 	warnAboutLeaks = flag.Bool("cache.pebble.warn_about_leaks", true, "If set, warn about leaked DB handles")
 )
+
+var NoSync = pebble.NoSync
+var Sync = pebble.Sync
+var ErrNotFound = pebble.ErrNotFound
+
+var NewCache = pebble.NewCache
+var WithFlushedWAL = pebble.WithFlushedWAL
+
+type Options = pebble.Options
+type IterOptions = pebble.IterOptions
+type Snapshot = pebble.Snapshot
+type Metrics = pebble.Metrics
 
 type Iterator interface {
 	io.Closer

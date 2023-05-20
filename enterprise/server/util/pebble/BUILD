@@ -1,11 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
 go_library(
-    name = "pebbleutil",
-    srcs = ["pebbleutil.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil",
+    name = "pebble",
+    srcs = ["pebble.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble",
+    visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",
         "//server/metrics",
@@ -18,13 +17,14 @@ go_library(
 )
 
 go_test(
-    name = "pebbleutil_test",
-    srcs = ["pebbleutil_test.go"],
+    name = "pebble_test",
+    srcs = ["pebble_test.go"],
     deps = [
-        ":pebbleutil",
+        ":pebble",
         "//server/testutil/testfs",
-        "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
