@@ -24,15 +24,16 @@ build:cache --experimental_remote_cache_compression
 
 # Flags shared across remote configs
 build:remote-shared --remote_upload_local_results
-build:remote-shared --host_platform=@buildbuddy_toolchain//:platform
-build:remote-shared --platforms=@buildbuddy_toolchain//:platform
-build:remote-shared --crosstool_top=@buildbuddy_toolchain//:toolchain
-build:remote-shared --extra_toolchains=//:sh_toolchain
 build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --experimental_repo_remote_exec
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
+build:remote-shared --platforms=@buildbuddy_toolchain//:platform_linux
+build:remote-shared --host_platform=@buildbuddy_toolchain//:platform_linux
+build:remote-shared --crosstool_top=@buildbuddy_toolchain//:ubuntu_cc_toolchain_suite
+build:remote-shared --extra_toolchains=@buildbuddy_toolchain//:ubuntu_cc_toolchain
+build:remote-shared --extra_toolchains=//:sh_toolchain
 
 # Build with --config=remote to use BuildBuddy RBE.
 build:remote --config=remote-shared
@@ -43,6 +44,26 @@ build:remote --remote_executor=grpcs://remote.buildbuddy.io
 build:remote-dev --config=remote-shared
 build:remote-dev --config=cache-dev
 build:remote-dev --remote_executor=grpcs://remote.buildbuddy.dev
+
+# Build with --config=target-linux to
+#   - Tell Bazel to build binaries for linux
+#   - Tell Bazel to use Linux-compatible toolchains to build
+build:target-linux --cpu=k8
+build:target-linux --host_cpu=k8
+
+# Build with --config=remote-target-linux* to build on remote Linux Executors.
+# from non-Linux machines (e.g. MacOS).
+#
+# Example usage in user.bazelrc:
+#   build --remote_header=x-buildbuddy-api-key=<foo>
+#   build:x --config=remote-target-linux
+#
+# Then you could start building/testing remotely with MacOS with:
+#   bazel test --config=x //...
+build:remote-target-linux --config=target-linux
+build:remote-target-linux --config=remote
+build:remote-target-linux-dev --config=target-linux
+build:remote-target-linux-dev --config=remote-dev
 
 # Configuration used for GitHub actions-based CI
 build:ci --config=remote
