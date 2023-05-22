@@ -1,6 +1,7 @@
 ---
 slug: keyboard-shortcuts
-title: "Keyboard Shortcuts in BuildBuddy"
+title: Keyboard Shortcuts in BuildBuddy
+description: We're happy to announce keyboard shortcut support in BuildBuddy.
 author: Iain Macdonald
 author_title: Engineer @ BuildBuddy
 date: 2023-05-18:12:00:00
