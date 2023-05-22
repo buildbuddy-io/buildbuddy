@@ -55,26 +55,26 @@ func TestInvocationNavShortcuts(t *testing.T) {
 
 	wt.FindBody().SendKeys("ga")
 	wt.FindBody().SendKeys("j")
-	wt.FindBody().SendKeys(selenium.EnterKey)
+	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[2], wt.CurrentURL())
 
 	wt.FindBody().SendKeys("u")
 	for i := 1; i < 5; i++ {
 		wt.FindBody().SendKeys("j")
 	}
-	wt.FindBody().SendKeys(selenium.EnterKey)
+	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[0], wt.CurrentURL())
 
 	wt.FindBody().SendKeys("u")
 	wt.FindBody().SendKeys("k")
-	wt.FindBody().SendKeys(selenium.EnterKey)
+	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[1], wt.CurrentURL())
 
 	wt.FindBody().SendKeys("u")
 	for i := 1; i < 5; i++ {
 		wt.FindBody().SendKeys("k")
 	}
-	wt.FindBody().SendKeys(selenium.EnterKey)
+	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[2], wt.CurrentURL())
 }
 
