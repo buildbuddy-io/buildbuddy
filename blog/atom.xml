@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2023-04-03T12:00:00.000Z</updated>
+    <updated>2023-05-22T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Keyboard Shortcuts in BuildBuddy]]></title>
+        <id>https://www.buildbuddy.io/blog/keyboard-shortcuts</id>
+        <link href="https://www.buildbuddy.io/blog/keyboard-shortcuts"/>
+        <updated>2023-05-22T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[We're happy to announce keyboard shortcuts in BuildBuddy.]]></summary>
+        <author>
+            <name>Iain Macdonald</name>
+            <uri>https://www.linkedin.com/in/macdonaldi/</uri>
+        </author>
+        <category label="product" term="product"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Welcoming Grace Chuang]]></title>
         <id>https://www.buildbuddy.io/blog/welcoming-grace-chuang</id>
