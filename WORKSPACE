@@ -50,32 +50,36 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchai
 
 go_rules_dependencies()
 
+# Register multiple Go SDKs so that we can perform cross-compilation remotely.
+# i.e. We might want to trigger a Linux AMD64 Go build remotely from a MacOS ARM64 laptop.
+#
+# Reference: https://github.com/bazelbuild/rules_go/issues/3540.
 go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
-    version = "1.20.3",  # Keep in sync with .github/workflows/checkstyle.yaml
+    version = "1.20.4",  # Keep in sync with .github/workflows/checkstyle.yaml
 )
 
 go_download_sdk(
     name = "go_sdk_linux_arm64",
     goarch = "arm64",
     goos = "linux",
-    version = "1.20.3",
+    version = "1.20.4",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
-    version = "1.20.3",
+    version = "1.20.4",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin_arm64",
     goarch = "arm64",
     goos = "darwin",
-    version = "1.20.3",
+    version = "1.20.4",
 )
 
 go_register_toolchains(
