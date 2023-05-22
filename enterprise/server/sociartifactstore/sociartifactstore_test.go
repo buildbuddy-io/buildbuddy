@@ -10,7 +10,6 @@ import (
 	"os"
 	"regexp"
 	"runtime"
-	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
@@ -337,7 +336,7 @@ type containerRegistry struct {
 	host string
 	port int
 
-	// List of blobs which were requested using GET
+	// Number of blobs requested using GET
 	blobsGot int
 }
 
@@ -349,21 +348,11 @@ func (r *containerRegistry) ImageAddress(imageName string) string {
 	return fmt.Sprintf("%s:%d/%s", r.host, r.port, imageName)
 }
 
+// A deduper implementation that doesn't do any de-duping as it's not required
+// for this test.
 type deduper struct {
-	mu sync.Mutex
 }
 
 func (d *deduper) Do(_ context.Context, _ string, work func() ([]byte, error)) ([]byte, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	return work()
-}
-
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
 }

@@ -54,7 +54,7 @@ type result struct {
 	err  error
 }
 
-type Work func() ([]byte, error)
+type Work = func() ([]byte, error)
 
 func redisLockKey(workKey string) string {
 	return fmt.Sprintf("singleflightLock/{%s}", workKey)

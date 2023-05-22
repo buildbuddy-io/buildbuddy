@@ -54,6 +54,7 @@ go_library(
         "//enterprise/server/telemetry",
         "//enterprise/server/usage",
         "//enterprise/server/usage_service",
+        "//enterprise/server/util/dsingleflight",
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",

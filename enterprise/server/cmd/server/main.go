@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -301,6 +302,8 @@ func main() {
 	if err := selfauth.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	realEnv.SetSingleFlightDeduper(dsingleflight.New(realEnv.GetDefaultRedisClient()))
 
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
