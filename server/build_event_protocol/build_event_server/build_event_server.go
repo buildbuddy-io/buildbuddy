@@ -180,11 +180,14 @@ func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel
 	// everything all at once, which means we don't need to worry about
 	// cross-server consistency of messages in an invocation.
 	sort.Sort(sort.IntSlice(acks))
-	for i, ack := range acks {
-		if ack != i+1 {
-			log.CtxWarningf(ctx, "Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
-			return status.UnknownErrorf("event sequence number mismatch: received %d, wanted %d", ack, i+1)
+
+	expectedSeqNo := channel.GetInitialSequenceNumber()
+	for _, ack := range acks {
+		if ack != int(expectedSeqNo) {
+			log.CtxWarningf(ctx, "Missing ack: saw %d and wanted %d. Bailing!", ack, expectedSeqNo)
+			return status.UnknownErrorf("event sequence number mismatch: received %d, wanted %d", ack, expectedSeqNo)
 		}
+		expectedSeqNo++
 	}
 
 	if channel != nil {

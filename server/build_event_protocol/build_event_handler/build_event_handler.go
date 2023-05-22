@@ -81,6 +81,10 @@ const (
 
 	// Exit code in Finished event indicating that the build was interrupted (i.e. killed by user).
 	InterruptedExitCode = 8
+
+	// First sequence number that we expect to see in the ordered build event
+	// stream.
+	firstExpectedSequenceNumber = 1
 )
 
 var (
@@ -758,6 +762,7 @@ type EventChannel struct {
 	bufferedEvents                   []*inpb.InvocationEvent
 	unprocessedStartingEvents        map[string]struct{}
 	numDroppedEventsBeforeProcessing uint64
+	initialSequenceNumber            int64
 	hasReceivedEventWithOptions      bool
 	hasReceivedStartedEvent          bool
 	logWriter                        *eventlog.EventLogWriter
@@ -916,6 +921,26 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	seqNo := event.OrderedBuildEvent.SequenceNumber
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId
+
+	if e.initialSequenceNumber == 0 {
+		e.initialSequenceNumber = seqNo
+	}
+	// We only allow initial sequence numbers greater than one in the case where
+	// Bazel failed to receive all of our ACKs after we finalized an invocation
+	// (marking it complete). In that case we just void the channel and ACK all
+	// events without doing any work. Otherwise, we treat it as a client error.
+	if e.initialSequenceNumber > firstExpectedSequenceNumber {
+		in, err := e.env.GetInvocationDB().LookupInvocation(e.ctx, iid)
+		if err != nil {
+			return status.WrapErrorf(err, "build event had unexpected initial sequence number %d, and failed to look up existing invocation", seqNo)
+		}
+		if in.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) {
+			log.Infof("Voiding EventChannel for invocation %s: invocation is already finalized", iid)
+			e.isVoid = true
+			return nil
+		}
+		return status.InvalidArgumentErrorf("received initial sequence number %d for build event stream retry of incomplete invocation, but expected sequence number %d", seqNo, firstExpectedSequenceNumber)
+	}
 
 	if isFinalEvent(event.OrderedBuildEvent) {
 		return nil
@@ -1223,6 +1248,10 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 
 func (e *EventChannel) GetNumDroppedEvents() uint64 {
 	return e.numDroppedEventsBeforeProcessing
+}
+
+func (e *EventChannel) GetInitialSequenceNumber() int64 {
+	return e.initialSequenceNumber
 }
 
 func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
