@@ -138,10 +138,7 @@ function normalizeThreadNames(events: TraceEvent[]) {
 }
 
 export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
-  events = events.filter(
-    // TODO(lulu): add CPU usage (Bazel), Memory usage and action count
-    (event) => TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS.has(event.name)
-  );
+  events = events.filter((event) => TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS.has(event.name));
   events.sort(timeSeriesEventComparator);
 
   const timelines: TimeSeries[] = [];

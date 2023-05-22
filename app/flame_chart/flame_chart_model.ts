@@ -1,5 +1,6 @@
-import { getUniformBrightnessColor, getMaterialChartColorPairs } from "../util/color";
+import { getUniformBrightnessColor, getMaterialChartColor, getLightMaterialChartColor } from "../util/color";
 import { buildThreadTimelines, buildTimeSeries, ThreadEvent, TraceEvent, TimeSeriesEvent } from "./profile_model";
+import capabilities from "../capabilities/capabilities";
 import {
   BLOCK_HEIGHT,
   BLOCK_VERTICAL_GAP,
@@ -101,57 +102,63 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
     currentThreadY += sectionHeight;
   }
 
-  let index = 0;
-  for (const { name, events } of timeSeries) {
-    const points = new Map<number, PointModel>();
-    const sectionHeight =
-      SECTION_LABEL_HEIGHT +
-      SECTION_PADDING_TOP +
-      SECTION_PADDING_BOTTOM +
-      TIME_SERIES_VERTICAL_GAP +
-      TIME_SERIES_HEIGHT;
-    let lowerBoundY = currentThreadY + sectionHeight;
-    let upperBoundY = currentThreadY + SECTION_LABEL_HEIGHT;
-    let d = `M 0 ${lowerBoundY} `;
+  if (capabilities.config.timeseriesChartsInTimingProfileEnabled) {
+    let index = 0;
+    for (const { name, events } of timeSeries) {
+      const points = new Map<number, PointModel>();
+      const sectionHeight =
+        SECTION_LABEL_HEIGHT +
+        SECTION_PADDING_TOP +
+        SECTION_PADDING_BOTTOM +
+        TIME_SERIES_VERTICAL_GAP +
+        TIME_SERIES_HEIGHT;
+      let lowerBoundY = currentThreadY + sectionHeight;
+      let upperBoundY = currentThreadY + SECTION_LABEL_HEIGHT;
+      let d = `M 0 ${lowerBoundY} `;
 
-    const [color, lightColor] = getMaterialChartColorPairs(index);
-    const yMax = Math.max(...events.map((event) => event.value));
-    console.log(`yMax ${yMax}`);
-    console.log(`lowerBoundY ${lowerBoundY}`);
-    for (const event of events) {
-      const { name, ts, value } = event;
-      const x = ts / MICROSECONDS_PER_SECOND;
-      const y = lowerBoundY - (value / yMax) * TIME_SERIES_HEIGHT;
-      d += `L ${x} ${y} `;
-      points.set(Math.round(x), {
-        lineProps: {
-          x1: x,
-          y1: y,
-          x2: x,
-          y2: y,
-          stroke: color,
+      const darkColor = getMaterialChartColor(index);
+      const lightColor = getLightMaterialChartColor(index);
+      const yMax = Math.max(...events.map((event) => event.value));
+      for (const event of events) {
+        const { name, ts, value } = event;
+        const x = ts / MICROSECONDS_PER_SECOND;
+        const y = lowerBoundY - (value / yMax) * TIME_SERIES_HEIGHT;
+        d += `L ${x} ${y} `;
+        // We use the rounded x as lookup key (instead of the exact value of x)
+        // when we render a reference vertical line and point on the path; so that
+        // a vertical line and point that is closest to the mouse's x coordinate
+        // will always show when the mouse hover on the graph. Otherwise, the
+        // condition to show the reference line is too strict.
+        points.set(Math.round(x), {
+          lineProps: {
+            x1: x,
+            y1: y,
+            x2: x,
+            y2: y,
+            stroke: darkColor,
+          },
+          event: event,
+        });
+      }
+      d += `V ${lowerBoundY} `;
+      lines.push({
+        pathProps: {
+          d: d,
+          fill: lightColor,
+          stroke: darkColor,
         },
-        event: event,
+        upperBoundY: upperBoundY,
+        lowerBoundY: lowerBoundY,
+        pointsByXCoord: points,
       });
+      sections.push({
+        name: name,
+        y: currentThreadY,
+        height: sectionHeight,
+      });
+      currentThreadY += sectionHeight;
+      index++;
     }
-    d += `V ${lowerBoundY} `;
-    lines.push({
-      pathProps: {
-        d: d,
-        fill: lightColor,
-        stroke: color,
-      },
-      upperBoundY: upperBoundY,
-      lowerBoundY: lowerBoundY,
-      pointsByXCoord: points,
-    });
-    sections.push({
-      name: name,
-      y: currentThreadY,
-      height: sectionHeight,
-    });
-    currentThreadY += sectionHeight;
-    index++;
   }
 
   return {

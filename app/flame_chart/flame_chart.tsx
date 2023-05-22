@@ -17,6 +17,7 @@ import {
   TIMESTAMP_HEADER_SIZE,
   VERTICAL_SCROLLBAR_WIDTH,
 } from "./style_constants";
+import capabilities from "../capabilities/capabilities";
 
 // NOTE: Do not add state to the flame chart since it is expensive to re-render.
 type ProfileFlameChartState = {};
@@ -446,7 +447,9 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                       onMouseMove={this.onLinesMouseMove.bind(this)}
                       onMouseLeave={this.onLinesMouseLeave.bind(this)}
                     />
-                    <HoveredRefLine ref={this.hoveredRefLineRef} />
+                    {capabilities.config.timeseriesChartsInTimingProfileEnabled && (
+                      <HoveredRefLine ref={this.hoveredRefLineRef} />
+                    )}
                   </g>
                 </g>
               </svg>
@@ -499,7 +502,9 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
           </div>
         </div>
         <HoveredBlockInfo ref={this.hoveredBlockInfoRef} buildDuration={this.buildDuration} />
-        <HoveredLineInfo ref={this.hoveredLineInfoRef} />
+        {capabilities.config.timeseriesChartsInTimingProfileEnabled && (
+          <HoveredLineInfo ref={this.hoveredLineInfoRef} />
+        )}
       </div>
     );
   }
@@ -709,6 +714,9 @@ class FlameChartLines extends React.Component<FlameChartLinesProps> {
   }
 
   render() {
+    if (!capabilities.config.timeseriesChartsInTimingProfileEnabled) {
+      return <></>;
+    }
     return (
       <g onMouseMove={this.onMouseMove.bind(this)} onMouseLeave={this.onMouseLeave.bind(this)}>
         {this.props.lines.map((line: any, i: number) => (

@@ -16,14 +16,14 @@ const MATERIAL_CHART_COLORS = [
  * A subset of material color pairs. Each pair includes a dark version and
  * a light version.
  */
-const MATERIAL_CHART_COLORS_DARK_AND_LIGHT = [
-  ["#4CAF50", "#A5D6A7"], // green-200
-  ["#03A9F4", "#90CAF9"], // blue-200
-  ["#FF9800", "#FFCC80"], // orange-200
-  ["#9C27B0", "#CE93D8"], // purple-200
-  ["#F44336", "#EF9A9A"], // red-200
-  ["#009688", "#80CBC4"], // teal-200
-  ["#3F51B5", "#9FA8DA"], // indigo-200
+const MATERIAL_CHART_LIGHT_COLORS = [
+  "#A5D6A7", // green-200
+  "#90CAF9", // blue-200
+  "#FFCC80", // orange-200
+  "#CE93D8", // purple-200
+  "#EF9A9A", // red-200
+  "#80CBC4", // teal-200
+  "#9FA8DA", // indigo-200
 ];
 
 /**
@@ -44,14 +44,23 @@ export function getChartColor(index: number) {
 }
 
 /**
- * Returns a pair of color with light and dark variants. The input parameter is
- * an index representing the color's position relative to other chart elements,
- * starting from 0. Indexes that are one apart from each other will have visually
- * distinct colors.
+ * Returns a color suitable for use in charts. The input
+ * parameter is an index representing the color's position relative to other
+ * chart elements, starting from 0. Indexes that are one apart from each other
+ * will have visually distinct colors.
  */
-export function getMaterialChartColorPairs(index: number) {
-  let pairs = MATERIAL_CHART_COLORS_DARK_AND_LIGHT[Math.abs(index % MATERIAL_CHART_COLORS_DARK_AND_LIGHT.length)];
-  return pairs;
+export function getMaterialChartColor(index: number) {
+  return MATERIAL_CHART_COLORS[Math.abs(index % MATERIAL_CHART_COLORS.length)];
+}
+
+/**
+ * Returns a light variant of color suitable for use in charts. The input
+ * parameter is an index representing the color's position relative to other
+ * chart elements, starting from 0. Indexes that are one apart from each other
+ * will have visually distinct colors.
+ */
+export function getLightMaterialChartColor(index: number) {
+  return MATERIAL_CHART_LIGHT_COLORS[Math.abs(index % MATERIAL_CHART_LIGHT_COLORS.length)];
 }
 
 // See https://perceived-brightness.vercel.app/
