@@ -41,7 +41,297 @@
         "y": 0
       },
       "id": 23,
-      "panels": [],
+      "panels": [
+        {
+          "aliasColors": {},
+          "bars": false,
+          "collapsed": true,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 1
+          },
+          "hiddenSeries": false,
+          "id": 21,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "rightSide": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "9.3.1",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeat": "job",
+          "repeatDirection": "h",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "expr": "sum(up{region=\"${region}\", job=\"${job}\"})",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Up",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(kube_pod_status_ready{region=\"${region}\", pod=~\"${job}-([0-9a-f]{8,10}-.*|[0-9]+)$\"})",
+              "interval": "",
+              "legendFormat": "Ready",
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "${job} instances",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:365",
+              "decimals": 0,
+              "format": "short",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:366",
+              "format": "short",
+              "logBase": 1,
+              "show": false
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "collapsed": true,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "hiddenSeries": false,
+          "id": 932,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "9.3.1",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{region=\"${region}\"}[1m])) by (pod, container, exported_namespace) > 0",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "Unexpected Restarts",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:137",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            },
+            {
+              "$$hashKey": "object:138",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "axisSoftMax": 0,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "id": 5492,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(1 - (buildbuddy_health_check_status{region=\"${region}\"} == 0)) by (pod_name, health_check_name)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Failing Health Checks",
+          "type": "timeseries"
+        }
+      ],
       "targets": [
         {
           "datasource": {
@@ -55,295 +345,6 @@
       "type": "row"
     },
     {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prom"
-      },
-      "fill": 0,
-      "fillGradient": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 0,
-        "y": 1
-      },
-      "hiddenSeries": false,
-      "id": 21,
-      "legend": {
-        "avg": false,
-        "current": false,
-        "max": false,
-        "min": false,
-        "rightSide": false,
-        "show": true,
-        "total": false,
-        "values": false
-      },
-      "lines": true,
-      "linewidth": 1,
-      "nullPointMode": "null",
-      "options": {
-        "alertThreshold": true
-      },
-      "percentage": false,
-      "pluginVersion": "9.3.1",
-      "pointradius": 2,
-      "points": false,
-      "renderer": "flot",
-      "repeat": "job",
-      "repeatDirection": "h",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "expr": "sum(up{region=\"${region}\", job=\"${job}\"})",
-          "hide": false,
-          "interval": "",
-          "legendFormat": "Up",
-          "queryType": "randomWalk",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "exemplar": true,
-          "expr": "sum(kube_pod_status_ready{region=\"${region}\", pod=~\"${job}-([0-9a-f]{8,10}-.*|[0-9]+)$\"})",
-          "interval": "",
-          "legendFormat": "Ready",
-          "refId": "B"
-        }
-      ],
-      "thresholds": [],
-      "timeRegions": [],
-      "title": "${job} instances",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "mode": "time",
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "$$hashKey": "object:365",
-          "decimals": 0,
-          "format": "short",
-          "logBase": 1,
-          "min": "0",
-          "show": true
-        },
-        {
-          "$$hashKey": "object:366",
-          "format": "short",
-          "logBase": 1,
-          "show": false
-        }
-      ],
-      "yaxis": {
-        "align": false
-      },
-      "collapsed": true
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prom"
-      },
-      "fill": 1,
-      "fillGradient": 0,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "hiddenSeries": false,
-      "id": 932,
-      "legend": {
-        "avg": false,
-        "current": false,
-        "max": false,
-        "min": false,
-        "show": true,
-        "total": false,
-        "values": false
-      },
-      "lines": true,
-      "linewidth": 1,
-      "nullPointMode": "null",
-      "options": {
-        "alertThreshold": true
-      },
-      "percentage": false,
-      "pluginVersion": "9.3.1",
-      "pointradius": 2,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "exemplar": true,
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{region=\"${region}\"}[1m])) by (pod, container, exported_namespace) > 0",
-          "interval": "",
-          "legendFormat": "",
-          "queryType": "randomWalk",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeRegions": [],
-      "title": "Unexpected Restarts",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "mode": "time",
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "$$hashKey": "object:137",
-          "format": "short",
-          "logBase": 1,
-          "show": true
-        },
-        {
-          "$$hashKey": "object:138",
-          "format": "short",
-          "logBase": 1,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false
-      },
-      "collapsed": true
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prom"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "axisSoftMax": 0,
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "id": 5492,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "editorMode": "code",
-          "expr": "sum(1 - (buildbuddy_health_check_status{region=\"${region}\"} == 0)) by (pod_name, health_check_name)",
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Failing Health Checks",
-      "type": "timeseries",
-      "collapsed": true
-    },
-    {
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
@@ -353,7 +354,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 1
       },
       "id": 330,
       "panels": [
@@ -556,7 +557,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 2
       },
       "id": 11,
       "panels": [
@@ -976,7 +977,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 3
       },
       "id": 1175,
       "panels": [
@@ -1540,7 +1541,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 4
       },
       "id": 220,
       "panels": [
@@ -1844,7 +1845,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 5
       },
       "id": 240,
       "panels": [
@@ -2470,7 +2471,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 6
       },
       "id": 1430,
       "panels": [
@@ -3424,7 +3425,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 7
       },
       "id": 15,
       "panels": [
@@ -4418,7 +4419,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 8
       },
       "id": 2276,
       "panels": [
@@ -4652,7 +4653,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 11
       },
       "id": 3680,
       "panels": [
@@ -4716,7 +4717,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 20
+            "y": 12
           },
           "id": 3763,
           "options": {
@@ -4841,7 +4842,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 20
+            "y": 12
           },
           "id": 3846,
           "options": {
@@ -4960,7 +4961,8 @@
                     "value": 80
                   }
                 ]
-              }
+              },
+              "unit": "ops"
             },
             "overrides": []
           },
@@ -4968,7 +4970,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 28
+            "y": 20
           },
           "id": 5160,
           "options": {
@@ -5060,7 +5062,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 28
+            "y": 20
           },
           "id": 5242,
           "options": {
@@ -5152,7 +5154,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 36
+            "y": 28
           },
           "id": 5324,
           "options": {
@@ -5244,7 +5246,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 36
+            "y": 28
           },
           "id": 5406,
           "options": {
@@ -5285,7 +5287,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 12
       },
       "id": 4996,
       "panels": [
@@ -6494,7 +6496,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 13
       },
       "id": 3104,
       "panels": [
@@ -6912,7 +6914,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 14
       },
       "id": 264,
       "panels": [
@@ -7545,7 +7547,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 17
       },
       "id": 38,
       "panels": [
@@ -8046,7 +8048,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 18
       },
       "id": 458,
       "panels": [
@@ -8686,7 +8688,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 19
       },
       "id": 48,
       "panels": [
@@ -9098,7 +9100,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 20
       },
       "id": 384,
       "panels": [
@@ -9692,7 +9694,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 21
       },
       "id": 107,
       "panels": [
@@ -10307,7 +10309,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 22
       },
       "id": 28,
       "panels": [
@@ -11982,7 +11984,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 25
       },
       "id": 83,
       "panels": [
@@ -12384,7 +12386,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 29
       },
       "id": 71,
       "panels": [
@@ -12814,7 +12816,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 30
       },
       "id": 1088,
       "panels": [
@@ -13137,7 +13139,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 34
       },
       "id": 962,
       "panels": [
@@ -13337,7 +13339,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 35
       },
       "id": 1975,
       "panels": [
@@ -13583,7 +13585,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 36
       },
       "id": 1988,
       "panels": [
@@ -13704,7 +13706,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 37
       },
       "id": 1983,
       "panels": [
@@ -13869,7 +13871,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 53
+        "y": 38
       },
       "id": 8,
       "panels": [
@@ -14192,7 +14194,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 39
       },
       "id": 1346,
       "panels": [
