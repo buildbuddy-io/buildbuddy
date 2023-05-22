@@ -289,16 +289,17 @@ Let's use Bazel's latest release, 6.2.0, as our baseline and see how Buck2 compa
 
    ```bash
    > cat .bazelrc
-   build:local --jobs=200
    build:local --strategy=local
+   build:local --jobs=200
    build:local --local_cpu_resources=200
    build:local --local_ram_resources='HOST_RAM*2.0'
    ```
 
    It's worth noting that Bazel executes actions in a sandbox by default, so `--strategy=local` is used here to explicitly disable sandboxing.
-   Bazel would also use your CPU and RAM to estimate the maximum concurrency for your machine, here we also override it with `--jobs=200`
-   and trick Bazel into thinking that we have way more CPU and RAM than we have.
-   This allows us to hit the 200 concurrent actions mark:
+   We also set Bazel's concurrency limit to 200 by specifying `--jobs=200` and override Bazel's system resource estimations by specifying
+   `--local_cpu_resources` and `--local_ram_resources` to larger values.
+   Because our actions are lightweighted, with majority of the time being spent on `sleep(1)` call,
+   these Bazel flags enable us to hit the "200 concurrent build actions" mark.
 
    ```bash
    > hyperfine --prepare 'bazel clean' --warmup 1 'bazel test --config=local //...'
