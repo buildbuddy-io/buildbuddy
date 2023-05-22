@@ -10,7 +10,6 @@ import (
 	"os"
 	"regexp"
 	"runtime"
-	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"

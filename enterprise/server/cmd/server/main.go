@@ -306,5 +306,7 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	realEnv.SetSingleFlightDeduper(dsingleflight.New(realEnv.GetDefaultRedisClient()))
+
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
