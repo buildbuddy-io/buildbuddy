@@ -7,7 +7,7 @@ author_title: Solution Engineer @ BuildBuddy
 date: 2023-05-16:12:00:00
 author_url: https://github.com/sluongng/
 author_image_url: https://avatars.githubusercontent.com/u/26684313?v=4
-image: /img/blog/buck2.jpg
+image: /img/blog/buck2-header.png
 tags: [buck2, engineering]
 ---
 
@@ -260,7 +260,7 @@ Our setup is a build graph composed of 4 stages:
 
 - Stage 4: Validate stage 3 output with a test (1 test target)
 
-Before each action, we sleep a random duration between 0 and 4 seconds to make the simulation a bit closer to real-world build.
+Before each action, we sleep a random duration between 0 and 4 seconds to make the simulation closer to real-world build.
 
 We also inject this sleep value into our test to help validate testing features down the line:
 
