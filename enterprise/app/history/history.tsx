@@ -156,6 +156,16 @@ export default class HistoryComponent extends React.Component<Props, State> {
             : response.invocation,
           pageToken: response.nextPageToken,
         });
+
+        // Select the invocation id from local storage. This is so that when
+        // navigating around the app, the selected invocation is sticky --
+        // though it gets cleared on refresh or navigation requests. This is
+        // done in the invocation-fetch rPC response because this is async with
+        // the react lifecycle methods.
+        if (localStorage["selected_invocation_id"] !== "" && this.state.invocations != undefined) {
+          this.selectInvocation(localStorage["selected_invocation_id"]);
+          localStorage["selected_invocation_id"] = "";
+        }
       })
       .finally(() => this.setState({ loadingInvocations: false }));
   }
@@ -248,11 +258,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
         this.selectPreviousInvocation();
       })
     );
-    handles.push(
-      shortcuts.register(KeyCombo.enter, () => {
-        this.navigateToSelectedInvocation();
-      })
-    );
     this.setState({
       keyboardShortcutHandles: handles,
     });
@@ -268,6 +273,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       selectedInvocationIndex: newInvocationIndex,
       selectedInvocationId: newInvocationId,
     });
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   selectPreviousInvocation() {
@@ -280,6 +286,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       selectedInvocationIndex: newInvocationIndex,
       selectedInvocationId: newInvocationId,
     });
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   selectInvocation(invocationId: string) {
@@ -289,7 +296,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
           selectedInvocationIndex: i,
           selectedInvocationId: invocationId,
         });
-        return;
       }
     }
     // Not found, reset the id because it might be invalid.
@@ -299,6 +305,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         selectedInvocationId: "",
       });
     }
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   navigateToSelectedInvocation() {
@@ -308,16 +315,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    // Select the invocation id from local storage. This is so that when
-    // navigating around the app, the selected invocation is sticky -- though
-    // it gets cleared on refresh or navigation requests.
-    // This must be done in  componentDidUpdate because the list of invocations
-    // is fetched after componentDidMount.
-    if (localStorage["selected_invocation_id"] !== "" && this.state.invocations != undefined) {
-      this.selectInvocation(localStorage["selected_invocation_id"]);
-      localStorage["selected_invocation_id"] = "";
-    }
-
     if (this.props.tab !== prevProps.tab || this.props.search !== prevProps.search) {
       this.fetch();
     }

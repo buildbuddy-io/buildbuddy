@@ -190,7 +190,8 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
         className={`clickable card history-invocation-card
           ${this.props.className}
           ${this.props.hover ? "card-hover" : ""}
-          ${this.props.isSelectedWithKeyboard ? "selected-keyboard-shortcuts" : this.getStatusClass()}`}>
+          ${this.getStatusClass()}
+          ${this.props.isSelectedWithKeyboard ? "selected-keyboard-shortcuts" : ""}`}>
         <div className="content">
           {this.props.isSelectedForCompare && (
             <div className="comparison-buffer-illustration buffered" title="Selected for compare">
