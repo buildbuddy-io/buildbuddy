@@ -71,7 +71,7 @@ go_test(
     srcs = ["firecracker_test.go"],
     exec_properties = {
         "Pool": "bare",
-        "use-self-hosted-executor": "true",
+        "use-self-hosted-executors": "true",
         "container-image": "none",
     },
     tags = [
