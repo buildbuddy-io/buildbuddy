@@ -540,8 +540,15 @@ class HoveredRefLine extends React.Component<HoveredRefLineState> {
           vectorEffect="non-scaling-stroke"
           stroke="red"
           stroke-dasharray="4"
+          style={{ pointerEvents: "none" }}
         />
-        <line {...point.lineProps} stroke-width="5px" stroke-linecap="round" vectorEffect="non-scaling-stroke" />
+        <line
+          {...point.lineProps}
+          stroke-width="5px"
+          stroke-linecap="round"
+          vectorEffect="non-scaling-stroke"
+          style={{ pointerEvents: "none" }}
+        />
       </g>
     );
   }
@@ -551,10 +558,12 @@ class HoveredLineInfo extends React.Component<HoveredLineInfoState> {
   state: HoveredLineInfoState = {};
   private lineRef = React.createRef<HTMLDivElement>();
 
+  readonly horizontalPadding = 8;
+
   private getHorizontalOverflow() {
     if (!this.lineRef.current || !this.state.line) return 0;
     const width = this.lineRef.current.getBoundingClientRect().width;
-    const rightEdgeX = (this.state.x || 0) + width;
+    const rightEdgeX = (this.state.x || 0) + width + this.horizontalPadding;
     return Math.max(0, rightEdgeX - window.innerWidth);
   }
 
@@ -577,17 +586,14 @@ class HoveredLineInfo extends React.Component<HoveredLineInfoState> {
         style={{
           position: "fixed",
           top: (this.state.y || 0) + 16,
-          left: (this.state.x || 0) - 16 - this.getHorizontalOverflow(),
+          left: (this.state.x || 0) + this.horizontalPadding - this.getHorizontalOverflow(),
           pointerEvents: "none",
           // Make the block invisible on the first render while we compute the
           // horizontal overflow based on the actual rendered size.
           opacity: this.lineRef.current ? 1 : 0,
         }}>
-        <div className="hovered-block-title">{name}</div>
         <div className="hovered-block-details">
-          <div></div>
-          <div>timestamp: {timestamp}s</div>
-          <div>value: {val}</div>
+          <div>{val}</div>
         </div>
       </div>
     );
@@ -683,33 +689,33 @@ type FlameChartLinesProps = {
 };
 /** The points rendered within the flame chart timeline. */
 class FlameChartLines extends React.Component<FlameChartLinesProps> {
-  private hoveredLine: {
-    element: SVGPathElement;
+  private hoveredBox: {
+    element: SVGRectElement;
     index: number;
   } | null = null;
 
   private onMouseMove(e: React.MouseEvent<SVGGElement, MouseEvent>) {
-    if ((e.target as Element).tagName !== "path") return;
-    const line = e.target as SVGPathElement;
+    if ((e.target as Element).tagName !== "rect") return;
+    const box = e.target as SVGRectElement;
 
-    const index = Number(line.dataset["index"]);
-    if (this.hoveredLine) {
-      this.hoveredLine.element.classList.remove("hover");
+    const index = Number(box.dataset["index"]);
+    if (this.hoveredBox) {
+      this.hoveredBox.element.classList.remove("hover");
     }
-    this.hoveredLine = {
-      element: line,
+    this.hoveredBox = {
+      element: box,
       index,
     };
-    line.classList.add("hover");
+    box.classList.add("hover");
     this.props.onHover(this.props.lines[index]);
     this.props.onMouseMove(e);
   }
 
   private onMouseLeave(e: React.MouseEvent<SVGGElement, MouseEvent>) {
-    if (this.hoveredLine) {
-      this.hoveredLine.element.classList.remove("hover");
+    if (this.hoveredBox) {
+      this.hoveredBox.element.classList.remove("hover");
     }
-    this.hoveredLine = null;
+    this.hoveredBox = null;
     this.props.onMouseLeave(e);
   }
 
@@ -720,7 +726,18 @@ class FlameChartLines extends React.Component<FlameChartLinesProps> {
     return (
       <g onMouseMove={this.onMouseMove.bind(this)} onMouseLeave={this.onMouseLeave.bind(this)}>
         {this.props.lines.map((line: any, i: number) => (
-          <path key={i} data-index={i} {...line.pathProps} vectorEffect="non-scaling-stroke" />
+          <g>
+            <path {...line.pathProps} vectorEffect="non-scaling-stroke" />
+            <rect
+              key={i}
+              data-index={i}
+              y={line.upperBoundY}
+              width={line.upperBoundX}
+              height={line.lowerBoundY - line.upperBoundY}
+              vectorEffect="non-scaling-stroke"
+              fill="transparent"
+            />
+          </g>
         ))}
       </g>
     );

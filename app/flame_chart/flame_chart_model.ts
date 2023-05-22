@@ -56,6 +56,7 @@ export type LineModel = {
   pointsByXCoord: Map<number, PointModel>;
   upperBoundY: number;
   lowerBoundY: number;
+  upperBoundX: number;
 };
 
 export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold = 0 } = {}): FlameChartModel {
@@ -119,6 +120,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
       const darkColor = getMaterialChartColor(index);
       const lightColor = getLightMaterialChartColor(index);
       const yMax = Math.max(...events.map((event) => event.value));
+      const xMax = Math.max(...events.map((event) => event.ts / MICROSECONDS_PER_SECOND));
       for (const event of events) {
         const { name, ts, value } = event;
         const x = ts / MICROSECONDS_PER_SECOND;
@@ -149,6 +151,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
         },
         upperBoundY: upperBoundY,
         lowerBoundY: lowerBoundY,
+        upperBoundX: xMax,
         pointsByXCoord: points,
       });
       sections.push({
