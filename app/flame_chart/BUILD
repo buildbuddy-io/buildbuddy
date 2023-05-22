@@ -7,6 +7,7 @@ ts_library(
     srcs = ["flame_chart.tsx"],
     strict = True,
     deps = [
+        "//app/capabilities",
         "//app/components/scrollbar",
         "//app/flame_chart:flame_chart_model",
         "//app/flame_chart:profile_model",
@@ -34,6 +35,7 @@ ts_library(
     srcs = ["flame_chart_model.ts"],
     strict = True,
     deps = [
+        "//app/capabilities",
         "//app/flame_chart:profile_model",
         "//app/flame_chart:style_constants",
         "//app/util:color",

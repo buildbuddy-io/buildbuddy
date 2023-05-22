@@ -31,20 +31,21 @@ const (
 )
 
 var (
-	defaultToDenseMode                   = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
-	codeEditorEnabled                    = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
-	userManagementEnabled                = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.")
-	testGridV2Enabled                    = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
-	usageEnabled                         = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
-	expandedSuggestionsEnabled           = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
-	enableWorkflows                      = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
-	enableExecutorKeyCreation            = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
-	testOutputManifestsEnabled           = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
-	patternFilterEnabled                 = flag.Bool("app.pattern_filter_enabled", true, "If set, allow filtering by pattern in the client.")
-	executionSearchEnabled               = flag.Bool("app.execution_search_enabled", true, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
-	trendsSummaryEnabled                 = flag.Bool("app.trends_summary_enabled", false, "If set, show the new 'summary' section at the top of the trends UI.")
-	customerManagedEncryptionKeysEnabled = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
-	tagsUIEnabled                        = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
+	defaultToDenseMode                     = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
+	codeEditorEnabled                      = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
+	userManagementEnabled                  = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.")
+	testGridV2Enabled                      = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
+	usageEnabled                           = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
+	expandedSuggestionsEnabled             = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
+	enableWorkflows                        = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
+	enableExecutorKeyCreation              = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
+	testOutputManifestsEnabled             = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
+	patternFilterEnabled                   = flag.Bool("app.pattern_filter_enabled", true, "If set, allow filtering by pattern in the client.")
+	executionSearchEnabled                 = flag.Bool("app.execution_search_enabled", true, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
+	trendsSummaryEnabled                   = flag.Bool("app.trends_summary_enabled", false, "If set, show the new 'summary' section at the top of the trends UI.")
+	customerManagedEncryptionKeysEnabled   = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
+	tagsUIEnabled                          = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
+	timeseriesChartsInTimingProfileEnabled = flag.Bool("app.timeseries_charts_in_timing_profile_enabled", true, "If set, charts with sampled time series data (such as CPU and memory usage) will be shown")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -136,38 +137,39 @@ type FrontendTemplateData struct {
 
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version, jsPath, stylePath string, w http.ResponseWriter) {
 	config := cfgpb.FrontendConfig{
-		Version:                              version,
-		ConfiguredIssuers:                    env.GetAuthenticator().PublicIssuers(),
-		DefaultToDenseMode:                   *defaultToDenseMode,
-		GithubEnabled:                        github.IsLegacyOAuthAppEnabled(),
-		GithubAppEnabled:                     env.GetGitHubApp() != nil,
-		AnonymousUsageEnabled:                env.GetAuthenticator().AnonymousUsageEnabled(),
-		TestDashboardEnabled:                 target_tracker.TargetTrackingEnabled(),
-		UserOwnedExecutorsEnabled:            remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
-		ExecutorKeyCreationEnabled:           remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
-		WorkflowsEnabled:                     remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
-		CodeEditorEnabled:                    *codeEditorEnabled,
-		RemoteExecutionEnabled:               remote_execution_config.RemoteExecutionEnabled(),
-		SsoEnabled:                           env.GetAuthenticator().SSOEnabled(),
-		GlobalFilterEnabled:                  true,
-		UsageEnabled:                         *usageEnabled,
-		UserManagementEnabled:                *userManagementEnabled,
-		ForceUserOwnedDarwinExecutors:        remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
-		TestGridV2Enabled:                    *testGridV2Enabled,
-		DetailedCacheStatsEnabled:            hit_tracker.DetailedStatsEnabled(),
-		ExpandedSuggestionsEnabled:           *expandedSuggestionsEnabled,
-		QuotaManagementEnabled:               env.GetQuotaManager() != nil,
-		SecretsEnabled:                       env.GetSecretService() != nil,
-		TestOutputManifestsEnabled:           *testOutputManifestsEnabled,
-		UserOwnedKeysEnabled:                 env.GetUserDB() != nil && env.GetUserDB().GetUserOwnedKeysEnabled(),
-		TrendsHeatmapEnabled:                 iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
-		PatternFilterEnabled:                 *patternFilterEnabled,
-		BotSuggestionsEnabled:                env.GetSuggestionService() != nil,
-		MultipleSuggestionProviders:          env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
-		ExecutionSearchEnabled:               *executionSearchEnabled,
-		TrendsSummaryEnabled:                 *trendsSummaryEnabled,
-		CustomerManagedEncryptionKeysEnabled: *customerManagedEncryptionKeysEnabled,
-		TagsUiEnabled:                        *tagsUIEnabled,
+		Version:                                version,
+		ConfiguredIssuers:                      env.GetAuthenticator().PublicIssuers(),
+		DefaultToDenseMode:                     *defaultToDenseMode,
+		GithubEnabled:                          github.IsLegacyOAuthAppEnabled(),
+		GithubAppEnabled:                       env.GetGitHubApp() != nil,
+		AnonymousUsageEnabled:                  env.GetAuthenticator().AnonymousUsageEnabled(),
+		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),
+		UserOwnedExecutorsEnabled:              remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
+		ExecutorKeyCreationEnabled:             remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
+		WorkflowsEnabled:                       remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
+		CodeEditorEnabled:                      *codeEditorEnabled,
+		RemoteExecutionEnabled:                 remote_execution_config.RemoteExecutionEnabled(),
+		SsoEnabled:                             env.GetAuthenticator().SSOEnabled(),
+		GlobalFilterEnabled:                    true,
+		UsageEnabled:                           *usageEnabled,
+		UserManagementEnabled:                  *userManagementEnabled,
+		ForceUserOwnedDarwinExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
+		TestGridV2Enabled:                      *testGridV2Enabled,
+		DetailedCacheStatsEnabled:              hit_tracker.DetailedStatsEnabled(),
+		ExpandedSuggestionsEnabled:             *expandedSuggestionsEnabled,
+		QuotaManagementEnabled:                 env.GetQuotaManager() != nil,
+		SecretsEnabled:                         env.GetSecretService() != nil,
+		TestOutputManifestsEnabled:             *testOutputManifestsEnabled,
+		UserOwnedKeysEnabled:                   env.GetUserDB() != nil && env.GetUserDB().GetUserOwnedKeysEnabled(),
+		TrendsHeatmapEnabled:                   iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
+		PatternFilterEnabled:                   *patternFilterEnabled,
+		BotSuggestionsEnabled:                  env.GetSuggestionService() != nil,
+		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
+		ExecutionSearchEnabled:                 *executionSearchEnabled,
+		TrendsSummaryEnabled:                   *trendsSummaryEnabled,
+		CustomerManagedEncryptionKeysEnabled:   *customerManagedEncryptionKeysEnabled,
+		TagsUiEnabled:                          *tagsUIEnabled,
+		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

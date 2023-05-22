@@ -32,9 +32,28 @@ export type ThreadTimeline = {
   maxDepth: number;
 };
 
+export type TimeSeriesEvent = TraceEvent & {
+  value: number;
+};
+
+export type TimeSeries = {
+  name: string;
+  events: TimeSeriesEvent[];
+};
+
 // Matches strings like "skyframe evaluator 1", "grpc-command-0", etc., splitting the
 // non-numeric prefix and numeric suffix into separate match groups.
 const NUMBERED_THREAD_NAME_PATTERN = /^(?<prefix>[^\d]+)(?<number>\d+)$/;
+
+// A list of names of events that contain a timestamp and a value in args.
+const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
+  ["action count", "action"],
+  ["CPU usage (Bazel)", "cpu"],
+  ["Memory usage (Bazel)", "memory"],
+  ["CPU usage (total)", "system cpu"],
+  ["Memory usage (total)", "system memory"],
+  ["System load average", "load"],
+]);
 
 export function parseProfile(data: string): Profile {
   // Note, the trace profile format specifies that the "]" at the end of the
@@ -74,6 +93,16 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
   return durationDiff;
 }
 
+function timeSeriesEventComparator(a: TraceEvent, b: TraceEvent) {
+  // Group by name.
+  const nameDiff = a.name.localeCompare(b.name);
+  if (nameDiff !== 0) return nameDiff;
+
+  // Sort in increasing order of start time;
+  const tsDiff = a.ts - b.ts;
+  return tsDiff;
+}
+
 function timelineComparator(a: ThreadTimeline, b: ThreadTimeline) {
   // Within numbered thread names (e.g. "skyframe evaluator 0", "grpc-command-0"), sort
   // numerically.
@@ -106,6 +135,34 @@ function normalizeThreadNames(events: TraceEvent[]) {
       }
     }
   }
+}
+
+export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
+  events = events.filter((event) => TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS.has(event.name));
+  events.sort(timeSeriesEventComparator);
+
+  const timelines: TimeSeries[] = [];
+  let name = null;
+  let timeSeries: TimeSeries | null = null;
+  for (const event of events as TimeSeriesEvent[]) {
+    if (name === null || event.name !== name) {
+      // Encountered new type of time series data
+      name = event.name;
+      timeSeries = {
+        name,
+        events: [],
+      };
+      timelines.push(timeSeries);
+    } else {
+      for (const key in event.args) {
+        if (key == TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS.get(event.name)) {
+          event.value = event.args[key];
+        }
+      }
+      timeSeries!.events.push(event);
+    }
+  }
+  return timelines;
 }
 
 /**

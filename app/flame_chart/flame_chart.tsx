@@ -6,16 +6,18 @@ import { AnimatedValue } from "../util/animated_value";
 import { AnimationLoop } from "../util/animation_loop";
 import { createSvgElement } from "../util/dom";
 import { truncateDecimals } from "../util/math";
-import { BlockModel, buildFlameChartModel, FlameChartModel } from "./flame_chart_model";
+import { BlockModel, buildFlameChartModel, FlameChartModel, LineModel } from "./flame_chart_model";
 import { Profile } from "./profile_model";
 import {
   BLOCK_HEIGHT,
+  TIME_SERIES_HEIGHT,
   INITIAL_END_TIME_SECONDS,
   SECTION_LABEL_HEIGHT,
   TIMESTAMP_FONT_SIZE,
   TIMESTAMP_HEADER_SIZE,
   VERTICAL_SCROLLBAR_WIDTH,
 } from "./style_constants";
+import capabilities from "../capabilities/capabilities";
 
 // NOTE: Do not add state to the flame chart since it is expensive to re-render.
 type ProfileFlameChartState = {};
@@ -51,6 +53,8 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private debugRef = React.createRef<HTMLPreElement>();
   private horizontalScrollbarRef = React.createRef<HorizontalScrollbar>();
   private hoveredBlockInfoRef = React.createRef<HoveredBlockInfo>();
+  private hoveredLineInfoRef = React.createRef<HoveredLineInfo>();
+  private hoveredRefLineRef = React.createRef<HoveredRefLine>();
 
   private viewport!: HTMLDivElement;
   private barsContainerSvg!: SVGSVGElement;
@@ -127,6 +131,22 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     this.hoveredBlockInfoRef.current?.setState({ block: undefined });
   }
 
+  private onHoverLine(hoveredLine: LineModel) {
+    this.hoveredLineInfoRef.current?.setState({ line: hoveredLine });
+    this.hoveredRefLineRef.current?.setState({ line: hoveredLine });
+  }
+  private onLinesMouseMove(e: React.MouseEvent<SVGGElement, MouseEvent>) {
+    const x = e.clientX;
+    const y = e.clientY;
+    const seconds = this.mouse.seconds;
+    this.hoveredLineInfoRef.current?.setState({ seconds, x, y });
+    this.hoveredRefLineRef.current?.setState({ seconds });
+  }
+  private onLinesMouseLeave(e: React.MouseEvent<SVGGElement, MouseEvent>) {
+    this.hoveredLineInfoRef.current?.setState({ line: undefined });
+    this.hoveredRefLineRef.current?.setState({ line: undefined });
+  }
+
   private setMaxXCoordinate(value: number) {
     this.endTimeSeconds = value * this.secondsPerX;
     this.screenPixelsPerSecond.min = this.getMinPixelsPerSecond();
@@ -189,6 +209,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
       this.adjustZoom(e.deltaY);
     }
   }
+
   private adjustZoom(delta: number) {
     const scrollSpeedMultiplier = 0.005;
     const y0 = Math.log(this.screenPixelsPerSecond.target);
@@ -420,6 +441,15 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                       onMouseMove={this.onBlocksMouseMove.bind(this)}
                       onMouseLeave={this.onBlocksMouseLeave.bind(this)}
                     />
+                    <FlameChartLines
+                      lines={this.chartModel.lines}
+                      onHover={this.onHoverLine.bind(this)}
+                      onMouseMove={this.onLinesMouseMove.bind(this)}
+                      onMouseLeave={this.onLinesMouseLeave.bind(this)}
+                    />
+                    {capabilities.config.timeseriesChartsInTimingProfileEnabled && (
+                      <HoveredRefLine ref={this.hoveredRefLineRef} />
+                    )}
                   </g>
                 </g>
               </svg>
@@ -472,6 +502,9 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
           </div>
         </div>
         <HoveredBlockInfo ref={this.hoveredBlockInfoRef} buildDuration={this.buildDuration} />
+        {capabilities.config.timeseriesChartsInTimingProfileEnabled && (
+          <HoveredLineInfo ref={this.hoveredLineInfoRef} />
+        )}
       </div>
     );
   }
@@ -483,8 +516,89 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 }
 
 type HoveredBlockInfoState = { block?: BlockModel; x?: number; y?: number };
+type HoveredLineInfoState = { line?: LineModel; x?: number; y?: number; seconds?: number };
+type HoveredRefLineState = { line?: LineModel; seconds?: number };
 
 const MICROSECONDS_PER_SECOND = 1_000_000;
+
+class HoveredRefLine extends React.Component<HoveredRefLineState> {
+  state: HoveredLineInfoState = {};
+
+  render() {
+    const { line } = this.state;
+    if (!line) return <></>;
+    let roundedSeconds = Math.round(this.state?.seconds || 0);
+    let point = line.pointsByXCoord.get(roundedSeconds) || null;
+    if (!point) return <></>;
+    return (
+      <g>
+        <line
+          x1={point.lineProps.x1}
+          y1={line.lowerBoundY}
+          x2={point.lineProps.x1}
+          y2={line.upperBoundY}
+          vectorEffect="non-scaling-stroke"
+          stroke="red"
+          stroke-dasharray="4"
+          style={{ pointerEvents: "none" }}
+        />
+        <line
+          {...point.lineProps}
+          stroke-width="5px"
+          stroke-linecap="round"
+          vectorEffect="non-scaling-stroke"
+          style={{ pointerEvents: "none" }}
+        />
+      </g>
+    );
+  }
+}
+
+class HoveredLineInfo extends React.Component<HoveredLineInfoState> {
+  state: HoveredLineInfoState = {};
+  private lineRef = React.createRef<HTMLDivElement>();
+
+  readonly horizontalPadding = 8;
+
+  private getHorizontalOverflow() {
+    if (!this.lineRef.current || !this.state.line) return 0;
+    const width = this.lineRef.current.getBoundingClientRect().width;
+    const rightEdgeX = (this.state.x || 0) + width + this.horizontalPadding;
+    return Math.max(0, rightEdgeX - window.innerWidth);
+  }
+
+  render() {
+    const { line } = this.state;
+    if (!line) return <></>;
+    let roundedSeconds = Math.round(this.state?.seconds || 0);
+    let point = line.pointsByXCoord.get(roundedSeconds) || null;
+    if (!point) return <></>;
+    const {
+      event: { name, ts, value },
+    } = point;
+    const timestamp = truncateDecimals(ts / MICROSECONDS_PER_SECOND, 3);
+    const val = truncateDecimals(value, 3);
+
+    return (
+      <div
+        className="flame-chart-hovered-block-info"
+        ref={this.lineRef}
+        style={{
+          position: "fixed",
+          top: (this.state.y || 0) + 16,
+          left: (this.state.x || 0) + this.horizontalPadding - this.getHorizontalOverflow(),
+          pointerEvents: "none",
+          // Make the block invisible on the first render while we compute the
+          // horizontal overflow based on the actual rendered size.
+          opacity: this.lineRef.current ? 1 : 0,
+        }}>
+        <div className="hovered-block-details">
+          <div>{val}</div>
+        </div>
+      </div>
+    );
+  }
+}
 
 class HoveredBlockInfo extends React.Component<{ buildDuration: number }, HoveredBlockInfoState> {
   state: HoveredBlockInfoState = {};
@@ -565,6 +679,69 @@ function computeGridlines(startTimeSeconds: number, endTimeSeconds: number, widt
     intervalSeconds,
     count,
   };
+}
+
+type FlameChartLinesProps = {
+  lines: LineModel[];
+  onHover: (line: LineModel) => void;
+  onMouseMove: (e: React.MouseEvent<SVGGElement, MouseEvent>) => void;
+  onMouseLeave: (e: React.MouseEvent<SVGGElement, MouseEvent>) => void;
+};
+/** The points rendered within the flame chart timeline. */
+class FlameChartLines extends React.Component<FlameChartLinesProps> {
+  private hoveredBox: {
+    element: SVGRectElement;
+    index: number;
+  } | null = null;
+
+  private onMouseMove(e: React.MouseEvent<SVGGElement, MouseEvent>) {
+    if ((e.target as Element).tagName !== "rect") return;
+    const box = e.target as SVGRectElement;
+
+    const index = Number(box.dataset["index"]);
+    if (this.hoveredBox) {
+      this.hoveredBox.element.classList.remove("hover");
+    }
+    this.hoveredBox = {
+      element: box,
+      index,
+    };
+    box.classList.add("hover");
+    this.props.onHover(this.props.lines[index]);
+    this.props.onMouseMove(e);
+  }
+
+  private onMouseLeave(e: React.MouseEvent<SVGGElement, MouseEvent>) {
+    if (this.hoveredBox) {
+      this.hoveredBox.element.classList.remove("hover");
+    }
+    this.hoveredBox = null;
+    this.props.onMouseLeave(e);
+  }
+
+  render() {
+    if (!capabilities.config.timeseriesChartsInTimingProfileEnabled) {
+      return <></>;
+    }
+    return (
+      <g onMouseMove={this.onMouseMove.bind(this)} onMouseLeave={this.onMouseLeave.bind(this)}>
+        {this.props.lines.map((line: any, i: number) => (
+          <g>
+            <path {...line.pathProps} vectorEffect="non-scaling-stroke" />
+            <rect
+              key={i}
+              data-index={i}
+              y={line.upperBoundY}
+              width={line.upperBoundX}
+              height={line.lowerBoundY - line.upperBoundY}
+              vectorEffect="non-scaling-stroke"
+              fill="transparent"
+            />
+          </g>
+        ))}
+      </g>
+    );
+  }
 }
 
 type FlameChartBlocksProps = {

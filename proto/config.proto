@@ -101,4 +101,7 @@ message FrontendConfig {
 
   // Whether to allow filtering invocations, trends, etc. by a tag.
   bool tags_ui_enabled = 33;
+
+  // Whether to allow filtering invocations, trends, etc. by a tag.
+  bool timeseries_charts_in_timing_profile_enabled = 34;
 }
