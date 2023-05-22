@@ -273,7 +273,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       selectedInvocationIndex: newInvocationIndex,
       selectedInvocationId: newInvocationId,
     });
-    (document.querySelector('.selected-keyboard-shortcuts') as HTMLElement|undefined)?.focus();
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   selectPreviousInvocation() {
@@ -286,7 +286,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       selectedInvocationIndex: newInvocationIndex,
       selectedInvocationId: newInvocationId,
     });
-    (document.querySelector('.selected-keyboard-shortcuts') as HTMLElement|undefined)?.focus();
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   selectInvocation(invocationId: string) {
@@ -305,7 +305,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         selectedInvocationId: "",
       });
     }
-    (document.querySelector('.selected-keyboard-shortcuts') as HTMLElement|undefined)?.focus();
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   navigateToSelectedInvocation() {
