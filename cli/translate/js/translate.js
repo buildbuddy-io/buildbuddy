@@ -55,7 +55,13 @@ function translateObject(arg, toplevel) {
 }
 
 let builtin = (name, args) => {
-  return { builtin: name + "(" + translateArg(args, true) + ")" };
+  let rendered = name + "(" + translateArg(args, true) + ")";
+  return {
+    builtin: rendered,
+    concat: (concatArg) => {
+      return { builtin: `${rendered} + ${translateArg(concatArg, false)}` };
+    },
+  };
 };
 let rule = (name, args) => {
   output += name + "(" + translateArgs(args) + ")\n\n";

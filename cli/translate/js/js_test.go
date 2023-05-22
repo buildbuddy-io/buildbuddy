@@ -21,7 +21,7 @@ ts_library({
 
 ts_library({
   name: "alert_service",
-  srcs: ["alert_service.ts"],
+  srcs: glob(["*.ts"]).concat(["alert_service.ts"]),
   strict: true,
   deps: ["@npm//rxjs"],
   foo: DEFAULT_LANGUAGES,
@@ -56,7 +56,7 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(name = "alert", srcs = ["alert.tsx"], strict = True, deps = sorted(["//app/alert:alert_service", "//app/components/banner", "@npm//@types/react", "@npm//react", "@npm//rxjs"]))
 
-ts_library(name = "alert_service", srcs = ["alert_service.ts"], strict = True, deps = ["@npm//rxjs"], foo = DEFAULT_LANGUAGES)
+ts_library(name = "alert_service", srcs = glob(["*.ts"]) + ["alert_service.ts"], strict = True, deps = ["@npm//rxjs"], foo = DEFAULT_LANGUAGES)
 
 ts_library(name = "my_service", srcs = select({":release_build": ["config/buildbuddy.release.yaml"], "//conditions:default": glob(["config/**"])}), strict = False, deps = ["@npm//my_service"])
 
