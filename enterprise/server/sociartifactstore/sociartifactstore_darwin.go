@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-containerregistry/pkg/v1"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"

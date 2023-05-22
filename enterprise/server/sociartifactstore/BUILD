@@ -15,6 +15,7 @@ go_library(
             "//proto:soci_go_proto",
             "//server/environment",
             "//server/util/status",
+            "@com_github_google_go_containerregistry//pkg/v1:pkg",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//proto:registry_go_proto",
