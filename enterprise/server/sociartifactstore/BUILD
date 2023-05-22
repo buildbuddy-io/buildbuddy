@@ -22,6 +22,7 @@ go_library(
             "//proto:soci_go_proto",
             "//server/environment",
             "//server/interfaces",
+            "//server/remote_cache/digest",
             "//server/util/log",
             "//server/util/prefix",
             "//server/util/random",
