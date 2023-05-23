@@ -297,7 +297,7 @@ func setup(t *testing.T) (*testenv.TestEnv, *SociArtifactStore, *containerRegist
 	env.SetDefaultRedisClient(testredis.Start(t).Client())
 	env.SetSingleFlightDeduper(&deduper{})
 	reg := runContainerRegistry(t)
-	err, store := NewSociArtifactStore(env)
+	err, store := newSociArtifactStore(env)
 	require.NoError(t, err)
 	ctx, err := prefix.AttachUserPrefixToContext(context.TODO(), env)
 	require.NoError(t, err)

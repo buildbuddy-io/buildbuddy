@@ -159,4 +159,5 @@ type Env interface {
 	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
 	SetSociArtifactStoreServer(socipb.SociArtifactStoreServer)
 	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
+	SetSingleFlightDeduper(interfaces.SingleFlightDeduper)
 }

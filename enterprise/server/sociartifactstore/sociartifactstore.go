@@ -79,11 +79,15 @@ const (
 type SociArtifactStore struct {
 	cache     interfaces.Cache
 	blobstore interfaces.Blobstore
+	deduper   interfaces.SingleFlightDeduper
 	env       environment.Env
 }
 
 func Register(env environment.Env) error {
-	err, server := NewSociArtifactStore(env)
+	if env.GetSingleFlightDeduper() == nil {
+		return nil
+	}
+	err, server := newSociArtifactStore(env)
 	if err != nil {
 		return err
 	}
@@ -91,16 +95,20 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
+func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 	if env.GetCache() == nil {
 		return status.FailedPreconditionError("soci artifact server requires a cache"), nil
 	}
 	if env.GetBlobstore() == nil {
 		return status.FailedPreconditionError("soci artifact server requires a blobstore"), nil
 	}
+	if env.GetSingleFlightDeduper() == nil {
+		return status.FailedPreconditionError("soci artifact server requires a single-flight deduper"), nil
+	}
 	return nil, &SociArtifactStore{
 		cache:     env.GetCache(),
 		blobstore: env.GetBlobstore(),
+		deduper:   env.GetSingleFlightDeduper(),
 		env:       env,
 	}
 }
@@ -246,7 +254,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	// the containter registry with a ton of parallel pull requests, and save
 	// apps a bunch of parallel work.
 	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
-	respBytes, err := s.env.GetSingleFlightDeduper().Do(ctx, workKey, func() ([]byte, error) {
+	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
 		resp, err := s.getArtifactsFromCache(ctx, configHash.Hex)
 		if status.IsNotFoundError(err) {
 			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)

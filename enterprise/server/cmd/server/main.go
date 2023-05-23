@@ -275,6 +275,9 @@ func main() {
 	if err := crypter_service.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := dsingleflight.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := sociartifactstore.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -302,8 +305,6 @@ func main() {
 	if err := selfauth.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-
-	realEnv.SetSingleFlightDeduper(dsingleflight.New(realEnv.GetDefaultRedisClient()))
 
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
