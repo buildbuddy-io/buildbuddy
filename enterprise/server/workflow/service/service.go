@@ -1060,7 +1060,12 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 // fetchWorkflowConfig returns the BuildBuddyConfig from the repo, or the
 // default BuildBuddyConfig if one is not set up.
 func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
-	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, webhookData.PushedRepoURL, config.FilePath, webhookData.SHA)
+	workflowRef := webhookData.SHA
+	if workflowRef == "" {
+		workflowRef = webhookData.PushedBranch
+	}
+
+	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, webhookData.PushedRepoURL, config.FilePath, workflowRef)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return config.GetDefault(webhookData.TargetRepoDefaultBranch), nil
