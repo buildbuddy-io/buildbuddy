@@ -53,10 +53,12 @@ var (
 	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
 	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
 
-	// TODO(iain): delete the streamableImages flag
+	// TODO(iain): delete executor.podman.run_soci_snapshotter flag once
+	// the snapshotter doesn't need root permissions to run.
 	runSociSnapshotter    = flag.Bool("executor.podman.run_soci_snapshotter", true, "If true, runs the soci snapshotter locally if needed for image streaming.")
 	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all podman images are streamed using soci artifacts generated and stored in the apps.")
-	streamableImages      = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
+	// TODO(iain): delete the streamableImages flag
+	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
