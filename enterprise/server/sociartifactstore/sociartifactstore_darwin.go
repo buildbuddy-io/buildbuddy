@@ -18,7 +18,7 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
+func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 	return status.UnimplementedError("soci artifact server not supported on mac"), nil
 }
 
