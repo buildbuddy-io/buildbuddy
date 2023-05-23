@@ -112,6 +112,7 @@ func (vfs *VFS) Mount() error {
 			DirectMount: true,
 			FsName:      "bbvfs",
 			MaxWrite:    fuse.MAX_KERNEL_WRITE,
+			EnableLocks: true,
 		},
 	}
 	nodeFS := fs.NewNodeFS(vfs.root, opts)
@@ -750,4 +751,75 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 	n.mu.Unlock()
 
 	return fs.OK
+}
+
+func (n *Node) Getlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fuse.FileLock, flags uint32, out *fuse.FileLock) (errno syscall.Errno) {
+	rf, ok := f.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+		return syscall.EBADF
+	}
+	req := &vfspb.GetLkRequest{
+		HandleId: rf.id,
+		Owner:    owner,
+		FileLock: fileLockToProto(lk),
+		Flags:    flags,
+	}
+	res, err := n.vfs.vfsClient.GetLk(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	fl := res.GetFileLock()
+	out.Start = fl.GetStart()
+	out.End = fl.GetEnd()
+	out.Pid = fl.GetPid()
+	out.Typ = fl.GetTyp()
+	return 0
+}
+
+func (n *Node) Setlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fuse.FileLock, flags uint32) (errno syscall.Errno) {
+	rf, ok := f.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+		return syscall.EBADF
+	}
+	req := &vfspb.SetLkRequest{
+		HandleId: rf.id,
+		Owner:    owner,
+		FileLock: fileLockToProto(lk),
+		Flags:    flags,
+	}
+	_, err := n.vfs.vfsClient.SetLk(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
+func (n *Node) Setlkw(ctx context.Context, f fs.FileHandle, owner uint64, lk *fuse.FileLock, flags uint32) (errno syscall.Errno) {
+	rf, ok := f.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+		return syscall.EBADF
+	}
+	req := &vfspb.SetLkRequest{
+		HandleId: rf.id,
+		Owner:    owner,
+		FileLock: fileLockToProto(lk),
+		Flags:    flags,
+	}
+	_, err := n.vfs.vfsClient.SetLkw(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
+func fileLockToProto(lk *fuse.FileLock) *vfspb.FileLock {
+	return &vfspb.FileLock{
+		Start: lk.Start,
+		End:   lk.End,
+		Typ:   lk.Typ,
+		Pid:   lk.Pid,
+	}
 }

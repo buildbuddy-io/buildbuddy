@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -29,6 +30,13 @@ import (
 // Files opened for reading that are smaller than this size are returned inline to avoid the overhead of additional
 // Read RPCs.
 const smallFileThresholdBytes = 512 * 1024
+
+// Fuse operations
+const (
+	_OFD_GETLK  = 36
+	_OFD_SETLK  = 37
+	_OFD_SETLKW = 38
+)
 
 type fileHandle struct {
 	mu        sync.Mutex
@@ -144,7 +152,6 @@ type Server struct {
 	remoteInstanceName string
 	lazyFiles          map[string]*LazyFile
 	lazyFileProvider   LazyFileProvider
-	nextHandleID       uint64
 	fileHandles        map[uint64]*fileHandle
 }
 
@@ -154,7 +161,6 @@ func New(env environment.Env, workspacePath string) *Server {
 		workspacePath: workspacePath,
 		lazyFiles:     make(map[string]*LazyFile),
 		fileHandles:   make(map[uint64]*fileHandle),
-		nextHandleID:  1,
 	}
 }
 
@@ -471,11 +477,13 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	if err != nil {
 		return nil, err
 	}
-
-	p.mu.Lock()
-	handleID := p.nextHandleID
+	// We use the file descriptor as the file handle ID so that we can directly
+	// use the flock/fcntl syscalls to implement file locking (SetLk, SetLkw,
+	// GetLk). This is needed because file locking works on descriptors, not
+	// paths.
+	handleID := uint64(fh.f.Fd())
 	rsp.HandleId = handleID
-	p.nextHandleID++
+	p.mu.Lock()
 	p.fileHandles[handleID] = fh
 	p.mu.Unlock()
 	return rsp, nil
@@ -688,6 +696,66 @@ func (p *Server) Unlink(ctx context.Context, request *vfspb.UnlinkRequest) (*vfs
 	return &vfspb.UnlinkResponse{}, nil
 }
 
+func (p *Server) GetLk(ctx context.Context, req *vfspb.GetLkRequest) (*vfspb.GetLkResponse, error) {
+	flk := syscall.Flock_t{}
+	fileLockFromProto(req.GetFileLock()).ToFlockT(&flk)
+	if err := syscall.FcntlFlock(uintptr(req.GetHandleId()), _OFD_GETLK, &flk); err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	out := &fuse.FileLock{}
+	out.FromFlockT(&flk)
+	return &vfspb.GetLkResponse{FileLock: fileLockToProto(out)}, nil
+}
+
+func (p *Server) SetLk(ctx context.Context, req *vfspb.SetLkRequest) (*vfspb.SetLkResponse, error) {
+	return p.setlk(ctx, req, false /*=wait*/)
+}
+
+func (p *Server) SetLkw(ctx context.Context, req *vfspb.SetLkRequest) (*vfspb.SetLkResponse, error) {
+	return p.setlk(ctx, req, true /*=wait*/)
+}
+
+func (p *Server) setlk(ctx context.Context, req *vfspb.SetLkRequest, wait bool) (*vfspb.SetLkResponse, error) {
+	lk := fileLockFromProto(req.GetFileLock())
+	flags := req.Flags
+
+	if (flags & fuse.FUSE_LK_FLOCK) != 0 {
+		// Lock with flock(2)
+		var op int
+		switch lk.Typ {
+		case syscall.F_RDLCK:
+			op = syscall.LOCK_SH
+		case syscall.F_WRLCK:
+			op = syscall.LOCK_EX
+		case syscall.F_UNLCK:
+			op = syscall.LOCK_UN
+		default:
+			return nil, syscallErrStatus(syscall.EINVAL)
+		}
+		if !wait {
+			op |= syscall.LOCK_NB
+		}
+		if err := syscall.Flock(int(req.GetHandleId()), op); err != nil {
+			return nil, syscallErrStatus(err)
+		}
+		return &vfspb.SetLkResponse{}, nil
+	}
+
+	// Lock with fcntl(2)
+	flk := syscall.Flock_t{}
+	lk.ToFlockT(&flk)
+	var op int
+	if wait {
+		op = _OFD_SETLKW
+	} else {
+		op = _OFD_SETLK
+	}
+	if err := syscall.FcntlFlock(uintptr(req.GetHandleId()), op, &flk); err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	return &vfspb.SetLkResponse{}, nil
+}
+
 func (p *Server) Start(lis net.Listener) error {
 	p.server = grpc.NewServer()
 	vfspb.RegisterFileSystemServer(p.server, p)
@@ -704,4 +772,22 @@ func (p *Server) Stop() {
 	}
 	p.mu.Unlock()
 	p.server.Stop()
+}
+
+func fileLockFromProto(pb *vfspb.FileLock) *fuse.FileLock {
+	return &fuse.FileLock{
+		Start: pb.Start,
+		End:   pb.End,
+		Typ:   pb.Typ,
+		Pid:   pb.Pid,
+	}
+}
+
+func fileLockToProto(lk *fuse.FileLock) *vfspb.FileLock {
+	return &vfspb.FileLock{
+		Start: lk.Start,
+		End:   lk.End,
+		Typ:   lk.Typ,
+		Pid:   lk.Pid,
+	}
 }
