@@ -57,6 +57,8 @@ export type LineModel = {
   upperBoundY: number;
   lowerBoundY: number;
   upperBoundX: number;
+  // The interval between x coords.
+  dt: number;
 };
 
 export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold = 0 } = {}): FlameChartModel {
@@ -115,12 +117,14 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
         TIME_SERIES_HEIGHT;
       let lowerBoundY = currentThreadY + sectionHeight;
       let upperBoundY = currentThreadY + SECTION_LABEL_HEIGHT;
-      let d = `M 0 ${lowerBoundY} `;
 
       const darkColor = getMaterialChartColor(index);
       const lightColor = getLightMaterialChartColor(index);
       const yMax = Math.max(...events.map((event) => event.value));
       const xMax = Math.max(...events.map((event) => event.ts / MICROSECONDS_PER_SECOND));
+      const xMin = Math.min(...events.map((event) => event.ts / MICROSECONDS_PER_SECOND));
+      let d = `M ${xMin} ${lowerBoundY}`;
+      const dt = events.length >= 2 ? (events[1].ts - events[0].ts) / MICROSECONDS_PER_SECOND : 1;
       for (const event of events) {
         const { name, ts, value } = event;
         const x = ts / MICROSECONDS_PER_SECOND;
@@ -131,7 +135,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
         // a vertical line and point that is closest to the mouse's x coordinate
         // will always show when the mouse hover on the graph. Otherwise, the
         // condition to show the reference line is too strict.
-        points.set(Math.round(x), {
+        points.set(Math.round(x / dt) * dt, {
           lineProps: {
             x1: x,
             y1: y,
@@ -153,6 +157,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
         lowerBoundY: lowerBoundY,
         upperBoundX: xMax,
         pointsByXCoord: points,
+        dt: dt,
       });
       sections.push({
         name: name,

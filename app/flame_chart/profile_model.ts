@@ -153,14 +153,13 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
         events: [],
       };
       timelines.push(timeSeries);
-    } else {
-      for (const key in event.args) {
-        if (key == TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS.get(event.name)) {
-          event.value = event.args[key];
-        }
-      }
-      timeSeries!.events.push(event);
     }
+    for (const key in event.args) {
+      if (key == TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS.get(event.name)) {
+        event.value = event.args[key];
+      }
+    }
+    timeSeries!.events.push(event);
   }
   return timelines;
 }
