@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -369,5 +370,87 @@ func TestSymlinkOps(t *testing.T) {
 		// Moving within the same directory should be okay though.
 		_, err = server.Rename(ctx, &vfspb.RenameRequest{OldPath: "dir/alink.rel", NewPath: "dir/blink.rel"})
 		require.NoError(t, err)
+	}
+}
+
+func TestFileLocking(t *testing.T) {
+	server, _ := newServer(t)
+	ctx := context.Background()
+
+	// Init two different file handle IDs referring to the same inode.
+	var id1, id2 uint64
+	{
+		req := &vfspb.OpenRequest{
+			Path:  "lock",
+			Flags: uint32(os.O_CREATE),
+			Mode:  0644,
+		}
+		res, err := server.Open(ctx, req)
+		require.NoError(t, err)
+		id1 = res.HandleId
+	}
+	{
+		req := &vfspb.OpenRequest{
+			Path:  "lock",
+			Flags: uint32(os.O_RDWR),
+			Mode:  0644,
+		}
+		res, err := server.Open(ctx, req)
+		require.NoError(t, err)
+		id2 = res.HandleId
+	}
+	require.NotEqual(t, id1, id2, "sanity check: file handle IDs should be different")
+
+	// Acquire exclusive flock (blocking) on fd 1, should succeed.
+	{
+		_, err := server.SetLkw(ctx, flock(id1, syscall.F_WRLCK))
+		require.NoError(t, err)
+	}
+	// Acquire exclusive flock (blocking) on fd 1 again, should succeed.
+	// Verify this behavior with the following shell code:
+	// ( flock -x 100 && flock -x 100 && echo OK ) 100>/tmp/lock
+	{
+		_, err := server.SetLkw(ctx, flock(id1, syscall.F_WRLCK))
+		require.NoError(t, err)
+	}
+	// Acquire exclusive lock with flock (non-blocking) on fd 2, should fail
+	// since fd 1 is locked and points to the same inode.
+	{
+		_, err := server.SetLk(ctx, flock(id2, syscall.F_WRLCK))
+		require.Error(t, err)
+	}
+	// Unlock fd 1, should succeed.
+	{
+		_, err := server.SetLk(ctx, flock(id1, syscall.F_UNLCK))
+		require.NoError(t, err)
+	}
+	// Unlock fd 1 again, should succeed.
+	// Verify this behavior with the following shell code:
+	// ( flock -x 100 && flock -u 100 && flock -u 100 && echo OK ) 100>/tmp/lock
+	{
+		_, err := server.SetLk(ctx, flock(id1, syscall.F_UNLCK))
+		require.NoError(t, err)
+	}
+	// Try locking fd 2 again, should succeed.
+	{
+		_, err := server.SetLk(ctx, flock(id2, syscall.F_WRLCK))
+		require.NoError(t, err)
+	}
+}
+
+// flock returns a flock(2) setlk request for the given file handle ID, pid, and
+// lock state (typ), which can be one of the syscall package constants F_WRLCK,
+// F_RDLCK, or F_UNLCK.
+func flock(id uint64, typ uint32) *vfspb.SetLkRequest {
+	return &vfspb.SetLkRequest{
+		HandleId: id,
+		Flags:    fuse.FUSE_LK_FLOCK,
+		FileLock: &vfspb.FileLock{
+			Typ: typ,
+			// Note: start and end are not needed, since these are only
+			// supported by the fcntl(2) API, but we are using flock(2). Also,
+			// pid is not needed since it is redundant, as file handle IDs are
+			// already isolated by pid.
+		},
 	}
 }
