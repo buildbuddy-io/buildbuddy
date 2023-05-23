@@ -54,6 +54,7 @@ var (
 	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
 
 	// TODO(iain): delete the streamableImages flag
+	runSociSnapshotter    = flag.Bool("executor.podman.run_soci_snapshotter", true, "If true, runs the soci snapshotter locally if needed for image streaming.")
 	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all podman images are streamed using soci artifacts generated and stored in the apps.")
 	streamableImages      = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
 
@@ -131,7 +132,9 @@ func runSociStore(ctx context.Context) {
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if *imageStreamingEnabled || len(*streamableImages) > 0 {
-		go runSociStore(env.GetServerContext())
+		if *runSociSnapshotter {
+			go runSociStore(env.GetServerContext())
+		}
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
