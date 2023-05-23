@@ -68,7 +68,6 @@ go_test(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/prefix",
-        "//server/util/random",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_cockroachdb_pebble//:pebble",
