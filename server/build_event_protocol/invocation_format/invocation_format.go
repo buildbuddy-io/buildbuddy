@@ -44,8 +44,8 @@ func ShortFormatPatterns(patterns []string) string {
 
 // Splits the provided comma-separated tag string and trims off any trailing
 // and leading whitespace from each tag.  If truncate it set to true, any tags
-// that would make the trimmed,comma-separated list longer than 255 characters
-// will be dropped.
+// that would make the trimmed, comma-separated string containing the tags
+// longer than 255 characters will be dropped along with all following tags.
 func SplitAndTrimTags(tags string, truncate bool) []*invocation.Invocation_Tag {
 	if len(tags) == 0 {
 		return []*invocation.Invocation_Tag{}
