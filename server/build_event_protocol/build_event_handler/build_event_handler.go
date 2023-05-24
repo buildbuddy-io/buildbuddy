@@ -1523,7 +1523,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
 	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
 	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
-	out.Tags = invocation_format.SplitAndTrimTags(i.Tags)
+	out.Tags = invocation_format.SplitAndTrimTags(i.Tags, false)
 	return out
 }
 

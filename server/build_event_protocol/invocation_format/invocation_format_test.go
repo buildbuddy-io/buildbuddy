@@ -1,6 +1,7 @@
 package invocation_format_test
 
 import (
+	"strings"
 	"testing"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -31,19 +32,28 @@ func makeTagSlice(args ...string) []*inpb.Invocation_Tag {
 }
 
 func TestSplitAndTrimTags(t *testing.T) {
+	longTag := "l" + strings.Repeat("o", 253) + "ng"
+	lotsOfWhitespace := strings.Repeat(" ", 255)
 	for _, testCase := range []struct {
 		input    string
+		truncate bool
 		expected []*inpb.Invocation_Tag
 	}{
-		{"", makeTagSlice()},
-		{",", makeTagSlice()},
-		{",  ,,,", makeTagSlice()},
-		{"beef", makeTagSlice("beef")},
-		{"  beef ", makeTagSlice("beef")},
-		{"beef,beer", makeTagSlice("beef", "beer")},
-		{" art , beef, beer , cheese..,ten dollars,,", makeTagSlice("art", "beef", "beer", "cheese..", "ten dollars")},
+		{"", false, makeTagSlice()},
+		{",", false, makeTagSlice()},
+		{",  ,,,", false, makeTagSlice()},
+		{"beef", false, makeTagSlice("beef")},
+		{"  beef ", false, makeTagSlice("beef")},
+		{"beef,beer", false, makeTagSlice("beef", "beer")},
+		{" art , beef, beer , cheese..,ten dollars,,", false, makeTagSlice("art", "beef", "beer", "cheese..", "ten dollars")},
+		{" art , beef, beer , cheese..,ten dollars,,", true, makeTagSlice("art", "beef", "beer", "cheese..", "ten dollars")},
+		{longTag + ",short1", false, makeTagSlice(longTag, "short1")},
+		{longTag, true, makeTagSlice()},
+		{longTag + ",short1", true, makeTagSlice()},
+		{"short1,short2," + longTag + ",short3", true, makeTagSlice("short1", "short2")},
+		{"lots of whitespace" + lotsOfWhitespace + "," + lotsOfWhitespace + "and,more,tags", true, makeTagSlice("lots of whitespace", "and", "more", "tags")},
 	} {
-		assert.Equal(t, testCase.expected, invocation_format.SplitAndTrimTags(testCase.input))
+		assert.Equal(t, testCase.expected, invocation_format.SplitAndTrimTags(testCase.input, testCase.truncate))
 	}
 }
 

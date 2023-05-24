@@ -42,15 +42,24 @@ func ShortFormatPatterns(patterns []string) string {
 	return out
 }
 
-func SplitAndTrimTags(tags string) []*invocation.Invocation_Tag {
+// Splits the provided comma-separated tag string and trims off any trailing
+// and leading whitespace from each tag.  If truncate it set to true, any tags
+// that would make the trimmed,comma-separated list longer than 255 characters
+// will be dropped.
+func SplitAndTrimTags(tags string, truncate bool) []*invocation.Invocation_Tag {
 	if len(tags) == 0 {
 		return []*invocation.Invocation_Tag{}
 	}
 	splitTags := strings.Split(tags, ",")
+	totalLength := 0
 	out := make([]*invocation.Invocation_Tag, 0, len(splitTags))
 	for _, t := range splitTags {
 		trimmed := strings.TrimSpace(t)
 		if len(trimmed) > 0 {
+			if truncate && totalLength+len(trimmed) > 255 {
+				break
+			}
+			totalLength += len(trimmed) + 1
 			out = append(out, &invocation.Invocation_Tag{Name: trimmed})
 		}
 	}
