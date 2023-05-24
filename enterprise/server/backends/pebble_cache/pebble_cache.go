@@ -75,7 +75,7 @@ var (
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
-	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 1000, "QPS limit for data version migration")
+	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
 
 	// Compression related flags
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
