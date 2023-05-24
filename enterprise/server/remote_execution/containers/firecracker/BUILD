@@ -93,7 +93,6 @@ go_test(
         "//server/util/disk",
         "//server/util/fileresolver",
         "//server/util/log",
-        "//server/util/networking",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
