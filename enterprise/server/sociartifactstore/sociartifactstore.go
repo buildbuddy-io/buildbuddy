@@ -249,7 +249,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	// apps a bunch of parallel work.
 	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
 	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
-		resp, err := s.getArtifactsFromCache(ctx, configHash.Hex)
+		resp, err := s.getArtifactsFromCache(ctx, configHash)
 		if status.IsNotFoundError(err) {
 			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)
 			if err != nil {
