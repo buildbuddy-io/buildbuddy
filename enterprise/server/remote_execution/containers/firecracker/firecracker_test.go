@@ -132,6 +132,11 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	fc, err := filecache.NewFileCache(testRootDir, fileCacheSize)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
+
+	// Some tests need iptables which is in /usr/sbin.
+	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	require.NoError(t, err)
+
 	return env
 }
 
