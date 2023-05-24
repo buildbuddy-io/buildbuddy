@@ -108,20 +108,22 @@ build:linux-workflows --config=buildbuddy_remote_executor
 build:mac-workflows --config=cache
 build:mac-workflows --config=workflows
 
-# Configuration used for BuildBuddy release workflow
+# Configuration used for all builds of artifacts released to GitHub
+build:release-shared -c opt
+build:release-shared --stamp
+build:release-shared --define release=true
+
+# Configuration used for Linux releases
+build:release --config=release-shared
 build:release --config=remote
 build:release --remote_instance_name=buildbuddy-io/buildbuddy/release
-build:release -c opt
-build:release --stamp
-build:release --define release=true
 build:release --remote_download_toplevel
 
-# Configuration used for BuildBuddy release m1 workflow
-build:release-m1 --remote_instance_name=buildbuddy-io/buildbuddy/release
-build:release-m1 -c opt
-build:release-m1 --stamp
-build:release-m1 --define release=true
-build:release-m1 --remote_download_toplevel
+# Configuration used for release-mac workflow
+build:release-mac --config=release-shared
+
+# Configuration used for release-m1 workflow
+build:release-m1 --config=release-shared
 
 # Configuration used for Buildbuddy auto-release
 build:auto-release --config=remote
