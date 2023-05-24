@@ -1,22 +1,24 @@
 package testpostgres
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"net"
 	"net/url"
+
 	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
+
 	"time"
 
+	// "github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5"
 )
 
 var (
@@ -65,17 +67,19 @@ func Start(t testing.TB, reuseServer bool) string {
 		}
 	}
 
+	containerName := fmt.Sprintf("buildbuddy-test-postgres-%d", port)
 	if port == 0 {
 		port = testport.FindFree(t)
-		containerName := fmt.Sprintf("buildbuddy-test-postgres-%d", port)
+		containerName = fmt.Sprintf("buildbuddy-test-postgres-%d", port)
 
 		log.Debug("Starting postgres DB...")
-
 		cmd := exec.Command(
-			"docker", "run", "--rm", "--detach",
-			"--env", "POSTGRES_ROOT_PASSWORD=root",
+			"docker", "run", "--detach",
+			"--env", "POSTGRES_USER=postgres",
+			"--env", "POSTGRES_PASSWORD=postgres",
 			"--env", "POSTGRES_DB="+dbName,
-			"--publish", fmt.Sprintf("%d:3306", port),
+			"--env", "POSTGRES_HOST_AUTH_METHOD=password",
+			"--publish", fmt.Sprintf("%d:5432", port),
 			"--name", containerName,
 			"postgres:15.3",
 		)
@@ -96,13 +100,12 @@ func Start(t testing.TB, reuseServer bool) string {
 
 	// Wait for the DB to start up.
 	dsn := &url.URL{
-		Scheme: "postgres",
-		User:   url.UserPassword("root", "root"),
-		Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
-		Path:   dbName,
+		Scheme:   "postgres",
+		User:     url.UserPassword("postgres", "postgres"),
+		Host:     net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
+		Path:     dbName,
+		RawQuery: url.Values(map[string][]string{"sslmode": {"disable"}}).Encode(),
 	}
-	// // Ignore errors logged by postgres driver when attempting to ping the DB before it is ready.
-	// gopostgres.SetLogger(&discardLogger{})
 	db, err := sql.Open("pgx", dsn.String())
 	require.NoError(t, err)
 	defer db.Close()
@@ -111,27 +114,37 @@ func Start(t testing.TB, reuseServer bool) string {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-
 		// Drop the DB from the old test and let it be re-created via GORM
 		// auto-migration.
 		if reuseServer {
-			ctx := context.Background()
-			conn, err := db.Conn(ctx)
+			log.Debug("Attempting to reset database.")
+
+			cmd := exec.Command(
+				"docker", "exec",
+				"-u", "postgres",
+				containerName,
+				"dropdb", "-f", dbName,
+			)
+			cmd.Stderr = &logWriter{"docker exec dropdb"}
+			err := cmd.Run()
 			require.NoError(t, err)
-			defer conn.Close()
-			_, err = conn.ExecContext(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", dbName))
+
+			cmd = exec.Command(
+				"docker", "exec",
+				"-u", "postgres",
+				containerName,
+				"createdb", dbName,
+			)
+			cmd.Stderr = &logWriter{"docker exec createdb"}
+			err = cmd.Run()
 			require.NoError(t, err)
-			_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE `%s`", dbName))
-			require.NoError(t, err)
+
+			log.Debug("Reset database.")
 		}
 
 		return dsn.String()
 	}
 }
-
-type discardLogger struct{}
-
-func (d *discardLogger) Print(args ...interface{}) {}
 
 type logWriter struct {
 	tag string

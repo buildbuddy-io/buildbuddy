@@ -27,7 +27,7 @@ import (
 
 var (
 	databaseType = flag.String("testenv.database_type", "sqlite", "What database to use for tests.")
-	reuseServer = flag.Bool("testenv.reuse_server", false, "If true, reuse database server between tests.")
+	reuseServer  = flag.Bool("testenv.reuse_server", false, "If true, reuse database server between tests.")
 )
 
 func init() {
@@ -139,6 +139,8 @@ func GetTestEnv(t testing.TB) *TestEnv {
 		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
 	case "postgres":
 		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
+	default:
+		t.Fatalf("Unsupported db type: %s", *databaseType)
 	}
 	dbHandle, err := db.GetConfiguredDatabase(te)
 	if err != nil {

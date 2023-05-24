@@ -245,7 +245,7 @@ type postgresDSNFormatter struct {
 	user     string
 	password string
 	dbname   string
-	params   map[string]string
+	params   map[string][]string
 }
 
 func newPostgresDSNFormatter(ac *AdvancedConfig) (*postgresDSNFormatter, error) {
@@ -253,7 +253,7 @@ func newPostgresDSNFormatter(ac *AdvancedConfig) (*postgresDSNFormatter, error) 
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("endpoint %s is not a valid URL: %s", ac.Endpoint, err)
 	}
-	params := make(map[string]string, 0)
+	params := make(map[string][]string, 0)
 	if ac.Params != "" {
 		for _, param := range strings.Split(ac.Params, "&") {
 			ix := strings.Index(param, "&")
@@ -262,7 +262,7 @@ func newPostgresDSNFormatter(ac *AdvancedConfig) (*postgresDSNFormatter, error) 
 			}
 			key := param[:ix]
 			value := param[ix+1:]
-			params[key] = value
+			params[key] = append(params[key], value)
 		}
 	}
 	p := &postgresDSNFormatter{
@@ -278,30 +278,24 @@ func newPostgresDSNFormatter(ac *AdvancedConfig) (*postgresDSNFormatter, error) 
 }
 
 func (p *postgresDSNFormatter) AddParam(key, val string) {
-	p.params[key] = val
+	p.params[key] = append(p.params[key], val)
 }
 
 func (p *postgresDSNFormatter) String() string {
-	dsn := []string{}
-	if p.host != "" {
-		dsn = append(dsn, fmt.Sprintf("host = %s", p.host))
-	}
-	if p.user != "" {
-		dsn = append(dsn, fmt.Sprintf("user = %s", p.user))
-	}
+	var user *url.Userinfo
 	if p.password != "" {
-		dsn = append(dsn, fmt.Sprintf("password = %s", p.password))
+		user = url.UserPassword(p.user, p.password)
+	} else {
+		user = url.User(p.user)
 	}
-	if p.dbname != "" {
-		dsn = append(dsn, fmt.Sprintf("dbname = %s", p.dbname))
+	dsn := url.URL{
+		Scheme:   "postgres",
+		Host:     net.JoinHostPort(p.host, p.port),
+		User:     user,
+		Path:     p.dbname,
+		RawQuery: url.Values(p.params).Encode(),
 	}
-	if p.port != "" {
-		dsn = append(dsn, fmt.Sprintf("port = %s", p.port))
-	}
-	for k, v := range p.params {
-		dsn = append(dsn, fmt.Sprintf("%s = %s", k, v))
-	}
-	return strings.Join(dsn, " ")
+	return dsn.String()
 }
 
 func (_ *postgresDSNFormatter) Driver() string {
@@ -322,9 +316,9 @@ func (p *postgresDSNFormatter) SetPassword(pw string) {
 
 func (p *postgresDSNFormatter) Clone() dsnFormatter {
 	c := *p
-	c.params = make(map[string]string, len(p.params))
+	c.params = make(map[string][]string, len(p.params))
 	for k, v := range p.params {
-		c.params[k] = v
+		copy(c.params[k], v)
 	}
 	return &c
 }
@@ -722,6 +716,9 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 		}
 		driverName, connString := parts[0], parts[1]
 		switch driverName {
+		case "postgres":
+			driverName = postgresDriver
+			fallthrough
 		case postgresDriver:
 			connString = datasource
 		case mysqlDriver:
@@ -968,21 +965,6 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 		log.Errorf("Driver %s is not supported by DateFromUsecTimestamp.", h.driver)
 		return `UNIMPLEMENTED`
 	}
-}
-
-// InsertIgnoreModifier returns SQL that can be placed after the
-// INSERT command to ignore duplicate keys when inserting.
-//
-// Example:
-//
-//	`INSERT `+db.InsertIgnoreModifier()+` INTO MyTable
-//	 (potentially_already_existing_key)
-//	 VALUES ("key_value")`
-func (h *DBHandle) InsertIgnoreModifier() string {
-	if h.driver == sqliteDriver {
-		return "OR IGNORE"
-	}
-	return "IGNORE"
 }
 
 // SelectForUpdateModifier returns SQL that can be placed after the

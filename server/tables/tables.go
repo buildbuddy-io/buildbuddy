@@ -891,15 +891,7 @@ func postMigrateInvocationUUIDForPostgresOrMySQL(db *gorm.DB) error {
 				table_name='TargetStatuses'`
 
 	case postgresDialect:
-		updateInvocationStmt = `UPDATE "Invocations" SET invocation_uuid = (REPLACE(invocation_id, '-',''))::uuid WHERE invocation_uuid IS NULL`
-		countPrimaryKeyStmt = `
-			SELECT
-			  COUNT(*) from information_schema.table_constraints
-			WHERE
-				constraint_schema = current_schema() AND
-				constraint_type = 'PRIMARY KEY' AND
-				table_name = 'TargetStatuses'`
-
+		// nop; we will never have postgres data without the uuid filled.
 	default:
 		log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 	}

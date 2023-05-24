@@ -18,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 )
@@ -271,72 +273,65 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 		Region:          ut.region,
 	}
 	dbh := ut.env.GetDBHandle()
-	return dbh.Transaction(ctx, func(tx *db.DB) error {
+	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_usage"), func(tx *db.DB) error {
+		tu := &tables.Usage{
+			GroupID:         pk.GroupID,
+			PeriodStartUsec: pk.PeriodStartUsec,
+			Region:          pk.Region,
+			FinalBeforeUsec: c.End().UnixMicro(),
+			UsageCounts:     *counts,
+		}
 		// Create a row for the corresponding usage period if one doesn't already
 		// exist.
-		res := tx.Exec(`
-			INSERT `+dbh.InsertIgnoreModifier()+` INTO "Usages" (
-				group_id,
-				period_start_usec,
-				region,
-				final_before_usec,
-				invocations,
-				cas_cache_hits,
-				action_cache_hits,
-				total_download_size_bytes,
-				linux_execution_duration_usec,
-				mac_execution_duration_usec
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`,
-			pk.GroupID,
-			pk.PeriodStartUsec,
-			pk.Region,
-			c.End().UnixMicro(),
-			counts.Invocations,
-			counts.CASCacheHits,
-			counts.ActionCacheHits,
-			counts.TotalDownloadSizeBytes,
-			counts.LinuxExecutionDurationUsec,
-			counts.MacExecutionDurationUsec,
-		)
-		if err := res.Error; err != nil {
-			return err
+		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(tu)
+		if res.Error != nil {
+			return res.Error
 		}
-		// If we inserted successfully, no need to update.
-		if res.RowsAffected > 0 {
+		if res.RowsAffected != 0 {
+			// Insert worked; we're done.
 			return nil
 		}
+
 		// Update the usage row, but only if collection period data has not already
 		// been written (for example, if the previous flush failed to delete the
 		// data from Redis).
-		return tx.Exec(`
-			UPDATE "Usages"
-			SET
-				final_before_usec = ?,
-				invocations = invocations + ?,
-				cas_cache_hits = cas_cache_hits + ?,
-				action_cache_hits = action_cache_hits + ?,
-				total_download_size_bytes = total_download_size_bytes + ?,
-				linux_execution_duration_usec = linux_execution_duration_usec + ?,
-				mac_execution_duration_usec = mac_execution_duration_usec + ?
-			WHERE
-				group_id = ?
-				AND period_start_usec = ?
-				AND region = ?
-				AND final_before_usec <= ?
+		return tx.Model(&tables.Usage{}).Where(`
+			group_id = ?
+			AND period_start_usec = ?
+			AND region = ?
+			AND final_before_usec <= ?
 		`,
-			c.End().UnixMicro(),
-			counts.Invocations,
-			counts.CASCacheHits,
-			counts.ActionCacheHits,
-			counts.TotalDownloadSizeBytes,
-			counts.LinuxExecutionDurationUsec,
-			counts.MacExecutionDurationUsec,
-			pk.GroupID,
-			pk.PeriodStartUsec,
-			pk.Region,
+			tu.GroupID,
+			tu.PeriodStartUsec,
+			tu.Region,
 			c.Start().UnixMicro(),
-		).Error
+		).Updates(map[string]interface{}{
+			"final_before_usec": tu.FinalBeforeUsec,
+			"invocations": gorm.Expr(
+				`invocations + ?`,
+				tu.Invocations,
+			),
+			"cas_cache_hits": gorm.Expr(
+				`cas_cache_hits + ?`,
+				tu.CASCacheHits,
+			),
+			"action_cache_hits": gorm.Expr(
+				`action_cache_hits + ?`,
+				tu.ActionCacheHits,
+			),
+			"total_download_size_bytes": gorm.Expr(
+				`total_download_size_bytes + ?`,
+				tu.TotalDownloadSizeBytes,
+			),
+			"linux_execution_duration_usec": gorm.Expr(
+				`linux_execution_duration_usec + ?`,
+				tu.LinuxExecutionDurationUsec,
+			),
+			"mac_execution_duration_usec": gorm.Expr(
+				`mac_execution_duration_usec + ?`,
+				tu.MacExecutionDurationUsec,
+			),
+		}).Error
 	})
 }
 

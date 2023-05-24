@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//server/testutil/testport",
         "//server/util/log",
-        "@com_github_jackc_pgx_v5//stdlib",
+        "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_stretchr_testify//require",
     ],
 )
