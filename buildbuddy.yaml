@@ -81,7 +81,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare
+      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare --modify_execution_info=^GoLink$=+local
 
 plugins:
   - path: cli/plugins/go-deps
