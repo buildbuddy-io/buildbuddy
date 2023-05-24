@@ -132,6 +132,11 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	fc, err := filecache.NewFileCache(testRootDir, fileCacheSize)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
+
+	// Some tests need iptables which is in /usr/sbin.
+	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	require.NoError(t, err)
+
 	return env
 }
 
@@ -448,10 +453,6 @@ func TestFirecrackerFileMapping(t *testing.T) {
 }
 
 func TestFirecrackerRunWithNetwork(t *testing.T) {
-	// Test needs iptables which is in /usr/sbin.
-	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
@@ -659,10 +660,6 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 		t.Skip()
 	}
 
-	// Test needs iptables which is in /usr/sbin.
-	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
@@ -796,10 +793,6 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		t.Skip()
 	}
 
-	// Test needs iptables which is in /usr/sbin.
-	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -898,10 +891,6 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	if *skipDockerTests {
 		t.Skip()
 	}
-
-	// Test needs iptables which is in /usr/sbin.
-	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
-	require.NoError(t, err)
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
