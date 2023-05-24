@@ -13,7 +13,7 @@ tags: [product]
 
 There are lots of small, satisfying moments in the day-to-day lives of software developers. From finding and deleting dead code, to writing tests that pass on the first run (actually), to receiving UX mocks that call for simplifying the frontend code, those little joys are a pleasant treat! We’re excited to share a small new BuildBuddy Build Result UI feature that we think fits into this category: keyboard shortcuts.
 
-For enterprise customers, keyboard shortcuts can be enabled in the personal preferences menu on the settings page in the app. Once enabled, a help menu explaining the shortcuts can be toggled using `?` to show and `Esc` to hide. There’s also a clickable button to close it just in case… if only Vim had one too!
+Keyboard shortcuts can be enabled in the personal preferences menu on the settings page in the app. Once enabled, a help menu explaining the shortcuts can be toggled using `?` to show and `Esc` to hide. There’s also a clickable button to close it just in case… if only Vim had one too!
 
 ![](/img/blog/keyboard-shortcuts.png)
 
