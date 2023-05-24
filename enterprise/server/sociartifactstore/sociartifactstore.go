@@ -76,9 +76,9 @@ const (
 )
 
 type SociArtifactStore struct {
-	cache     interfaces.Cache
-	deduper   interfaces.SingleFlightDeduper
-	env       environment.Env
+	cache   interfaces.Cache
+	deduper interfaces.SingleFlightDeduper
+	env     environment.Env
 }
 
 func Register(env environment.Env) error {
@@ -101,9 +101,9 @@ func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 		return status.FailedPreconditionError("soci artifact server requires a single-flight deduper"), nil
 	}
 	return nil, &SociArtifactStore{
-		cache:     env.GetCache(),
-		deduper:   env.GetSingleFlightDeduper(),
-		env:       env,
+		cache:   env.GetCache(),
+		deduper: env.GetSingleFlightDeduper(),
+		env:     env,
 	}
 }
 
