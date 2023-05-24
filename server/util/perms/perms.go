@@ -35,7 +35,7 @@ const (
 type UserGroupPerm struct {
 	UserID  string
 	GroupID string
-	Perms   int
+	Perms   int32
 }
 
 func AnonymousUserPermissions() *UserGroupPerm {
@@ -54,7 +54,7 @@ func GroupAuthPermissions(groupID string) *UserGroupPerm {
 	}
 }
 
-func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
+func ToACLProto(userID *uidpb.UserId, groupID string, perms int32) *aclpb.ACL {
 	return &aclpb.ACL{
 		UserId:  userID,
 		GroupId: groupID,
@@ -73,14 +73,14 @@ func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
 	}
 }
 
-func FromACL(acl *aclpb.ACL) (int, error) {
+func FromACL(acl *aclpb.ACL) (int32, error) {
 	if acl == nil {
 		return 0, status.InvalidArgumentError("ACL is nil.")
 	}
 	if acl.GetOwnerPermissions() == nil || acl.GetGroupPermissions() == nil || acl.GetOthersPermissions() == nil {
 		return 0, status.InvalidArgumentError("ACL is missing one or more required permissions fields.")
 	}
-	p := 0
+	p := int32(0)
 	if acl.GetOwnerPermissions().GetRead() {
 		p |= OWNER_READ
 	}

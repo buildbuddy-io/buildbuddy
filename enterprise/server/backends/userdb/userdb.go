@@ -380,7 +380,7 @@ func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.A
 	if err != nil {
 		return nil, err
 	}
-	keyPerms := 0
+	keyPerms := int32(0)
 	if userID == "" {
 		keyPerms = perms.GROUP_READ | perms.GROUP_WRITE
 	} else {
