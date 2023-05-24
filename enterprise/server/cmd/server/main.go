@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -272,6 +273,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := crypter_service.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := dsingleflight.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := sociartifactstore.Register(realEnv); err != nil {

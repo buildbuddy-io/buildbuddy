@@ -16,7 +16,6 @@ go_library(
             "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
-            "//enterprise/server/util/dsingleflight",
             "//proto:registry_go_proto",
             "//proto:remote_execution_go_proto",
             "//proto:resource_go_proto",

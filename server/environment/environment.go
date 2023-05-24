@@ -158,4 +158,6 @@ type Env interface {
 	SetCrypter(crypter interfaces.Crypter)
 	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
 	SetSociArtifactStoreServer(socipb.SociArtifactStoreServer)
+	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
+	SetSingleFlightDeduper(interfaces.SingleFlightDeduper)
 }

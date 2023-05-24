@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 	"testing"
 
@@ -94,6 +95,7 @@ func TestIndexExists(t *testing.T) {
 		},
 	}
 	assert.True(t, proto.Equal(&expected, actual))
+	assert.Equal(t, 0, r.blobsGot)
 	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest1))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest2))
@@ -150,6 +152,7 @@ func TestIndexPartiallyExists(t *testing.T) {
 		},
 	}
 	assert.True(t, proto.Equal(&expected, actual))
+	assert.Equal(t, 2, r.blobsGot)
 	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest1))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest2))
@@ -201,6 +204,16 @@ func TestIndexDoesNotExist(t *testing.T) {
 		},
 	}
 	assert.True(t, proto.Equal(&expected, actual))
+	assert.Equal(t, 2, r.blobsGot)
+	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
+	assert.True(t, cacheContains(ctx, t, env, &ztocDigest1))
+	assert.True(t, cacheContains(ctx, t, env, &ztocDigest2))
+
+	r.blobsGot = 0
+	actual, err = store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
+	require.NoError(t, err)
+	assert.True(t, proto.Equal(&expected, actual))
+	assert.Equal(t, 0, r.blobsGot)
 	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest1))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest2))
@@ -256,7 +269,7 @@ func appendLayer(t *testing.T, image v1.Image, filename string) v1.Image {
 	return image
 }
 
-func pushImage(t *testing.T, r containerRegistry, image v1.Image, imageName string) string {
+func pushImage(t *testing.T, r *containerRegistry, image v1.Image, imageName string) string {
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
@@ -279,35 +292,52 @@ func writeFileContentsToCache(ctx context.Context, t *testing.T, env *testenv.Te
 	require.NoError(t, env.GetCache().Set(ctx, resourceName.ToProto(), data))
 }
 
-func setup(t *testing.T) (*testenv.TestEnv, *SociArtifactStore, containerRegistry, context.Context) {
+func setup(t *testing.T) (*testenv.TestEnv, *SociArtifactStore, *containerRegistry, context.Context) {
 	env := testenv.GetTestEnv(t)
 	env.SetDefaultRedisClient(testredis.Start(t).Client())
+	env.SetSingleFlightDeduper(&deduper{})
 	reg := runContainerRegistry(t)
-	err, store := NewSociArtifactStore(env)
+	err, store := newSociArtifactStore(env)
 	require.NoError(t, err)
 	ctx, err := prefix.AttachUserPrefixToContext(context.TODO(), env)
 	require.NoError(t, err)
 	return env, store, reg, ctx
 }
 
-func runContainerRegistry(t *testing.T) containerRegistry {
+func runContainerRegistry(t *testing.T) *containerRegistry {
 	handler := registry.New()
-	r := containerRegistry{
-		host: "localhost",
-		port: testport.FindFree(t),
+	registry := containerRegistry{
+		host:     "localhost",
+		port:     testport.FindFree(t),
+		blobsGot: 0,
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
-	server := &http.Server{Handler: mux}
-	lis, err := net.Listen("tcp", r.Address())
+
+	// Wrap the container registry so we can verify which blobs are fetched.
+	f := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			matches, err := regexp.MatchString("/v2/.*/blobs/sha256:.*", r.URL.Path)
+			require.NoError(t, err)
+			if matches {
+				registry.blobsGot = registry.blobsGot + 1
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+	server := &http.Server{Handler: f}
+	lis, err := net.Listen("tcp", registry.Address())
 	require.NoError(t, err)
 	go func() { _ = server.Serve(lis) }()
-	return r
+	return &registry
 }
 
 type containerRegistry struct {
 	host string
 	port int
+
+	// Number of blobs requested using GET
+	blobsGot int
 }
 
 func (r *containerRegistry) Address() string {
@@ -316,4 +346,13 @@ func (r *containerRegistry) Address() string {
 
 func (r *containerRegistry) ImageAddress(imageName string) string {
 	return fmt.Sprintf("%s:%d/%s", r.host, r.port, imageName)
+}
+
+// A deduper implementation that doesn't do any de-duping as it's not required
+// for this test.
+type deduper struct {
+}
+
+func (d *deduper) Do(_ context.Context, _ string, work func() ([]byte, error)) ([]byte, error) {
+	return work()
 }

@@ -20,7 +20,6 @@ import (
 	"github.com/awslabs/soci-snapshotter/compression"
 	"github.com/awslabs/soci-snapshotter/soci"
 	"github.com/awslabs/soci-snapshotter/ztoc"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -29,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/containerd/containerd/images"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/match"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -42,7 +42,6 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -80,13 +79,15 @@ const (
 type SociArtifactStore struct {
 	cache     interfaces.Cache
 	blobstore interfaces.Blobstore
+	deduper   interfaces.SingleFlightDeduper
 	env       environment.Env
-
-	deduper *dsingleflight.Coordinator
 }
 
 func Register(env environment.Env) error {
-	err, server := NewSociArtifactStore(env)
+	if env.GetSingleFlightDeduper() == nil {
+		return nil
+	}
+	err, server := newSociArtifactStore(env)
 	if err != nil {
 		return err
 	}
@@ -94,18 +95,21 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
+func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 	if env.GetCache() == nil {
 		return status.FailedPreconditionError("soci artifact server requires a cache"), nil
 	}
 	if env.GetBlobstore() == nil {
 		return status.FailedPreconditionError("soci artifact server requires a blobstore"), nil
 	}
+	if env.GetSingleFlightDeduper() == nil {
+		return status.FailedPreconditionError("soci artifact server requires a single-flight deduper"), nil
+	}
 	return nil, &SociArtifactStore{
 		cache:     env.GetCache(),
 		blobstore: env.GetBlobstore(),
+		deduper:   env.GetSingleFlightDeduper(),
 		env:       env,
-		deduper:   dsingleflight.New(env.GetDefaultRedisClient()),
 	}
 }
 
@@ -245,20 +249,19 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err != nil {
 		return nil, err
 	}
-	configHashHex := configHash.Hex
 
 	// Try to only read-pull-index-write once at a time to prevent hammering
 	// the containter registry with a ton of parallel pull requests, and save
 	// apps a bunch of parallel work.
-	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHashHex)
+	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
 	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
-		resp, err := s.getArtifactsFromCache(ctx, configHashHex)
+		resp, err := s.getArtifactsFromCache(ctx, configHash.Hex)
 		if status.IsNotFoundError(err) {
-			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, req.Credentials)
+			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)
 			if err != nil {
 				return nil, err
 			}
-			resp = getArtifactsResponse(configHashHex, sociIndexDigest, ztocDigests)
+			resp = getArtifactsResponse(configHash.Hex, sociIndexDigest, ztocDigests)
 		} else if err != nil {
 			return nil, err
 		}
@@ -349,13 +352,13 @@ func deserializeDigest(s string) (*repb.Digest, error) {
 
 }
 
-func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
+func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, configHash v1.Hash, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
 	log.Infof("soci artifacts not found, generating them for image %s", imageRef.DigestStr())
 	image, err := fetchImageDescriptor(ctx, imageRef, credentials)
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.indexImage(ctx, image)
+	return s.indexImage(ctx, image, configHash)
 }
 
 func fetchImageDescriptor(ctx context.Context, imageRef ctrname.Digest, credentials *rgpb.Credentials) (v1.Image, error) {
@@ -390,7 +393,7 @@ func fetchImageDescriptor(ctx context.Context, imageRef ctrname.Digest, credenti
 	}
 }
 
-func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image) (*repb.Digest, []*repb.Digest, error) {
+func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, configHash v1.Hash) (*repb.Digest, []*repb.Digest, error) {
 	layers, err := image.Layers()
 	if err != nil {
 		return nil, nil, err
@@ -444,6 +447,9 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image) (*re
 		SizeBytes: indexSizeBytes,
 	}
 	s.cache.Set(ctx, resourceName(&indexDigest), indexBytes)
+	if _, err := s.blobstore.WriteBlob(ctx, blobKey(configHash.Hex), []byte(serializeDigest(&indexDigest))); err != nil {
+		return nil, nil, err
+	}
 	return &indexDigest, ztocDigests, nil
 }
 
