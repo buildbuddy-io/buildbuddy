@@ -116,7 +116,7 @@ type Invocation struct {
 	ActionCount                    int64
 	Perms                          int32 `gorm:"index:perms;type:int;default:NULL"`
 	CreatedWithCapabilities        int32
-	RedactionFlags                 int32   `gorm:"default:NULL;type:int;default:NULL"`
+	RedactionFlags                 int32 `gorm:"default:NULL;type:int;default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                int64
 	ActionCacheMisses              int64
@@ -365,7 +365,7 @@ type Secret struct {
 	GroupID string `gorm:"primaryKey"`
 	Name    string `gorm:"primaryKey"`
 	Value   string `gorm:"type:text"`
-	Perms   int32    `gorm:"type:int;default:NULL"`
+	Perms   int32  `gorm:"type:int;default:NULL"`
 }
 
 func (s *Secret) TableName() string {
@@ -528,7 +528,7 @@ type GitHubAppInstallation struct {
 
 	// GroupID is the group linked to the GitHub app installation.
 	GroupID string `gorm:"primaryKey"`
-	Perms   int32    `gorm:"not null"`
+	Perms   int32  `gorm:"not null"`
 
 	// InstallationID is the GitHub app installation ID.
 	InstallationID int64 `gorm:"not null"`
@@ -552,7 +552,7 @@ type GitRepository struct {
 	RepoURL string `gorm:"primaryKey;unique"`
 	UserID  string `gorm:"not null"`
 	GroupID string `gorm:"primaryKey"`
-	Perms   int32    `gorm:"not null"`
+	Perms   int32  `gorm:"not null"`
 
 	// InstanceNameSuffix is the remote instance name suffix to apply to any
 	// BuildBuddy-initiated invocations within this repo, such as workflows or
@@ -705,7 +705,7 @@ func (*EncryptionKey) TableName() string {
 type EncryptionKeyVersion struct {
 	Model
 	EncryptionKeyID string `gorm:"primaryKey"`
-	Version         int32    `gorm:"primaryKey"`
+	Version         int32  `gorm:"primaryKey"`
 
 	// BuildBuddy portion of the composite key encrypted using the master key.
 	MasterEncryptedKey []byte
