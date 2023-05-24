@@ -11,6 +11,7 @@ message Attrs {
   int64 size = 1;
   uint32 perm = 2;
   bool immutable = 3;
+  uint32 nlink = 4;
 }
 
 message SymlinkEntry {
@@ -167,6 +168,15 @@ message SymlinkRequest {
 
 message SymlinkResponse {}
 
+message LinkRequest {
+  string path = 1;
+  string target = 2;
+}
+
+message LinkResponse {
+  Attrs attrs = 1;
+}
+
 message UnlinkRequest {
   string path = 1;
 }
@@ -244,6 +254,7 @@ service FileSystem {
   rpc Rename(RenameRequest) returns (RenameResponse);
   rpc Mkdir(MkdirRequest) returns (MkdirResponse);
   rpc Rmdir(RmdirRequest) returns (RmdirResponse);
+  rpc Link(LinkRequest) returns (LinkResponse);
   rpc Symlink(SymlinkRequest) returns (SymlinkResponse);
   rpc Unlink(UnlinkRequest) returns (UnlinkResponse);
 

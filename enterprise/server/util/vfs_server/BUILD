@@ -21,6 +21,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/digest",
         "//server/util/alert",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_hanwen_go_fuse_v2//fs",
         "@com_github_hanwen_go_fuse_v2//fuse",
