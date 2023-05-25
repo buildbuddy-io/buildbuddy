@@ -532,6 +532,26 @@ func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb
 	return fh.fsync(request)
 }
 
+func (p *Server) FsyncDir(ctx context.Context, request *vfspb.FsyncDirRequest) (*vfspb.FsyncDirResponse, error) {
+	path, err := p.computeFullPath(request.GetPath())
+	if err != nil {
+		return nil, err
+	}
+	fd, err := syscall.Open(path, syscall.O_RDONLY, 0)
+	if err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	defer func() {
+		if err := syscall.Close(fd); err != nil {
+			log.Errorf("FsyncDir: failed to close fd %d: %s", fd, err)
+		}
+	}()
+	if err := syscall.Fsync(fd); err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	return &vfspb.FsyncDirResponse{}, nil
+}
+
 func (p *Server) Flush(ctx context.Context, request *vfspb.FlushRequest) (*vfspb.FlushResponse, error) {
 	fh, err := p.getFileHandle(request.GetHandleId())
 	if err != nil {

@@ -790,6 +790,40 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 	return fs.OK
 }
 
+func (n *Node) Fsync(ctx context.Context, f fs.FileHandle, flags uint32) syscall.Errno {
+	if f == nil {
+		return n.fsyncDir(ctx)
+	}
+
+	if n.vfs.verbose {
+		log.Debugf("[%s] Fsync %q", n.vfs.taskID(), n.relativePath())
+	}
+	rf, ok := f.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+		return syscall.EBADF
+	}
+	req := &vfspb.FsyncRequest{HandleId: rf.id}
+	_, err := n.vfs.vfsClient.Fsync(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
+func (n *Node) fsyncDir(ctx context.Context) syscall.Errno {
+	if n.vfs.verbose {
+		log.Debugf("[%s] FsyncDir %q", n.vfs.taskID(), n.relativePath())
+	}
+
+	req := &vfspb.FsyncDirRequest{Path: n.relativePath()}
+	_, err := n.vfs.vfsClient.FsyncDir(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
 func (n *Node) Getlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fuse.FileLock, flags uint32, out *fuse.FileLock) (errno syscall.Errno) {
 	rf, ok := f.(*remoteFile)
 	if !ok {

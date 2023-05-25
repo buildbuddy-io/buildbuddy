@@ -92,6 +92,12 @@ message FsyncRequest {
 
 message FsyncResponse {}
 
+message FsyncDirRequest {
+  string path = 1;
+}
+
+message FsyncDirResponse {}
+
 message FlushRequest {
   uint64 handle_id = 1;
 }
@@ -234,6 +240,7 @@ service FileSystem {
   // Flushes any buffered modifications to backing storage device.
   // See `man 2 fsync`.
   rpc Fsync(FsyncRequest) returns (FsyncResponse);
+  rpc FsyncDir(FsyncDirRequest) returns (FsyncDirResponse);
 
   // Flush is called on a file handle whenever a file descriptor is closed in
   // the client FS. This may be called more than once if the file descriptor was
