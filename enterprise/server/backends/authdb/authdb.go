@@ -2,6 +2,7 @@ package authdb
 
 import (
 	"context"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -11,6 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+)
+
+const (
+	// Keys are generated in userdb.newAPIKeyToken
+	maxAPIKeyLength = 20
 )
 
 type AuthDB struct {
@@ -82,6 +88,10 @@ func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 }
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
+	if strings.Contains(strings.TrimSpace(apiKey), " ") || len(strings.TrimSpace(apiKey)) > maxAPIKeyLength {
+		return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
+	}
+
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
