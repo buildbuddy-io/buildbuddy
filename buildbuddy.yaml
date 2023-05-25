@@ -9,11 +9,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
-<<<<<<< HEAD
-      - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker --build_metadata=TAGS=linux-workflow
-=======
-      - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
->>>>>>> 4132d3905 (Exclude bare tests in Test action)
+      - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare --build_metadata=TAGS=linux-workflow
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:
@@ -26,7 +22,7 @@ actions:
     # TODO: Fix the tests below on Mac, and re-enable.
     bazel_commands:
       - >-
-        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker --build_metadata=TAGS=mac-workflow
+        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare --build_metadata=TAGS=mac-workflow
         --
         //...
         -//server/backends/disk_cache:all
