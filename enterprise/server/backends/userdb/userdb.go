@@ -67,6 +67,7 @@ var (
 
 func newAPIKeyToken() string {
 	// NB: Keep in sync with BuildBuddyServer#redactAPIKeys, which relies on this exact impl.
+	// NB: Keep in sync with authdb.maxAPIKeyLength
 	return randomToken(20)
 }
 
