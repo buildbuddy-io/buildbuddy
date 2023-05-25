@@ -100,8 +100,10 @@ func (v *BEValues) Invocation() *inpb.Invocation {
 	return v.parser.GetInvocation()
 }
 
-func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
-	v.parser.ParseEvent(event)
+func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
+	if err := v.parser.ParseEvent(event); err != nil {
+		return err
+	}
 
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
@@ -139,6 +141,7 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 			}
 		}
 	}
+	return nil
 }
 
 func (v *BEValues) Finalize(ctx context.Context) {
