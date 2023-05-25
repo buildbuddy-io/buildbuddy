@@ -53,9 +53,9 @@ go_test(
         "--testmysql.reuse_server",
     ],
     exec_properties = {
-        "workload-isolation-type": "firecracker",
-        "init-dockerd": "true",
-        "recycle-runner": "true",
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
     },
     shard_count = 7,
     tags = ["docker"],
