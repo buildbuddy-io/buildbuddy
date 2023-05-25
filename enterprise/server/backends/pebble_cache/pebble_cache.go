@@ -79,6 +79,7 @@ var (
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 
 	// ac eviction flags
+	acEvictionEnabled       = flag.Bool("cache.pebble.ac_eviction_enabled", false, "Whether AC eviction is enabled.")
 	groupIDSamplingEnabled  = flag.Bool("cache.pebble.groupid_sampling_enabled", false, "Whether AC entries are sampled and exported via metrics. Not yet used for eviction.")
 	samplesPerGroupID       = flag.Int("cache.pebble.samples_per_groupid", 20, "How many samples to use when approximating AC item count for groups.")
 	groupIDSamplesOnStartup = flag.Int("cache.pebble.num_groupid_samples_on_startup", 10, "How many group IDs to sample to on startup.")
@@ -1997,7 +1998,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	// Sample some random groups at startup so that eviction has something to
 	// work with.
 	// AC eviction requires version 2 or higher.
-	if vg.minDatabaseVersion() >= filestore.Version2 && *groupIDSamplingEnabled {
+	if vg.minDatabaseVersion() >= filestore.Version2 && (*groupIDSamplingEnabled || *acEvictionEnabled) {
 		for i := 0; i < *groupIDSamplesOnStartup; i++ {
 			pe.updateGroupIDApproxCounts()
 		}
@@ -2319,7 +2320,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 
 var digestChars = []byte("abcdef1234567890")
 
-func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
+func (e *partitionEvictor) randomKey(digestLength int, groupID string, cacheType rspb.CacheType) ([]byte, error) {
 	version := e.versionGetter.minDatabaseVersion()
 	buf := bytes.NewBuffer(make([]byte, 0, digestLength))
 	for i := 0; i < digestLength; i++ {
@@ -2328,8 +2329,9 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 
 	key, err := e.fileStorer.PebbleKey(&rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rspb.CacheType_CAS,
+			CacheType:   cacheType,
 			PartitionId: e.part.ID,
+			GroupId:     groupID,
 		},
 		Digest: &repb.Digest{
 			Hash: string(buf.Bytes()),
@@ -2409,18 +2411,14 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 	return false, atime, nil
 }
 
-func (e *partitionEvictor) sampleGroup() {
-	if !*groupIDSamplingEnabled {
-		return
-	}
+func (e *partitionEvictor) randomGroupForEvictionSampling() (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if len(e.groupIDApproxCounts) == 0 {
-		return
+		return "", status.NotFoundErrorf("no groups available")
 	}
 
 	n := rand.Int63n(e.groupIDApproxTotalCount)
-
 	pos, _ := slices.BinarySearchFunc(e.groupIDApproxCounts, groupIDApproxCount{cumulativeCount: n}, func(a, b groupIDApproxCount) int {
 		if a.cumulativeCount < b.cumulativeCount {
 			return -1
@@ -2430,10 +2428,21 @@ func (e *partitionEvictor) sampleGroup() {
 		return 0
 	})
 	if pos == len(e.groupIDApproxCounts) {
-		log.Warningf("strange, did not find group in list, looking for %d\n%s", n, e.formatGroupIDApproxCounts())
+		return "", status.NotFoundErrorf("strange, did not find group in list, looking for %d\n%s", n, e.formatGroupIDApproxCounts())
+	}
+	return e.groupIDApproxCounts[pos].groupID, nil
+}
+
+func (e *partitionEvictor) sampleGroup() {
+	if !*groupIDSamplingEnabled {
 		return
 	}
-	metrics.PebbleCacheGroupIDSampleCount.With(prometheus.Labels{metrics.GroupID: e.groupIDApproxCounts[pos].groupID}).Inc()
+
+	groupID, err := e.randomGroupForEvictionSampling()
+	if err != nil {
+		log.Warningf("could not sample group: %s", err)
+	}
+	metrics.PebbleCacheGroupIDSampleCount.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 }
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
@@ -2450,14 +2459,28 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 	iter.SeekGE(start)
 	defer iter.Close()
 
-	e.sampleGroup()
+	if !*acEvictionEnabled {
+		e.sampleGroup()
+	}
 
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
 
 	// generate k random digests and for each:
 	//   - seek to the next valid key, and return that file record
 	for i := 0; i < k*2; i++ {
-		randKey, err := e.randomKey(64)
+		groupID := ""
+		cacheType := rspb.CacheType_CAS
+		if i%2 == 1 && *acEvictionEnabled {
+			gid, err := e.randomGroupForEvictionSampling()
+			if err == nil {
+				cacheType = rspb.CacheType_AC
+				groupID = gid
+			} else {
+				log.Warningf("no groups to sample for %q", e.part.ID)
+			}
+		}
+
+		randKey, err := e.randomKey(64, groupID, cacheType)
 		if err != nil {
 			log.Errorf("Error generating random key: %s", err)
 			continue
