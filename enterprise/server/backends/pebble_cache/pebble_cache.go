@@ -1926,8 +1926,10 @@ type partitionEvictor struct {
 	casCount  int64
 	acCount   int64
 
-	// Total, approximate number of items stored under sampled group IDs.
+	// Total approximate number of items stored under sampled group IDs.
+	// This is the sum of all the counts in the slice below.
 	groupIDApproxTotalCount int64
+
 	// List of sampled group IDs and their approximate item counts, sorted by
 	// item count.
 	groupIDApproxCounts []groupIDApproxCount
@@ -1997,45 +1999,9 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		}
 		defer db.Close()
 
-		approxTotalCount := int64(0)
-		seenGroupIDs := make(map[string]struct{})
-		var approxCounts []groupIDApproxCount
 		for i := 0; i < *groupIDSamplesOnStartup; i++ {
-			groupID, err := pe.sampleGroupID()
-			if status.IsNotFoundError(err) {
-				continue
-			}
-			if err != nil {
-				log.Warningf("Could not sample group ID: %s", err)
-				continue
-			}
-			if _, ok := seenGroupIDs[groupID]; ok {
-				continue
-			}
-			seenGroupIDs[groupID] = struct{}{}
-
-			approxCount, err := pe.approxGroupItemCount(groupID)
-			if err != nil {
-				log.Warningf("Could not approximate count for group ID %s: %s", groupID, err)
-				continue
-			}
-			log.Debugf("Sampled group ID %q with approx item count %d", groupID, approxCount)
-			approxTotalCount += approxCount
-			approxCounts = append(approxCounts, groupIDApproxCount{groupID: groupID, count: approxCount})
+			pe.updateGroupIDApproxCounts()
 		}
-
-		slices.SortFunc(approxCounts, func(a, b groupIDApproxCount) bool {
-			return a.count < b.count
-		})
-
-		cumulativeCount := int64(0)
-		for i, v := range approxCounts {
-			cumulativeCount += v.count
-			approxCounts[i].cumulativeCount = cumulativeCount
-		}
-
-		pe.groupIDApproxTotalCount = approxTotalCount
-		pe.groupIDApproxCounts = approxCounts
 	}
 
 	log.Infof("Pebble Cache: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
@@ -2080,6 +2046,22 @@ func (e *partitionEvictor) sampleGroupID() (string, error) {
 // maximum value of a 32 byte hash, represented as a big int
 var maxHashAsBigInt = big.NewInt(0).SetBytes([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 
+func keyToBigInt(key filestore.PebbleKey) (*big.Int, error) {
+	hash, err := hex.DecodeString(key.Hash())
+	if err != nil {
+		return nil, status.UnknownErrorf("could not parse key %q hash: %s", key.Hash(), err)
+	}
+
+	for len(hash) < 32 {
+		hash = append(hash, 0)
+	}
+	if len(hash) > 32 {
+		hash = hash[:32]
+	}
+
+	return big.NewInt(0).SetBytes(hash), nil
+}
+
 // approximates the number of items in a group by measuring the distance
 // between adjacent keys over n keys and then taking the median value.
 func (e *partitionEvictor) approxGroupItemCount(groupID string) (int64, error) {
@@ -2114,19 +2096,11 @@ func (e *partitionEvictor) approxGroupItemCount(groupID string) (int64, error) {
 		if err != nil {
 			return 0, status.UnknownErrorf("could not parse key %q: %s", string(iter.Key()), err)
 		}
-		hash, err := hex.DecodeString(key.Hash())
+
+		keyAsNum, err := keyToBigInt(key)
 		if err != nil {
-			return 0, status.UnknownErrorf("could not parse key %q hash: %s", string(iter.Key()), err)
+			return 0, err
 		}
-		for len(hash) < 32 {
-			hash = append(hash, 0)
-		}
-		if len(hash) > 32 {
-			hash = hash[:32]
-		}
-
-		keyAsNum := big.NewInt(0).SetBytes(hash)
-
 		if keyAsNum.Cmp(prevKeyAsNum) != 0 {
 			gap := big.NewInt(0).Sub(keyAsNum, prevKeyAsNum)
 			approxCount := big.NewInt(0).Div(maxHashAsBigInt, gap)
@@ -2646,66 +2620,40 @@ func (e *partitionEvictor) updateGroupIDApproxCounts() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	sampledGroupIdx := -1
+	// Delete the group if it's already in the list.
+	deleteIdx := -1
 	for i, w := range e.groupIDApproxCounts {
 		if w.groupID == randomGroupID {
-			sampledGroupIdx = i
+			deleteIdx = i
+			e.groupIDApproxCounts = append(e.groupIDApproxCounts[:i], e.groupIDApproxCounts[i+1:]...)
+			e.groupIDApproxTotalCount -= w.count
+			break
 		}
 	}
 
-	// If the group ID is already in the list, we need to update the count.
-	if sampledGroupIdx != -1 {
-		data := e.groupIDApproxCounts
-		oldCount := data[sampledGroupIdx].count
-		delta := approxCount - oldCount
-		data[sampledGroupIdx].count = approxCount
-		data[sampledGroupIdx].cumulativeCount += delta
-		e.groupIDApproxTotalCount += delta
-
-		// Shift the entry up or down as necessary to keep the list sorted.
-
-		for i := sampledGroupIdx - 1; i >= 0; i-- {
-			if data[i].count <= data[i+1].count {
-				break
-			}
-			tmp := data[i]
-			data[i] = data[i+1]
-			data[i].cumulativeCount -= tmp.count
-			data[i+1] = tmp
-			data[i+1].cumulativeCount += approxCount
+	e.groupIDApproxTotalCount += approxCount
+	insertIdx, _ := slices.BinarySearchFunc(e.groupIDApproxCounts, groupIDApproxCount{count: approxCount}, func(a, b groupIDApproxCount) int {
+		if a.count < b.count {
+			return -1
 		}
+		if a.count > b.count {
+			return 1
+		}
+		return 0
+	})
+	w := groupIDApproxCount{groupID: randomGroupID, count: approxCount}
+	e.groupIDApproxCounts = append(e.groupIDApproxCounts[:insertIdx], append([]groupIDApproxCount{w}, e.groupIDApproxCounts[insertIdx:]...)...)
 
-		for i := sampledGroupIdx + 1; i < len(data); i++ {
-			if data[i-1].count <= data[i].count {
-				data[i].cumulativeCount += delta
-				continue
-			}
-			tmp := data[i-1]
-			data[i-1] = data[i]
-			data[i-1].cumulativeCount -= oldCount
-			data[i] = tmp
-			data[i].cumulativeCount += data[i-1].count
-		}
-	} else {
-		e.groupIDApproxTotalCount += approxCount
-		// Not in the list, need to insert it.
-		idx, _ := slices.BinarySearchFunc(e.groupIDApproxCounts, groupIDApproxCount{count: approxCount}, func(a, b groupIDApproxCount) int {
-			if a.count < b.count {
-				return -1
-			}
-			if a.count > b.count {
-				return 1
-			}
-			return 0
-		})
-		cumulativeCount := approxCount
-		if idx > 0 {
-			cumulativeCount = e.groupIDApproxCounts[idx-1].cumulativeCount + approxCount
-		}
-		w := groupIDApproxCount{groupID: randomGroupID, count: approxCount, cumulativeCount: cumulativeCount}
-		e.groupIDApproxCounts = append(e.groupIDApproxCounts[:idx], append([]groupIDApproxCount{w}, e.groupIDApproxCounts[idx:]...)...)
-		for i := idx + 1; i < len(e.groupIDApproxCounts); i++ {
-			e.groupIDApproxCounts[i].cumulativeCount += approxCount
+	// Update cumulative counts starting from the lowest affected index.
+	lowestAffectedIdx := insertIdx
+	if deleteIdx != -1 && deleteIdx < lowestAffectedIdx {
+		lowestAffectedIdx = deleteIdx
+	}
+	for i := lowestAffectedIdx; i < len(e.groupIDApproxCounts); i++ {
+		if i == 0 {
+			e.groupIDApproxCounts[i].cumulativeCount = e.groupIDApproxCounts[i].count
+		} else {
+			e.groupIDApproxCounts[i].cumulativeCount = e.groupIDApproxCounts[i-1].cumulativeCount + e.groupIDApproxCounts[i].count
 		}
 	}
 }
