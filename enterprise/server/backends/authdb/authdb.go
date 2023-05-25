@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	// Keys are generated in userdb.newAPIKeyToken
 	maxAPIKeyLength = 20
 )
 
