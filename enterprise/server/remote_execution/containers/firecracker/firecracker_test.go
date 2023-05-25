@@ -140,6 +140,13 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 }
 
 func tempJailerRoot(t *testing.T) string {
+	// When running this test on the bare executor pool, ensure the jailer root
+	// is under /buildbuddy so that it's on the same device as the executor data
+	// dir (with action workspaces and filecache).
+	if testfs.Exists(t, "/buildbuddy", "") {
+		*testExecutorRoot = "/buildbuddy/test-executor-root"
+	}
+
 	if *testExecutorRoot != "" {
 		cleanExecutorRoot(t, *testExecutorRoot)
 		return *testExecutorRoot
