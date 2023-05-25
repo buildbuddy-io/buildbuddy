@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"google.golang.org/grpc"
@@ -336,7 +337,7 @@ func (p *Server) Prepare(lazyFileProvider LazyFileProvider) error {
 func (p *Server) computeFullPath(relativePath string) (string, error) {
 	fullPath := filepath.Clean(filepath.Join(p.workspacePath, relativePath))
 	if !strings.HasPrefix(fullPath, p.workspacePath) {
-		return "", status.PermissionDeniedError("open request outside of workspace")
+		return "", status.PermissionDeniedError("path is outside of workspace")
 	}
 	return fullPath, nil
 }
@@ -556,10 +557,14 @@ func (p *Server) getAttr(fullPath string) (*vfspb.Attrs, error) {
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
-	return &vfspb.Attrs{
+	attrs := &vfspb.Attrs{
 		Size: fi.Size(),
 		Perm: uint32(fi.Mode().Perm()),
-	}, nil
+	}
+	if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
+		attrs.Nlink = uint32(stat.Nlink)
+	}
+	return attrs, nil
 }
 
 func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*vfspb.GetAttrResponse, error) {
@@ -655,6 +660,31 @@ func (p *Server) Rmdir(ctx context.Context, request *vfspb.RmdirRequest) (*vfspb
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.RmdirResponse{}, nil
+}
+
+func (p *Server) Link(ctx context.Context, request *vfspb.LinkRequest) (*vfspb.LinkResponse, error) {
+	fullPath, err := p.computeFullPath(request.GetPath())
+	if err != nil {
+		return nil, err
+	}
+	targetFullPath, err := p.computeFullPath(request.GetTarget())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := syscall.Link(targetFullPath, fullPath); err != nil {
+		return nil, syscallErrStatus(err)
+	}
+
+	attrs, err := p.getAttr(fullPath)
+	if err != nil {
+		if err := syscall.Unlink(fullPath); err != nil {
+			log.Warningf("Failed to unlink %q after stat failed during hardlink request: %s", fullPath, err)
+		}
+		return nil, err
+	}
+
+	return &vfspb.LinkResponse{Attrs: attrs}, nil
 }
 
 func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*vfspb.SymlinkResponse, error) {

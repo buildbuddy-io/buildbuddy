@@ -67,6 +67,49 @@ func newServer(t *testing.T) (*vfs_server.Server, string) {
 	return server, tmpDir
 }
 
+func writeToVFS(t *testing.T, server *vfs_server.Server, path, content string) {
+	ctx := context.Background()
+	f, err := server.Open(ctx, &vfspb.OpenRequest{
+		Path:  path,
+		Mode:  0644,
+		Flags: uint32(os.O_CREATE | os.O_RDWR),
+	})
+	require.NoError(t, err, "open %s", path)
+	defer func() {
+		_, err := server.Release(ctx, &vfspb.ReleaseRequest{
+			HandleId: f.GetHandleId(),
+		})
+		require.NoError(t, err, "release %s", path)
+	}()
+	_, err = server.Write(ctx, &vfspb.WriteRequest{
+		HandleId: f.GetHandleId(),
+		Data:     []byte(content),
+	})
+	require.NoError(t, err, "write %s", path)
+}
+
+func readFromVFS(t *testing.T, server *vfs_server.Server, path string) string {
+	ctx := context.Background()
+	f, err := server.Open(ctx, &vfspb.OpenRequest{
+		Path:  path,
+		Mode:  0644,
+		Flags: uint32(os.O_RDONLY)},
+	)
+	require.NoError(t, err, "open %s", path)
+	defer func() {
+		_, err := server.Release(ctx, &vfspb.ReleaseRequest{
+			HandleId: f.GetHandleId(),
+		})
+		require.NoError(t, err, "release %s", path)
+	}()
+	res, err := server.Read(ctx, &vfspb.ReadRequest{
+		HandleId: f.GetHandleId(),
+		NumBytes: 10_000,
+	})
+	require.NoError(t, err, "read %s", path)
+	return string(res.Data)
+}
+
 func TestGetLayout(t *testing.T) {
 	server, tmpDir := newServer(t)
 
@@ -371,6 +414,31 @@ func TestSymlinkOps(t *testing.T) {
 		_, err = server.Rename(ctx, &vfspb.RenameRequest{OldPath: "dir/alink.rel", NewPath: "dir/blink.rel"})
 		require.NoError(t, err)
 	}
+}
+
+func TestHardlink(t *testing.T) {
+	server, _ := newServer(t)
+	ctx := context.Background()
+
+	writeToVFS(t, server, "src", "hello")
+	_, err := server.Link(ctx, &vfspb.LinkRequest{Path: "dst", Target: "src"})
+	require.NoError(t, err)
+
+	content := readFromVFS(t, server, "dst")
+	require.Equal(t, "hello", content, "hardlink content should match source file")
+
+	// Update src with new contents
+	writeToVFS(t, server, "src", "world")
+
+	content = readFromVFS(t, server, "dst")
+	require.Equal(t, "world", content, "hardlink content should match updated source file")
+
+	// Unlink src; hardlink should still be readable
+	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{Path: "src"})
+	require.NoError(t, err)
+
+	content = readFromVFS(t, server, "dst")
+	require.Equal(t, "world", content, "hardlink should be readable after unlinking source file")
 }
 
 func TestFileLocking(t *testing.T) {
