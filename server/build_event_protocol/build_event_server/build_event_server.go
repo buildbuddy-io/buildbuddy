@@ -55,6 +55,12 @@ func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, re
 	return &emptypb.Empty{}, nil
 }
 
+func closeForwardingStreams(clients []pepb.PublishBuildEvent_PublishBuildToolEventStreamClient) {
+	for _, c := range clients {
+		c.CloseSend()
+	}
+}
+
 // Handles Streaming BuildToolEvent
 // From the bazel client: (Read more in BuildEventServiceUploader.java.)
 // {@link BuildEventServiceUploaderCommands#OPEN_STREAM} is the first event and opens a
@@ -78,11 +84,6 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	var channel interfaces.BuildEventChannel
 
 	eg, ctx := errgroup.WithContext(ctx)
-	if s.synchronous {
-		// wait for acknowledges from the forwarding stream clients. Note: Wait()
-		// needs to be run *after* fwdStream.CloseSend()
-		defer eg.Wait()
-	}
 	forwardingStreams := make([]pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, 0)
 	for _, client := range s.env.GetBuildEventProxyClients() {
 		fwdStream, err := client.PublishBuildToolEventStream(ctx, grpc.WaitForReady(false))
@@ -98,12 +99,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 				}
 				if err != nil {
 					log.Warningf("Got error while getting response from proxy: %s", err)
-					break
+					return err
 				}
 			}
 			return nil
 		})
-		defer fwdStream.CloseSend()
 		forwardingStreams = append(forwardingStreams, fwdStream)
 	}
 
@@ -136,9 +136,16 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	for {
 		select {
 		case <-channelDone:
+			closeForwardingStreams(forwardingStreams)
 			return disconnectWithErr(status.FromContextError(channel.Context()))
 		case err := <-errCh:
+			closeForwardingStreams(forwardingStreams)
 			if err == io.EOF {
+				if s.synchronous {
+					if err := eg.Wait(); err != nil {
+						return disconnectWithErr(err)
+					}
+				}
 				return postProcessStream(ctx, channel, streamID, acks, stream)
 			}
 			log.CtxWarningf(ctx, "Error receiving build event stream %+v: %s", streamID, err)
@@ -153,6 +160,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			}
 
 			if err := channel.HandleEvent(in); err != nil {
+				closeForwardingStreams(forwardingStreams)
 				if status.IsAlreadyExistsError(err) {
 					log.CtxWarningf(ctx, "AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
 					return err
