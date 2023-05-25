@@ -1993,12 +1993,6 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	// work with.
 	// AC eviction requires version 2 or higher.
 	if vg.minDatabaseVersion() >= filestore.Version2 && *groupIDSamplingEnabled {
-		db, err := dbg.DB()
-		if err != nil {
-			return nil, err
-		}
-		defer db.Close()
-
 		for i := 0; i < *groupIDSamplesOnStartup; i++ {
 			pe.updateGroupIDApproxCounts()
 		}
