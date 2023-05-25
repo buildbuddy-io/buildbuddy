@@ -30,8 +30,8 @@ go_test(
     srcs = ["docker_test.go"],
     exec_properties = {
         # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1094): Require less manual configuration here.
-        "workload-isolation-type": "firecracker",
-        "init-dockerd": "true",
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
     },
     shard_count = 2,
     tags = ["docker"],

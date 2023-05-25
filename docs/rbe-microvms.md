@@ -35,8 +35,8 @@ This test would normally fail when run using BuildBuddy's shared Linux
 executors, since running Docker inside RBE actions is only supported when
 using self-hosted executors.
 
-But we can instead run this action using **Docker-in-Firecracker** by
-adding a few `exec_properties` to our action:
+But we can instead run this test using **Docker-in-Firecracker** by
+adding a few `exec_properties` to the test runner action:
 
 ```python
 sh_test(
@@ -44,14 +44,24 @@ sh_test(
     srcs = ["docker_test.sh"],
     exec_properties = {
         # Tell BuildBuddy to run this test using a Firecracker microVM.
-        "workload-isolation-type": "firecracker",
+        "test.workload-isolation-type": "firecracker",
         # Tell BuildBuddy to ensure that the Docker daemon is started
-        # inside the microVM before this action runs, so that we don't
+        # inside the microVM before the test starts, so that we don't
         # have to worry about starting it ourselves.
-        "init-dockerd": "true",
+        "test.init-dockerd": "true",
     },
 )
 ```
+
+:::note
+
+The `test.` prefix on the `exec_properties` keys ensures that the
+properties are only applied to the action that actually runs the test,
+and not the actions which are building the test code. See
+[execution groups](https://bazel.build/extending/exec-groups) for more
+info.
+
+:::
 
 And that's it! This test now works on BuildBuddy's shared Linux executors.
 
@@ -74,10 +84,10 @@ sh_test(
     name = "docker_test",
     srcs = ["docker_test.sh"],
     exec_properties = {
-        "workload-isolation-type": "firecracker",
-        "init-dockerd": "true",
-        # Tell BuildBuddy to preserve the microVM state across runs.
-        "recycle-runner": "true",
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        # Tell BuildBuddy to preserve the microVM state across test runs.
+        "test.recycle-runner": "true",
     },
 )
 ```
