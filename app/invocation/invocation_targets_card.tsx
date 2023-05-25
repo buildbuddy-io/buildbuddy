@@ -68,10 +68,7 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
               {events
                 .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
                 .map((target) => (
-                  <Link
-                    className="target-row"
-                    draggable={false}
-                    href={`?target=${encodeURIComponent(target.id.targetCompleted.label)}`}>
+                  <Link className="target-row" href={`?target=${encodeURIComponent(target.id.targetCompleted.label)}`}>
                     <div
                       title={`${
                         this.props.model.configuredMap.get(target.id.targetCompleted.label)?.buildEvent.configured
