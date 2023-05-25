@@ -70,9 +70,9 @@ go_test(
     timeout = "long",
     srcs = ["firecracker_test.go"],
     exec_properties = {
-        "Pool": "bare",
-        "use-self-hosted-executors": "true",
-        "container-image": "none",
+        "test.Pool": "bare",
+        "test.use-self-hosted-executors": "true",
+        "test.container-image": "none",
     },
     tags = [
         "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
