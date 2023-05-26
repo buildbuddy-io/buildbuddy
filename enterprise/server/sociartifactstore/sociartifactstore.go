@@ -283,36 +283,31 @@ func sociIndexKey(h v1.Hash) (*repb.Digest, error) {
 	return digest.Compute(buf, repb.DigestFunction_SHA256)
 }
 
-func resourceName(digest *repb.Digest, cacheType rspb.CacheType) *rspb.ResourceName {
-	return &rspb.ResourceName{
-		Digest:         digest,
-		Compressor:     repb.Compressor_IDENTITY,
-		CacheType:      cacheType,
-		DigestFunction: repb.DigestFunction_SHA256,
-	}
-}
-
+// TODO(iain): consider reading/writing soci artifacts from/to the cache using
+// RPC clients for ByteStream read/write and UpdatActionResult APIs so that
+// reading the action result automatically checks for existence of artifacts.
 func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConfigHash v1.Hash) (*socipb.GetArtifactsResponse, error) {
 	sociIndexCacheKey, err := sociIndexKey(imageConfigHash)
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.cache.Contains(ctx, resourceName(sociIndexCacheKey, rspb.CacheType_AC))
+	sociIndexNameResourceName := digest.NewResourceName(sociIndexCacheKey, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
+	exists, err := s.cache.Contains(ctx, sociIndexNameResourceName)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
 		return nil, status.NotFoundErrorf("soci index for image with manifest config %s not found in cache", imageConfigHash.Hex)
 	}
-	bytes, err := s.cache.Get(ctx, resourceName(sociIndexCacheKey, rspb.CacheType_AC))
+	bytes, err := s.cache.Get(ctx, sociIndexNameResourceName)
 	if err != nil {
 		return nil, err
 	}
-	sociIndexDigest, err := deserializeDigest(string(bytes))
+	sociIndexResourceName, err := digest.ParseDownloadResourceName(string(bytes))
 	if err != nil {
 		return nil, err
 	}
-	sociIndexBytes, err := s.cache.Get(ctx, resourceName(sociIndexDigest, rspb.CacheType_CAS))
+	sociIndexBytes, err := s.cache.Get(ctx, sociIndexResourceName.ToProto())
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +316,8 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 		return nil, err
 	}
 	for _, ztocDigest := range ztocDigests {
-		exists, err := s.cache.Contains(ctx, resourceName(ztocDigest, rspb.CacheType_CAS))
+		exists, err := s.cache.Contains(ctx,
+			digest.NewResourceName(ztocDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 		if err != nil {
 			return nil, err
 		}
@@ -329,7 +325,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 			return nil, status.NotFoundErrorf("ztoc %s not found in cache", ztocDigest.Hash)
 		}
 	}
-	return getArtifactsResponse(imageConfigHash, sociIndexDigest, ztocDigests), nil
+	return getArtifactsResponse(imageConfigHash, sociIndexResourceName.GetDigest(), ztocDigests), nil
 }
 
 // Serializes a repb.Digest as "<digest>/<size-bytes">
@@ -448,7 +444,9 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 		Hash:      indexHash.Hex,
 		SizeBytes: indexSizeBytes,
 	}
-	if err = s.cache.Set(ctx, resourceName(&indexDigest, rspb.CacheType_CAS), indexBytes); err != nil {
+	indexResourceName := digest.NewResourceName(&indexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	err = s.cache.Set(ctx, indexResourceName.ToProto(), indexBytes)
+	if err != nil {
 		return nil, nil, err
 	}
 	sociIndexCacheKey, err := sociIndexKey(configHash)
@@ -457,7 +455,14 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 	}
 	// Write the pointer from image identifier to SOCI Index in the ActionCache
 	// because the entry isn't content-addressable.
-	if err = s.cache.Set(ctx, resourceName(sociIndexCacheKey, rspb.CacheType_AC), []byte(serializeDigest(&indexDigest))); err != nil {
+	serializedIndexResourceName, err := indexResourceName.DownloadString()
+	if err != nil {
+		return nil, nil, err
+	}
+	err = s.cache.Set(ctx,
+		digest.NewResourceName(sociIndexCacheKey, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto(),
+		[]byte(serializedIndexResourceName))
+	if err != nil {
 		return nil, nil, err
 	}
 	return &indexDigest, ztocDigests, nil
@@ -557,7 +562,8 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 		Hash:      ztocDesc.Digest.Encoded(),
 		SizeBytes: ztocDesc.Size,
 	}
-	cacheWriter, err := s.cache.Writer(ctx, resourceName(&ztocDigest, rspb.CacheType_CAS))
+	cacheWriter, err := s.cache.Writer(ctx,
+		digest.NewResourceName(&ztocDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 	if err != nil {
 		return nil, err
 	}

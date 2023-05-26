@@ -68,13 +68,15 @@ func TestIndexExists(t *testing.T) {
 		Hash:      "ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
 		SizeBytes: 99024,
 	}
+	serializedSociIndexResourceName, err := digest.NewResourceName(&sociIndexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
+	require.NoError(t, err)
 
 	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json", rspb.CacheType_CAS)
 	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc", rspb.CacheType_CAS)
 	writeFileContentsToCache(ctx, t, env, &ztocDigest2, "test_data/ztocs/ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c.ztoc", rspb.CacheType_CAS)
 	writeDataToCache(ctx, t, env,
 		getSociIndexKey(t, "sha256:dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b"),
-		[]byte("7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea/1225"),
+		[]byte(serializedSociIndexResourceName),
 		rspb.CacheType_AC)
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
@@ -128,13 +130,15 @@ func TestIndexPartiallyExists(t *testing.T) {
 		Hash:      "ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
 		SizeBytes: 99024,
 	}
+	serializedSociIndexResourceName, err := digest.NewResourceName(&sociIndexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
+	require.NoError(t, err)
 
 	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json", rspb.CacheType_CAS)
 	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc", rspb.CacheType_CAS)
 	// Don't write the second ztoc (ffc7a...) to the cache.
 	writeDataToCache(ctx, t, env,
 		getSociIndexKey(t, "sha256:dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b"),
-		[]byte("7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea/1225"),
+		[]byte(serializedSociIndexResourceName),
 		rspb.CacheType_AC)
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
