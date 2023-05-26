@@ -49,10 +49,18 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
 
   updateTimeIfInProgress() {
     if (!this.isInProgress()) {
+      if (this.interval) {
+        window.clearInterval(this.interval);
+      }
       return;
     }
     this.setState({ time: Date.now() });
-    this.interval = window.setInterval(() => this.updateTimeIfInProgress(), durationRefreshIntervalMillis);
+    if (!this.interval) {
+      this.interval = window.setInterval(() => {
+        console.log("updating");
+        this.updateTimeIfInProgress();
+      }, durationRefreshIntervalMillis);
+    }
   }
 
   componentWillUnmount() {
