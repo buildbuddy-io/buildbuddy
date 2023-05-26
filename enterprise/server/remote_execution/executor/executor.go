@@ -204,10 +204,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
-	//finishedCleanly := false
-	//defer func() {
-	//	go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
-	//}()
+	finishedCleanly := false
+	defer func() {
+		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
+	}()
 
 	log.CtxInfof(ctx, "Preparing runner for task.")
 	stage.Set("pull_image")
@@ -351,7 +351,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	if cmdResult.Error == nil {
 		log.CtxInfof(ctx, "Task finished cleanly.")
-		//finishedCleanly = true
+		finishedCleanly = true
 	}
 	return false, nil
 }

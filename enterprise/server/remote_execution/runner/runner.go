@@ -1333,6 +1333,12 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	if !cr.PlatformProperties.RecycleRunner {
 		return
 	}
+
+	exitEarly := true
+	if exitEarly {
+		return
+	}
+
 	if !finishedCleanly || cr.doNotReuse {
 		log.CtxWarningf(ctx, "Failed to recycle runner %s due to previous execution error", cr)
 		return
