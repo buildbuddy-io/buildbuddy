@@ -22,7 +22,7 @@ Web Services KMS.
 To get started, head over to your organization Settings page and look for the "Encryption Keys" tab. Note that these
 settings are only visible to Organization Administrators.
 
-For more details, see the [Customer Managed Encryption Keys documentation](https://www.buildbuddy.io/docs/remote-build-execution).
+For more details, see the [Customer Managed Encryption Keys documentation](https://www.buildbuddy.io/docs/cache-encryption-keys).
 
 If you have any questions or feedback about this feature, please reach out to us on [Slack](https://slack.buildbuddy.io/) or at [hello@buildbuddy.io](mailto:hello@buildbuddy.io).
 
