@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
@@ -275,6 +276,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := sociartifactstore.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := prom.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

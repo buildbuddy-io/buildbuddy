@@ -12,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -448,7 +450,8 @@ type UsageTracker interface {
 
 type ApiService interface {
 	apipb.ApiServiceServer
-	http.Handler
+	GetFileHandler() http.Handler
+	GetMetricsHandler() http.Handler
 	CacheEnabled() bool
 }
 
@@ -1120,4 +1123,12 @@ type Crypter interface {
 
 	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (Decryptor, error)
+}
+
+type MetricsGroupRegisteries interface {
+	GetOrCreateRegistry(groupID string) (*prometheus.Registry, error)
+}
+
+type PromQuerier interface {
+	FetchMetrics(ctx context.Context, groupID string) (model.Vector, error)
 }

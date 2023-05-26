@@ -24,7 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"

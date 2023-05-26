@@ -158,4 +158,8 @@ type Env interface {
 	SetCrypter(crypter interfaces.Crypter)
 	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
 	SetSociArtifactStoreServer(socipb.SociArtifactStoreServer)
+	GetMetricsGroupRegistries() interfaces.MetricsGroupRegisteries
+	SetMetricsGroupRegistries(interfaces.MetricsGroupRegisteries)
+	GetPromQuerier() interfaces.PromQuerier
+	SetPromQuerier(interfaces.PromQuerier)
 }

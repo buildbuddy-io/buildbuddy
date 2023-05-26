@@ -206,6 +206,7 @@ var (
 		InvocationStatusLabel,
 		BazelExitCode,
 		BazelCommand,
+		GroupID,
 	})
 
 	/// #### Examples

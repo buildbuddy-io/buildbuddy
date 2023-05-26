@@ -814,6 +814,13 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if err != nil {
 		return err
 	}
+	auth := e.env.GetAuthenticator()
+	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	groupID := ""
+	if err == nil {
+		groupID = userInfo.GetGroupID()
+	}
+	ti.GroupID = groupID
 	recordInvocationMetrics(ti)
 	updated, err := e.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
@@ -889,6 +896,7 @@ func recordInvocationMetrics(ti *tables.Invocation) {
 		metrics.InvocationStatusLabel: statusLabel,
 		metrics.BazelExitCode:         ti.BazelExitCode,
 		metrics.BazelCommand:          ti.Command,
+		metrics.GroupID:               ti.GroupID,
 	}).Inc()
 	metrics.InvocationDurationUs.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,

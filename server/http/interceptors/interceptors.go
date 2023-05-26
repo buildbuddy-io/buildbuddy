@@ -106,6 +106,18 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 	})
 }
 
+func SetAPIKeyFromAuthHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		// cannot use auth.APIKeyHeader because of circular dependency
+		apiKey := strings.TrimPrefix(authHeader, "x-buildbuddy-api-key ")
+		if apiKey != "" && r.Header.Get("x-buildbuddy-api-key") == "" {
+			r.Header.Set("x-buildbuddy-api-key", apiKey)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -306,6 +318,22 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	return wrapHandler(env, next, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
+		RequestContextFromURL,
+		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
+		LogRequest,
+		RequestID,
+		RecoverAndAlert,
+	})
+}
+
+// WrapExternalHandlerWithAuthHeader copies API key from Authorization Header to
+// "x-buildbuddy-api-key". It doesn't support GZip.
+func WrapExternalHandlerWithAuthHeader(env environment.Env, next http.Handler) http.Handler {
+	// NB: These are called in reverse order, so the 0th element will be
+	// called last before the handler itself is called.
+	return wrapHandler(env, next, &[]wrapFn{
+		func(h http.Handler) http.Handler { return Authenticate(env, h) },
+		SetAPIKeyFromAuthHeader,
 		RequestContextFromURL,
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,

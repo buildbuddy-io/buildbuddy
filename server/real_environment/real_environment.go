@@ -108,6 +108,8 @@ type RealEnv struct {
 	crypterService                   interfaces.Crypter
 	sociArtifactStoreServer          socipb.SociArtifactStoreServer
 	sociArtifactStoreClient          socipb.SociArtifactStoreClient
+	metricsGroupRegisteries          interfaces.MetricsGroupRegisteries
+	promQuerier                      interfaces.PromQuerier
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -609,4 +611,18 @@ func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
 }
 func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
 	r.sociArtifactStoreServer = s
+}
+
+func (r *RealEnv) GetMetricsGroupRegistries() interfaces.MetricsGroupRegisteries {
+	return r.metricsGroupRegisteries
+}
+func (r *RealEnv) SetMetricsGroupRegistries(gr interfaces.MetricsGroupRegisteries) {
+	r.metricsGroupRegisteries = gr
+}
+
+func (r *RealEnv) GetPromQuerier() interfaces.PromQuerier {
+	return r.promQuerier
+}
+func (r *RealEnv) SetPromQuerier(q interfaces.PromQuerier) {
+	r.promQuerier = q
 }
