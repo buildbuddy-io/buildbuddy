@@ -35,7 +35,9 @@ export default class ScorecardCardComponent extends React.Component<Props, State
     }
     e.preventDefault();
     const url = (e.target as HTMLAnchorElement).getAttribute("href");
-    router.navigateTo(url);
+    if (url) {
+      router.navigateTo(url);
+    }
   }
 
   render() {
@@ -94,12 +96,12 @@ export default class ScorecardCardComponent extends React.Component<Props, State
 
 type ResultGroup = {
   targetId: string;
-  results: cache.ScoreCard.IResult[];
+  results: cache.ScoreCard.Result[];
   hiddenResultsCount?: number;
 };
 
-function groupResultsByTargetId(results: cache.ScoreCard.IResult[]): ResultGroup[] {
-  const resultsByTarget = new Map<string, cache.ScoreCard.IResult[]>();
+function groupResultsByTargetId(results: cache.ScoreCard.Result[]): ResultGroup[] {
+  const resultsByTarget = new Map<string, cache.ScoreCard.Result[]>();
   for (const result of results) {
     const resultsForTarget = resultsByTarget.get(result.targetId) || [];
     resultsForTarget.push(result);
