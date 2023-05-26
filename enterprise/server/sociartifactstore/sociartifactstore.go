@@ -13,8 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/awslabs/soci-snapshotter/compression"
@@ -49,7 +47,7 @@ import (
 
 var (
 	layerStorage       = flag.String("soci_artifact_store.layer_storage", "/tmp/", "Directory in which to store pulled container image layers for indexing by soci artifact store.")
-	sociIndexCacheSeed = flag.String("soci_artifact_store.cache_seed", "socicache-05222023", "If set, this seed is hashed with container image IDs to generate cache keys storing soci indexes.")
+	sociIndexCacheSeed = flag.String("soci_artifact_store.cache_seed", "socicache-05262023", "If set, this seed is hashed with container image IDs to generate cache keys storing soci indexes.")
 )
 
 const (
@@ -326,28 +324,6 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 		}
 	}
 	return getArtifactsResponse(imageConfigHash, sociIndexResourceName.GetDigest(), ztocDigests), nil
-}
-
-// Serializes a repb.Digest as "<digest>/<size-bytes">
-func serializeDigest(d *repb.Digest) string {
-	return d.Hash + "/" + strconv.FormatInt(d.SizeBytes, 10)
-}
-
-// Deserializes a digest ("<digest>/<size-bytes>") into a repb.Digest
-func deserializeDigest(s string) (*repb.Digest, error) {
-	pieces := strings.Split(s, "/")
-	if len(pieces) != 2 {
-		return nil, status.InvalidArgumentErrorf("malformed serialized digest %s", s)
-	}
-	size, err := strconv.ParseInt(pieces[1], 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	return &repb.Digest{
-		Hash:      pieces[0],
-		SizeBytes: size,
-	}, nil
-
 }
 
 func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, configHash v1.Hash, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
