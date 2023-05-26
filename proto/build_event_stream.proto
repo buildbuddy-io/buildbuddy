@@ -445,6 +445,14 @@ message WorkspaceStatus {
 message BuildMetadata {
   // Custom metadata for the build.
   map<string, string> metadata = 1;
+
+  // Represents a set of additional metadata flag value for a given metadata
+  // key. This will be set, for example, if two different --build_metadata
+  // arguments try to set the same flag.
+  message ExtraValues {
+    repeated string values = 1;
+  }
+  map<string, ExtraValues> extra_values = 2;
 }
 
 // Payload of an event reporting details of a given configuration.

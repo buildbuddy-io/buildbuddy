@@ -212,7 +212,7 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 			if metadata == nil {
 				return
 			}
-			sep.fillInvocationFromBuildMetadata(metadata)
+			sep.fillInvocationFromBuildMetadata(metadata, p.BuildMetadata.ExtraValues)
 		}
 	case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 		{
@@ -363,7 +363,7 @@ func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStat
 	}
 }
 
-func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) {
+func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string, extras map[string]*build_event_stream.BuildMetadata_ExtraValues) {
 	priority := buildMetadataPriority
 	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
 		sep.setCommitSha(sha, priority)
@@ -390,7 +390,11 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
 	if tags, ok := metadata["TAGS"]; ok && tags != "" {
-		sep.setTags(tags, priority)
+		var extraTags *build_event_stream.BuildMetadata_ExtraValues = nil
+		if extras != nil {
+			extraTags = extras["TAGS"]
+		}
+		sep.setTags(tags, extraTags, priority)
 	}
 }
 
@@ -460,9 +464,16 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 		sep.invocation.Pattern = value
 	}
 }
-func (sep *StreamingEventParser) setTags(value string, priority int) {
+func (sep *StreamingEventParser) setTags(value string, extras *build_event_stream.BuildMetadata_ExtraValues, priority int) {
 	if *tagsEnabled && sep.priority.Tags <= priority {
+		tagStrings := []string{}
+		if extras != nil {
+			for _, extra := range extras.GetValues() {
+				tagStrings = append(tagStrings, extra)
+			}
+		}
+		tagStrings = append(tagStrings, value)
 		sep.priority.Tags = priority
-		sep.invocation.Tags = invocation_format.SplitAndTrimTags(value)
+		sep.invocation.Tags = invocation_format.SplitAndTrimTags(strings.Join(tagStrings, ","))
 	}
 }
