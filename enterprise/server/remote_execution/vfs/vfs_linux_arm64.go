@@ -1,5 +1,4 @@
-//go:build linux && !android
-// +build linux,!android
+//go:build linux && arm64
 
 package vfs
 
@@ -13,6 +12,6 @@ func attrsToStat(attr *vfspb.Attrs) *syscall.Stat_t {
 	return &syscall.Stat_t{
 		Size:  attr.GetSize(),
 		Mode:  attr.GetPerm(),
-		Nlink: uint64(attr.GetNlink()),
+		Nlink: attr.GetNlink(),
 	}
 }
