@@ -33,4 +33,3 @@ message Platform {
   // CPU variant (e.g. v8, v7)
   string variant = 3;
 }
-
