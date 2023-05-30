@@ -4,7 +4,10 @@ go_library(
     name = "terminal",
     srcs = ["terminal.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/terminal",
-    deps = ["@com_github_mattn_go_isatty//:go-isatty"],
+    deps = [
+        "//cli/parser",
+        "@com_github_mattn_go_isatty//:go-isatty",
+    ],
 )
 
 package(default_visibility = ["//cli:__subpackages__"])

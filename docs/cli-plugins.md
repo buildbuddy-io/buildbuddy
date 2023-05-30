@@ -255,9 +255,19 @@ exec python3 ./post_bazel.py "$@"
 
 ### `handle_bazel_output.sh`
 
-The `handle_bazel_output.sh` script is piped all Bazel output during a build via stdin. This allows you to transform and modify the output that Bazel displays to users.
+The `handle_bazel_output.sh` script receives on its stdin all of Bazel's
+stderr output (not stdout). This is useful because Bazel outputs warnings,
+errors, and progress output on stderr, allowing you to transform and
+modify the output that Bazel displays to users.
 
-Here's a simple script that calls a python script `handle_bazel_output.py`:
+As an example, we can write a `handle_bazel_output.sh` plugin to take the
+plain output from a build, and add
+[ANSI colors](https://wikipedia.org/wiki/ANSI_escape_code) to Go file
+names to make them easier to spot.
+
+Our `handle_bazel_output.sh` script delegates to a python script
+`handle_bazel_output.py`, gracefully falling back to running `cat` if
+Python is missing:
 
 ```bash
 if ! which python3 &>/dev/null; then
@@ -266,14 +276,6 @@ if ! which python3 &>/dev/null; then
 fi
 exec python3 ./handle_bazel_output.py "$@"
 ```
-
-:::note
-
-If `handle_bazel_output.sh` fails to find one of its required system
-dependencies, it can fall back to running `cat` so that the plugin
-effectively becomes a no-op.
-
-:::
 
 Here is the Python script `handle_bazel_output.py` from the
 `go-highlight` plugin:
@@ -292,7 +294,8 @@ if __name__ == "__main__":
 
 ```
 
-Or another `handle_bazel_output.py` python script that changes the colors of various Bazel outputs:
+As another example, here is a `handle_bazel_output.py` script that changes
+the colors of various Bazel outputs:
 
 ```py
 import re
