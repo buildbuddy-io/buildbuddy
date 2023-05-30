@@ -114,9 +114,9 @@ type Invocation struct {
 	DurationUsec                   int64
 	UploadThroughputBytesPerSecond int64
 	ActionCount                    int64
-	Perms                          int32 `gorm:"index:perms;type:int;default:NULL"`
+	Perms                          int32 `gorm:"index:perms;default:NULL"`
 	CreatedWithCapabilities        int32
-	RedactionFlags                 int32 `gorm:"default:NULL;type:int;default:NULL"`
+	RedactionFlags                 int32 `gorm:"default:NULL;default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                int64
 	ActionCacheMisses              int64
@@ -347,7 +347,7 @@ type APIKey struct {
 	// The API key token used for authentication.
 	Value string `gorm:"default:NULL;unique;uniqueIndex:api_key_value_index;"`
 	Model
-	Perms int32 `gorm:"type:int;default:NULL"`
+	Perms int32 `gorm:"default:NULL"`
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
@@ -365,7 +365,7 @@ type Secret struct {
 	GroupID string `gorm:"primaryKey"`
 	Name    string `gorm:"primaryKey"`
 	Value   string `gorm:"type:text"`
-	Perms   int32  `gorm:"type:int;default:NULL"`
+	Perms   int32  `gorm:"default:NULL"`
 }
 
 func (s *Secret) TableName() string {
@@ -407,7 +407,7 @@ type Execution struct {
 	EstimatedMilliCPU    int64
 
 	// ExecutedActionMetadata (in addition to Worker above)
-	Perms                              int32 `gorm:"index:executions_perms;type:int;default:NULL"`
+	Perms                              int32 `gorm:"index:executions_perms;default:NULL"`
 	QueuedTimestampUsec                int64
 	WorkerStartTimestampUsec           int64
 	WorkerCompletedTimestampUsec       int64
@@ -485,7 +485,7 @@ type Target struct {
 	RepoURL  string
 	Label    string
 	Model
-	Perms int32 `gorm:"index:target_perms;type:int;default:NULL"`
+	Perms int32 `gorm:"index:target_perms;default:NULL"`
 	// TargetID is made up of repoURL + label.
 	TargetID int64 `gorm:"not null;uniqueIndex:target_target_id_group_id_idx,priority:1"`
 }
@@ -580,7 +580,7 @@ type Workflow struct {
 	AccessToken string `gorm:"size:4096"`
 	WebhookID   string `gorm:"default:NULL;unique;uniqueIndex:workflow_webhook_id_index;"`
 	Model
-	Perms int32 `gorm:"index:workflow_perms;type:int;default:NULL"`
+	Perms int32 `gorm:"index:workflow_perms;default:NULL"`
 	// InstanceNameSuffix is appended to the remote instance name for CI runner
 	// actions associated with this workflow. It can be updated in order to
 	// prevent reusing a bad workspace.
