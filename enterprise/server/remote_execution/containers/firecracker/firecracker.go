@@ -1336,9 +1336,7 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 	statsListener := func(stats *repb.UsageStats) {
 		container.Metrics.Observe(c, stats)
 	}
-	result := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
-	result.KernelLogs = c.vmLog.Tail()
-	return result
+	return vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
@@ -1434,6 +1432,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		// TODO(bduffany): Figure out a good way to surface this in the command result.
 		if err := c.parseOOMError(); err != nil {
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
+		}
+		if err := c.parseSegFault(); err != nil {
+			log.CtxWarningf(ctx, "Segfault occurred during task execution: %s", err)
 		}
 	}()
 
@@ -1687,6 +1688,17 @@ func (c *FirecrackerContainer) parseOOMError() error {
 		}
 	}
 	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines)
+}
+
+// parseSegFault looks for segfaults in the kernel logs and returns an error if found.
+func (c *FirecrackerContainer) parseSegFault() error {
+	tail := string(c.vmLog.Tail())
+	if !strings.Contains(tail, "segfault") {
+		return nil
+	}
+	// Logs contain "\r\n"; convert these to universal line endings.
+	tail = strings.ReplaceAll(tail, "\r\n", "\n")
+	return status.InternalErrorf("process hit a segfault:\n%s", string(tail))
 }
 
 // VMLog retains the tail of the VM log.
