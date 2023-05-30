@@ -6,6 +6,19 @@ import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
 import "proto/remote_execution.proto";
 
+// The VM service allows performing setup-related actions inside the VM within
+// the root filesystem (i.e. not constrained to the chroot).
+service VM {
+  // Unmounts the currently mounted workspace drive so that the backing disk
+  // image can safely be hot-swapped with another image. The workspace must
+  // be re-mounted via MountWorkspace before it can be used.
+  rpc UnmountWorkspace(UnmountWorkspaceRequest)
+      returns (UnmountWorkspaceResponse);
+
+  // Mounts the workspace drive.
+  rpc MountWorkspace(MountWorkspaceRequest) returns (MountWorkspaceResponse);
+}
+
 // The exec service is run from inside a VM. The host uses this service to
 // execute commands as well as prepare the VM for command execution.
 service Exec {
@@ -23,15 +36,6 @@ service Exec {
 
   // Calls sync(1) within the VM.
   rpc Sync(SyncRequest) returns (SyncResponse);
-
-  // Unmounts the currently mounted workspace drive so that the backing disk
-  // image can safely be hot-swapped with another image. The workspace must
-  // be re-mounted via MountWorkspace before it can be used.
-  rpc UnmountWorkspace(UnmountWorkspaceRequest)
-      returns (UnmountWorkspaceResponse);
-
-  // Mounts the workspace drive.
-  rpc MountWorkspace(MountWorkspaceRequest) returns (MountWorkspaceResponse);
 }
 
 message ExecRequest {

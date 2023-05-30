@@ -4148,6 +4148,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20210803160452-9aa261dae9b1",
     )
     go_repository(
+        name = "com_github_samalba_buse_go",
+        importpath = "github.com/samalba/buse-go",
+        sum = "h1:eozzYjlA/fkfxlxy23y5tR5gWYUMU6hfvxGgQCpHkAc=",
+        version = "v0.0.0-20171001000303-9289eeeb8c7f",
+        patch_args = ["-p1"],
+        patches = ["//buildpatches:com_github_samalba_buse_go.patch"],
+    )
+
+    go_repository(
         name = "com_github_sanposhiho_wastedassign_v2",
         importpath = "github.com/sanposhiho/wastedassign/v2",
         sum = "h1:+6/hQIHKNJAUixEj6EmOngGIisyeI+T3335lYTyxRoA=",
@@ -6381,7 +6390,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-5.4.0",
-        sha256 = "fc81fa0933db7977b5e1d4b9ff3a757914b579c7812b63f9cdcabc035c7057e0",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-5.4.0"],
+        sha256 = "57fb3f81d91709c9fe36ba420ca29042eac314f931ade2218daf085b031cf40f",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.4-57fb3f81d91709c9fe36ba420ca29042eac314f931ade2218daf085b031cf40f"],
         executable = True,
     )

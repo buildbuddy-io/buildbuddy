@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -27,7 +28,17 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	if err := checkImageOutputPath(outputFile); err != nil {
 		return err
 	}
+	return directoryToImage(ctx, inputDir, outputFile, sizeBytes)
+}
 
+func SyncDirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64) error {
+	if err := syscall.Truncate(outputFile, 0); err != nil {
+		return status.WrapError(err, "truncate image")
+	}
+	return directoryToImage(ctx, inputDir, outputFile, sizeBytes)
+}
+
+func directoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 

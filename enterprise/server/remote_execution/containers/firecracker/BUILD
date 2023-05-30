@@ -31,6 +31,8 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/remote_execution/nbd/nbdio",
+            "//enterprise/server/remote_execution/nbd/nbdserver",
             "//enterprise/server/remote_execution/snaploader",
             "//enterprise/server/remote_execution/vmexec_client",
             "//enterprise/server/util/container",

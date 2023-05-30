@@ -40,9 +40,9 @@ import (
 )
 
 const (
-	busyboxImage = "docker.io/library/busybox:latest"
+	// busyboxImage = "docker.io/library/busybox:latest"
 	// Alternate image to use if getting rate-limited by docker hub
-	// busyboxImage = "gcr.io/google-containers/busybox:latest"
+	busyboxImage = "quay.io/quay/busybox:latest"
 
 	ubuntuImage              = "marketplace.gcr.io/google/ubuntu2004"
 	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
@@ -57,6 +57,7 @@ const (
 
 var (
 	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
+	debugMode        = flag.Bool("test_firecracker_debug", false, "Whether to run firecracker in DebugMode.")
 
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
@@ -187,6 +188,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 		EnableNetworking:       false,
 		ScratchDiskSizeMB:      100,
 		JailerRoot:             tempJailerRoot(t),
+		DebugMode:              *debugMode,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
@@ -196,9 +198,8 @@ func TestFirecrackerRunSimple(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
+	require.NoError(t, res.Error)
+	res.UsageStats = nil
 	assert.Equal(t, expectedResult, res)
 }
 
@@ -304,33 +305,50 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		}
 	})
 
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			for dir in /workspace /root; do
+				(
+					cd "$dir"
+					if [[ -e ./count ]]; then
+						count=$(cat ./count)
+						count=$((count+1))
+						printf "$count" > ./count
+					else
+						printf 0 > ./count
+					fi
+					echo "$PWD/count: $(cat count)"
+				)
+			done
+		`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+
+	assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
+
 	// Try pause, unpause, exec several times.
-	for i := 0; i < 3; i++ {
+	for i := 1; i <= 3; i++ {
 		if err := c.Pause(ctx); err != nil {
 			t.Fatalf("unable to pause container: %s", err)
 		}
+
+		countBefore := i * i
+		err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
+		require.NoError(t, err)
+
 		if err := c.Unpause(ctx); err != nil {
 			t.Fatalf("unable to unpause container: %s", err)
 		}
 
-		cmd := &repb.Command{
-			Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-				{Name: "GREETING", Value: "Hello"},
-			},
-		}
-		expectedResult := &interfaces.CommandResult{
-			ExitCode: 0,
-			Stdout:   []byte("Hello world"),
-			Stderr:   []byte("foo"),
-		}
-
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
-		if res.Error != nil {
-			t.Fatalf("error: %s", res.Error)
-		}
-		res.UsageStats = nil
-		assert.Equal(t, expectedResult, res)
+		require.NoError(t, res.Error)
+
+		assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 	}
 }
 
@@ -413,7 +431,11 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		assert.Fail(t, "/workspace disk usage was not reported")
 	} else {
 		assert.Equal(t, "ext4", workspaceFSU.GetFstype())
-		assert.Equal(t, "/dev/vdc", workspaceFSU.GetSource())
+		assert.True(
+			t,
+			workspaceFSU.GetSource() == "/dev/vdc" || workspaceFSU.GetSource() == "/dev/nbd1",
+			"unexpected workspace mount source %s", workspaceFSU.GetSource(),
+		)
 		assert.InDelta(
 			t, workspaceFSU.GetUsedBytes(),
 			// Expected size is twice the input size, since we duplicate the inputs.
@@ -677,12 +699,19 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			set -e
+
 			# Discard pull output to make the output deterministic
 			docker pull ` + busyboxImage + ` &>/dev/null
 
+			# DO NOT SUBMIT
+			# echo Hello
+			# echo world
+			# sleep 0.5
+			# exit 0
+
 			# Try running a few commands
-			docker run --rm ` + busyboxImage + ` echo Hello
-			docker run --rm ` + busyboxImage + ` echo world
+			docker run --net=none --rm ` + busyboxImage + ` echo Hello
+			docker run --net=none --rm ` + busyboxImage + ` echo world
 		`},
 	}
 
@@ -695,6 +724,7 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 		InitDockerd:            true,
 		ScratchDiskSizeMB:      100,
 		JailerRoot:             tempJailerRoot(t),
+		DebugMode:              *debugMode,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)

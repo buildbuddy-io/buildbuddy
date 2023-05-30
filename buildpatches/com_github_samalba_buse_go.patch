@@ -1,0 +1,105 @@
+diff --git a/buse/buse.go b/buse/buse.go
+index 476812d..ce65b24 100644
+--- a/buse/buse.go
++++ b/buse/buse.go
+@@ -7,13 +7,31 @@ import (
+ 	"log"
+ 	"os"
+ 	"syscall"
++	"time"
+ 	"unsafe"
+ )
+ 
+ func ioctl(fd, op, arg uintptr) {
+-	_, _, ep := syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
+-	if ep != 0 {
+-		log.Fatalf("ioctl(%d, %d, %d) failed: %s", fd, op, arg, syscall.Errno(ep))
++	// Retry EBUSY
++	start := time.Now()
++	delay := 1 * time.Millisecond
++	for i := 0; true; i++ {
++		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
++		if time.Since(start) < 5*time.Second && errno == syscall.EBUSY {
++			log.Printf("NBD: ioctl failed (EBUSY); retrying")
++			time.Sleep(delay)
++			delay *= 2
++			if delay > 50*time.Millisecond {
++				delay = 50 * time.Millisecond
++			}
++			continue
++		}
++		if errno != 0 {
++			// NOTE: "die: " prefix is required so the executor can parse the
++			// fatal error from the logs.
++			log.Fatalf("die: NBD ioctl(%d, %d, %d) failed: %s", fd, op, arg, errno)
++		}
++		return
+ 	}
+ }
+ 
+@@ -85,13 +103,11 @@ func (bd *BuseDevice) startNBDClient() {
+ 	// The following call will block until the client disconnects
+ 	log.Println("Starting NBD client...")
+ 	go ioctl(bd.deviceFp.Fd(), NBD_DO_IT, 0)
+-	// Block on the disconnect channel
+-	<-bd.disconnect
+ }
+ 
+ // Disconnect disconnects the BuseDevice
+ func (bd *BuseDevice) Disconnect() {
+-	bd.disconnect <- 1
++	close(bd.disconnect)
+ 	// Ok to fail, ignore errors
+ 	syscall.Syscall(syscall.SYS_IOCTL, bd.deviceFp.Fd(), NBD_CLEAR_QUE, 0)
+ 	syscall.Syscall(syscall.SYS_IOCTL, bd.deviceFp.Fd(), NBD_DISCONNECT, 0)
+@@ -123,7 +139,7 @@ func writeNbdReply(reply *nbdReply) []byte {
+ // Connect connects a BuseDevice to an actual device file
+ // and starts handling requests. It does not return until it's done serving requests.
+ func (bd *BuseDevice) Connect() error {
+-	go bd.startNBDClient()
++	bd.startNBDClient()
+ 	defer bd.Disconnect()
+ 	//opens the device file at least once, to make sure the partition table is updated
+ 	tmp, err := os.Open(bd.device)
+@@ -139,10 +155,9 @@ func (bd *BuseDevice) Connect() error {
+ 	buf := make([]byte, unsafe.Sizeof(request))
+ 	for true {
+ 		if _, err := fp.Read(buf[0:28]); err != nil {
+-			return fmt.Errorf("NBD client stopped: %s", err)
++			return fmt.Errorf("NBD client (fd %d) stopped: %s", fp.Fd(), err)
+ 		}
+ 		readNbdRequest(buf, &request)
+-		fmt.Printf("DEBUG %#v\n", request)
+ 		if request.Magic != NBD_REQUEST_MAGIC {
+ 			return fmt.Errorf("Fatal error: received packet with wrong Magic number")
+ 		}
+@@ -161,6 +176,10 @@ func (bd *BuseDevice) Connect() error {
+ 	return nil
+ }
+ 
++func (bd *BuseDevice) SetSize(size uint) {
++	ioctl(bd.deviceFp.Fd(), NBD_SET_SIZE, uintptr(size))
++}
++
+ func CreateDevice(device string, size uint, buseDriver BuseInterface) (*BuseDevice, error) {
+ 	buseDevice := &BuseDevice{size: size, device: device, driver: buseDriver}
+ 	sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+@@ -181,6 +200,6 @@ func CreateDevice(device string, size uint, buseDriver BuseInterface) (*BuseDevi
+ 	buseDevice.op[NBD_CMD_DISC] = opDeviceDisconnect
+ 	buseDevice.op[NBD_CMD_FLUSH] = opDeviceFlush
+ 	buseDevice.op[NBD_CMD_TRIM] = opDeviceTrim
+-	buseDevice.disconnect = make(chan int, 5)
++	buseDevice.disconnect = make(chan struct{})
+ 	return buseDevice, nil
+ }
+diff --git a/buse/types.go b/buse/types.go
+index 9038a92..a9c00a5 100644
+--- a/buse/types.go
++++ b/buse/types.go
+@@ -70,5 +70,5 @@ type BuseDevice struct {
+ 	deviceFp   *os.File
+ 	socketPair [2]int
+ 	op         [5]func(driver BuseInterface, fp *os.File, chunk []byte, request *nbdRequest, reply *nbdReply) error
+-	disconnect chan int
++	disconnect chan struct{}
+ }

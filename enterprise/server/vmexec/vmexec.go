@@ -11,11 +11,14 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdclient"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
@@ -26,16 +29,36 @@ const (
 	// NOTE: These must match the values in enterprise/server/cmd/goinit/main.go
 
 	// workspaceDevice is the path to the hot-swappable workspace block device.
-	workspaceDevice = "/dev/vdc"
+	workspaceDevicePath = "/dev/vdc"
 
 	// workspaceMountPath is the path where the hot-swappable workspace block
 	// device is mounted.
-	workspaceMountPath = "/workspace"
+	workspaceMountPath = "/mnt/workspace"
 )
+
+type vmServer struct {
+	workspaceDevice *nbdclient.ClientDevice
+}
+
+func NewVMServer(workspaceDevice *nbdclient.ClientDevice) (*vmServer, error) {
+	return &vmServer{workspaceDevice: workspaceDevice}, nil
+}
+
+func (x *vmServer) Start(ctx context.Context, maxRecvSizeBytes int) error {
+	listener, err := vsock.NewGuestListener(ctx, uint32(vsock.VMServicePort))
+	if err != nil {
+		return err
+	}
+	log.Infof("Starting vm exec listener on vsock port: %d", vsock.VMServicePort)
+	server := grpc.NewServer(grpc.MaxRecvMsgSize(maxRecvSizeBytes))
+	vmxpb.RegisterVMServer(server, x)
+	go server.Serve(listener)
+	return nil
+}
 
 type execServer struct{}
 
-func NewServer() (*execServer, error) {
+func NewExecServer() (*execServer, error) {
 	return &execServer{}, nil
 }
 
@@ -93,17 +116,32 @@ func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.S
 	return &vmxpb.SyncResponse{}, nil
 }
 
-func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWorkspaceRequest) (*vmxpb.UnmountWorkspaceResponse, error) {
+func (x *vmServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWorkspaceRequest) (*vmxpb.UnmountWorkspaceResponse, error) {
+	if x.workspaceDevice != nil {
+		if err := x.workspaceDevice.Unmount(); err != nil {
+			return nil, err
+		}
+		return &vmxpb.UnmountWorkspaceResponse{}, nil
+	}
+
 	if err := syscall.Unmount(workspaceMountPath, 0); err != nil {
-		return nil, status.InternalErrorf("unmount failed: %s", err)
+		return nil, status.InternalErrorf("unmount %s failed: %s", workspaceMountPath, err)
 	}
 	return &vmxpb.UnmountWorkspaceResponse{}, nil
 }
 
-func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
-	if err := syscall.Mount(workspaceDevice, workspaceMountPath, "ext4", syscall.MS_RELATIME, ""); err != nil {
-		return nil, err
+func (x *vmServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
+	if x.workspaceDevice != nil {
+		if err := x.workspaceDevice.Mount(workspaceMountPath); err != nil {
+			return nil, err
+		}
+		return &vmxpb.MountWorkspaceResponse{}, nil
 	}
+
+	if err := syscall.Mount(workspaceDevicePath, workspaceMountPath, "ext4", syscall.MS_RELATIME, ""); err != nil {
+		return nil, status.WrapErrorf(err, "mount %s => %s", workspaceDevicePath, workspaceMountPath)
+	}
+	log.Infof("VM server: mounted %s => %s", workspaceDevicePath, workspaceMountPath)
 	return &vmxpb.MountWorkspaceResponse{}, nil
 }
 

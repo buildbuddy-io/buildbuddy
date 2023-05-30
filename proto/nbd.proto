@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package nbd;
+
+// Remote block device service.
+//
+// Clients can use this service to read and write blocks from a remote device
+// that serves the underlying block data.
+//
+// Servers are responsible for writing and serving the block data to persistent
+// storage.
+service BlockDevice {
+  // Returns metadata for a device label. The label is a well-known value by
+  // both the client and server that corresponds to a desired device.
+  rpc Metadata(MetadataRequest) returns (MetadataResponse);
+
+  // Reads a block from a device with a given ID.
+  rpc Read(ReadRequest) returns (ReadResponse);
+
+  // Writes a block to a device with a given ID.
+  rpc Write(WriteRequest) returns (WriteResponse);
+
+  // Sync flushes all buffered writes to the block device.
+  rpc Sync(SyncRequest) returns (SyncResponse);
+}
+
+message DeviceMetadata {
+  uint64 device_id = 1;
+  string label = 2;
+  uint64 size_bytes = 3;
+  string filesystem_type = 4;
+}
+
+message MetadataRequest {
+  string label = 1;
+}
+
+message MetadataResponse {
+  DeviceMetadata device_metadata = 1;
+}
+
+message ReadRequest {
+  uint64 device_id = 1;
+  uint64 offset = 2;
+  uint64 length = 3;
+}
+
+message ReadResponse {
+  bytes data = 1;
+}
+
+message WriteRequest {
+  uint64 device_id = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+}
+
+message WriteResponse {}
+
+message SyncRequest {
+  uint64 device_id = 1;
+}
+
+message SyncResponse {}

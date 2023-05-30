@@ -90,6 +90,7 @@ require (
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.37.0
 	github.com/rs/zerolog v1.20.0
+	github.com/samalba/buse-go v0.0.0-20171001000303-9289eeeb8c7f
 	github.com/shirou/gopsutil/v3 v3.22.10
 	github.com/sirupsen/logrus v1.9.0
 	github.com/smacker/go-tree-sitter v0.0.0-20230226123037-c459dbde1464

@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -22,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jsimonetti/rtnetlink/rtnl"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
@@ -39,7 +40,8 @@ const (
 
 var (
 	path                    = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
-	vmExecPort              = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
+	vmExecPort              = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for the Exec service.")
+	enableNBD               = flag.Bool("enable_nbd", false, "Whether to enable network block devices (nbd)")
 	debugMode               = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
@@ -52,9 +54,14 @@ var (
 // die logs the provided error if it is not nil and then terminates the program.
 func die(err error) {
 	if err != nil {
+		caller := ""
+		_, file, line, ok := runtime.Caller(1)
+		if ok {
+			caller = fmt.Sprintf("%s:%d: ", file, line)
+		}
 		// NOTE: do not change this "die: " prefix. We rely on it to parse the fatal
 		// error from the firecracker machine logs and return it back to the user.
-		log.Fatalf("die: %s", err)
+		log.Fatalf("die: %s%s", caller, err)
 	}
 }
 
@@ -179,7 +186,6 @@ func waitForDockerd(ctx context.Context) error {
 // This is mostly cribbed from github.com/superfly/init-snapshot
 // which was very helpful <3!
 func main() {
-	start := time.Now()
 	rootContext := context.Background()
 
 	// setup logging
@@ -220,8 +226,18 @@ func main() {
 	die(mkdirp("/container", 0755))
 	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
 
+	// sysfs is needed in the root dir for block device metadata.
+	die(mkdirp("/sys", 0555))
+	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
+
 	die(mkdirp("/scratch", 0755))
-	die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
+	if *enableNBD {
+		sd, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
+		die(err)
+		die(sd.Mount("/scratch"))
+	} else {
+		die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
+	}
 
 	die(mkdirp("/scratch/bbvmroot", 0755))
 	die(mkdirp("/scratch/bbvmwork", 0755))
@@ -230,10 +246,31 @@ func main() {
 	die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
 
 	die(mkdirp("/mnt/workspace", 0755))
-	die(mount("/dev/vdc", "/mnt/workspace", "ext4", syscall.MS_RELATIME, ""))
+	var workspaceDevice *nbdclient.ClientDevice
+	if *enableNBD {
+		wd, err := nbdclient.NewClientDevice(rootContext, "workspacefs")
+		die(err)
+		die(wd.Mount("/mnt/workspace"))
+		workspaceDevice = wd
+	} else {
+		die(mount("/dev/vdc", "/mnt/workspace", "ext4", syscall.MS_RELATIME, ""))
+	}
+
+	// Start the VM service, which allows the host to mount/unmount drives so
+	// that they can be hot-swapped.
+	vms, err := vmexec.NewVMServer(workspaceDevice)
+	die(err)
+	die(vms.Start(rootContext, *gRPCMaxRecvMsgSizeBytes))
 
 	die(mkdirp("/mnt/dev", 0755))
-	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
+	// Note: create a second devtmpfs under /mnt/dev so that the VMServer
+	// (which runs in the initrd root) can also access it (in order to mount
+	// and unmount drives).
+	die(mount("devtmpfs", "/mnt/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5,ptmxmode=666"))
+	// die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
+	// die(os.Symlink("/mnt/dev/null", "/dev/null"))
+	// tree("/dev")
+	// die(os.Remove("/dev"))
 
 	// TODO(bduffany): Spawn vmvfs via the init binary like we do for vmexec, to
 	// save scratch disk space. I tried it, but for some reason the fuse library
@@ -242,9 +279,20 @@ func main() {
 	die(copyFile("/vmvfs", "/mnt/vmvfs", 0555))
 	die(copyFile("/init", "/mnt/init", 0555))
 
-	log.Debugf("switching root!")
+	go reapChildren(rootContext)
+
+	// Run vmexec server as a child process.
+	die(runVMExecAsChild(rootContext))
+
+	// Halt the system explicitly to prevent a kernel panic.
+	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+}
+
+func chrootAndInit() error {
 	die(chdir("/mnt"))
-	die(mount(".", "/", "", syscall.MS_MOVE, ""))
+	// DO NOT SUBMIT: the "mount . /" seems to mess up the FS. Is it safe to
+	// remove?
+	// die(mount(".", "/", "", syscall.MS_MOVE, ""))
 	die(chroot("."))
 	die(chdir("/"))
 
@@ -337,80 +385,82 @@ func main() {
 
 	die(os.Setenv("PATH", *path))
 
-	// Done configuring the FS and env.
-	// Now initialize child processes.
+	return nil
+}
 
-	go reapChildren(rootContext)
-
-	eg, ctx := errgroup.WithContext(rootContext)
-	if *debugMode {
-		log.Warningf("Running init in debug mode; this is not secure!")
-		eg.Go(func() error {
-			c := exec.CommandContext(rootContext, "chpasswd")
-			c.Stdin = bytes.NewBuffer([]byte("root:root"))
-			if _, err := c.CombinedOutput(); err != nil {
-				log.Errorf("Error setting root pw: %s", err)
-			}
-			for {
-				c2 := exec.CommandContext(ctx, "getty", "-L", "ttyS0", "115200", "vt100")
-				if err := c2.Run(); err != nil {
-					return err
-				}
-			}
-		})
+func runTTY(ctx context.Context) error {
+	c := exec.CommandContext(ctx, "chpasswd")
+	c.Stdin = bytes.NewBuffer([]byte("root:root"))
+	if _, err := c.CombinedOutput(); err != nil {
+		log.Errorf("Error setting root pw: %s", err)
 	}
-
-	if *initDockerd {
-		die(startDockerd(ctx))
+	for {
+		c2 := exec.CommandContext(ctx, "getty", "-L", "ttyS0", "115200", "vt100")
+		if err := c2.Run(); err != nil {
+			return err
+		}
 	}
-	eg.Go(func() error {
-		// Run the vmexec server as a child process so that when we call wait()
-		// to reap direct zombie children, we aren't stealing the WaitStatus
-		// from the vmexec server (since only the parent process can wait() for
-		// a pid). We could alternatively use a mutex to avoid reaping while
-		// vmexec is running a command, but that causes problems for Bazel,
-		// which explicitly waits for stale server processes to be reaped.
-		cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmexec")...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	})
-	eg.Go(func() error {
-		cmd := exec.CommandContext(ctx, "/vmvfs")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	})
+}
 
-	log.Printf("Finished init in %s", time.Since(start))
-	if err := eg.Wait(); err != nil {
-		log.Errorf("Init errgroup finished with err: %s", err)
+func runVMExecAsChild(ctx context.Context) error {
+	// Run the vmexec server as a child process so that when we call wait()
+	// to reap direct zombie children, we aren't stealing the WaitStatus
+	// from the vmexec server (since only the parent process can wait() for
+	// a pid). We could alternatively use a mutex to avoid reaping while
+	// vmexec is running a command, but that causes problems for Bazel,
+	// which explicitly waits for stale server processes to be reaped.
+	cmd := exec.CommandContext(ctx, "/init", append(os.Args[1:], "--vmexec")...)
+	// golang wants to wire up stdin to /dev/null, which doesn't exist since
+	// we moved /dev to /mnt/dev.
+	cmd.Stdin = &bytes.Buffer{}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("vmexec (%s) crashed: %s", cmd, err)
 	}
-
-	// Halt the system explicitly to prevent a kernel panic.
-	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+	return nil
 }
 
 func runVMExecServer(ctx context.Context) error {
+	// chroot to /mnt and provision system dirs within the new root FS (/proc,
+	// /etc, /dev, ...)
+	die(chrootAndInit())
+
+	// Run VFS daemon.
+	go func() {
+		cmd := exec.CommandContext(ctx, "/vmvfs")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		// If vmvfs terminates, terminate the whole process.
+		if err := cmd.Run(); err != nil {
+			die(fmt.Errorf("vmvfs crashed: %s", err))
+		}
+	}()
+
 	listener, err := vsock.NewGuestListener(ctx, uint32(*vmExecPort))
 	if err != nil {
-		return err
+		return status.WrapError(err, "failed to create vsock guest listener")
 	}
 	log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes))
-	vmService, err := vmexec.NewServer()
+	vmService, err := vmexec.NewExecServer()
 	if err != nil {
-		return err
+		return status.WrapError(err, "failed to create exec server")
 	}
 	vmxpb.RegisterExecServer(server, vmService)
 
-	// If applicable, wait for dockerd to start before accepting commands, so
-	// that commands depending on dockerd do not need to explicitly wait for it.
+	// If applicable, start dockerd and wait for it to be ready before accepting
+	// commands, so that commands depending on dockerd do not need to explicitly
+	// wait for it.
 	if *initDockerd {
+		if err := startDockerd(ctx); err != nil {
+			return err
+		}
 		if err := waitForDockerd(ctx); err != nil {
 			return err
 		}
 	}
 
+	log.Infof("VMExec server: serving...")
 	return server.Serve(listener)
 }

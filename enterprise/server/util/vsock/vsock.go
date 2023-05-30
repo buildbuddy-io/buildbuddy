@@ -35,8 +35,14 @@ const (
 	VMExecPort = 25415
 	// VMVFSPort is the guest gRPC port for the FileSystem service used to configure the FUSE-based filesystem.
 	VMVFSPort = 25416
+	// VMServicePort is the guest gRPC port for the VM service used to perform
+	// system setup actions outside the chroot.
+	VMServicePort = 25417
 	// HostVFSServerPort is the host gRPC port for the VFS server that handles requests forwarded from the FUSE-based fs.
 	HostVFSServerPort = 25410
+	// HostBlockDeviceServerPort is the host gRPC port hosting network block
+	// devices.
+	HostBlockDeviceServerPort = 25411
 )
 
 // GetContextID returns ths next available vsock context ID.
