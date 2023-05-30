@@ -2,11 +2,24 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2023-05-22T12:00:00.000Z</updated>
+    <updated>2023-05-30T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Buck2 Unboxing]]></title>
+        <id>https://www.buildbuddy.io/blog/buck2-review</id>
+        <link href="https://www.buildbuddy.io/blog/buck2-review"/>
+        <updated>2023-05-30T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[A review of Meta's new build tool Buck2.]]></summary>
+        <author>
+            <name>Son Luong Ngoc</name>
+            <uri>https://github.com/sluongng/</uri>
+        </author>
+        <category label="buck2" term="buck2"/>
+        <category label="engineering" term="engineering"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Keyboard Shortcuts in BuildBuddy]]></title>
         <id>https://www.buildbuddy.io/blog/keyboard-shortcuts</id>
