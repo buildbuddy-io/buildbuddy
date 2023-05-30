@@ -1,8 +1,8 @@
 diff --git a/buse/buse.go b/buse/buse.go
-index 476812d..ce65b24 100644
+index 476812d..8abfca3 100644
 --- a/buse/buse.go
 +++ b/buse/buse.go
-@@ -7,13 +7,31 @@ import (
+@@ -7,14 +7,32 @@ import (
  	"log"
  	"os"
  	"syscall"
@@ -10,17 +10,19 @@ index 476812d..ce65b24 100644
  	"unsafe"
  )
  
- func ioctl(fd, op, arg uintptr) {
+-func ioctl(fd, op, arg uintptr) {
 -	_, _, ep := syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
 -	if ep != 0 {
 -		log.Fatalf("ioctl(%d, %d, %d) failed: %s", fd, op, arg, syscall.Errno(ep))
-+	// Retry EBUSY
++func ioctl(fd, op, arg uintptr) error {
 +	start := time.Now()
 +	delay := 1 * time.Millisecond
-+	for i := 0; true; i++ {
-+		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
-+		if time.Since(start) < 5*time.Second && errno == syscall.EBUSY {
-+			log.Printf("NBD: ioctl failed (EBUSY); retrying")
++	var errno syscall.Errno
++	for {
++		_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
++		// Retry EBUSY for up to 50ms
++		if errno == syscall.EBUSY && time.Since(start) < 50*time.Millisecond {
++			log.Printf("NBD: ioctl(%d, %d, %d) failed (EBUSY); retrying", fd, op, arg)
 +			time.Sleep(delay)
 +			delay *= 2
 +			if delay > 50*time.Millisecond {
@@ -28,44 +30,139 @@ index 476812d..ce65b24 100644
 +			}
 +			continue
 +		}
-+		if errno != 0 {
-+			// NOTE: "die: " prefix is required so the executor can parse the
-+			// fatal error from the logs.
-+			log.Fatalf("die: NBD ioctl(%d, %d, %d) failed: %s", fd, op, arg, errno)
-+		}
-+		return
++		break
++	}
++	if errno != 0 {
++		return errno
  	}
++	return nil
  }
  
-@@ -85,13 +103,11 @@ func (bd *BuseDevice) startNBDClient() {
- 	// The following call will block until the client disconnects
- 	log.Println("Starting NBD client...")
- 	go ioctl(bd.deviceFp.Fd(), NBD_DO_IT, 0)
+ func opDeviceRead(driver BuseInterface, fp *os.File, chunk []byte, request *nbdRequest, reply *nbdReply) error {
+@@ -25,10 +43,10 @@ func opDeviceRead(driver BuseInterface, fp *os.File, chunk []byte, request *nbdR
+ 	}
+ 	buf := writeNbdReply(reply)
+ 	if _, err := fp.Write(buf); err != nil {
+-		log.Println("Write error, when sending reply header:", err)
++		log.Println("NBD write error, when sending reply header:", err)
+ 	}
+ 	if _, err := fp.Write(chunk); err != nil {
+-		log.Println("Write error, when sending data chunk:", err)
++		log.Println("NBD write error, when sending data chunk:", err)
+ 	}
+ 	return nil
+ }
+@@ -43,7 +61,7 @@ func opDeviceWrite(driver BuseInterface, fp *os.File, chunk []byte, request *nbd
+ 	}
+ 	buf := writeNbdReply(reply)
+ 	if _, err := fp.Write(buf); err != nil {
+-		log.Println("Write error, when sending reply header:", err)
++		log.Println("NBD write error, when sending reply header:", err)
+ 	}
+ 	return nil
+ }
+@@ -61,7 +79,7 @@ func opDeviceFlush(driver BuseInterface, fp *os.File, chunk []byte, request *nbd
+ 	}
+ 	buf := writeNbdReply(reply)
+ 	if _, err := fp.Write(buf); err != nil {
+-		log.Println("Write error, when sending reply header:", err)
++		log.Println("NBD write error, when sending reply header:", err)
+ 	}
+ 	return nil
+ }
+@@ -73,25 +91,32 @@ func opDeviceTrim(driver BuseInterface, fp *os.File, chunk []byte, request *nbdR
+ 	}
+ 	buf := writeNbdReply(reply)
+ 	if _, err := fp.Write(buf); err != nil {
+-		log.Println("Write error, when sending reply header:", err)
++		log.Println("NBD write error, when sending reply header:", err)
+ 	}
+ 	return nil
+ }
+ 
+-func (bd *BuseDevice) startNBDClient() {
+-	ioctl(bd.deviceFp.Fd(), NBD_SET_SOCK, uintptr(bd.socketPair[1]))
++func (bd *BuseDevice) startNBDClient() error {
++	if err := ioctl(bd.deviceFp.Fd(), NBD_SET_SOCK, uintptr(bd.socketPair[1])); err != nil {
++		return err
++	}
+ 	// The call below may fail on some systems (if flags unset), could be ignored
+-	ioctl(bd.deviceFp.Fd(), NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM)
+-	// The following call will block until the client disconnects
+-	log.Println("Starting NBD client...")
+-	go ioctl(bd.deviceFp.Fd(), NBD_DO_IT, 0)
 -	// Block on the disconnect channel
 -	<-bd.disconnect
++	if err := ioctl(bd.deviceFp.Fd(), NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM); err != nil {
++		return err
++	}
++	log.Printf("Starting NBD client for %s", bd.device)
++	go func() {
++		// The following call will block until the client disconnects
++		_ = ioctl(bd.deviceFp.Fd(), NBD_DO_IT, 0)
++		log.Printf("%s client disconnected (ioctl(%d, NBD_DO_IT, 0) returned)", bd.device, bd.deviceFp.Fd())
++	}()
++	return nil
  }
  
  // Disconnect disconnects the BuseDevice
  func (bd *BuseDevice) Disconnect() {
 -	bd.disconnect <- 1
++	log.Println("NBD: Disconnect called")
 +	close(bd.disconnect)
  	// Ok to fail, ignore errors
  	syscall.Syscall(syscall.SYS_IOCTL, bd.deviceFp.Fd(), NBD_CLEAR_QUE, 0)
  	syscall.Syscall(syscall.SYS_IOCTL, bd.deviceFp.Fd(), NBD_DISCONNECT, 0)
-@@ -123,7 +139,7 @@ func writeNbdReply(reply *nbdReply) []byte {
+@@ -100,7 +125,9 @@ func (bd *BuseDevice) Disconnect() {
+ 	syscall.Close(bd.socketPair[0])
+ 	syscall.Close(bd.socketPair[1])
+ 	bd.deviceFp.Close()
+-	log.Println("NBD client disconnected")
++
++	log.Println("NBD client disconnected, possibly due to a system interrupt. Auto-reconnecting now...")
++	bd.Connect()
+ }
+ 
+ func readNbdRequest(buf []byte, request *nbdRequest) {
+@@ -123,8 +150,10 @@ func writeNbdReply(reply *nbdReply) []byte {
  // Connect connects a BuseDevice to an actual device file
  // and starts handling requests. It does not return until it's done serving requests.
  func (bd *BuseDevice) Connect() error {
 -	go bd.startNBDClient()
-+	bd.startNBDClient()
- 	defer bd.Disconnect()
+-	defer bd.Disconnect()
++	if err := bd.startNBDClient(); err != nil {
++		return fmt.Errorf("failed to start %s: %s", bd.device, err)
++	}
++	// defer bd.Disconnect()
  	//opens the device file at least once, to make sure the partition table is updated
  	tmp, err := os.Open(bd.device)
-@@ -139,10 +155,9 @@ func (bd *BuseDevice) Connect() error {
+ 	if err != nil {
+@@ -139,10 +168,30 @@ func (bd *BuseDevice) Connect() error {
  	buf := make([]byte, unsafe.Sizeof(request))
  	for true {
  		if _, err := fp.Read(buf[0:28]); err != nil {
 -			return fmt.Errorf("NBD client stopped: %s", err)
++			if err == io.EOF {
++				// TODO: restructure to avoid recursion
++				log.Printf("%s: NBD disconnected; attempting to reconnect.", bd.device)
++				return bd.Connect()
++			}
++			// if err == io.EOF {
++			// 	log.Printf("Got EOF on NBD socket; attempting to reconnect.")
++
++			// 	time.Sleep(50 * time.Millisecond)
++			// 	continue
++
++			// 	// syscall.Close(bd.socketPair[1])
++			// 	// sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
++			// 	// if err != nil {
++			// 	// 	return fmt.Errorf("Reconnect failed: socketpair failed: %s", err)
++			// 	// }
++			// 	// bd.socketPair = sockPair
++			// 	// bd.startNBDClient()
++
++			// 	// time.Sleep(50 * time.Millisecond)
++			// }
 +			return fmt.Errorf("NBD client (fd %d) stopped: %s", fp.Fd(), err)
  		}
  		readNbdRequest(buf, &request)
@@ -73,18 +170,36 @@ index 476812d..ce65b24 100644
  		if request.Magic != NBD_REQUEST_MAGIC {
  			return fmt.Errorf("Fatal error: received packet with wrong Magic number")
  		}
-@@ -161,6 +176,10 @@ func (bd *BuseDevice) Connect() error {
+@@ -161,6 +210,10 @@ func (bd *BuseDevice) Connect() error {
  	return nil
  }
  
-+func (bd *BuseDevice) SetSize(size uint) {
-+	ioctl(bd.deviceFp.Fd(), NBD_SET_SIZE, uintptr(size))
++func (bd *BuseDevice) SetSize(size uint) error {
++	return ioctl(bd.deviceFp.Fd(), NBD_SET_SIZE, uintptr(size))
 +}
 +
  func CreateDevice(device string, size uint, buseDriver BuseInterface) (*BuseDevice, error) {
  	buseDevice := &BuseDevice{size: size, device: device, driver: buseDriver}
  	sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
-@@ -181,6 +200,6 @@ func CreateDevice(device string, size uint, buseDriver BuseInterface) (*BuseDevi
+@@ -172,15 +225,21 @@ func CreateDevice(device string, size uint, buseDriver BuseInterface) (*BuseDevi
+ 		return nil, fmt.Errorf("Cannot open \"%s\". Make sure the `nbd' kernel module is loaded: %s", device, err)
+ 	}
+ 	buseDevice.deviceFp = fp
+-	ioctl(buseDevice.deviceFp.Fd(), NBD_SET_SIZE, uintptr(size))
+-	ioctl(buseDevice.deviceFp.Fd(), NBD_CLEAR_QUE, 0)
+-	ioctl(buseDevice.deviceFp.Fd(), NBD_CLEAR_SOCK, 0)
++	if err := ioctl(buseDevice.deviceFp.Fd(), NBD_SET_SIZE, uintptr(size)); err != nil {
++		return nil, fmt.Errorf("NBD_SET_SIZE failed: %s", err)
++	}
++	if err := ioctl(buseDevice.deviceFp.Fd(), NBD_CLEAR_QUE, 0); err != nil {
++		return nil, fmt.Errorf("NBD_CLEAR_QUE failed: %s", err)
++	}
++	if err := ioctl(buseDevice.deviceFp.Fd(), NBD_CLEAR_SOCK, 0); err != nil {
++		return nil, fmt.Errorf("NBD_CLEAR_SOCK failed: %s", err)
++	}
+ 	buseDevice.socketPair = sockPair
+ 	buseDevice.op[NBD_CMD_READ] = opDeviceRead
+ 	buseDevice.op[NBD_CMD_WRITE] = opDeviceWrite
  	buseDevice.op[NBD_CMD_DISC] = opDeviceDisconnect
  	buseDevice.op[NBD_CMD_FLUSH] = opDeviceFlush
  	buseDevice.op[NBD_CMD_TRIM] = opDeviceTrim
@@ -93,9 +208,38 @@ index 476812d..ce65b24 100644
  	return buseDevice, nil
  }
 diff --git a/buse/types.go b/buse/types.go
-index 9038a92..a9c00a5 100644
+index 9038a92..f0612c9 100644
 --- a/buse/types.go
 +++ b/buse/types.go
+@@ -8,17 +8,17 @@ import (
+ // as defined in <linux/nbd.h>
+ 
+ const (
+-	NBD_SET_SOCK        = (0xab<<8 | 0)
+-	NBD_SET_BLKSIZE     = (0xab<<8 | 1)
+-	NBD_SET_SIZE        = (0xab<<8 | 2)
+-	NBD_DO_IT           = (0xab<<8 | 3)
+-	NBD_CLEAR_SOCK      = (0xab<<8 | 4)
+-	NBD_CLEAR_QUE       = (0xab<<8 | 5)
+-	NBD_PRINT_DEBUG     = (0xab<<8 | 6)
+-	NBD_SET_SIZE_BLOCKS = (0xab<<8 | 7)
+-	NBD_DISCONNECT      = (0xab<<8 | 8)
+-	NBD_SET_TIMEOUT     = (0xab<<8 | 9)
+-	NBD_SET_FLAGS       = (0xab<<8 | 10)
++	NBD_SET_SOCK        = (0xab<<8 | 0)  // 43776
++	NBD_SET_BLKSIZE     = (0xab<<8 | 1)  // 43777
++	NBD_SET_SIZE        = (0xab<<8 | 2)  // 43778
++	NBD_DO_IT           = (0xab<<8 | 3)  // 43779
++	NBD_CLEAR_SOCK      = (0xab<<8 | 4)  // 43780
++	NBD_CLEAR_QUE       = (0xab<<8 | 5)  // 43781
++	NBD_PRINT_DEBUG     = (0xab<<8 | 6)  // 43782
++	NBD_SET_SIZE_BLOCKS = (0xab<<8 | 7)  // 43783
++	NBD_DISCONNECT      = (0xab<<8 | 8)  // 43784
++	NBD_SET_TIMEOUT     = (0xab<<8 | 9)  // 43785
++	NBD_SET_FLAGS       = (0xab<<8 | 10) // 43786
+ )
+ 
+ const (
 @@ -70,5 +70,5 @@ type BuseDevice struct {
  	deviceFp   *os.File
  	socketPair [2]int
