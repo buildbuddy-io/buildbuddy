@@ -89,7 +89,7 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
                       <div className="raw-event">
                         <div className="raw-event-title" onClick={this.handleEventClicked.bind(this, event.event)}>
                           [{expanded ? "-" : "+"}] Build event {event.event.sequenceNumber} -{" "}
-                          {Object.keys(event.event.buildEvent)
+                          {Object.keys(event.event.buildEvent ?? {})
                             .filter((key) => key != "id" && key != "children")
                             .join(", ")}
                         </div>

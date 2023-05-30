@@ -13,7 +13,9 @@ export default class ErrorCardComponent extends React.Component<Props> {
         <AlertCircle className="icon" />
         <div className="content">
           <div className="title">Error</div>
-          <div className="details">{this.props.model.aborted.aborted.description}</div>
+          <div className="details">
+            {this.props.model.aborted?.aborted?.description || "No description was found for this error."}
+          </div>
         </div>
       </div>
     );
