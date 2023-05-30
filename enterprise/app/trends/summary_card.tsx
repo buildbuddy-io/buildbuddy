@@ -55,7 +55,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
     const cacheHitRate = +this.props.currentPeriod.acCacheHits / cacheRequestTotal;
     const previousCacheRequestTotal =
       +(this.props.previousPeriod?.acCacheHits ?? 0) + +(this.props.previousPeriod?.acCacheMisses ?? 0);
-    const previousCacheHitRate = +this.props.previousPeriod.acCacheHits / previousCacheRequestTotal;
+    const previousCacheHitRate = +(this.props.previousPeriod?.acCacheHits ?? 0) / previousCacheRequestTotal;
     const formattedTimePeriod = getDayCountStringFromSearchParams(this.props.search);
     return (
       <div className="trend-chart">
