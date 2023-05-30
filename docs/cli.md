@@ -55,7 +55,7 @@ buildbuddy-io/5.0.6
 5.3.2
 ```
 
-The version 0.0.12 of the BuildBuddy CLI will now automatically be used when you type `bazel` or `bazelisk` and continue to use the Bazel version specified on the second line of your `.bazelrc` file.
+The version 5.0.6 of the BuildBuddy CLI will now automatically be used when you type `bazel` or `bazelisk` and continue to use the Bazel version specified on the second line of your `.bazelrc` file.
 
 To find the latest version of the BuildBuddy CLI, you can view our releases page [here](https://github.com/buildbuddy-io/bazel/releases).
 
