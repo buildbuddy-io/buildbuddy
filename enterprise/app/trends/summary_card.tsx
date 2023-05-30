@@ -95,7 +95,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
             <div className="trend-headline-stat">
               <Cpu size="27" className="icon"></Cpu>
               <span className="trend-headline-text">
-                {format.cpuSavingsUsec(+this.props.currentPeriod.cpuMicrosSaved)} saved
+                {format.cpuSavingsSec(+this.props.currentPeriod.cpuMicrosSaved / 1000000)} saved
               </span>
             </div>
             <div className="trend-sub-item">

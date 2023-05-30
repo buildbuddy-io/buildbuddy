@@ -59,8 +59,8 @@ export function durationSec(duration: number | Long) {
   return `${(milliseconds * 1000).toPrecision(3)}µs`;
 }
 
-export function cpuSavingsUsec(duration: number | Long) {
-  let seconds = +duration / 1000000;
+export function cpuSavingsSec(duration: number | Long) {
+  let seconds = +duration;
   if (!seconds || seconds < 0) {
     return "0 CPU-seconds";
   }
