@@ -298,7 +298,7 @@ Let's use Bazel's latest release, 6.2.0, as our baseline and see how Buck2 compa
    It's worth noting that Bazel executes actions in a sandbox by default, so `--strategy=local` is used here to explicitly disable sandboxing.
    We also set Bazel's concurrency limit to 200 by specifying `--jobs=200` and override Bazel's system resource estimations by specifying
    `--local_cpu_resources` and `--local_ram_resources` to larger values.
-   Because our actions are lightweighted, with majority of the time being spent on `sleep(1)` call,
+   Because our actions are lightweight, with majority of the time being spent on `sleep(1)` call,
    these Bazel flags enable us to hit the "200 concurrent build actions" mark.
 
    ```bash
@@ -420,7 +420,7 @@ Let's use Bazel's latest release, 6.2.0, as our baseline and see how Buck2 compa
    Buck2 does not have a good way to invalidate the remote cache to give a fair comparison,
    so I did apply a workaround by invalidating all the `x` and `y` actions with a random value instead.
 
-   Regardless to say, the performance was very impressive.
+   Regardless, the performance was very impressive.
    The Remote Build Execution client of Buck2 is not as configurable as Bazel, so it was harder to tune.
    I expect it will make builds perform much better in the future.
 
@@ -439,7 +439,7 @@ The Buck2 team in Meta has been quite engaging thus far.
 It often takes them less than a week to respond to my GitHub Issues / Pull Requests.
 And most of the time, I get a response within a day.
 
-Diving into Buck2 and its Rust code base is... addictive to me. 😅
+Diving into Buck2 and its Rust code base is... addictive. 😅
 
 ## The cons
 
@@ -551,7 +551,7 @@ I would say _not yet_!
 
 - There are still too many foot guns that come with the new tool (as documented above).
 
-- There is not enough configurations and/or documentation to support large-scale enterprise user.
+- There is not enough configurations and/or documentation to support large-scale enterprise users.
 
 - Users are expected to be hands-on with the code base. If you don't know Rust... well you better learn it first.
 
