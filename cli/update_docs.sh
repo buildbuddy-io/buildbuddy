@@ -23,6 +23,7 @@ fi
 
 perl -p -i -e 's#buildbuddy-io/\d+\.\d+\.\d+#buildbuddy-io/'"$VERSION"'#g' "${DOCS_FILES[@]}"
 perl -p -i -e 's#buildbuddy-io/plugins@v\d+\.\d+\.\d+#buildbuddy-io/plugins@'"$VERSION"'#g' "${DOCS_FILES[@]}"
+perl -p -i -e 's#(<span class="cli-version">)(.*?)(</span>)#${1}'"$VERSION"'${3}#g' "${DOCS_FILES[@]}"
 
 if ! ((UPDATE_GIT)); then
   exit
