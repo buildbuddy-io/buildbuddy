@@ -816,6 +816,8 @@ type CommandResult struct {
 	Stdout []byte
 	// Stderr from the command. This may contain data even if there was an Error.
 	Stderr []byte
+	// Kernel logs from the command. This will only be set if the command was run in a firecracker VM.
+	KernelLogs []byte
 
 	// ExitCode is one of the following:
 	// * The exit code returned by the executed command

@@ -1336,7 +1336,9 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 	statsListener := func(stats *repb.UsageStats) {
 		container.Metrics.Observe(c, stats)
 	}
-	return vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
+	result := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
+	result.KernelLogs = c.vmLog.Tail()
+	return result
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
