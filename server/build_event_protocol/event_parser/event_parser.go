@@ -121,7 +121,7 @@ func (sep *StreamingEventParser) GetInvocation() *inpb.Invocation {
 	return sep.invocation
 }
 
-func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent) {
+func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		{
@@ -210,9 +210,9 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 		{
 			metadata := p.BuildMetadata.Metadata
 			if metadata == nil {
-				return
+				return nil
 			}
-			sep.fillInvocationFromBuildMetadata(metadata)
+			return sep.fillInvocationFromBuildMetadata(metadata)
 		}
 	case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 		{
@@ -221,11 +221,12 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 		{
 			wfc := p.WorkflowConfigured
 			if wfc == nil {
-				return
+				return nil
 			}
 			sep.fillInvocationFromWorkflowConfigured(wfc)
 		}
 	}
+	return nil
 }
 
 func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine) {
@@ -363,7 +364,7 @@ func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStat
 	}
 }
 
-func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) {
+func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) error {
 	priority := buildMetadataPriority
 	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
 		sep.setCommitSha(sha, priority)
@@ -390,8 +391,11 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
 	if tags, ok := metadata["TAGS"]; ok && tags != "" {
-		sep.setTags(tags, priority)
+		if err := sep.setTags(tags, priority); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured) {
@@ -460,9 +464,14 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 		sep.invocation.Pattern = value
 	}
 }
-func (sep *StreamingEventParser) setTags(value string, priority int) {
+func (sep *StreamingEventParser) setTags(value string, priority int) error {
 	if *tagsEnabled && sep.priority.Tags <= priority {
+		tags, err := invocation_format.SplitAndTrimTags(value, true)
+		if err != nil {
+			return err
+		}
 		sep.priority.Tags = priority
-		sep.invocation.Tags = invocation_format.SplitAndTrimTags(value)
+		sep.invocation.Tags = tags
 	}
+	return nil
 }

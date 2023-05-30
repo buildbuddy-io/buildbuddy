@@ -1104,7 +1104,9 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	}
 	e.redactor.RedactMetadata(event.BuildEvent)
 	// Accumulate a subset of invocation fields in memory.
-	e.beValues.AddEvent(event.BuildEvent)
+	if err := e.beValues.AddEvent(event.BuildEvent); err != nil {
+		return err
+	}
 
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
@@ -1381,7 +1383,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 					return err
 				}
 				redactor.RedactMetadata(event.BuildEvent)
-				beValues.AddEvent(event.BuildEvent)
+				if err := beValues.AddEvent(event.BuildEvent); err != nil {
+					return err
+				}
 			}
 			events = append(events, event)
 			switch p := event.BuildEvent.Payload.(type) {
@@ -1523,7 +1527,9 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
 	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
 	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
-	out.Tags = invocation_format.SplitAndTrimTags(i.Tags)
+	// Don't bother with validation here; just give the user whatever the DB
+	// claims the tags are.
+	out.Tags, _ = invocation_format.SplitAndTrimTags(i.Tags, false)
 	return out
 }
 

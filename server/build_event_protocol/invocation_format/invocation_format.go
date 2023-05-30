@@ -42,19 +42,28 @@ func ShortFormatPatterns(patterns []string) string {
 	return out
 }
 
-func SplitAndTrimTags(tags string) []*invocation.Invocation_Tag {
+// Splits the provided comma-separated tag string and trims off any trailing
+// and leading whitespace from each tag.  If validate it set to true and the
+// trimmed, comma-separated string containing the tags would be longer than 160
+// characters, an error is returned.
+func SplitAndTrimTags(tags string, validate bool) ([]*invocation.Invocation_Tag, error) {
 	if len(tags) == 0 {
-		return []*invocation.Invocation_Tag{}
+		return []*invocation.Invocation_Tag{}, nil
 	}
 	splitTags := strings.Split(tags, ",")
+	totalLength := 0
 	out := make([]*invocation.Invocation_Tag, 0, len(splitTags))
 	for _, t := range splitTags {
 		trimmed := strings.TrimSpace(t)
 		if len(trimmed) > 0 {
+			if validate && totalLength+len(trimmed) > 160 {
+				return nil, status.InvalidArgumentError("Tag list is too long.")
+			}
+			totalLength += len(trimmed) + 1
 			out = append(out, &invocation.Invocation_Tag{Name: trimmed})
 		}
 	}
-	return out
+	return out, nil
 }
 
 func JoinTags(tags []*invocation.Invocation_Tag) (string, error) {
