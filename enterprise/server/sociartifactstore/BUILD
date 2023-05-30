@@ -11,9 +11,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore",
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
+            "//proto:remote_execution_go_proto",
             "//proto:soci_go_proto",
             "//server/environment",
             "//server/util/status",
+            "@com_github_google_go_containerregistry//pkg/v1:pkg",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//proto:registry_go_proto",
@@ -22,6 +24,7 @@ go_library(
             "//proto:soci_go_proto",
             "//server/environment",
             "//server/interfaces",
+            "//server/remote_cache/digest",
             "//server/util/log",
             "//server/util/prefix",
             "//server/util/random",
