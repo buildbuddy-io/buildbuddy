@@ -2014,6 +2014,16 @@ var (
 	}, []string{
 		PebbleOperation,
 	})
+
+	// Temporary metric to verify AC sampling behavior.
+	PebbleCacheGroupIDSampleCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_groupid_sample_count",
+		Help:      "The number of times a group has been selected for key sampling.",
+	}, []string{
+		GroupID,
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

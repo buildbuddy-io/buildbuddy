@@ -125,10 +125,14 @@ func (pmk PebbleKey) Hash() string {
 	return pmk.hash
 }
 
-// Returns a group ID that is zero padded to 20 digits in order to make all
-// key group IDs uniform. This is necessary to be able to sample uniformly
-// across group IDs.
-func fixedWidthGroupID(groupID string) string {
+func (pmk PebbleKey) GroupID() string {
+	return pmk.groupID
+}
+
+// FixedWidthGroupID returns a group ID that is zero padded to 20 digits in
+// order to make all key group IDs uniform. This is necessary to be able to
+// sample uniformly across group IDs.
+func FixedWidthGroupID(groupID string) string {
 	// This is only for true the special "ANON" group.
 	if !strings.HasPrefix(groupID, groupIDPrefix) {
 		return groupID
@@ -136,7 +140,7 @@ func fixedWidthGroupID(groupID string) string {
 	return fmt.Sprintf("%s%020s", groupIDPrefix, groupID[2:])
 }
 
-// Undoes the padding added by fixedWidthGroupID to produce the "real" group
+// Undoes the padding added by FixedWidthGroupID to produce the "real" group
 // ID.
 func trimFixedWidthGroupID(groupID string) string {
 	// This is only for true the special "ANON" group.
@@ -168,7 +172,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 	case Version2:
 		filePath := filepath.Join(pmk.hash, pmk.isolation, pmk.remoteInstanceHash)
 		if pmk.isolation == "ac" {
-			filePath = filepath.Join(fixedWidthGroupID(pmk.groupID), filePath)
+			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
 		}
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v2")
@@ -180,7 +184,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		}
 		filePath := filepath.Join(pmk.hash, pmk.isolation, rih, pmk.encryptionKeyID)
 		if pmk.isolation == "ac" {
-			filePath = filepath.Join(fixedWidthGroupID(pmk.groupID), filePath)
+			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
 		}
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v3")
