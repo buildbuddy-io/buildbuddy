@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
@@ -189,6 +190,10 @@ func main() {
 
 	rootContext := context.Background()
 
+	flag.Parse()
+	if err := configsecrets.Configure(); err != nil {
+		log.Fatalf("Could not prepare config secrets provider: %s", err)
+	}
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}

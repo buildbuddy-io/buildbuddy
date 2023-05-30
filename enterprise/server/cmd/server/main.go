@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
@@ -169,6 +170,11 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 func main() {
 	rootContext := context.Background()
 	version.Print()
+
+	flag.Parse()
+	if err := configsecrets.Configure(); err != nil {
+		log.Fatalf("Could not prepare config secrets provider: %s", err)
+	}
 
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)

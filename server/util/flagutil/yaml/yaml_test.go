@@ -1,12 +1,16 @@
 package yaml_test
 
 import (
+	"context"
 	"flag"
 	"net/url"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -421,4 +425,54 @@ first:
 	assert.Equal(t, "xxx", *flagABString)
 	assert.Equal(t, []testStruct{{Field: 7, Meadow: "Chimney"}}, flagABStructSlice)
 	assert.Equal(t, url.URL{Scheme: "http", Host: "www.example.com:8080"}, *flagABURL)
+}
+
+type fakeSecretProvider struct {
+	secrets map[string]string
+}
+
+func (f *fakeSecretProvider) GetSecret(ctx context.Context, name string) ([]byte, error) {
+	secret, ok := f.secrets[name]
+	if !ok {
+		return nil, status.NotFoundErrorf("secret %q not found", name)
+	}
+	return []byte(secret), nil
+}
+
+func TestSecretExpansion(t *testing.T) {
+	flags := replaceFlagsForTesting(t)
+
+	os.Setenv("SOMEENV", "foo")
+	envFlag := flags.String("env_flag", "", "")
+	err := flagyaml.PopulateFlagsFromData([]byte(strings.TrimSpace(`
+		env_flag: ${SOMEENV}
+	`)))
+	require.NoError(t, err)
+	require.Equal(t, "foo", *envFlag)
+
+	secretFlag := flags.String("secret_flag", "", "")
+	err = flagyaml.PopulateFlagsFromData([]byte(strings.TrimSpace(`
+		secret_flag: ${SECRET:FOO}
+	`)))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no secret provider")
+
+	flagyaml.SecretProvider = &fakeSecretProvider{}
+	defer func() {
+		flagyaml.SecretProvider = nil
+	}()
+	err = flagyaml.PopulateFlagsFromData([]byte(strings.TrimSpace(`
+		secret_flag: ${SECRET:FOO}
+	`)))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+
+	flagyaml.SecretProvider = &fakeSecretProvider{
+		secrets: map[string]string{"FOO": "BAR"},
+	}
+	err = flagyaml.PopulateFlagsFromData([]byte(strings.TrimSpace(`
+		secret_flag: ${SECRET:FOO}
+	`)))
+	require.NoError(t, err)
+	require.Equal(t, "BAR", *secretFlag)
 }

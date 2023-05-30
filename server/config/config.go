@@ -28,7 +28,6 @@ func Path() string {
 
 // Load parses the flags and loads the config file specified by config.Path().
 func Load() error {
-	flag.Parse()
 	return flagyaml.PopulateFlagsFromFile(Path())
 }
 

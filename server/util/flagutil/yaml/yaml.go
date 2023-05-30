@@ -2,6 +2,7 @@ package yaml
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -17,7 +19,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const spacesPerYAMLIndentLevel = 4
+const (
+	spacesPerYAMLIndentLevel = 4
+	externalSecretPrefix     = "SECRET:"
+)
 
 var (
 	// Flag names to ignore when generating a YAML map or populating flags (e. g.,
@@ -39,6 +44,9 @@ var (
 	WordWrapForIndentationLevel = generateWordWrapRegexByIndentationLevel(76, 3)
 
 	StartOfLine = regexp.MustCompile("(?m)^")
+
+	// This may be optionally set by a configured provider.
+	SecretProvider interfaces.ConfigSecretProvider
 )
 
 func generateWordWrapRegexByIndentationLevel(targetLineLength, minWrapLength int) []*regexp.Regexp {
@@ -646,11 +654,38 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, pref
 	return nil
 }
 
+func expandConfig(data []byte) ([]byte, error) {
+	ctx := context.Background()
+	var expandErr error
+	expandedData := []byte(os.Expand(string(data), func(s string) string {
+		if strings.HasPrefix(s, externalSecretPrefix) {
+			if SecretProvider == nil {
+				expandErr = status.UnavailableError("config references an external secret but no secret provider is available")
+			} else {
+				name := strings.TrimPrefix(s, externalSecretPrefix)
+				secret, err := SecretProvider.GetSecret(ctx, name)
+				if err != nil {
+					expandErr = status.UnavailableErrorf("could not retrieve config secret %q: %s", name, err)
+				}
+				return string(secret)
+			}
+		}
+		return os.Getenv(s)
+	}))
+	if expandErr != nil {
+		return nil, expandErr
+	}
+	return expandedData, nil
+}
+
 // OverrideFlagsFromData takes some YAML input and marshals it, then uses the
 // unmarshaled data to override the flags with names corresponding to the keys.
 func OverrideFlagsFromData(data []byte) error {
 	// expand environment variables
-	expandedData := []byte(os.ExpandEnv(string(data)))
+	expandedData, err := expandConfig(data)
+	if err != nil {
+		return err
+	}
 
 	yamlMap, node, err := getYAMLMapAndNodeFromData(expandedData)
 	if err != nil {
@@ -664,7 +699,10 @@ func OverrideFlagsFromData(data []byte) error {
 // keys.
 func PopulateFlagsFromData(data []byte) error {
 	// expand environment variables
-	expandedData := []byte(os.ExpandEnv(string(data)))
+	expandedData, err := expandConfig(data)
+	if err != nil {
+		return err
+	}
 
 	yamlMap, node, err := getYAMLMapAndNodeFromData(expandedData)
 	if err != nil {
