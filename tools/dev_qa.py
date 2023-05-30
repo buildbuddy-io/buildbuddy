@@ -31,7 +31,8 @@ REPO_CONFIGS = [
         "command": """
             bazel test //... \
                 --config=remote-dev \
-                --flaky_test_attempts=3
+                --flaky_test_attempts=3 \
+                --build_metadata=TAGS=dev-qa
         """,
     },
     {
@@ -43,7 +44,8 @@ REPO_CONFIGS = [
                 --remote_cache=remote.buildbuddy.dev \
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-                --remote_timeout=10m
+                --remote_timeout=10m \
+                --build_metadata=TAGS=dev-qa
         """,
     },
     {
@@ -60,7 +62,8 @@ REPO_CONFIGS = [
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
                 --host_platform=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain
+                --crosstool_top=@buildbuddy_toolchain//:toolchain \
+                --build_metadata=TAGS=dev-qa
         """,
     },
     {
@@ -79,7 +82,8 @@ REPO_CONFIGS = [
                 --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --noincompatible_disallow_empty_glob \
                 --java_runtime_version=remotejdk_17 \
-                --jobs=100
+                --jobs=100 \
+                --build_metadata=TAGS=dev-qa
         """,
     },
     {
@@ -92,7 +96,8 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
-                --jobs=100
+                --jobs=100 \
+                --build_metadata=TAGS=dev-qa
         """,
     },
     {
@@ -106,7 +111,8 @@ REPO_CONFIGS = [
                 --remote_cache=remote.buildbuddy.dev \
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-                --nogoogle_default_credentials
+                --nogoogle_default_credentials \
+                --build_metadata=TAGS=dev-qa
         """,
     },
 ]
