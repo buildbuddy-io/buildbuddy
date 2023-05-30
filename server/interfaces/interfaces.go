@@ -1132,3 +1132,8 @@ type Crypter interface {
 type SingleFlightDeduper interface {
 	Do(ctx context.Context, key string, work func() ([]byte, error)) ([]byte, error)
 }
+
+// ConfigSecretProvider provides secrets interpolation into configs.
+type ConfigSecretProvider interface {
+	GetSecret(ctx context.Context, name string) ([]byte, error)
+}

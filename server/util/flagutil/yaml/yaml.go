@@ -2,6 +2,7 @@ package yaml
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -17,11 +19,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const spacesPerYAMLIndentLevel = 4
+const (
+	spacesPerYAMLIndentLevel = 4
+
+	// The placeholder prefix we look for to identify external secret references
+	// when parsing config file. Any placeholders in format ${SECRET:foo} will
+	// be replaced with the resolved content from the external secret store.
+	externalSecretPrefix = "SECRET:"
+)
 
 var (
-	// Flag names to ignore when generating a YAML map or populating flags (e. g.,
-	// the flag specifying the path to the config file)
+	// Flag names to ignore when generating a YAML map or populating flags
+	// (e.g. the flag specifying the path to the config file)
 	ignoreSet = make(map[string]struct{})
 
 	nilableKinds = map[reflect.Kind]struct{}{
@@ -39,6 +48,9 @@ var (
 	WordWrapForIndentationLevel = generateWordWrapRegexByIndentationLevel(76, 3)
 
 	StartOfLine = regexp.MustCompile("(?m)^")
+
+	// This may be optionally set by a configured provider.
+	SecretProvider interfaces.ConfigSecretProvider
 )
 
 func generateWordWrapRegexByIndentationLevel(targetLineLength, minWrapLength int) []*regexp.Regexp {
@@ -599,6 +611,74 @@ func RemoveEmptyMapsFromYAMLMap(m map[string]any) map[string]any {
 	return m
 }
 
+func expandValue(value string) (string, error) {
+	ctx := context.Background()
+	var expandErr error
+	expandedValue := os.Expand(value, func(s string) string {
+		if strings.HasPrefix(s, externalSecretPrefix) {
+			if SecretProvider == nil {
+				expandErr = status.UnavailableError("config references an external secret but no secret provider is available")
+			} else {
+				name := strings.TrimPrefix(s, externalSecretPrefix)
+				secret, err := SecretProvider.GetSecret(ctx, name)
+				if err != nil {
+					expandErr = status.UnavailableErrorf("could not retrieve config secret %q: %s", name, err)
+				}
+				return string(secret)
+			}
+		}
+		return os.Getenv(s)
+	})
+	if expandErr != nil {
+		return "", expandErr
+	}
+	return expandedValue, nil
+}
+
+func expandSliceValues(yamlSlice []any) error {
+	for i, v := range yamlSlice {
+		switch cv := v.(type) {
+		case map[string]any:
+			if err := expandMapValues(cv); err != nil {
+				return err
+			}
+		case []any:
+			if err := expandSliceValues(yamlSlice); err != nil {
+				return err
+			}
+		case string:
+			ev, err := expandValue(cv)
+			if err != nil {
+				return err
+			}
+			yamlSlice[i] = ev
+		}
+	}
+	return nil
+}
+
+func expandMapValues(yamlMap map[string]any) error {
+	for k, v := range yamlMap {
+		switch cv := v.(type) {
+		case map[string]any:
+			if err := expandMapValues(cv); err != nil {
+				return err
+			}
+		case []any:
+			if err := expandSliceValues(cv); err != nil {
+				return err
+			}
+		case string:
+			ev, err := expandValue(cv)
+			if err != nil {
+				return err
+			}
+			yamlMap[k] = ev
+		}
+	}
+	return nil
+}
+
 // RetypeAndFilterYAMLMap un-marshals yaml from the input yamlMap and then
 // re-marshals it into the types specified by the type map, replacing the
 // original value in the input map. Filters out any values not specified by the
@@ -648,11 +728,8 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, pref
 
 // OverrideFlagsFromData takes some YAML input and marshals it, then uses the
 // unmarshaled data to override the flags with names corresponding to the keys.
-func OverrideFlagsFromData(data []byte) error {
-	// expand environment variables
-	expandedData := []byte(os.ExpandEnv(string(data)))
-
-	yamlMap, node, err := getYAMLMapAndNodeFromData(expandedData)
+func OverrideFlagsFromData(data string) error {
+	yamlMap, node, err := getYAMLMapAndNodeFromData(data)
 	if err != nil {
 		return err
 	}
@@ -662,18 +739,15 @@ func OverrideFlagsFromData(data []byte) error {
 // PopulateFlagsFromData takes some YAML input and unmarshals it, then uses the
 // unmarshaled data to populate the unset flags with names corresponding to the
 // keys.
-func PopulateFlagsFromData(data []byte) error {
-	// expand environment variables
-	expandedData := []byte(os.ExpandEnv(string(data)))
-
-	yamlMap, node, err := getYAMLMapAndNodeFromData(expandedData)
+func PopulateFlagsFromData(data string) error {
+	yamlMap, node, err := getYAMLMapAndNodeFromData(data)
 	if err != nil {
 		return err
 	}
 	return PopulateFlagsFromYAMLMap(yamlMap, node)
 }
 
-func getYAMLMapAndNodeFromData(data []byte) (map[string]any, *yaml.Node, error) {
+func getYAMLMapAndNodeFromData(data string) (map[string]any, *yaml.Node, error) {
 	yamlMap := make(map[string]any)
 	if err := yaml.Unmarshal([]byte(data), yamlMap); err != nil {
 		return nil, nil, status.InternalErrorf("Error parsing config file: %s", err)
@@ -692,6 +766,10 @@ func getYAMLMapAndNodeFromData(data []byte) (map[string]any, *yaml.Node, error) 
 		IgnoreFilter,
 	)
 	if err != nil {
+		return nil, nil, err
+	}
+	// Expand environment variables and secrets.
+	if err := expandMapValues(yamlMap); err != nil {
 		return nil, nil, err
 	}
 	if err := RetypeAndFilterYAMLMap(yamlMap, typeMap, []string{}); err != nil {
@@ -719,7 +797,7 @@ func PopulateFlagsFromFile(configFile string) error {
 		return fmt.Errorf("Error reading config file: %s", err)
 	}
 
-	if err := PopulateFlagsFromData(fileBytes); err != nil {
+	if err := PopulateFlagsFromData(string(fileBytes)); err != nil {
 		return err
 	}
 

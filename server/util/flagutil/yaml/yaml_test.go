@@ -1,12 +1,17 @@
 package yaml_test
 
 import (
+	"context"
 	"flag"
 	"net/url"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -260,7 +265,7 @@ first:
     unknown: 9009
     no: "definitely not"
 `
-	err := flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err := flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, true, *flagBool)
 	assert.Equal(t, int(1), *flagOneTwoInt)
@@ -278,13 +283,13 @@ func TestBadPopulateFlagsFromData(t *testing.T) {
 	yamlData := `
 	bool: true
 `
-	err := flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err := flagyaml.PopulateFlagsFromData(yamlData)
 	require.Error(t, err)
 
 	flags := replaceFlagsForTesting(t)
 
 	flags.Var(&unsupportedFlagValue{}, "bad", "")
-	err = flagyaml.PopulateFlagsFromData([]byte{})
+	err = flagyaml.PopulateFlagsFromData("")
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
@@ -293,7 +298,7 @@ func TestBadPopulateFlagsFromData(t *testing.T) {
 	yamlData = `
 bool: 7
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.Error(t, err)
 }
 
@@ -411,7 +416,7 @@ first:
     unknown: 9009
     no: "definitely not"
 `
-	err := flagyaml.OverrideFlagsFromData([]byte(yamlData))
+	err := flagyaml.OverrideFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, true, *flagBool)
 	assert.Equal(t, int(1), *flagOneTwoInt)
@@ -421,4 +426,98 @@ first:
 	assert.Equal(t, "xxx", *flagABString)
 	assert.Equal(t, []testStruct{{Field: 7, Meadow: "Chimney"}}, flagABStructSlice)
 	assert.Equal(t, url.URL{Scheme: "http", Host: "www.example.com:8080"}, *flagABURL)
+}
+
+type fakeSecretProvider struct {
+	secrets map[string]string
+}
+
+func (f *fakeSecretProvider) GetSecret(ctx context.Context, name string) ([]byte, error) {
+	secret, ok := f.secrets[name]
+	if !ok {
+		return nil, status.NotFoundErrorf("secret %q not found", name)
+	}
+	return []byte(secret), nil
+}
+
+type secretHolder struct {
+	Secret string
+}
+
+func TestSecretExpansion(t *testing.T) {
+	flags := replaceFlagsForTesting(t)
+
+	os.Setenv("SOMEENV", "foo")
+	envFlag := flags.String("env_flag", "", "")
+	err := flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
+		env_flag: ${SOMEENV}
+	`))
+	require.NoError(t, err)
+	require.Equal(t, "foo", *envFlag)
+
+	// Multiline env variable. Uncommon, but should work.
+	os.Setenv("SOMEENV", "foo\nbar")
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
+		env_flag: ${SOMEENV}
+	`))
+	require.NoError(t, err)
+	require.Equal(t, "foo\nbar", *envFlag)
+
+	secretFlag := flags.String("secret_flag", "", "")
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
+		secret_flag: ${SECRET:FOO}
+	`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no secret provider")
+
+	flagyaml.SecretProvider = &fakeSecretProvider{}
+	defer func() {
+		flagyaml.SecretProvider = nil
+	}()
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
+		secret_flag: ${SECRET:FOO}
+	`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+
+	flagyaml.SecretProvider = &fakeSecretProvider{
+		secrets: map[string]string{"FOO": "BAR"},
+	}
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
+		secret_flag: ${SECRET:FOO}
+	`))
+	require.NoError(t, err)
+	require.Equal(t, "BAR", *secretFlag)
+
+	// Multiline secret.
+	flagyaml.SecretProvider = &fakeSecretProvider{
+		secrets: map[string]string{"FOO": "BAR\nBAZ"},
+	}
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
+		secret_flag: ${SECRET:FOO}
+	`))
+	require.NoError(t, err)
+	require.Equal(t, "BAR\nBAZ", *secretFlag)
+
+	// Secrets inside a list.
+	flagyaml.SecretProvider = &fakeSecretProvider{
+		secrets: map[string]string{"FOO1": "FIRST\nSECRET", "FOO2": "SECOND\nSECRET"},
+	}
+	secretSliceFlag := flagutil.New("secret_slice_flag", []string{}, "")
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
+secret_slice_flag: 
+  - ${SECRET:FOO1}
+  - ${SECRET:FOO2}
+	`))
+	require.NoError(t, err)
+	require.Equal(t, []string{"FIRST\nSECRET", "SECOND\nSECRET"}, *secretSliceFlag)
+
+	secretStructSliceFlag := flagutil.New("secret_struct_slice_flag", []secretHolder{}, "")
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
+secret_struct_slice_flag: 
+  - secret: ${SECRET:FOO1}
+  - secret: ${SECRET:FOO2}
+	`))
+	require.NoError(t, err)
+	require.Equal(t, []secretHolder{{Secret: "FIRST\nSECRET"}, {Secret: "SECOND\nSECRET"}}, *secretStructSliceFlag)
 }

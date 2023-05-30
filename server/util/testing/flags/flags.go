@@ -14,7 +14,7 @@ import (
 
 var populateFlagsOnce sync.Once
 
-func PopulateFlagsFromData(t testing.TB, testConfigData []byte) {
+func PopulateFlagsFromData(t testing.TB, testConfigData string) {
 	populateFlagsOnce.Do(func() {
 		// add placeholder type for type adding by testing
 		flag.VisitAll(func(flg *flag.Flag) {

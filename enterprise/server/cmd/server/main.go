@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
@@ -169,6 +170,12 @@ func main() {
 	rootContext := context.Background()
 	version.Print()
 
+	// Flags must be parsed before config secrets integration is enabled since
+	// that feature itself depends on flag values.
+	flag.Parse()
+	if err := configsecrets.Configure(); err != nil {
+		log.Fatalf("Could not prepare config secrets provider: %s", err)
+	}
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}

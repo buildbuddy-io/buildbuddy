@@ -105,7 +105,7 @@ func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
 }
 
 func GetTestEnv(t testing.TB) *TestEnv {
-	flags.PopulateFlagsFromData(t, []byte(testConfigData))
+	flags.PopulateFlagsFromData(t, testConfigData)
 	testRootDir := testfs.MakeTempDir(t)
 	if flag.Lookup("storage.disk.root_directory") != nil {
 		flags.Set(t, "storage.disk.root_directory", fmt.Sprintf("%s/storage", testRootDir))
