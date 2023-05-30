@@ -219,14 +219,14 @@ type Group struct {
 	GithubToken *string
 	Model
 
-	SharingEnabled       bool `gorm:"default:true"`
-	UserOwnedKeysEnabled bool `gorm:"not null;default:false"`
+	SharingEnabled       bool `gorm:"default:1"`
+	UserOwnedKeysEnabled bool `gorm:"not null;default:0"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
 	UseGroupOwnedExecutors *bool
 
-	CacheEncryptionEnabled bool `gorm:"not null;default:false"`
+	CacheEncryptionEnabled bool `gorm:"not null;default:0"`
 
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl *string
@@ -353,7 +353,7 @@ type APIKey struct {
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
 	Capabilities        int32 `gorm:"default:1"`
-	VisibleToDevelopers bool  `gorm:"not null;default:false"`
+	VisibleToDevelopers bool  `gorm:"not null;default:0"`
 }
 
 func (k *APIKey) TableName() string {
