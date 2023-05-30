@@ -39,7 +39,6 @@ go_library(
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/quota",
         "//enterprise/server/raft/cache",
-        "//enterprise/server/registry:registry_lib",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/redis_client",
         "//enterprise/server/saml",
