@@ -68,9 +68,6 @@ var (
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
 
-	// TODO(Maggie): Clean up this flag when done debugging segfaults
-	workflowsForceExpunge = flag.Bool("remote_execution.workflows_force_expunge", false, "If set, run bazel clean --expunge before every workflow action.")
-
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
 	// ApprovalRequired is an error indicating that a workflow action could not be
@@ -940,7 +937,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--trigger_event=" + wd.EventName,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
-			"--force_expunge=" + fmt.Sprintf("%v", *workflowsForceExpunge),
+			"--force_expunge=" + fmt.Sprintf("%v", workflowAction.ForceExpunge),
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{

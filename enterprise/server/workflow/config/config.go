@@ -35,6 +35,9 @@ type Action struct {
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
+
+	// TODO(Maggie): Clean up this flag when done debugging segfaults
+	ForceExpunge bool `yaml:"force_expunge"`
 }
 
 type Triggers struct {
