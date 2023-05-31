@@ -294,6 +294,7 @@ ts_library(
         "//app/format",
         "//app/invocation:invocation_execution_util",
         "//proto:execution_stats_ts_proto",
+        "//proto:remote_execution_ts_proto",
         "@npm//@types/react",
         "@npm//react",
     ],
