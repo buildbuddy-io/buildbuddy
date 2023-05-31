@@ -10,6 +10,17 @@ actions:
           - "master"
     bazel_commands:
       - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker --build_metadata=TAGS=linux-workflow
+  - name: Build executor (linux_arm64)
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "master"
+    bazel_commands:
+      - build //enterprise/server/cmd/executor:executor_arm64 --config=linux-workflows
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:

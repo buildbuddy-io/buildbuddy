@@ -68,6 +68,26 @@ go_binary(
     embed = [":executor_lib"],
 )
 
+go_binary(
+    name = "executor_arm64",
+    args = [
+        "--config_file=enterprise/config/executor.local.yaml",
+        "--port=8888",
+        "--monitoring_port=9091",
+        "--max_shutdown_duration=3s",
+    ],
+    cgo = False,
+    data = [
+        "//enterprise:config_files",
+        "//enterprise:licenses",
+    ],
+    embed = [":executor_lib"],
+    goarch = "arm64",
+    goos = "linux",
+    pure = "on",
+    tags = ["manual"],
+)
+
 # Executor expects "firecracker" and "jailer" binaries in $PATH,
 # and they can't be symlinks (otherwise the VM will not start).
 # Rename the firecracker/jailer binaries so that we can place
