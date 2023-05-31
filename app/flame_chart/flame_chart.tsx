@@ -10,7 +10,6 @@ import { BlockModel, buildFlameChartModel, FlameChartModel, LineModel } from "./
 import { Profile } from "./profile_model";
 import {
   BLOCK_HEIGHT,
-  TIME_SERIES_HEIGHT,
   INITIAL_END_TIME_SECONDS,
   SECTION_LABEL_HEIGHT,
   TIMESTAMP_FONT_SIZE,
