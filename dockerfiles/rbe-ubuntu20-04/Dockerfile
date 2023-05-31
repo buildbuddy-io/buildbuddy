@@ -79,6 +79,7 @@ RUN apt-get update && \
     apt-get install -y \
       docker-ce \
       docker-ce-cli \
+      docker-compose-plugin \
       containerd.io \
       && \
     apt-get remove -y gnupg && \
