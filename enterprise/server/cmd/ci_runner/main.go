@@ -857,7 +857,12 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
-		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
+		var runErr error
+		if *bazelCommand == "maggie" {
+			runErr = runCommand(ctx, *bazelCommand, []string{"test", "server/util/lru/..."}, ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
+		} else {
+			runErr = runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
+		}
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)

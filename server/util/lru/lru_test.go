@@ -12,6 +12,12 @@ type eviction struct {
 	reason lru.EvictionReason
 }
 
+func TestSegfault(t *testing.T) {
+	var p *int
+	t.Log("A")
+	t.Log("B:", *p)
+}
+
 func TestAdd(t *testing.T) {
 	evictions := []eviction{}
 
