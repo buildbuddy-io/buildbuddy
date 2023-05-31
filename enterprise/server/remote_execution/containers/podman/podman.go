@@ -558,7 +558,9 @@ func (c *podmanCommandContainer) getSociArtifacts(ctx context.Context, creds con
 	}
 	resp, err := c.sociArtifactStoreClient.GetArtifacts(ctx, &req)
 	if err != nil {
-		return err
+		log.Infof("Error fetching soci artifacts %v", err)
+		// Fall back to pulling the image without streaming.
+		return nil
 	}
 	for _, artifact := range resp.Artifacts {
 		if artifact.Type == socipb.Type_UNKNOWN_TYPE {
