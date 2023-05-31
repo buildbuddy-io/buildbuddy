@@ -13,14 +13,14 @@ interface Props {
 interface State {}
 
 export interface InputNode {
-  obj: build.bazel.remote.execution.v2.IFileNode | build.bazel.remote.execution.v2.IDirectoryNode;
+  obj: build.bazel.remote.execution.v2.FileNode | build.bazel.remote.execution.v2.DirectoryNode;
   type: "file" | "dir";
 }
 
 export default class InputNodeComponent extends React.Component<Props, State> {
   render() {
     const expanded = this.props.treeShaToExpanded.get(
-      this.props.node.obj.digest.hash + "/" + this.props.node.obj.digest.sizeBytes
+      this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes
     );
     return (
       <div className={`input-tree-node`}>
@@ -41,13 +41,13 @@ export default class InputNodeComponent extends React.Component<Props, State> {
             )}
           </span>{" "}
           <span className="input-tree-node-label">{this.props.node.obj.name}</span>
-          <DigestComponent digest={this.props.node.obj.digest} />
+          {this.props.node.obj?.digest && <DigestComponent digest={this.props.node.obj.digest} />}
         </div>
         {expanded && (
           <div className="input-tree-node-children">
             {this.props.treeShaToChildrenMap
-              .get(this.props.node.obj.digest.hash + "/" + this.props.node.obj.digest.sizeBytes)
-              .map((child: any) => (
+              .get(this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes)
+              ?.map((child: any) => (
                 <InputNodeComponent
                   node={child}
                   treeShaToExpanded={this.props.treeShaToExpanded}

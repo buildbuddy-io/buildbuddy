@@ -18,29 +18,29 @@ interface Datum {
 
 export default class InvocationBreakdownCardComponent extends React.Component<Props> {
   render() {
-    let launching = this.props.durationByNameMap.get("Launch Blaze");
-    let total = this.props.durationByNameMap.get("buildTargets");
-    let targets = this.props.durationByNameMap.get("evaluateTargetPatterns");
-    let analysis = this.props.durationByNameMap.get("runAnalysisPhase");
+    let launching = this.props.durationByNameMap.get("Launch Blaze") ?? 0;
+    let total = this.props.durationByNameMap.get("buildTargets") ?? 0;
+    let targets = this.props.durationByNameMap.get("evaluateTargetPatterns") ?? 0;
+    let analysis = this.props.durationByNameMap.get("runAnalysisPhase") ?? 0;
     let building = total - analysis - targets;
 
-    let runningProcess = this.props.durationByNameMap.get("subprocess.run");
-    let localActionExecution = this.props.durationByCategoryMap.get("local action execution");
+    let runningProcess = this.props.durationByNameMap.get("subprocess.run") ?? 0;
+    let localActionExecution = this.props.durationByCategoryMap.get("local action execution") ?? 0;
     let localExecution = runningProcess + localActionExecution;
 
-    let executingRemotely = this.props.durationByNameMap.get("execute remotely");
-    let sandboxSetup = this.props.durationByNameMap.get("sandbox.createFileSystem");
-    let sandboxTeardown = this.props.durationByNameMap.get("sandbox.delete");
-    let inputMapping = this.props.durationByNameMap.get("AbstractSpawnStrategy.getInputMapping");
-    let merkleTree = this.props.durationByNameMap.get("MerkleTree.build(ActionInput)");
-    let downloadOuputs = this.props.durationByCategoryMap.get("remote output download");
-    let uploadMissing = this.props.durationByNameMap.get("upload missing inputs");
-    let uploadOutputs = this.props.durationByNameMap.get("upload outputs");
-    let checkCache = this.props.durationByNameMap.get("check cache hit");
-    let detectModifiedOutput = this.props.durationByNameMap.get("detectModifiedOutputFiles");
-    let stableStatus = this.props.durationByNameMap.get("BazelWorkspaceStatusAction stable-status.txt");
+    let executingRemotely = this.props.durationByNameMap.get("execute remotely") ?? 0;
+    let sandboxSetup = this.props.durationByNameMap.get("sandbox.createFileSystem") ?? 0;
+    let sandboxTeardown = this.props.durationByNameMap.get("sandbox.delete") ?? 0;
+    let inputMapping = this.props.durationByNameMap.get("AbstractSpawnStrategy.getInputMapping") ?? 0;
+    let merkleTree = this.props.durationByNameMap.get("MerkleTree.build(ActionInput)") ?? 0;
+    let downloadOuputs = this.props.durationByCategoryMap.get("remote output download") ?? 0;
+    let uploadMissing = this.props.durationByNameMap.get("upload missing inputs") ?? 0;
+    let uploadOutputs = this.props.durationByNameMap.get("upload outputs") ?? 0;
+    let checkCache = this.props.durationByNameMap.get("check cache hit") ?? 0;
+    let detectModifiedOutput = this.props.durationByNameMap.get("detectModifiedOutputFiles") ?? 0;
+    let stableStatus = this.props.durationByNameMap.get("BazelWorkspaceStatusAction stable-status.txt") ?? 0;
 
-    let phaseData = [
+    let phaseData: Datum[] = [
       { value: launching, name: "Launch" },
       { value: targets, name: "Evaluation" },
       { value: analysis, name: "Analysis" },
@@ -49,7 +49,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
 
     phaseData = phaseData.sort((a, b) => b.value - a.value).filter((entry) => entry.value > 0);
 
-    let executionData = [
+    let executionData: Datum[] = [
       { value: localExecution, name: "Executing locally" },
       { value: inputMapping, name: "Input mapping" },
       { value: merkleTree, name: "Merkle tree building" },

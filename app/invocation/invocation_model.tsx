@@ -72,7 +72,7 @@ export default class InvocationModel {
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   rootCauseTargetLabels: Set<String> = new Set<String>();
 
-  private fileSetIDToFilesMap: Map<string, build_event_stream.IFile[]> = new Map();
+  private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
@@ -619,7 +619,7 @@ export default class InvocationModel {
     );
   }
 
-  getTestSize(testSize: build_event_stream.TestSize) {
+  getTestSize(testSize?: build_event_stream.TestSize) {
     switch (testSize) {
       case build_event_stream.TestSize.SMALL:
         return " - Small";
@@ -633,16 +633,23 @@ export default class InvocationModel {
     return "";
   }
 
-  getLinks() {
+  getLinks(): { linkUrl: string; linkText: string }[] {
     let links = this.buildMetadataMap?.get("BUILDBUDDY_LINKS")?.split(",");
-    return (
+    const filtered: { linkUrl: string; linkText: string }[] =
       links
-        ?.map((link) => link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups)
-        ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || []
-    );
+        ?.flatMap((link) => {
+          const groups = link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups;
+          if (groups?.linkUrl) {
+            return { linkUrl: groups.linkUrl, linkText: groups.linkText };
+          } else {
+            return [];
+          }
+        })
+        ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || [];
+    return filtered;
   }
 
-  getFiles(event: build_event_stream.IBuildEvent): build_event_stream.IFile[] {
+  getFiles(event?: build_event_stream.BuildEvent): build_event_stream.File[] {
     if (!event?.completed) {
       return [];
     }
