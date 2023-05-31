@@ -1,8 +1,8 @@
 diff --git a/buse/buse.go b/buse/buse.go
-index 476812d..8abfca3 100644
+index 476812d..9d5033a 100644
 --- a/buse/buse.go
 +++ b/buse/buse.go
-@@ -7,14 +7,32 @@ import (
+@@ -7,14 +7,33 @@ import (
  	"log"
  	"os"
  	"syscall"
@@ -25,8 +25,9 @@ index 476812d..8abfca3 100644
 +			log.Printf("NBD: ioctl(%d, %d, %d) failed (EBUSY); retrying", fd, op, arg)
 +			time.Sleep(delay)
 +			delay *= 2
-+			if delay > 50*time.Millisecond {
-+				delay = 50 * time.Millisecond
++			const maxDelay = 50 * time.Millisecond
++			if delay > maxDelay {
++				delay = maxDelay
 +			}
 +			continue
 +		}
@@ -39,7 +40,7 @@ index 476812d..8abfca3 100644
  }
  
  func opDeviceRead(driver BuseInterface, fp *os.File, chunk []byte, request *nbdRequest, reply *nbdReply) error {
-@@ -25,10 +43,10 @@ func opDeviceRead(driver BuseInterface, fp *os.File, chunk []byte, request *nbdR
+@@ -25,10 +44,10 @@ func opDeviceRead(driver BuseInterface, fp *os.File, chunk []byte, request *nbdR
  	}
  	buf := writeNbdReply(reply)
  	if _, err := fp.Write(buf); err != nil {
@@ -52,7 +53,7 @@ index 476812d..8abfca3 100644
  	}
  	return nil
  }
-@@ -43,7 +61,7 @@ func opDeviceWrite(driver BuseInterface, fp *os.File, chunk []byte, request *nbd
+@@ -43,7 +62,7 @@ func opDeviceWrite(driver BuseInterface, fp *os.File, chunk []byte, request *nbd
  	}
  	buf := writeNbdReply(reply)
  	if _, err := fp.Write(buf); err != nil {
@@ -61,7 +62,7 @@ index 476812d..8abfca3 100644
  	}
  	return nil
  }
-@@ -61,7 +79,7 @@ func opDeviceFlush(driver BuseInterface, fp *os.File, chunk []byte, request *nbd
+@@ -61,7 +80,7 @@ func opDeviceFlush(driver BuseInterface, fp *os.File, chunk []byte, request *nbd
  	}
  	buf := writeNbdReply(reply)
  	if _, err := fp.Write(buf); err != nil {
@@ -70,7 +71,7 @@ index 476812d..8abfca3 100644
  	}
  	return nil
  }
-@@ -73,25 +91,32 @@ func opDeviceTrim(driver BuseInterface, fp *os.File, chunk []byte, request *nbdR
+@@ -73,25 +92,32 @@ func opDeviceTrim(driver BuseInterface, fp *os.File, chunk []byte, request *nbdR
  	}
  	buf := writeNbdReply(reply)
  	if _, err := fp.Write(buf); err != nil {
@@ -113,7 +114,7 @@ index 476812d..8abfca3 100644
  	// Ok to fail, ignore errors
  	syscall.Syscall(syscall.SYS_IOCTL, bd.deviceFp.Fd(), NBD_CLEAR_QUE, 0)
  	syscall.Syscall(syscall.SYS_IOCTL, bd.deviceFp.Fd(), NBD_DISCONNECT, 0)
-@@ -100,7 +125,9 @@ func (bd *BuseDevice) Disconnect() {
+@@ -100,7 +126,9 @@ func (bd *BuseDevice) Disconnect() {
  	syscall.Close(bd.socketPair[0])
  	syscall.Close(bd.socketPair[1])
  	bd.deviceFp.Close()
@@ -124,7 +125,7 @@ index 476812d..8abfca3 100644
  }
  
  func readNbdRequest(buf []byte, request *nbdRequest) {
-@@ -123,8 +150,10 @@ func writeNbdReply(reply *nbdReply) []byte {
+@@ -123,8 +151,10 @@ func writeNbdReply(reply *nbdReply) []byte {
  // Connect connects a BuseDevice to an actual device file
  // and starts handling requests. It does not return until it's done serving requests.
  func (bd *BuseDevice) Connect() error {
@@ -137,7 +138,7 @@ index 476812d..8abfca3 100644
  	//opens the device file at least once, to make sure the partition table is updated
  	tmp, err := os.Open(bd.device)
  	if err != nil {
-@@ -139,10 +168,30 @@ func (bd *BuseDevice) Connect() error {
+@@ -139,10 +169,30 @@ func (bd *BuseDevice) Connect() error {
  	buf := make([]byte, unsafe.Sizeof(request))
  	for true {
  		if _, err := fp.Read(buf[0:28]); err != nil {
@@ -170,7 +171,7 @@ index 476812d..8abfca3 100644
  		if request.Magic != NBD_REQUEST_MAGIC {
  			return fmt.Errorf("Fatal error: received packet with wrong Magic number")
  		}
-@@ -161,6 +210,10 @@ func (bd *BuseDevice) Connect() error {
+@@ -161,6 +211,10 @@ func (bd *BuseDevice) Connect() error {
  	return nil
  }
  
@@ -181,7 +182,7 @@ index 476812d..8abfca3 100644
  func CreateDevice(device string, size uint, buseDriver BuseInterface) (*BuseDevice, error) {
  	buseDevice := &BuseDevice{size: size, device: device, driver: buseDriver}
  	sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
-@@ -172,15 +225,21 @@ func CreateDevice(device string, size uint, buseDriver BuseInterface) (*BuseDevi
+@@ -172,15 +226,21 @@ func CreateDevice(device string, size uint, buseDriver BuseInterface) (*BuseDevi
  		return nil, fmt.Errorf("Cannot open \"%s\". Make sure the `nbd' kernel module is loaded: %s", device, err)
  	}
  	buseDevice.deviceFp = fp

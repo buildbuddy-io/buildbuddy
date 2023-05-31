@@ -40,9 +40,9 @@ import (
 )
 
 const (
-	// busyboxImage = "docker.io/library/busybox:latest"
+	busyboxImage = "docker.io/library/busybox:latest"
 	// Alternate image to use if getting rate-limited by docker hub
-	busyboxImage = "quay.io/quay/busybox:latest"
+	// busyboxImage = "quay.io/quay/busybox:latest"
 
 	ubuntuImage              = "marketplace.gcr.io/google/ubuntu2004"
 	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
@@ -714,10 +714,12 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 			# docker create --privileged --net=none --rm --name=foo ` + busyboxImage + ` sleep 10000 >&2
 			# docker start foo >&2
 			# docker exec foo echo hello >&2
-			for i in $(seq 1); do
-			  docker run --privileged --net=none --rm ` + busyboxImage + ` echo >&2
-			done
-			# docker run --privileged --net=none --rm ` + busyboxImage + ` echo world
+			docker run --privileged --net=none --rm ` + busyboxImage + ` echo >&2
+			docker run --privileged --net=none --rm ` + busyboxImage + ` echo >&2
+
+			touch ~/foo
+			touch /workspace/bar
+			sync
 		`},
 	}
 
