@@ -190,6 +190,8 @@ func main() {
 
 	rootContext := context.Background()
 
+	// Flags must be parsed before config secrets integration is enabled since
+	// that feature itself depends on flag values.
 	flag.Parse()
 	if err := configsecrets.Configure(); err != nil {
 		log.Fatalf("Could not prepare config secrets provider: %s", err)

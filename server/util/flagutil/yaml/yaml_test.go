@@ -264,7 +264,7 @@ first:
     unknown: 9009
     no: "definitely not"
 `
-	err := flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err := flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, true, *flagBool)
 	assert.Equal(t, int(1), *flagOneTwoInt)
@@ -282,13 +282,13 @@ func TestBadPopulateFlagsFromData(t *testing.T) {
 	yamlData := `
 	bool: true
 `
-	err := flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err := flagyaml.PopulateFlagsFromData(yamlData)
 	require.Error(t, err)
 
 	flags := replaceFlagsForTesting(t)
 
 	flags.Var(&unsupportedFlagValue{}, "bad", "")
-	err = flagyaml.PopulateFlagsFromData([]byte{})
+	err = flagyaml.PopulateFlagsFromData("")
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
@@ -297,7 +297,7 @@ func TestBadPopulateFlagsFromData(t *testing.T) {
 	yamlData = `
 bool: 7
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.Error(t, err)
 }
 
@@ -415,7 +415,7 @@ first:
     unknown: 9009
     no: "definitely not"
 `
-	err := flagyaml.OverrideFlagsFromData([]byte(yamlData))
+	err := flagyaml.OverrideFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, true, *flagBool)
 	assert.Equal(t, int(1), *flagOneTwoInt)
@@ -444,16 +444,16 @@ func TestSecretExpansion(t *testing.T) {
 
 	os.Setenv("SOMEENV", "foo")
 	envFlag := flags.String("env_flag", "", "")
-	err := flagyaml.PopulateFlagsFromData([]byte(strings.TrimSpace(`
+	err := flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
 		env_flag: ${SOMEENV}
-	`)))
+	`))
 	require.NoError(t, err)
 	require.Equal(t, "foo", *envFlag)
 
 	secretFlag := flags.String("secret_flag", "", "")
-	err = flagyaml.PopulateFlagsFromData([]byte(strings.TrimSpace(`
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
 		secret_flag: ${SECRET:FOO}
-	`)))
+	`))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no secret provider")
 
@@ -461,18 +461,18 @@ func TestSecretExpansion(t *testing.T) {
 	defer func() {
 		flagyaml.SecretProvider = nil
 	}()
-	err = flagyaml.PopulateFlagsFromData([]byte(strings.TrimSpace(`
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
 		secret_flag: ${SECRET:FOO}
-	`)))
+	`))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not found")
 
 	flagyaml.SecretProvider = &fakeSecretProvider{
 		secrets: map[string]string{"FOO": "BAR"},
 	}
-	err = flagyaml.PopulateFlagsFromData([]byte(strings.TrimSpace(`
+	err = flagyaml.PopulateFlagsFromData(strings.TrimSpace(`
 		secret_flag: ${SECRET:FOO}
-	`)))
+	`))
 	require.NoError(t, err)
 	require.Equal(t, "BAR", *secretFlag)
 }

@@ -21,12 +21,16 @@ import (
 
 const (
 	spacesPerYAMLIndentLevel = 4
-	externalSecretPrefix     = "SECRET:"
+
+	// The placeholder prefix we look for to identify external secret references
+	// when parsing config file. Any placeholders in format ${SECRET:foo} will
+	// be replaced with the resolved content from the external secret store.
+	externalSecretPrefix = "SECRET:"
 )
 
 var (
-	// Flag names to ignore when generating a YAML map or populating flags (e. g.,
-	// the flag specifying the path to the config file)
+	// Flag names to ignore when generating a YAML map or populating flags
+	// (e.g. the flag specifying the path to the config file)
 	ignoreSet = make(map[string]struct{})
 
 	nilableKinds = map[reflect.Kind]struct{}{
@@ -654,10 +658,10 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, pref
 	return nil
 }
 
-func expandConfig(data []byte) ([]byte, error) {
+func expandConfig(data string) (string, error) {
 	ctx := context.Background()
 	var expandErr error
-	expandedData := []byte(os.Expand(string(data), func(s string) string {
+	expandedConfig := os.Expand(string(data), func(s string) string {
 		if strings.HasPrefix(s, externalSecretPrefix) {
 			if SecretProvider == nil {
 				expandErr = status.UnavailableError("config references an external secret but no secret provider is available")
@@ -671,16 +675,16 @@ func expandConfig(data []byte) ([]byte, error) {
 			}
 		}
 		return os.Getenv(s)
-	}))
+	})
 	if expandErr != nil {
-		return nil, expandErr
+		return "", expandErr
 	}
-	return expandedData, nil
+	return expandedConfig, nil
 }
 
 // OverrideFlagsFromData takes some YAML input and marshals it, then uses the
 // unmarshaled data to override the flags with names corresponding to the keys.
-func OverrideFlagsFromData(data []byte) error {
+func OverrideFlagsFromData(data string) error {
 	// expand environment variables
 	expandedData, err := expandConfig(data)
 	if err != nil {
@@ -697,7 +701,7 @@ func OverrideFlagsFromData(data []byte) error {
 // PopulateFlagsFromData takes some YAML input and unmarshals it, then uses the
 // unmarshaled data to populate the unset flags with names corresponding to the
 // keys.
-func PopulateFlagsFromData(data []byte) error {
+func PopulateFlagsFromData(data string) error {
 	// expand environment variables
 	expandedData, err := expandConfig(data)
 	if err != nil {
@@ -711,7 +715,7 @@ func PopulateFlagsFromData(data []byte) error {
 	return PopulateFlagsFromYAMLMap(yamlMap, node)
 }
 
-func getYAMLMapAndNodeFromData(data []byte) (map[string]any, *yaml.Node, error) {
+func getYAMLMapAndNodeFromData(data string) (map[string]any, *yaml.Node, error) {
 	yamlMap := make(map[string]any)
 	if err := yaml.Unmarshal([]byte(data), yamlMap); err != nil {
 		return nil, nil, status.InternalErrorf("Error parsing config file: %s", err)
@@ -757,7 +761,7 @@ func PopulateFlagsFromFile(configFile string) error {
 		return fmt.Errorf("Error reading config file: %s", err)
 	}
 
-	if err := PopulateFlagsFromData(fileBytes); err != nil {
+	if err := PopulateFlagsFromData(string(fileBytes)); err != nil {
 		return err
 	}
 

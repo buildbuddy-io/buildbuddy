@@ -171,11 +171,12 @@ func main() {
 	rootContext := context.Background()
 	version.Print()
 
+	// Flags must be parsed before config secrets integration is enabled since
+	// that feature itself depends on flag values.
 	flag.Parse()
 	if err := configsecrets.Configure(); err != nil {
 		log.Fatalf("Could not prepare config secrets provider: %s", err)
 	}
-
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
