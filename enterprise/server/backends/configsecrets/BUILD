@@ -15,3 +15,5 @@ go_library(
         "@org_golang_x_oauth2//google",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
