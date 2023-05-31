@@ -858,7 +858,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		var runErr error
-		if *bazelCommand == "maggie" {
+		if contains(args, "maggie") {
 			runErr = runCommand(ctx, *bazelCommand, []string{"test", "server/util/lru/..."}, ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
 		} else {
 			runErr = runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
@@ -943,6 +943,16 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 	return nil
+}
+
+func contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+
+	return false
 }
 
 type runInfo struct {
