@@ -93,7 +93,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
     rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getId() ?? "", "arraybuffer")
       .then((buffer: any) => {
-        // XXX: Logic change, test this!
         const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
         this.setState({
           actionResult: actionResult,
