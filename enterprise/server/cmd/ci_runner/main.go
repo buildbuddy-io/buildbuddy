@@ -139,6 +139,9 @@ var (
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
+	// TODO(Maggie): Clean up this flag when done debugging segfaults
+	forceExpunge = flag.Bool("force_expunge", false, "If set, run bazel clean --expunge before every action.")
+
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 
 	// TODO(Maggie): Clean up this field - consolidate with --commit_sha
@@ -857,6 +860,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
+		if *forceExpunge {
+			runCommand(ctx, *bazelCommand, []string{"clean", "--expunge"}, ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
+		}
 		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
