@@ -15,6 +15,7 @@ go_library(
         "//proto:soci_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/alert",
@@ -30,6 +31,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@com_github_opencontainers_go_digest//:go-digest",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
     ],
 )
