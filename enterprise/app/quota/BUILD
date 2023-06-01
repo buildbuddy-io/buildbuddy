@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "quota",
     srcs = ["quota.tsx"],
-    strict = True,
     deps = [
         "//enterprise/app/quota:bucket",
         "//enterprise/app/quota:namespace",
@@ -20,7 +19,6 @@ ts_library(
 ts_library(
     name = "bucket",
     srcs = ["bucket.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/errors:error_service",
@@ -38,7 +36,6 @@ ts_library(
 ts_library(
     name = "bucket_form",
     srcs = ["bucket_form.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/components/button",
@@ -54,7 +51,6 @@ ts_library(
 ts_library(
     name = "namespace",
     srcs = ["namespace.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/components/button",
@@ -76,7 +72,6 @@ ts_library(
 ts_library(
     name = "namespaces",
     srcs = ["namespaces.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/components/button",
@@ -94,7 +89,6 @@ ts_library(
 ts_library(
     name = "quota_breadcrumbs",
     srcs = ["quota_breadcrumbs.tsx"],
-    strict = True,
     deps = [
         "//app/components/link",
         "@npm//@types/react",

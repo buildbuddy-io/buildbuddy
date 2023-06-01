@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "input",
     srcs = ["input.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//react",

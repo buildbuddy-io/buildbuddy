@@ -7,7 +7,6 @@ exports_files(["secrets.css"])
 ts_library(
     name = "secrets",
     srcs = ["secrets.tsx"],
-    strict = True,
     deps = [
         "//enterprise/app/secrets:secrets_list",
         "//enterprise/app/secrets:update_secret",
@@ -19,7 +18,6 @@ ts_library(
 ts_library(
     name = "secrets_list",
     srcs = ["secrets_list.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/components/button",
@@ -38,7 +36,6 @@ ts_library(
 ts_library(
     name = "update_secret",
     srcs = ["update_secret.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/components/button",

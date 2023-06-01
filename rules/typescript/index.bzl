@@ -9,13 +9,10 @@ def _swc(**kwargs):
         **kwargs
     )
 
-def ts_library(name, srcs, strict = True, **kwargs):
-    tsconfig = "//:tsconfig"
-    if strict:
-        tsconfig = "//:tsconfig_strict"
+def ts_library(name, srcs, **kwargs):
     ts_project(
         name = name,
-        tsconfig = tsconfig,
+        tsconfig = "//:tsconfig",
         composite = True,
         transpiler = _swc,
         srcs = srcs,
@@ -32,7 +29,6 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
     # do code-splitting properly on commonjs modules that are produced by SWC.
     ts_library(
         name = "%s_esm" % name,
-        strict = True,
         testonly = 1,
         srcs = srcs,
         deps = deps + ["@npm//@types/jasmine"],

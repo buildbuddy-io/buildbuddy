@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "modal",
     srcs = ["modal.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//@types/react-modal",

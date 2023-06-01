@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "compare_invocations",
     srcs = ["compare_invocations.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/compare:diff_chunk",
@@ -30,7 +29,6 @@ ts_library(
 ts_library(
     name = "diff_chunk",
     srcs = ["diff_chunk.tsx"],
-    strict = True,
     deps = [
         "//app/components/button",
         "@npm//@types/diff-match-patch",
@@ -44,7 +42,6 @@ ts_library(
 ts_library(
     name = "diff_preprocessing",
     srcs = ["diff_preprocessing.tsx"],
-    strict = True,
     deps = [
         "//proto:build_event_stream_ts_proto",
         "//proto:command_line_ts_proto",

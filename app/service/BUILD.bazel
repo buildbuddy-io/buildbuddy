@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "rpc_service",
     srcs = ["rpc_service.ts"],
-    strict = True,
     deps = [
         "//app/util:async",
         "//proto:buildbuddy_service_ts_proto",

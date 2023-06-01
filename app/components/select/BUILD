@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "select",
     srcs = ["select.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//lucide-react",

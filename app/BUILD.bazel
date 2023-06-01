@@ -34,7 +34,6 @@ esbuild(
 ts_library(
     name = "app",
     srcs = ["app.tsx"],
-    strict = True,
     deps = [
         "//app/root",
         "@npm//@types/react",
