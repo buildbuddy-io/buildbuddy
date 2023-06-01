@@ -24,7 +24,6 @@ go_library(
         "//server/util/random",
         "//server/util/role",
         "//server/util/status",
-        "@io_gorm_gorm//:gorm",
     ],
 )
 
@@ -65,8 +64,8 @@ go_test(
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
     },
-    tags = ["docker"],
     shard_count = 5,
+    tags = ["docker"],
     deps = [
         ":userdb",
         "//enterprise/server/testutil/enterprise_testauth",
