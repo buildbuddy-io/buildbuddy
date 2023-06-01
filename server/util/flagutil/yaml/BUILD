@@ -21,6 +21,7 @@ go_test(
     srcs = ["yaml_test.go"],
     deps = [
         ":yaml",
+        "//server/util/flagutil",
         "//server/util/flagutil/common",
         "//server/util/flagutil/types",
         "//server/util/status",

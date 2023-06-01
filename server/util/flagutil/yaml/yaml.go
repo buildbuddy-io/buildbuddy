@@ -611,6 +611,74 @@ func RemoveEmptyMapsFromYAMLMap(m map[string]any) map[string]any {
 	return m
 }
 
+func expandValue(value string) (string, error) {
+	ctx := context.Background()
+	var expandErr error
+	expandedValue := os.Expand(value, func(s string) string {
+		if strings.HasPrefix(s, externalSecretPrefix) {
+			if SecretProvider == nil {
+				expandErr = status.UnavailableError("config references an external secret but no secret provider is available")
+			} else {
+				name := strings.TrimPrefix(s, externalSecretPrefix)
+				secret, err := SecretProvider.GetSecret(ctx, name)
+				if err != nil {
+					expandErr = status.UnavailableErrorf("could not retrieve config secret %q: %s", name, err)
+				}
+				return string(secret)
+			}
+		}
+		return os.Getenv(s)
+	})
+	if expandErr != nil {
+		return "", expandErr
+	}
+	return expandedValue, nil
+}
+
+func expandSliceValues(yamlSlice []any) error {
+	for i, v := range yamlSlice {
+		switch cv := v.(type) {
+		case map[string]any:
+			if err := expandMapValues(cv); err != nil {
+				return err
+			}
+		case []any:
+			if err := expandSliceValues(yamlSlice); err != nil {
+				return err
+			}
+		case string:
+			ev, err := expandValue(cv)
+			if err != nil {
+				return err
+			}
+			yamlSlice[i] = ev
+		}
+	}
+	return nil
+}
+
+func expandMapValues(yamlMap map[string]any) error {
+	for k, v := range yamlMap {
+		switch cv := v.(type) {
+		case map[string]any:
+			if err := expandMapValues(cv); err != nil {
+				return err
+			}
+		case []any:
+			if err := expandSliceValues(cv); err != nil {
+				return err
+			}
+		case string:
+			ev, err := expandValue(cv)
+			if err != nil {
+				return err
+			}
+			yamlMap[k] = ev
+		}
+	}
+	return nil
+}
+
 // RetypeAndFilterYAMLMap un-marshals yaml from the input yamlMap and then
 // re-marshals it into the types specified by the type map, replacing the
 // original value in the input map. Filters out any values not specified by the
@@ -658,40 +726,10 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, pref
 	return nil
 }
 
-func expandConfig(data string) (string, error) {
-	ctx := context.Background()
-	var expandErr error
-	expandedConfig := os.Expand(string(data), func(s string) string {
-		if strings.HasPrefix(s, externalSecretPrefix) {
-			if SecretProvider == nil {
-				expandErr = status.UnavailableError("config references an external secret but no secret provider is available")
-			} else {
-				name := strings.TrimPrefix(s, externalSecretPrefix)
-				secret, err := SecretProvider.GetSecret(ctx, name)
-				if err != nil {
-					expandErr = status.UnavailableErrorf("could not retrieve config secret %q: %s", name, err)
-				}
-				return string(secret)
-			}
-		}
-		return os.Getenv(s)
-	})
-	if expandErr != nil {
-		return "", expandErr
-	}
-	return expandedConfig, nil
-}
-
 // OverrideFlagsFromData takes some YAML input and marshals it, then uses the
 // unmarshaled data to override the flags with names corresponding to the keys.
 func OverrideFlagsFromData(data string) error {
-	// expand environment variables
-	expandedData, err := expandConfig(data)
-	if err != nil {
-		return err
-	}
-
-	yamlMap, node, err := getYAMLMapAndNodeFromData(expandedData)
+	yamlMap, node, err := getYAMLMapAndNodeFromData(data)
 	if err != nil {
 		return err
 	}
@@ -702,13 +740,7 @@ func OverrideFlagsFromData(data string) error {
 // unmarshaled data to populate the unset flags with names corresponding to the
 // keys.
 func PopulateFlagsFromData(data string) error {
-	// expand environment variables
-	expandedData, err := expandConfig(data)
-	if err != nil {
-		return err
-	}
-
-	yamlMap, node, err := getYAMLMapAndNodeFromData(expandedData)
+	yamlMap, node, err := getYAMLMapAndNodeFromData(data)
 	if err != nil {
 		return err
 	}
@@ -734,6 +766,10 @@ func getYAMLMapAndNodeFromData(data string) (map[string]any, *yaml.Node, error) 
 		IgnoreFilter,
 	)
 	if err != nil {
+		return nil, nil, err
+	}
+	// Expand environment variables and secrets.
+	if err := expandMapValues(yamlMap); err != nil {
 		return nil, nil, err
 	}
 	if err := RetypeAndFilterYAMLMap(yamlMap, typeMap, []string{}); err != nil {
