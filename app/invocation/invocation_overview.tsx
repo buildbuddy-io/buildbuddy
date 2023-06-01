@@ -157,21 +157,21 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {isBazelInvocation && (
             <div
               className="detail"
-              title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured`}>
+              title={`${this.props.model.buildMetrics?.targetMetrics?.targetsConfigured} configured`}>
               <Target className="icon" />
               {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
             </div>
           )}
           {isBazelInvocation && (
-            <div title={`${this.props.model.buildMetrics?.actionSummary.actionsCreated} created`} className="detail">
+            <div title={`${this.props.model.buildMetrics?.actionSummary?.actionsCreated} created`} className="detail">
               <Activity className="icon" />
-              {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
+              {this.props.model.buildMetrics?.actionSummary?.actionsExecuted} actions
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail">
               <Box className="icon" />
-              {this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages
+              {this.props.model.buildMetrics?.packageMetrics?.packagesLoaded} packages
             </div>
           )}
           {isBazelInvocation && (
@@ -202,7 +202,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <Link
               className="detail"
               href={RepoURL.parse(this.props.model.getRepo())?.pullRequestLink(
-                this.props.model.getPullRequestNumber()
+                this.props.model.getPullRequestNumber()!
               )}>
               <GitPullRequest className="icon" />#{this.props.model.getPullRequestNumber()}
             </Link>
@@ -218,7 +218,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {this.props.model.getBranchName() && this.props.model.getForkRepoURL() && (
             <div className="detail">
               <GitBranch className="icon" />
-              {RepoURL.parse(this.props.model.getForkRepoURL())?.owner}:{this.props.model.getBranchName()}
+              {RepoURL.parse(this.props.model.getForkRepoURL()!)?.owner}:{this.props.model.getBranchName()!}
             </div>
           )}
           {this.props.model.getCommit() && (

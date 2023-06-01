@@ -873,7 +873,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   )}
                   {this.state.eventData?.executions && (
                     <InvocationExecutionTable
-                      executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.IExecution)}
+                      executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.Execution)}
                       invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}></InvocationExecutionTable>
                   )}
                 </div>

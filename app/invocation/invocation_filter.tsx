@@ -43,7 +43,7 @@ export default class InvocationFilterComponent extends React.Component<Props> {
     return (
       <FilterInput
         className="invocation-filter"
-        value={this.props.search.get(this.filterType())}
+        value={this.props.search.get(this.filterType()) ?? ""}
         placeholder={this.props.placeholder ? this.props.placeholder : "Filter..."}
         onChange={this.handleFilterChange.bind(this)}
       />
