@@ -68,7 +68,6 @@ func Register(env environment.Env) error {
 
 	m := newMetricsGroupRegistry(env)
 	env.SetMetricsGroupRegistries(m)
-	// TODO(lulu):UnregisterRegistries when shutdown.
 	return nil
 }
 
