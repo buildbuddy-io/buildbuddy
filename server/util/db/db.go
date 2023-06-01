@@ -249,32 +249,23 @@ type postgresDSNFormatter struct {
 }
 
 func newPostgresDSNFormatter(ac *AdvancedConfig) (*postgresDSNFormatter, error) {
-	endpoint, err := url.Parse(ac.Endpoint)
+	host, port, err := net.SplitHostPort(ac.Endpoint)
 	if err != nil {
-		return nil, status.FailedPreconditionErrorf("endpoint %s is not a valid URL: %s", ac.Endpoint, err)
+		return nil, status.FailedPreconditionErrorf("Endpoint %s for postgres is not valid: %s", ac.Endpoint, err)
 	}
-	params := make(map[string][]string, 0)
-	if ac.Params != "" {
-		for _, param := range strings.Split(ac.Params, "&") {
-			ix := strings.Index(param, "&")
-			if ix < 0 {
-				return nil, status.FailedPreconditionErrorf("endpoint %s is not a valid URL: %s", ac.Endpoint, err)
-			}
-			key := param[:ix]
-			value := param[ix+1:]
-			params[key] = append(params[key], value)
-		}
+	params, err := url.ParseQuery(ac.Params)
+	if err != nil {
+		return nil, status.FailedPreconditionErrorf("Params %s for postgres are not valid: %s", params, err)
 	}
-	p := &postgresDSNFormatter{
-		host:     endpoint.Hostname(),
-		port:     endpoint.Port(),
+	params.Add("sslmode", "disable")
+	return &postgresDSNFormatter{
+		host:     host,
+		port:     port,
 		user:     ac.Username,
 		password: ac.Password,
 		dbname:   ac.DBName,
 		params:   params,
-	}
-	p.AddParam("sslmode", "disable")
-	return p, nil
+	}, nil
 }
 
 func (p *postgresDSNFormatter) AddParam(key, val string) {
@@ -285,14 +276,22 @@ func (p *postgresDSNFormatter) String() string {
 	var user *url.Userinfo
 	if p.password != "" {
 		user = url.UserPassword(p.user, p.password)
-	} else {
+	} else if p.user != "" {
 		user = url.User(p.user)
+	}
+	host := p.host
+	if p.port != "" {
+		host = net.JoinHostPort(p.host, p.port)
+	}
+	dbname := p.dbname
+	if !strings.HasPrefix(dbname, "/") {
+		dbname = "/" + dbname
 	}
 	dsn := url.URL{
 		Scheme:   "postgres",
-		Host:     net.JoinHostPort(p.host, p.port),
+		Host:     host,
 		User:     user,
-		Path:     p.dbname,
+		Path:     dbname,
 		RawQuery: url.Values(p.params).Encode(),
 	}
 	return dsn.String()
