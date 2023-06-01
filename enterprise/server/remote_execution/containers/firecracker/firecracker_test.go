@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -58,6 +59,7 @@ const (
 var (
 	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
 	debugMode        = flag.Bool("test_firecracker_debug", false, "Whether to run firecracker in DebugMode.")
+	testBazelBuild   = flag.Bool("test_bazel_build", false, "Test workflows (approximately) by cloning a git repo and running a bazel build.")
 
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
@@ -1132,6 +1134,53 @@ func TestFirecrackerLargeResult(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Equal(t, string(res.Stderr), "")
 	assert.Len(t, res.Stdout, stdoutSize)
+}
+
+func TestFirecrackerCloneAndBuildBazelRepo(t *testing.T) {
+	if !*testBazelBuild {
+		t.Skip()
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			set -x
+			id
+			export HOME=/root
+			cd ~/
+			mkdir -p ~/.cache
+			chown -R 0:0 ~/.cache
+			git clone https://github.com/bazelbuild/rules_foreign_cc
+			cd rules_foreign_cc
+			chown 0:0 $(which bazelisk)
+			stat $(which bazelisk)
+			bazelisk test ...
+		`},
+	}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                6,
+		MemSizeMB:              8000,
+		EnableNetworking:       true,
+		ScratchDiskSizeMB:      10_000,
+		JailerRoot:             tempJailerRoot(t),
+		DebugMode:              *debugMode,
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	require.NoError(t, res.Error)
 }
 
 func tree(label string) {

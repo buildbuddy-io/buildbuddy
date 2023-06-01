@@ -12,11 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Merovius/nbd"
+	"github.com/Merovius/nbd/nbdnl"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/samalba/buse-go/buse"
 	"google.golang.org/grpc"
 
 	nbdpb "github.com/buildbuddy-io/buildbuddy/proto/nbd"
@@ -34,16 +35,17 @@ const (
 // ClientDevice implements the BUSE interface by forwarding read and write
 // requests to a remote target.
 type ClientDevice struct {
-	ctx       context.Context
-	client    nbdpb.BlockDeviceClient
-	conn      *grpc.ClientConn
-	metadata  *nbdpb.DeviceMetadata
-	device    *buse.BuseDevice
+	ctx      context.Context
+	client   nbdpb.BlockDeviceClient
+	conn     *grpc.ClientConn
+	metadata *nbdpb.DeviceMetadata
+	// device    *buse.BuseDevice
+	device    *nbd.NetlinkDevice
 	mountPath string
 }
 
 // ClientDevice implements buse.BuseInterface
-var _ buse.BuseInterface = (*ClientDevice)(nil)
+// var _ buse.BuseInterface = (*ClientDevice)(nil)
 
 func dialHost() (*grpc.ClientConn, error) {
 	dialer := func(_ context.Context, _ string) (net.Conn, error) {
@@ -71,7 +73,11 @@ func NewClientDevice(ctx context.Context, label string) (*ClientDevice, error) {
 
 // DevicePath returns the /dev/nbd* path for this device, such as "/dev/nbd0"
 func (d *ClientDevice) DevicePath() string {
-	return fmt.Sprintf("/dev/nbd%d", d.metadata.GetDeviceId())
+	if d.device == nil {
+		// TODO: don't panic
+		panic("device is not yet created")
+	}
+	return fmt.Sprintf("/dev/nbd%d", d.device.Index)
 }
 
 func (d *ClientDevice) updateMetadata(ctx context.Context) error {
@@ -99,22 +105,28 @@ func (d *ClientDevice) createDevice(ctx context.Context) error {
 		return err
 	}
 
-	path := d.DevicePath()
-	device, err := buse.CreateDevice(path, uint(d.metadata.GetSizeBytes()), d)
+	device, err := nbd.Loopback(ctx, d, d.metadata.GetSizeBytes(), uint32(d.metadata.GetDeviceId()))
 	if err != nil {
-		return err
+		return status.WrapErrorf(err, "failed to create device %q", d.metadata.GetLabel())
 	}
 	d.device = device
-	go func() {
-		err := device.Connect()
-		log.Fatalf("die: %s unexpectedly disconnected: %s", d.DevicePath(), err)
-	}()
+
+	// path := d.DevicePath()
+	// device, err := buse.CreateDevice(path, uint(d.metadata.GetSizeBytes()), d)
+	// if err != nil {
+	// 	return err
+	// }
+	// d.device = device
+	// go func() {
+	// 	err := device.Connect()
+	// 	log.Fatalf("die: %s unexpectedly disconnected: %s", d.DevicePath(), err)
+	// }()
 
 	if err := d.waitForReady(ctx); err != nil {
 		return status.WrapError(err, "ready check poll failed")
 	}
 
-	log.Infof("Created network block device %q at %s in %s", d.metadata.GetLabel(), path, time.Since(start))
+	log.Infof("Created network block device %q at %s in %s", d.metadata.GetLabel(), d.DevicePath(), time.Since(start))
 	return nil
 }
 
@@ -173,7 +185,9 @@ func (d *ClientDevice) Mount(path string) error {
 		if err := d.updateMetadata(context.TODO()); err != nil {
 			return status.WrapError(err, "failed to fetch device metadata")
 		}
-		d.device.SetSize(uint(d.metadata.GetSizeBytes()))
+		if err := nbdnl.Reconfigure(d.device.Index, []*os.File{d.device.ClientSock}, d.metadata.SizeBytes, 0, 0); err != nil {
+			return status.WrapError(err, "failed to update device block size")
+		}
 	}
 	if err := syscall.Mount(d.DevicePath(), path, d.metadata.GetFilesystemType(), syscall.MS_RELATIME, "" /*=data*/); err != nil {
 		return status.InternalErrorf("failed to mount %s (type %s) to %s: %s", d.DevicePath(), d.metadata.GetFilesystemType(), path, err)
@@ -201,7 +215,8 @@ func (d *ClientDevice) Unmount() error {
 	return nil
 }
 
-func (d *ClientDevice) ReadAt(p []byte, off uint) error {
+// func (d *ClientDevice) ReadAt(p []byte, off uint) error {
+func (d *ClientDevice) ReadAt(p []byte, off int64) (int, error) {
 	cancel := canary.Start(1 * time.Second)
 	defer cancel()
 	var res *nbdpb.ReadResponse
@@ -223,10 +238,11 @@ func (d *ClientDevice) ReadAt(p []byte, off uint) error {
 			len(res.Data), len(p), off)
 	}
 	copy(p, res.Data)
-	return nil
+	return len(res.Data), nil
 }
 
-func (d *ClientDevice) WriteAt(p []byte, off uint) error {
+// func (d *ClientDevice) WriteAt(p []byte, off uint) error {
+func (d *ClientDevice) WriteAt(p []byte, off int64) (int, error) {
 	err := d.doWithRedial(func() error {
 		_, err := d.client.Write(d.ctx, &nbdpb.WriteRequest{
 			DeviceId: d.metadata.GetDeviceId(),
@@ -238,14 +254,17 @@ func (d *ClientDevice) WriteAt(p []byte, off uint) error {
 	if err != nil {
 		fatalf("%s: write failed: %s", d.DevicePath(), err)
 	}
+	return len(p), nil
+}
+
+// func (d *ClientDevice) Disconnect() {
+func (d *ClientDevice) Disconnect() error {
+	log.Errorf("%s unexpected disconnect", d.DevicePath())
 	return nil
 }
 
-func (d *ClientDevice) Disconnect() {
-	log.Errorf("%s unexpected disconnect", d.DevicePath())
-}
-
-func (d *ClientDevice) Flush() error {
+// func (d *ClientDevice) Flush() error {
+func (d *ClientDevice) Sync() error {
 	err := d.doWithRedial(func() error {
 		_, err := d.client.Sync(d.ctx, &nbdpb.SyncRequest{
 			DeviceId: d.metadata.GetDeviceId(),

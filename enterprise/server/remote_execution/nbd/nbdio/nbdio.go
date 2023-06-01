@@ -11,6 +11,7 @@ type BlockDevice interface {
 	io.ReaderAt
 	io.WriterAt
 	Sync() error
+	Close() error
 	Size() (int64, error)
 }
 

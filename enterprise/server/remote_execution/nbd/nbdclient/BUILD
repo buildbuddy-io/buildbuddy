@@ -12,8 +12,10 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_mdlayher_vsock//:vsock",
-        "@com_github_samalba_buse_go//buse",
+        "@com_github_merovius_nbd//:nbd",
+        "@com_github_merovius_nbd//nbdnl",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_x_sys//unix",
     ],
 )
 

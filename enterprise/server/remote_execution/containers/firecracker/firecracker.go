@@ -63,6 +63,7 @@ var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_worksp
 var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 var enableNBD = flag.Bool("executor.firecracker_enable_nbd", false, "Enables network block devices for firecracker VMs.")
+var netlinkDebug = flag.Bool("executor.firecracker_netlink_debug", false, "Enables debug logging for the netlink library used by the VM for NBD connections.")
 
 const (
 	// How long to wait for the VMM to listen on the firecracker socket.
@@ -310,6 +311,7 @@ type FirecrackerContainer struct {
 	// When NBD is enabled, this is the running NBD server that serves the VM
 	// disks.
 	nbdServer       *nbdserver.Server
+	scratchDevice   *nbdserver.Device
 	workspaceDevice *nbdserver.Device
 
 	jailerRoot         string            // the root dir the jailer will work in
@@ -794,18 +796,11 @@ func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
 
 	if *enableNBD {
 		// Swap out the backing file for the workspace device.
-		df := c.workspaceDevice.BlockDevice.(*nbdio.File)
-		_ = df.Sync()
-		_ = df.Close()
-
+		_ = c.workspaceDevice.BlockDevice.Close()
 		f, err := os.OpenFile(c.workspaceFSPath(), os.O_RDWR, 0)
 		if err != nil {
 			return status.WrapError(err, "open workspace image")
 		}
-		go func() {
-			<-ctx.Done()
-			f.Close()
-		}()
 		c.workspaceDevice.BlockDevice = &nbdio.File{File: f}
 		log.Debugf("Set new backing image for workspace NBD")
 	} else {
@@ -907,6 +902,11 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 	}
 	if *enableNBD {
 		bootArgs = "-enable_nbd " + bootArgs
+	}
+	if *netlinkDebug {
+		// Set NLDEBUG=1 env var so that the go netlink library logs all sends
+		// and recvs.
+		bootArgs = "NLDEBUG=1 " + bootArgs
 	}
 
 	cgroupVersion, err := getCgroupVersion()
@@ -1225,6 +1225,7 @@ func (c *FirecrackerContainer) getNetworkBlockDevices(ctx context.Context) ([]*n
 	if err != nil {
 		return nil, err
 	}
+	c.scratchDevice = sd
 	wd, err := c.getExt4Device(ctx, c.workspaceFSPath(), 1, workspaceDriveID)
 	if err != nil {
 		return nil, err
@@ -1238,10 +1239,6 @@ func (c *FirecrackerContainer) getExt4Device(ctx context.Context, path string, i
 	if err != nil {
 		return nil, err
 	}
-	go func() {
-		<-ctx.Done()
-		f.Close()
-	}()
 	device, err := nbdserver.NewExt4Device(f, id, label)
 	if err != nil {
 		return nil, err
@@ -1736,6 +1733,14 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if c.nbdServer != nil {
 		c.nbdServer.Stop()
 		c.nbdServer = nil
+	}
+	if c.workspaceDevice != nil {
+		c.workspaceDevice.Close()
+		c.workspaceDevice = nil
+	}
+	if c.scratchDevice != nil {
+		c.scratchDevice.Close()
+		c.scratchDevice = nil
 	}
 	return lastErr
 }

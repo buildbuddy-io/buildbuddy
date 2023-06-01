@@ -21,6 +21,7 @@ require (
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.2.0
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.33.0
+	github.com/Merovius/nbd v0.0.0-20190302171823-26e01c0f01c9
 	github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e
 	github.com/aws/aws-sdk-go v1.43.9
 	github.com/awslabs/soci-snapshotter v0.1.0
@@ -90,7 +91,6 @@ require (
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.37.0
 	github.com/rs/zerolog v1.20.0
-	github.com/samalba/buse-go v0.0.0-20171001000303-9289eeeb8c7f
 	github.com/shirou/gopsutil/v3 v3.22.10
 	github.com/sirupsen/logrus v1.9.0
 	github.com/smacker/go-tree-sitter v0.0.0-20230226123037-c459dbde1464
@@ -237,6 +237,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-ieproxy v0.0.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
+	github.com/mdlayher/genetlink v1.0.0 // indirect
 	github.com/mdlayher/netlink v1.6.0 // indirect
 	github.com/mdlayher/socket v0.2.0 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
