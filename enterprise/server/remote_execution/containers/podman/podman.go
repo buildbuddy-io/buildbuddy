@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -125,6 +127,7 @@ func runSociStore(ctx context.Context) {
 		cmd.Run()
 
 		log.Infof("Detected soci store crash, restarting")
+		metrics.PodmanSociStoreCrashes.Inc()
 		// If the store crashed, the path must be unmounted to recover.
 		syscall.Unmount(sociStorePath, 0)
 
@@ -524,13 +527,22 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	if *imageStreamingEnabled && c.sociArtifactStoreClient != nil {
+		startTime := time.Now()
 		if err := c.getSociArtifacts(ctx, creds); err != nil {
 			return err
 		}
+		metrics.PodmanGetSociArtifactsLatencyUsec.
+			With(prometheus.Labels{metrics.ContainerImageTag: c.image}).
+			Observe(float64(time.Now().Sub(startTime).Microseconds()))
 	}
+
+	startTime := time.Now()
 	if err := c.pullImage(ctx, creds); err != nil {
 		return err
 	}
+	metrics.PodmanColdImagePullLatencyMsec.
+		With(prometheus.Labels{metrics.ContainerImageTag: c.image}).
+		Observe(float64(time.Now().Sub(startTime).Milliseconds()))
 	ps.pulled = true
 	return nil
 }
