@@ -140,9 +140,6 @@ var (
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
-
-	// TODO(Maggie): Clean up this field - consolidate with --commit_sha
-	targetCommitSHA = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
 )
 
 type workspace struct {
@@ -1415,9 +1412,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 	}
 
 	// If a commit is set, use it
-	if *targetCommitSHA != "" {
-		checkoutRef = *targetCommitSHA
-	} else if *commitSHA != "" {
+	if *commitSHA != "" {
 		checkoutRef = *commitSHA
 	}
 
