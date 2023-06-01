@@ -3,12 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 load("@npm//@bazel/typescript:index.bzl", "ts_config")
 load("//rules/go:index.bzl", "go_sdk_tool")
 
-# TODO(bduffany): The sh_toolchain config here is a workaround for
-# https://github.com/aspect-build/rules_swc/issues/20
-# We should probably either move these to the buildbuddy-toolchain repo
-# or add a symlink from /usr/bin/bash -> /bin/bash to remove the need for these.
-load("@bazel_tools//tools/sh:sh_toolchain.bzl", "sh_toolchain")
-
 package(default_visibility = ["//visibility:public"])
 
 nogo(
@@ -202,6 +196,12 @@ platform(
         "enable-vfs": "true",
     },
 )
+
+# TODO(bduffany): The sh_toolchain config here is a workaround for
+# https://github.com/aspect-build/rules_swc/issues/20
+# We should probably either move these to the buildbuddy-toolchain repo
+# or add a symlink from /usr/bin/bash -> /bin/bash to remove the need for these.
+load("@bazel_tools//tools/sh:sh_toolchain.bzl", "sh_toolchain")
 
 sh_toolchain(
     name = "bash_rbe_ubuntu1604",
