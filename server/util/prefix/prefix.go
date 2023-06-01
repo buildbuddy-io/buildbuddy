@@ -21,6 +21,8 @@ func addPrefix(prefix, key string) string {
 
 func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (string, error) {
 	auth := env.GetAuthenticator()
+	// Note: authenticator can't be nil, even in the OSS version (we use
+	// NullAuthenticator insteadof nil).
 	u, err := auth.AuthenticatedUser(ctx)
 	if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
 		return addPrefix(interfaces.AuthAnonymousUser, key), nil
