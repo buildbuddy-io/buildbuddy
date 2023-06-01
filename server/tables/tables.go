@@ -832,16 +832,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			}
 			log.Debugf("MySQL Version: %q", versionStr)
 			postMigrate = append(postMigrate, func() error {
-				return postMigrateInvocationUUIDForPostgresOrMySQL(db)
-			})
-		case postgresDialect:
-			versionStr := ""
-			if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
-				return nil, err
-			}
-			log.Debugf("Postgres Version: %q", versionStr)
-			postMigrate = append(postMigrate, func() error {
-				return postMigrateInvocationUUIDForPostgresOrMySQL(db)
+				return postMigrateInvocationUUIDForMySQL(db)
 			})
 		default:
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
@@ -877,7 +868,7 @@ func updateInBatches(db *gorm.DB, baseQuery string, batchSize int64) error {
 	}
 }
 
-func postMigrateInvocationUUIDForPostgresOrMySQL(db *gorm.DB) error {
+func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	var updateInvocationStmt, countPrimaryKeyStmt string
 	switch db.Dialector.Name() {
 	case mysqlDialect:
