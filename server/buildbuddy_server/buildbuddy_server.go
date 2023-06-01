@@ -236,7 +236,7 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 	}
 	if tu == nil {
 		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-		return nil, status.UnauthenticatedError("User not found")
+		return nil, status.UnauthenticatedErrorf("User %q not found", req.GetUserId())
 	}
 
 	selectedGroupID := ""
