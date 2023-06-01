@@ -21,6 +21,7 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
@@ -81,7 +82,32 @@ func testInjectFailureAfterBazelEvent(t *testing.T, payloadMsg interface{}) {
 		&inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: result.InvocationID}})
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(res.Invocation), 0)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, res.Invocation[0].GetInvocationStatus())
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, res.Invocation[0].GetInvocationStatus())
+	assert.Equal(t, true, res.Invocation[0].Success)
+}
+
+func TestBuildWithRetry_InjectFailureWhileServerIsSendingACKs(t *testing.T) {
+	app := buildbuddy.Run(t)
+	bepClient := app.PublishBuildEventClient(t)
+	proxy := StartBEPProxy(t, bepClient)
+	proxy.FailOnce(BeforeServerSendsNthACK(2))
+
+	ctx := context.Background()
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	buildFlags := append([]string{"//:hello.txt"}, app.BESBazelFlags()...)
+	buildFlags = append(buildFlags, "--bes_backend="+proxy.GRPCAddress())
+
+	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+
+	require.NoError(t, result.Error)
+	assert.Contains(t, result.Stderr, "Build completed successfully")
+	bbService := app.BuildBuddyServiceClient(t)
+	res, err := bbService.GetInvocation(
+		context.Background(),
+		&inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: result.InvocationID}})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(res.Invocation), 0)
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, res.Invocation[0].GetInvocationStatus())
 	assert.Equal(t, true, res.Invocation[0].Success)
 }
 
@@ -132,6 +158,20 @@ func AfterForwardBazelEvent(t *testing.T, payloadMsg interface{}) StreamErrorInj
 		}
 		if reflect.TypeOf(bazelEvent.GetPayload()).AssignableTo(reflect.TypeOf(payloadType)) {
 			return status.UnavailableError("Proxy: Injected error for test")
+		}
+		return nil
+	}
+}
+
+// BeforeServerSendsNthACK returns an error injector that injects an error just
+// before the server sends the n'th ACK.
+func BeforeServerSendsNthACK(n int64) StreamErrorInjector {
+	return func(event *StreamEvent) error {
+		if event.ServerRecv == nil || event.ServerRecv.res == nil {
+			return nil
+		}
+		if event.ServerRecv.res.SequenceNumber == n {
+			return status.UnavailableErrorf("Proxy: Injected error before server sends ACK %d", n)
 		}
 		return nil
 	}

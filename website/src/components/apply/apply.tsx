@@ -10,6 +10,7 @@ let form = {
   phone: React.createRef<HTMLInputElement>(),
   linkedin: React.createRef<HTMLInputElement>(),
   github: React.createRef<HTMLInputElement>(),
+  blurb: React.createRef<HTMLInputElement>(),
   button: React.createRef<HTMLButtonElement>(),
 };
 
@@ -22,6 +23,7 @@ function Component() {
       <input ref={form.phone} placeholder="Phone number" />
       <input ref={form.linkedin} placeholder="LinkedIn Profile" />
       <input ref={form.github} placeholder="Github Profile" />
+      <textarea ref={form.blurb} className={styles.span2} placeholder="(Optional) Anything else?" />
       <button
         ref={form.button}
         onClick={() => sendMessage()}
@@ -34,7 +36,7 @@ function Component() {
 
 function sendMessage() {
   message(
-    `New Job Application!\nURL: ${window.location.href}\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nPhone: ${form.phone.current.value}\nLinkedIn: ${form.linkedin.current.value}\nGithub: ${form.github.current.value}`
+    `New Job Application!\nURL: ${window.location.href}\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nPhone: ${form.phone.current.value}\nLinkedIn: ${form.linkedin.current.value}\nGithub: ${form.github.current.value}\nBlurb: ${form.blurb.current.value}`
   );
 
   form.firstName.current.disabled = true;
@@ -43,6 +45,7 @@ function sendMessage() {
   form.phone.current.disabled = true;
   form.linkedin.current.disabled = true;
   form.github.current.disabled = true;
+  form.blurb.current.disabled = true;
 
   form.button.current.innerText = "Application Submitted!";
   form.button.current.disabled = true;

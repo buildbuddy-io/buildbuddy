@@ -68,7 +68,7 @@ func TestE2E(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d, err := digest.Compute(f)
+		d, err := digest.Compute(f, repb.DigestFunction_SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}

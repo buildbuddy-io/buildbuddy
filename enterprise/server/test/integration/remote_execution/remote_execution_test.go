@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -145,13 +146,21 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	invocationID := "testabc123"
 
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
 	cmd := rbe.Execute(
 		&repb.Command{Arguments: []string{"sh", "-c", `
 			echo >&1 ExampleStdout
 			echo >&2 ExampleStderr
       # Wait for context to be canceled
 			sleep 100
-		`}},
+		`},
+			Platform: platform,
+		},
 		&rbetest.ExecuteOpts{
 			ActionTimeout: 750 * time.Millisecond,
 			InvocationID:  invocationID,
@@ -207,7 +216,7 @@ func TestSimpleCommand_Abort_ReturnsExecutionError(t *testing.T) {
 
 	// TODO(bduffany): Aborted probably makes a bit more sense here
 	assert.True(t, status.IsResourceExhaustedError(err), "expecting ResourceExhausted error but got: %s", err)
-	assert.Contains(t, err.Error(), "signal: aborted")
+	assert.Contains(t, err.Error(), fmt.Sprintf("signal: %s", syscall.SIGABRT))
 	assert.Equal(t, "Debug message to help diagnose abort()\n", res.Stderr)
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	// The executor thinks this is a Bazel task, so will let bazel retry.
@@ -271,7 +280,18 @@ func TestTimeoutAlwaysReturnsDeadlineExceeded(t *testing.T) {
 
 	opts := &rbetest.ExecuteOpts{ActionTimeout: 1 * time.Millisecond}
 	// Note: The actual command here doesn't matter since we override the response.
-	cmd := rbe.Execute(&repb.Command{Arguments: []string{"sh", "-c", "exit 0"}}, opts)
+	cmd := rbe.Execute(
+		&repb.Command{
+			Arguments: []string{"sh", "-c", "exit 0"},
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "OSFamily", Value: runtime.GOOS},
+					{Name: "Arch", Value: runtime.GOARCH},
+				},
+			},
+		},
+		opts,
+	)
 	res := cmd.MustTerminateAbnormally()
 
 	assert.True(t, status.IsDeadlineExceededError(res.Err), "expected DeadlineExceeded, got: %s", res.Err)
@@ -289,7 +309,7 @@ func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 	})
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		Name:   "executor",
-		APIKey: rbetest.ExecutorAPIKey,
+		APIKey: rbe.APIKey1,
 	})
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "echo hello && echo bye >&2")
@@ -313,7 +333,7 @@ func TestSimpleCommand_RunnerReuse_CanReadPreviouslyWrittenFileButNotOutputDirs(
 	}
 
 	// Note: authentication is required for workspace reuse, currently.
-	opts := &rbetest.ExecuteOpts{UserID: rbe.UserID1}
+	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
@@ -358,7 +378,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -375,7 +395,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 		// present as "b.input" in the previous action).
 		"f1.input": "B",
 	})
-	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
+	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, APIKey: rbe.APIKey1}
 
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -408,7 +428,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -423,7 +443,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 		"f1.input": "B",
 		"f2.input": "B",
 	})
-	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
+	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, APIKey: rbe.APIKey1}
 
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -451,7 +471,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{UserID: rbe.UserID1}
+	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"touch", "foo.txt"},
@@ -492,7 +512,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 		},
 	}
 	opts := &rbetest.ExecuteOpts{
-		UserID: rbe.UserID1,
+		APIKey: rbe.APIKey1,
 		RemoteHeaders: map[string]string{
 			"x-buildbuddy-platform.pool": "foo",
 		},
@@ -915,7 +935,7 @@ func TestComplexActionIO(t *testing.T) {
 	missing := []string{}
 	for parent, nSkippedBytes := range skippedBytes {
 		for dir, sizes := range dirLayout {
-			for i, _ := range sizes {
+			for i := range sizes {
 				inputRelPath := filepath.Join(dir, fmt.Sprintf("file_%d.input", i))
 				outputRelPath := filepath.Join(parent, dir, fmt.Sprintf("file_%d.output", i))
 				if testfs.Exists(t, outDir, outputRelPath) {
@@ -1070,7 +1090,7 @@ func TestOutputPaths(t *testing.T) {
 	}
 }
 
-func TestOuputPathsDirectoriesAndFiles(t *testing.T) {
+func TestOutputPathsDirectoriesAndFiles(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	dirLayout := []string{"", "a", "b", "c"}
 	files := []string{"a.txt", "b.txt"}
@@ -1219,7 +1239,7 @@ func TestComplexActionIOWithCompression(t *testing.T) {
 	missing := []string{}
 	for parent, nSkippedBytes := range skippedBytes {
 		for dir, sizes := range dirLayout {
-			for i, _ := range sizes {
+			for i := range sizes {
 				inputRelPath := filepath.Join(dir, fmt.Sprintf("file_%d.input", i))
 				outputRelPath := filepath.Join(parent, dir, fmt.Sprintf("file_%d.output", i))
 				if testfs.Exists(t, outDir, outputRelPath) {
@@ -1503,7 +1523,7 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	}, &rbetest.ExecuteOpts{SimulateMissingDigest: true})
 	err := cmd.MustFailToStart()
 
-	require.Contains(t, err.Error(), "not found in cache")
+	require.True(t, status.IsFailedPreconditionError(err))
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	// NotFound errors should not be retried by the scheduler, since this test
 	// is simulating a bazel task, and bazel will retry on its own.
@@ -1513,7 +1533,15 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 func TestRedisRestart(t *testing.T) {
 	workspaceContents := map[string]string{
 		"WORKSPACE": `workspace(name = "integration_test")`,
-		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "sleep 5 && echo 'Hello world' > $@")`,
+		"BUILD": fmt.Sprintf(`genrule(
+  name = "hello_txt",
+  outs = ["hello.txt"],
+  cmd_bash = "sleep 5 && echo 'Hello world' > $@",
+  exec_properties = {
+    "OSFamily": "%s",
+    "Arch": "%s",
+  },
+)`, runtime.GOOS, runtime.GOARCH),
 	}
 
 	var redisShards []*testredis.Handle
@@ -1528,7 +1556,7 @@ func TestRedisRestart(t *testing.T) {
 	for _, shard := range redisShards {
 		args = append(args, "--remote_execution.sharded_redis.shards="+shard.Target)
 	}
-	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.NoAuthConfig, args...)
+	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig, args...)
 
 	_ = testexecutor.Run(t,
 		"enterprise/server/cmd/executor/executor_/executor",
@@ -1631,7 +1659,16 @@ func TestActionMerging(t *testing.T) {
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
-	cmd := &repb.Command{Arguments: []string{"sh", "-c", "sleep 10"}}
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "sleep 10"},
+		Platform:  platform,
+	}
 	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
 	op1 := cmd1.WaitAccepted()
 
@@ -1640,11 +1677,11 @@ func TestActionMerging(t *testing.T) {
 
 	require.Equal(t, op1, op2, "the execution IDs for both commands should be the same")
 
-	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, UserID: rbe.UserID1, InvocationID: "invocation3"})
+	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation3"})
 	op3 := cmd3.WaitAccepted()
 	require.NotEqual(t, op2, op3, "actions under different organizations should not be merged")
 
-	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, UserID: rbe.UserID1, InvocationID: "invocation4"})
+	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation4"})
 	op4 := cmd4.WaitAccepted()
 	require.Equal(t, op3, op4, "expected actions to be merged")
 }

@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/operation",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",

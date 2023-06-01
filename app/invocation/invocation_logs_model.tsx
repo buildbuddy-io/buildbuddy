@@ -16,8 +16,8 @@ export default class InvocationLogsModel {
   readonly onChange: Subject<undefined> = new Subject<undefined>();
 
   private logs = "";
-  private responseSubscription: Subscription;
-  private pollTailTimeout: number | null = null;
+  private responseSubscription?: Subscription;
+  private pollTailTimeout?: number;
 
   // Length of the log prefix which has already been persisted. The remainder of
   // the log is considered "live" and may be updated on subsequent fetches.
@@ -30,9 +30,11 @@ export default class InvocationLogsModel {
   }
 
   stopFetching() {
-    window.clearTimeout(this.pollTailTimeout);
+    if (this.pollTailTimeout !== undefined) {
+      window.clearTimeout(this.pollTailTimeout);
+    }
     this.responseSubscription?.unsubscribe();
-    this.responseSubscription = null;
+    this.responseSubscription = undefined;
   }
 
   getLogs(): string {
@@ -63,7 +65,7 @@ export default class InvocationLogsModel {
         // Empty next chunk ID means the invocation is complete and we've reached
         // the end of the log.
         if (!response.nextChunkId) {
-          this.responseSubscription = null;
+          this.responseSubscription = undefined;
           // Notify of change to `isFetching` state.
           this.onChange.next();
           return;

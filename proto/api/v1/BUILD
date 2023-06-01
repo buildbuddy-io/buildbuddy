@@ -1,5 +1,6 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("//proto:defs.bzl", "ts_proto_library")
 
 proto_library(
     name = "common_proto",
@@ -21,6 +22,17 @@ go_proto_library(
     visibility = ["//visibility:public"],
 )
 
+ts_proto_library(
+    name = "common_ts_proto",
+    proto = ":common_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:duration_ts_proto",
+        "//proto:grpc_status_ts_proto",
+        "//proto:timestamp_ts_proto",
+    ],
+)
+
 proto_library(
     name = "api_v1_proto",
     srcs = [
@@ -30,12 +42,14 @@ proto_library(
         "log.proto",
         "service.proto",
         "target.proto",
+        "workflow.proto",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":common_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
+        "@go_googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -47,5 +61,6 @@ go_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
     ],
 )

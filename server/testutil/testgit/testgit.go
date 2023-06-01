@@ -106,7 +106,7 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 // and initializes the directory with an initial commit of all the existing
 // files.
 func Init(t testing.TB, dir string) {
-	testshell.Run(t, dir, `git init`)
+	testshell.Run(t, dir, `git -c init.defaultBranch=master init`)
 	configure(t, dir)
 	testshell.Run(t, dir, `git add . && git commit -m "Initial commit"`)
 }
@@ -132,6 +132,16 @@ func MakeTempRepoClone(t testing.TB, path string) string {
 	testshell.Run(t, copyPath, fmt.Sprintf(`git clone file://%q .`, path))
 	configure(t, copyPath)
 	return copyPath
+}
+
+// CommitFiles writes the given file contents and creates a new commit with the changes.
+// Contents are specified as a map of file path to file contents.
+// Returns the sha of the new commit
+func CommitFiles(t testing.TB, repoPath string, contents map[string]string) string {
+	testfs.WriteAllFileContents(t, repoPath, contents)
+	testshell.Run(t, repoPath, `git add . && git commit -m "Initial commit"`)
+	commitSHA := strings.TrimSpace(testshell.Run(t, repoPath, `git rev-parse HEAD`))
+	return commitSHA
 }
 
 func configure(t testing.TB, repoPath string) {

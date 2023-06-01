@@ -2,22 +2,30 @@ package invocation_search_service
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 const (
@@ -26,15 +34,21 @@ const (
 	pageSizeOffsetPrefix = "offset_"
 )
 
+var (
+	olapInvocationSearchEnabled = flag.Bool("app.olap_invocation_search_enabled", true, "If true, InvocationSearchService will query clickhouse for some queries.")
+)
+
 type InvocationSearchService struct {
-	env environment.Env
-	h   interfaces.DBHandle
+	env     environment.Env
+	dbh     interfaces.DBHandle
+	olapdbh interfaces.OLAPDBHandle
 }
 
-func NewInvocationSearchService(env environment.Env, h interfaces.DBHandle) *InvocationSearchService {
+func NewInvocationSearchService(env environment.Env, h interfaces.DBHandle, oh interfaces.OLAPDBHandle) *InvocationSearchService {
 	return &InvocationSearchService{
-		env: env,
-		h:   h,
+		env:     env,
+		dbh:     h,
+		olapdbh: oh,
 	}
 }
 
@@ -45,21 +59,98 @@ func defaultSortParams() *inpb.InvocationSort {
 	}
 }
 
-func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, sql string, values ...interface{}) ([]*tables.Invocation, error) {
-	rows, err := s.h.RawWithOptions(ctx, db.Opts().WithQueryName("search_invocations"), sql, values...).Rows()
+func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, invocationIds []string, sort *inpb.InvocationSort) ([]*inpb.Invocation, error) {
+	q := query_builder.NewQuery(`SELECT * FROM "Invocations" as i`)
+	q.AddWhereClause("i.invocation_id IN ?", invocationIds)
+	addOrderBy(sort, q)
+	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
+	addPermissionsCheckToQuery(u, q)
+
+	qStr, qArgs := q.Build()
+
+	rows, err := s.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("hydrate_invocation_search"), qStr, qArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+
 	defer rows.Close()
-	invocations := make([]*tables.Invocation, 0)
+	out := make([]*tables.Invocation, 0)
 	for rows.Next() {
 		var ti tables.Invocation
-		if err := s.h.DB(ctx).ScanRows(rows, &ti); err != nil {
+		if err := s.dbh.DB(ctx).ScanRows(rows, &ti); err != nil {
 			return nil, err
 		}
-		invocations = append(invocations, &ti)
+		out = append(out, &ti)
 	}
+
+	invocations := make([]*inpb.Invocation, 0)
+	for _, ti := range out {
+		invocations = append(invocations, build_event_handler.TableInvocationToProto(ti))
+	}
+
 	return invocations, nil
+}
+
+func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.Context, req *inpb.SearchInvocationRequest, offset int64, limit int64) ([]*inpb.Invocation, int64, error) {
+	sql, args, err := s.buildPrimaryQuery(ctx, "invocation_uuid", offset, limit, req)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("clickhouse_search_invocations"), sql, args...).Rows()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	tis := make([]string, 0)
+	for rows.Next() {
+		var ti schema.Invocation
+		if err := s.olapdbh.DB(ctx).ScanRows(rows, &ti); err != nil {
+			return nil, 0, err
+		}
+		fixedUUID, err := uuid.Base64StringToString(ti.InvocationUUID)
+		if err != nil {
+			return nil, 0, err
+		}
+		tis = append(tis, fixedUUID)
+	}
+
+	invocations, err := s.hydrateInvocationsFromDB(ctx, tis, req.GetSort())
+	// It's possible but unlikely that some of the invocations we find in
+	// Clickhouse can't be found in the main database.  In this case, we
+	// silently drop these invocations but still use the number of
+	// invocations returned by Clickhouse as the offset for future queries
+	// so that the pagination offset picks up from the right place.
+	return invocations, int64(len(tis)), err
+}
+
+func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest, offset int64, limit int64) ([]*inpb.Invocation, int64, error) {
+	sql, args, err := s.buildPrimaryQuery(ctx, "*", offset, limit, req)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("search_invocations"), sql, args...).Rows()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	tis := make([]*tables.Invocation, 0)
+	for rows.Next() {
+		var ti tables.Invocation
+		if err := s.dbh.DB(ctx).ScanRows(rows, &ti); err != nil {
+			return nil, 0, err
+		}
+		tis = append(tis, &ti)
+	}
+
+	invocations := make([]*inpb.Invocation, 0)
+	for _, ti := range tis {
+		invocations = append(invocations, build_event_handler.TableInvocationToProto(ti))
+	}
+
+	return invocations, int64(len(invocations)), nil
 }
 
 func (s *InvocationSearchService) IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error {
@@ -97,99 +188,14 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	q = q.AddWhereClause("("+orQuery+")", orArgs...)
 }
 
-func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
-	if err := s.checkPreconditions(req); err != nil {
-		return nil, err
-	}
-	u, err := perms.AuthenticatedUser(ctx, s.env)
-	if err != nil {
-		return nil, err
-	}
-	if blocklist.IsBlockedForStatsQuery(u.GetGroupID()) {
-		return nil, status.ResourceExhaustedErrorf("Too many rows.")
-	}
+func (s *InvocationSearchService) shouldQueryClickhouse(req *inpb.SearchInvocationRequest) bool {
+	return s.olapdbh != nil && *olapInvocationSearchEnabled && (len(req.GetQuery().GetTags()) > 0 || len(req.GetQuery().GetFilter()) > 0)
+}
 
-	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
-
-	// Don't include anonymous builds.
-	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")
-
-	if user := req.GetQuery().GetUser(); user != "" {
-		q.AddWhereClause("i.user = ?", user)
-	}
-	if host := req.GetQuery().GetHost(); host != "" {
-		q.AddWhereClause("i.host = ?", host)
-	}
-	if url := req.GetQuery().GetRepoUrl(); url != "" {
-		q.AddWhereClause("i.repo_url = ?", url)
-	}
-	if branch := req.GetQuery().GetBranchName(); branch != "" {
-		q.AddWhereClause("i.branch_name = ?", branch)
-	}
-	if command := req.GetQuery().GetCommand(); command != "" {
-		q.AddWhereClause("i.command = ?", command)
-	}
-	if sha := req.GetQuery().GetCommitSha(); sha != "" {
-		q.AddWhereClause("i.commit_sha = ?", sha)
-	}
-	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
-		q.AddWhereClause("i.group_id = ?", group_id)
-	}
-	roleClauses := query_builder.OrClauses{}
-	for _, role := range req.GetQuery().GetRole() {
-		roleClauses.AddOr("i.role = ?", role)
-	}
-	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
-		q.AddWhereClause("("+roleQuery+")", roleArgs...)
-	}
-	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
-		q.AddWhereClause("i.updated_at_usec >= ?", start.AsTime().UnixMicro())
-	}
-	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
-		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
-	}
-
-	statusClauses := query_builder.OrClauses{}
-	for _, status := range req.GetQuery().GetStatus() {
-		switch status {
-		case inpb.OverallStatus_SUCCESS:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 1)
-		case inpb.OverallStatus_FAILURE:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 0)
-		case inpb.OverallStatus_IN_PROGRESS:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_PARTIAL_INVOCATION_STATUS))
-		case inpb.OverallStatus_DISCONNECTED:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS))
-		case inpb.OverallStatus_UNKNOWN_OVERALL_STATUS:
-			continue
-		default:
-			continue
-		}
-	}
-	statusQuery, statusArgs := statusClauses.Build()
-	if statusQuery != "" {
-		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
-	}
-
-	// The underlying data is not precise enough to accurately support nanoseconds and there's no use case for it yet.
-	if req.GetQuery().GetMinimumDuration().GetNanos() != 0 || req.GetQuery().GetMaximumDuration().GetNanos() != 0 {
-		return nil, status.InvalidArgumentError("InvocationSearchService does not support nanoseconds in duration queries")
-	}
-
-	if req.GetQuery().GetMinimumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec >= ?`, req.GetQuery().GetMinimumDuration().GetSeconds()*1000*1000)
-	}
-	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
-	}
-
-	// Always add permissions check.
-	addPermissionsCheckToQuery(u, q)
-
-	sort := req.Sort
+func addOrderBy(sort *inpb.InvocationSort, q *query_builder.Query) {
 	if sort == nil {
 		sort = defaultSortParams()
-	} else if req.Sort.SortField == inpb.InvocationSort_UNKNOWN_SORT_FIELD {
+	} else if sort.SortField == inpb.InvocationSort_UNKNOWN_SORT_FIELD {
 		sort.SortField = defaultSortParams().SortField
 	}
 	switch sort.SortField {
@@ -219,36 +225,185 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	case inpb.InvocationSort_UNKNOWN_SORT_FIELD:
 		alert.UnexpectedEvent("invocation_search_no_sort_order")
 	}
+}
 
-	limitSize := defaultLimitSize
-	if req.Count > 0 {
-		limitSize = int64(req.Count)
+func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields string, offset int64, limit int64, req *inpb.SearchInvocationRequest) (string, []interface{}, error) {
+	if req.GetQuery().GetRepoUrl() != "" {
+		norm, err := git.NormalizeRepoURL(req.GetQuery().GetRepoUrl())
+		if err == nil { // if we normalized successfully
+			req.Query.RepoUrl = norm.String()
+		}
 	}
-	q.SetLimit(limitSize)
 
+	if err := s.checkPreconditions(req); err != nil {
+		return "", nil, err
+	}
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return "", nil, err
+	}
+	if blocklist.IsBlockedForStatsQuery(u.GetGroupID()) {
+		return "", nil, status.ResourceExhaustedErrorf("Too many rows.")
+	}
+	q := query_builder.NewQuery(fmt.Sprintf(`SELECT %s FROM "Invocations" as i`, fields))
+
+	// Don't include anonymous builds.
+	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")
+
+	if user := req.GetQuery().GetUser(); user != "" {
+		q.AddWhereClause("i.user = ?", user)
+	}
+	if host := req.GetQuery().GetHost(); host != "" {
+		q.AddWhereClause("i.host = ?", host)
+	}
+	if url := req.GetQuery().GetRepoUrl(); url != "" {
+		q.AddWhereClause("i.repo_url = ?", url)
+	}
+	if branch := req.GetQuery().GetBranchName(); branch != "" {
+		q.AddWhereClause("i.branch_name = ?", branch)
+	}
+	if command := req.GetQuery().GetCommand(); command != "" {
+		q.AddWhereClause("i.command = ?", command)
+	}
+	if pattern := req.GetQuery().GetPattern(); pattern != "" {
+		q.AddWhereClause("i.pattern = ?", pattern)
+	}
+	if sha := req.GetQuery().GetCommitSha(); sha != "" {
+		q.AddWhereClause("i.commit_sha = ?", sha)
+	}
+	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
+		q.AddWhereClause("i.group_id = ?", group_id)
+	}
+	roleClauses := query_builder.OrClauses{}
+	for _, role := range req.GetQuery().GetRole() {
+		roleClauses.AddOr("i.role = ?", role)
+	}
+	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
+		q.AddWhereClause("("+roleQuery+")", roleArgs...)
+	}
+	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
+		q.AddWhereClause("i.updated_at_usec >= ?", start.AsTime().UnixMicro())
+	}
+	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
+		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
+	}
+	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
+		if s.shouldQueryClickhouse(req) {
+			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("i.tags", tags)
+			q.AddWhereClause(clause, args...)
+		} else if s.dbh.DB(ctx).Dialector.Name() == "mysql" {
+			for _, tag := range tags {
+				q.AddWhereClause("FIND_IN_SET(?, i.tags)", tag)
+			}
+		} else {
+			for _, tag := range tags {
+				q.AddWhereClause("i.tags LIKE ?", "%"+strings.ReplaceAll(tag, "%", "\\%")+"%")
+			}
+		}
+	}
+
+	statusClauses := query_builder.OrClauses{}
+	for _, status := range req.GetQuery().GetStatus() {
+		switch status {
+		case inspb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
+		case inspb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 0)
+		case inspb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS))
+		case inspb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS))
+		case inspb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+			continue
+		default:
+			continue
+		}
+	}
+	statusQuery, statusArgs := statusClauses.Build()
+	if statusQuery != "" {
+		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
+	}
+
+	// The underlying data is not precise enough to accurately support nanoseconds and there's no use case for it yet.
+	if req.GetQuery().GetMinimumDuration().GetNanos() != 0 || req.GetQuery().GetMaximumDuration().GetNanos() != 0 {
+		return "", nil, status.InvalidArgumentError("InvocationSearchService does not support nanoseconds in duration queries")
+	}
+
+	if req.GetQuery().GetMinimumDuration().GetSeconds() != 0 {
+		q.AddWhereClause(`duration_usec >= ?`, req.GetQuery().GetMinimumDuration().GetSeconds()*1000*1000)
+	}
+	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
+		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
+	}
+
+	for _, f := range req.GetQuery().GetFilter() {
+		if f.GetMetric().Invocation == nil {
+			continue
+		}
+		str, args, err := filter.GenerateFilterStringAndArgs(f, "i.")
+		if err != nil {
+			return "", nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
+
+	// Clickhouse doesn't hold permissions data, but we need to *always*
+	// check permissions when we query from the main DB.  This is handled
+	// here for the non-Clickhouse case, and at the hydration step when
+	// querying clickhouse.
+	if !s.shouldQueryClickhouse(req) {
+		addPermissionsCheckToQuery(u, q)
+	}
+
+	addOrderBy(req.Sort, q)
+	q.SetLimit(limit)
+
+	q.SetOffset(offset)
+	qStr, qArgs := q.Build()
+	return qStr, qArgs, nil
+}
+
+func computeOffsetAndLimit(req *inpb.SearchInvocationRequest) (int64, int64, error) {
 	offset := int64(0)
 	if strings.HasPrefix(req.PageToken, pageSizeOffsetPrefix) {
 		parsedOffset, err := strconv.ParseInt(strings.Replace(req.PageToken, pageSizeOffsetPrefix, "", 1), 10, 64)
 		if err != nil {
-			return nil, status.InvalidArgumentError("Error parsing pagination token")
+			return 0, 0, status.InvalidArgumentError("Error parsing pagination token")
 		}
 		offset = parsedOffset
 	} else if req.PageToken != "" {
-		return nil, status.InvalidArgumentError("Invalid pagination token")
+		return 0, 0, status.InvalidArgumentError("Invalid pagination token")
 	}
-	q.SetOffset(offset)
 
-	qString, qArgs := q.Build()
-	tableInvocations, err := s.rawQueryInvocations(ctx, qString, qArgs...)
+	limit := defaultLimitSize
+	if req.Count > 0 {
+		limit = int64(req.Count)
+	}
+
+	return offset, limit, nil
+
+}
+
+func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
+	offset, limit, err := computeOffsetAndLimit(req)
 	if err != nil {
 		return nil, err
 	}
-	rsp := &inpb.SearchInvocationResponse{}
-	for _, ti := range tableInvocations {
-		rsp.Invocation = append(rsp.Invocation, build_event_handler.TableInvocationToProto(ti))
+
+	var invocations []*inpb.Invocation
+	var count int64
+	if s.shouldQueryClickhouse(req) {
+		invocations, count, err = s.rawQueryInvocationsFromClickhouse(ctx, req, offset, limit)
+	} else {
+		invocations, count, err = s.rawQueryInvocations(ctx, req, offset, limit)
 	}
-	if int64(len(rsp.Invocation)) == limitSize {
-		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(offset+limitSize, 10)
+	if err != nil {
+		return nil, err
+	}
+
+	rsp := &inpb.SearchInvocationResponse{Invocation: invocations}
+	if count == limit {
+		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(offset+limit, 10)
 	}
 	return rsp, nil
 }

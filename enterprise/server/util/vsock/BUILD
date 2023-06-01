@@ -1,9 +1,8 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-package(default_visibility = [
-    "//enterprise:__subpackages__",
-    "//tools/vmexec_client:__pkg__",
-])
+# TODO(sluongng): ensure all //enterprise code are not dependency of FOSS code
+# gazelle:default_visibility //enterprise:__subpackages__
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "vsock",

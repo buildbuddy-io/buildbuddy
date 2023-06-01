@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -251,7 +252,7 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 }
 
 func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command, timeout time.Duration) (*Command, error) {
-	commandDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, commandProto)
+	commandDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, commandProto)
 	if err != nil {
 		return nil, status.UnknownErrorf("unable to upload command %q to CAS: %s", name, err)
 	}
@@ -263,7 +264,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	if timeout != 0 {
 		action.Timeout = durationpb.New(timeout)
 	}
-	actionDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, action)
+	actionDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, action)
 	if err != nil {
 		return nil, status.UnknownErrorf("unable to upload action for command %q to CAS: %s", name, err)
 	}
@@ -271,7 +272,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	command := &Command{
 		gRPCClientSource:   c.gRPClientSource,
 		Name:               name,
-		actionResourceName: digest.NewResourceName(actionDigest, instanceName),
+		actionResourceName: digest.NewResourceName(actionDigest, instanceName, rspb.CacheType_AC, repb.DigestFunction_SHA256),
 	}
 
 	return command, nil
@@ -283,7 +284,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
 			return err
 		}
-		d := digest.NewResourceName(out.GetDigest(), res.InstanceName)
+		d := digest.NewResourceName(out.GetDigest(), res.InstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 		f, err := os.Create(path)
 		if err != nil {
 			return err
@@ -299,12 +300,12 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(path, 0777); err != nil {
 			return err
 		}
-		treeDigest := digest.NewResourceName(dir.GetTreeDigest(), res.InstanceName)
+		treeDigest := digest.NewResourceName(dir.GetTreeDigest(), res.InstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 		tree := &repb.Tree{}
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err
 		}
-		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, tree, path, &dirtools.DownloadTreeOpts{}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, repb.DigestFunction_SHA256, tree, path, &dirtools.DownloadTreeOpts{}); err != nil {
 			return err
 		}
 	}

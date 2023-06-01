@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -26,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
@@ -68,9 +68,9 @@ func TestGetSet(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: instanceName,
 		}
 		// Set() the bytes in the cache.
@@ -83,7 +83,7 @@ func TestGetSet(t *testing.T) {
 		require.NoError(t, err)
 
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
@@ -105,9 +105,9 @@ func TestMetadata(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_AC,
+			CacheType:    rspb.CacheType_AC,
 			InstanceName: "remoteInstanceName",
 		}
 		// Set() the bytes in the cache.
@@ -116,9 +116,9 @@ func TestMetadata(t *testing.T) {
 
 		// Metadata should return true size of the blob, regardless of queried size.
 		digestWrongSize := &repb.Digest{Hash: d.GetHash(), SizeBytes: 1}
-		rn := &resource.ResourceName{
+		rn := &rspb.ResourceName{
 			Digest:       digestWrongSize,
-			CacheType:    resource.CacheType_AC,
+			CacheType:    rspb.CacheType_AC,
 			InstanceName: "remoteInstanceName",
 		}
 
@@ -165,9 +165,9 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 
 	testSize := int64(100)
 	d, _ := testdigest.NewRandomDigestBuf(t, testSize)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 
 	md, err := dc.Metadata(ctx, r)
@@ -175,13 +175,13 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 	require.Nil(t, md)
 }
 
-func randomDigests(t *testing.T, sizes ...int64) map[*resource.ResourceName][]byte {
-	m := make(map[*resource.ResourceName][]byte)
+func randomDigests(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte {
+	m := make(map[*rspb.ResourceName][]byte)
 	for _, size := range sizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, size)
-		rn := &resource.ResourceName{
+		rn := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		m[rn] = buf
 	}
@@ -202,22 +202,22 @@ func TestFindMissing(t *testing.T) {
 	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
 
 	remoteInstanceName := "farFarAway"
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:       d,
-		CacheType:    resource.CacheType_AC,
+		CacheType:    rspb.CacheType_AC,
 		InstanceName: remoteInstanceName,
 	}
 	err = dc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
-	rns := digest.ResourceNames(resource.CacheType_AC, remoteInstanceName, digests)
+	rns := digest.ResourceNames(rspb.CacheType_AC, remoteInstanceName, digests)
 	missing, err := dc.FindMissing(ctx, rns)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
 
 	digests = []*repb.Digest{d}
-	rns = digest.ResourceNames(resource.CacheType_AC, remoteInstanceName, digests)
+	rns = digest.ResourceNames(rspb.CacheType_AC, remoteInstanceName, digests)
 	missing, err = dc.FindMissing(ctx, rns)
 	require.NoError(t, err)
 	require.Empty(t, missing)
@@ -236,7 +236,7 @@ func TestMultiGetSet(t *testing.T) {
 	if err := dc.SetMulti(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
-	resourceNames := make([]*resource.ResourceName, 0, len(digests))
+	resourceNames := make([]*rspb.ResourceName, 0, len(digests))
 	for d := range digests {
 		resourceNames = append(resourceNames, d)
 	}
@@ -250,7 +250,7 @@ func TestMultiGetSet(t *testing.T) {
 		if !ok {
 			t.Fatalf("Multi-get failed to return expected digest: %q", d.GetHash())
 		}
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -274,9 +274,9 @@ func TestReadWrite(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t, te)
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
-		rn := &resource.ResourceName{
+		rn := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		// Use Writer() to set the bytes in the cache.
 		wc, err := dc.Writer(ctx, rn)
@@ -314,9 +314,9 @@ func TestReadOffset(t *testing.T) {
 	}
 	ctx := getAnonContext(t, te)
 	d, r := testdigest.NewRandomDigestReader(t, 100)
-	rn := &resource.ResourceName{
+	rn := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 	// Use Writer() to set the bytes in the cache.
 	wc, err := dc.Writer(ctx, rn)
@@ -353,9 +353,9 @@ func TestReadOffsetLimit(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	size := int64(10)
 	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 	err = dc.Set(ctx, r, buf)
 	require.NoError(t, err)
@@ -383,7 +383,7 @@ func TestSizeLimit(t *testing.T) {
 	dc.WaitUntilMapped()
 	ctx := getAnonContext(t, te)
 	digestBufs := randomDigests(t, 400, 400, 400)
-	digestKeys := make([]*resource.ResourceName, 0, len(digestBufs))
+	digestKeys := make([]*rspb.ResourceName, 0, len(digestBufs))
 	for d, buf := range digestBufs {
 		if err := dc.Set(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetDigest().GetHash(), err.Error())
@@ -407,7 +407,7 @@ func TestSizeLimit(t *testing.T) {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
@@ -426,7 +426,7 @@ func TestLRU(t *testing.T) {
 	dc.WaitUntilMapped()
 	ctx := getAnonContext(t, te)
 	digestBufs := randomDigests(t, 400, 400)
-	digestKeys := make([]*resource.ResourceName, 0, len(digestBufs))
+	digestKeys := make([]*rspb.ResourceName, 0, len(digestBufs))
 	for r, buf := range digestBufs {
 		if err := dc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
@@ -444,9 +444,9 @@ func TestLRU(t *testing.T) {
 	// Now write one more digest, which should evict the oldest digest,
 	// (the second one we wrote).
 	d, buf := testdigest.NewRandomDigestBuf(t, 400)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 	if err := dc.Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
@@ -470,7 +470,7 @@ func TestLRU(t *testing.T) {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
@@ -494,9 +494,9 @@ func TestFileAtomicity(t *testing.T) {
 		eg.Go(func() error {
 			lock.Lock()
 			defer lock.Unlock()
-			r := &resource.ResourceName{
+			r := &rspb.ResourceName{
 				Digest:    d,
-				CacheType: resource.CacheType_CAS,
+				CacheType: rspb.CacheType_CAS,
 			}
 			if err := dc.Set(gctx, r, buf); err != nil {
 				return err
@@ -543,9 +543,9 @@ func TestAsyncLoading(t *testing.T) {
 	// Ensure that files on disk exist *immediately*, even though
 	// they may not have been async processed yet.
 	for _, d := range digests {
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		exists, err := dc.Contains(ctx, r)
 		if err != nil {
@@ -558,9 +558,9 @@ func TestAsyncLoading(t *testing.T) {
 	// Write some more files, just to ensure the LRU is appended to.
 	for i := 0; i < 1000; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		if err := dc.Set(ctx, r, buf); err != nil {
 			t.Fatal(err)
@@ -572,9 +572,9 @@ func TestAsyncLoading(t *testing.T) {
 
 	// Check that everything still exists.
 	for _, d := range digests {
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		exists, err := dc.Contains(ctx, r)
 		if err != nil {
@@ -597,7 +597,7 @@ func waitForEviction(t *testing.T, dc *disk_cache.DiskCache) {
 	require.FailNow(t, "eviction did not happen in time")
 }
 
-func expectedDefaultV1DiskPath(rootDir string, r *resource.ResourceName) string {
+func expectedDefaultV1DiskPath(rootDir string, r *rspb.ResourceName) string {
 	return filepath.Join(rootDir, interfaces.AuthAnonymousUser, r.GetDigest().GetHash())
 }
 
@@ -609,12 +609,12 @@ func testEviction(t *testing.T, rootDir string) {
 	require.NoError(t, err)
 
 	// Fill the cache.
-	resources := make([]*resource.ResourceName, 0)
+	resources := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 999; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		err := dc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -648,7 +648,7 @@ func testEviction(t *testing.T, rootDir string) {
 
 	for i := 0; i < 500; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		r := &resource.ResourceName{Digest: d, CacheType: resource.CacheType_CAS}
+		r := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS}
 		err := dc.Set(ctx, r, buf)
 		require.NoError(t, err)
 	}
@@ -699,12 +699,12 @@ func TestJanitorThread(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Fill the cache.
-	digests := make([]*resource.ResourceName, 0)
+	digests := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 999; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		err := dc.Set(ctx, r, buf)
 		if err != nil {
@@ -742,7 +742,7 @@ func TestDefaultToV2Layout(t *testing.T) {
 
 		c, ctx := newCacheAndContext(t, &disk_cache.Options{ForceV1Layout: true, RootDirectory: rootDir}, 10_000_000)
 		d, data := testdigest.NewRandomDigestBuf(t, 1000)
-		err := c.Set(ctx, &resource.ResourceName{Digest: d, CacheType: resource.CacheType_CAS}, data)
+		err := c.Set(ctx, &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS}, data)
 		require.NoError(t, err)
 
 		c, ctx = newCacheAndContext(t, &disk_cache.Options{RootDirectory: rootDir}, 10_000_000)
@@ -787,7 +787,7 @@ func TestZeroLengthFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Ensure that the goodDigest exists and the zero length one does not.
-	exists, err := dc.Contains(ctx, digest.NewCASResourceName(badDigest, "").ToProto())
+	exists, err := dc.Contains(ctx, digest.NewResourceName(badDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,7 +795,7 @@ func TestZeroLengthFiles(t *testing.T) {
 		t.Fatalf("%q (empty file) should not be mapped in cache.", badDigest.GetHash())
 	}
 
-	exists, err = dc.Contains(ctx, digest.NewCASResourceName(goodDigest, "").ToProto())
+	exists, err = dc.Contains(ctx, digest.NewResourceName(goodDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -898,9 +898,9 @@ func TestNonDefaultPartition(t *testing.T) {
 	{
 		ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 
 		err = dc.Set(ctx, r, buf)
@@ -921,9 +921,9 @@ func TestNonDefaultPartition(t *testing.T) {
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 
 		err = dc.Set(ctx, r, buf)
@@ -946,9 +946,9 @@ func TestNonDefaultPartition(t *testing.T) {
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 		instanceName := "nonmatchingprefix"
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: instanceName,
 		}
 
@@ -973,9 +973,9 @@ func TestNonDefaultPartition(t *testing.T) {
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 		instanceName := otherPartitionPrefix + "hello"
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: instanceName,
 		}
 
@@ -1006,9 +1006,9 @@ func TestV2Layout(t *testing.T) {
 
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 
 	err = dc.Set(ctx, r, buf)
@@ -1022,9 +1022,9 @@ func TestV2Layout(t *testing.T) {
 	require.NoError(t, err)
 	require.Truef(t, ok, "digest should be in the cache")
 
-	_, err = dc.Get(ctx, &resource.ResourceName{
+	_, err = dc.Get(ctx, &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	})
 	require.NoError(t, err)
 }
@@ -1109,9 +1109,9 @@ func TestV2LayoutMigration(t *testing.T) {
 	testHash := "7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620"
 	{
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		buf, err := dc.Get(ctx, &resource.ResourceName{
+		buf, err := dc.Get(ctx, &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		})
 		require.NoError(t, err)
 		require.Equal(t, []byte("test1"), buf)
@@ -1119,9 +1119,9 @@ func TestV2LayoutMigration(t *testing.T) {
 
 	{
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		rn := &resource.ResourceName{
+		rn := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: "prefix",
 		}
 		ok, err := dc.Contains(ctx, rn)
@@ -1139,9 +1139,9 @@ func TestV2LayoutMigration(t *testing.T) {
 		require.NoError(t, err)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		rn := &resource.ResourceName{
+		rn := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		ok, err := dc.Contains(ctx, rn)
 		require.NoError(t, err)
@@ -1158,9 +1158,9 @@ func TestV2LayoutMigration(t *testing.T) {
 		require.NoError(t, err)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		rn := &resource.ResourceName{
+		rn := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: "prefix",
 		}
 		ok, err := dc.Contains(ctx, rn)

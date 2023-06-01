@@ -6,10 +6,7 @@ exports_files(glob(["*.css"]))
 
 ts_library(
     name = "banner",
-    srcs = glob([
-        "*.ts",
-        "*.tsx",
-    ]),
+    srcs = ["banner.tsx"],
     strict = True,
     deps = [
         "@npm//@types/react",

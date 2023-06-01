@@ -38,19 +38,7 @@ esbuild(
     }),
     visibility = ["//visibility:public"],
     deps = [
-        ":enterprise_app",
-    ],
-)
-
-ts_library(
-    name = "enterprise_app",
-    srcs = glob(["*.tsx"]),
-    deps = [
-        "//enterprise/app/root",
-        "@npm//@types/react",
-        "@npm//@types/react-dom",
-        "@npm//react",
-        "@npm//react-dom",
+        ":app",
     ],
 )
 
@@ -58,6 +46,7 @@ genrule(
     name = "style",
     srcs = [
         "//enterprise/app/api_keys:api_keys.css",
+        "//enterprise/app/encryption:encryption.css",
         "//enterprise/app/history:history.css",
         "//enterprise/app/org:org.css",
         "//enterprise/app/settings:settings.css",
@@ -95,4 +84,17 @@ sha(
         "//enterprise/app:app_bundle",
     ],
     visibility = ["//visibility:public"],
+)
+
+ts_library(
+    name = "app",
+    srcs = ["app.tsx"],
+    strict = True,
+    deps = [
+        "//enterprise/app/root",
+        "@npm//@types/react",
+        "@npm//@types/react-dom",
+        "@npm//react",
+        "@npm//react-dom",
+    ],
 )

@@ -5,12 +5,12 @@ import (
 	"context"
 	"io"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 // CompressionCache simulates a cache that supports compression for unit tests
@@ -18,7 +18,7 @@ type CompressionCache struct {
 	interfaces.Cache
 }
 
-func (c *CompressionCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (c *CompressionCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	data, err := c.Cache.Get(ctx, r)
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func (c *CompressionCache) Get(ctx context.Context, r *resource.ResourceName) ([
 	return cachedDataWithCompression, nil
 }
 
-func (c *CompressionCache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *CompressionCache) Reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	buf, err := c.Get(ctx, rn)
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func (c *CompressionCache) Reader(ctx context.Context, rn *resource.ResourceName
 	return io.NopCloser(r), nil
 }
 
-func (c *CompressionCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *CompressionCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	for _, r := range resources {
 		data, err := c.Get(ctx, r)
@@ -64,7 +64,7 @@ func (c *CompressionCache) GetMulti(ctx context.Context, resources []*resource.R
 	return foundMap, nil
 }
 
-func dataWithCompression(requestedResource *resource.ResourceName, cachedData []byte) ([]byte, error) {
+func dataWithCompression(requestedResource *rspb.ResourceName, cachedData []byte) ([]byte, error) {
 	isCompressed := int64(len(cachedData)) != requestedResource.GetDigest().GetSizeBytes()
 	if isCompressed {
 		if requestedResource.GetCompressor() == repb.Compressor_ZSTD {

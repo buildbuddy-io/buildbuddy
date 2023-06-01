@@ -16,6 +16,7 @@ go_library(
         "//server/util/background",
         "//server/util/status",
         "//server/util/tracing",
+        "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
     ],
 )

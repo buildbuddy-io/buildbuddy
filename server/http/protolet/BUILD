@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/http/protolet",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/util/log",
         "//server/util/request_context",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_protobuf//encoding/protojson",

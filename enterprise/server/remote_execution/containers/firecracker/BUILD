@@ -1,9 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = [
-    "//enterprise:__subpackages__",
-    "//tools/vmstart:__pkg__",
-])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "firecracker",
@@ -26,6 +23,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
             "//proto:remote_execution_go_proto",
+            "//proto:vmvfs_go_proto",
             "//server/environment",
             "//server/interfaces",
             "//server/util/status",
@@ -39,15 +37,16 @@ go_library(
             "//enterprise/server/util/ext4",
             "//enterprise/server/util/vfs_server",
             "//enterprise/server/util/vsock",
+            "//proto:firecracker_go_proto",
             "//proto:remote_execution_go_proto",
             "//proto:vmexec_go_proto",
             "//proto:vmvfs_go_proto",
             "//server/environment",
             "//server/interfaces",
+            "//server/remote_cache/digest",
             "//server/util/alert",
             "//server/util/background",
             "//server/util/disk",
-            "//server/util/hash",
             "//server/util/log",
             "//server/util/networking",
             "//server/util/status",
@@ -80,6 +79,7 @@ go_test(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/workspace",
+        "//enterprise/server/util/ext4",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/interfaces",
@@ -93,7 +93,6 @@ go_test(
         "//server/util/disk",
         "//server/util/fileresolver",
         "//server/util/log",
-        "//server/util/networking",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

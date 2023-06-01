@@ -4,10 +4,11 @@ go_library(
     name = "tooltag",
     srcs = ["tooltag.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/tooltag",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/log",
         "//cli/version",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

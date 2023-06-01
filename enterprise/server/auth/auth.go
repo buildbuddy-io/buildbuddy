@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -145,6 +147,7 @@ type Claims struct {
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
 	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
+	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 }
 
 func (c *Claims) GetUserID() string {
@@ -191,6 +194,10 @@ func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
 
 func (c *Claims) GetUseGroupOwnedExecutors() bool {
 	return c.UseGroupOwnedExecutors
+}
+
+func (c *Claims) GetCacheEncryptionEnabled() bool {
+	return c.CacheEncryptionEnabled
 }
 
 func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
@@ -671,6 +678,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKey)
 		if ok {
+			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
 			return d, nil
 		}
 	}
@@ -680,7 +688,10 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	}
 	apkg, err := authDB.GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 	if err == nil && a.apiKeyGroupCache != nil {
+		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
 		a.apiKeyGroupCache.Add(apiKey, apkg)
+	} else {
+		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
 	}
 	return apkg, err
 }
@@ -724,8 +735,9 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 	}
 }
 
-func groupClaims(akg interfaces.APIKeyGroup) *Claims {
+func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 	return &Claims{
+		UserID:        akg.GetUserID(),
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},
 		// For now, API keys are assigned the default role.
@@ -734,6 +746,7 @@ func groupClaims(akg interfaces.APIKeyGroup) *Claims {
 		},
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
+		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
 	}
 }
 
@@ -802,7 +815,7 @@ func (a *OpenIDAuthenticator) claimsFromAPIKey(ctx context.Context, apiKey strin
 	if err != nil {
 		return nil, err
 	}
-	return groupClaims(akg), nil
+	return APIKeyGroupClaims(akg), nil
 }
 
 func (a *OpenIDAuthenticator) claimsFromAPIKeyID(ctx context.Context, apiKeyID string) (*Claims, error) {
@@ -810,7 +823,7 @@ func (a *OpenIDAuthenticator) claimsFromAPIKeyID(ctx context.Context, apiKeyID s
 	if err != nil {
 		return nil, err
 	}
-	return groupClaims(akg), nil
+	return APIKeyGroupClaims(akg), nil
 }
 
 func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pass string) (*Claims, error) {
@@ -822,7 +835,7 @@ func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pa
 	if err != nil {
 		return nil, err
 	}
-	return groupClaims(akg), nil
+	return APIKeyGroupClaims(akg), nil
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {

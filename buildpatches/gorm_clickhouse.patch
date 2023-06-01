@@ -1,0 +1,49 @@
+diff --git a/clickhouse.go b/clickhouse.go
+index 4153279..a21bae7 100644
+--- a/clickhouse.go
++++ b/clickhouse.go
+@@ -18,17 +18,18 @@ import (
+ )
+ 
+ type Config struct {
+-	DriverName                 string
+-	DSN                        string
+-	Conn                       gorm.ConnPool
+-	DisableDatetimePrecision   bool
+-	DontSupportRenameColumn    bool
+-	DontSupportColumnPrecision bool
+-	SkipInitializeWithVersion  bool
+-	DefaultGranularity         int    // 1 granule = 8192 rows
+-	DefaultCompression         string // default compression algorithm. LZ4 is lossless
+-	DefaultIndexType           string // index stores extremes of the expression
+-	DefaultTableEngineOpts     string
++	DriverName                   string
++	DSN                          string
++	Conn                         gorm.ConnPool
++	DisableDatetimePrecision     bool
++	DontSupportRenameColumn      bool
++	DontSupportColumnPrecision   bool
++	DontSupportEmptyDefaultValue bool
++	SkipInitializeWithVersion    bool
++	DefaultGranularity           int    // 1 granule = 8192 rows
++	DefaultCompression           string // default compression algorithm. LZ4 is lossless
++	DefaultIndexType             string // index stores extremes of the expression
++	DefaultTableEngineOpts       string
+ }
+ 
+ type Dialector struct {
+diff --git a/migrator.go b/migrator.go
+index 139e2ca..037f468 100644
+--- a/migrator.go
++++ b/migrator.go
+@@ -354,6 +354,10 @@ func (m Migrator) ColumnTypes(value interface{}) ([]gorm.ColumnType, error) {
+ 				column.DefaultValueValue.String = strings.Trim(column.DefaultValueValue.String, "'")
+ 			}
+ 
++			if m.Dialector.DontSupportEmptyDefaultValue && column.DefaultValueValue.String == "" {
++				column.DefaultValueValue.Valid = false
++			}
++
+ 			for _, c := range rawColumnTypes {
+ 				if c.Name() == column.NameValue.String {
+ 					column.SQLColumnType = c

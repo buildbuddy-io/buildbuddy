@@ -77,7 +77,7 @@ func TestExecStreamed_Stdio(t *testing.T) {
 func TestExecStreamed_Stats(t *testing.T) {
 	wd := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, wd, map[string]string{
-		"mem.py": useMemPythonScript(1e9, 1*time.Second),
+		"mem.py": useMemPythonScript(1e9, 3*time.Second),
 		"cpu.py": useCPUPythonScript(1 * time.Second),
 	})
 	client := startExecService(t)
@@ -97,6 +97,7 @@ func TestExecStreamed_Stats(t *testing.T) {
 	assert.LessOrEqual(t, res.UsageStats.GetCpuNanos(), int64(1.6e9), "should use around 1e9 CPU nanos")
 	assert.GreaterOrEqual(t, res.UsageStats.GetMemoryBytes(), int64(1e9), "should use at least 1GB memory")
 	assert.LessOrEqual(t, res.UsageStats.GetMemoryBytes(), int64(1.6e9), "shouldn't use much more than 1GB memory")
+	assert.NotEmpty(t, res.UsageStats.GetPeakFileSystemUsage(), "file system usage should not be empty")
 }
 
 func TestExecStreamed_Timeout(t *testing.T) {
@@ -151,6 +152,28 @@ func TestExecStreamed_Cancel(t *testing.T) {
 	assert.Equal(t, "foo-stdout\n", string(res.Stdout), "should get partial stdout despite cancel")
 	assert.Equal(t, "bar-stderr\n", string(res.Stderr), "should get partial stderr despite cancel")
 	assert.Equal(t, commandutil.NoExitCode, res.ExitCode)
+}
+
+func TestExecStreamed_Crash(t *testing.T) {
+	ctx := context.Background()
+	client := startExecService(t)
+	wd := testfs.MakeTempDir(t)
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			echo foo-stdout >&1
+			echo bar-stderr >&2
+			kill 0 -KILL
+		`},
+	}
+
+	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+
+	assert.Error(t, res.Error)
+
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted but got %T: %s", res.Error, res.Error)
+	assert.Equal(t, "foo-stdout\n", string(res.Stdout), "should get partial stdout despite crash")
+	assert.Equal(t, "bar-stderr\n", string(res.Stderr), "should get partial stderr despite crash")
+	assert.Equal(t, commandutil.KilledExitCode, res.ExitCode)
 }
 
 func startExecService(t *testing.T) vmxpb.ExecClient {

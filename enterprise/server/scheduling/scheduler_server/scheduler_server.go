@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -42,7 +43,6 @@ var (
 	defaultPoolName              = flag.String("remote_execution.default_pool_name", "", "The default executor pool to use if one is not specified.")
 	sharedExecutorPoolGroupID    = flag.String("remote_execution.shared_executor_pool_group_id", "", "Group ID that owns the shared executor pool.")
 	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
-	removeStaleExecutors         = flag.Bool("remote_execution.remove_stale_executors", false, "If true, executors are removed if they are not heard from for a prolonged amount of time.")
 )
 
 const (
@@ -540,7 +540,7 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 			return nil, err
 		}
 
-		if *removeStaleExecutors && time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
+		if time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
 			log.Infof("Removing stale executor %q from pool %+v", id, np.key)
 			if err := np.rdb.HDel(ctx, np.key.redisPoolKey(), id).Err(); err != nil {
 				log.Warningf("could not remove stale executor: %s", err)
@@ -905,8 +905,8 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 		Name:    sharedPoolName,
 	}
 
-	// Linux workflows are currently only supported on shared executors.
-	if os == platform.LinuxOperatingSystemName && workflowID != "" {
+	// Linux workflows use shared executors unless self_hosted is set.
+	if os == platform.LinuxOperatingSystemName && workflowID != "" && !useSelfHosted {
 		return sharedPool, nil
 	}
 
@@ -997,7 +997,8 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 		return nil
 	}
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
-	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, addr %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, poolKey)
+	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, addr %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, node.GetVersion(), poolKey)
+	metrics.RemoteExecutionExecutorRegistrationCount.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
 	go func() {
 		if err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
@@ -1005,7 +1006,6 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 		}
 	}()
 	return nil
-
 }
 
 func (s *SchedulerServer) redisKeyForExecutorPools(groupID string) string {
@@ -1021,7 +1021,7 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 		return err
 	}
 
-	permissions := 0
+	permissions := int32(0)
 	if s.requireExecutorAuthorization {
 		permissions = perms.GROUP_WRITE | perms.GROUP_READ
 	} else {
@@ -1409,7 +1409,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 		}
 
-		done := req.GetFinalize() || req.GetRelease()
+		done := req.GetFinalize() || req.GetRelease() || req.GetReEnqueue()
 
 		if req.GetFinalize() && claimed {
 			// Finalize deletes the task (and implicitly releases the lease).
@@ -1422,8 +1422,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			} else {
 				log.CtxWarningf(ctx, "Could not delete claimed task %q: %s", taskID, err)
 			}
-		} else if req.GetRelease() && claimed {
+		} else if (req.GetRelease() || req.GetReEnqueue()) && claimed {
 			// Release removes the claim on the task without deleting the task.
+			// "release" was deprecated in favor of "reEnqueue" but remains
+			// for backwards compatibility with older executors.
 
 			err := s.unclaimTask(ctx, taskID)
 			if err == nil {
@@ -1431,6 +1433,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 				log.CtxInfof(ctx, "LeaseTask task %q successfully released by %q", taskID, executorID)
 			} else {
 				log.CtxWarningf(ctx, "Could not release lease for task %q: %s", taskID, err)
+			}
+
+			if req.GetReEnqueue() {
+				if _, err := s.ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{TaskId: taskID, Reason: req.GetReEnqueueReason().GetMessage()}); err != nil {
+					log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task requested by executor but failed with err: %s", taskID, err)
+				}
 			}
 		}
 

@@ -11,6 +11,8 @@ go_library(
         "//proto:user_id_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/authutil",
+        "//server/util/blocklist",
         "//server/util/log",
         "//server/util/query_builder",
         "//server/util/status",

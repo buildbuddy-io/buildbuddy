@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -28,12 +27,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
@@ -63,7 +65,7 @@ type evilCache struct {
 	interfaces.Cache
 }
 
-func (e *evilCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (e *evilCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	rsp, err := e.Cache.GetMulti(ctx, resources)
 	for d := range rsp {
 		rsp[d] = []byte{}
@@ -115,7 +117,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	compressedBlob := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob))
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// FindMissingBlobs should report that the blob is missing, initially.
@@ -210,7 +212,7 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	compressedBlob := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob))
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// Upload compressed blob via BatchUpdate.
@@ -321,7 +323,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 			}
 
 			// Note: Digest is of uncompressed contents
-			d, err := digest.Compute(bytes.NewReader(blob))
+			d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 			require.NoError(t, err, tc.name)
 
 			// FindMissingBlobs should report that the blob is missing, initially.
@@ -440,7 +442,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 			subdir := &repb.Directory{}
 			if d == depth {
 				d, buf := testdigest.NewRandomDigestBuf(t, 100)
-				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, bytes.NewReader(buf))
+				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf))
 				require.NoError(t, err)
 				fileName := fmt.Sprintf("leaf-file-%s-%d", d.GetHash(), n)
 				fileNames = append(fileNames, fileName)
@@ -454,7 +456,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 				subdir.Directories = append(subdir.Directories, leafNodes[start:end]...)
 			}
 
-			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, subdir)
+			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, subdir)
 			require.NoError(t, err)
 			dirName := fmt.Sprintf("node-%s-depth-%d-node-%d", subdirDigest.GetHash(), d, n)
 			fileNames = append(fileNames, dirName)
@@ -469,7 +471,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 	parentDir := &repb.Directory{
 		Directories: leafNodes,
 	}
-	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, parentDir)
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, parentDir)
 	require.NoError(t, err)
 	return rootDigest, fileNames
 }
@@ -539,7 +541,7 @@ func TestGetTree(t *testing.T) {
 			},
 		},
 	}
-	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir)
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
 	assert.Nil(t, err)
 
 	allFiles := append(child1Files, child2Files...)
@@ -582,7 +584,7 @@ func TestGetTreeCaching(t *testing.T) {
 			},
 		},
 	}
-	rootDigest1, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir1)
+	rootDigest1, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir1)
 	assert.Nil(t, err)
 
 	rootDir2 := &repb.Directory{
@@ -597,7 +599,7 @@ func TestGetTreeCaching(t *testing.T) {
 			},
 		},
 	}
-	rootDigest2, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir2)
+	rootDigest2, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir2)
 	assert.Nil(t, err)
 
 	uploadedFiles1 := append(child1Files, child2Files...)
@@ -617,4 +619,71 @@ func TestGetTreeCaching(t *testing.T) {
 
 	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
 	assert.Less(t, fetch2Time, fetch1Time/2)
+}
+
+func hasMissingDigestError(err error) bool {
+	st := gstatus.Convert(err)
+	for _, detail := range st.Details() {
+		switch detail.(type) {
+		case *errdetails.PreconditionFailure:
+			if pf, ok := detail.(*errdetails.PreconditionFailure); ok {
+				if len(pf.Violations) > 0 && pf.Violations[0].GetType() == "MISSING" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func TestGetTreeMissingRoot(t *testing.T) {
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Upload a dir containing fileCount files, and return the file
+	// names and directory digest.
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, _ := uploadDirWithFiles(2, 1)
+	child2Digest, _ := uploadDirWithFiles(2, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "child11",
+				Digest: child1Digest,
+			},
+			&repb.DirectoryNode{
+				Name:   "child2",
+				Digest: child2Digest,
+			},
+		},
+	}
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+	assert.Nil(t, err)
+
+	rootRN := digest.NewResourceName(rootDigest, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	require.NoError(t, te.GetCache().Delete(ctx, rootRN.ToProto()))
+
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
+		InstanceName: instanceName,
+		RootDigest:   rootDigest,
+	})
+	assert.Nil(t, err)
+
+	_, err = stream.Recv()
+	require.Error(t, err)
+	require.True(t, hasMissingDigestError(err))
 }

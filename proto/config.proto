@@ -12,7 +12,7 @@ message FrontendConfig {
   // Whether to default to Dense UI mode.
   bool default_to_dense_mode = 3;
 
-  // Whether Github linking is enabled.
+  // Whether the GitHub legacy OAuth-only app is enabled.
   bool github_enabled = 4;
 
   // Whether anonymous usage is enabled.
@@ -42,7 +42,7 @@ message FrontendConfig {
   // Whether or not SSO is enabled.
   bool sso_enabled = 13;
 
-  // Whether or not the global invocation filter is enabled.
+  // DEPRECATED: Whether or not the global invocation filter is enabled.
   bool global_filter_enabled = 14;
 
   // Whether or not the usage page is enabled.
@@ -71,4 +71,37 @@ message FrontendConfig {
 
   // Whether to render test outputs.zip contents in the targets UI.
   bool test_output_manifests_enabled = 23;
+
+  // Whether to enable the user-owned keys UI.
+  bool user_owned_keys_enabled = 24;
+
+  // Whether to show the new heatmap and drilldowns UI for build stats
+  bool trends_heatmap_enabled = 25;
+
+  // Whether to allow filtering invocations, trends, etc. by pattern.
+  bool pattern_filter_enabled = 26;
+
+  // Whether or not bot suggestions are enabled.
+  bool bot_suggestions_enabled = 27;
+
+  // Enable searching for executions in the OLAP DB.
+  bool execution_search_enabled = 28;
+
+  // Whether the GitHub app is enabled.
+  bool github_app_enabled = 29;
+
+  // Whether or not we show the new summary section on the trends page.
+  bool trends_summary_enabled = 30;
+
+  // Whether to show encryption settings.
+  bool customer_managed_encryption_keys_enabled = 31;
+
+  // True if multiple suggestions providers are configured.
+  bool multiple_suggestion_providers = 32;
+
+  // Whether to allow filtering invocations, trends, etc. by a tag.
+  bool tags_ui_enabled = 33;
+
+  // Whether to allow filtering invocations, trends, etc. by a tag.
+  bool timeseries_charts_in_timing_profile_enabled = 34;
 }

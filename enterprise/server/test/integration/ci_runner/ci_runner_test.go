@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -26,6 +27,8 @@ import (
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -112,6 +115,21 @@ actions:
 `,
 	}
 
+	workspaceContentsWithLocalEnvironmentalErrorAction = map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD":     `sh_binary(name = "exit", srcs = ["exit.sh"])`,
+		"exit.sh":   `exit "$1"`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Exit 36"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    bazel_commands:
+      - run :exit -- 36
+`,
+	}
+
 	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
@@ -121,8 +139,12 @@ type result struct {
 	// InvocationIDs are the invocation IDs parsed from the output.
 	// There should be one invocation ID for each action.
 	InvocationIDs []string
-	// ExitCode is the exit code of the runner itself.
+	// ExitCode is the exit code of the runner itself, or -1 if the runner was
+	// terminated by a signal.
 	ExitCode int
+	// Signal is the signal that terminated the runner, or -1 if the runner
+	// exited.
+	Signal syscall.Signal
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
@@ -143,15 +165,24 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	cmd.Dir = workDir
 	cmd.Env = env
 	outputBytes, err := cmd.CombinedOutput()
-	exitCode := 0
+	exitCode := -1
+	signal := syscall.Signal(-1)
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
+			ws := exitErr.Sys().(syscall.WaitStatus)
+			if ws.Exited() {
+				exitCode = ws.ExitStatus()
+			} else {
+				signal = ws.Signal()
+			}
 		} else {
 			t.Fatal(err)
 		}
+	} else {
+		exitCode = 0
 	}
 	output := string(outputBytes)
+	t.Log(output)
 
 	invocationIDs := []string{}
 	iidMatches := invocationIDPattern.FindAllStringSubmatch(output, -1)
@@ -163,6 +194,7 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	return &result{
 		Output:        output,
 		ExitCode:      exitCode,
+		Signal:        signal,
 		InvocationIDs: invocationIDs,
 	}
 }
@@ -513,29 +545,91 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	run()
 }
 
-func TestRunAction_RespectsArgs(t *testing.T) {
+func TestRunAction_RespectsCommitSha(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
-	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
-	runnerFlags := []string{
+	baselineRunnerFlags := []string{
 		"--workflow_id=test-workflow",
 		"--action_name=Print args",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
-		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
-	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+	runnerFlagsCommit1 := append(baselineRunnerFlags, "--commit_sha="+initialCommitSHA)
 
-	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-
+	result := invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
 	checkRunnerResult(t, result)
-
 	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+
+	// Commit changes to the print statement in the workflow config
+	modifiedWorkflowConfig := `
+actions:
+  - name: "Print args"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    bazel_commands:
+      - run //:print_args -- "Switcheroo!"
+`
+	newCommitSha := testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
+
+	// When invoked with the initial commit sha, should not contain the modified print statement
+	result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+
+	// When invoked with the new commit sha, should contain the modified print statement
+	runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha)
+	result = invokeRunner(t, runnerFlagsCommit2, []string{}, wsPath)
+	checkRunnerResult(t, result)
+	assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
+}
+
+func TestRunAction_TargetRepoOnly(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	testCases := []struct {
+		name      string
+		useSha    bool
+		repoFlags []string
+	}{
+		{
+			name:   "With commit sha",
+			useSha: true,
+		},
+		{
+			name:   "Without commit sha",
+			useSha: false,
+		},
+	}
+	baselineRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+
+	for _, tc := range testCases {
+		runnerFlags := baselineRunnerFlags
+		if tc.useSha {
+			runnerFlags = append(runnerFlags, "--commit_sha="+initialCommitSHA)
+		}
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		checkRunnerResult(t, result)
+		assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
+	}
 }
 
 func TestEnvExpansion(t *testing.T) {
@@ -679,7 +773,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 
 	ctx := context.Background()
 	bsClient := app.ByteStreamClient(t)
-	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", bytes.NewReader([]byte(patch)))
+	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", repb.DigestFunction_SHA256, bytes.NewReader([]byte(patch)))
 	require.NoError(t, err)
 
 	// Execute a Bazel command with a patched `pass.sh` that should output 'EDIT'.
@@ -690,7 +784,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 			"--target_repo_url=file://" + targetRepoPath,
 			"--target_branch=master",
 			"--cache_backend=" + app.GRPCAddress(),
-			"--patch_digest=" + fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()),
+			"--patch_uri=" + fmt.Sprintf("blobs/%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()),
 			"--bazel_sub_command", "test --test_output=streamed --nocache_test_results //...",
 			// Disable clean checkout fallback for this test since we expect to sync
 			// without errors.
@@ -731,4 +825,31 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 			t.Log(runnerInvocation.ConsoleBuffer)
 		}
 	}
+}
+
+func TestLocalEnvironmentalError(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithLocalEnvironmentalErrorAction)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Exit 36",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+
+	require.Equal(t, syscall.SIGKILL, result.Signal, "runner process should have signaled its own PID with SIGKILL")
+	runnerInvocation := singleInvocation(t, app, result)
+	require.NotEqual(
+		t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
+		runnerInvocation.GetInvocationStatus(),
+		"runner invocation status not be COMPLETE_INVOCATION_STATUS")
 }

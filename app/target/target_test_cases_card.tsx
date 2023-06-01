@@ -3,11 +3,13 @@ import format from "../format/format";
 import { AlertCircle, XCircle, PlayCircle, CheckCircle } from "lucide-react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { durationToMillisWithFallback } from "../util/proto";
+import TerminalComponent from "../terminal/terminal";
 
 interface Props {
   testResult: invocation.InvocationEvent;
   testSuite: Element;
   tagName?: string;
+  dark?: boolean;
 }
 
 export default class TargetTestCasesCardComponent extends React.Component<Props> {
@@ -54,7 +56,7 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
     let testCases = Array.from(this.props.testSuite.getElementsByTagName("testcase")).filter(
       (testCase) =>
         (!this.props.tagName && testCase.children.length == 0) ||
-        testCase.getElementsByTagName(this.props.tagName).length > 0
+        (this.props.tagName && testCase.getElementsByTagName(this.props.tagName).length > 0)
     );
     return (
       testCases.length > 0 && (
@@ -66,8 +68,8 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
               {testCases.length} {testCases.length == 1 ? "test" : "tests"} {this.getStatusTitle()} in{" "}
               {format.durationMillis(
                 durationToMillisWithFallback(
-                  this.props.testResult.buildEvent.testResult.testAttemptDuration,
-                  this.props.testResult.buildEvent.testResult.testAttemptDurationMillis
+                  this.props.testResult.buildEvent?.testResult?.testAttemptDuration,
+                  this.props.testResult.buildEvent?.testResult?.testAttemptDurationMillis || 0
                 )
               )}
             </div>
@@ -90,7 +92,15 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
                           <div className="test-case-message">
                             {child.getAttribute("message")} {child.getAttribute("type")}
                           </div>
-                          <div className="test-case-contents">{child.textContent}</div>
+                          {!!child.textContent?.trim() && (
+                            <TerminalComponent
+                              value={child.textContent
+                                .replaceAll(`�[`, `\u001b[`)
+                                .replaceAll(`#x1b[`, `\u001b[`)
+                                .replaceAll(`#x1B[`, `\u001b[`)}
+                              lightTheme={!this.props.dark}
+                            />
+                          )}
                         </div>
                       ))}
                     </div>

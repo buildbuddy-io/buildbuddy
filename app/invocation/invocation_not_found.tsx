@@ -56,7 +56,7 @@ export default class InvocationNotFoundComponent extends React.Component<Props> 
                   <div className="title">Permission denied</div>
                 </div>
                 <div className="details">You are not authorized to access this invocation.</div>
-                {this.props.user.canCall("getInvocationOwner") && (
+                {this.props.user?.canCall("getInvocationOwner") && (
                   <div>
                     <FilledButton onClick={this.handleImpersonateClicked.bind(this)} className="impersonate-button">
                       Impersonate owner

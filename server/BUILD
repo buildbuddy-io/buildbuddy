@@ -2,11 +2,16 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "buildbuddy",
+    actual = "//server/cmd/buildbuddy:buildbuddy",  # go_binary
+)
+
 [alias(
     name = t,
     actual = "//server/cmd/buildbuddy:%s" % t,
+    tags = ["manual"],
 ) for t in [
-    "buildbuddy",  # go_binary
     "base_image",  # container_image
     "buildbuddy_image",  # go_image
 ]]

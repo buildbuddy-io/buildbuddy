@@ -108,6 +108,10 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("failed to parse webhook payload: %s", err)
 	}
+	return ParseWebhookData(event)
+}
+
+func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	switch event := event.(type) {
 	case *gh.PushEvent:
 		// Ignore branch deletion events.
@@ -120,19 +124,21 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			"Ref",
 			"Repo.CloneURL",
 			"Repo.Private",
+			"Repo.DefaultBranch",
 		)
 		if err != nil {
 			return nil, err
 		}
 		branch := strings.TrimPrefix(v["Ref"], "refs/heads/")
 		return &interfaces.WebhookData{
-			EventName:          webhook_data.EventName.Push,
-			PushedRepoURL:      v["Repo.CloneURL"],
-			PushedBranch:       branch,
-			SHA:                v["HeadCommit.ID"],
-			TargetRepoURL:      v["Repo.CloneURL"],
-			TargetBranch:       branch,
-			IsTargetRepoPublic: v["Repo.Private"] == "false",
+			EventName:               webhook_data.EventName.Push,
+			PushedRepoURL:           v["Repo.CloneURL"],
+			PushedBranch:            branch,
+			SHA:                     v["HeadCommit.ID"],
+			TargetRepoURL:           v["Repo.CloneURL"],
+			TargetRepoDefaultBranch: v["Repo.DefaultBranch"],
+			TargetBranch:            branch,
+			IsTargetRepoPublic:      v["Repo.Private"] == "false",
 		}, nil
 
 	case *gh.PullRequestEvent:
@@ -143,7 +149,12 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		if !(baseBranchChanged || event.GetAction() == "opened" || event.GetAction() == "synchronize" || event.GetAction() == "reopened") {
 			return nil, nil
 		}
-		return parsePullRequestOrReview(event)
+		wd, err := parsePullRequestOrReview(event)
+		if err != nil {
+			return nil, err
+		}
+		wd.PullRequestNumber = int64(event.GetPullRequest().GetNumber())
+		return wd, nil
 
 	case *gh.PullRequestReviewEvent:
 		if event.GetAction() != "submitted" {
@@ -157,6 +168,7 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			return nil, err
 		}
 		wd.PullRequestApprover = event.GetReview().GetUser().GetLogin()
+		wd.PullRequestNumber = int64(event.GetPullRequest().GetNumber())
 		return wd, nil
 
 	default:
@@ -174,6 +186,7 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 		"PullRequest.Head.SHA",
 		"PullRequest.Base.Repo.CloneURL",
 		"PullRequest.Base.Repo.Private",
+		"PullRequest.Base.Repo.DefaultBranch",
 		"PullRequest.Base.Ref",
 		"PullRequest.User.Login",
 	)
@@ -182,14 +195,15 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 	}
 	isTargetRepoPublic := v["PullRequest.Base.Repo.Private"] == "false"
 	return &interfaces.WebhookData{
-		EventName:          webhook_data.EventName.PullRequest,
-		PushedRepoURL:      v["PullRequest.Head.Repo.CloneURL"],
-		PushedBranch:       v["PullRequest.Head.Ref"],
-		SHA:                v["PullRequest.Head.SHA"],
-		TargetRepoURL:      v["PullRequest.Base.Repo.CloneURL"],
-		IsTargetRepoPublic: isTargetRepoPublic,
-		TargetBranch:       v["PullRequest.Base.Ref"],
-		PullRequestAuthor:  v["PullRequest.User.Login"],
+		EventName:               webhook_data.EventName.PullRequest,
+		PushedRepoURL:           v["PullRequest.Head.Repo.CloneURL"],
+		PushedBranch:            v["PullRequest.Head.Ref"],
+		SHA:                     v["PullRequest.Head.SHA"],
+		TargetRepoURL:           v["PullRequest.Base.Repo.CloneURL"],
+		TargetRepoDefaultBranch: v["PullRequest.Base.Repo.DefaultBranch"],
+		IsTargetRepoPublic:      isTargetRepoPublic,
+		TargetBranch:            v["PullRequest.Base.Ref"],
+		PullRequestAuthor:       v["PullRequest.User.Login"],
 	}, nil
 }
 

@@ -1,70 +1,50 @@
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
 
-// Query params for the global filter.
-// These should be preserved when navigating between pages in the app.
-
-export const ROLE_PARAM_NAME = "role";
-export const STATUS_PARAM_NAME = "status";
-export const START_DATE_PARAM_NAME = "start";
-export const END_DATE_PARAM_NAME = "end";
-export const LAST_N_DAYS_PARAM_NAME = "days";
-
-export const USER_PARAM_NAME = "user";
-export const REPO_PARAM_NAME = "repo";
-export const BRANCH_PARAM_NAME = "branch";
-export const COMMIT_PARAM_NAME = "commit";
-export const HOST_PARAM_NAME = "host";
-export const COMMAND_PARAM_NAME = "command";
-export const MINIMUM_DURATION_PARAM_NAME = "min-dur";
-export const MAXIMUM_DURATION_PARAM_NAME = "max-dur";
-
-// Sort params for the global filter.
-
-export const SORT_BY_PARAM_NAME = "sort-by";
-export const SORT_ORDER_PARAM_NAME = "sort-order";
-
-const GLOBAL_FILTER_PARAM_NAMES = [
-  ROLE_PARAM_NAME,
-  STATUS_PARAM_NAME,
-  START_DATE_PARAM_NAME,
-  END_DATE_PARAM_NAME,
-  LAST_N_DAYS_PARAM_NAME,
-
-  USER_PARAM_NAME,
-  REPO_PARAM_NAME,
-  BRANCH_PARAM_NAME,
-  COMMIT_PARAM_NAME,
-  HOST_PARAM_NAME,
-  COMMAND_PARAM_NAME,
-  MINIMUM_DURATION_PARAM_NAME,
-  MAXIMUM_DURATION_PARAM_NAME,
-];
-
-const GLOBAL_SORT_PARAM_NAMES = [SORT_BY_PARAM_NAME, SORT_ORDER_PARAM_NAME];
-
-const PERSISTENT_URL_PARAMS = [...GLOBAL_FILTER_PARAM_NAMES, ...GLOBAL_SORT_PARAM_NAMES];
+import { GLOBAL_FILTER_PARAM_NAMES, PERSISTENT_URL_PARAMS } from "./router_params";
 
 class Router {
   register(pathChangeHandler: VoidFunction) {
-    history.pushState = ((f) =>
-      function pushState() {
-        var ret = f.apply(this, arguments);
-        pathChangeHandler();
-        return ret;
-      })(history.pushState);
+    const oldPushState = history.pushState;
+    history.pushState = (data: any, unused: string, url?: string | URL): void => {
+      oldPushState.apply(history, [data, unused, url]);
+      pathChangeHandler();
+      return undefined;
+    };
 
-    history.replaceState = ((f) =>
-      function replaceState() {
-        var ret = f.apply(this, arguments);
-        pathChangeHandler();
-        return ret;
-      })(history.replaceState);
+    const oldReplaceState = history.replaceState;
+    history.replaceState = (data: any, unused: string, url?: string | URL): void => {
+      oldReplaceState.apply(history, [data, unused, url]);
+      pathChangeHandler();
+      return undefined;
+    };
 
     window.addEventListener("popstate", () => {
       pathChangeHandler();
+    });
+
+    // The router is only created once, so no need to keep the handles and
+    // deregister these shortcuts.
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.a], () => {
+      this.navigateHome();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.r], () => {
+      this.navigateToTrends();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.t], () => {
+      this.navigateToTap();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.x], () => {
+      this.navigateToExecutors();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.q], () => {
+      this.navigateToSetup();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
+      this.navigateToSettings();
     });
   }
 
@@ -80,6 +60,10 @@ class Router {
     const newUrl = new URL(url, window.location.href);
 
     const matchedPath = getMatchedPath(newUrl.pathname);
+    if (matchedPath === null) {
+      alert("Requested path not found.");
+      return;
+    }
     const unavailableMsg = getUnavailableMessage(matchedPath);
     if (unavailableMsg && !capabilities.canNavigateToPath(matchedPath)) {
       alert(unavailableMsg);
@@ -88,13 +72,20 @@ class Router {
 
     // Preserve persistent URL params.
     for (const key of PERSISTENT_URL_PARAMS) {
-      if (!newUrl.searchParams.get(key) && oldUrl.searchParams.get(key)) {
-        newUrl.searchParams.set(key, oldUrl.searchParams.get(key));
+      const oldParam = oldUrl.searchParams.get(key);
+      if (!newUrl.searchParams.get(key) && oldParam) {
+        newUrl.searchParams.set(key, oldParam);
       }
     }
 
     if (oldUrl.href === newUrl.href) {
       rpc_service.events.next("refresh");
+      return;
+    }
+
+    // Initiate a full page load for server-side redirects.
+    if (newUrl.pathname.startsWith("/auth/")) {
+      window.location.href = newUrl.href;
       return;
     }
 
@@ -200,6 +191,10 @@ class Router {
     this.navigateTo(Path.commitHistoryPath + commit);
   }
 
+  navigateToTagHistory(tag: string) {
+    this.navigateTo(Path.home + "?tag=" + tag);
+  }
+
   navigateToCreateOrg() {
     if (!capabilities.createOrg) {
       window.open("https://buildbuddy.typeform.com/to/PFjD5A", "_blank");
@@ -215,6 +210,10 @@ class Router {
 
   replaceParams(params: Record<string, string>) {
     const newUrl = getModifiedUrl({ query: params });
+    this.replaceURL(newUrl);
+  }
+
+  replaceURL(newUrl: string) {
     window.history.replaceState({ path: newUrl }, "", newUrl);
   }
 
@@ -281,45 +280,62 @@ class Router {
     this.replaceParams(Object.fromEntries(url.searchParams.entries()));
   }
 
-  canAccessExecutorsPage(user: User | null) {
+  canAccessExecutorsPage(user?: User) {
     return capabilities.executors && Boolean(user?.canCall("getExecutionNodes"));
   }
 
-  canAccessUsagePage(user: User | null) {
+  canAccessUsagePage(user?: User) {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
   }
 
-  canAccessWorkflowsPage(user: User | null) {
+  canAccessWorkflowsPage(user?: User) {
     return capabilities.workflows && Boolean(user?.canCall("getWorkflows"));
   }
 
-  canAccessOrgDetailsPage(user: User | null) {
+  canAccessOrgDetailsPage(user?: User) {
     return Boolean(user?.canCall("updateGroup"));
   }
 
-  canAccessOrgMembersPage(user: User | null) {
+  canAccessOrgMembersPage(user?: User) {
     return Boolean(user?.canCall("updateGroupUsers"));
   }
 
-  canCreateOrg(user: User | null) {
+  canCreateOrg(user?: User) {
     return Boolean(user?.canCall("createGroup"));
   }
 
-  canAccessOrgGitHubLinkPage(user: User | null) {
+  canAccessOrgGitHubLinkPage(user?: User) {
     // GitHub linking does not call updateGroup, but the required permissions
     // are equivalent.
     return Boolean(user?.canCall("updateGroup"));
   }
 
-  canAccessOrgSecretsPage(user: User | null) {
+  canAccessOrgSecretsPage(user?: User) {
     return Boolean(user?.canCall("listSecrets"));
+  }
+
+  getTab() {
+    let tab = window.location.hash.split("@")[0];
+    return tab == "#" ? "" : tab;
+  }
+
+  getLineNumber() {
+    let hashParts = location.hash.split("@");
+    if (hashParts.length > 1) {
+      return parseInt(hashParts[1]);
+    }
+    return undefined;
+  }
+
+  canAccessEncryptionPage(user?: User) {
+    return Boolean(user?.canCall("getEncryptionConfig"));
   }
 
   /**
    * Routes the user to a new page if they don't have the ability to access the
    * current page.
    */
-  rerouteIfNecessary(user: User | null) {
+  rerouteIfNecessary(user?: User) {
     const fallbackPath = this.getFallbackPath(user);
     if (fallbackPath === null) return;
 
@@ -327,10 +343,10 @@ class Router {
     window.history.replaceState({}, "", newUrl);
   }
 
-  private getFallbackPath(user: User | null): string | null {
+  private getFallbackPath(user?: User): string | null {
     // Require the user to create an org if they are logged in but not part of
     // an org.
-    if (user !== null && !user.groups?.length) {
+    if (user && !user.groups?.length) {
       return Path.createOrgPath;
     }
 

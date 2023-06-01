@@ -1,7 +1,10 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
-package(default_visibility = ["//enterprise/server/test/integration/remote_execution:__subpackages__"])
+# gazelle:default_visibility //enterprise/server/test/integration/remote_execution:__subpackages__
+package(default_visibility = [
+    "//enterprise/server/test/integration/remote_execution:__subpackages__",
+])
 
 proto_library(
     name = "remoteexecutiontest_proto",

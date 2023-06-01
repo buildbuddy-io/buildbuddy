@@ -25,13 +25,14 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const gRPCMaxSize = int64(4000000)
 
 var (
-	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", false, "If true, enable compression of downloads from remote caches")
+	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
 )
 
 type TransferInfo struct {
@@ -98,6 +99,10 @@ func NewDirHelper(rootDir string, outputDirectories, outputPaths []string, dirPe
 	// of the output_directories, so go ahead and do that. The directories are
 	// also present in output_paths, so they're forgotten after creation here
 	// and then selected for upload through the output_paths.
+	//
+	// As of Bazel 6.0.0, the output directories are included as part of the
+	// InputRoot, so this hack is only needed for older clients.
+	// See: https://github.com/bazelbuild/bazel/pull/15366 for more info.
 	for _, outputDirectory := range outputDirectories {
 		fullPath := filepath.Join(c.rootDir, outputDirectory)
 		c.dirsToCreate = append(c.dirsToCreate, fullPath)
@@ -183,13 +188,18 @@ type fileToUpload struct {
 	dir  *repb.Directory
 }
 
-func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.Directory) (*fileToUpload, error) {
+func newDirToUpload(instanceName string, digestFunction repb.DigestFunction_Value, parentDir string, info os.FileInfo, dir *repb.Directory) (*fileToUpload, error) {
 	data, err := proto.Marshal(dir)
 	if err != nil {
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	r, err := cachetools.ComputeDigest(reader, instanceName)
+
+	d, err := digest.Compute(reader, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -203,9 +213,9 @@ func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.
 	}, nil
 }
 
-func newFileToUpload(instanceName, parentDir string, info os.FileInfo) (*fileToUpload, error) {
+func newFileToUpload(instanceName string, digestFunction repb.DigestFunction_Value, parentDir string, info os.FileInfo) (*fileToUpload, error) {
 	fullFilePath := filepath.Join(parentDir, info.Name())
-	ad, err := cachetools.ComputeFileDigest(fullFilePath, instanceName)
+	ad, err := cachetools.ComputeFileDigest(fullFilePath, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -258,10 +268,7 @@ func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	}
 }
 
-func uploadFiles(ctx context.Context, env environment.Env, instanceName string, filesToUpload []*fileToUpload) error {
-	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName)
-	fc := env.GetFileCache()
-
+func uploadFiles(uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
 		if fc != nil && uploadableFile.dir == nil {
@@ -279,16 +286,93 @@ func uploadFiles(ctx context.Context, env environment.Env, instanceName string, 
 		}
 	}
 
-	return uploader.Wait()
+	return nil
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName, rootDir string, actionResult *repb.ActionResult) (*TransferInfo, error) {
+// handleSymlink adds the symlink to the directory and actionResult proto so that
+// they could be recreated on the Bazel client side if needed.
+func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, directory *repb.Directory, fqfn string) error {
+	target, err := os.Readlink(fqfn)
+	if err != nil {
+		return err
+	}
+	symlink := &repb.OutputSymlink{
+		Path:   trimPathPrefix(fqfn, rootDir),
+		Target: target,
+	}
+	addSymlinkToDir := func() {
+		directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
+			Name:   symlink.Path,
+			Target: symlink.Target,
+		})
+	}
+
+	// REAPI specification:
+	//   `output_symlinks` will only be populated if the command `output_paths` field
+	//   was used, and not the pre v2.1 `output_files` or `output_directories` fields.
+	//
+	// Check whether the current client is using REAPI version before or after v2.1.
+	if len(cmd.OutputPaths) > 0 && len(cmd.OutputFiles) == 0 && len(cmd.OutputDirectories) == 0 {
+		if !dirHelper.IsOutputPath(fqfn) {
+			return nil
+		}
+		// REAPI >= v2.1
+		addSymlinkToDir()
+		actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
+
+		// REAPI specification:
+		//   Servers that wish to be compatible with v2.0 API should still
+		//   populate `output_file_symlinks` and `output_directory_symlinks`
+		//   in addition to `output_symlinks`.
+		//
+		// TODO(sluongng): Since v6.0.0, all the output directories are included in
+		// Action.input_root_digest. So we should be able to save a `stat()` call by
+		// checking wherether the symlink target was included as a directory inside
+		// input root or not.
+		//
+		// Reference:
+		//   https://github.com/bazelbuild/bazel/commit/4310aeb36c134e5fc61ed5cdfdf683f3e95f19b7
+		symlinkInfo, err := os.Stat(fqfn)
+		if err != nil {
+			// When encounter a dangling symlink, skip setting it to legacy fields.
+			// TODO(sluongng): do we care to log this?
+			log.Warningf("Could not find symlink %q's target: %s, skip legacy fields", fqfn, err)
+			return nil
+		}
+		if symlinkInfo.IsDir() {
+			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
+			return nil
+		}
+
+		actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
+		return nil
+	}
+
+	// REAPI < v2.1
+	for _, expectedFile := range cmd.OutputFiles {
+		if symlink.Path == expectedFile {
+			addSymlinkToDir()
+			actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
+			break
+		}
+	}
+	for _, expectedDir := range cmd.OutputDirectories {
+		if symlink.Path == expectedDir {
+			addSymlinkToDir()
+			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
+			break
+		}
+	}
+	return nil
+}
+
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 	treesToUpload := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
 	uploadFileFn := func(parentDir string, info os.FileInfo) (*repb.FileNode, error) {
-		uploadableFile, err := newFileToUpload(instanceName, parentDir, info)
+		uploadableFile, err := newFileToUpload(instanceName, digestFunction, parentDir, info)
 		if err != nil {
 			return nil, err
 		}
@@ -322,7 +406,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				return nil, err
 			}
 			fqfn := filepath.Join(fullPath, info.Name())
-			if info.Mode().IsDir() {
+			if info.IsDir() {
 				// Don't recurse on non-uploadable directories.
 				if !dirHelper.ShouldUploadAnythingInDir(fqfn) {
 					continue
@@ -350,18 +434,13 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
 				directory.Files = append(directory.Files, fileNode)
 			} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
-				target, err := os.Readlink(fqfn)
-				if err != nil {
+				if err := handleSymlink(dirHelper, rootDir, cmd, actionResult, directory, fqfn); err != nil {
 					return nil, err
 				}
-				directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
-					Name:   trimPathPrefix(fqfn, rootDir),
-					Target: target,
-				})
 			}
 		}
 
-		uploadableDir, err := newDirToUpload(instanceName, parentDir, dirInfo, directory)
+		uploadableDir, err := newDirToUpload(instanceName, digestFunction, parentDir, dirInfo, directory)
 		if err != nil {
 			return nil, err
 		}
@@ -371,7 +450,9 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	if _, err := uploadDirFn(rootDir, ""); err != nil {
 		return nil, err
 	}
-	if err := uploadFiles(ctx, env, instanceName, filesToUpload); err != nil {
+
+	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
+	if err := uploadFiles(uploader, env.GetFileCache(), filesToUpload); err != nil {
 		return nil, err
 	}
 
@@ -398,7 +479,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	for fullFilePath, tree := range trees {
-		td, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, tree)
+		td, err := uploader.UploadProto(tree)
 		if err != nil {
 			return nil, err
 		}
@@ -408,6 +489,9 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		})
 	}
 
+	if err := uploader.Wait(); err != nil {
+		return nil, err
+	}
 	endTime := time.Now()
 	txInfo.TransferDuration = endTime.Sub(startTime)
 	return txInfo, nil
@@ -474,11 +558,12 @@ func linkFileFromFileCache(d *repb.Digest, fp *FilePointer, fc interfaces.FileCa
 type FileMap map[digest.Key][]*FilePointer
 
 type BatchFileFetcher struct {
-	ctx          context.Context
-	env          environment.Env
-	instanceName string
-	once         *sync.Once
-	compress     bool
+	ctx            context.Context
+	env            environment.Env
+	instanceName   string
+	digestFunction repb.DigestFunction_Value
+	once           *sync.Once
+	compress       bool
 
 	statsMu sync.Mutex
 	stats   repb.IOStats
@@ -487,13 +572,14 @@ type BatchFileFetcher struct {
 // NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
 // `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
 // `casClient` is optional. If not specified, all requests will use the ByteStream API.
-func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string) *BatchFileFetcher {
+func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) *BatchFileFetcher {
 	return &BatchFileFetcher{
-		ctx:          ctx,
-		env:          env,
-		instanceName: instanceName,
-		once:         &sync.Once{},
-		compress:     false,
+		ctx:            ctx,
+		env:            env,
+		instanceName:   instanceName,
+		digestFunction: digestFunction,
+		once:           &sync.Once{},
+		compress:       false,
 	}
 }
 
@@ -583,7 +669,8 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
 	newRequest := func() *repb.BatchReadBlobsRequest {
 		r := &repb.BatchReadBlobsRequest{
-			InstanceName: ff.instanceName,
+			InstanceName:   ff.instanceName,
+			DigestFunction: ff.digestFunction,
 		}
 		if ff.supportsCompression() {
 			r.AcceptableCompressors = append(r.AcceptableCompressors, repb.Compressor_ZSTD)
@@ -601,8 +688,9 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	for dk, filePointers := range filesToFetch {
 		d := dk.ToDigest()
 
+		rn := digest.NewResourceName(dk.ToDigest(), ff.instanceName, rspb.CacheType_CAS, ff.digestFunction)
 		// Write empty files directly (skip checking cache and downloading).
-		if d.GetHash() == digest.EmptySha256 {
+		if rn.IsEmpty() {
 			for _, fp := range filePointers {
 				if err := writeFile(fp, []byte("")); err != nil {
 					return err
@@ -701,7 +789,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if err != nil {
 		return err
 	}
-	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName)
+	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName, rspb.CacheType_CAS, ff.digestFunction)
 	if ff.supportsCompression() {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
@@ -740,17 +828,17 @@ func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *di
 	return dir, nil
 }
 
-func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
+func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
-	rootDigest, err = digest.ComputeForMessage(tree.Root)
+	rootDigest, err = digest.ComputeForMessage(tree.Root, digestFunction)
 	if err != nil {
 		return nil, nil, err
 	}
 	dirMap[digest.NewKey(rootDigest)] = tree.Root
 
 	for _, child := range tree.Children {
-		d, err := digest.ComputeForMessage(child)
+		d, err := digest.ComputeForMessage(child, digestFunction)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -773,11 +861,11 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 }
 
-func DownloadTree(ctx context.Context, env environment.Env, instanceName string, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
+func DownloadTree(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
-	rootDirectoryDigest, dirMap, err := DirMapFromTree(tree)
+	rootDirectoryDigest, dirMap, err := DirMapFromTree(tree, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -829,7 +917,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
 				return err
 			}
-			if child.GetDigest().Hash == digest.EmptySha256 && child.GetDigest().SizeBytes == 0 {
+			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
+			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
 				continue
 			}
 			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]
@@ -853,7 +942,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		return nil, err
 	}
 
-	ff := NewBatchFileFetcher(ctx, env, instanceName)
+	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
 
 	// Download any files into the directory structure.
 	if err := ff.FetchFiles(filesToFetch, opts); err != nil {

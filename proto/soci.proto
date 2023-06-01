@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+import "proto/registry.proto";
+import "proto/remote_execution.proto";
+
+package soci;
+
+enum Type {
+  UNKNOWN_TYPE = 0;
+
+  // The SOCI Index is a JSON file containing indexing information for some
+  // layers of the images. It is basically a mapping from the digest of the
+  // layer to the digest of the ZTOC. Note that some layers may be absent as
+  // only layers above a certain size are indexed.
+  SOCI_INDEX = 1;
+
+  // The ZTOC (Zip Table Of Contents) is a JSON file containing indexing
+  // information for a single layer. It is basically a mapping from file path
+  // to the byte offsets in the zipped layer where the file exists.
+  ZTOC = 2;
+}
+
+// A single SOCI artifact.
+message Artifact {
+  // The digest of the artifact. The bytes of the artifact may be retrieved
+  // from the CAS using this digest.
+  build.bazel.remote.execution.v2.Digest digest = 1;
+  Type type = 2;
+}
+
+message GetArtifactsRequest {
+  string image = 1;
+
+  // If an image has multiple variants, this selector is used
+  // to select a single variant.
+  registry.Platform platform = 2;
+
+  // Optional credentials for accessing the target image.
+  registry.Credentials credentials = 3;
+}
+
+message GetArtifactsResponse {
+  // The image ID is the hash of the image's configuration object and refers to
+  // a single version of an image (i.e. it changes as tags change). The SOCI
+  // snapshotter uses image IDs internally, so the client will need this.
+  string image_id = 1;
+  repeated Artifact artifacts = 2;
+}
+
+service SociArtifactStore {
+  rpc GetArtifacts(GetArtifactsRequest) returns (GetArtifactsResponse);
+}

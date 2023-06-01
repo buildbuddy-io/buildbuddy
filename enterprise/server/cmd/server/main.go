@@ -21,22 +21,27 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -105,7 +110,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 // source main() entry point and the enterprise main() entry point, both of
 // which import from libmain.go.
 func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
-	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
+	env.SetAuthDB(authdb.NewAuthDB(env, env.GetDBHandle()))
 	configureFilesystemsOrDie(env)
 
 	if err := auth.Register(ctx, env); err != nil {
@@ -130,7 +135,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	stat := invocation_stat_service.NewInvocationStatService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
 	env.SetInvocationStatService(stat)
 
-	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
+	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
 	env.SetInvocationSearchService(search)
 
 	if err := usage_service.Register(env); err != nil {
@@ -147,6 +152,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		github.NewProvider(),
 		bitbucket.NewProvider(),
 	})
+	if err := githubapp.Register(env); err != nil {
+		log.Fatalf("Failed to register GitHub app: %s", err)
+	}
 
 	runnerService, err := hostedrunner.New(env)
 	if err != nil {
@@ -250,19 +258,30 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	if err := registry.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-
 	if err := kms.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := secrets.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := suggestion.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := crypter_service.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := dsingleflight.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := sociartifactstore.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	executionService := execution_service.NewExecutionService(realEnv)
 	realEnv.SetExecutionService(executionService)
+
+	executionSearchService := execution_search_service.NewExecutionSearchService(realEnv, realEnv.GetDBHandle(), realEnv.GetOLAPDBHandle())
+	realEnv.SetExecutionSearchService(executionSearchService)
 
 	telemetryServer := telserver.NewTelemetryServer(realEnv, realEnv.GetDBHandle())
 	telemetryServer.StartOrDieIfEnabled()
@@ -271,9 +290,12 @@ func main() {
 	telemetryClient.Start()
 	defer telemetryClient.Stop()
 
-	cleanupService := janitor.NewJanitor(realEnv)
-	cleanupService.Start()
-	defer cleanupService.Stop()
+	invocationCleanupService := janitor.NewInvocationJanitor(realEnv)
+	invocationCleanupService.Start()
+	defer invocationCleanupService.Stop()
+	executionCleanupService := janitor.NewExecutionJanitor(realEnv)
+	executionCleanupService.Start()
+	defer executionCleanupService.Stop()
 
 	if err := selfauth.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)

@@ -3,11 +3,12 @@ import router from "../router/router";
 import InvocationModel from "./invocation_model";
 import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
-import { invocation } from "../../proto/invocation_ts_proto";
+import { google as google_ts } from "../../proto/timestamp_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
-import Link, { TextLink } from "../components/link/link";
+import { TextLink } from "../components/link/link";
 import { durationToMillis, timestampToDate } from "../util/proto";
 import error_service from "../errors/error_service";
 import Button, { OutlinedButton } from "../components/button/button";
@@ -19,6 +20,8 @@ import * as proto from "../util/proto";
 import { google as google_field_mask } from "../../proto/field_mask_ts_proto";
 import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 import { BuildBuddyError } from "../util/errors";
+import { subtractTimestamp } from "./invocation_execution_util";
+import capabilities from "../capabilities/capabilities";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -29,11 +32,11 @@ interface State {
   searchText: string;
 
   loading: boolean;
-  results: cache.ScoreCard.IResult[];
+  results: cache.ScoreCard.Result[];
   nextPageToken: string;
   didInitialFetch: boolean;
 
-  digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse>;
+  digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse | null>;
 }
 
 const SEARCH_DEBOUNCE_INTERVAL_MS = 300;
@@ -152,7 +155,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       )
       .then((response) => {
         this.setState({
-          results: [...(pageToken && this.state.results), ...response.results],
+          results: [...(pageToken ? this.state.results : []), ...response.results],
           nextPageToken: response.nextPageToken,
         });
       })
@@ -183,13 +186,33 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     return `/invocation/${this.props.model.getId()}?actionDigest=${digestHash}#action`;
   }
 
+  private hasSavingsData(result: cache.ScoreCard.Result): boolean {
+    return Boolean(result.executionStartTimestamp && result.executionCompletedTimestamp);
+  }
+
+  private renderSavingsString(result: cache.ScoreCard.Result, compact: boolean = true) {
+    if (!this.hasSavingsData(result)) {
+      return "--";
+    }
+    const timestampUsec = subtractTimestamp(result.executionCompletedTimestamp!, result.executionStartTimestamp!);
+    if (compact) {
+      return format.compactDurationMillis(timestampUsec / 1000);
+    } else {
+      return format.durationUsec(timestampUsec);
+    }
+  }
+
+  private renderSavingsColumn(result: cache.ScoreCard.Result) {
+    return <div className="duration-column">{this.renderSavingsString(result)}</div>;
+  }
+
   private renderWaterfallBar(
-    result: cache.ScoreCard.IResult,
+    result: cache.ScoreCard.Result,
     timelineStartTimeMillis: number,
     timelineDurationMillis: number
   ) {
-    const resultStartTimeMillis = timestampToDate(result.startTime).getTime();
-    const resultDurationMillis = durationToMillis(result.duration);
+    const resultStartTimeMillis = timestampToDate(result.startTime || {}).getTime();
+    const resultDurationMillis = durationToMillis(result.duration || {});
     const beforeDurationMillis = resultStartTimeMillis - timelineStartTimeMillis;
     return (
       <div className="waterfall-column">
@@ -215,13 +238,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
    */
   private getStartTimestampAndDurationMillis(): [number, number] {
     const earliestStartTimeMillis = this.state.results
-      .map((result) => timestampToDate(result.startTime).getTime())
+      .map((result) => timestampToDate(result.startTime || {}).getTime())
       .reduce((acc, cur) => Math.min(acc, cur), Number.MAX_SAFE_INTEGER);
     const invocationStartTimeMillis = this.props.model.getStartTimeDate().getTime();
     const startTimeMillis = Math.min(earliestStartTimeMillis, invocationStartTimeMillis);
 
     const latestEndTimeMillis = this.state.results
-      .map((result) => timestampToDate(result.startTime).getTime() + durationToMillis(result.duration))
+      .map((result) => timestampToDate(result.startTime || {}).getTime() + durationToMillis(result.duration || {}))
       .reduce((acc, cur) => Math.max(acc, cur), earliestStartTimeMillis);
     const invocationEndTimeMillis = this.props.model.getEndTimeDate().getTime();
     const endTimeMillis = Math.max(latestEndTimeMillis, invocationEndTimeMillis);
@@ -302,7 +325,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           {/* Filtering controls */}
           <div className="separator" />
           <label>Show</label>
-          <Select value={this.getFilterIndex()} onChange={this.onChangeFilter.bind(this)}>
+          <Select
+            debug-id="filter-cache-requests"
+            value={this.getFilterIndex()}
+            onChange={this.onChangeFilter.bind(this)}>
             {filters.map((filter, i) => (
               <Option key={filter.label} value={i}>
                 {filter.label}
@@ -326,7 +352,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   private renderResults(
-    results: cache.ScoreCard.IResult[],
+    results: cache.ScoreCard.Result[],
     startTimeMillis: number,
     durationMillis: number,
     groupTarget: string | null = null,
@@ -355,9 +381,11 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           {renderCacheType(result.cacheType)}
         </div>
         <div className="status-column column-with-icon">{renderStatus(result)}</div>
-        <div>
-          <DigestComponent hashWidth="96px" sizeWidth="72px" digest={result.digest} expandOnHover={false} />
-        </div>
+        {result.digest && (
+          <div>
+            <DigestComponent hashWidth="96px" sizeWidth="72px" digest={result.digest} expandOnHover={false} />
+          </div>
+        )}
         {this.isCompressedSizeColumnVisible() && (
           <div className={`compressed-size-column ${!result.compressor ? "uncompressed" : ""}`}>
             {(console.log(result), result.compressor) ? (
@@ -369,14 +397,20 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             )}
           </div>
         )}
-        <div className="duration-column">{format.compactDurationMillis(proto.durationToMillis(result.duration))}</div>
+        <div className="duration-column">
+          {format.compactDurationMillis(proto.durationToMillis(result.duration ?? {}))}
+        </div>
+        {capabilities.config.trendsSummaryEnabled && this.renderSavingsColumn(result)}
         {this.renderWaterfallBar(result, startTimeMillis, durationMillis)}
       </Tooltip>
     ));
   }
 
-  private getCacheMetadata(scorecardResult: cache.ScoreCard.IResult) {
+  private getCacheMetadata(scorecardResult: cache.ScoreCard.Result) {
     const digest = scorecardResult.digest;
+    if (!digest?.hash) {
+      return;
+    }
     const remoteInstanceName = this.props.model.getRemoteInstanceName();
 
     // Set an empty struct in the map so the FE doesn't fire duplicate requests while the first request is in progress
@@ -402,7 +436,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       });
   }
 
-  private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
+  private renderResultHovercard(result: cache.ScoreCard.Result, startTimeMillis: number) {
+    if (!result.digest?.hash) {
+      return null;
+    }
     const digest = result.digest.hash;
     // TODO(bduffany): Add an `onHover` prop to <Tooltip> and move this logic there
     if (!this.state.digestToCacheMetadata.has(digest)) {
@@ -455,7 +492,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         ) : null}
         <>
           <b>Size</b>
-          <span>{format.bytes(result.digest.sizeBytes)}</span>
+          <span>{format.bytes(result.digest?.sizeBytes ?? 0)}</span>
         </>
         {result.compressor ? (
           <>
@@ -468,10 +505,18 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         <>
           {/* Timestamp relative to the invocation start time */}
           <b>Started at</b>{" "}
-          <span>{format.durationMillis(proto.timestampToDate(result.startTime).getTime() - startTimeMillis)}</span>
+          <span>
+            {format.durationMillis(proto.timestampToDate(result.startTime ?? {}).getTime() - startTimeMillis)}
+          </span>
         </>
         <>
-          <b>Duration</b> <span>{format.durationMillis(proto.durationToMillis(result.duration))}</span>
+          <b>Duration</b> <span>{format.durationMillis(proto.durationToMillis(result.duration ?? {}))}</span>
+          {capabilities.config.trendsSummaryEnabled && this.hasSavingsData(result) && (
+            <>
+              <b>CPU saved by cache hit</b>
+              <span>{this.renderSavingsString(result, false)}</span>
+            </>
+          )}
         </>
         {lastAccessed ? (
           <>
@@ -530,7 +575,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
         }>
         {this.renderControls()}
-        <div className="results-table">
+        <div debug-id="cache-results-table" className="results-table">
           <div className="row column-headers">
             {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
               <div className="name-column">Name</div>
@@ -540,6 +585,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <div className="digest-column">Digest (hash/size)</div>
             {this.isCompressedSizeColumnVisible() && <div className="compressed-size-column">Compression</div>}
             <div className="duration-column">Duration</div>
+            {capabilities.config.trendsSummaryEnabled && <div className="duration-column">Savings</div>}
             <div className="waterfall-column">Waterfall</div>
           </div>
           {groups === null && (
@@ -559,7 +605,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                       <ChevronRight className="icon chevron" />
                       {/* If we have an action ID that looks like a digest, render it as a link
                           to the action page. */}
-                      {looksLikeDigest(group.actionId) && (
+                      {group.actionId && looksLikeDigest(group.actionId) && (
                         <TextLink className="action-mnemonic" href={this.getActionUrl(group.actionId)}>
                           {group.results[0]?.actionMnemonic || `(Unknown action ${group.actionId})`}
                         </TextLink>
@@ -601,7 +647,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 function areResultsAvailable(model: InvocationModel): boolean {
   return Boolean(
     model.invocations[0] &&
-      model.invocations[0].invocationStatus !== invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS
+      model.invocations[0].invocationStatus !== invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS
   );
 }
 
@@ -639,8 +685,8 @@ function cacheTypeTitle(cacheType: resource.CacheType): string | undefined {
   }
 }
 
-function renderCompressionSavings(result: cache.ScoreCard.IResult) {
-  const compressionSavings = 1 - Number(result.transferredSizeBytes) / Number(result.digest.sizeBytes);
+function renderCompressionSavings(result: cache.ScoreCard.Result) {
+  const compressionSavings = 1 - Number(result.transferredSizeBytes) / Number(result.digest?.sizeBytes ?? 1);
   return (
     <span className={`compression-savings ${compressionSavings > 0 ? "positive" : "negative"}`}>
       {compressionSavings <= 0 ? "+" : ""}
@@ -649,9 +695,9 @@ function renderCompressionSavings(result: cache.ScoreCard.IResult) {
   );
 }
 
-function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
+function renderStatus(result: cache.ScoreCard.Result): React.ReactNode {
   if (result.requestType === cache.RequestType.READ) {
-    if (result.status.code !== 0 /*=OK*/) {
+    if (result.status?.code !== 0 /*=OK*/) {
       return (
         <>
           <X className="icon red" />
@@ -672,7 +718,7 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
     );
   }
   if (result.requestType === cache.RequestType.WRITE) {
-    if (result.status.code !== 0 /*=OK*/) {
+    if (result.status?.code !== 0 /*=OK*/) {
       return (
         <>
           <X className="icon red" />
@@ -695,10 +741,10 @@ type ResultGroup = {
   targetId: string | null;
   // Action ID or null if not grouping by anything / grouping only by target.
   actionId: string | null;
-  results: cache.ScoreCard.IResult[];
+  results: cache.ScoreCard.Result[];
 };
 
-function getGroupKey(result: cache.ScoreCard.IResult, groupBy: cache.GetCacheScoreCardRequest.GroupBy): string | null {
+function getGroupKey(result: cache.ScoreCard.Result, groupBy: cache.GetCacheScoreCardRequest.GroupBy): string | null {
   if (!groupBy) return null;
   if (groupBy === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION) return result.actionId;
   return result.targetId;
@@ -709,7 +755,7 @@ function getGroupKey(result: cache.ScoreCard.IResult, groupBy: cache.GetCacheSco
  * This un-flattens the runs into a list of groups.
  */
 function groupResults(
-  results: cache.ScoreCard.IResult[],
+  results: cache.ScoreCard.Result[],
   groupBy: cache.GetCacheScoreCardRequest.GroupBy
 ): ResultGroup[] {
   const out: ResultGroup[] = [];
@@ -724,9 +770,9 @@ function groupResults(
         results: [],
       };
       curGroup = groupKey;
-      out.push(curRun);
+      out.push(curRun!);
     }
-    curRun.results.push(result);
+    curRun!.results.push(result);
   }
   return out;
 }
@@ -735,6 +781,6 @@ function groupResults(
  * Bazel includes some action IDs like "bes-upload" so we use this logic to try
  * and tell those apart from digests.
  */
-function looksLikeDigest(actionId: string) {
-  return actionId.length === 64;
+function looksLikeDigest(actionId: string | null) {
+  return actionId?.length === 64;
 }

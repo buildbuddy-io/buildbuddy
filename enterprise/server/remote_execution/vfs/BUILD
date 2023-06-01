@@ -1,10 +1,19 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-package(default_visibility = ["//visibility:public"])
+# gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "@buildbuddy_internal//:__subpackages__",
+])
 
 go_library(
     name = "vfs",
-    srcs = ["vfs.go"],
+    srcs = [
+        "vfs.go",
+        "vfs_darwin.go",
+        "vfs_linux_amd64.go",
+        "vfs_linux_arm64.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs",
     deps = [
         "//proto:vfs_go_proto",

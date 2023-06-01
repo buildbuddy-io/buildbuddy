@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -48,7 +48,7 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	authIsRequired := !a.AnonymousUsageEnabled()
 	user, err := a.AuthenticatedUser(ctx)
 	if err != nil {
-		if perms.IsAnonymousUserError(err) {
+		if authutil.IsAnonymousUserError(err) {
 			if authIsRequired {
 				return false, nil
 			}
@@ -66,7 +66,7 @@ func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiK
 	}
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		if perms.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
 			return DefaultAuthenticatedUserCapabilities, nil
 		}
 		return nil, err

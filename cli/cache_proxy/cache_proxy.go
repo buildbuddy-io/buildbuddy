@@ -23,12 +23,14 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
-	readThrough  = flag.Bool("read_through", true, "If true, cache remote reads locally")
-	writeThrough = flag.Bool("write_through", true, "If true, upload writes to remote cache too")
+	readThrough      = flag.Bool("read_through", true, "If true, cache remote reads locally")
+	writeThrough     = flag.Bool("write_through", true, "If true, upload writes to remote cache too")
+	synchronousWrite = flag.Bool("synchronous_write", false, "If true, wait until writes to remote cache are finished")
 )
 
 const (
@@ -214,7 +216,7 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 		if err != nil {
 			if err == io.EOF {
 				if localFile != nil {
-					resourceName := digest.NewResourceName(d, instanceName)
+					resourceName := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, resourceName.GetDigestFunction())
 					if _, err := cachetools.UploadFromReader(ctx, p.localBSSClient, resourceName, localFile); err != nil {
 						log.Errorf("error uploading from reader: %s", err.Error())
 					}
@@ -258,8 +260,14 @@ func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			if *writeThrough {
-				if err := p.qWorker.EnqueueRemoteWrite(stream.Context(), wreq); err != nil {
-					log.Errorf("Error enqueueing write request to remote: %s", err.Error())
+				if *synchronousWrite {
+					if err := p.qWorker.RemoteWriteBlocked(stream.Context(), wreq); err != nil {
+						log.Errorf("Error write to remote cache: %s", err)
+					}
+				} else {
+					if err := p.qWorker.EnqueueRemoteWrite(stream.Context(), wreq); err != nil {
+						log.Errorf("Error enqueueing write request to remote: %s", err.Error())
+					}
 				}
 			}
 			return stream.SendAndClose(lastRsp)
@@ -347,4 +355,13 @@ func (qw *queueWorker) EnqueueRemoteWrite(ctx context.Context, wreq *bspb.WriteR
 	default:
 		return status.ResourceExhaustedError("Queue was at capacity.")
 	}
+}
+
+func (qw *queueWorker) RemoteWriteBlocked(ctx context.Context, wreq *bspb.WriteRequest) error {
+	md, _ := metadata.FromIncomingContext(ctx)
+	req := queueReq{
+		metadata:          md,
+		writeResourceName: wreq.GetResourceName(),
+	}
+	return qw.handleWriteRequest(req)
 }

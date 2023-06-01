@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -29,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,7 +56,7 @@ const (
 )
 
 var (
-	testJailerRoot = flag.String("test_jailer_root", "", "If set, use this as the jailer root. Helps avoid excessive image pulling when re-running tests.")
+	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
 
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
@@ -64,6 +64,28 @@ var (
 func init() {
 	// Set umask to match the executor process.
 	syscall.Umask(0)
+}
+
+// cleanExecutorRoot cleans all entries in the test root dir *except* for cached
+// ext4 images. Converting docker images to ext4 images takes a long time and
+// it would slow down testing to build these images from scratch every time.
+// So we instead keep the same directory around and clean it between tests.
+//
+// See README.md for more details on the filesystem layout.
+func cleanExecutorRoot(t *testing.T, path string) {
+	err := os.MkdirAll(path, 0755)
+	require.NoError(t, err)
+	entries, err := os.ReadDir(path)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		// The "/executor" subdir contains the cached images.
+		// Delete all other content.
+		if entry.Name() == "executor" {
+			continue
+		}
+		err := os.RemoveAll(filepath.Join(path, entry.Name()))
+		require.NoError(t, err)
+	}
 }
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
@@ -109,12 +131,25 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	fc, err := filecache.NewFileCache(testRootDir, fileCacheSize)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
+
+	// Some tests need iptables which is in /usr/sbin.
+	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	require.NoError(t, err)
+
 	return env
 }
 
 func tempJailerRoot(t *testing.T) string {
-	if *testJailerRoot != "" {
-		return *testJailerRoot
+	// When running this test on the bare executor pool, ensure the jailer root
+	// is under /buildbuddy so that it's on the same device as the executor data
+	// dir (with action workspaces and filecache).
+	if testfs.Exists(t, "/buildbuddy", "") {
+		*testExecutorRoot = "/buildbuddy/test-executor-root"
+	}
+
+	if *testExecutorRoot != "" {
+		cleanExecutorRoot(t, *testExecutorRoot)
+		return *testExecutorRoot
 	}
 
 	// NOTE: JailerRoot needs to be < 38 chars long, so can't just use
@@ -154,7 +189,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +234,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,6 +261,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
+	res.UsageStats = nil
 	assert.Equal(t, expectedResult, res)
 }
 
@@ -250,7 +286,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		ScratchDiskSizeMB:      100,
 		JailerRoot:             tempJailerRoot(t),
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,35 +304,40 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		}
 	})
 
-	if err := c.Pause(ctx); err != nil {
-		t.Fatalf("unable to pause container: %s", err)
-	}
-	if err := c.Unpause(ctx); err != nil {
-		t.Fatalf("unable to unpause container: %s", err)
-	}
+	// Try pause, unpause, exec several times.
+	for i := 0; i < 3; i++ {
+		if err := c.Pause(ctx); err != nil {
+			t.Fatalf("unable to pause container: %s", err)
+		}
+		if err := c.Unpause(ctx); err != nil {
+			t.Fatalf("unable to unpause container: %s", err)
+		}
 
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult := &interfaces.CommandResult{
-		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
-		Stderr:   []byte("foo"),
-	}
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GREETING", Value: "Hello"},
+			},
+		}
+		expectedResult := &interfaces.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("Hello world"),
+			Stderr:   []byte("foo"),
+		}
 
-	res := c.Exec(ctx, cmd, nil /*=stdio*/)
-	if res.Error != nil {
-		t.Fatalf("error: %s", res.Error)
+		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+		if res.Error != nil {
+			t.Fatalf("error: %s", res.Error)
+		}
+		res.UsageStats = nil
+		assert.Equal(t, expectedResult, res)
 	}
-	assert.Equal(t, expectedResult, res)
 }
 
 func TestFirecrackerFileMapping(t *testing.T) {
 	numFiles := 100
-	fileSizeBytes := int64(1000)
+	fileSizeBytes := int64(1_000_000)
+	scratchTestFileSizeBytes := int64(50_000_000)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 
@@ -320,8 +361,16 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		}
 	}
 
+	workspaceDirSize, err := disk.DirSize(rootDir)
+	require.NoError(t, err)
+
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `find -name '*.txt' -exec cp {} {}.out \;`},
+		Arguments: []string{"sh", "-c", `
+			find -name '*.txt' -exec cp {} {}.out \;
+			</dev/zero head -c ` + fmt.Sprint(scratchTestFileSizeBytes) + ` > ~/scratch_file.txt
+			# Sleep a bit to ensure we get a good disk usage sample.
+			sleep 1
+		`},
 	}
 	expectedResult := &interfaces.CommandResult{
 		ExitCode: 0,
@@ -338,7 +387,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,9 +397,53 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		t.Fatalf("error: %s", res.Error)
 	}
 
-	// Check that the result has usage stats, but don't perform equality checks
-	// on them.
+	// Check that the result has the expected disk usage stats.
 	assert.True(t, res.UsageStats != nil)
+	var workspaceFSU, scratchFSU *repb.UsageStats_FileSystemUsage
+	for _, fsu := range res.UsageStats.PeakFileSystemUsage {
+		if fsu.Target == "/workspace" {
+			workspaceFSU = fsu
+		} else if fsu.Target == "/" {
+			scratchFSU = fsu
+		}
+	}
+
+	const workspaceDiskSlackSpaceBytes = 2_000_000_000
+	if workspaceFSU == nil {
+		assert.Fail(t, "/workspace disk usage was not reported")
+	} else {
+		assert.Equal(t, "ext4", workspaceFSU.GetFstype())
+		assert.Equal(t, "/dev/vdc", workspaceFSU.GetSource())
+		assert.InDelta(
+			t, workspaceFSU.GetUsedBytes(),
+			// Expected size is twice the input size, since we duplicate the inputs.
+			2*workspaceDirSize,
+			10_000_000,
+			"used workspace disk size")
+		expectedTotalSize := ext4.MinDiskImageSizeBytes + workspaceDirSize + workspaceDiskSlackSpaceBytes
+		assert.InDelta(
+			t, expectedTotalSize, workspaceFSU.GetTotalBytes(),
+			60_000_000,
+			"total workspace disk size")
+	}
+	if scratchFSU == nil {
+		assert.Fail(t, "scratch (/) disk usage was not reported")
+	} else {
+		assert.Equal(t, "overlay", scratchFSU.GetFstype())
+		assert.Equal(t, "overlayfs:/scratch/bbvmroot", scratchFSU.GetSource())
+		const approxInitialScratchDiskSizeBytes = 60e6
+		assert.InDelta(
+			t, approxInitialScratchDiskSizeBytes+scratchTestFileSizeBytes,
+			scratchFSU.GetUsedBytes(),
+			20_000_000,
+			"used scratch disk size")
+		assert.InDelta(
+			t, 1_000_000*opts.ScratchDiskSizeMB+ext4.MinDiskImageSizeBytes+approxInitialScratchDiskSizeBytes,
+			scratchFSU.GetTotalBytes(),
+			20_000_000,
+			"total scratch disk size")
+	}
+
 	res.UsageStats = nil
 
 	assert.Equal(t, expectedResult, res)
@@ -365,108 +458,15 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	}
 }
 
-func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
-	// TODO: Re-enable after fixing TODOs in Run()
-	t.Skip()
-
-	ctx := context.Background()
-	env := getTestEnv(ctx, t)
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work1")
-
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult := &interfaces.CommandResult{
-		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
-		Stderr:   []byte("foo"),
-	}
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              minMemSizeMB,
-		EnableNetworking:       false,
-		AllowSnapshotStart:     true,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
-	}
-	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	firstRunStart := time.Now()
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
-	firstRunDuration := time.Since(firstRunStart)
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-	assert.Equal(t, expectedResult, res)
-
-	// Now do the same thing again, but with a twist. The attached
-	// files and command run will be different. This command would
-	// fail if the new workspace were not properly attached.
-	workDir = testfs.MakeDirAll(t, rootDir, "work2")
-	opts.ActionWorkingDirectory = workDir
-
-	path = filepath.Join(workDir, "mars.txt")
-	if err := os.WriteFile(path, []byte("mars"), 0660); err != nil {
-		t.Fatal(err)
-	}
-	cmd = &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING from $(cat mars.txt)" && printf "bar" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult = &interfaces.CommandResult{
-		ExitCode: 0,
-		Stdout:   []byte("Hello from mars"),
-		Stderr:   []byte("bar"),
-	}
-
-	// This should resume the previous snapshot.
-	c, err = firecracker.NewContainer(env, auth, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	secondRunStart := time.Now()
-	res = c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
-	secondRunDuration := time.Since(secondRunStart)
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-	assert.Equal(t, expectedResult, res)
-
-	// This should be significantly faster because it's started from a
-	// snapshot.
-	// TODO(tylerw): debug this.
-	assert.Less(t, secondRunDuration, firstRunDuration)
-}
-
 func TestFirecrackerRunWithNetwork(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	// Make sure the container can at least send packets via the default route.
-	defaultRouteIP, err := networking.FindDefaultRouteIP(ctx)
-	require.NoError(t, err, "failed to find default route IP")
-	cmd := &repb.Command{Arguments: []string{"ping", "-c1", defaultRouteIP}}
+	// Make sure the container can send packets to something external of the VM
+	googleDNS := "8.8.8.8"
+	cmd := &repb.Command{Arguments: []string{"ping", "-c1", googleDNS}}
 
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -478,7 +478,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +490,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Contains(t, string(res.Stdout), "64 bytes from "+defaultRouteIP)
+	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
 }
 
 func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
@@ -546,7 +546,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,7 +616,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -649,7 +649,7 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 		ScratchDiskSizeMB: 0,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
@@ -697,7 +697,7 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +734,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 		ScratchDiskSizeMB:      2000,
 		JailerRoot:             tempJailerRoot(t),
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
@@ -820,7 +820,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		EnableNetworking:       true,
 		InitDockerd:            true,
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
@@ -914,7 +914,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		ScratchDiskSizeMB:      1000,
 		JailerRoot:             tempJailerRoot(t),
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -991,7 +991,7 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
@@ -1034,7 +1034,7 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, auth, c, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
@@ -1085,7 +1085,7 @@ func TestFirecrackerLargeResult(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 	const stdoutSize = 10_000_000
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf(`yes | head -c %d`, stdoutSize)}}

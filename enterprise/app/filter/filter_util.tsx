@@ -1,7 +1,10 @@
+import capabilities from "../../../app/capabilities/capabilities";
+import { differenceInCalendarDays, formatDateRange, formatPreviousDateRange } from "../../../app/format/format";
 import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
-import { invocation } from "../../../proto/invocation_ts_proto";
+import { invocation_status } from "../../../proto/invocation_status_ts_proto";
+import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import moment from "moment";
 import {
   ROLE_PARAM_NAME,
@@ -15,11 +18,13 @@ import {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
+  PATTERN_PARAM_NAME,
+  TAG_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
-} from "../../../app/router/router";
+} from "../../../app/router/router_params";
 
 // URL param value representing the empty role (""), which is the default.
 const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
@@ -41,7 +46,7 @@ export type SortOrder = "asc" | "desc";
 
 export interface ProtoFilterParams {
   role?: string[];
-  status?: invocation.OverallStatus[];
+  status?: invocation_status.OverallStatus[];
   updatedAfter?: google_timestamp.protobuf.Timestamp;
   updatedBefore?: google_timestamp.protobuf.Timestamp;
 
@@ -51,6 +56,8 @@ export interface ProtoFilterParams {
   commit?: string;
   host?: string;
   command?: string;
+  pattern?: string;
+  tags?: string[];
   minimumDuration?: google_duration.protobuf.Duration;
   maximumDuration?: google_duration.protobuf.Duration;
 
@@ -59,6 +66,16 @@ export interface ProtoFilterParams {
 }
 
 export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
+
+function splitAndTrimTags(param: string | null): string[] {
+  if (!param) {
+    return [];
+  }
+  return param
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s);
+}
 
 export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams {
   const endDate = getEndDate(search);
@@ -74,6 +91,8 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     commit: search.get(COMMIT_PARAM_NAME) || undefined,
     host: search.get(HOST_PARAM_NAME) || undefined,
     command: search.get(COMMAND_PARAM_NAME) || undefined,
+    pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
+    tags: (capabilities.config.tagsUiEnabled && splitAndTrimTags(search.get(TAG_PARAM_NAME))) || undefined,
     minimumDuration: parseDuration(search.get(MINIMUM_DURATION_PARAM_NAME)),
     maximumDuration: parseDuration(search.get(MAXIMUM_DURATION_PARAM_NAME)),
 
@@ -100,6 +119,14 @@ export function getStartDate(search: URLSearchParams): Date {
   return getDefaultStartDate();
 }
 
+export function getDisplayDateRange(search: URLSearchParams): { startDate: Date; endDate: Date } {
+  // Not using `getEndDate` here because it's set to "start of day after the one specified
+  // in the URL" which causes an off-by-one error if we were to render that directly in
+  // the calendar.
+  const endDate = search.get(END_DATE_PARAM_NAME) ? moment(search.get(END_DATE_PARAM_NAME)).toDate() : new Date();
+  return { startDate: getStartDate(search), endDate };
+}
+
 export function getEndDate(search: URLSearchParams): Date | undefined {
   if (!search.get(END_DATE_PARAM_NAME)) {
     return undefined;
@@ -108,17 +135,17 @@ export function getEndDate(search: URLSearchParams): Date | undefined {
 }
 
 const STATUS_TO_STRING = Object.fromEntries(
-  Object.entries(invocation.OverallStatus).map(([k, v]) => [v, k.toLowerCase().replace(/_/g, "-")])
+  Object.entries(invocation_status.OverallStatus).map(([k, v]) => [v, k.toLowerCase().replace(/_/g, "-")])
 );
 
-export function statusToString(status: invocation.OverallStatus) {
+export function statusToString(status: invocation_status.OverallStatus) {
   return STATUS_TO_STRING[status];
 }
 
 export function statusFromString(value: string) {
-  return (invocation.OverallStatus[
+  return (invocation_status.OverallStatus[
     value.toUpperCase().replace(/-/g, "_") as any
-  ] as unknown) as invocation.OverallStatus;
+  ] as unknown) as invocation_status.OverallStatus;
 }
 
 export function parseRoleParam(paramValue: string | null): string[] {
@@ -133,16 +160,53 @@ export function toRoleParam(roles: Iterable<string>): string {
     .join(" ");
 }
 
-export function parseStatusParam(paramValue: string | null): invocation.OverallStatus[] {
+export function parseStatusParam(paramValue: string | null): invocation_status.OverallStatus[] {
   if (!paramValue) return [];
   return paramValue.split(" ").map((name) => statusFromString(name));
 }
 
-export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): string {
+export function toStatusParam(statuses: Iterable<invocation_status.OverallStatus>): string {
   return [...statuses]
     .map(statusToString)
     .sort((a, b) => statusFromString(a) - statusFromString(b))
     .join(" ");
+}
+
+export function isExecutionMetric(m: stat_filter.Metric): boolean {
+  return m.execution !== null && m.execution !== undefined;
+}
+
+export function formatPreviousDateRangeFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  return formatPreviousDateRange(startDate, endDate);
+}
+
+export function getDayCountStringFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  const diff = differenceInCalendarDays(startDate, endDate) + 1;
+  return diff == 1 ? "1 day" : `${diff} days`;
+}
+
+export function formatDateRangeFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  return formatDateRange(startDate, endDate);
+}
+
+export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
+  return Boolean(
+    search.get(ROLE_PARAM_NAME) ||
+      search.get(STATUS_PARAM_NAME) ||
+      search.get(USER_PARAM_NAME) ||
+      search.get(REPO_PARAM_NAME) ||
+      search.get(BRANCH_PARAM_NAME) ||
+      search.get(COMMIT_PARAM_NAME) ||
+      search.get(HOST_PARAM_NAME) ||
+      search.get(COMMAND_PARAM_NAME) ||
+      search.get(PATTERN_PARAM_NAME) ||
+      (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
+      search.get(MINIMUM_DURATION_PARAM_NAME) ||
+      search.get(MAXIMUM_DURATION_PARAM_NAME)
+  );
 }
 
 function parseDuration(value: string | null): google_duration.protobuf.Duration | undefined {

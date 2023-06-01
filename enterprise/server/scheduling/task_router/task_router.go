@@ -30,12 +30,12 @@ const (
 	// router for routable tasks. This is intentionally less than the number of
 	// probes per task (for load balancing purposes).
 	defaultPreferredNodeLimit = 1
-	// The preferred node limit for workflows. This should be at least as big as
-	// the number of probes per task, since we strongly prefer to route workflow
-	// actions to executors that ran them previously. Here, it's set slightly
-	// bigger than the number of probes, in case any of the nodes go down or
-	// a probe fails.
-	workflowsPreferredNodeLimit = 6
+	// The preferred node limit for workflows.
+	// This is set higher than the default limit since we strongly prefer
+	// workflow tasks to hit a node with a warm bazel workspace, but it is
+	// set less than the number of probes so that we can autoscale the workflow
+	// executor pool effectively.
+	workflowsPreferredNodeLimit = 2
 )
 
 type taskRouter struct {

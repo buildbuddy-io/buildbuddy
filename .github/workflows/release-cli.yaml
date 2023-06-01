@@ -7,7 +7,7 @@ on:
 
 jobs:
   create-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     if: "!contains(github.event.head_commit.message, 'release skip')"
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
@@ -52,7 +52,7 @@ jobs:
             --repo=buildbuddy-io/bazel --title="$TAG" --draft --notes="Release version $TAG"
 
   sync-plugins:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     needs: create-release
     steps:
       - name: Checkout buildbuddy-io/buildbuddy
@@ -114,7 +114,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-20.04
             shell: bash
           - os: macos-11
             shell: bash

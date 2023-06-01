@@ -330,6 +330,69 @@ func TestForceRoot(t *testing.T) {
 	}
 }
 
+func TestUser(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	workDir := filepath.Join(rootDir, "work")
+	testfs.MakeDirAll(t, rootDir, "work")
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	image := "docker.io/library/busybox"
+
+	tests := []struct {
+		name      string
+		user      string
+		wantUser  string
+		wantGroup string
+	}{
+		{
+			name:      "username_groupname",
+			user:      "operator:operator",
+			wantUser:  "operator",
+			wantGroup: "operator",
+		},
+		{
+			name:      "uid_guid",
+			user:      "1000:1000",
+			wantUser:  "",
+			wantGroup: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pm := podman.NewPodmanCommandContainer(env, cacheAuth, image, rootDir, &podman.PodmanOptions{User: tc.user})
+			result := pm.Run(ctx, &repb.Command{
+				Arguments: []string{"id", "-u", "-n"},
+			}, workDir, container.PullCredentials{})
+			u := strings.TrimSpace(string(result.Stdout))
+			if tc.wantUser != "" {
+				assert.Equal(t, tc.wantUser, u)
+				assert.Empty(t, string(result.Stderr), "stderr should be empty")
+				assert.Equal(t, 0, result.ExitCode, "should exit with success")
+			} else {
+				assert.Contains(t, string(result.Stderr), "unknown ID")
+				assert.Equal(t, 1, result.ExitCode, "should exit with error")
+			}
+
+			result = pm.Run(ctx, &repb.Command{
+				Arguments: []string{"id", "-g", "-n"},
+			}, workDir, container.PullCredentials{})
+			g := strings.TrimSpace(string(result.Stdout))
+			if tc.wantGroup != "" {
+				assert.Equal(t, tc.wantGroup, g)
+				assert.Empty(t, string(result.Stderr), "stderr should be empty")
+				assert.Equal(t, 0, result.ExitCode, "should exit with success")
+			} else {
+				assert.Contains(t, string(result.Stderr), "unknown ID")
+				assert.Equal(t, 1, result.ExitCode, "should exit with error")
+			}
+		})
+	}
+}
+
 func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)

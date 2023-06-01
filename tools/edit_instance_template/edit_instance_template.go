@@ -30,9 +30,28 @@ func getSubnetURL() string {
 	return fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/%s", *project, *region, *subnetwork)
 }
 
+// Parses the "kube-labels" metadata item formatted like "k1=v1,k2=v2" into a
+// key-value map.
+func parseKubeLabels(tpl *computepb.InstanceTemplate) map[string]string {
+	out := map[string]string{}
+	for _, m := range tpl.GetProperties().GetMetadata().GetItems() {
+		if m.GetKey() != "kube-labels" {
+			continue
+		}
+		for _, entry := range strings.Split(m.GetValue(), ",") {
+			parts := strings.SplitN(entry, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			out[parts[0]] = parts[1]
+		}
+	}
+	return out
+}
+
 func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClient) ([]*computepb.InstanceTemplate, error) {
 	it := c.List(ctx, &computepb.ListInstanceTemplatesRequest{
-		Filter:  proto.String(fmt.Sprintf("name = gke-%s-%s-*", *cluster, *pool)),
+		Filter:  proto.String(fmt.Sprintf("name = gke-%s-*", *cluster)),
 		Project: *project,
 	})
 
@@ -44,6 +63,10 @@ func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClie
 		}
 		if err != nil {
 			return nil, err
+		}
+		labels := parseKubeLabels(tpl)
+		if labels["cloud.google.com/gke-nodepool"] != *pool {
+			continue
 		}
 		templates = append(templates, tpl)
 	}

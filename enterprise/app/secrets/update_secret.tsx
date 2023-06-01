@@ -45,7 +45,11 @@ export default class UpdateSecretComponent extends React.Component<UpdateSecretP
     rpc_service.service
       .getPublicKey(secrets.GetPublicKeyRequest.create({}))
       .then((response) => {
-        const secret = this.encrypt(response.publicKey, name, value.trim());
+        const typedResponse = response as secrets.GetPublicKeyResponse;
+        if (!typedResponse.publicKey) {
+          throw new Error("Server did not return public key.");
+        }
+        const secret = this.encrypt(typedResponse.publicKey, name, value.trim());
         this.updateSecret(secret);
       })
       .catch((e) => {
@@ -54,7 +58,7 @@ export default class UpdateSecretComponent extends React.Component<UpdateSecretP
       });
   }
 
-  private encrypt(publicKey: secrets.IPublicKey, name: string, value: string): secrets.ISecret {
+  private encrypt(publicKey: secrets.PublicKey, name: string, value: string): secrets.ISecret {
     // See https://docs.github.com/en/rest/actions/secrets#example-encrypting-a-secret-using-nodejs
     const binkey = sodium.from_base64(publicKey.value, sodium.base64_variants.ORIGINAL);
     const binsec = sodium.from_string(value);

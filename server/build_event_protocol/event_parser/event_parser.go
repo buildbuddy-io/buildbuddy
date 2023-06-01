@@ -1,11 +1,13 @@
 package event_parser
 
 import (
+	"flag"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -15,6 +17,10 @@ import (
 const (
 	envVarOptionName = "client_env"
 	envVarSeparator  = "="
+)
+
+var (
+	tagsEnabled = flag.Bool("app.tags_enabled", false, "Enable setting tags on invocations via build_metadata")
 )
 
 const (
@@ -32,10 +38,30 @@ const (
 	workflowConfiguredPriority = 5
 )
 
-func parseEnv(commandLine *command_line.CommandLine) map[string]string {
-	envVarMap := make(map[string]string)
+var (
+	optionsToParse = map[string]struct{}{
+		"remote_cache":                {},
+		"remote_upload_local_results": {},
+		"remote_download_outputs":     {},
+		"remote_executor":             {},
+	}
+)
+
+type cmdOptions struct {
+	// environment variables in structured command line.
+	envVarMap map[string]string
+	// The option name and value pairs whose option name is included in
+	// the optionsToParse.
+	optionsMap map[string]string
+}
+
+func parseCommandLine(commandLine *command_line.CommandLine) cmdOptions {
+	res := cmdOptions{
+		envVarMap:  make(map[string]string),
+		optionsMap: make(map[string]string),
+	}
 	if commandLine == nil {
-		return envVarMap
+		return res
 	}
 	for _, section := range commandLine.Sections {
 		p, ok := section.SectionType.(*command_line.CommandLineSection_OptionList)
@@ -43,16 +69,17 @@ func parseEnv(commandLine *command_line.CommandLine) map[string]string {
 			continue
 		}
 		for _, option := range p.OptionList.Option {
-			if option.OptionName != envVarOptionName {
-				continue
-			}
-			parts := strings.Split(option.OptionValue, envVarSeparator)
-			if len(parts) == 2 {
-				envVarMap[parts[0]] = parts[1]
+			if option.OptionName == envVarOptionName {
+				parts := strings.Split(option.OptionValue, envVarSeparator)
+				if len(parts) == 2 {
+					res.envVarMap[parts[0]] = parts[1]
+				}
+			} else if _, ok := optionsToParse[option.OptionName]; ok {
+				res.optionsMap[option.OptionName] = option.OptionValue
 			}
 		}
 	}
-	return envVarMap
+	return res
 }
 
 // StreamingEventParser consumes a stream of build events and populates an
@@ -80,7 +107,8 @@ type fieldPriorities struct {
 	BranchName,
 	CommitSha,
 	Command,
-	Pattern int
+	Pattern,
+	Tags int
 }
 
 func NewStreamingEventParser(invocation *inpb.Invocation) *StreamingEventParser {
@@ -93,7 +121,7 @@ func (sep *StreamingEventParser) GetInvocation() *inpb.Invocation {
 	return sep.invocation
 }
 
-func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent) {
+func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		{
@@ -182,9 +210,9 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 		{
 			metadata := p.BuildMetadata.Metadata
 			if metadata == nil {
-				return
+				return nil
 			}
-			sep.fillInvocationFromBuildMetadata(metadata)
+			return sep.fillInvocationFromBuildMetadata(metadata)
 		}
 	case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 		{
@@ -193,16 +221,18 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 		{
 			wfc := p.WorkflowConfigured
 			if wfc == nil {
-				return
+				return nil
 			}
 			sep.fillInvocationFromWorkflowConfigured(wfc)
 		}
 	}
+	return nil
 }
 
 func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine) {
 	priority := envPriority
-	envVarMap := parseEnv(commandLine)
+	commandLineOptions := parseCommandLine(commandLine)
+	envVarMap := commandLineOptions.envVarMap
 	if user, ok := envVarMap["USER"]; ok && user != "" {
 		sep.setUser(user, priority)
 	}
@@ -281,6 +311,28 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
 		sep.setCommitSha(sha, priority)
 	}
+
+	options := commandLineOptions.optionsMap
+	// remote cache and remote execution options
+	downloadOption := inpb.DownloadOutputsOption_NONE
+	if _, ok := options["remote_cache"]; ok {
+		// remote cache is enabled
+		downloadOption = inpb.DownloadOutputsOption_ALL
+		if val, ok := options["remote_download_outputs"]; ok {
+			if val == "toplevel" {
+				downloadOption = inpb.DownloadOutputsOption_TOP_LEVEL
+			} else if val == "minimal" {
+				downloadOption = inpb.DownloadOutputsOption_MINIMAL
+			}
+		}
+	}
+	sep.invocation.DownloadOutputsOption = downloadOption
+	if _, ok := options["remote_executor"]; ok {
+		sep.invocation.RemoteExecutionEnabled = true
+	}
+	if val, ok := options["remote_upload_local_results"]; ok && val == "1" {
+		sep.invocation.UploadLocalResultsEnabled = true
+	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus) {
@@ -312,7 +364,7 @@ func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStat
 	}
 }
 
-func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) {
+func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) error {
 	priority := buildMetadataPriority
 	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
 		sep.setCommitSha(sha, priority)
@@ -338,6 +390,12 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
+	if tags, ok := metadata["TAGS"]; ok && tags != "" {
+		if err := sep.setTags(tags, priority); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured) {
@@ -405,4 +463,15 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 		sep.priority.Pattern = priority
 		sep.invocation.Pattern = value
 	}
+}
+func (sep *StreamingEventParser) setTags(value string, priority int) error {
+	if *tagsEnabled && sep.priority.Tags <= priority {
+		tags, err := invocation_format.SplitAndTrimTags(value, true)
+		if err != nil {
+			return err
+		}
+		sep.priority.Tags = priority
+		sep.invocation.Tags = tags
+	}
+	return nil
 }

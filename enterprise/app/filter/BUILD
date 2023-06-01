@@ -4,9 +4,10 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 ts_library(
     name = "filter",
-    srcs = glob(["*.tsx"]),
+    srcs = ["filter.tsx"],
     strict = True,
     deps = [
+        "//app/capabilities",
         "//app/components/button",
         "//app/components/checkbox",
         "//app/components/input",
@@ -15,13 +16,12 @@ ts_library(
         "//app/components/slider",
         "//app/format",
         "//app/router",
-        "//app/util:proto",
-        "//proto:invocation_ts_proto",
-        "//proto:timestamp_ts_proto",
+        "//app/router:router_params",
+        "//enterprise/app/filter:filter_util",
+        "//proto:invocation_status_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//@types/react-date-range",
-        "@npm//date-fns",
         "@npm//lucide-react",
         "@npm//moment",
         "@npm//react",
@@ -36,5 +36,23 @@ filegroup(
         ":filter.css",
         ":react_date_range_base.css",
         ":react_date_range_default_theme.css",
+    ],
+)
+
+ts_library(
+    name = "filter_util",
+    srcs = ["filter_util.tsx"],
+    deps = [
+        "//app/capabilities",
+        "//app/format",
+        "//app/router:router_params",
+        "//app/util:proto",
+        "//proto:duration_ts_proto",
+        "//proto:invocation_status_ts_proto",
+        "//proto:stat_filter_ts_proto",
+        "//proto:timestamp_ts_proto",
+        "@npm//@types/moment",
+        "@npm//moment",
+        "@npm//tslib",
     ],
 )

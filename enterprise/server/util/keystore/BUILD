@@ -18,8 +18,10 @@ go_test(
     srcs = ["keystore_test.go"],
     deps = [
         ":keystore",
-        "//server/interfaces",
+        "//enterprise/server/backends/kms",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -2,11 +2,10 @@ package arg
 
 import (
 	"fmt"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-import "testing"
 
 func TestFindLast(t *testing.T) {
 	repr := func(val string, idx, length int) string {
@@ -43,4 +42,65 @@ func TestFindLast(t *testing.T) {
 			"incorrect return value for %s", tc.Args,
 		)
 	}
+}
+
+func TestGetMulti(t *testing.T) {
+	args := []string{"--build_metadata=COMMIT_SHA=abc123", "--foo", "--build_metadata=ROLE=CI"}
+
+	values := GetMulti(args, "build_metadata")
+
+	assert.Equal(t, []string{"COMMIT_SHA=abc123", "ROLE=CI"}, values)
+}
+
+func TestGetTargets(t *testing.T) {
+	args := []string{"build", "foo"}
+	targets := GetTargets(args)
+	assert.Equal(t, []string{"foo"}, targets)
+
+	args = []string{"build", "foo", "bar"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{"foo", "bar"}, targets)
+
+	args = []string{"build", "--opt=val", "foo", "bar", "--anotheropt=anotherval"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{"foo", "bar"}, targets)
+
+	args = []string{"run", "--opt=val", "foo", "bar", "--", "baz"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{"foo", "bar"}, targets)
+
+	// Support subtractive patterns https://bazel.build/run/build#specifying-build-targets
+	args = []string{"build", "--opt=val", "--", "foo", "bar", "-baz"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{"foo", "bar"}, targets)
+
+	args = []string{"build"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{}, targets)
+
+	args = []string{}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{}, targets)
+}
+
+func TestGetCommand(t *testing.T) {
+	args := []string{}
+	command, index := GetCommandAndIndex(args)
+	assert.Equal(t, "", command)
+	assert.Equal(t, -1, index)
+
+	args = []string{"command"}
+	command, index = GetCommandAndIndex(args)
+	assert.Equal(t, "command", command)
+	assert.Equal(t, 0, index)
+
+	args = []string{"command", "notcommand"}
+	command, index = GetCommandAndIndex(args)
+	assert.Equal(t, "command", command)
+	assert.Equal(t, 0, index)
+
+	args = []string{"--ouput_base=notcommand", "command", "--foo", "bar", "baz"}
+	command, index = GetCommandAndIndex(args)
+	assert.Equal(t, "command", command)
+	assert.Equal(t, 1, index)
 }

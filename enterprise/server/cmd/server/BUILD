@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
-package(default_visibility = ["//visibility:public"])
+# gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "@buildbuddy_internal//:__subpackages__",
+])
 
 go_library(
     name = "server_lib",
@@ -26,13 +30,15 @@ go_library(
         "//enterprise/server/backends/redis_metrics_collector",
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/backends/userdb",
+        "//enterprise/server/crypter_service",
+        "//enterprise/server/execution_search_service",
         "//enterprise/server/execution_service",
+        "//enterprise/server/githubapp",
         "//enterprise/server/hostedrunner",
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/quota",
         "//enterprise/server/raft/cache",
-        "//enterprise/server/registry:registry_lib",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/redis_client",
         "//enterprise/server/saml",
@@ -40,11 +46,14 @@ go_library(
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/secrets",
         "//enterprise/server/selfauth",
+        "//enterprise/server/sociartifactstore",
         "//enterprise/server/splash",
+        "//enterprise/server/suggestion",
         "//enterprise/server/tasksize",
         "//enterprise/server/telemetry",
         "//enterprise/server/usage",
         "//enterprise/server/usage_service",
+        "//enterprise/server/util/dsingleflight",
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",

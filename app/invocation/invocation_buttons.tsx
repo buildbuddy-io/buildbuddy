@@ -6,6 +6,7 @@ import InvocationMenuComponent from "./invocation_menu";
 import InvocationModel from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
 import WorkflowRerunButton from "./workflow_rerun_button";
+import SuggestionButton from "./suggestion_button";
 
 export interface InvocationButtonsProps {
   model: InvocationModel;
@@ -14,7 +15,15 @@ export interface InvocationButtonsProps {
 }
 
 export default class InvocationButtons extends React.Component<InvocationButtonsProps> {
+  state = {
+    askLoading: false,
+  };
+
   private canRerunWorkflow() {
+    if (!this.props.user?.groups.some((group) => group.id === this.props.model.invocations[0]?.acl?.groupId)) {
+      return false;
+    }
+
     const repoUrl = this.props.model.getRepo();
     // This repo URL comes from the GitHub API, so no need to worry about
     // ssh or other URL formats.
@@ -32,6 +41,8 @@ export default class InvocationButtons extends React.Component<InvocationButtons
         {showRerunButton && <WorkflowRerunButton model={this.props.model} />}
         {showCancelButton && <InvocationCancelButton invocationId={this.props.invocationId} />}
         <InvocationCompareButton invocationId={this.props.invocationId} />
+
+        <SuggestionButton user={this.props.user} model={this.props.model} />
         <InvocationShareButton user={this.props.user} model={this.props.model} invocationId={this.props.invocationId} />
         <InvocationMenuComponent
           user={this.props.user}

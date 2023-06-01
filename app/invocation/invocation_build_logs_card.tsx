@@ -7,7 +7,7 @@ interface Props {
   loading: boolean;
   expanded: boolean;
   dark: boolean;
-  fullLogsFetcher: () => Promise<string>;
+  fullLogsFetcher: () => void;
 }
 
 export default class BuildLogsCardComponent extends React.Component<Props> {

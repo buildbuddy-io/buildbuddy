@@ -8,10 +8,10 @@ export type InvocationTabsProps = TabsContext;
  * and which tab is the default tab.
  */
 export type TabsContext = {
-  hash: string;
+  tab: string;
   denseMode: boolean;
   role: string;
-  rbeEnabled?: boolean;
+  executionsEnabled?: boolean;
   hasSuggestions?: boolean;
 };
 
@@ -30,12 +30,12 @@ export type TabId =
   | "fetches"
   | "action";
 
-export function getTabId(hash: string): TabId {
-  return (hash.substring(1) as TabId) || "all";
+export function getTabId(tab: string): TabId {
+  return (tab.substring(1) as TabId) || "all";
 }
 
-export function getActiveTab({ hash, role, denseMode }: TabsContext): TabId {
-  if (hash) return getTabId(hash);
+export function getActiveTab({ tab, role, denseMode }: TabsContext): TabId {
+  if (tab) return getTabId(tab);
 
   if (!denseMode) return "all";
 
@@ -64,7 +64,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
         {isBazelInvocation && this.renderTab("artifacts", { label: "Artifacts" })}
         {isBazelInvocation && this.renderTab("timing", { label: "Timing" })}
         {isBazelInvocation && this.renderTab("cache", { label: "Cache" })}
-        {isBazelInvocation && this.props.rbeEnabled && this.renderTab("execution", { label: "Executions" })}
+        {this.props.executionsEnabled && this.renderTab("execution", { label: "Executions" })}
         {this.props.hasSuggestions && this.renderTab("suggestions", { label: "Suggestions" })}
         {this.renderTab("raw", { label: "Raw" })}
       </div>

@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize_model"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -260,7 +261,7 @@ func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string,
 func (s *taskSizer) groupKey(ctx context.Context) (string, error) {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
-		if perms.IsAnonymousUserError(err) && s.env.GetAuthenticator().AnonymousUsageEnabled() {
+		if authutil.IsAnonymousUserError(err) && s.env.GetAuthenticator().AnonymousUsageEnabled() {
 			return "ANON", nil
 		}
 		return "", err

@@ -1,6 +1,6 @@
 import React from "react";
 import { bazel_config } from "../../proto/bazel_config_ts_proto";
-import authService from "../auth/auth_service";
+import error_service from "../errors/error_service";
 import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import SetupCodeComponent from "./setup_code";
@@ -9,13 +9,12 @@ interface Props {}
 
 interface State {
   menuExpanded: boolean;
-  bazelConfigResponse: bazel_config.GetBazelConfigResponse;
+  bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
 }
 
 export default class SetupComponent extends React.Component<Props> {
   state: State = {
     menuExpanded: false,
-    bazelConfigResponse: null,
   };
 
   componentWillMount() {
@@ -25,10 +24,13 @@ export default class SetupComponent extends React.Component<Props> {
     request.host = window.location.host;
     request.protocol = window.location.protocol;
     request.includeCertificate = true;
-    rpcService.service.getBazelConfig(request).then((response: bazel_config.GetBazelConfigResponse) => {
-      console.log(response);
-      this.setState({ ...this.state, bazelConfigResponse: response });
-    });
+    rpcService.service
+      .getBazelConfig(request)
+      .then((response: bazel_config.GetBazelConfigResponse) => {
+        console.log(response);
+        this.setState({ bazelConfigResponse: response });
+      })
+      .catch((e) => error_service.handleError(e));
   }
 
   render() {

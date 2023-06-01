@@ -8,9 +8,10 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/golang-jwt/jwt"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -18,7 +19,9 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -26,10 +29,13 @@ import (
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
+	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -65,6 +71,8 @@ type GroupMembership struct {
 }
 
 type UserInfo interface {
+	jwt.Claims
+
 	GetUserID() string
 	GetGroupID() string
 	// IsImpersonating returns whether the group ID is being impersonated by the
@@ -87,6 +95,7 @@ type UserInfo interface {
 	IsAdmin() bool
 	HasCapability(akpb.ApiKey_Capability) bool
 	GetUseGroupOwnedExecutors() bool
+	GetCacheEncryptionEnabled() bool
 }
 
 // Authenticator constants
@@ -182,6 +191,7 @@ type BuildEventChannel interface {
 	FinalizeInvocation(iid string) error
 	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
 	GetNumDroppedEvents() uint64
+	GetInitialSequenceNumber() int64
 	Close()
 }
 
@@ -200,6 +210,7 @@ type Blobstore interface {
 	// and calling delete on a non-existent blob, so this is the only way to
 	// provide a consistent interface.
 	DeleteBlob(ctx context.Context, blobName string) error
+	Writer(ctx context.Context, blobName string) (CommittedWriteCloser, error)
 }
 
 type CacheMetadata struct {
@@ -217,21 +228,22 @@ type CacheMetadata struct {
 // storing of blob data based on its size.
 type Cache interface {
 	// Normal cache-like operations
-	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
-	Metadata(ctx context.Context, r *resource.ResourceName) (*CacheMetadata, error)
-	FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error)
-	Get(ctx context.Context, r *resource.ResourceName) ([]byte, error)
-	GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error)
-	Set(ctx context.Context, r *resource.ResourceName, data []byte) error
-	SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error
-	Delete(ctx context.Context, r *resource.ResourceName) error
+	Contains(ctx context.Context, r *rspb.ResourceName) (bool, error)
+	Metadata(ctx context.Context, r *rspb.ResourceName) (*CacheMetadata, error)
+	FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error)
+	Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error)
+	GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error)
+	Set(ctx context.Context, r *rspb.ResourceName, data []byte) error
+	SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error
+	Delete(ctx context.Context, r *rspb.ResourceName) error
 
 	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error)
-	Writer(ctx context.Context, r *resource.ResourceName) (CommittedWriteCloser, error)
+	Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error)
+	Writer(ctx context.Context, r *rspb.ResourceName) (CommittedWriteCloser, error)
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
+	SupportsEncryption(ctx context.Context) bool
 }
 
 type StoppableCache interface {
@@ -264,12 +276,19 @@ type DBHandle interface {
 	IsDeadlockError(err error) bool
 }
 
+type OLAPDBOptions interface {
+	WithQueryName(queryName string) OLAPDBOptions
+	QueryName() string
+}
+
 // OLAPDBHandle is a DB Handle for Online Analytical Processing(OLAP) DB
 type OLAPDBHandle interface {
 	DB(ctx context.Context) *gorm.DB
+	RawWithOptions(ctx context.Context, opts OLAPDBOptions, sql string, values ...interface{}) *gorm.DB
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error
 	FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error
+	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 }
 
 type InvocationDB interface {
@@ -289,8 +308,10 @@ type InvocationDB interface {
 
 type APIKeyGroup interface {
 	GetCapabilities() int32
+	GetUserID() string
 	GetGroupID() string
 	GetUseGroupOwnedExecutors() bool
+	GetCacheEncryptionEnabled() bool
 }
 
 type AuthDB interface {
@@ -316,7 +337,6 @@ type UserDB interface {
 	// to impersonate. It requires that the authenticated user has impersonation
 	// permissions and is requesting to impersonate a group.
 	GetImpersonatedUser(ctx context.Context) (*tables.User, error)
-	DeleteUser(ctx context.Context, userID string) error
 	FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error
 
 	// Creates the DEFAULT group, for on-prem usage where there is only
@@ -324,25 +344,74 @@ type UserDB interface {
 	CreateDefaultGroup(ctx context.Context) error
 
 	// Groups API
+
+	// CreateGroup creates a new group, adds the authenticated user to it,
+	// and creates an initial API key for the group.
+	CreateGroup(ctx context.Context, g *tables.Group) (string, error)
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
-	GetAuthGroup(ctx context.Context) (*tables.Group, error)
-	DeleteGroup(ctx context.Context, groupID string) error
-	AddUserToGroup(ctx context.Context, userID string, groupID string) error
-	RequestToJoinGroup(ctx context.Context, userID string, groupID string) error
+
+	// RequestToJoinGroup performs an attempt for the authenticated user to join
+	// the given group. If the user email matches the group's owned domain, the
+	// user is immediately added to the group. Otherwise, a pending membership
+	// request is submitted. The return value is the user's new membership
+	// status within the group after the transaction is performed (either
+	// REQUESTED or MEMBER).
+	RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error)
+
 	GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
+	// DeleteUserGitHubToken deletes the authenticated user's GitHub token.
+	DeleteUserGitHubToken(ctx context.Context) error
 
-	// API Keys API
-	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
-	GetAPIKeys(ctx context.Context, groupID string, checkVisibility bool) ([]*tables.APIKey, error)
+	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
+	// group. It is only to be used in situations where the user has a
+	// pre-authorized grant to access resources on behalf of the org, such as a
+	// publicly shared invocation. The returned API key must only be used to
+	// access internal resources and must not be returned to the caller.
+	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
+
+	// API Keys API.
+	//
+	// All of these functions authenticate the user if applicable and
+	// authorize access to the relevant user IDs, group IDs, and API keys,
+	// taking the group role into account.
+	//
+	// Any operations involving user-level keys return an error if user-level
+	// keys are not enabled by the org.
+
+	// GetAPIKeys returns group-level API keys that the user is authorized to
+	// access.
+	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// CreateAPIKey creates a group-level API key.
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+
+	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
+	GetUserOwnedKeysEnabled() bool
+
+	// GetUserAPIKeys returns all user-owned API keys within a group.
+	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// CreateUserAPIKey creates a user-owned API key within the group.
+	CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
+
+	// GetAPIKey returns an API key by ID. The key may be user-owned or
+	// group-owned.
+	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
+
+	// UpdateAPIKey updates an API key by ID. The key may be user-owned or
+	// group-owned.
 	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
+
+	// DeleteAPIKey deletes an API key by ID. The key may be user-owned or
+	// group-owned.
 	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 
-	// To support secrets API
+	// Secrets API
+
 	GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error)
 }
 
@@ -354,7 +423,9 @@ type Webhook interface {
 // Allows aggregating invocation statistics.
 type InvocationStatService interface {
 	GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error)
-	GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error)
+	GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error)
+	GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error)
+	GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error)
 }
 
 // Allows searching invocations.
@@ -389,12 +460,51 @@ type WorkflowService interface {
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 
+	// HandleRepositoryEvent handles a webhook event corresponding to the given
+	// GitRepository by initiating any relevant workflow actions.
+	HandleRepositoryEvent(ctx context.Context, repo *tables.GitRepository, wd *WebhookData, accessToken string) error
+
 	// GetLinkedWorkflows returns any workflows linked with the given repo access
 	// token.
 	GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error)
 
 	// WorkflowsPoolName returns the name of the executor pool to use for workflow actions.
 	WorkflowsPoolName() string
+
+	// GetLegacyWorkflowIDForGitRepository generates an artificial workflow ID so that legacy Workflow structs
+	// can be created from GitRepositories to play nicely with the pre-existing architecture
+	// that expects the legacy format
+	GetLegacyWorkflowIDForGitRepository(groupID string, repoURL string) string
+}
+
+type GitHubApp interface {
+	// TODO(bduffany): Add webhook handler and repo management API
+
+	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
+	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)
+	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
+
+	GetLinkedGitHubRepos(context.Context, *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error)
+	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
+	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
+
+	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
+
+	// GetInstallationTokenForStatusReportingOnly returns an installation token
+	// for the installation associated with the given installation owner (GitHub
+	// username or org name). It does not authorize the authenticated group ID,
+	// so should be used for status reporting only.
+	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (string, error)
+
+	// GetRepositoryInstallationToken returns an installation token for the given
+	// GitRepository.
+	GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error)
+
+	// WebhookHandler returns the GitHub webhook HTTP handler.
+	WebhookHandler() http.Handler
+
+	// OAuthHandler returns the OAuth flow HTTP handler.
+	OAuthHandler() http.Handler
 }
 
 type RunnerService interface {
@@ -462,6 +572,11 @@ type WebhookData struct {
 	// Ex: "https://github.com/acme-inc/acme"
 	TargetRepoURL string
 
+	// TargetRepoDefaultBranch is the default / main branch of the target repo.
+	// The default branch can be configured in the repo settings on GitHub.
+	// Ex: "main"
+	TargetRepoDefaultBranch string
+
 	// TargetBranch is the branch associated with the event that determines whether
 	// actions should be triggered. For push events this is the branch that was
 	// pushed to. For pull_request events this is the base branch into which the PR
@@ -472,6 +587,10 @@ type WebhookData struct {
 	// IsTargetRepoPublic reflects whether the target repo is publicly visible via
 	// the git provider.
 	IsTargetRepoPublic bool
+
+	// PullRequestNumber is the PR number if applicable.
+	// Ex: 123
+	PullRequestNumber int64
 
 	// PullRequestAuthor is the user name of the author of the pull request,
 	// if applicable.
@@ -500,8 +619,14 @@ type RemoteExecutionService interface {
 
 type FileCache interface {
 	FastLinkFile(f *repb.FileNode, outputPath string) bool
+	DeleteFile(f *repb.FileNode) bool
 	AddFile(f *repb.FileNode, existingFilePath string)
 	WaitForDirectoryScanToComplete()
+
+	// TempDir returns a directory that is guaranteed to be on the same device
+	// as the filecache. The directory is not unique per call. Callers should
+	// generate globally unique file names under this directory.
+	TempDir() string
 }
 
 type SchedulerService interface {
@@ -537,6 +662,10 @@ type ExecutionNode interface {
 	// GetExecutorID returns the ID for this execution node that uniquely identifies
 	// it within a node pool.
 	GetExecutorID() string
+}
+
+type ExecutionSearchService interface {
+	SearchExecutions(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error)
 }
 
 // TaskRouter decides which execution nodes should execute a task.
@@ -923,11 +1052,22 @@ type AEAD interface {
 	Decrypt(ciphertext, associatedData []byte) ([]byte, error)
 }
 
+type KMSType int
+
+const (
+	KMSTypeLocalInsecure KMSType = iota
+	KMSTypeGCP
+	KMSTypeAWS
+)
+
 // A KMS is a Key Managment Service (typically a cloud provider or external
 // service) that manages keys that can be fetched and used to encrypt/decrypt
 // data.
 type KMS interface {
 	FetchMasterKey() (AEAD, error)
+	FetchKey(uri string) (AEAD, error)
+
+	SupportedTypes() []KMSType
 }
 
 // SecretService manages secrets for an org.
@@ -955,4 +1095,35 @@ type ExecutionCollector interface {
 	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error
 	GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error)
 	DeleteInvocationLinks(ctx context.Context, execution_id string) error
+}
+
+// SuggestionService enables fetching of suggestions.
+type SuggestionService interface {
+	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
+	MultipleProvidersConfigured() bool
+}
+
+type Encryptor interface {
+	CommittedWriteCloser
+	Metadata() *rfpb.EncryptionMetadata
+}
+
+type Decryptor interface {
+	io.ReadCloser
+}
+
+type Crypter interface {
+	SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error)
+	GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error)
+
+	ActiveKey(ctx context.Context) (*rfpb.EncryptionMetadata, error)
+
+	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
+	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (Decryptor, error)
+}
+
+// Provides a duplicate function call suppression mechanism, just like the
+// singleflight package.
+type SingleFlightDeduper interface {
+	Do(ctx context.Context, key string, work func() ([]byte, error)) ([]byte, error)
 }

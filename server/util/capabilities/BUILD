@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//proto:api_key_go_proto",
         "//server/environment",
-        "//server/util/perms",
+        "//server/util/authutil",
         "//server/util/status",
     ],
 )

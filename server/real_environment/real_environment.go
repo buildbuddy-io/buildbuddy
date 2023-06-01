@@ -3,6 +3,7 @@ package real_environment
 import (
 	"context"
 	"io/fs"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -10,10 +11,10 @@ import (
 	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -42,6 +43,7 @@ type RealEnv struct {
 	workflowService                  interfaces.WorkflowService
 	runnerService                    interfaces.RunnerService
 	gitProviders                     interfaces.GitProviders
+	gitHubApp                        interfaces.GitHubApp
 	staticFilesystem                 fs.FS
 	appFilesystem                    fs.FS
 	blobstore                        interfaces.Blobstore
@@ -49,6 +51,7 @@ type RealEnv struct {
 	authenticator                    interfaces.Authenticator
 	repoDownloader                   interfaces.RepoDownloader
 	executionService                 interfaces.ExecutionService
+	executionSearchService           interfaces.ExecutionSearchService
 	cache                            interfaces.Cache
 	userDB                           interfaces.UserDB
 	authDB                           interfaces.AuthDB
@@ -81,6 +84,7 @@ type RealEnv struct {
 	fileResolver                     fs.FS
 	internalHTTPMux                  interfaces.HttpServeMux
 	mux                              interfaces.HttpServeMux
+	httpServerWaitGroup              *sync.WaitGroup
 	listenAddr                       string
 	buildbuddyServer                 interfaces.BuildBuddyServer
 	sslService                       interfaces.SSLService
@@ -96,18 +100,23 @@ type RealEnv struct {
 	internalGRPCSServer              *grpc.Server
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
-	registryServer                   rgpb.RegistryServer
 	olapDBHandle                     interfaces.OLAPDBHandle
 	kms                              interfaces.KMS
 	secretService                    interfaces.SecretService
 	executionCollector               interfaces.ExecutionCollector
+	suggestionService                interfaces.SuggestionService
+	crypterService                   interfaces.Crypter
+	sociArtifactStoreServer          socipb.SociArtifactStoreServer
+	sociArtifactStoreClient          socipb.SociArtifactStoreClient
+	singleFlightDeduper              interfaces.SingleFlightDeduper
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 	return &RealEnv{
-		healthChecker:    h,
-		serverContext:    context.Background(),
-		executionClients: make(map[string]*executionClientConfig, 0),
+		healthChecker:       h,
+		serverContext:       context.Background(),
+		executionClients:    make(map[string]*executionClientConfig, 0),
+		httpServerWaitGroup: &sync.WaitGroup{},
 	}
 }
 
@@ -173,6 +182,7 @@ func (r *RealEnv) SetBuildEventHandler(b interfaces.BuildEventHandler) {
 func (r *RealEnv) GetInvocationSearchService() interfaces.InvocationSearchService {
 	return r.invocationSearchService
 }
+
 func (r *RealEnv) SetInvocationSearchService(s interfaces.InvocationSearchService) {
 	r.invocationSearchService = s
 }
@@ -335,6 +345,12 @@ func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
 func (r *RealEnv) GetExecutionService() interfaces.ExecutionService {
 	return r.executionService
 }
+func (r *RealEnv) SetExecutionSearchService(e interfaces.ExecutionSearchService) {
+	r.executionSearchService = e
+}
+func (r *RealEnv) GetExecutionSearchService() interfaces.ExecutionSearchService {
+	return r.executionSearchService
+}
 func (r *RealEnv) GetRepoDownloader() interfaces.RepoDownloader {
 	return r.repoDownloader
 }
@@ -358,6 +374,12 @@ func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 }
 func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
 	r.gitProviders = gp
+}
+func (r *RealEnv) SetGitHubApp(val interfaces.GitHubApp) {
+	r.gitHubApp = val
+}
+func (r *RealEnv) GetGitHubApp() interfaces.GitHubApp {
+	return r.gitHubApp
 }
 func (r *RealEnv) GetXcodeLocator() interfaces.XcodeLocator {
 	return r.xcodeLocator
@@ -404,6 +426,10 @@ func (r *RealEnv) GetMux() interfaces.HttpServeMux {
 
 func (r *RealEnv) SetMux(mux interfaces.HttpServeMux) {
 	r.mux = mux
+}
+
+func (r *RealEnv) GetHTTPServerWaitGroup() *sync.WaitGroup {
+	return r.httpServerWaitGroup
 }
 
 func (r *RealEnv) GetInternalHTTPMux() interfaces.HttpServeMux {
@@ -534,14 +560,6 @@ func (r *RealEnv) SetGRPCSServer(grpcsServer *grpc.Server) {
 	r.grpcsServer = grpcsServer
 }
 
-func (r *RealEnv) GetRegistryServer() rgpb.RegistryServer {
-	return r.registryServer
-}
-
-func (r *RealEnv) SetRegistryServer(server rgpb.RegistryServer) {
-	r.registryServer = server
-}
-
 func (r *RealEnv) GetOLAPDBHandle() interfaces.OLAPDBHandle {
 	return r.olapDBHandle
 }
@@ -571,4 +589,32 @@ func (r *RealEnv) GetExecutionCollector() interfaces.ExecutionCollector {
 
 func (r *RealEnv) SetExecutionCollector(c interfaces.ExecutionCollector) {
 	r.executionCollector = c
+}
+
+func (r *RealEnv) GetSuggestionService() interfaces.SuggestionService {
+	return r.suggestionService
+}
+func (r *RealEnv) SetSuggestionService(s interfaces.SuggestionService) {
+	r.suggestionService = s
+}
+
+func (r *RealEnv) GetCrypter() interfaces.Crypter {
+	return r.crypterService
+}
+func (r *RealEnv) SetCrypter(c interfaces.Crypter) {
+	r.crypterService = c
+}
+
+func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
+	return r.sociArtifactStoreServer
+}
+func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
+	r.sociArtifactStoreServer = s
+}
+
+func (r *RealEnv) GetSingleFlightDeduper() interfaces.SingleFlightDeduper {
+	return r.singleFlightDeduper
+}
+func (r *RealEnv) SetSingleFlightDeduper(d interfaces.SingleFlightDeduper) {
+	r.singleFlightDeduper = d
 }

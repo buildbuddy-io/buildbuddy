@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -106,7 +107,7 @@ func TestRun_Killed_ErrorResult(t *testing.T) {
 		res := runSh(ctx, "kill -ABRT $$")
 
 		require.Error(t, res.Error)
-		assert.Contains(t, res.Error.Error(), "signal: aborted")
+		assert.Contains(t, res.Error.Error(), fmt.Sprintf("signal: %s", syscall.SIGABRT))
 		assert.Equal(t, -1, res.ExitCode)
 	}
 	{
@@ -186,7 +187,7 @@ func TestRun_Timeout(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
 		echo stdout >&1
 		echo stderr >&2
-		sleep infinity
+		sleep 60
 	`}}
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()

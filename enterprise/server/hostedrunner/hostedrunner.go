@@ -2,7 +2,6 @@ package hostedrunner
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/fs"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -27,6 +27,7 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -61,7 +62,7 @@ func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
+	q := query_builder.NewQuery(`SELECT * FROM "APIKeys"`)
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
@@ -93,15 +94,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	apiKey, err := r.lookupAPIKey(ctx)
-	if err != nil {
-		return nil, err
-	}
 	binaryBlob, err := fs.ReadFile(r.env.GetFileResolver(), runnerPath)
 	if err != nil {
 		return nil, err
 	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), binaryBlob)
+	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, binaryBlob)
 	if err != nil {
 		return nil, err
 	}
@@ -114,18 +111,23 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			IsExecutable: true,
 		}},
 	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), dir)
+	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, dir)
 	if err != nil {
 		return nil, err
 	}
 
-	var patchDigests []string
+	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
-		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), patch)
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, patch)
 		if err != nil {
 			return nil, err
 		}
-		patchDigests = append(patchDigests, fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()))
+		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		uri, err := rn.DownloadString()
+		if err != nil {
+			return nil, err
+		}
+		patchURIs = append(patchURIs, uri)
 	}
 
 	// Use https for git operations.
@@ -142,20 +144,17 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--target_repo_url=" + repoURL.String(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,
+		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
+		"--target_branch=" + req.GetRepoState().GetBranch(),
 	}
 	if strings.HasPrefix(req.GetBazelCommand(), "run ") {
 		args = append(args, "--record_run_metadata")
 	}
-	if req.GetRepoState().GetCommitSha() != "" {
-		args = append(args, "--target_commit_sha="+req.GetRepoState().GetCommitSha())
-	} else {
-		args = append(args, "--target_branch="+req.GetRepoState().GetBranch())
-	}
 	if req.GetInstanceName() != "" {
 		args = append(args, "--remote_instance_name="+req.GetInstanceName())
 	}
-	for _, patchDigest := range patchDigests {
-		args = append(args, "--patch_digest="+patchDigest)
+	for _, patchURI := range patchURIs {
+		args = append(args, "--patch_uri="+patchURI)
 	}
 
 	affinityKey := req.GetSessionAffinityKey()
@@ -166,9 +165,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
-			{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
-			{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
 			// Run from the scratch disk, since the workspace disk is hot-swapped
 			// between runs, which may not be very Bazel-friendly.
 			{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"},
@@ -200,7 +196,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		})
 	}
 
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -209,8 +205,23 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
 	}
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, action)
 	return actionDigest, err
+}
+
+func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
+	apiKey, err := r.lookupAPIKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Use env override headers for credentials.
+	envOverrides := []*repb.Command_EnvironmentVariable{
+		{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
+		{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
+		{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
+	}
+	ctx = withEnvOverrides(ctx, envOverrides)
+	return ctx, nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run
@@ -241,6 +252,11 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, err
 	}
+	execCtx, err = r.withCredentials(execCtx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	executionID, err := r.env.GetRemoteExecutionService().Dispatch(execCtx, &repb.ExecuteRequest{
 		InstanceName:    req.GetInstanceName(),
 		SkipCacheLookup: true,
@@ -324,4 +340,13 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 		}
 	}
+}
+
+func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {
+	assignments := make([]string, 0, len(env))
+	for _, e := range env {
+		assignments = append(assignments, e.Name+"="+e.Value)
+	}
+	return platform.WithRemoteHeaderOverride(
+		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
 }

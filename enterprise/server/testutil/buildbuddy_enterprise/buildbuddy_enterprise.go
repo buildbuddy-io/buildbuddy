@@ -3,6 +3,7 @@ package buildbuddy_enterprise
 import (
 	"bytes"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,11 +13,19 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+)
+
+var (
+	webdriverTarget = flag.String("webdriver_target", "local", "Target that should be tested by the webdriver. Should be 'local' or 'remote'. For remote targets, you must also set the --remote_app_endpoint and --remote_sso_slug flags.")
+
+	remoteAppEndpoint = flag.String("remote_app_endpoint", "", "For remote targets, the endpoint to reach the app (Ex. https://app.buildbuddy.dev, or https://app.buildbuddy.io).")
+	remoteSSOSlug     = flag.String("remote_sso_slug", "", "For remote targets, the SSO slug to login. Self-auth must be enabled for these targets.")
 )
 
 const (
@@ -25,10 +34,10 @@ const (
 )
 
 func Run(t *testing.T, args ...string) *app.App {
-	return RunWithConfig(t, DefaultConfig, args...)
+	return RunWithConfig(t, DefaultAppConfig(t), DefaultConfig, args...)
 }
 
-func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
+func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...string) *app.App {
 	redisTarget := testredis.Start(t).Target
 	commandArgs := []string{
 		"--app_directory=/enterprise/app",
@@ -36,12 +45,48 @@ func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
 		"--telemetry_port=-1",
 	}
 	commandArgs = append(commandArgs, args...)
-	return app.Run(
+	return app.RunWithApp(
 		t,
+		appConfig,
 		/* commandPath= */ "enterprise/server/cmd/server/buildbuddy_/buildbuddy",
 		commandArgs,
 		/* configPath= */ configPath,
 	)
+}
+
+func DefaultAppConfig(t *testing.T) *app.App {
+	return &app.App{
+		HttpPort:       testport.FindFree(t),
+		GRPCPort:       testport.FindFree(t),
+		MonitoringPort: testport.FindFree(t),
+	}
+}
+
+// remote represents a handle on a remote BuildBuddy enterprise server.
+type remote struct{}
+
+func (d *remote) HTTPURL() string {
+	return *remoteAppEndpoint
+}
+
+func (d *remote) SSOSlug() string {
+	return *remoteSSOSlug
+}
+
+type WebTarget interface {
+	HTTPURL() string
+}
+
+func SetupWebTarget(t *testing.T) WebTarget {
+	switch *webdriverTarget {
+	case "local":
+		return Run(t, "--cache.detailed_stats_enabled=true", "--app.user_owned_keys_enabled=true")
+	case "remote":
+		return &remote{}
+	default:
+		require.FailNowf(t, "invalid target", "%s is an invalid target for the webdriver invocation tests.", *webdriverTarget)
+		return nil
+	}
 }
 
 // WebClient is a lightweight client for testing enterprise functionality that

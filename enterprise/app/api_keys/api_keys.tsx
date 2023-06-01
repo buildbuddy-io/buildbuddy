@@ -14,21 +14,30 @@ import TextInput from "../../../app/components/input/input";
 import Spinner from "../../../app/components/spinner/spinner";
 import Modal from "../../../app/components/modal/modal";
 import errorService from "../../../app/errors/error_service";
-import rpcService from "../../../app/service/rpc_service";
+import { CancelableRpc } from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
 
 export interface ApiKeysComponentProps {
-  user?: User;
+  /** The authenticated user. */
+  user: User;
+
+  /** Whether to show only user-owned keys. */
+  userOwnedOnly?: boolean;
+
+  get: CancelableRpc<api_key.GetApiKeysRequest, api_key.GetApiKeysResponse>;
+  create: CancelableRpc<api_key.CreateApiKeyRequest, api_key.CreateApiKeyResponse>;
+  update: CancelableRpc<api_key.UpdateApiKeyRequest, api_key.UpdateApiKeyResponse>;
+  delete: CancelableRpc<api_key.DeleteApiKeyRequest, api_key.DeleteApiKeyResponse>;
 }
 
 interface State {
   initialLoadError: string | null;
   getApiKeysResponse: api_key.GetApiKeysResponse | null;
 
-  createForm: FormState<api_key.CreateApiKeyRequest> | null;
+  createForm: FormState<api_key.CreateApiKeyRequest>;
 
-  updateForm: FormState<api_key.UpdateApiKeyRequest> | null;
+  updateForm: FormState<api_key.UpdateApiKeyRequest>;
 
   keyToDelete: api_key.ApiKey | null;
   isDeleteModalOpen: boolean;
@@ -39,9 +48,9 @@ const INITIAL_STATE: State = {
   initialLoadError: null,
   getApiKeysResponse: null,
 
-  createForm: {},
+  createForm: newFormState(api_key.CreateApiKeyRequest.create()),
 
-  updateForm: {},
+  updateForm: newFormState(api_key.UpdateApiKeyRequest.create()),
 
   keyToDelete: null,
   isDeleteModalOpen: false,
@@ -51,9 +60,9 @@ const INITIAL_STATE: State = {
 type ApiKeyFields = api_key.ICreateApiKeyRequest | api_key.IUpdateApiKeyRequest;
 
 type FormState<T extends ApiKeyFields> = {
-  isOpen?: boolean;
-  isSubmitting?: boolean;
-  request?: T;
+  isOpen: boolean;
+  isSubmitting: boolean;
+  request: T;
 };
 
 export default class ApiKeysComponent extends React.Component<ApiKeysComponentProps, State> {
@@ -78,15 +87,27 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     if (!this.props.user) return;
 
     try {
-      const response = await rpcService.service.getApiKeys(
-        api_key.GetApiKeysRequest.create({ groupId: this.props.user.selectedGroup.id })
+      const response = await this.props.get(
+        api_key.GetApiKeysRequest.create({
+          groupId: this.props.user.selectedGroup.id,
+        })
       );
       this.setState({ getApiKeysResponse: response });
     } catch (e) {
       this.setState({ initialLoadError: BuildBuddyError.parse(e).description });
     } finally {
-      this.setState({ createForm: {}, updateForm: {} });
+      this.setState({
+        createForm: newFormState(api_key.CreateApiKeyRequest.create()),
+        updateForm: newFormState(api_key.UpdateApiKeyRequest.create()),
+      });
     }
+  }
+
+  private defaultCapabilities(): api_key.ApiKey.Capability[] {
+    if (this.props.user.isGroupAdmin()) {
+      return [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY];
+    }
+    return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
   }
 
   // Creation modal
@@ -95,8 +116,9 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.setState({
       createForm: {
         isOpen: true,
+        isSubmitting: false,
         request: new api_key.CreateApiKeyRequest({
-          capability: [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY],
+          capability: this.defaultCapabilities(),
         }),
       },
     });
@@ -105,7 +127,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     });
   }
   private async onCloseCreateForm() {
-    this.setState({ createForm: {} });
+    this.setState({ createForm: newFormState(api_key.CreateApiKeyRequest.create()) });
   }
   private onChangeCreateForm(name: string, value: any) {
     this.setState({
@@ -121,7 +143,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     try {
       this.setState({ createForm: { ...this.state.createForm, isSubmitting: true } });
-      await rpcService.service.createApiKey(
+      await this.props.create(
         new api_key.CreateApiKeyRequest({
           ...this.state.createForm.request,
           groupId: this.props.user.selectedGroup.id,
@@ -142,6 +164,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.setState({
       updateForm: {
         isOpen: true,
+        isSubmitting: false,
         request: new api_key.UpdateApiKeyRequest({
           id: apiKey.id,
           label: apiKey.label,
@@ -155,7 +178,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     });
   }
   private async onCloseUpdateForm() {
-    this.setState({ updateForm: {} });
+    this.setState({ updateForm: newFormState(api_key.UpdateApiKeyRequest.create()) });
   }
   private onChangeUpdateForm(name: string, value: any) {
     this.setState({
@@ -171,7 +194,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     try {
       this.setState({ updateForm: { ...this.state.updateForm, isSubmitting: true } });
-      await rpcService.service.updateApiKey(
+      await this.props.update(
         api_key.UpdateApiKeyRequest.create({
           ...this.state.updateForm.request,
         })
@@ -201,7 +224,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   private async onConfirmDelete() {
     try {
       this.setState({ isDeleteModalSubmitting: true });
-      await rpcService.service.deleteApiKey(new api_key.DeleteApiKeyRequest({ id: this.state.keyToDelete.id }));
+      await this.props.delete(new api_key.DeleteApiKeyRequest({ id: this.state.keyToDelete!.id }));
       await this.fetchApiKeys();
       this.setState({ isDeleteModalOpen: false });
     } catch (e) {
@@ -215,66 +238,35 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange(e.target.name, e.target.value);
   }
 
-  private onChangeCapability<T extends ApiKeyFields>(
-    request: T,
-    capability: api_key.ApiKey.Capability,
-    enabled: boolean,
-    onChange: (name: string, value: any) => any
-  ) {
-    if (enabled) {
-      request.capability.push(capability);
-    } else {
-      request.capability = request.capability.filter((cap) => cap !== capability);
-    }
-    onChange("capability", request.capability);
+  private onSelectReadOnly(onChange: (name: string, value: any) => any) {
+    onChange("capability", []);
   }
 
-  private onChangeReadOnly<T extends ApiKeyFields>(
-    request: T,
-    onChange: (name: string, value: any) => any,
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, false, onChange);
-    this.onChangeCapability(request, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY, false, onChange);
+  private onSelectCASOnly(onChange: (name: string, value: any) => any) {
+    onChange("capability", [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY]);
   }
 
-  private onChangeCASOnly<T extends ApiKeyFields>(
-    request: T,
-    onChange: (name: string, value: any) => any,
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, false, onChange);
-    this.onChangeCapability(request, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY, true, onChange);
+  private onSelectReadWrite(onChange: (name: string, value: any) => any) {
+    onChange("capability", [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY]);
   }
 
-  private onChangeReadWrite<T extends ApiKeyFields>(
-    request: T,
-    onChange: (name: string, value: any) => any,
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, true, onChange);
-    this.onChangeCapability(request, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY, false, onChange);
+  private onSelectExecutor(onChange: (name: string, value: any) => any) {
+    onChange("capability", [
+      api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY,
+      api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY,
+    ]);
   }
 
-  private onChangeVisibility<T extends ApiKeyFields>(
-    request: T,
-    onChange: (name: string, value: any) => any,
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
+  private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
     onChange("visibleToDevelopers", e.target.checked);
   }
 
-  private onChangeRegisterExecutor<T extends ApiKeyFields>(
-    request: T,
-    onChange: (name: string, value: any) => any,
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    this.onChangeCapability(
-      request,
-      api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY,
-      e.target.checked,
-      onChange
-    );
+  private canChangeCapabilities(): boolean {
+    return this.props.user.isGroupAdmin();
+  }
+
+  private canEdit(): boolean {
+    return this.props.userOwnedOnly || this.props.user.canCall("updateApiKey");
   }
 
   private renderModal<T extends ApiKeyFields>({
@@ -289,7 +281,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     title: string;
     submitLabel: string;
     onRequestClose: () => any;
-    onSubmit: () => any;
+    onSubmit: (e: React.FormEvent) => any;
     onChange: (name: string, value: any) => any;
     ref: React.RefObject<HTMLFormElement>;
     formState: FormState<T>;
@@ -306,14 +298,19 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <label className="note-input-label" htmlFor="label">
                   Label <span className="field-description">(what's this key for?)</span>
                 </label>
-                <TextInput name="label" onChange={this.onChangeLabel.bind(this, onChange)} value={request?.label} />
+                <TextInput
+                  name="label"
+                  onChange={this.onChangeLabel.bind(this, onChange)}
+                  value={request?.label || ""}
+                />
               </div>
               <div className="field-container">
                 <label className="checkbox-row">
                   <input
                     type="radio"
-                    onChange={this.onChangeReadWrite.bind(this, request, onChange)}
+                    onChange={this.onSelectReadWrite.bind(this, onChange)}
                     checked={isReadWrite(request)}
+                    disabled={!this.canChangeCapabilities()}
                   />
                   <span>
                     Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
@@ -324,8 +321,9 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <label className="checkbox-row">
                   <input
                     type="radio"
-                    onChange={this.onChangeReadOnly.bind(this, request, onChange)}
+                    onChange={this.onSelectReadOnly.bind(this, onChange)}
                     checked={isReadOnly(request)}
+                    disabled={!this.canChangeCapabilities()}
                   />
                   <span>
                     Read-only key <span className="field-description">(disable all remote cache uploads)</span>
@@ -336,8 +334,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <label className="checkbox-row">
                   <input
                     type="radio"
-                    onChange={this.onChangeCASOnly.bind(this, request, onChange)}
+                    onChange={this.onSelectCASOnly.bind(this, onChange)}
                     checked={isCASOnly(request)}
+                    disabled={!this.canChangeCapabilities()}
+                    debug-id="cas-only-radio-button"
                   />
                   <span>
                     CAS-only key <span className="field-description">(disable action cache uploads)</span>
@@ -345,13 +345,15 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 </label>
               </div>
 
-              {capabilities.executorKeyCreation && (
+              {/* User-owned keys cannot be used to register executors. */}
+              {capabilities.executorKeyCreation && !this.props.userOwnedOnly && (
                 <div className="field-container">
                   <label className="checkbox-row">
                     <input
-                      type="checkbox"
-                      onChange={this.onChangeRegisterExecutor.bind(this, request, onChange)}
-                      checked={hasCapability(request, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)}
+                      type="radio"
+                      onChange={this.onSelectExecutor.bind(this, onChange)}
+                      checked={isExecutorKey(request)}
+                      disabled={!this.canChangeCapabilities()}
                     />
                     <span>
                       Executor key <span className="field-description">(for self-hosted executors)</span>
@@ -359,18 +361,21 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   </label>
                 </div>
               )}
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    onChange={this.onChangeVisibility.bind(this, request, onChange)}
-                    checked={isVisibleToDevelopers(request)}
-                  />
-                  <span>
-                    Visible to developers <span className="field-description">(users with the role Developer)</span>
-                  </span>
-                </label>
-              </div>
+              {/* "Visible to developers" bit does not apply for user-level keys. */}
+              {!this.props.userOwnedOnly && (
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      onChange={this.onChangeVisibility.bind(this, onChange)}
+                      checked={request.visibleToDevelopers}
+                    />
+                    <span>
+                      Visible to developers <span className="field-description">(users with the role Developer)</span>
+                    </span>
+                  </label>
+                </div>
+              )}
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
@@ -408,9 +413,12 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     return (
       <div className="api-keys">
-        {this.props.user.canCall("createApiKey") && (
+        {this.canEdit() && (
           <div>
-            <FilledButton className="big-button" onClick={this.onClickCreateNew.bind(this)}>
+            <FilledButton
+              className="big-button"
+              onClick={this.onClickCreateNew.bind(this)}
+              debug-id="create-new-api-key">
               Create new API key
             </FilledButton>
           </div>
@@ -436,7 +444,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         })}
 
         <div className="api-keys-list">
-          {getApiKeysResponse.apiKey.length == 0 && !this.props.user.canCall("createApiKey") && (
+          {!this.props.userOwnedOnly && getApiKeysResponse.apiKey.length == 0 && !this.canEdit() && (
             <div className="no-api-keys-message">
               No API keys have been made visible to developers. Only organization admins can create API keys.
             </div>
@@ -515,42 +523,56 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 }
 
-function hasCapability<T extends ApiKeyFields>(apiKey: T | null, capability: api_key.ApiKey.Capability) {
-  return Boolean(apiKey?.capability?.some((existingCapability) => existingCapability === capability));
+function capabilitiesToInt(capabilities: api_key.ApiKey.Capability[]): number {
+  let out = 0;
+  for (const capability of capabilities) {
+    out |= capability;
+  }
+  return out;
+}
+
+function hasExactCapabilities<T extends ApiKeyFields>(apiKey: T | null, capabilities: api_key.ApiKey.Capability[]) {
+  return capabilitiesToInt(apiKey?.capability || []) === capabilitiesToInt(capabilities);
 }
 
 function isReadWrite<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasCapability(apiKey, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY);
+  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY]);
 }
 
 function isCASOnly<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasCapability(apiKey, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY);
+  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY]);
+}
+
+function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [
+    api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY,
+    api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY,
+  ]);
 }
 
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
-  return (
-    !hasCapability(apiKey, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY) &&
-    !hasCapability(apiKey, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY)
-  );
+  return hasExactCapabilities(apiKey, []);
 }
 
-function isVisibleToDevelopers<T extends ApiKeyFields>(apiKey: T | null) {
-  return apiKey?.visibleToDevelopers;
-}
-
-function describeCapabilities<T extends ApiKeyFields>(apiKey: T | null) {
+function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
   let capabilities = "Read+Write";
   if (isReadOnly(apiKey)) {
     capabilities = "Read-only";
-  }
-  if (isCASOnly(apiKey)) {
+  } else if (isCASOnly(apiKey)) {
     capabilities = "CAS-only";
+  } else if (isExecutorKey(apiKey)) {
+    capabilities = "Executor";
   }
-  if (hasCapability(apiKey, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)) {
-    capabilities += "+Executor";
-  }
-  if (isVisibleToDevelopers(apiKey)) {
+  if (apiKey.visibleToDevelopers) {
     capabilities += " [D]";
   }
   return capabilities;
+}
+
+function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
+  return {
+    isOpen: false,
+    isSubmitting: false,
+    request,
+  };
 }

@@ -7,6 +7,7 @@ import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
 import "proto/api/v1/log.proto";
 import "proto/api/v1/target.proto";
+import "proto/api/v1/workflow.proto";
 
 // This is the public interface used to programatically retrieve information
 // from BuildBuddy.
@@ -50,4 +51,9 @@ service ApiService {
 
   // Delete the File with the given uri.
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+
+  // Execute a workflow for the given URL and branch.
+  // Github App authentication is required. The API does not support running
+  // legacy workflows.
+  rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 }

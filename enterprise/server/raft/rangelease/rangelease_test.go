@@ -9,34 +9,37 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/lni/goutils/random"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+
+	dbcl "github.com/lni/dragonboat/v3/client"
+	sm "github.com/lni/dragonboat/v3/statemachine"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
 
+const clusterID = 1
+
 type testingProposer struct {
 	t    testing.TB
 	Data map[string]string
 }
 
-func newTestingProposer(t testing.TB) *testingProposer {
-	return &testingProposer{
-		t:    t,
-		Data: make(map[string]string),
-	}
-}
+var _ sender.ISender = &testingSender{}
 
 func statusProto(err error) *statuspb.Status {
 	s, _ := gstatus.FromError(err)
 	return s.Proto()
 }
 
-func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) *rfpb.BatchCmdResponse {
-	return &rfpb.BatchCmdResponse{
+func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) sm.Result {
+	p := &rfpb.BatchCmdResponse{
 		Union: []*rfpb.ResponseUnion{{
 			Status: statusProto(err),
 			Value: &rfpb.ResponseUnion_Cas{
@@ -46,9 +49,20 @@ func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) *rfpb.BatchCmdRes
 			},
 		}},
 	}
+	buf, err := proto.Marshal(p)
+	require.NoError(tp.t, err)
+	return sm.Result{Data: buf}
 }
 
-func (tp *testingProposer) SyncPropose(ctx context.Context, _ []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func (tp *testingProposer) GetNoOPSession(clusterID uint64) *dbcl.Session {
+	return dbcl.NewNoOPSession(clusterID, random.LockGuardedRand)
+}
+
+func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Session, cmd []byte) (sm.Result, error) {
+	batch := &rfpb.BatchCmdRequest{}
+	if err := proto.Unmarshal(cmd, batch); err != nil {
+		return sm.Result{}, err
+	}
 	// This is "fake" sender that only supports CAS values and stores them in a local map for ease of testing.
 	if len(batch.GetUnion()) != 1 {
 		tp.t.Fatal("Only one cmd at a time is allowed.")
@@ -74,16 +88,67 @@ func (tp *testingProposer) SyncPropose(ctx context.Context, _ []byte, batch *rfp
 		}
 	}
 	tp.t.Fatal("unsupported batch cmd value was provided.")
-	return nil, nil
+	return sm.Result{}, nil
 }
 
-func (tp *testingProposer) SyncRead(ctx context.Context, _ []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func (tp *testingProposer) SyncRead(ctx context.Context, clusterID uint64, query interface{}) (interface{}, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 
+// testingSender forwards all requests directly to the underlying proposer.
+type testingSender struct {
+	tp *testingProposer
+}
+
+func (t *testingSender) SyncPropose(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	buf, err := proto.Marshal(batch)
+	if err != nil {
+		return nil, err
+	}
+
+	sess := t.tp.GetNoOPSession(clusterID)
+
+	res, err := t.tp.SyncPropose(ctx, sess, buf)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &rfpb.BatchCmdResponse{}
+	if err := proto.Unmarshal(res.Data, resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	buf, err := proto.Marshal(batch)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := t.tp.SyncRead(ctx, clusterID, buf)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &rfpb.BatchCmdResponse{}
+	if err := proto.Unmarshal(res.([]byte), resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender) {
+	p := &testingProposer{
+		t:    t,
+		Data: make(map[string]string),
+	}
+	return p, &testingSender{p}
+}
+
 func TestAcquireAndRelease(t *testing.T) {
-	proposer := newTestingProposer(t)
-	liveness := nodeliveness.New("nodeID-1", proposer)
+	proposer, sender := newTestingProposerAndSender(t)
+	liveness := nodeliveness.New("nodeID-1", sender)
 
 	rd := &rfpb.RangeDescriptor{
 		Left:    []byte("a"),
@@ -95,7 +160,7 @@ func TestAcquireAndRelease(t *testing.T) {
 			{ClusterId: 1, NodeId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, clusterID, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
@@ -117,8 +182,8 @@ func TestAcquireAndRelease(t *testing.T) {
 }
 
 func TestAcquireAndReleaseMetaRange(t *testing.T) {
-	proposer := newTestingProposer(t)
-	liveness := nodeliveness.New("nodeID-2", proposer)
+	proposer, sender := newTestingProposerAndSender(t)
+	liveness := nodeliveness.New("nodeID-2", sender)
 
 	rd := &rfpb.RangeDescriptor{
 		Left:    keys.MinByte,
@@ -130,7 +195,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{ClusterId: 1, NodeId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, clusterID, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
@@ -152,8 +217,8 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 }
 
 func TestMetaRangeLeaseKeepalive(t *testing.T) {
-	proposer := newTestingProposer(t)
-	liveness := nodeliveness.New("nodeID-3", proposer)
+	proposer, sender := newTestingProposerAndSender(t)
+	liveness := nodeliveness.New("nodeID-3", sender)
 
 	rd := &rfpb.RangeDescriptor{
 		Left:    keys.MinByte,
@@ -167,7 +232,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, clusterID, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
@@ -195,8 +260,8 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 }
 
 func TestNodeEpochInvalidation(t *testing.T) {
-	proposer := newTestingProposer(t)
-	liveness := nodeliveness.New("nodeID-4", proposer)
+	proposer, sender := newTestingProposerAndSender(t)
+	liveness := nodeliveness.New("nodeID-4", sender)
 
 	rd := &rfpb.RangeDescriptor{
 		Left:    []byte("a"),
@@ -208,7 +273,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 			{ClusterId: 1, NodeId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, clusterID, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease()

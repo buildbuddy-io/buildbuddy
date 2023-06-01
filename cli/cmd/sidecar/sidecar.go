@@ -43,12 +43,13 @@ var (
 	serverType = flag.String("server_type", "sidecar", "The server type to match on health checks")
 
 	listenAddr  = flag.String("listen_addr", "localhost:1991", "Local address to listen on.")
-	besBackend  = flag.String("bes_backend", "", "Server address to proxy build events to.")
+	besBackend  = flag.String("bes_backend", "", "Server address to proxy build events to. Multiple servers can be specified if comma-separated.")
 	remoteCache = flag.String("remote_cache", "", "Server address to cache events to.")
 
 	cacheDir          = flag.String("cache_dir", "", "Root directory to use for local cache")
 	cacheMaxSizeBytes = flag.Int64("cache_max_size_bytes", 0, "Max cache size, in bytes")
 	inactivityTimeout = flag.Duration("inactivity_timeout", 5*time.Minute, "Sidecar will terminate after this much inactivity")
+	besSynchronous    = flag.Bool("bes_synchronous", false, "If true, wait until ackowledged")
 )
 
 var (
@@ -156,18 +157,22 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 }
 
 func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
-	besTarget := normalizeGrpcTarget(*besBackend)
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
-	buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget))
+	targets := make([]string, 0)
+	for _, besBE := range strings.Split(*besBackend, ",") {
+		besTarget := normalizeGrpcTarget(besBE)
+		targets = append(targets, besTarget)
+		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget, *besSynchronous))
+	}
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 
 	// Register to handle build event protocol messages.
-	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
+	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env, *besSynchronous)
 	if err != nil {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err.Error())
 	}
 	pepb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
-	log.Infof("BES proxy: will proxy requests to %q", besTarget)
+	log.Infof("BES proxy: will proxy requests to %q", strings.Join(targets, ", "))
 }
 
 func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpcServer *grpc.Server) {

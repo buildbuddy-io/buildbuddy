@@ -5,19 +5,18 @@ package(default_visibility = ["//visibility:public"])
 exports_files(glob(["*.css"]))
 
 ts_library(
-    name = "compare",
-    srcs = glob([
-        "**/*.tsx",
-        "**/*.ts",
-    ]),
+    name = "compare_invocations",
+    srcs = ["compare_invocations.tsx"],
+    strict = True,
     deps = [
-        "//app/auth",
+        "//app/auth:auth_service",
+        "//app/compare:diff_chunk",
+        "//app/compare:diff_preprocessing",
         "//app/components/button",
+        "//app/components/button:checkbox_button",
         "//app/router",
-        "//app/service",
+        "//app/service:rpc_service",
         "//app/util:errors",
-        "//proto:build_event_stream_ts_proto",
-        "//proto:command_line_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/diff-match-patch",
         "@npm//@types/react",
@@ -25,5 +24,30 @@ ts_library(
         "@npm//lucide-react",
         "@npm//react",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "diff_chunk",
+    srcs = ["diff_chunk.tsx"],
+    strict = True,
+    deps = [
+        "//app/components/button",
+        "@npm//@types/diff-match-patch",
+        "@npm//@types/react",
+        "@npm//diff-match-patch",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "diff_preprocessing",
+    srcs = ["diff_preprocessing.tsx"],
+    strict = True,
+    deps = [
+        "//proto:build_event_stream_ts_proto",
+        "//proto:command_line_ts_proto",
+        "//proto:invocation_ts_proto",
     ],
 )

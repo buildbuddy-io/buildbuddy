@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "google/rpc/status.proto";
 import "google/protobuf/timestamp.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
@@ -24,6 +25,7 @@ message LeaseTaskRequest {
   // Mutually exclusive with `release`.
   bool finalize = 2;
 
+  // DEPRECATED
   // Indicates that the lease should be released without finalizing (deleting)
   // the task.
   // Mutually exclusive with `finalize`.
@@ -31,6 +33,13 @@ message LeaseTaskRequest {
 
   // ID of the executor making the request.
   string executor_id = 4;
+
+  // Indicates that the leased task could not be run to completion and should
+  // be re-enqueued to be retried.
+  bool re_enqueue = 5;
+  // Optional description of why the task needs to be re-enqueued (may be
+  // visible to end user).
+  google.rpc.Status re_enqueue_reason = 6;
 }
 
 message LeaseTaskResponse {

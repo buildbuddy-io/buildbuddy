@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package encryption;
+
+import "proto/context.proto";
+
+message LocalInsecureKMSConfig {
+  string key_id = 1;
+}
+
+message GCPKMSConfig {
+  string project = 1;
+  string location = 2;
+  string key_ring = 3;
+  string key = 4;
+}
+
+message AWSKMSConfig {
+  // Amazon Resource Name for the key resource.
+  string key_arn = 1;
+}
+
+message KMSConfig {
+  LocalInsecureKMSConfig local_insecure_kms_config = 1;
+  GCPKMSConfig gcp_kms_config = 2;
+  AWSKMSConfig aws_kms_config = 3;
+}
+
+message SetEncryptionConfigRequest {
+  context.RequestContext request_context = 1;
+
+  bool enabled = 2;
+
+  // This field is required when enabling encryption.
+  KMSConfig kms_config = 3;
+}
+
+message SetEncryptionConfigResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message GetEncryptionConfigRequest {
+  context.RequestContext request_context = 1;
+}
+
+enum KMS {
+  UNKNOWN_KMS = 0;
+
+  LOCAL_INSECURE = 1;
+  GCP = 2;
+  AWS = 3;
+}
+
+message GetEncryptionConfigResponse {
+  context.ResponseContext response_context = 1;
+
+  bool enabled = 2;
+
+  repeated KMS supported_kms = 3;
+}

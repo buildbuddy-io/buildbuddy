@@ -1,13 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "executor_lib",
     srcs = ["executor.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor",
+    visibility = ["//visibility:public"],
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/auth",
@@ -27,7 +28,6 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/config",
         "//server/environment",
-        "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
@@ -48,7 +48,6 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//encoding/gzip",
         "@org_golang_google_grpc//test/bufconn",
     ],
@@ -69,17 +68,53 @@ go_binary(
     embed = [":executor_lib"],
 )
 
+# Executor expects "firecracker" and "jailer" binaries in $PATH,
+# and they can't be symlinks (otherwise the VM will not start).
+# Rename the firecracker/jailer binaries so that we can place
+# those into /usr/bin as regular files.
+
+genrule(
+    name = "firecracker_rename",
+    srcs = ["@com_github_firecracker_microvm_firecracker-v1.1.1-x86_64//:firecracker-v1.1.1-x86_64"],
+    outs = ["firecracker"],
+    cmd = "cp $(SRCS) $@",
+)
+
+genrule(
+    name = "jailer_rename",
+    srcs = ["@com_github_firecracker_microvm_firecracker-v1.1.1-x86_64//:jailer-v1.1.1-x86_64"],
+    outs = ["jailer"],
+    cmd = "cp $(SRCS) $@",
+)
+
+container_layer(
+    name = "executor_tools",
+    directory = "/usr/bin",
+    files = [
+        ":firecracker",
+        ":jailer",
+        "@com_github_iain_macdonald_soci_snapshotter-soci-store-v0.2.3-linux-amd64//file:soci-store-v0.2.3-linux-amd64",
+    ],
+    symlinks = {
+        "/usr/bin/soci-store": "/usr/bin/soci-store-v0.2.3-linux-amd64",
+    },
+)
+
 container_image(
     name = "base_image",
     base = "@executor_image//image:dockerfile_image.tar",
+    layers = [":executor_tools"],
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
     },
     tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 # Build a docker image similar to the go_binary above, but use the "go_image"
 # rule from @io_bazel_rules_docker instead, which creates a docker image.
+#
+# This target can be run locally with enterprise/tools/run_executor_image.sh
 go_image(
     name = "executor_image",
     base = ":base_image",

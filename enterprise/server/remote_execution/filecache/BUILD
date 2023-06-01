@@ -1,9 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = [
-    "//enterprise:__subpackages__",
-    "//tools/vmstart:__pkg__",
-])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "filecache",
@@ -30,8 +27,11 @@ go_test(
     deps = [
         ":filecache",
         "//proto:remote_execution_go_proto",
+        "//server/metrics",
         "//server/testutil/testfs",
+        "//server/testutil/testmetrics",
         "//server/util/hash",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

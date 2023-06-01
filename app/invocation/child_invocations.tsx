@@ -1,18 +1,12 @@
 import React from "react";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import InvocationModel from "./invocation_model";
 import ChildInvocationCard from "./child_invocation_card";
 import { CheckCircle, PlayCircle, XCircle } from "lucide-react";
+import { BazelCommandResult } from "./child_invocation_card";
+import { durationToMillisWithFallback } from "../util/proto";
 
 export type ChildInvocationProps = {
   model: InvocationModel;
-};
-
-export type BazelCommandResult = {
-  invocation:
-    | build_event_stream.WorkflowConfigured.IInvocationMetadata
-    | build_event_stream.ChildInvocationsConfigured.IInvocationMetadata;
-  durationMillis?: number;
 };
 
 export default class ChildInvocations extends React.Component<ChildInvocationProps> {
@@ -46,7 +40,10 @@ export default class ChildInvocations extends React.Component<ChildInvocationPro
         }
         continue;
       }
-      const durationMillis = Number(completedEvent.durationMillis);
+      const durationMillis = durationToMillisWithFallback(
+        completedEvent?.duration,
+        +(completedEvent?.durationMillis ?? 0)
+      );
 
       const result = { invocation, durationMillis };
       if (completedEvent.exitCode === 0) {

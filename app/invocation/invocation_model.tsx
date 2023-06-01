@@ -1,26 +1,33 @@
 import { HelpCircle, PlayCircle, XCircle, CheckCircle } from "lucide-react";
 import moment from "moment";
 import React from "react";
+import { Subject } from "rxjs";
 import { api_key } from "../../proto/api_key_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
+import { suggestion } from "../../proto/suggestion_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 import { formatDate } from "../format/format";
 import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
+import rpcService from "../service/rpc_service";
+import capabilities from "../capabilities/capabilities";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
 
-export const InvocationStatus = invocation.Invocation.InvocationStatus;
+export const InvocationStatus = invocation_status.InvocationStatus;
 
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
-  scoreCard: cache.IScoreCard;
+  scoreCard?: cache.ScoreCard;
+  botSuggestions: string[] = [];
+  onChange: Subject<void> = new Subject();
 
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
@@ -33,24 +40,24 @@ export default class InvocationModel {
   flakyTest: build_event_stream.BuildEvent[] = [];
   timeoutTest: build_event_stream.BuildEvent[] = [];
   structuredCommandLine: command_line.CommandLine[] = [];
-  finished: build_event_stream.BuildFinished;
-  aborted: build_event_stream.BuildEvent;
-  toolLogs: build_event_stream.BuildToolLogs;
-  workflowConfigured: build_event_stream.WorkflowConfigured;
-  childInvocationsConfigured: build_event_stream.ChildInvocationsConfigured;
+  finished?: build_event_stream.BuildFinished;
+  aborted?: build_event_stream.BuildEvent;
+  toolLogs?: build_event_stream.BuildToolLogs;
+  workflowConfigured?: build_event_stream.WorkflowConfigured;
+  childInvocationsConfigured?: build_event_stream.ChildInvocationsConfigured;
   childInvocationCompletedByInvocationId = new Map<
     string,
     build_event_stream.IChildInvocationCompleted | build_event_stream.IWorkflowCommandCompleted
   >();
-  workspaceStatus: build_event_stream.WorkspaceStatus;
-  configuration: build_event_stream.Configuration;
-  workspaceConfig: build_event_stream.WorkspaceConfig;
-  optionsParsed: build_event_stream.OptionsParsed;
-  unstructuredCommandLine: build_event_stream.UnstructuredCommandLine;
-  started: build_event_stream.BuildStarted;
-  expanded: build_event_stream.BuildEvent;
-  buildMetrics: build_event_stream.BuildMetrics;
-  buildToolLogs: build_event_stream.BuildToolLogs;
+  workspaceStatus?: build_event_stream.WorkspaceStatus;
+  configuration?: build_event_stream.Configuration;
+  workspaceConfig?: build_event_stream.WorkspaceConfig;
+  optionsParsed?: build_event_stream.OptionsParsed;
+  unstructuredCommandLine?: build_event_stream.UnstructuredCommandLine;
+  started?: build_event_stream.BuildStarted;
+  expanded?: build_event_stream.BuildEvent;
+  buildMetrics?: build_event_stream.BuildMetrics;
+  buildToolLogs?: build_event_stream.BuildToolLogs;
 
   workspaceStatusMap = new Map<string, string>();
   toolLogMap = new Map<string, string>();
@@ -63,9 +70,9 @@ export default class InvocationModel {
   testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
-  rootCauseTargetLabels: Set<String>;
+  rootCauseTargetLabels: Set<String> = new Set<String>();
 
-  private fileSetIDToFilesMap: Map<string, build_event_stream.IFile[]> = new Map();
+  private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
@@ -82,30 +89,33 @@ export default class InvocationModel {
 
       for (let event of invocation.event) {
         let buildEvent = event.buildEvent;
-        if (buildEvent.namedSetOfFiles) {
+        if (!buildEvent) {
+          continue;
+        }
+        if (buildEvent.namedSetOfFiles && buildEvent.id?.namedSet?.id) {
           model.fileSetIDToFilesMap.set(buildEvent.id.namedSet.id, buildEvent.namedSetOfFiles.files);
         }
         if (buildEvent.configured) model.targets.push(buildEvent as build_event_stream.BuildEvent);
-        if (buildEvent.configured) {
+        if (buildEvent.configured && buildEvent.id?.targetConfigured?.label) {
           model.configuredMap.set(buildEvent.id.targetConfigured.label, event as invocation.InvocationEvent);
         }
-        if (buildEvent.completed) {
+        if (buildEvent.completed && buildEvent.id?.targetCompleted?.label) {
           model.completedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
         }
-        if (buildEvent.fetch) {
+        if (buildEvent.fetch && buildEvent.id?.fetch?.url) {
           model.fetchEventURLs.push(buildEvent.id.fetch.url);
         }
-        if (buildEvent.testResult) {
+        if (buildEvent.testResult && buildEvent.id?.testResult?.label) {
           let results = model.testResultMap.get(buildEvent.id.testResult.label) || [];
           results.push(event as invocation.InvocationEvent);
           model.testResultMap.set(buildEvent.id.testResult.label, results);
         }
-        if (buildEvent.action) {
+        if (buildEvent.action && buildEvent.id?.actionCompleted?.label) {
           let results = model.actionMap.get(buildEvent.id.actionCompleted.label) || [];
           results.push(event as invocation.InvocationEvent);
           model.actionMap.set(buildEvent.id.actionCompleted.label, results);
         }
-        if (buildEvent.testSummary) {
+        if (buildEvent.testSummary && buildEvent.id?.testSummary?.label) {
           model.testSummaryMap.set(buildEvent.id.testSummary.label, event as invocation.InvocationEvent);
         }
         if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
@@ -113,7 +123,9 @@ export default class InvocationModel {
         if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
         if (buildEvent.aborted && buildEvent.aborted.reason == build_event_stream.Aborted.AbortReason.SKIPPED) {
           model.skipped.push(buildEvent as build_event_stream.BuildEvent);
-          model.skippedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
+          if (buildEvent.id?.targetCompleted?.label) {
+            model.skippedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
+          }
         } else if (buildEvent.aborted) {
           model.aborted = buildEvent as build_event_stream.BuildEvent;
         }
@@ -127,13 +139,13 @@ export default class InvocationModel {
         if (buildEvent.childInvocationsConfigured) {
           model.childInvocationsConfigured = buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured;
         }
-        if (buildEvent.workflowCommandCompleted) {
+        if (buildEvent.workflowCommandCompleted && buildEvent.id?.workflowCommandCompleted?.invocationId) {
           model.childInvocationCompletedByInvocationId.set(
             buildEvent.id.workflowCommandCompleted.invocationId,
             buildEvent.workflowCommandCompleted
           );
         }
-        if (buildEvent.childInvocationCompleted) {
+        if (buildEvent.childInvocationCompleted && buildEvent.id?.childInvocationCompleted?.invocationId) {
           model.childInvocationCompletedByInvocationId.set(
             buildEvent.id.childInvocationCompleted.invocationId,
             buildEvent.childInvocationCompleted
@@ -157,18 +169,23 @@ export default class InvocationModel {
         if (buildEvent.unstructuredCommandLine) {
           model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
+        if (buildEvent.buildMetadata) {
+          for (const [key, value] of Object.entries(buildEvent.buildMetadata.metadata || {})) {
+            model.buildMetadataMap.set(key, value);
+          }
+        }
       }
     }
     model.rootCauseTargetLabels = new Set(
       [...model.completedMap.values()]
-        .filter((e) => !e.buildEvent.completed.success)
-        .map((e) => e.buildEvent.children.filter((child) => child.actionCompleted?.label))
+        .filter((e) => !e.buildEvent?.completed?.success)
+        .map((e) => e.buildEvent?.children.filter((child) => child.actionCompleted?.label) || [])
         .flat()
-        .map((child) => child.actionCompleted.label)
+        .map((child) => child.actionCompleted!.label)
     );
     for (let label of model.completedMap.keys()) {
       let buildEvent = model.completedMap.get(label)?.buildEvent;
-      let testResult = model.testSummaryMap.get(label)?.buildEvent.testSummary;
+      let testResult = model.testSummaryMap.get(label)?.buildEvent?.testSummary;
       if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FLAKY) {
         model.flakyTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FAILED_TO_BUILD) {
@@ -181,7 +198,7 @@ export default class InvocationModel {
         model.failedTest.push(buildEvent as build_event_stream.BuildEvent);
       }
 
-      if (buildEvent.completed.success) {
+      if (buildEvent?.completed?.success) {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
@@ -208,7 +225,7 @@ export default class InvocationModel {
             let parts = option.optionValue.split("=");
             if (parts.length >= 2) {
               let key = parts.shift();
-              model.buildMetadataMap.set(key, parts.join("="));
+              model.buildMetadataMap.set(key!, parts.join("="));
             }
           }
         }
@@ -250,7 +267,7 @@ export default class InvocationModel {
     const invocation = this.invocations[0];
     if (!invocation) return null;
 
-    return groups.find((group) => group.id === invocation.acl.groupId) || null;
+    return groups.find((group) => group.id === invocation.acl?.groupId) || null;
   }
 
   isAnonymousInvocation(): boolean {
@@ -258,21 +275,31 @@ export default class InvocationModel {
   }
 
   hasCacheWriteCapability(): boolean {
-    return this.invocations
-      .find(() => true)
-      ?.createdWithCapabilities?.some(
-        (existingCapability) =>
-          existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY ||
-          existingCapability == api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY
-      );
+    return Boolean(
+      this.invocations
+        .find(() => true)
+        ?.createdWithCapabilities?.some(
+          (existingCapability) =>
+            existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY ||
+            existingCapability == api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY
+        )
+    );
   }
 
-  getId() {
+  getId(): string | undefined {
     return this.invocations.find(() => true)?.invocationId;
+  }
+
+  getAttempt() {
+    return this.invocations.find(() => true)?.attempt;
   }
 
   getHost() {
     return this.invocations.find(() => true)?.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+  }
+
+  getTags(): invocation.Invocation.Tag[] {
+    return (capabilities.config.tagsUiEnabled && this.invocations.find(() => true)?.tags) || [];
   }
 
   booleanCommandLineOption(name: string, defaultValue = false): boolean {
@@ -335,6 +362,16 @@ export default class InvocationModel {
     return this.getGithubBranch();
   }
 
+  getForkRepoURL(): string | undefined {
+    return this.buildMetadataMap.get("FORK_REPO_URL");
+  }
+
+  getPullRequestNumber(): number | undefined {
+    return this.buildMetadataMap.get("PULL_REQUEST_NUMBER")
+      ? Number(this.buildMetadataMap.get("PULL_REQUEST_NUMBER"))
+      : undefined;
+  }
+
   getGithubUser() {
     return this.clientEnvMap.get("GITHUB_ACTOR");
   }
@@ -380,7 +417,7 @@ export default class InvocationModel {
   }
 
   getRole(): string {
-    return this.invocations.find(() => true).role;
+    return this.invocations.find(() => true)?.role ?? "";
   }
 
   isWorkflowInvocation() {
@@ -405,13 +442,17 @@ export default class InvocationModel {
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
 
+  getToolTag() {
+    return this.optionsParsed?.toolTag;
+  }
+
   getPattern() {
     return this.getAllPatterns(3);
   }
 
   getAllPatterns(patternLimit?: number) {
     let patterns =
-      this.invocations.find(() => true).pattern ||
+      this.invocations.find(() => true)?.pattern ||
       this.expanded?.id?.pattern?.pattern ||
       this.aborted?.id?.pattern?.pattern ||
       [];
@@ -422,7 +463,7 @@ export default class InvocationModel {
   }
 
   getStartTimeDate(): Date {
-    return timestampToDateWithFallback(this.started?.startTime, this.started?.startTimeMillis);
+    return timestampToDateWithFallback(this.started?.startTime, this.started?.startTimeMillis ?? 0);
   }
 
   getEndTimeDate(): Date {
@@ -443,9 +484,9 @@ export default class InvocationModel {
       return Math.max(0, new Date().getTime() - this.getStartTimeDate().getTime()) * 1000;
     }
     if (this.toolLogMap.has("elapsed time")) {
-      return +this.toolLogMap.get("elapsed time") * 1000000;
+      return +this.toolLogMap.get("elapsed time")! * 1000000;
     }
-    return +this.invocations.find(() => true)?.durationUsec;
+    return +(this.invocations.find(() => true)?.durationUsec ?? 0);
   }
 
   getDurationSeconds() {
@@ -460,7 +501,7 @@ export default class InvocationModel {
 
   getTiming() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+    if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return "disconnected";
     }
     if (!this.finished && this.started) {
@@ -511,7 +552,7 @@ export default class InvocationModel {
 
   getFaviconType() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+    if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
     }
     if (!this.started) {
@@ -520,12 +561,12 @@ export default class InvocationModel {
     if (!this.finished) {
       return IconType.InProgress;
     }
-    return this.finished.exitCode.code == 0 ? IconType.Success : IconType.Failure;
+    return this.finished.exitCode?.code == 0 ? IconType.Success : IconType.Failure;
   }
 
   getStatusIcon() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+    if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
     }
     if (!this.started) {
@@ -534,7 +575,11 @@ export default class InvocationModel {
     if (!this.finished) {
       return <PlayCircle className="icon blue" />;
     }
-    return this.finished.exitCode.code == 0 ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
+    return this.finished.exitCode?.code == 0 ? (
+      <CheckCircle className="icon green" />
+    ) : (
+      <XCircle className="icon red" />
+    );
   }
 
   getCPU() {
@@ -564,7 +609,7 @@ export default class InvocationModel {
   }
 
   getRuntime(label: string) {
-    let testResult = this.testSummaryMap.get(label)?.buildEvent.testSummary;
+    let testResult = this.testSummaryMap.get(label)?.buildEvent?.testSummary;
     if (testResult) {
       let durationMillis = durationToMillisWithFallback(testResult.totalRunDuration, testResult.totalRunDurationMillis);
       return (durationMillis / 1000).toFixed(3) + " seconds";
@@ -574,7 +619,7 @@ export default class InvocationModel {
     );
   }
 
-  getTestSize(testSize: build_event_stream.TestSize) {
+  getTestSize(testSize?: build_event_stream.TestSize) {
     switch (testSize) {
       case build_event_stream.TestSize.SMALL:
         return " - Small";
@@ -588,21 +633,25 @@ export default class InvocationModel {
     return "";
   }
 
-  getLinks() {
+  getLinks(): { linkUrl: string; linkText: string }[] {
     let links = this.buildMetadataMap?.get("BUILDBUDDY_LINKS")?.split(",");
-    return (
+    const filtered: { linkUrl: string; linkText: string }[] =
       links
-        ?.map((link) => link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups)
-        ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || []
-    );
+        ?.flatMap((link) => {
+          const groups = link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups;
+          if (groups?.linkUrl) {
+            return { linkUrl: groups.linkUrl, linkText: groups.linkText };
+          } else {
+            return [];
+          }
+        })
+        ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || [];
+    return filtered;
   }
 
-  getFiles(event: build_event_stream.IBuildEvent): build_event_stream.IFile[] {
+  getFiles(event?: build_event_stream.BuildEvent): build_event_stream.File[] {
     if (!event?.completed) {
       return [];
-    }
-    if (event.completed.directoryOutput?.length) {
-      return event.completed.directoryOutput || [];
     }
     return (
       event.completed.outputGroup
@@ -617,5 +666,24 @@ export default class InvocationModel {
 
   hasChunkedEventLogs(): boolean {
     return this.invocations[0]?.hasChunkedEventLogs || false;
+  }
+
+  fetchSuggestions(service: string) {
+    let req = new suggestion.GetSuggestionRequest();
+    if (service == "openai") {
+      req.service = suggestion.SuggestionService.OPENAI;
+    }
+    req.invocationId = this.getId() ?? "";
+    return rpcService.service
+      .getSuggestion(req)
+      .then((res) => {
+        this.botSuggestions = res.suggestion;
+        this.onChange.next();
+      })
+      .catch((err) => {
+        console.error(err);
+        this.botSuggestions = ["Error getting a fix suggestion :("];
+        this.onChange.next();
+      });
   }
 }

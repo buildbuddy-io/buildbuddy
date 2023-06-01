@@ -55,7 +55,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
         router.navigateToWorkflows();
       })
       .catch((error) => {
-        this.setState({ createRequest: null });
+        this.setState({ createRequest: undefined });
         errorService.handleError(error);
       });
   }
@@ -65,17 +65,25 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
   }
 
   private onClickWorkflowBreadcrumb(e: React.MouseEvent) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateToWorkflows();
   }
 
   private onClickAddOther(e: React.MouseEvent) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateTo("/workflows/new/custom");
   }
 
   private getImportedRepoUrls(): Set<string> {
-    return new Set(this.state.workflowsResponse.workflow.map((workflow) => workflow.repoUrl));
+    return new Set(this.state.workflowsResponse?.workflow?.map((workflow) => workflow.repoUrl));
   }
 
   render() {
@@ -120,7 +128,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
         </div>
         <div className="container content-container">
           <div className="repo-list">
-            {this.state.reposResponse.repo.slice(0, this.state.repoListLimit).map((repo) => {
+            {this.state.reposResponse?.repo?.slice(0, this.state.repoListLimit).map((repo) => {
               const [owner, repoName] = parseOwnerRepo(repo.url);
               return (
                 <div className="repo-item">
@@ -144,7 +152,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
               );
             })}
           </div>
-          {this.state.repoListLimit < this.state.reposResponse.repo.length && (
+          {this.state.repoListLimit < (this.state.reposResponse?.repo?.length || 0) && (
             <div className="show-more-button-container">
               <OutlinedButton className="show-more-button" onClick={this.onClickShowMore.bind(this)}>
                 <span>Show more repos</span>

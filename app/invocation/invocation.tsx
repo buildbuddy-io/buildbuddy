@@ -2,6 +2,7 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
 import rpcService from "../service/rpc_service";
@@ -31,9 +32,12 @@ import InvocationActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
 import UserPreferences from "../preferences/preferences";
-import { eventlog } from "../../proto/eventlog_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "./cache_requests_card";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
+import router from "../router/router";
+import rpc_service from "../service/rpc_service";
+import { InvocationBotCard } from "./invocation_bot_card";
 
 interface State {
   loading: boolean;
@@ -41,19 +45,20 @@ interface State {
   error: BuildBuddyError | null;
 
   model: InvocationModel;
+
+  keyboardShortcutHandle: string;
 }
 
 interface Props {
-  user?: User | null;
+  user?: User;
   invocationId: string;
-  hash: string;
+  tab: string;
   search: URLSearchParams;
   preferences: UserPreferences;
 }
 
 const largePageSize = 100;
 const smallPageSize = 10;
-const maxInt32 = 2147483647;
 
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
@@ -62,11 +67,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
     error: null,
 
     model: new InvocationModel(),
+
+    keyboardShortcutHandle: "",
   };
 
-  private timeoutRef: number;
-  private logsModel: InvocationLogsModel;
-  private logsSubscription: Subscription;
+  private timeoutRef: number = 0;
+  private logsModel?: InvocationLogsModel;
+  private logsSubscription?: Subscription;
+  private modelChangedSubscription?: Subscription;
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -83,10 +91,41 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.logsModel.startFetching();
   }
 
+  componentDidMount() {
+    let handle = shortcuts.register(KeyCombo.u, () => {
+      // Used to select the correct invocation on the history page so that
+      // selecting an invocation with 'enter' and then going back with 'u' ends
+      // up with the same invocation still selected.
+      localStorage["selected_invocation_id"] = this.props.invocationId;
+      router.navigateHome();
+    });
+    this.setState({ keyboardShortcutHandle: handle });
+  }
+
+  componentDidUpdate(_prevProps: Props, prevState: State) {
+    // Update model subscription
+    if (this.state.model !== prevState.model) {
+      this.modelChangedSubscription?.unsubscribe();
+      this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
+    }
+    // Update title and favicon
+    if (this.state.model.invocations?.length) {
+      document.title = `${this.state.model.getUser(
+        true
+      )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
+      faviconService.setFaviconForType(this.state.model.getFaviconType());
+    }
+    // If in progress, schedule another fetch
+    if (this.state.model?.isInProgress()) {
+      this.scheduleRefetch();
+    }
+  }
+
   componentWillUnmount() {
     clearTimeout(this.timeoutRef);
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
+    shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
   fetchInvocation() {
@@ -97,34 +136,22 @@ export default class InvocationComponent extends React.Component<Props, State> {
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {
         console.log(response);
-        let showInProgressScreen = false;
-        if (
-          response.invocation.length &&
-          response.invocation[0].invocationStatus == invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS
-        ) {
-          showInProgressScreen = response.invocation[0].event.length == 0;
-          this.fetchUpdatedProgress();
-        }
+        const model = InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]);
+        // Only show the in-progress screen if we don't have any events yet.
+        const showInProgressScreen = model.isInProgress() && !response.invocation[0]?.event?.length;
         this.setState({
           inProgress: showInProgressScreen,
-          model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
-          loading: false,
+          model: model,
         });
-        document.title = `${this.state.model.getUser(
-          true
-        )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
-        faviconService.setFaviconForType(this.state.model.getFaviconType());
       })
       .catch((error: any) => {
         console.error(error);
-        this.setState({
-          error: BuildBuddyError.parse(error),
-          loading: false,
-        });
-      });
+        this.setState({ error: BuildBuddyError.parse(error) });
+      })
+      .finally(() => this.setState({ loading: false }));
   }
 
-  fetchUpdatedProgress() {
+  scheduleRefetch() {
     clearTimeout(this.timeoutRef);
     // Refetch invocation data in 3 seconds to update status.
     this.timeoutRef = window.setTimeout(() => {
@@ -136,20 +163,20 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (!this.state.model.hasChunkedEventLogs()) {
       // Use the inlined console buffer if this invocation was created before
       // log chunking existed.
-      return this.state.model.invocations[0]?.consoleBuffer;
+      return this.state.model.invocations[0]?.consoleBuffer ?? "";
     }
-    return this.logsModel.getLogs();
+    return this.logsModel?.getLogs() ?? "";
   }
 
   areBuildLogsLoading() {
     if (!this.state.model.hasChunkedEventLogs()) {
       return false;
     }
-    return this.logsModel.isFetching() && !this.logsModel.getLogs();
+    return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
   }
 
   render() {
-    if (this.state.loading || this.props.user === undefined) {
+    if (this.state.loading) {
       return <div className="loading"></div>;
     }
 
@@ -170,28 +197,27 @@ export default class InvocationComponent extends React.Component<Props, State> {
     let targetLabel = this.props.search.get("target");
     if (targetLabel) {
       let completed = this.state.model.completedMap.get(targetLabel);
-      let actionEvents =
-        completed?.buildEvent.children
+      let actionEvents: invocation.InvocationEvent[] =
+        completed?.buildEvent?.children
           .flatMap((child) =>
-            this.state.model.actionMap
-              .get(child?.actionCompleted?.label)
-              ?.filter(
-                (event) =>
-                  event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
-                  event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
-              )
+            (this.state.model.actionMap.get(child?.actionCompleted?.label ?? "") ?? []).filter(
+              (event) =>
+                event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
+                event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
+            )
           )
           .filter((event) => !!event) || [];
 
       return (
         <TargetComponent
+          model={this.state.model}
           invocationId={this.props.invocationId}
-          hash={this.props.hash}
-          files={this.state.model.getFiles(completed?.buildEvent)}
+          tab={this.props.tab}
+          files={completed?.buildEvent ? this.state.model.getFiles(completed.buildEvent) ?? [] : []}
           configuredEvent={this.state.model.configuredMap.get(targetLabel)}
           skippedEvent={this.state.model.skippedMap.get(targetLabel)}
           completedEvent={completed}
-          testResultEvents={this.state.model.testResultMap.get(targetLabel)}
+          testResultEvents={this.state.model.testResultMap.get(targetLabel) ?? []}
           testSummaryEvent={this.state.model.testSummaryMap.get(targetLabel)}
           actionEvents={actionEvents}
           user={this.props.user}
@@ -203,22 +229,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }
 
     const activeTab = getActiveTab({
-      hash: this.props.hash,
+      tab: this.props.tab,
       role: this.state.model.getRole(),
       denseMode: this.props.preferences.denseModeEnabled,
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
-      return rpcService.service
-        .getEventLogChunk(
-          new eventlog.GetEventLogChunkRequest({
-            invocationId: this.props.invocationId,
-            minLines: maxInt32, // int32 max value: max number of lines we can request.
-          })
-        )
-        .then((response: eventlog.GetEventLogChunkResponse) => {
-          return new TextDecoder().decode(response.buffer || new Uint8Array());
-        });
+      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model.invocations[0]?.attempt ?? 0));
     };
 
     const suggestions = getSuggestions({
@@ -246,23 +263,27 @@ export default class InvocationComponent extends React.Component<Props, State> {
         </div>
         <div className="container nopadding-dense">
           <InvocationTabsComponent
-            hash={this.props.hash}
+            tab={this.props.tab}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
-            rbeEnabled={this.state.model.getIsRBEEnabled() ? true : false}
+            executionsEnabled={this.state.model.getIsRBEEnabled() || this.state.model.isWorkflowInvocation()}
             hasSuggestions={suggestions.length > 0}
           />
 
           {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
             <InvocationFilterComponent
-              hash={this.props.hash}
+              tab={this.props.tab}
               search={this.props.search}
               placeholder={activeTab == "execution" ? "Filter by digest or command..." : ""}
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
+          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted?.description && (
             <ErrorCardComponent model={this.state.model} />
+          )}
+
+          {(activeTab === "all" || activeTab == "log") && this.state.model.botSuggestions.length > 0 && (
+            <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
           {(this.state.model.workflowConfigured || this.state.model.childInvocationsConfigured) &&
@@ -272,7 +293,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <TargetsComponent
               model={this.state.model}
               mode="failing"
-              filter={this.props.search.get("targetFilter")}
+              filter={this.props.search.get("targetFilter") ?? ""}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
@@ -303,7 +324,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <TargetsComponent
               model={this.state.model}
               mode="passing"
-              filter={this.props.search.get("targetFilter")}
+              filter={this.props.search.get("targetFilter") ?? ""}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
@@ -327,17 +348,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
-              filter={this.props.search.get("artifactFilter")}
+              filter={this.props.search.get("artifactFilter") ?? ""}
               pageSize={activeTab ? largePageSize : smallPageSize}
             />
           )}
 
-          {isBazelInvocation && activeTab == "execution" && (
+          {activeTab == "execution" && (
             <ExecutionCardComponent
               model={this.state.model}
               inProgress={this.state.inProgress}
               search={this.props.search}
-              filter={this.props.search.get("executionFilter")}
+              filter={this.props.search.get("executionFilter") ?? ""}
             />
           )}
 

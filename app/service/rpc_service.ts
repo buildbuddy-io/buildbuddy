@@ -26,6 +26,7 @@ class RpcService {
   events: Subject<string>;
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 
   constructor() {
@@ -44,6 +45,10 @@ class RpcService {
     return false;
   }
 
+  getDownloadUrl(params: Record<string, string>): string {
+    return `/file/download?${new URLSearchParams(params)}`;
+  }
+
   getBytestreamUrl(bytestreamURL: string, invocationId: string, { filename = "", zip = "" } = {}): string {
     const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
     const params: Record<string, string> = {
@@ -53,7 +58,16 @@ class RpcService {
     };
     if (filename) params.filename = filename;
     if (zip) params.z = zip;
-    return `/file/download?${new URLSearchParams(params)}`;
+    return this.getDownloadUrl(params);
+  }
+
+  downloadLog(invocationId: string, attempt: number) {
+    const params: Record<string, string> = {
+      invocation_id: invocationId,
+      attempt: attempt.toString(),
+      artifact: "buildlog",
+    };
+    window.open(this.getDownloadUrl(params));
   }
 
   downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
@@ -72,7 +86,7 @@ class RpcService {
     return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId), responseType || "");
   }
 
-  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {
+  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | ""): Promise<string> {
     return new Promise((resolve, reject) => {
       var request = new XMLHttpRequest();
       request.responseType = responseType;
@@ -148,7 +162,7 @@ function getRpcMethodNames(serviceClass: Function) {
 
 type Rpc<Request, Response> = (request: Request) => Promise<Response>;
 
-type CancelableRpc<Request, Response> = (request: Request) => CancelablePromise<Response>;
+export type CancelableRpc<Request, Response> = (request: Request) => CancelablePromise<Response>;
 
 type RpcMethodNames<Service> = keyof Omit<Service, keyof protobufjs.rpc.Service>;
 

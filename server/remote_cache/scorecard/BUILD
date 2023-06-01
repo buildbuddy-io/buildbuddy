@@ -30,6 +30,7 @@ go_test(
         "//server/interfaces",
         "//server/tables",
         "//server/testutil/testenv",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@go_googleapis//google/rpc:status_go_proto",

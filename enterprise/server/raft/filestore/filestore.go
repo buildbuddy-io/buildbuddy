@@ -4,6 +4,7 @@ package filestore
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
@@ -12,17 +13,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
 	PartitionDirectoryPrefix = "PT"
+	groupIDPrefix            = "GR"
 )
 
 // returns partitionID, groupID, isolation, remote_instance_name, hash
@@ -37,9 +39,9 @@ func fileRecordSegments(r *rfpb.FileRecord) (partID string, groupID string, isol
 	partID = r.GetIsolation().GetPartitionId()
 	groupID = r.GetIsolation().GetGroupId()
 
-	if r.GetIsolation().GetCacheType() == resource.CacheType_CAS {
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_CAS {
 		isolation = "cas"
-	} else if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
+	} else if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
 		isolation = "ac"
 		if remoteInstanceName := r.GetIsolation().GetRemoteInstanceName(); remoteInstanceName != "" {
 			remoteInstanceHash = strconv.Itoa(int(crc32.ChecksumIEEE([]byte(remoteInstanceName))))
@@ -73,6 +75,10 @@ const (
 	// regardless of remote instance name.
 	Version2
 
+	// Version3 adds an optional encryption key ID for keys that refer to
+	// encrypted data.
+	Version3
+
 	// TestingMaxKeyVersion should not be used directly -- it is always
 	// 1 more than the highest defined version, which allows for tests
 	// to iterate across all versions from UndefinedKeyVersion to
@@ -86,16 +92,62 @@ type PebbleKey struct {
 	isolation          string
 	remoteInstanceHash string
 	hash               string
-
-	prioritizeHashInMetadataKey bool
+	encryptionKeyID    string
 }
 
-func (pmk *PebbleKey) String() string {
+func (pmk PebbleKey) String() string {
 	fmk, err := pmk.Bytes(UndefinedKeyVersion)
 	if err != nil {
 		return err.Error()
 	}
 	return string(fmk)
+}
+
+func (pmk PebbleKey) LockID() string {
+	if pmk.isolation == "ac" {
+		return filepath.Join(pmk.isolation, pmk.groupID, pmk.remoteInstanceHash, pmk.hash)
+	}
+	return filepath.Join(pmk.isolation, pmk.hash)
+}
+
+func (pmk PebbleKey) CacheType() rspb.CacheType {
+	switch pmk.isolation {
+	case "ac":
+		return rspb.CacheType_AC
+	case "cas":
+		return rspb.CacheType_CAS
+	default:
+		return rspb.CacheType_UNKNOWN_CACHE_TYPE
+	}
+}
+
+func (pmk PebbleKey) Hash() string {
+	return pmk.hash
+}
+
+func (pmk PebbleKey) GroupID() string {
+	return pmk.groupID
+}
+
+// FixedWidthGroupID returns a group ID that is zero padded to 20 digits in
+// order to make all key group IDs uniform. This is necessary to be able to
+// sample uniformly across group IDs.
+func FixedWidthGroupID(groupID string) string {
+	// This is only for true the special "ANON" group.
+	if !strings.HasPrefix(groupID, groupIDPrefix) {
+		return groupID
+	}
+	return fmt.Sprintf("%s%020s", groupIDPrefix, groupID[2:])
+}
+
+// Undoes the padding added by FixedWidthGroupID to produce the "real" group
+// ID.
+func trimFixedWidthGroupID(groupID string) string {
+	// This is only for true the special "ANON" group.
+	if !strings.HasPrefix(groupID, groupIDPrefix) {
+		return groupID
+	}
+	return groupIDPrefix + strings.TrimLeft(groupID[2:], "0")
 }
 
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
@@ -114,16 +166,28 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(pmk.groupID, filePath)
 		}
-		partDir := "/v1/" + PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v1")
 		return []byte(filePath), nil
 	case Version2:
 		filePath := filepath.Join(pmk.hash, pmk.isolation, pmk.remoteInstanceHash)
 		if pmk.isolation == "ac" {
-			filePath = filepath.Join(pmk.groupID, filePath)
+			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
 		}
-		partDir := "/v2/" + PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v2")
+		return []byte(filePath), nil
+	case Version3:
+		rih := pmk.remoteInstanceHash
+		if pmk.isolation == "ac" && rih == "" {
+			rih = "0"
+		}
+		filePath := filepath.Join(pmk.hash, pmk.isolation, rih, pmk.encryptionKeyID)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
+		}
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v3")
 		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
@@ -138,6 +202,8 @@ func (pmk *PebbleKey) parseUndefinedVersion(parts [][]byte) error {
 	switch len(parts) {
 	case 3:
 		pmk.partID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2])
+	case 4:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
 	case 5:
 		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
@@ -150,9 +216,11 @@ func (pmk *PebbleKey) parseUndefinedVersion(parts [][]byte) error {
 func (pmk *PebbleKey) parseVersion1(parts [][]byte) error {
 	switch len(parts) {
 	case 4:
-		pmk.partID, pmk.isolation, pmk.hash = string(parts[1]), string(parts[2]), string(parts[3])
+		pmk.partID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2])
+	case 5:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
 	case 6:
-		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
 		return parseError(parts)
 	}
@@ -163,13 +231,48 @@ func (pmk *PebbleKey) parseVersion1(parts [][]byte) error {
 func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
 	switch len(parts) {
 	case 4:
-		pmk.partID, pmk.hash, pmk.isolation = string(parts[1]), string(parts[2]), string(parts[3])
+		pmk.partID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2])
+	case 5:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
 	case 6:
-		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
 		return parseError(parts)
 	}
 	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	pmk.groupID = trimFixedWidthGroupID(pmk.groupID)
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion3(parts [][]byte) error {
+	switch len(parts) {
+	// CAS artifact
+	// PTfoo/abcd12345asdasdasd123123123asdasdasd/v3
+	case 4:
+		pmk.partID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2])
+	// encrypted CAS artifact
+	// PTfoo/abcd12345asdasdasd123123123asdasdasd/EK123/v3
+	case 5:
+		pmk.partID, pmk.hash, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	// AC artifact
+	// PTfoo/GR123/abcd12345asdasdasd123123123asdasdasd/ac/123/v3
+	case 6:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	// encrypted AC artifact
+	// PTfoo/GR123/abcd12345asdasdasd123123123asdasdasd/ac/123/EK123/v3
+	case 7:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	pmk.groupID = trimFixedWidthGroupID(pmk.groupID)
 	return nil
 }
 
@@ -185,9 +288,12 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	// Attempt to read the key version, if one is present. This allows for much
 	// simpler parsing because we can restrict the set of valid parse inputs
 	// instead of having to possibly parse any/all versions at once.
-	if len(parts[0]) > 1 && bytes.ContainsRune(parts[0][:1], 'v') {
-		if s, err := strconv.ParseUint(string(parts[0][1:]), 10, 32); err == nil {
-			version = PebbleKeyVersion(s)
+	if len(parts[0]) > 1 {
+		lastPart := parts[len(parts)-1]
+		if bytes.ContainsRune(lastPart[:1], 'v') {
+			if s, err := strconv.ParseUint(string(lastPart[1:]), 10, 32); err == nil {
+				version = PebbleKeyVersion(s)
+			}
 		}
 	}
 
@@ -198,6 +304,8 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 		return Version1, pmk.parseVersion1(parts)
 	case Version2:
 		return Version2, pmk.parseVersion2(parts)
+	case Version3:
+		return Version3, pmk.parseVersion3(parts)
 	default:
 		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
 	}
@@ -207,7 +315,7 @@ type Store interface {
 	FileKey(r *rfpb.FileRecord) ([]byte, error)
 	FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string
 	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
-	PebbleKey(r *rfpb.FileRecord) (*PebbleKey, error)
+	PebbleKey(r *rfpb.FileRecord) (PebbleKey, error)
 
 	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
 	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
@@ -221,25 +329,15 @@ type Store interface {
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
 
-	LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, srcFileDir, targetFileDir string) error
+	LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, dstFileRecord *rfpb.FileRecord, srcFileDir, targetFileDir string) (*rfpb.StorageMetadata, error)
 }
 
 type fileStorer struct {
-	prioritizeHashInMetadataKey bool
-}
-
-type Opts struct {
-	// PrioritizeHashInMetadataKey controls the placement of the digest within the metadata
-	// key. When enabled, the digest is placed before the cache type & isolation
-	// parts.
-	PrioritizeHashInMetadataKey bool
 }
 
 // New creates a new filestorer interface.
-func New(opts Opts) Store {
-	return &fileStorer{
-		prioritizeHashInMetadataKey: opts.PrioritizeHashInMetadataKey,
-	}
+func New() Store {
+	return &fileStorer{}
 }
 
 func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
@@ -264,8 +362,11 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.GetEncryption().GetKeyId() != "" {
+		hash += "_" + r.GetEncryption().GetKeyId()
+	}
 	partDir := PartitionDirectoryPrefix + partID
-	if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
 		return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	} else {
 		return []byte(filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
@@ -298,18 +399,18 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	return pmk.Bytes(UndefinedKeyVersion)
 }
 
-func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (*PebbleKey, error) {
+func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
 	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
-		return nil, err
+		return PebbleKey{}, err
 	}
-	return &PebbleKey{
-		partID:                      partID,
-		groupID:                     groupID,
-		isolation:                   isolation,
-		remoteInstanceHash:          remoteInstanceHash,
-		hash:                        hash,
-		prioritizeHashInMetadataKey: fs.prioritizeHashInMetadataKey,
+	return PebbleKey{
+		partID:             partID,
+		groupID:            groupID,
+		isolation:          isolation,
+		remoteInstanceHash: remoteInstanceHash,
+		hash:               hash,
+		encryptionKeyID:    r.GetEncryption().GetKeyId(),
 	}, nil
 }
 
@@ -383,38 +484,48 @@ func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *rfpb.St
 	return disk.FileReader(ctx, fp, offset, limit)
 }
 
-func (fs *fileStorer) LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, srcFileDir, targetFileDir string) error {
+func (fs *fileStorer) LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, dstFileRecord *rfpb.FileRecord, srcFileDir, targetFileDir string) (*rfpb.StorageMetadata, error) {
 	if md.GetFileMetadata() == nil {
-		return nil
+		return md, nil
 	}
 	f := md.GetFileMetadata()
 	originalFp := fs.FilePath(srcFileDir, f)
-	targetFp := fs.FilePath(targetFileDir, f)
+	dstfileKey, err := fs.FileKey(dstFileRecord)
+	if err != nil {
+		return nil, err
+	}
+	targetFp := filepath.Join(targetFileDir, string(dstfileKey))
 	if err := disk.EnsureDirectoryExists(filepath.Dir(targetFp)); err != nil {
-		return err
+		return nil, err
+	}
+
+	newMD := &rfpb.StorageMetadata{
+		FileMetadata: &rfpb.StorageMetadata_FileMetadata{
+			Filename: string(dstfileKey),
+		},
 	}
 	if err := os.Link(originalFp, targetFp); err == nil {
-		return nil
+		return newMD, nil
 	}
 	// Linking failed :( Attempt to copy instead.
 	log.Warningf("Linking failed, copying file %q => %q (may be slow)", originalFp, targetFp)
 	rc, err := fs.FileReader(ctx, srcFileDir, f, 0, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rc.Close()
 
 	wc, err := disk.FileWriter(ctx, targetFp)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer wc.Close()
 
 	_, err = io.Copy(wc, rc)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return wc.Commit()
+	return newMD, wc.Commit()
 }
 
 func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {

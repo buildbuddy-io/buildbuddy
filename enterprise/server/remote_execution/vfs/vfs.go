@@ -112,6 +112,7 @@ func (vfs *VFS) Mount() error {
 			DirectMount: true,
 			FsName:      "bbvfs",
 			MaxWrite:    fuse.MAX_KERNEL_WRITE,
+			EnableLocks: true,
 		},
 	}
 	nodeFS := fs.NewNodeFS(vfs.root, opts)
@@ -580,6 +581,7 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 	}
 	out.Size = uint64(attrs.GetSize())
 	out.Mode = attrs.GetPerm()
+	out.Nlink = attrs.GetNlink()
 	return fs.OK
 }
 
@@ -676,6 +678,42 @@ func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	return fs.NewListDirStream(r), 0
 }
 
+func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
+	targetNode, ok := target.EmbeddedInode().Operations().(*Node)
+	if !ok {
+		log.Warningf("[%s] Existing node is not a *Node", n.vfs.taskID())
+		return nil, syscall.EINVAL
+	}
+	if n.vfs.verbose {
+		log.Debugf("[%s] Link %q -> %q", n.vfs.taskID(), targetNode.relativePath(), name)
+	}
+
+	reqTarget := targetNode.relativePath()
+	reqTarget = strings.TrimPrefix(reqTarget, n.vfs.mountDir)
+
+	req := &vfspb.LinkRequest{
+		Path:   filepath.Join(n.relativePath(), name),
+		Target: reqTarget,
+	}
+	res, err := n.vfs.vfsClient.Link(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
+	}
+
+	child := &Node{vfs: n.vfs, parent: n}
+	inode := n.vfs.root.NewPersistentInode(ctx, child, fs.StableAttr{
+		Mode: fuse.S_IFREG,
+		Ino:  target.EmbeddedInode().StableAttr().Ino,
+	})
+	if !n.AddChild(name, inode, false) {
+		log.Warningf("[%s] Link could not add child %q to %q, already exists", n.vfs.taskID(), name, n.relativePath())
+		return nil, syscall.EIO
+	}
+
+	out.Attr.FromStat(attrsToStat(res.GetAttrs()))
+	return inode, 0
+}
+
 func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
 	src := filepath.Join(n.relativePath(), name)
 	if n.vfs.verbose {
@@ -750,4 +788,75 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 	n.mu.Unlock()
 
 	return fs.OK
+}
+
+func (n *Node) Getlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fuse.FileLock, flags uint32, out *fuse.FileLock) (errno syscall.Errno) {
+	rf, ok := f.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+		return syscall.EBADF
+	}
+	req := &vfspb.GetLkRequest{
+		HandleId: rf.id,
+		Owner:    owner,
+		FileLock: fileLockToProto(lk),
+		Flags:    flags,
+	}
+	res, err := n.vfs.vfsClient.GetLk(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	fl := res.GetFileLock()
+	out.Start = fl.GetStart()
+	out.End = fl.GetEnd()
+	out.Pid = fl.GetPid()
+	out.Typ = fl.GetTyp()
+	return 0
+}
+
+func (n *Node) Setlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fuse.FileLock, flags uint32) (errno syscall.Errno) {
+	rf, ok := f.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+		return syscall.EBADF
+	}
+	req := &vfspb.SetLkRequest{
+		HandleId: rf.id,
+		Owner:    owner,
+		FileLock: fileLockToProto(lk),
+		Flags:    flags,
+	}
+	_, err := n.vfs.vfsClient.SetLk(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
+func (n *Node) Setlkw(ctx context.Context, f fs.FileHandle, owner uint64, lk *fuse.FileLock, flags uint32) (errno syscall.Errno) {
+	rf, ok := f.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+		return syscall.EBADF
+	}
+	req := &vfspb.SetLkRequest{
+		HandleId: rf.id,
+		Owner:    owner,
+		FileLock: fileLockToProto(lk),
+		Flags:    flags,
+	}
+	_, err := n.vfs.vfsClient.SetLkw(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
+func fileLockToProto(lk *fuse.FileLock) *vfspb.FileLock {
+	return &vfspb.FileLock{
+		Start: lk.Start,
+		End:   lk.End,
+		Typ:   lk.Typ,
+		Pid:   lk.Pid,
+	}
 }

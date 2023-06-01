@@ -184,6 +184,29 @@ func ResolveVersion() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// If we're being invoked directly by the CLI, and the .bazelversion file
+	// also has a buildbuddy-io/ header, grab the actual Bazel version rather
+	// than the cli version.
+	if isCLIVersion(rawVersion) {
+		ws, err := workspace.Path()
+		if err != nil {
+			return "", err
+		}
+		parts, err := ParseVersionDotfile(filepath.Join(ws, ".bazelversion"))
+		if err != nil && !os.IsNotExist(err) {
+			return "", err
+		}
+		for len(parts) > 0 && isCLIVersion(parts[0]) {
+			parts = parts[1:]
+		}
+		if len(parts) > 0 {
+			rawVersion = parts[0]
+		} else {
+			rawVersion = "latest"
+		}
+	}
+
 	// TODO: Support forks?
 	fork := ""
 	repos := createRepositories()
@@ -201,11 +224,23 @@ func setBazelVersion() error {
 	return setVersionErr
 }
 
+func isCLIVersion(version string) bool {
+	if strings.HasPrefix(version, "buildbuddy-io/") {
+		return true
+	}
+	// Bazelisk also allows hard-coding a path to the bb CLI as the "version",
+	// like /usr/local/bin/bb.
+	if strings.HasSuffix(version, "/bb") {
+		return true
+	}
+	return false
+}
+
 func setBazelVersionImpl() error {
 	// If USE_BAZEL_VERSION is already set and not pointing to us (the BB CLI),
 	// preserve that value.
 	envVersion := os.Getenv("USE_BAZEL_VERSION")
-	if envVersion != "" && !strings.HasPrefix(envVersion, "buildbuddy-io/") {
+	if envVersion != "" && !isCLIVersion(envVersion) {
 		return nil
 	}
 
@@ -214,7 +249,7 @@ func setBazelVersionImpl() error {
 
 	ws, err := workspace.Path()
 	if err != nil {
-		return err
+		return os.Setenv("USE_BAZEL_VERSION", "latest")
 	}
 	parts, err := ParseVersionDotfile(filepath.Join(ws, ".bazelversion"))
 	if err != nil && !os.IsNotExist(err) {
@@ -223,7 +258,7 @@ func setBazelVersionImpl() error {
 	// If we appear first in .bazelversion, ignore that version to prevent
 	// bazelisk from invoking us recursively.
 	if IsInvokedByBazelisk() {
-		for len(parts) > 0 && strings.HasPrefix(parts[0], "buildbuddy-io/") {
+		for len(parts) > 0 && isCLIVersion(parts[0]) {
 			parts = parts[1:]
 		}
 	}

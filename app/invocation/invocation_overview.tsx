@@ -12,16 +12,20 @@ import {
   HardDrive,
   LayoutGrid,
   Link as LinkIcon,
+  Tag,
   Target,
   User as UserIcon,
   Wrench,
   Zap,
+  GitPullRequest,
+  Terminal,
 } from "lucide-react";
 import React from "react";
 import { User } from "../auth/auth_service";
 import { Link } from "../components/link/link";
 import format from "../format/format";
 import router from "../router/router";
+import { RepoURL } from "../util/git";
 import InvocationButtons from "./invocation_buttons";
 import InvocationModel from "./invocation_model";
 
@@ -61,6 +65,10 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
       return;
     }
     router.navigateToSetup();
+  }
+
+  handleTagClicked(tag: string) {
+    router.navigateToTagHistory(tag);
   }
 
   handleFetchesClicked() {
@@ -113,7 +121,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {roleLabel && <div className={`role-badge ${this.props.model.getRole()}`}>{roleLabel}</div>}
           <div className="subtitle">{this.props.model.getFormattedStartedDate()}</div>
         </div>
-        <div className="details">
+        <div debug-id="invocation-details" className="details">
           <div className="detail">
             {this.props.model.getStatusIcon()}
             {this.props.model.getStatus()}
@@ -134,6 +142,12 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <Wrench className="icon" />
             {this.props.model.getTool()}
           </div>
+          {this.props.model.getToolTag() && (
+            <div className="detail">
+              <Terminal className="icon" />
+              {this.props.model.getToolTag()}
+            </div>
+          )}
           {isBazelInvocation && (
             <div className="detail" title={this.props.model.getAllPatterns()}>
               <LayoutGrid className="icon" />
@@ -143,21 +157,21 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {isBazelInvocation && (
             <div
               className="detail"
-              title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured`}>
+              title={`${this.props.model.buildMetrics?.targetMetrics?.targetsConfigured} configured`}>
               <Target className="icon" />
               {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
             </div>
           )}
           {isBazelInvocation && (
-            <div title={`${this.props.model.buildMetrics?.actionSummary.actionsCreated} created`} className="detail">
+            <div title={`${this.props.model.buildMetrics?.actionSummary?.actionsCreated} created`} className="detail">
               <Activity className="icon" />
-              {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
+              {this.props.model.buildMetrics?.actionSummary?.actionsExecuted} actions
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail">
               <Box className="icon" />
-              {this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages
+              {this.props.model.buildMetrics?.packageMetrics?.packagesLoaded} packages
             </div>
           )}
           {isBazelInvocation && (
@@ -184,10 +198,27 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               {format.formatGitUrl(this.props.model.getRepo())}
             </div>
           )}
-          {this.props.model.getBranchName() && (
+          {this.props.model.getRepo() && this.props.model.getPullRequestNumber() && (
+            <Link
+              className="detail"
+              href={RepoURL.parse(this.props.model.getRepo())?.pullRequestLink(
+                this.props.model.getPullRequestNumber()!
+              )}>
+              <GitPullRequest className="icon" />#{this.props.model.getPullRequestNumber()}
+            </Link>
+          )}
+          {/* For branches that aren't in forked repos, show a link to the branch history. */}
+          {this.props.model.getBranchName() && !this.props.model.getForkRepoURL() && (
             <div className="detail clickable" onClick={this.handleBranchClicked.bind(this)}>
               <GitBranch className="icon" />
               {this.props.model.getBranchName()}
+            </div>
+          )}
+          {/* For branches in forked repos, just render "{forkName}:{branchName}" */}
+          {this.props.model.getBranchName() && this.props.model.getForkRepoURL() && (
+            <div className="detail">
+              <GitBranch className="icon" />
+              {RepoURL.parse(this.props.model.getForkRepoURL()!)?.owner}:{this.props.model.getBranchName()!}
             </div>
           )}
           {this.props.model.getCommit() && (
@@ -219,6 +250,12 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               <LinkIcon className="icon" />
               {link.linkText}
             </a>
+          ))}
+          {this.props.model.getTags().map((tag) => (
+            <div className="detail clickable" onClick={this.handleTagClicked.bind(this, tag.name)}>
+              <Tag className="icon" />
+              {tag.name}
+            </div>
           ))}
         </div>
       </div>

@@ -15,6 +15,7 @@ import {
 
 export interface PercentilesChartProps {
   title: string;
+  id?: string;
   data: string[];
   extractLabel: (datum: string) => string;
   formatHoverLabel: (datum: string) => string;
@@ -27,7 +28,7 @@ export interface PercentilesChartProps {
 }
 
 export default class PercentilesChartComponent extends React.Component<PercentilesChartProps> {
-  private lastDataFromHover: string;
+  private lastDataFromHover: string = "";
 
   handleRowClick() {
     if (!this.props.onColumnClicked || !this.lastDataFromHover) {
@@ -38,7 +39,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
 
   render() {
     return (
-      <div className="trend-chart">
+      <div id={this.props.id} className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
@@ -133,11 +134,11 @@ class PercentilesChartTooltip extends React.Component<PercentilesChartTooltipPro
       <div className="trend-chart-hover">
         <div className="trend-chart-hover-label">{this.props.labelFormatter(data)}</div>
         <div className="trend-chart-hover-value">
-          <div>p50: {format.durationSec(this.props.extractP50(data))}</div>
-          <div>p75: {format.durationSec(this.props.extractP75(data))}</div>
-          <div>p90: {format.durationSec(this.props.extractP90(data))}</div>
-          <div>p95: {format.durationSec(this.props.extractP95(data))}</div>
           <div>p99: {format.durationSec(this.props.extractP99(data))}</div>
+          <div>p95: {format.durationSec(this.props.extractP95(data))}</div>
+          <div>p90: {format.durationSec(this.props.extractP90(data))}</div>
+          <div>p75: {format.durationSec(this.props.extractP75(data))}</div>
+          <div>p50: {format.durationSec(this.props.extractP50(data))}</div>
         </div>
       </div>
     );

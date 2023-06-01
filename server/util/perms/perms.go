@@ -7,6 +7,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -33,7 +35,7 @@ const (
 type UserGroupPerm struct {
 	UserID  string
 	GroupID string
-	Perms   int
+	Perms   int32
 }
 
 func AnonymousUserPermissions() *UserGroupPerm {
@@ -52,7 +54,7 @@ func GroupAuthPermissions(groupID string) *UserGroupPerm {
 	}
 }
 
-func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
+func ToACLProto(userID *uidpb.UserId, groupID string, perms int32) *aclpb.ACL {
 	return &aclpb.ACL{
 		UserId:  userID,
 		GroupId: groupID,
@@ -71,14 +73,14 @@ func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
 	}
 }
 
-func FromACL(acl *aclpb.ACL) (int, error) {
+func FromACL(acl *aclpb.ACL) (int32, error) {
 	if acl == nil {
 		return 0, status.InvalidArgumentError("ACL is nil.")
 	}
 	if acl.GetOwnerPermissions() == nil || acl.GetGroupPermissions() == nil || acl.GetOthersPermissions() == nil {
 		return 0, status.InvalidArgumentError("ACL is missing one or more required permissions fields.")
 	}
-	p := 0
+	p := int32(0)
 	if acl.GetOwnerPermissions().GetRead() {
 		p |= OWNER_READ
 	}
@@ -247,6 +249,16 @@ func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID stri
 	return status.PermissionDeniedError("You do not have access to the requested group")
 }
 
+func AuthorizeGroupAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
+	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+		return err
+	}
+	if blocklist.IsBlockedForStatsQuery(groupID) {
+		return status.ResourceExhaustedError("Too many rows.")
+	}
+	return nil
+}
+
 // AuthenticateSelectedGroupID returns the group ID selected by the user in the
 // UI (determined via the proto request context), returning an error if the user
 // does not have access to the selected group.
@@ -281,16 +293,6 @@ func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, err
 	return groupID, nil
 }
 
-// IsAnonymousUserError can be used to check whether an error returned by
-// functions which return the authenticated user (such as AuthenticatedUser or
-// AuthenticateSelectedGroupID) is due to an anonymous user accessing the
-// service. This is useful for allowing anonymous users to proceed, in cases
-// where anonymous usage is explicitly enabled in the app config, and we support
-// anonymous usage for the part of the service where this is used.
-func IsAnonymousUserError(err error) bool {
-	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
-}
-
 // ForAuthenticatedGroup returns GROUP_READ|GROUP_WRITE permissions for authenticated groups,
 // or OTHERS_READ for anonymous users.
 func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
@@ -301,7 +303,7 @@ func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroup
 
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil || u.GetGroupID() == "" {
-		if IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
 			return AnonymousUserPermissions(), nil
 		}
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")

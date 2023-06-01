@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 
@@ -49,9 +50,9 @@ func NewCapabilitiesServer(env environment.Env, supportCAS, supportRemoteExec, s
 
 func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
 	c := repb.ServerCapabilities{
-		// Support bazel 2.0 -> 99.9
+		// Support bazel 2.0 -> 2.3
 		LowApiVersion:  &smpb.SemVer{Major: int32(2)},
-		HighApiVersion: &smpb.SemVer{Major: int32(99), Minor: int32(9)},
+		HighApiVersion: &smpb.SemVer{Major: int32(2), Minor: int32(3)},
 	}
 	var compressors []repb.Compressor_Value
 	if s.supportZstd {
@@ -59,7 +60,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 	}
 	if s.supportCAS {
 		c.CacheCapabilities = &repb.CacheCapabilities{
-			DigestFunctions: []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
+			DigestFunctions: digest.SupportedDigestFunctions(),
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
 				UpdateEnabled: s.actionCacheUpdateEnabled(ctx),
 			},
@@ -86,6 +87,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 					{MinPriority: math.MinInt32, MaxPriority: math.MaxInt32},
 				},
 			},
+			DigestFunctions: digest.SupportedDigestFunctions(),
 		}
 	}
 	return &c, nil

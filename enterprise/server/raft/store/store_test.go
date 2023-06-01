@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -39,6 +38,7 @@ import (
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 )
 
@@ -271,13 +271,13 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
 	fr := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   resource.CacheType_CAS,
+			CacheType:   rspb.CacheType_CAS,
 			PartitionId: groupID,
 		},
 		Digest: d,
 	}
 
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 	fileMetadataKey := metadataKey(t, fr)
 
 	_, err := ts.APIClient.Get(ctx, ts.GRPCAddress)
@@ -314,7 +314,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 }
 
 func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 	pebbleKey, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
 	keyBytes, err := pebbleKey.Bytes(filestore.Version2)

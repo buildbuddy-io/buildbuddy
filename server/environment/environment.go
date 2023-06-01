@@ -3,8 +3,8 @@ package environment
 import (
 	"context"
 	"io/fs"
+	"sync"
 
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
@@ -13,6 +13,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -59,6 +60,7 @@ type Env interface {
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService
 	GetExecutionService() interfaces.ExecutionService
+	GetExecutionSearchService() interfaces.ExecutionSearchService
 	GetInvocationSearchService() interfaces.InvocationSearchService
 	GetSplashPrinter() interfaces.SplashPrinter
 	GetActionCacheClient() repb.ActionCacheClient
@@ -92,6 +94,8 @@ type Env interface {
 	SetKeyValStore(interfaces.KeyValStore)
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
+	GetGitHubApp() interfaces.GitHubApp
+	SetGitHubApp(interfaces.GitHubApp)
 	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
@@ -109,6 +113,7 @@ type Env interface {
 	GetFileResolver() fs.FS
 	GetMux() interfaces.HttpServeMux
 	SetMux(interfaces.HttpServeMux)
+	GetHTTPServerWaitGroup() *sync.WaitGroup
 	GetInternalHTTPMux() interfaces.HttpServeMux
 	SetInternalHTTPMux(mux interfaces.HttpServeMux)
 	GetListenAddr() string
@@ -139,8 +144,6 @@ type Env interface {
 	GetInternalGRPCSServer() *grpc.Server
 	SetInternalGRPCSServer(*grpc.Server)
 	SetGRPCSServer(*grpc.Server)
-	GetRegistryServer() rgpb.RegistryServer
-	SetRegistryServer(r rgpb.RegistryServer)
 	GetOLAPDBHandle() interfaces.OLAPDBHandle
 	SetOLAPDBHandle(dbh interfaces.OLAPDBHandle)
 	GetKMS() interfaces.KMS
@@ -149,4 +152,12 @@ type Env interface {
 	SetSecretService(s interfaces.SecretService)
 	GetExecutionCollector() interfaces.ExecutionCollector
 	SetExecutionCollector(c interfaces.ExecutionCollector)
+	GetSuggestionService() interfaces.SuggestionService
+	SetSuggestionService(s interfaces.SuggestionService)
+	GetCrypter() interfaces.Crypter
+	SetCrypter(crypter interfaces.Crypter)
+	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
+	SetSociArtifactStoreServer(socipb.SociArtifactStoreServer)
+	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
+	SetSingleFlightDeduper(interfaces.SingleFlightDeduper)
 }

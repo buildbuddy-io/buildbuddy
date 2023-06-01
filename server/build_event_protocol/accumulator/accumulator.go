@@ -2,6 +2,7 @@ package accumulator
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
@@ -23,6 +25,7 @@ const (
 	workflowIDFieldName                   = "workflowID"
 	actionNameFieldName                   = "actionName"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
+	disableTargetTrackingFieldName        = "disableTargetTracking"
 )
 
 var (
@@ -31,6 +34,7 @@ var (
 		"COMMIT_SHA":                      commitSHAFieldName,
 		"ROLE":                            roleFieldName,
 		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
+		"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
 	}
 )
 
@@ -44,6 +48,7 @@ type Accumulator interface {
 
 	StartTime() time.Time
 	DisableCommitStatusReporting() bool
+	DisableTargetTracking() bool
 	WorkflowID() string
 	ActionName() string
 	Pattern() string
@@ -70,11 +75,14 @@ type Accumulator interface {
 // memory for the life of the stream, so it should not save every single event
 // in full (that data lives in blobstore).
 type BEValues struct {
-	valuesMap               map[string]string
-	sawWorkspaceStatusEvent bool
-	sawBuildMetadataEvent   bool
-	sawFinishedEvent        bool
-	buildStartTime          time.Time
+	valuesMap                      map[string]string
+	sawWorkspaceStatusEvent        bool
+	sawBuildMetadataEvent          bool
+	sawFinishedEvent               bool
+	buildStartTime                 time.Time
+	bytestreamProfileURI           *url.URL
+	profileName                    string
+	hasBytestreamTestActionOutputs bool
 
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
@@ -92,8 +100,10 @@ func (v *BEValues) Invocation() *inpb.Invocation {
 	return v.parser.GetInvocation()
 }
 
-func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
-	v.parser.ParseEvent(event)
+func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
+	if err := v.parser.ParseEvent(event); err != nil {
+		return err
+	}
 
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
@@ -110,13 +120,35 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
 	case *build_event_stream.BuildEvent_Finished:
 		v.sawFinishedEvent = true
+	case *build_event_stream.BuildEvent_BuildToolLogs:
+		for _, toolLog := range p.BuildToolLogs.Log {
+			// Get the first non-empty URI like we do in the app.
+			if uri := toolLog.GetUri(); uri != "" {
+				if url, err := url.Parse(uri); err != nil {
+					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
+				} else if url.Scheme == "bytestream" {
+					v.bytestreamProfileURI = url
+				}
+				break
+			}
+		}
+	case *build_event_stream.BuildEvent_TestResult:
+		for _, f := range p.TestResult.TestActionOutput {
+			if u, err := url.Parse(f.GetUri()); err != nil {
+				log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
+			} else if u.Scheme == "bytestream" {
+				v.hasBytestreamTestActionOutputs = true
+			}
+		}
 	}
+	return nil
 }
+
 func (v *BEValues) Finalize(ctx context.Context) {
 	invocation := v.Invocation()
-	invocation.InvocationStatus = inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
+	invocation.InvocationStatus = inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS
 	if v.BuildFinished() {
-		invocation.InvocationStatus = inpb.Invocation_COMPLETE_INVOCATION_STATUS
+		invocation.InvocationStatus = inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS
 	}
 
 	// Do some logging so that we can understand whether the invocation fields
@@ -157,6 +189,10 @@ func (v *BEValues) DisableCommitStatusReporting() bool {
 	return v.getBoolValue(disableCommitStatusReportingFieldName)
 }
 
+func (v *BEValues) DisableTargetTracking() bool {
+	return v.getBoolValue(disableTargetTrackingFieldName)
+}
+
 func (v *BEValues) Role() string {
 	return v.getStringValue(roleFieldName)
 }
@@ -183,6 +219,14 @@ func (v *BEValues) BuildMetadataIsLoaded() bool {
 
 func (v *BEValues) BuildFinished() bool {
 	return v.sawFinishedEvent
+}
+
+func (v *BEValues) BytestreamProfileURI() *url.URL {
+	return v.bytestreamProfileURI
+}
+
+func (v *BEValues) HasBytestreamTestActionOutputs() bool {
+	return v.hasBytestreamTestActionOutputs
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
@@ -262,6 +306,9 @@ func (v *BEValues) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_eve
 		}
 		if item.Key == "COMMIT_SHA" {
 			v.setStringValue(commitSHAFieldName, item.Value)
+		}
+		if item.Key == "ROLE" {
+			v.setStringValue(roleFieldName, item.Value)
 		}
 	}
 }

@@ -55,3 +55,154 @@
   /* Allow axis labels to extend slightly out of bounds */
   overflow: visible;
 }
+
+.heatmap-svg {
+  user-select: none;
+  cursor: pointer;
+}
+
+.heatmap-zoom {
+  cursor: pointer;
+  stroke: #616161;
+  fill: #eee;
+}
+
+.heatmap-zoom:hover {
+  stroke: #414141;
+  fill: #ddd;
+}
+
+.drilldown-page-warning-section {
+  display: inline-block;
+  margin: 0 0 16px;
+}
+
+.drilldown-page-dd-chart {
+  display: inline-block;
+}
+
+.drilldown-page-dd-chart-title {
+  margin-left: 4px;
+  font-weight: 600;
+}
+
+.drilldown-page-tooltip-base {
+  color: #8782bc;
+}
+
+.drilldown-page-tooltip-selected {
+  color: #4daf62;
+}
+
+.drilldown-page-zoom-summary {
+  display: inline-block;
+  height: 40px;
+  margin: 0 0 0 36px;
+  vertical-align: bottom;
+}
+
+.drilldown-page-zoom-summary.zoomed {
+  /* 1px of extra margin keeps spacing consistent with the button border. */
+  margin: 0 0 0 61px;
+}
+
+.drilldown-page-zoom-filters {
+  display: inline-block;
+  vertical-align: bottom;
+  margin-left: 8px;
+  height: 40px;
+  max-height: 40px;
+}
+
+.drilldown-page-zoom-summary.zoomed .drilldown-page-zoom-filters {
+  margin-right: 16px;
+}
+
+.drilldown-page-zoom-filter-attr {
+  font-size: 14px;
+  height: 20px;
+  max-height: 20px;
+  text-align: left;
+}
+
+.drilldown-page-zoom-button {
+  margin-left: 8px;
+  max-height: 40px;
+}
+
+.drilldown-page-zoom-button.square {
+  padding: 8px;
+}
+
+.select.drilldown-page-select {
+  font-size: 16px;
+  margin: 0 16px;
+}
+
+.drilldown-selection-summary {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.selection-summary-indicator {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+}
+
+.selection-summary-indicator.selection {
+  background-color: #4daf62;
+}
+
+.selection-summary-indicator.baseline {
+  background-color: #8782bc;
+}
+
+.selection-summary-text {
+  vertical-align: top;
+}
+
+.card.trend-summary-group {
+  flex-direction: column;
+  display: inline-block;
+  flex-grow: 1;
+  margin: 0;
+  max-width: 300px;
+}
+
+.trend-headline-stat {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.trend-headline-text {
+  font-weight: bold;
+  vertical-align: top;
+  margin-left: 8px;
+}
+
+.trend-sub-item {
+  font-size: 12px;
+  max-width: 240px;
+  margin-bottom: 4px;
+}
+
+.trend-change {
+  font-weight: bold;
+}
+
+.trend-change.up {
+  color: #4caf50;
+}
+
+.trend-change.down {
+  color: #f44336;
+}
+
+.trend-summary-block {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 16px;
+  column-gap: 16px;
+}

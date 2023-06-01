@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "proto/remote_execution.proto";
 
 package runner;
 
@@ -86,4 +87,61 @@ message RunResponse {
 
   // The invocation ID of the run.
   string invocation_id = 2;
+}
+
+// RunnerPoolState is used to serialize the state of the runner pool to disk so
+// that we can restore the runner pool after an executor restart.
+message RunnerPoolState {
+  // The list of pooled runners that were present when the executor shut down.
+  repeated RunnerState runner_states = 1;
+}
+
+// Runner key represents a fixed set of runner properties which are assigned
+// when a runner is created. When assigning tasks to pooled runners, the task's
+// computed runner key must match the runner's key.
+message RunnerKey {
+  // BuildBuddy group ID.
+  string group_id = 1;
+
+  // Remote instance name.
+  string instance_name = 2;
+
+  // Platform associated with the runner.
+  build.bazel.remote.execution.v2.Platform platform = 3;
+
+  // Persistent worker key, which will either match the "persistentWorkerKey"
+  // platform property, or if unset, will default to the persistent worker's
+  // command-line configuration (non-flagfile arguments).
+  string persistent_worker_key = 4;
+}
+
+message RunnerState {
+  // Runner key.
+  RunnerKey runner_key = 1;
+
+  // State specific to the isolation type in use.
+  ContainerState container_state = 2;
+
+  // Short debug ID used to identify the runner.
+  string debug_id = 3;
+
+  // Counter that is incremented each time the runner is assigned a new task.
+  int64 assigned_task_count = 4;
+}
+
+// The container-specific runner state.
+message ContainerState {
+  // Isolation type determines which container state field should be set.
+  // Example: "firecracker"
+  string isolation_type = 1;
+
+  // Firecracker microVM state.
+  // Set when isolation_type == "firecracker".
+  FirecrackerState firecracker_state = 2;
+}
+
+message FirecrackerState {
+  // The snapshot key pointing to the snapshot manifest file in the executor's
+  // local cache.
+  build.bazel.remote.execution.v2.Digest snapshot_key = 1;
 }

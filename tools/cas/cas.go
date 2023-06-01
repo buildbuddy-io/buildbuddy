@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -29,7 +30,7 @@ var (
 
 	target     = flag.String("target", "", "Cache grpc target, such as grpcs://remote.buildbuddy.io")
 	blobDigest = flag.String("digest", "", "Digest of the blob to fetch, in HASH/SIZE format.")
-	blobType   = flag.String("type", "", "Type of blob to inspect: Action, ActionResult, Command, file, stdout, stderr")
+	blobType   = flag.String("type", "", "Type of blob to inspect: Action, ActionResult, Command, Tree, file, stdout, stderr")
 
 	// Optional flags:
 
@@ -66,16 +67,29 @@ func main() {
 	if *blobDigest == "" {
 		log.Fatalf("Missing --digest")
 	}
-	d, err := digest.Parse(*blobDigest)
+
+	// For backwards compatibility, attempt to fixup old style digest
+	// strings that don't start with a '/blobs/' prefix.
+	digestString := *blobDigest
+	if !strings.HasPrefix(digestString, "/blobs") {
+		digestString = "/blobs/" + digestString
+	}
+
+	ind, err := digest.ParseDownloadResourceName(digestString)
 	if err != nil {
 		log.Fatalf(status.Message(err))
 	}
-
-	cacheType := rspb.CacheType_CAS
 	if *blobType == "ActionResult" {
-		cacheType = rspb.CacheType_AC
+		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC, repb.DigestFunction_SHA256)
 	}
-	ind := digest.NewCacheResourceName(d, *instanceName, cacheType)
+
+	// For backwards compatibility with the existing behavior of this code:
+	// If the parsed remote_instance_name is empty, and the flag instance
+	// name is set; override the instance name of `rn`.
+	if ind.GetInstanceName() == "" && *instanceName != "" {
+		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType(), repb.DigestFunction_SHA256)
+	}
+
 	conn, err := grpc_client.DialTarget(*target)
 	if err != nil {
 		log.Fatalf("Error dialing CAS target: %s", err)
@@ -134,7 +148,7 @@ func main() {
 			if err != nil {
 				log.Fatalf(err.Error())
 			}
-			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName())
+			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName(), rspb.CacheType_AC, repb.DigestFunction_SHA256)
 			ar, err = cachetools.GetActionResult(ctx, acClient, ind)
 			if err != nil {
 				log.Fatal(err.Error())
@@ -162,7 +176,7 @@ func main() {
 	case "Command":
 		msg = &repb.Command{}
 	default:
-		log.Fatalf(`Invalid --type: %q (allowed values: Action, ActionResult, Command, file, stderr, stdout)`, *blobType)
+		log.Fatalf(`Invalid --type: %q (allowed values: Action, ActionResult, Command, Tree, file, stderr, stdout)`, *blobType)
 	}
 	if err := cachetools.GetBlobAsProto(ctx, bsClient, ind, msg); err != nil {
 		log.Fatal(err.Error())

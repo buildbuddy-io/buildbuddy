@@ -4,12 +4,10 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "alert",
-    srcs = glob([
-        "*.tsx",
-        "*.ts",
-    ]),
+    srcs = ["alert.tsx"],
     strict = True,
     deps = [
+        "//app/alert:alert_service",
         "//app/components/banner",
         "@npm//@types/react",
         "@npm//react",
@@ -18,3 +16,10 @@ ts_library(
 )
 
 exports_files(srcs = glob(["*.css"]))
+
+ts_library(
+    name = "alert_service",
+    srcs = ["alert_service.ts"],
+    strict = True,
+    deps = ["@npm//rxjs"],
+)

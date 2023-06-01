@@ -14,7 +14,7 @@ interface Props {
 
 interface State {
   loading: boolean;
-  manifest: zip.Manifest;
+  manifest?: zip.Manifest;
 }
 
 export default class TargetArtifactsCardComponent extends React.Component<Props, State> {
@@ -22,7 +22,6 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
 
   state: State = {
     loading: false,
-    manifest: null,
   };
 
   componentDidMount() {
@@ -47,19 +46,18 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       return;
     }
 
-    this.setState({ ...this.state, loading: true });
+    this.setState({ loading: true });
     const request = new zip.GetZipManifestRequest();
     request.uri = testOutputsUri;
     rpcService.service
       .getZipManifest(request)
       .then((response) => {
-        this.setState({ ...this.state, manifest: response.manifest, loading: false });
+        this.setState({ manifest: response.manifest ?? undefined, loading: false });
       })
       .catch(() => {
         this.setState({
-          ...this.state,
           loading: false,
-          manifest: null,
+          manifest: undefined,
         });
       });
   }
@@ -79,7 +77,16 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     });
   }
 
-  handleArtifactClicked(outputUri: string, outputFilename: string, event: MouseEvent) {
+  makeArtifactViewUri(baseUri: string, outputFilename: string): string {
+    let params: Record<string, string> = {
+      bytestream_url: baseUri,
+      invocation_id: this.props.invocationId,
+      filename: outputFilename,
+    };
+    return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}`;
+  }
+
+  handleArtifactClicked(outputUri: string, outputFilename: string, event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
     if (!outputUri) return false;
 
@@ -91,7 +98,12 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     return false;
   }
 
-  handleZipArtifactClicked(outputUri: string, outputFilename: string, entry: zip.ManifestEntry, event: MouseEvent) {
+  handleZipArtifactClicked(
+    outputUri: string,
+    outputFilename: string,
+    entry: zip.ManifestEntry,
+    event: React.MouseEvent<HTMLAnchorElement>
+  ) {
     event.preventDefault();
     if (!outputUri) return false;
 
@@ -127,11 +139,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                     {output.name}
                   </a>
                   {output.uri?.startsWith("bytestream://") && (
-                    <a
-                      className="artifact-view"
-                      href={`/code/buildbuddy-io/buildbuddy/?bytestream_url=${encodeURIComponent(
-                        output.uri
-                      )}&invocation_id=${this.props.invocationId}&filename=${output.name}`}>
+                    <a className="artifact-view" href={this.makeArtifactViewUri(output.uri, output.name)}>
                       <FileCode /> View
                     </a>
                   )}

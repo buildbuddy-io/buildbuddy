@@ -1,18 +1,17 @@
 load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
-load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
 
 package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "format",
     srcs = ["format.tsx"],
+    strict = True,
     deps = [
         "@npm//@types/long",
         "@npm//@types/moment",
         "@npm//date-fns",
         "@npm//long",
         "@npm//moment",
-        "@npm//tslib",
     ],
 )
 

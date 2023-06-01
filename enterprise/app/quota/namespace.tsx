@@ -21,7 +21,7 @@ export interface NamespaceProps {
 
 interface State {
   loading?: boolean;
-  response?: quota.IGetNamespaceResponse;
+  response?: quota.GetNamespaceResponse;
 
   // "Add member to bucket" dialog
   bucketToAssign?: string;
@@ -137,7 +137,8 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
     });
     return `/settings/server/quota/bucket?${search}`;
   }
-  private getEditBucketURL(bucket: quota.IBucket): string {
+  private getEditBucketURL(bucket?: quota.Bucket | null): string {
+    if (!bucket) return "";
     const search = new URLSearchParams({
       namespace: this.getNamespaceName(),
       bucket: bucket.name,
@@ -188,27 +189,29 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
             <div className="bucket">
               <div className="bucket-info">
                 <span className="bucket-details">
-                  Bucket <b>{assigned.bucket.name}</b>: {assigned.bucket.maxRate.numRequests} requests per{" "}
-                  {formatDurationMillis(durationToMillis(assigned.bucket.maxRate.period))} &bull;{" "}
-                  {assigned.bucket.maxBurst} max burst
+                  Bucket <b>{assigned.bucket?.name}</b>: {assigned.bucket?.maxRate?.numRequests} requests per{" "}
+                  {formatDurationMillis(durationToMillis(assigned.bucket?.maxRate?.period || {}))} &bull;{" "}
+                  {assigned.bucket?.maxBurst} max burst
                 </span>
-                <FilledButton onClick={this.onClickAssign.bind(this, assigned.bucket.name)}>Assign</FilledButton>
+                <FilledButton onClick={this.onClickAssign.bind(this, assigned.bucket?.name || "")}>Assign</FilledButton>
                 <OutlinedLinkButton href={this.getEditBucketURL(assigned.bucket)}>Edit</OutlinedLinkButton>
-                <OutlinedButton className="destructive" onClick={this.onClickDelete.bind(this, assigned.bucket.name)}>
+                <OutlinedButton
+                  className="destructive"
+                  onClick={this.onClickDelete.bind(this, assigned.bucket?.name || "")}>
                   Delete
                 </OutlinedButton>
               </div>
               <div className="bucket-members-list">
-                {assigned.quotaKeys?.length === 0 && assigned.bucket.name !== DEFAULT_BUCKET_NAME && (
+                {assigned.quotaKeys?.length === 0 && assigned.bucket?.name !== DEFAULT_BUCKET_NAME && (
                   <div className="bucket-empty-message">No users are assigned to this bucket.</div>
                 )}
-                {assigned.quotaKeys?.length === 0 && assigned.bucket.name === DEFAULT_BUCKET_NAME && (
+                {assigned.quotaKeys?.length === 0 && assigned.bucket?.name === DEFAULT_BUCKET_NAME && (
                   <div className="bucket-empty-message">Users in the default bucket are not shown.</div>
                 )}
                 {assigned.quotaKeys.map((key) => (
                   <div className="bucket-member-item">
                     <span className="bucket-member-key">{key}</span>
-                    <OutlinedButton onClick={this.onClickEditQuotaKey.bind(this, assigned.bucket.name, key)}>
+                    <OutlinedButton onClick={this.onClickEditQuotaKey.bind(this, assigned.bucket?.name || "", key)}>
                       Edit
                     </OutlinedButton>
                   </div>
@@ -258,7 +261,7 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
             <Option value={DEFAULT_BUCKET_NAME}>default (unassigned)</Option>
             {this.state.response.namespaces[0]?.assignedBuckets
               .sort(compareBuckets)
-              .map((assigned) => assigned.bucket.name)
+              .map((assigned) => assigned.bucket?.name || "")
               .filter((name) => name !== DEFAULT_BUCKET_NAME)
               .map((name) => (
                 <Option value={name}>{name}</Option>
@@ -274,8 +277,8 @@ function quotaKeyFromString(val: string): quota.QuotaKey {
   return quota.QuotaKey.create(val.includes(".") || val.includes(":") ? { ipAddress: val } : { groupId: val });
 }
 
-function compareBuckets(a: quota.IAssignedBucket, b: quota.IAssignedBucket): number {
+function compareBuckets(a: quota.AssignedBucket, b: quota.AssignedBucket): number {
   // Always show the default bucket first.
-  if (a.bucket.name === "default") return -1;
-  return a.bucket.name < b.bucket.name ? -1 : 1;
+  if (a.bucket?.name === "default") return -1;
+  return (a.bucket?.name || "") < (b.bucket?.name || "") ? -1 : 1;
 }

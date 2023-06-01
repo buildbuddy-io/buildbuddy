@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -24,6 +23,7 @@ import (
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -72,6 +72,7 @@ const (
 	UploadUsec
 
 	CachedActionExecUsec
+	UncachedActionExecUsec
 
 	// New counter types go here!
 )
@@ -128,6 +129,8 @@ func counterField(actionCache bool, ct counterType) string {
 		return "upload-usec"
 	case CachedActionExecUsec:
 		return "cached-action-exec-usec"
+	case UncachedActionExecUsec:
+		return "uncached-action-exec-usec"
 	default:
 		return "UNKNOWN-COUNTER-TYPE"
 	}
@@ -142,6 +145,9 @@ type HitTracker struct {
 
 	// The request metadata, may be nil or incomplete.
 	requestMetadata *repb.RequestMetadata
+
+	// The metadata for an executed action, may be nil
+	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
 func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
@@ -184,6 +190,10 @@ func (h *HitTracker) cacheTypeLabel() string {
 
 func makeTargetField(actionMnemonic, targetID, actionID string) string {
 	return fmt.Sprintf("%s(%s)/%s", actionMnemonic, targetID, actionID)
+}
+
+func (h *HitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
+	h.executedActionMetadata = md
 }
 
 // Example Usage:
@@ -268,9 +278,9 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 
 	// TODO(bduffany): Use protos instead of counterType so we can avoid this
 	// translation
-	cacheType := resource.CacheType_CAS
+	cacheType := rspb.CacheType_CAS
 	if h.actionCache {
-		cacheType = resource.CacheType_AC
+		cacheType = rspb.CacheType_AC
 	}
 	requestType := capb.RequestType_READ
 	if stats.Status == Upload {
@@ -297,6 +307,11 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		Compressor:           stats.Compressor,
 		TransferredSizeBytes: stats.TransferredSizeBytes,
 		// TODO(bduffany): Committed
+	}
+
+	if md := h.executedActionMetadata; md != nil {
+		result.ExecutionStartTimestamp = md.GetExecutionStartTimestamp()
+		result.ExecutionCompletedTimestamp = md.GetExecutionCompletedTimestamp()
 	}
 	b, err := proto.Marshal(result)
 	if err != nil {
@@ -376,6 +391,7 @@ type transferTimer struct {
 	start time.Time
 	actionCounter,
 	sizeCounter,
+	execDurationCounter,
 	timeCounter counterType
 	// TODO(bduffany): response code
 }
@@ -441,6 +457,16 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 			return err
 		}
 	}
+
+	if md := h.executedActionMetadata; h.actionCache && md != nil {
+		execStartTime := md.GetExecutionStartTimestamp().AsTime()
+		execEndTime := md.GetExecutionCompletedTimestamp().AsTime()
+		execDuration := execEndTime.Sub(execStartTime)
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.execDurationCounter), execDuration.Microseconds()); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
@@ -453,12 +479,13 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		h:             h,
-		d:             d,
-		start:         start,
-		actionCounter: Hit,
-		sizeCounter:   DownloadSizeBytes,
-		timeCounter:   DownloadUsec,
+		h:                   h,
+		d:                   d,
+		start:               start,
+		actionCounter:       Hit,
+		sizeCounter:         DownloadSizeBytes,
+		timeCounter:         DownloadUsec,
+		execDurationCounter: CachedActionExecUsec,
 	}
 }
 
@@ -471,12 +498,13 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		h:             h,
-		d:             d,
-		start:         start,
-		actionCounter: Upload,
-		sizeCounter:   UploadSizeBytes,
-		timeCounter:   UploadUsec,
+		h:                   h,
+		d:                   d,
+		start:               start,
+		actionCounter:       Upload,
+		sizeCounter:         UploadSizeBytes,
+		timeCounter:         UploadUsec,
+		execDurationCounter: UncachedActionExecUsec,
 	}
 }
 
@@ -623,6 +651,7 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	cs.UploadThroughputBytesPerSecond = computeThroughputBytesPerSecond(cs.TotalUploadSizeBytes, cs.TotalUploadUsec)
 
 	cs.TotalCachedActionExecUsec = counts[counterField(false, CachedActionExecUsec)]
+	cs.TotalUncachedActionExecUsec = counts[counterField(false, UncachedActionExecUsec)]
 
 	return cs
 }

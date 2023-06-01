@@ -303,7 +303,7 @@ func TestCanonicalizeArgs(t *testing.T) {
 		"--remote_header", "x-buildbuddy-bar=2",
 	}
 
-	canonicalArgs, err := canonicalizeArgs(args, staticHelpFromTestData)
+	canonicalArgs, err := canonicalizeArgs(args, staticHelpFromTestData, false)
 
 	require.NoError(t, err)
 	expectedCanonicalArgs := []string{
@@ -319,6 +319,47 @@ func TestCanonicalizeArgs(t *testing.T) {
 		"--bes_backend=",
 		"--remote_header=x-buildbuddy-foo=1",
 		"--remote_header=x-buildbuddy-bar=2",
+	}
+	require.Equal(t, expectedCanonicalArgs, canonicalArgs)
+}
+
+func TestCanonicalizeStartupArgs(t *testing.T) {
+	// Use some args that look like bazel commands but are actually
+	// specifying flag values.
+	args := []string{
+		"--output_base", "build",
+		"--host_jvm_args", "query",
+		"--unknown_plugin_flag", "unknown_plugin_flag_value",
+		"--ignore_all_rc_files",
+		"test",
+		"-c", "opt",
+		"--another_unknown_plugin_flag",
+		"--cache_test_results",
+		"--nocache_test_results",
+		"--bes_backend", "remote.buildbuddy.io",
+		"--bes_backend=",
+		"--remote_header", "x-buildbuddy-foo=1",
+		"--remote_header", "x-buildbuddy-bar=2",
+	}
+
+	canonicalArgs, err := canonicalizeArgs(args, staticHelpFromTestData, true)
+
+	require.NoError(t, err)
+	expectedCanonicalArgs := []string{
+		"--output_base=build",
+		"--host_jvm_args=query",
+		"--unknown_plugin_flag",
+		"unknown_plugin_flag_value",
+		"--ignore_all_rc_files",
+		"test",
+		"-c", "opt",
+		"--another_unknown_plugin_flag",
+		"--cache_test_results",
+		"--nocache_test_results",
+		"--bes_backend", "remote.buildbuddy.io",
+		"--bes_backend=",
+		"--remote_header", "x-buildbuddy-foo=1",
+		"--remote_header", "x-buildbuddy-bar=2",
 	}
 	require.Equal(t, expectedCanonicalArgs, canonicalArgs)
 }

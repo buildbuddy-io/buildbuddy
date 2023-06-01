@@ -2,6 +2,7 @@ import React from "react";
 
 import TargetTestLogCardComponent from "./target_test_log_card";
 import TargetTestDocumentCardComponent from "./target_test_document_card";
+import TargetTestCoverageCardComponent from "./target_test_coverage_card";
 import TargetArtifactsCardComponent from "./target_artifacts_card";
 import ActionCardComponent from "./action_card";
 import router from "../router/router";
@@ -14,20 +15,22 @@ import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import { timestampToDateWithFallback } from "../util/proto";
 import { OutlinedLinkButton } from "../components/button/link_button";
+import InvocationModel from "../invocation/invocation_model";
 
 interface Props {
   invocationId: string;
   user?: User;
   repo?: string;
   targetLabel: string;
-  hash: string;
+  tab: string;
+  model: InvocationModel;
 
   files: build_event_stream.IFile[];
-  configuredEvent: invocation.InvocationEvent;
-  completedEvent: invocation.InvocationEvent;
-  skippedEvent: invocation.InvocationEvent;
+  configuredEvent?: invocation.InvocationEvent;
+  completedEvent?: invocation.InvocationEvent;
+  skippedEvent?: invocation.InvocationEvent;
   testResultEvents: invocation.InvocationEvent[];
-  testSummaryEvent: invocation.InvocationEvent;
+  testSummaryEvent?: invocation.InvocationEvent;
   actionEvents: invocation.InvocationEvent[];
   dark: boolean;
 }
@@ -46,12 +49,12 @@ export default class TargetComponent extends React.Component<Props> {
   }
 
   renderStatusIcon(status: build_event_stream.TestStatus): JSX.Element {
-    if (this.props?.skippedEvent) {
+    if (this.props.skippedEvent) {
       return <SkipForward className="icon purple" />;
     }
 
-    if (!this.props?.testSummaryEvent) {
-      return this.props?.completedEvent?.buildEvent?.completed?.success ? (
+    if (!this.props.testSummaryEvent) {
+      return this.props.completedEvent?.buildEvent?.completed?.success ? (
         <CheckCircle className="icon green" />
       ) : (
         <XCircle className="icon red" />
@@ -71,12 +74,12 @@ export default class TargetComponent extends React.Component<Props> {
   }
 
   getStatusTitle(status: build_event_stream.TestStatus) {
-    if (this.props?.skippedEvent) {
+    if (this.props.skippedEvent) {
       return "Skipped";
     }
 
-    if (!this.props?.testSummaryEvent) {
-      return this.props?.completedEvent?.buildEvent?.completed?.success ? "Success" : "Failure";
+    if (!this.props.testSummaryEvent) {
+      return this.props.completedEvent?.buildEvent?.completed?.success ? "Success" : "Failure";
     }
 
     switch (status) {
@@ -121,6 +124,8 @@ export default class TargetComponent extends React.Component<Props> {
 
   getTestSize(size: build_event_stream.TestSize) {
     switch (size) {
+      case build_event_stream.TestSize.UNKNOWN:
+        return "Unknown test size";
       case build_event_stream.TestSize.SMALL:
         return "Small test";
       case build_event_stream.TestSize.MEDIUM:
@@ -133,35 +138,35 @@ export default class TargetComponent extends React.Component<Props> {
   }
 
   resultSort(a: invocation.InvocationEvent, b: invocation.InvocationEvent) {
-    let statusDiff = b.buildEvent.testResult.status - a.buildEvent.testResult.status;
+    let statusDiff = (b.buildEvent?.testResult?.status ?? 0) - (a.buildEvent?.testResult?.status ?? 0);
     if (statusDiff != 0) {
       return statusDiff;
     }
-    let shardDiff = a.buildEvent.id.testResult.shard - b.buildEvent.id.testResult.shard;
+    let shardDiff = (a.buildEvent?.id?.testResult?.shard ?? 0) - (b.buildEvent?.id?.testResult?.shard ?? 0);
     if (shardDiff != 0) {
       return shardDiff;
     }
-    let runDiff = a.buildEvent.id.testResult.run - b.buildEvent.id.testResult.run;
+    let runDiff = (a.buildEvent?.id?.testResult?.run ?? 0) - (b.buildEvent?.id?.testResult?.run ?? 0);
     if (runDiff != 0) {
       return runDiff;
     }
-    return a.buildEvent.id.testResult.attempt - b.buildEvent.id.testResult.attempt;
+    return (a.buildEvent?.id?.testResult?.attempt ?? 0) - (b.buildEvent?.id?.testResult?.attempt ?? 0);
   }
 
   actionSort(a: invocation.InvocationEvent, b: invocation.InvocationEvent) {
-    return b.buildEvent.action.exitCode - a.buildEvent.action.exitCode;
+    return (b.buildEvent?.action?.exitCode ?? 0) - (a.buildEvent?.action?.exitCode ?? 0);
   }
 
   getTime() {
-    const testSummary = this.props?.testSummaryEvent?.buildEvent?.testSummary;
+    const testSummary = this.props.testSummaryEvent?.buildEvent?.testSummary;
     if (testSummary?.lastStopTime || testSummary?.lastStopTimeMillis) {
       const lastStopDate = timestampToDateWithFallback(testSummary?.lastStopTime, testSummary?.lastStopTimeMillis);
       return format.formatDate(lastStopDate);
     }
-    if (this.props?.completedEvent?.eventTime?.seconds) {
-      return format.formatTimestampMillis(+this.props?.completedEvent?.eventTime.seconds * 1000);
+    if (this.props.completedEvent?.eventTime?.seconds) {
+      return format.formatTimestampMillis(+this.props.completedEvent?.eventTime.seconds * 1000);
     }
-    return format.formatTimestampMillis(+this.props?.configuredEvent?.eventTime?.seconds * 1000);
+    return format.formatTimestampMillis(+(this.props.configuredEvent?.eventTime?.seconds ?? 0) * 1000);
   }
 
   handleCopyClicked(label: string) {
@@ -223,25 +228,33 @@ export default class TargetComponent extends React.Component<Props> {
             </div>
             <div className="details">
               <div className="detail">
-                {this.renderStatusIcon(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
-                {this.getStatusTitle(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
+                {this.renderStatusIcon(
+                  this.props.testSummaryEvent?.buildEvent?.testSummary?.overallStatus ??
+                    build_event_stream.TestStatus.NO_STATUS
+                )}
+                {this.getStatusTitle(
+                  this.props.testSummaryEvent?.buildEvent?.testSummary?.overallStatus ??
+                    build_event_stream.TestStatus.NO_STATUS
+                )}
               </div>
 
-              {this.props?.testSummaryEvent && (
+              {this.props.testSummaryEvent && (
                 <div className="detail">
                   <Hash className="icon" />
-                  {this.props?.testSummaryEvent?.buildEvent?.testSummary?.totalRunCount} total runs
+                  {this.props.testSummaryEvent?.buildEvent?.testSummary?.totalRunCount ?? 0} total runs
                 </div>
               )}
               <div className="detail">
                 <Target className="icon" />
-                {this.props?.configuredEvent?.buildEvent?.configured.targetKind ||
-                  this.props.actionEvents?.map((action) => action?.buildEvent?.action?.type).join(",")}
+                {this.props.configuredEvent?.buildEvent?.configured?.targetKind ||
+                  this.props.actionEvents?.map((action) => action.buildEvent?.action?.type).join(",")}
               </div>
-              {this.props?.configuredEvent?.buildEvent?.configured.testSize > 0 && (
+              {(this.props.configuredEvent?.buildEvent?.configured?.testSize ?? 0) > 0 && (
                 <div className="detail">
                   <Box className="icon" />
-                  {this.getTestSize(this.props?.configuredEvent?.buildEvent?.configured.testSize)}
+                  {this.getTestSize(
+                    this.props.configuredEvent?.buildEvent?.configured?.testSize ?? build_event_stream.TestSize.UNKNOWN
+                  )}
                 </div>
               )}
             </div>
@@ -253,18 +266,19 @@ export default class TargetComponent extends React.Component<Props> {
               {resultEvents.map((result, index) => (
                 <a
                   href={`#${index + 1}`}
-                  title={this.generateRunName(result.buildEvent.id.testResult)}
-                  className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${
-                    (this.props.hash || "#1") == `#${index + 1}` ? "selected" : ""
-                  }`}>
-                  Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard{" "}
-                  {result.buildEvent.id.testResult.shard})
+                  title={this.generateRunName(result.buildEvent?.id?.testResult ?? {})}
+                  className={`run ${this.getStatusClass(
+                    result.buildEvent?.testResult?.status ?? build_event_stream.TestStatus.NO_STATUS
+                  )} ${(this.props.tab || "#1") == `#${index + 1}` ? "selected" : ""}`}>
+                  Run {result.buildEvent?.id?.testResult?.run ?? 0} (Attempt{" "}
+                  {result.buildEvent?.id?.testResult?.attempt ?? 0}, Shard{" "}
+                  {result.buildEvent?.id?.testResult?.shard ?? 0})
                 </a>
               ))}
             </div>
           )}
           {resultEvents
-            .filter((value, index) => `#${index + 1}` == (this.props.hash || "#1"))
+            .filter((value, index) => `#${index + 1}` == (this.props.tab || "#1"))
             .map((result) => (
               <span>
                 <TargetTestDocumentCardComponent
@@ -277,6 +291,7 @@ export default class TargetComponent extends React.Component<Props> {
                   invocationId={this.props.invocationId}
                   testResult={result}
                 />
+                <TargetTestCoverageCardComponent model={this.props.model} testResult={result} />
               </span>
             ))}
           {actionEvents.map((action) => (
@@ -292,12 +307,12 @@ export default class TargetComponent extends React.Component<Props> {
           {resultEvents
             .filter(
               (value, index) =>
-                `#${index + 1}` == (this.props.hash || "#1") && value.buildEvent?.testResult?.testActionOutput
+                `#${index + 1}` == (this.props.tab || "#1") && value.buildEvent?.testResult?.testActionOutput
             )
             .map((result) => (
               <div>
                 <TargetArtifactsCardComponent
-                  name={this.generateRunName(result.buildEvent.id.testResult)}
+                  name={this.generateRunName(result.buildEvent?.id?.testResult ?? {})}
                   invocationId={this.props.invocationId}
                   files={result.buildEvent?.testResult?.testActionOutput as build_event_stream.File[]}
                 />

@@ -4,7 +4,8 @@ import "proto/user_id.proto";
 
 package context;
 
-// Next ID: 5
+// Next ID: 6
+
 message RequestContext {
   user_id.UserId user_id = 1;
 
@@ -33,6 +34,10 @@ message RequestContext {
   // See also
   // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
   int32 timezone_offset_minutes = 3;
+
+  // The timezone from the user's browser (if supported). If empty, we will fall
+  // back to timezone_offset_mintues. If that is unset, we default to UTC.
+  string timezone = 5;
 }
 
 message ResponseContext {

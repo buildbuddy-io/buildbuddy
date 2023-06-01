@@ -437,6 +437,10 @@ svg.icon.orange {
   box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.1), 0px 1px 10px rgba(0, 0, 0, 0.05);
 }
 
+.card.selected-keyboard-shortcuts {
+  outline: 2px solid #2196f3;
+}
+
 .card.card-success {
   border-left: 6px solid #8bc34a;
 }
@@ -475,6 +479,15 @@ svg.icon.orange {
 
 .card.card-suggestion {
   border-left: 6px solid transparent;
+}
+
+.card-suggestion.card-suggestion-bot {
+  background: #2196f3;
+  color: #fff;
+}
+
+.card-suggestion.card-suggestion-bot svg {
+  stroke: white;
 }
 
 .card.dark {
@@ -1985,11 +1998,14 @@ code .comment {
 
 .loading {
   width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-grow: 1;
+}
+
+.loading:not(.loading-slim) {
+  height: 100%;
 }
 
 .loading:before {
@@ -2022,4 +2038,16 @@ code .comment {
   height: 0.8em;
   width: 0.8em;
   margin-left: 0.2em;
+}
+
+.coverage-source {
+  font-weight: 600;
+}
+
+.coverage-percent {
+  font-weight: 700;
+}
+
+.coverage-details {
+  color: #aaa;
 }

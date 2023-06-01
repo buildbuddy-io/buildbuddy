@@ -10,23 +10,32 @@ import (
 	"os/user"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/singleflight"
 
 	dockerclient "github.com/docker/docker/client"
 )
 
 const (
 	diskImageFileName = "containerfs.ext4"
+
+	// Minimum timeout used for background Firecracker disk image conversion.
+	imageConversionTimeout = 15 * time.Minute
 )
 
 var (
 	isRoot bool
+
+	// Single-flight group used to dedupe firecracker image conversions.
+	conversionGroup singleflight.Group
 )
 
 func init() {
@@ -36,10 +45,6 @@ func init() {
 	} else {
 		isRoot = u.Uid == "0"
 	}
-}
-
-func hashString(input string) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(input)))
 }
 
 func hashFile(filename string) (string, error) {
@@ -59,7 +64,7 @@ func hashFile(filename string) (string, error) {
 // path to it, if it exists. It returns "" (with no error) if the disk image
 // does not exist and no other errors occurred while looking for the image.
 func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage string) (string, error) {
-	hashedContainerName := hashString(containerImage)
+	hashedContainerName := hash.String(containerImage)
 	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 	files, err := os.ReadDir(containerImagesPath)
 	if os.IsNotExist(err) {
@@ -134,7 +139,37 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, wor
 		return existingPath, nil
 	}
 
-	hashedContainerName := hashString(containerImage)
+	// Dedupe image conversion operations, which are disk IO-heavy. Note, we
+	// convert the image in the background so that one client's ctx timeout does
+	// not affect other clients. We do apply a timeout to the background
+	// conversion though to prevent it from running forever.
+	conversionOpKey := singleflightKey(
+		workspaceDir, containerImage, creds.Username, creds.Password,
+	)
+	resultChan := conversionGroup.DoChan(conversionOpKey, func() (interface{}, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), imageConversionTimeout)
+		defer cancel()
+		// NOTE: If more params are added to this func, be sure to update
+		// conversionOpKey above (if applicable).
+		return createExt4Image(ctx, dockerClient, workspaceDir, containerImage, creds)
+	})
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-resultChan:
+		if res.Err != nil {
+			return "", res.Err
+		}
+		if res.Shared {
+			log.CtxInfof(ctx, "De-duped firecracker disk image conversion for %s", containerImage)
+		}
+		return res.Val.(string), nil
+	}
+}
+
+func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
+	hashedContainerName := hash.String(containerImage)
 	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 
 	// container not found -- write one!
@@ -266,4 +301,14 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 	}
 	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
 	return imageFile, nil
+}
+
+// singleflightKey returns a key that can be used to dedupe a function whose
+// output depends solely on the given args.
+func singleflightKey(args ...string) string {
+	h := ""
+	for _, s := range args {
+		h += hash.String(s)
+	}
+	return hash.String(h)
 }

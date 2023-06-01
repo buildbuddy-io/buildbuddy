@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -126,18 +127,19 @@ func newUUID(t *testing.T) string {
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(
-		"US1", "GR1",
-		"US2", "GR2",
-		"US3", "GR3",
-	)))
+	var userGroups []string
+	for i := 0; i < 10; i++ {
+		userGroups = append(userGroups, fmt.Sprintf("US%d", i), fmt.Sprintf("GR%d", i))
+	}
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(userGroups...)))
 	return env
 }
 
-func withAuthenticatedUser(t *testing.T, ctx context.Context, userID string) context.Context {
-	jwt, err := testauth.TestJWTForUserID(userID)
+func withAuthenticatedUser(t *testing.T, ctx context.Context, env *testenv.TestEnv, userID string) context.Context {
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	ctx, err := auth.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
-	return context.WithValue(ctx, "x-buildbuddy-jwt", jwt)
+	return ctx
 }
 
 func mustRun(t *testing.T, r *commandRunner) {
@@ -241,7 +243,7 @@ func sleepRandMicros(max int64) {
 func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r1 := mustGetNewRunner(t, ctx, pool, newTask())
 
@@ -256,8 +258,8 @@ func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctxUser1 := withAuthenticatedUser(t, context.Background(), "US1")
-	ctxUser2 := withAuthenticatedUser(t, context.Background(), "US2")
+	ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
+	ctxUser2 := withAuthenticatedUser(t, context.Background(), env, "US2")
 
 	r1 := mustGetNewRunner(t, ctxUser1, pool, newTask())
 
@@ -270,7 +272,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
 
 func TestRunnerPool_CannotTakeRunnerFromOtherInstanceName(t *testing.T) {
 	env := newTestEnv(t)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	task1 := newTask()
 	task1.ExecutionTask.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/1"}
@@ -288,7 +290,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherInstanceName(t *testing.T) {
 
 func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 	env := newTestEnv(t)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	task1 := newTask()
 	task1.ExecutionTask.Command.Platform.Properties = append(
@@ -313,7 +315,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r := mustGetNewRunner(t, ctx, pool, newTask())
 
@@ -332,12 +334,12 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	t.Logf("Random seed: %d", seed)
 
 	env := newTestEnv(t)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
-	// Run 100 trials where we create a pool that runs 50 tasks using runner
+	// Run 30 trials where we create a pool that runs 50 tasks using runner
 	// recycling, shutting down the pool after roughly half of the tasks have been
 	// started.
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 30; i++ {
 		pool := newRunnerPool(t, env, noLimitsCfg)
 		numTasks := 50
 		tasksStarted := make(chan struct{}, numTasks)
@@ -394,9 +396,15 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 }
 
 func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		// TODO(bduffany): Set macos memory limit to match total system
+		// memory instead of free memory, then re-enable.
+		t.SkipNow()
+	}
+
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, defaultCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r, err := get(ctx, pool, newTask())
 
@@ -433,12 +441,12 @@ func TestRunnerPool_DiskOnlyContainer_CanAddMultiple(t *testing.T) {
 	// Make sure we can add up to `maxRunnerCount` runners without eviction.
 	ctx := context.Background()
 	for i := 0; i < maxRunnerCount; i++ {
-		ctx = withAuthenticatedUser(t, ctx, fmt.Sprintf("US%d", i))
+		ctx = withAuthenticatedUser(t, ctx, env, fmt.Sprintf("US%d", i))
 		r := mustGetNewRunner(t, ctx, pool, newTask())
 		mustAddWithoutEviction(t, ctx, pool, r)
 	}
 	for i := 0; i < maxRunnerCount; i++ {
-		ctx = withAuthenticatedUser(t, ctx, fmt.Sprintf("US%d", i))
+		ctx = withAuthenticatedUser(t, ctx, env, fmt.Sprintf("US%d", i))
 		_ = mustGetPausedRunner(t, ctx, pool, newTask())
 	}
 }
@@ -450,9 +458,9 @@ func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 		MaxRunnerDiskSizeBytes:    unlimited,
 		MaxRunnerMemoryUsageBytes: unlimited,
 	})
-	ctxUser1 := withAuthenticatedUser(t, context.Background(), "US1")
-	ctxUser2 := withAuthenticatedUser(t, context.Background(), "US2")
-	ctxUser3 := withAuthenticatedUser(t, context.Background(), "US3")
+	ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
+	ctxUser2 := withAuthenticatedUser(t, context.Background(), env, "US2")
+	ctxUser3 := withAuthenticatedUser(t, context.Background(), env, "US3")
 
 	r1 := mustGetNewRunner(t, ctxUser1, pool, newTask())
 	r2 := mustGetNewRunner(t, ctxUser2, pool, newTask())
@@ -480,7 +488,7 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 		// At least one byte should be needed for the workspace root dir.
 		MaxRunnerDiskSizeBytes: 1,
 	})
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r := mustGetNewRunner(t, ctx, pool, newTask())
 
@@ -493,7 +501,7 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	task := newTask()
 	task.ExecutionTask.Command.Arguments = []string{"sh", "-c", "touch foo.txt && sleep infinity"}
@@ -522,7 +530,7 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T
 func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r1 := mustGetNewRunner(t, ctx, pool, newTaskWithAffinityKey("key1"))
 
@@ -537,8 +545,8 @@ func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
 func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctxUser1 := withAuthenticatedUser(t, context.Background(), "US1")
-	ctxUser2 := withAuthenticatedUser(t, context.Background(), "US2")
+	ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
+	ctxUser2 := withAuthenticatedUser(t, context.Background(), env, "US2")
 
 	r1 := mustGetNewRunner(t, ctxUser1, pool, newTaskWithAffinityKey("key1"))
 
@@ -547,6 +555,49 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 	r2 := mustGetNewRunner(t, ctxUser2, pool, newTaskWithAffinityKey("key2"))
 
 	assert.NotSame(t, r1, r2)
+}
+
+func TestRunnerPool_TaskSize(t *testing.T) {
+	oneGB := "1000000000"
+	twoGB := "2000000000"
+
+	for _, test := range []struct {
+		Name          string
+		Size1, Size2  string
+		WFID1, WFID2  string
+		ShouldRecycle bool
+	}{
+		{Name: "DifferentSize_NonWorkflow_ShouldNotRecycle", Size1: oneGB, Size2: twoGB, WFID1: "", WFID2: "", ShouldRecycle: false},
+		{Name: "SameSize_Workflow_ShouldRecycle", Size1: oneGB, Size2: oneGB, WFID1: "WF1", WFID2: "WF1", ShouldRecycle: true},
+		{Name: "DifferentSize_Workflow_ShouldNotRecycle", Size1: oneGB, Size2: twoGB, WFID1: "WF1", WFID2: "WF1", ShouldRecycle: false},
+		{Name: "SameSize_DifferentWorkflowIDs_ShouldNotRecycle", Size1: oneGB, Size2: oneGB, WFID1: "WF1", WFID2: "WF2", ShouldRecycle: false},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			env := newTestEnv(t)
+			pool := newRunnerPool(t, env, noLimitsCfg)
+			ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
+			t1 := newTask()
+			p1 := t1.ExecutionTask.Command.Platform
+			p1.Properties = append(p1.Properties, &repb.Platform_Property{Name: platform.EstimatedMemoryPropertyName, Value: test.Size1})
+			p1.Properties = append(p1.Properties, &repb.Platform_Property{Name: platform.WorkflowIDPropertyName, Value: test.WFID1})
+			t2 := newTask()
+			p2 := t2.ExecutionTask.Command.Platform
+			p2.Properties = append(p2.Properties, &repb.Platform_Property{Name: platform.EstimatedMemoryPropertyName, Value: test.Size2})
+			p2.Properties = append(p2.Properties, &repb.Platform_Property{Name: platform.WorkflowIDPropertyName, Value: test.WFID2})
+
+			r1 := mustGetNewRunner(t, ctxUser1, pool, t1)
+			mustAddWithoutEviction(t, ctxUser1, pool, r1)
+
+			var r2 *commandRunner
+			if test.ShouldRecycle {
+				r2 = mustGetPausedRunner(t, ctxUser1, pool, t2)
+				require.Same(t, r1, r2)
+			} else {
+				r2 = mustGetNewRunner(t, ctxUser1, pool, t2)
+				require.NotSame(t, r1, r2)
+			}
+		})
+	}
 }
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
@@ -608,7 +659,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 
 		env := newTestEnv(t)
 		pool := newRunnerPool(t, env, noLimitsCfg)
-		ctx := withAuthenticatedUser(t, context.Background(), "US1")
+		ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 		// Note: in each test step below, we use a fresh context and cancel it
 		// after the step is done, to ensure that the worker sticks around across task
@@ -668,7 +719,7 @@ func TestRunnerPool_PersistentWorkerUnknownProtocol(t *testing.T) {
 	}
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	// Make a new persistent worker
 	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", "unknown", resp))
@@ -680,7 +731,7 @@ func TestRunnerPool_PersistentWorkerUnknownProtocol(t *testing.T) {
 func TestRunnerPool_PersistentWorker_UnknownFlagFileError(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	// Persistent worker with unknown flagfile
 	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "@flagfile", "", &wkpb.WorkResponse{}))
@@ -697,7 +748,7 @@ func TestRunnerPool_PersistentWorker_UnknownFlagFileError(t *testing.T) {
 func TestRunnerPool_PersistentWorker_Crash_ShowsWorkerStderrInOutput(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	// Persistent worker with runner that crashes
 	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "--fail_with_stderr=TestStderrMessage", "", &wkpb.WorkResponse{}))

@@ -45,7 +45,7 @@ func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 	if err != nil {
 		return nil, status.InternalErrorf("Error running %q %s: %s", cmd.String(), string(out), err)
 	}
-	log.Debugf("Succesfully ran: %q", cmd.String())
+	log.Debugf("Successfully ran: %q", cmd.String())
 	return out, nil
 }
 
@@ -437,25 +437,6 @@ func findRoute(ctx context.Context, prefix string) (route, error) {
 		}
 	}
 	return route{}, status.FailedPreconditionErrorf("Unable to determine device with prefix: %s", prefix)
-}
-
-// FindDefaultRouteIP finds the default IP used for routing traffic, typically
-// corresponding to a local router or access point.
-//
-// Equivalent to "ip route | grep default | awk '{print $3}'.
-func FindDefaultRouteIP(ctx context.Context) (string, error) {
-	out, err := sudoCommand(ctx, "ip", "route")
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.HasPrefix(line, "default") {
-			if parts := strings.Split(line, " "); len(parts) > 5 {
-				return parts[2], nil
-			}
-		}
-	}
-	return "", status.FailedPreconditionError("Unable to determine default route.")
 }
 
 // EnableMasquerading turns on ipmasq for the device with --device_prefix. This is required

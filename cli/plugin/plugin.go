@@ -40,6 +40,10 @@ const (
 	// Path under the CLI storage dir where plugins are saved.
 	pluginsStorageDirName = "plugins"
 
+	// Environment variable whose presence indicates that a script has been
+	// invoked by BB as a plugin.
+	isPluginEnvVar = "IS_BB_PLUGIN"
+
 	installCommandUsage = `
 Usage: bb install [REPO[@VERSION]][:PATH] [--user]
 
@@ -420,9 +424,17 @@ type Plugin struct {
 // LoadAll loads all plugins from the combined user and workspace configs, and
 // ensures that any remote plugins are downloaded.
 func LoadAll(tempDir string) ([]*Plugin, error) {
+	// When invoking a nested bazel invocation from within a plugin,
+	// disable plugins. Otherwise, this can result in infinite recursion.
+	if os.Getenv(isPluginEnvVar) == "1" {
+		return nil, nil
+	}
+
 	ws, err := workspace.Path()
 	if err != nil {
-		return nil, err
+		// If we can't find a workspace file, don't load plugins as we won't
+		// be able to find the buildbuddy.yaml file that defines them.
+		return nil, nil
 	}
 	return loadAll(ws, tempDir)
 }
@@ -469,11 +481,10 @@ func getConfiguredPlugins(workspaceDir string) ([]*Plugin, error) {
 // PrepareEnv sets environment variables for use in plugins.
 func PrepareEnv() error {
 	ws, err := workspace.Path()
-	if err != nil {
-		return err
-	}
-	if err := os.Setenv("BUILD_WORKSPACE_DIRECTORY", ws); err != nil {
-		return err
+	if err == nil {
+		if err := os.Setenv("BUILD_WORKSPACE_DIRECTORY", ws); err != nil {
+			return err
+		}
 	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
@@ -487,6 +498,9 @@ func PrepareEnv() error {
 		return err
 	}
 	if err := os.Setenv("USER_CACHE_DIR", cache); err != nil {
+		return err
+	}
+	if err := os.Setenv("BB_EXECUTABLE", os.Args[0]); err != nil {
 		return err
 	}
 	return nil
@@ -689,6 +703,7 @@ func (p *Plugin) Path() (string, error) {
 func (p *Plugin) commandEnv() []string {
 	env := os.Environ()
 	env = append(env, fmt.Sprintf("PLUGIN_TEMPDIR=%s", p.tempDir))
+	env = append(env, fmt.Sprintf("%s=1", isPluginEnvVar))
 	return env
 }
 
@@ -702,11 +717,11 @@ func (p *Plugin) commandEnv() []string {
 // last plugin.
 //
 // See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
-func (p *Plugin) PreBazel(args []string) ([]string, error) {
+func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	// Write args to a file so the plugin can manipulate them.
 	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
 	if err != nil {
-		return nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
+		return nil, nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
 	}
 	defer func() {
 		argsFile.Close()
@@ -714,21 +729,35 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	}()
 	_, err = disk.WriteFile(context.TODO(), argsFile.Name(), []byte(strings.Join(args, "\n")+"\n"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	// Write args for executable to a file so the plugin can manipulate them.
+	execArgsFile, err := os.CreateTemp("", "bazelisk-exec-args-*")
+	if err != nil {
+		return nil, nil, status.InternalErrorf("failed to create exec args file for pre-bazel hook: %s", err)
+	}
+	defer func() {
+		execArgsFile.Close()
+		os.Remove(execArgsFile.Name())
+	}()
+	_, err = disk.WriteFile(context.TODO(), execArgsFile.Name(), []byte(strings.Join(execArgs, "\n")+"\n"))
+	if err != nil {
+		return nil, nil, err
 	}
 
 	path, err := p.Path()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	scriptPath := filepath.Join(path, "pre_bazel.sh")
 	exists, err := disk.FileExists(context.TODO(), scriptPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !exists {
 		log.Debugf("Bazel hook not found at %s", scriptPath)
-		return args, nil
+		return args, execArgs, nil
 	}
 	log.Debugf("Running pre-bazel hook for %s/%s", p.config.Repo, p.config.Path)
 	// TODO: support "pre_bazel.<any-extension>" as long as the file is
@@ -739,20 +768,31 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Env = p.commandEnv()
+	cmd.Env = append(cmd.Env, "EXEC_ARGS_FILE="+execArgsFile.Name())
 	if err := cmd.Run(); err != nil {
-		return nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
+		return nil, nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
 
 	newArgs, err := readArgsFile(argsFile.Name())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	newExecArgs, err := readArgsFile(execArgsFile.Name())
+	if err != nil {
+		return nil, nil, err
 	}
 
 	log.Debugf("New bazel args: %s", newArgs)
+	log.Debugf("New executable args: %s", newExecArgs)
 
 	// Canonicalize args after each plugin is run, so that every plugin gets
 	// canonicalized args as input.
-	return parser.CanonicalizeArgs(newArgs)
+	canonicalizedArgs, err := parser.CanonicalizeArgs(newArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return canonicalizedArgs, newExecArgs, nil
 }
 
 // PostBazel executes the plugin's post-bazel hook if it exists, allowing it to
@@ -838,7 +878,17 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 		io.Copy(pw, ptmx)
 	}()
 	go func() {
-		defer tty.Close()
+		// TODO: Properly clean up the tty here. We disable the cleanup since it
+		// seems to cause some plugin output to get dropped in rare cases.
+		// See: https://github.com/creack/pty/issues/127
+		//
+		// The cleanup being disabled is not a problem for the CLI because it
+		// should get cleaned up automatically when the CLI process exits, but
+		// if we want to reuse this code for other things then we should
+		// probably fix this so the tty can get cleaned up sooner.
+
+		// defer tty.Close()
+
 		defer ptmx.Close()
 		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
@@ -886,8 +936,11 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 }
 
 func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin) (int, error) {
-	// Build the pipeline of bazel output handlers
-	wc, err := PipelineWriter(os.Stdout, plugins)
+	// Build the pipeline of handle_bazel_output plugins for bazel's stderr
+	// output. We don't allow plugins to handle stdout since it would require
+	// separate plugins for handling stdout and stderr, as well as having
+	// separate pseudoterminals for stdout and stderr.
+	wc, err := PipelineWriter(os.Stderr, plugins)
 	if err != nil {
 		return -1, err
 	}
@@ -899,25 +952,32 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 
 	log.Debugf("Calling bazelisk with %+v", args)
 
-	// Create the output path where the original bazel output will be written,
+	// Create the output file where the original bazel output will be written,
 	// for post-bazel plugins to read.
-	output, err := os.Create(outputPath)
+	outputFile, err := os.Create(outputPath)
 	if err != nil {
 		return -1, fmt.Errorf("failed to create output file: %s", err)
 	}
-	defer output.Close()
+	defer outputFile.Close()
 
 	// If bb's output is connected to a terminal, then allocate a pty so that
 	// bazel thinks it's writing to a terminal, even though we're capturing its
 	// output via a Writer that is not a terminal. This enables ANSI colors,
 	// proper truncation of progress messages, etc.
-	isStdoutTTY, err := terminal.IsTTY(os.Stdout)
-	if err != nil {
-		return -1, fmt.Errorf("failed to determine whether stdout is a terminal: %s", err)
+	isWritingToTerminal := terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr)
+	w := io.MultiWriter(outputFile, wc)
+	opts := &bazelisk.RunOpts{
+		Stdout: os.Stdout,
+		Stderr: w,
 	}
-	w := io.MultiWriter(output, wc)
-	opts := &bazelisk.RunOpts{Stdout: w, Stderr: w}
-	if isStdoutTTY {
+	if isWritingToTerminal {
+		// We're writing to a MultiWriter in order to capture Bazel's output to
+		// a file, but also writing output to a terminal. Hint to bazel that we
+		// are still writing to a terminal, by setting --color=yes --curses=yes
+		// (with lowest priority, in case the user wants to set those flags
+		// themselves).
+		args = terminal.AddTerminalFlags(args)
+
 		ptmx, tty, err := pty.Open()
 		if err != nil {
 			return -1, fmt.Errorf("failed to allocate pty: %s", err)
@@ -933,12 +993,9 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 		// Note: we don't listen to resize events (SIGWINCH) and re-inherit the
 		// size, because Bazel itself doesn't do that currently. So it wouldn't
 		// make a difference either way.
-		opts.Stdout = tty
+		opts.Stdout = os.Stdout
 		opts.Stderr = tty
 		go io.Copy(w, ptmx)
-	} else {
-		opts.Stdout = w
-		opts.Stderr = w
 	}
 
 	return bazelisk.Run(args, opts)

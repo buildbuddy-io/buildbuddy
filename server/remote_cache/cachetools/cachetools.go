@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -23,6 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", false, "If true, enable compression of uploads to remote caches")
+	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
 )
 
 type StreamBlobOpts struct {
@@ -49,16 +49,20 @@ type nopCloser struct {
 
 func (nopCloser) Close() error { return nil }
 
-func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, opts *StreamBlobOpts, out io.Writer) (int64, error) {
+func getBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, opts *StreamBlobOpts, out io.Writer) (int64, error) {
 	if bsClient == nil {
 		return 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if r.GetDigest().GetHash() == digest.EmptySha256 {
+	if r.IsEmpty() {
 		return 0, nil
 	}
 
+	downloadString, err := r.DownloadString()
+	if err != nil {
+		return 0, err
+	}
 	req := &bspb.ReadRequest{
-		ResourceName: r.DownloadString(),
+		ResourceName: downloadString,
 		ReadOffset:   opts.Offset,
 		ReadLimit:    opts.Limit,
 	}
@@ -69,10 +73,15 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 		}
 		return 0, err
 	}
+	checksum, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return 0, err
+	}
+	w := io.MultiWriter(checksum, out)
 
-	var wc io.WriteCloser = nopCloser{out}
+	var wc io.WriteCloser = nopCloser{w}
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		decompressor, err := compression.NewZstdDecompressor(out)
+		decompressor, err := compression.NewZstdDecompressor(w)
 		if err != nil {
 			return 0, err
 		}
@@ -97,37 +106,41 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 		}
 		written += int64(n)
 	}
+	computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
+	if opts.Offset == 0 && opts.Limit == 0 && computedDigest != r.GetDigest().GetHash() {
+		return 0, status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
+	}
 	return written, nil
 }
 
-// TODO(vadim): return # of bytes written for consistency with GetBlobChunk
+// TODO(vadim): return # of bytes written for consistency with getBlobChunk
 func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
-	_, err := GetBlobChunk(ctx, bsClient, r, &StreamBlobOpts{Offset: 0, Limit: 0}, out)
+	_, err := getBlobChunk(ctx, bsClient, r, &StreamBlobOpts{Offset: 0, Limit: 0}, out)
 	return err
 }
 
-func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.ResourceName, error) {
-	d, err := digest.Compute(in)
+func computeDigest(in io.ReadSeeker, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.ResourceName, error) {
+	d, err := digest.Compute(in, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	return digest.NewResourceName(d, instanceName), nil
+	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction), nil
 }
 
-func ComputeFileDigest(fullFilePath, instanceName string) (*digest.ResourceName, error) {
+func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.ResourceName, error) {
 	f, err := os.Open(fullFilePath)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	return ComputeDigest(f, instanceName)
+	return computeDigest(f, instanceName, digestFunction)
 }
 
 func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if r.GetDigest().GetHash() == digest.EmptySha256 {
+	if r.IsEmpty() {
 		return r.GetDigest(), nil
 	}
 	resourceName, err := r.UploadString()
@@ -178,16 +191,36 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 
 	}
-	_, err = stream.CloseAndRecv()
+	rsp, err := stream.CloseAndRecv()
 	if err != nil {
 		return nil, err
 	}
+
+	remoteSize := rsp.GetCommittedSize()
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
+		// Either the write succeeded or was short-circuited, but in
+		// either case, the remoteSize for uncompressed uploads should
+		// match the file size.
+		if remoteSize != r.GetDigest().GetSizeBytes() {
+			return nil, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+		}
+	} else {
+		// -1 is returned if the blob already exists, otherwise the
+		// remoteSize should agree with what we uploaded.
+		if remoteSize != bytesUploaded && remoteSize != -1 {
+			return nil, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+		}
+	}
+
 	return r.GetDigest(), nil
 }
 
 func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ResourceName) (*repb.ActionResult, error) {
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("ActionCacheClient not configured")
+	}
+	if ar.GetCacheType() != rspb.CacheType_AC {
+		return nil, status.InvalidArgumentError("Cannot download non-AC resource from action cache")
 	}
 	req := &repb.GetActionResultRequest{
 		ActionDigest: ar.GetDigest(),
@@ -200,6 +233,10 @@ func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r 
 	if acClient == nil {
 		return status.FailedPreconditionError("ActionCacheClient not configured")
 	}
+	if r.GetCacheType() != rspb.CacheType_AC {
+		return status.InvalidArgumentError("Cannot upload non-AC resource to action cache")
+	}
+
 	req := &repb.UpdateActionResultRequest{
 		InstanceName: r.GetInstanceName(),
 		ActionDigest: r.GetDigest(),
@@ -209,13 +246,13 @@ func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r 
 	return err
 }
 
-func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in proto.Message) (*repb.Digest, error) {
+func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	resourceName, err := ComputeDigest(reader, instanceName)
+	resourceName, err := computeDigest(reader, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -226,8 +263,8 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	return UploadFromReader(ctx, bsClient, resourceName, reader)
 }
 
-func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	resourceName, err := ComputeDigest(in, instanceName)
+func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
+	resourceName, err := computeDigest(in, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -238,13 +275,13 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return UploadFromReader(ctx, bsClient, resourceName, in)
 }
 
-func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, fullFilePath string) (*repb.Digest, error) {
+func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, fullFilePath string) (*repb.Digest, error) {
 	f, err := os.Open(fullFilePath)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	resourceName, err := ComputeDigest(f, instanceName)
+	resourceName, err := computeDigest(f, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -256,23 +293,14 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 }
 
 func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out proto.Message) error {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		return status.InvalidArgumentError("Cannot download non-CAS resource from CAS cache")
+	}
 	buf := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
 	if err := GetBlob(ctx, bsClient, r, buf); err != nil {
 		return err
 	}
 	return proto.Unmarshal(buf.Bytes(), out)
-}
-
-func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.ResourceName) (*repb.Action, *repb.Command, error) {
-	action := &repb.Action{}
-	if err := GetBlobAsProto(ctx, bsClient, actionDigest, action); err != nil {
-		return nil, nil, status.WrapErrorf(err, "could not fetch action")
-	}
-	cmd := &repb.Command{}
-	if err := GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName()), cmd); err != nil {
-		return nil, nil, status.WrapErrorf(err, "could not fetch command")
-	}
-	return action, cmd, nil
 }
 
 func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.ResourceName, out proto.Message) error {
@@ -287,29 +315,29 @@ func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.R
 }
 
 func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	casRN := digest.NewCASResourceName(d.GetDigest(), d.GetInstanceName())
+	casRN := digest.NewResourceName(d.GetDigest(), d.GetInstanceName(), rspb.CacheType_CAS, d.GetDigestFunction())
 	return readProtoFromCache(ctx, cache, casRN, out)
 }
 
 func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	acRN := digest.NewACResourceName(d.GetDigest(), d.GetInstanceName())
+	acRN := digest.NewResourceName(d.GetDigest(), d.GetInstanceName(), rspb.CacheType_AC, d.GetDigestFunction())
 	return readProtoFromCache(ctx, cache, acRN, out)
 }
 
-func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType resource.CacheType, remoteInstanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	d, err := digest.Compute(in)
+func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
+	d, err := digest.Compute(in, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	if d.GetHash() == digest.EmptySha256 {
+	resourceName := digest.NewResourceName(d, remoteInstanceName, cacheType, digestFunction)
+	if resourceName.IsEmpty() {
 		return d, nil
 	}
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	resourceName := digest.NewCacheResourceName(d, remoteInstanceName, cacheType).ToProto()
-	wc, err := cache.Writer(ctx, resourceName)
+	wc, err := cache.Writer(ctx, resourceName.ToProto())
 	if err != nil {
 		return nil, err
 	}
@@ -321,26 +349,22 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType r
 	return d, wc.Commit()
 }
 
-func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	return UploadBytesToCache(ctx, cache, resource.CacheType_CAS, instanceName, in)
-}
-
-func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType resource.CacheType, instanceName string, in proto.Message) (*repb.Digest, error) {
+func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	return UploadBytesToCache(ctx, cache, cacheType, instanceName, reader)
+	return UploadBytesToCache(ctx, cache, cacheType, instanceName, digestFunction, reader)
 }
 
-func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, blob []byte) (*repb.Digest, error) {
+func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, blob []byte) (*repb.Digest, error) {
 	reader := bytes.NewReader(blob)
-	return UploadBytesToCache(ctx, cache, resource.CacheType_CAS, instanceName, reader)
+	return UploadBytesToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, reader)
 }
 
-func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
-	return uploadProtoToCache(ctx, cache, resource.CacheType_CAS, instanceName, in)
+func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
+	return uploadProtoToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, in)
 }
 
 func SupportsCompression(ctx context.Context, capabilitiesClient repb.CapabilitiesClient) (bool, error) {
@@ -378,12 +402,13 @@ type BatchCASUploader struct {
 	unsentBatchReq  *repb.BatchUpdateBlobsRequest
 	uploads         map[digest.Key]struct{}
 	instanceName    string
+	digestFunction  repb.DigestFunction_Value
 	unsentBatchSize int64
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string) *BatchCASUploader {
+func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
 		ctx:             ctx,
@@ -392,9 +417,10 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		compress:        false,
 		eg:              eg,
 		bufferPool:      bytebufferpool.New(uploadBufSizeBytes),
-		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
+		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
 		unsentBatchSize: 0,
 		instanceName:    instanceName,
+		digestFunction:  digestFunction,
 		uploads:         make(map[digest.Key]struct{}),
 	}
 }
@@ -442,7 +468,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	}
 
 	if d.GetSizeBytes() > gRPCMaxSize {
-		resourceName := digest.NewResourceName(d, ul.instanceName)
+		resourceName := digest.NewResourceName(d, ul.instanceName, rspb.CacheType_CAS, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
 		byteStreamClient := ul.env.GetByteStreamClient()
@@ -485,7 +511,7 @@ func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) 
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(bytes.NewReader(data))
+	d, err := digest.Compute(bytes.NewReader(data), ul.digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +526,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(f)
+	d, err := digest.Compute(f, ul.digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -528,7 +554,10 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 	}
 
 	req := ul.unsentBatchReq
-	ul.unsentBatchReq = &repb.BatchUpdateBlobsRequest{InstanceName: ul.instanceName}
+	ul.unsentBatchReq = &repb.BatchUpdateBlobsRequest{
+		InstanceName:   ul.instanceName,
+		DigestFunction: ul.digestFunction,
+	}
 	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
 		rsp, err := casClient.BatchUpdateBlobs(ul.ctx, req)
@@ -566,8 +595,8 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // UploadDirectoryToCAS uploads all the files in a given directory to the CAS
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
-func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul := NewBatchCASUploader(ctx, env, instanceName)
+func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
+	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction)
 
 	// Recursively find and upload all descendant dirs.
 	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)
@@ -645,10 +674,6 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 	return visited, digest, nil
 }
 
-func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
-	return uploadProtoToCache(ctx, cache, resource.CacheType_AC, instanceName, in)
-}
-
 func isExecutable(info os.FileInfo) bool {
 	return info.Mode()&0100 != 0
 }
@@ -658,9 +683,10 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 	nextPageToken := ""
 	for {
 		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-			RootDigest:   r.GetDigest(),
-			InstanceName: r.GetInstanceName(),
-			PageToken:    nextPageToken,
+			RootDigest:     r.GetDigest(),
+			InstanceName:   r.GetInstanceName(),
+			PageToken:      nextPageToken,
+			DigestFunction: r.GetDigestFunction(),
 		})
 		if err != nil {
 			return nil, err

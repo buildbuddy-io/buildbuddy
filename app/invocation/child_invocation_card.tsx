@@ -1,7 +1,14 @@
 import React from "react";
 import format from "../format/format";
 import router from "../router/router";
-import { BazelCommandResult } from "./child_invocations";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+
+export type BazelCommandResult = {
+  invocation:
+    | build_event_stream.WorkflowConfigured.IInvocationMetadata
+    | build_event_stream.ChildInvocationsConfigured.IInvocationMetadata;
+  durationMillis?: number;
+};
 
 export type ChildInvocationCardProps = {
   status: string;
@@ -13,6 +20,10 @@ export type ChildInvocationCardProps = {
 
 export default class ChildInvocationCard extends React.Component<ChildInvocationCardProps> {
   private handleCommandClicked(invocationId: string, e: React.MouseEvent) {
+    // TODO(siggisim): Switch this to using the <Link> component
+    if (e.metaKey || e.ctrlKey) {
+      return;
+    }
     e.preventDefault();
     router.navigateTo(`/invocation/${invocationId}`);
   }
@@ -27,16 +38,19 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
           </div>
           <div className="details">
             {this.props.results.map((result) => (
-              <div
+              <a
+                href={`/invocation/${result.invocation.invocationId}`}
                 className="list-grid"
                 onClick={
-                  !this.props.linksDisabled && this.handleCommandClicked.bind(this, result.invocation.invocationId)
+                  this.props.linksDisabled
+                    ? undefined
+                    : this.handleCommandClicked.bind(this, result.invocation?.invocationId ?? "")
                 }>
                 <div className={`${!this.props.linksDisabled && "clickable"} target`}>
                   <span className="target-status-icon">{this.props.icon}</span> {result.invocation.bazelCommand}
                 </div>
                 <div>{typeof result.durationMillis === "number" && format.durationMillis(result.durationMillis)}</div>
-              </div>
+              </a>
             ))}
           </div>
         </div>

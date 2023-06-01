@@ -129,6 +129,7 @@ const matchers: SuggestionMatcher[] = [
   }),
   ({ model, buildLogs }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (!buildLogs.includes("DEADLINE_EXCEEDED")) return null;
@@ -156,6 +157,8 @@ const matchers: SuggestionMatcher[] = [
   // Suggest recommended flags for `bazel coverage` when using RBE
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
     if (model.getCommand() !== "coverage") return null;
     if (!model.optionsMap.get("remote_executor")) return null;
     if (
@@ -196,6 +199,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest remote.buildbuddy.io instead of cloud.buildbuddy.io
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     // remote.buildbuddy.io doesn't support cert-based auth
     if (model.optionsMap.get("tls_client_certificate")) return null;
@@ -233,6 +237,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest using cache compression
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (model.optionsMap.get("experimental_remote_cache_compression")) return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
@@ -260,6 +265,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest using --jobs
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("jobs")) return null;
@@ -276,6 +282,33 @@ const matchers: SuggestionMatcher[] = [
       reason: <>Shown because this build has remote execution enabled, but a jobs count is not configured.</>,
     };
   },
+  // Suggest --experimental_remote_build_event_upload=minimal
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
+    if (!model.optionsMap.get("remote_cache")) return null;
+    if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
+    const version = getBazelMajorVersion(model);
+    // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal
+    if (version === null || version < 6) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider setting the Bazel flag <BazelFlag>--experimental_remote_build_event_upload=minimal</BazelFlag> to
+          reduce the number of unnecessary cache uploads that Bazel might perform during a build.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build has remote cache enabled, and{" "}
+          <span className="inline-code">--experimental_remote_build_event_upload</span> is not explicitly set.
+        </>
+      ),
+    };
+  },
   // Suggest timing profile flags
   getTimingDataSuggestion,
   // Suggest using remote_download_minimal
@@ -285,6 +318,7 @@ const matchers: SuggestionMatcher[] = [
     return null;
 
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("remote_download_outputs")) return null;
@@ -306,9 +340,33 @@ const matchers: SuggestionMatcher[] = [
       ),
     };
   },
+  // Suggest --nolegacy_important_outputs
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
+    if (model.optionsMap.get("legacy_important_outputs")) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding the Bazel flag <BazelFlag>--nolegacy_important_outputs</BazelFlag>, which can significantly
+          reduce the payload size of the uploaded build event stream by eliminating duplicate file references.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because
+          <span className="inline-code">--legacy_important_outputs</span> is not explicitly set.
+        </>
+      ),
+    };
+  },
   // Suggest modify_execution_info for iOS builds
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("modify_execution_info")) return null;
@@ -354,7 +412,9 @@ const matchers: SuggestionMatcher[] = [
     // with min Bazel version check once issues are fixed.
     return null;
 
+    /* No clue why, but strict TS gets broken by dead code, so this is commented out.
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("experimental_remote_cache_async")) return null;
@@ -377,10 +437,12 @@ const matchers: SuggestionMatcher[] = [
         </>
       ),
     };
+    */
   },
   // Suggest configuring metadata to enable test grid
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!capabilities.config.testDashboardEnabled) return null;
     if (model.invocations[0]?.role !== "CI") return null;
@@ -418,7 +480,7 @@ export function getSuggestions({
 }: {
   model: InvocationModel;
   buildLogs: string;
-  user: User;
+  user?: User;
 }): Suggestion[] {
   if (!buildLogs || !model || !user) return [];
 
@@ -470,7 +532,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
         {suggestions.map((suggestion) => (
           <SuggestionComponent suggestion={suggestion} />
         ))}
-        {this.props.user.canCall("updateGroup") && (
+        {this.props.user?.canCall("updateGroup") && (
           <TextLink className="settings-link" href="/settings/org/details">
             Suggestion settings
           </TextLink>
@@ -526,10 +588,14 @@ function buildLogRegex({
 }
 
 function BazelFlag({ children }: { children: string }) {
+  let flag = children.split("=")[0] || "";
+  if (flag.startsWith("--no")) {
+    flag = "--" + flag.substring("--no".length);
+  }
   return (
     <TextLink
       className="inline-code bazel-flag"
-      href={`https://docs.bazel.build/versions/main/command-line-reference.html#flag${children}`}>
+      href={`https://docs.bazel.build/versions/main/command-line-reference.html#flag${flag}`}>
       {children}
     </TextLink>
   );

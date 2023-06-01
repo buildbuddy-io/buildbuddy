@@ -4,13 +4,13 @@ go_library(
     name = "parser",
     srcs = ["parser.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
         "//cli/log",
         "//cli/storage",
         "//cli/workspace",
+        "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
         "//server/util/disk",
         "@com_github_google_shlex//:shlex",
@@ -29,3 +29,5 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

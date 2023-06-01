@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -45,7 +46,9 @@ import (
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
@@ -91,6 +94,11 @@ const (
 	bazelBinaryName    = "bazel"
 	bazeliskBinaryName = "bazelisk"
 
+	// Bazel exit codes
+	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
+
+	bazelLocalEnvironmentalErrorExitCode = 36
+
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
 	// parse correctly).
@@ -104,20 +112,20 @@ var (
 	cacheBackend       = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
 	rbeBackend         = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
 	besResultsURL      = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
-	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches.")
+	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches (for hosted bazel) or the remote instance name running the workflow action.")
 	triggerEvent       = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL      = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
 	pushedBranch       = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	prNumber           = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
 	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
-	targetCommitSHA    = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
 	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	patchDigests       = flagutil.New("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
+	patchURIs          = flagutil.New("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 	gitCleanExclude    = flagutil.New("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 
@@ -132,6 +140,9 @@ var (
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
+
+	// TODO(Maggie): Clean up this field - consolidate with --commit_sha
+	targetCommitSHA = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
 )
 
 type workspace struct {
@@ -287,6 +298,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: 0}}},
 			{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
+			{Id: &bespb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original"}}},
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
 			Uuid:               r.invocationID,
@@ -311,6 +323,13 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		if err := r.bep.Publish(patternEvent); err != nil {
 			return err
 		}
+	}
+	structuredCommandLineEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original"}}},
+		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: getStructuredCommandLine()},
+	}
+	if err := r.bep.Publish(structuredCommandLineEvent); err != nil {
+		return err
 	}
 
 	// Flush whenever the log buffer fills past a certain threshold.
@@ -455,10 +474,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	// Write setup logs to the current task's stderr (to make debugging easier),
-	// and also to the invocation.
-	ws.log = io.MultiWriter(os.Stderr, buildEventReporter)
+	// Note: logs written to the buildEventReporter will be written as
+	// invocation progress events as well as written to the workflow action's
+	// stderr.
+	ws.log = buildEventReporter
 	ws.hostname, ws.username = getHostAndUserName()
 
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
@@ -477,6 +496,11 @@ func run() error {
 	}
 	ws.rootDir = rootDir
 
+	if *workflowID != "" {
+		if err := os.Setenv("CI", "true"); err != nil {
+			return status.WrapError(err, "set CI=true")
+		}
+	}
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
 		return status.WrapError(err, "ensure HOME")
@@ -756,6 +780,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	} else {
 		buildMetadata.Metadata["ROLE"] = "HOSTED_BAZEL"
 	}
+	if *prNumber != 0 {
+		buildMetadata.Metadata["PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
+	}
+	if *targetRepoURL != "" {
+		buildMetadata.Metadata["REPO_URL"] = *targetRepoURL
+	}
+	if *pushedRepoURL != *targetRepoURL {
+		buildMetadata.Metadata["FORK_REPO_URL"] = *pushedRepoURL
+	}
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}
@@ -828,6 +861,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+		}
+
+		// If this is a workflow, kill-signal the current process on certain
+		// exit codes (rather than exiting) so that the workflow action is
+		// retried. Note that we do this immediately after the Bazel command is
+		// completed so that the outer workflow invocation gets disconnected
+		// rather than finishing with an error.
+		if *workflowID != "" && exitCode == bazelLocalEnvironmentalErrorExitCode {
+			syscall.Kill(os.Getpid(), syscall.SIGKILL)
 		}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
@@ -929,7 +971,7 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]stri
 				return nil
 			}
 		}
-		rn, err := cachetools.ComputeFileDigest(path, *remoteInstanceName)
+		rn, err := cachetools.ComputeFileDigest(path, *remoteInstanceName, repb.DigestFunction_SHA256)
 		if err != nil {
 			return err
 		}
@@ -972,10 +1014,15 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		if err != nil {
 			return nil, nil, err
 		}
+		downloadString, err := digest.NewResourceName(d.ToDigest(), *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
+		if err != nil {
+			return nil, nil, err
+		}
+
 		runfiles = append(runfiles, &bespb.File{
 			Name: relPath,
 			File: &bespb.File_Uri{
-				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewResourceName(d.ToDigest(), *remoteInstanceName).DownloadString()),
+				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, downloadString),
 			},
 		})
 	}
@@ -989,7 +1036,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	missingDigests := rsp.GetMissingBlobDigests()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName)
+	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256)
 
 	for _, d := range missingDigests {
 		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
@@ -1018,7 +1065,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		placePath := placePath
 		realPath := realPath
 		eg.Go(func() error {
-			_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, *remoteInstanceName, realPath)
+			_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, realPath)
 			if err != nil {
 				return err
 			}
@@ -1026,10 +1073,14 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			if err != nil {
 				return err
 			}
+			downloadString, err := digest.NewResourceName(td, *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
+			if err != nil {
+				return err
+			}
 			mu.Lock()
 			runfileDirs = append(runfileDirs, &bespb.Tree{
 				Name: relPath,
-				Uri:  fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewResourceName(td, *remoteInstanceName).DownloadString()),
+				Uri:  fmt.Sprintf("%s%s", bytestreamURIPrefix, downloadString),
 			})
 			mu.Unlock()
 			return nil
@@ -1301,28 +1352,32 @@ func (ws *workspace) setup(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamClient, digestString string) error {
-	d, err := digest.Parse(digestString)
+func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamClient, patchURI string) error {
+	rn, err := digest.ParseDownloadResourceName(patchURI)
 	if err != nil {
 		return err
 	}
-	patchFile := d.GetHash()
-	f, err := os.OpenFile(patchFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	patchFileName := rn.GetDigest().GetHash()
+	f, err := os.OpenFile(patchFileName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, bsClient, digest.NewResourceName(d, *remoteInstanceName), f); err != nil {
+	if err := cachetools.GetBlob(ctx, bsClient, rn, f); err != nil {
 		_ = f.Close()
 		return err
 	}
 	_ = f.Close()
-	if err := git(ctx, ws.log, "apply", "--verbose", patchFile); err != nil {
+	if _, err := git(ctx, ws.log, "apply", "--verbose", patchFileName); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
+	if *pushedBranch == "" && *targetBranch == "" {
+		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `target_branch` to be set")
+	}
+
 	// Fetch the pushed and target branches from their respective remotes.
 	// "base" here is referring to the repo on which the workflow is configured.
 	// "fork" is referring to the forked repo, if the runner was triggered by a
@@ -1355,13 +1410,15 @@ func (ws *workspace) sync(ctx context.Context) error {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 		checkoutLocalBranchName = *pushedBranch
 	} else {
-		if *targetBranch != "" {
-			checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-			checkoutLocalBranchName = *targetBranch
-		} else {
-			checkoutRef = *targetCommitSHA
-			checkoutLocalBranchName = "local"
-		}
+		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
+		checkoutLocalBranchName = *targetBranch
+	}
+
+	// If a commit is set, use it
+	if *targetCommitSHA != "" {
+		checkoutRef = *targetCommitSHA
+	} else if *commitSHA != "" {
+		checkoutRef = *commitSHA
 	}
 
 	// Clean up in case a previous workflow made a mess.
@@ -1374,21 +1431,31 @@ func (ws *workspace) sync(ctx context.Context) error {
 	for _, path := range *gitCleanExclude {
 		cleanArgs = append(cleanArgs, "-e", path)
 	}
-	if err := git(ctx, ws.log, cleanArgs...); err != nil {
+	if _, err := git(ctx, ws.log, cleanArgs...); err != nil {
 		return err
 	}
-	// Create the branch if it doesn't already exist, then update it to point to
-	// the pushed branch tip.
-	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
+
+	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
+	if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
 		return err
 	}
+
+	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
+	if *commitSHA == "" {
+		headCommitSHA, err := git(ctx, ws.log, "rev-parse", "HEAD")
+		if err != nil {
+			return err
+		}
+		*commitSHA = headCommitSHA
+	}
+
 	// Merge the target branch (if different from the pushed branch) so that the
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
+		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
-			if err := git(ctx, ws.log, "merge", "--abort"); err != nil {
+			if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 				errMsg += "\n" + err.Output
 			}
 			// Make note of the merge conflict and abort. We'll run all actions and each
@@ -1400,14 +1467,14 @@ func (ws *workspace) sync(ctx context.Context) error {
 		}
 	}
 
-	if len(*patchDigests) > 0 {
+	if len(*patchURIs) > 0 {
 		conn, err := grpc_client.DialTarget(*cacheBackend)
 		if err != nil {
 			return err
 		}
 		bsClient := bspb.NewByteStreamClient(conn)
-		for _, digestString := range *patchDigests {
-			if err := ws.applyPatch(ctx, bsClient, digestString); err != nil {
+		for _, patchURI := range *patchURIs {
+			if err := ws.applyPatch(ctx, bsClient, patchURI); err != nil {
 				return err
 			}
 		}
@@ -1425,7 +1492,7 @@ func (ws *workspace) config(ctx context.Context) error {
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
 		// Don't show the config output.
-		if err := git(ctx, io.Discard, "config", kv[0], kv[1]); err != nil {
+		if _, err := git(ctx, io.Discard, "config", kv[0], kv[1]); err != nil {
 			return err
 		}
 	}
@@ -1458,11 +1525,11 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
 	// Don't show `git remote add` command or the error message since the URL may
 	// contain the repo access token.
-	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
+	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
 	fetchArgs := append([]string{"fetch", "--filter=blob:none", "--force", remoteName}, branches...)
-	if err := git(ctx, ws.log, fetchArgs...); err != nil {
+	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
 	return nil
@@ -1486,14 +1553,15 @@ func isAlreadyUpToDate(err error) bool {
 	return ok && strings.Contains(gitErr.Output, "up to date")
 }
 
-func git(ctx context.Context, out io.Writer, args ...string) *gitError {
+func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError) {
 	var buf bytes.Buffer
 	w := io.MultiWriter(out, &buf)
 	printCommandLine(out, "git", args...)
 	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
-		return &gitError{err, string(buf.Bytes())}
+		return "", &gitError{err, string(buf.Bytes())}
 	}
-	return nil
+	output := string(buf.Bytes())
+	return strings.TrimSpace(output), nil
 }
 
 func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
@@ -1541,6 +1609,13 @@ func writeBazelrc(path, invocationID string) error {
 	if *workflowID != "" {
 		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)
 	}
+	if *prNumber != 0 {
+		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
+		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
+	}
+	if *pushedRepoURL != *targetRepoURL {
+		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
+	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
@@ -1555,6 +1630,7 @@ func writeBazelrc(path, invocationID string) error {
 	}...)
 	if *cacheBackend != "" {
 		lines = append(lines, "build:buildbuddy_remote_cache --remote_cache="+*cacheBackend)
+		lines = append(lines, "build:buildbuddy_experimental_remote_downloader --experimental_remote_downloader="+*cacheBackend)
 	}
 	if *rbeBackend != "" {
 		lines = append(lines, "build:buildbuddy_remote_executor --remote_executor="+*rbeBackend)
@@ -1572,7 +1648,10 @@ func readConfig() (*config.BuildBuddyConfig, error) {
 	f, err := os.Open(config.FilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return config.GetDefault(), nil
+			// Note: targetRepoDefaultBranch is only used to compute triggers,
+			// but we don't read triggers in the CI runner (since the runner is
+			// already triggered). So we exclude the default branch here.
+			return config.GetDefault("" /*=targetRepoDefaultBranch*/), nil
 		}
 		return nil, status.FailedPreconditionErrorf("open %q: %s", config.FilePath, err)
 	}
@@ -1662,4 +1741,40 @@ func toShellToken(s string) string {
 		s = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 	}
 	return s
+}
+
+func getStructuredCommandLine() *clpb.CommandLine {
+	options := make([]*clpb.Option, 0, len(os.Args[1:]))
+	for _, arg := range os.Args[1:] {
+		// TODO: Handle other arg formats ("-name=value", "--name value",
+		// "--bool_switch", etc). Ignore these for now since we don't set
+		// them in practice.
+		if !strings.HasPrefix(arg, "--") || !strings.Contains(arg, "=") {
+			continue
+		}
+		arg = strings.TrimPrefix(arg, "--")
+		parts := strings.SplitN(arg, "=", 2)
+		options = append(options, &clpb.Option{
+			CombinedForm: arg,
+			OptionName:   parts[0],
+			OptionValue:  parts[1],
+		})
+	}
+	return &clpb.CommandLine{
+		CommandLineLabel: "original",
+		Sections: []*clpb.CommandLineSection{
+			{
+				SectionLabel: "executable",
+				SectionType: &clpb.CommandLineSection_ChunkList{ChunkList: &clpb.ChunkList{
+					Chunk: []string{os.Args[0]},
+				}},
+			},
+			{
+				SectionLabel: "command options",
+				SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{
+					Option: options,
+				}},
+			},
+		},
+	}
 }

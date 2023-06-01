@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https")
+	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
 
 	uuidV4Regexp = regexp.MustCompile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 )
@@ -43,7 +43,7 @@ func SetSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func RedirectIfNotForwardedHTTPS(env environment.Env, next http.Handler) http.Handler {
+func RedirectIfNotForwardedHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
 		// Our k8s healthchecks set "server-type" header, but Google LB healthchecks don't support them so we check the UA.

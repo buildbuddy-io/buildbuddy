@@ -6,12 +6,16 @@ go_library(
     name = "vmexec",
     srcs = ["vmexec.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_elastic_gosigar//:gosigar",
         "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sys//unix",
@@ -21,6 +25,7 @@ go_library(
 go_test(
     name = "vmexec_test",
     srcs = ["vmexec_test.go"],
+    flaky = True,
     deps = [
         ":vmexec",
         "//enterprise/server/remote_execution/commandutil",

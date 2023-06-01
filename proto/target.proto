@@ -9,7 +9,8 @@ package target;
 message Target {
   // The id of this target.
   // For example: "TS12345".
-  string id = 1;
+  // DEPRECATED: Use repo_url and label to identify a target.
+  string id = 1 [deprecated = true];
 
   // The label of the target.
   // For example: "//server/test:foo"

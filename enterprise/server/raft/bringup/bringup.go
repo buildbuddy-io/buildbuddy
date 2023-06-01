@@ -346,6 +346,31 @@ func StartCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInf
 	return eg.Wait()
 }
 
+func CloneCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInfo *ClusterBootstrapInfo, srcRangeID, dstRangeID uint64) error {
+	log.Debugf("CloneCluster called with bootstrapInfo: %+v", bootstrapInfo)
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, node := range bootstrapInfo.nodes {
+		node := node
+		eg.Go(func() error {
+			apiClient, err := apiClient.Get(ctx, node.grpcAddress)
+			if err != nil {
+				return err
+			}
+			_, err = apiClient.CloneCluster(ctx, &rfpb.CloneClusterRequest{
+				SourceRangeId: srcRangeID,
+				DestRangeId:   dstRangeID,
+			})
+			if err != nil {
+				log.Errorf("Clone cluster returned err: %s", err)
+				return err
+			}
+			return nil
+		})
+	}
+
+	return eg.Wait()
+}
+
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
 func SendStartClusterRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {

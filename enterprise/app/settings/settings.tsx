@@ -1,5 +1,7 @@
 import React from "react";
+import { AlertCircle } from "lucide-react";
 import { User } from "../../../app/auth/auth_service";
+import rpc_service from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import ApiKeysComponent from "../api_keys/api_keys";
@@ -10,6 +12,11 @@ import router from "../../../app/router/router";
 import UserPreferences from "../../../app/preferences/preferences";
 import GitHubLink from "./github_link";
 import QuotaComponent from "../quota/quota";
+import UserGitHubLink from "./user_github_link";
+import Banner from "../../../app/components/banner/banner";
+import Link from "../../../app/components/link/link";
+import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
+import EncryptionComponent from "../encryption/encryption";
 
 export interface SettingsProps {
   user: User;
@@ -24,11 +31,18 @@ enum TabId {
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
   OrgSecrets = "org/secrets",
+  OrgCacheEncryption = "org/cache-encryption",
+
   PersonalPreferences = "personal/preferences",
+  PersonalApiKeys = "personal/api-keys",
+  PersonalGitHubLink = "personal/github",
+
   ServerQuota = "server/quota",
 }
 
 const TAB_IDS = new Set<string>(Object.values(TabId));
+
+const CLI_LOGIN_PATH = "/settings/cli-login";
 
 function isTabId(id: string): id is TabId {
   return TAB_IDS.has(id);
@@ -37,6 +51,23 @@ function isTabId(id: string): id is TabId {
 export default class SettingsComponent extends React.Component<SettingsProps> {
   componentWillMount() {
     document.title = `Settings | BuildBuddy`;
+
+    // Handle the redirect for CLI login.
+    if (this.isCLILoginPath()) {
+      if (capabilities.config.userOwnedKeysEnabled && this.props.user?.selectedGroup?.userOwnedKeysEnabled) {
+        router.replaceURL("/settings/personal/api-keys?cli-login=1");
+      } else {
+        router.replaceURL("/settings/org/api-keys?cli-login=1");
+      }
+    }
+  }
+
+  private isCLILogin() {
+    return this.props.search.get("cli-login") === "1";
+  }
+
+  private isCLILoginPath() {
+    return this.props.path === CLI_LOGIN_PATH || this.props.path === CLI_LOGIN_PATH + "/";
   }
 
   private getDefaultTabId(): TabId {
@@ -65,6 +96,10 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
   }
 
   render() {
+    if (this.isCLILoginPath()) {
+      return null;
+    }
+
     const activeTabId = this.getActiveTabId();
 
     return (
@@ -92,28 +127,50 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     Members
                   </SettingsTab>
                 )}
-                {router.canAccessOrgGitHubLinkPage(this.props.user) && (
-                  <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
-                    GitHub link
-                  </SettingsTab>
-                )}
+                {router.canAccessOrgGitHubLinkPage(this.props.user) &&
+                  (capabilities.github || capabilities.config.githubAppEnabled) && (
+                    <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
+                      <span>GitHub link</span>
+                      {/* If the user has a group-level GitHub link and the new GitHub App is
+                        enabled, show a deprecation alert. */}
+                      {capabilities.config.githubAppEnabled && this.props.user.selectedGroup.githubLinked && (
+                        <AlertCircle className="icon orange" />
+                      )}
+                    </SettingsTab>
+                  )}
                 <SettingsTab id={TabId.OrgApiKeys} activeTabId={activeTabId}>
-                  API keys
+                  Org API keys
                 </SettingsTab>
                 {capabilities.config.secretsEnabled && router.canAccessOrgSecretsPage(this.props.user) && (
                   <SettingsTab id={TabId.OrgSecrets} activeTabId={activeTabId}>
                     Secrets
                   </SettingsTab>
                 )}
+                {capabilities.config.customerManagedEncryptionKeysEnabled &&
+                  router.canAccessEncryptionPage(this.props.user) && (
+                    <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
+                      Encryption keys
+                    </SettingsTab>
+                  )}
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
                 <div className="settings-tab-group-subtitle">{this.props.user.displayUser.name?.full}</div>
               </div>
               <div className="settings-tab-group">
-                <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId}>
+                <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId} debugId="personal-preferences">
                   Preferences
                 </SettingsTab>
+                {this.props.user?.selectedGroup?.userOwnedKeysEnabled && (
+                  <SettingsTab id={TabId.PersonalApiKeys} activeTabId={activeTabId}>
+                    Personal API keys
+                  </SettingsTab>
+                )}
+                {capabilities.config.githubAppEnabled && (
+                  <SettingsTab id={TabId.PersonalGitHubLink} activeTabId={activeTabId}>
+                    GitHub account link
+                  </SettingsTab>
+                )}
               </div>
               {this.props.user.canCall("getNamespace") && capabilities.config.quotaManagementEnabled && (
                 <>
@@ -147,6 +204,16 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     onClick={() => this.props.preferences.toggleLightTerminal()}>
                     Switch to {this.props.preferences.lightTerminalEnabled ? "dark" : "light"} log viewer theme
                   </FilledButton>
+                  <div className="settings-option-title">Keyboard Shortcuts</div>
+                  <div className="settings-option-description">
+                    Enables keyboard shortcuts. Hit '?' for help when enabled.
+                  </div>
+                  <FilledButton
+                    className="settings-button"
+                    onClick={() => this.props.preferences.toggleKeyboardShortcuts()}
+                    debug-id="keyboard-shortcuts-button">
+                    {this.props.preferences.keyboardShortcutsEnabled ? "Disable" : "Enable"} keyboard shortcuts
+                  </FilledButton>
                 </>
               )}
               {capabilities.auth && this.props.user && (
@@ -169,21 +236,89 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <OrgMembersComponent user={this.props.user} />
                     </>
                   )}
-                  {activeTabId === TabId.OrgGitHub && capabilities.github && <GitHubLink user={this.props.user} />}
+                  {activeTabId === TabId.OrgGitHub &&
+                    (capabilities.github || capabilities.config.githubAppEnabled) &&
+                    this.props.user.canCall("unlinkGitHubAccount") && (
+                      <GitHubLink user={this.props.user} path={this.props.path} />
+                    )}
+                  {this.props.path === "/settings/org/github/complete-installation" && (
+                    <CompleteGitHubAppInstallationDialog user={this.props.user} search={this.props.search} />
+                  )}
+                  {activeTabId === TabId.PersonalGitHubLink && capabilities.config.githubAppEnabled && (
+                    <UserGitHubLink user={this.props.user} />
+                  )}
                   {activeTabId === TabId.OrgApiKeys && capabilities.manageApiKeys && (
                     <>
-                      <div className="settings-option-title">API keys</div>
+                      <div className="settings-option-title">Org API keys</div>
                       <div className="settings-option-description">
                         API keys grant access to your BuildBuddy organization.
                       </div>
-                      <ApiKeysComponent user={this.props.user} />
+                      {this.isCLILogin() && (
+                        <>
+                          <div className="settings-option-description">
+                            <Banner type="info">
+                              {capabilities.config.userOwnedKeysEnabled && (
+                                <>
+                                  To log in as <b>{this.props.user.displayUser.email}</b>, an organization administrator
+                                  must enable user-owned API keys in Org details.{" "}
+                                </>
+                              )}
+                              To log in as the organization <b>{this.props.user.selectedGroupName()}</b>, copy one of
+                              the keys below and paste it back into the login prompt.
+                            </Banner>
+                          </div>
+                        </>
+                      )}
+                      <ApiKeysComponent
+                        user={this.props.user}
+                        get={rpc_service.service.getApiKeys}
+                        create={rpc_service.service.createApiKey}
+                        update={rpc_service.service.updateApiKey}
+                        delete={rpc_service.service.deleteApiKey}
+                      />
                     </>
                   )}
+                  {activeTabId === TabId.PersonalApiKeys &&
+                    capabilities.manageApiKeys &&
+                    this.props.user?.selectedGroup?.userOwnedKeysEnabled && (
+                      <>
+                        <div className="settings-option-title">Personal API keys</div>
+                        <div className="settings-option-description">
+                          Personal API keys associate builds with both your individual user account and your
+                          organization.
+                        </div>
+                        {this.isCLILogin() && (
+                          <div className="settings-option-description">
+                            <Banner type="info">
+                              To login, copy one of the API keys below and paste it back into the login prompt.
+                            </Banner>
+                          </div>
+                        )}
+                        <ApiKeysComponent
+                          user={this.props.user}
+                          userOwnedOnly
+                          get={rpc_service.service.getUserApiKeys}
+                          create={rpc_service.service.createUserApiKey}
+                          update={rpc_service.service.updateUserApiKey}
+                          delete={rpc_service.service.deleteUserApiKey}
+                        />
+                      </>
+                    )}
                   {activeTabId === TabId.OrgSecrets && capabilities.config.secretsEnabled && (
                     <SecretsComponent path={this.props.path} search={this.props.search} />
                   )}
                   {activeTabId === TabId.ServerQuota && capabilities.config.quotaManagementEnabled && (
                     <QuotaComponent path={this.props.path} search={this.props.search} />
+                  )}
+                  {activeTabId == TabId.OrgCacheEncryption && (
+                    <>
+                      <div className="settings-option-title">Customer managed encryption keys</div>
+                      <div className="settings-option-description">
+                        Customer managed encryption keys give you the ability to provide and manage your own encryption
+                        keys that are used for the encryption of your BuildBuddy cache artifacts.
+                      </div>
+                      <EncryptionComponent />
+                    </>
                   )}
                 </>
               )}
@@ -198,30 +333,18 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
 type SettingsTabProps = {
   id: TabId;
   activeTabId: TabId;
+  debugId?: string;
 };
 
 class SettingsTab extends React.Component<SettingsTabProps> {
-  private handleClick(e: React.MouseEvent) {
-    e.preventDefault();
-    if (this.props.activeTabId === this.props.id && window.location.pathname === this.props.id) {
-      return;
-    }
-    const linkTarget = (e.target as HTMLAnchorElement).getAttribute("href");
-    // If this isn't really a link, probably better to go nowhere.
-    if (linkTarget === null) {
-      return;
-    }
-    router.navigateTo(linkTarget);
-  }
-
   render() {
     return (
-      <a
+      <Link
         className={`settings-tab ${this.props.activeTabId === this.props.id ? "active-tab" : ""}`}
         href={`/settings/${this.props.id}`}
-        onClick={this.handleClick.bind(this)}>
+        debug-id={this.props.debugId}>
         {this.props.children}
-      </a>
+      </Link>
     );
   }
 }

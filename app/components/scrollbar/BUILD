@@ -4,17 +4,13 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "scrollbar",
-    srcs = glob([
-        "*.ts",
-        "*.tsx",
-    ]),
+    srcs = ["scrollbar.tsx"],
     strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//@types/uuid",
         "@npm//react",
         "@npm//rxjs",
-        "@npm//tslib",
         "@npm//uuid",
     ],
 )

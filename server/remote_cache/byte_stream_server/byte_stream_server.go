@@ -2,7 +2,6 @@ package byte_stream_server
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"hash"
 	"io"
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -21,6 +21,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -28,6 +29,10 @@ import (
 const (
 	// Keep under the limit of ~4MB (save 256KB).
 	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
+)
+
+var (
+	bazel5_1_0 = bazel_request.MustParseVersion("5.1.0")
 )
 
 type ByteStreamServer struct {
@@ -100,14 +105,14 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return err
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	if r.GetDigest().GetHash() == digest.EmptySha256 {
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
+	if r.IsEmpty() {
 		ht.TrackEmptyHit()
 		return nil
 	}
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
+	cacheRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
 	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
@@ -253,7 +258,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		resourceNameString: req.ResourceName,
 	}
 
-	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
+	casRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
@@ -274,18 +279,23 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 
 	var committedWriteCloser interfaces.CommittedWriteCloser
-	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
+	if r.IsEmpty() {
+		committedWriteCloser = ioutil.DiscardWriteCloser()
+	} else {
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
 		}
 		committedWriteCloser = cacheWriter
-	} else {
-		committedWriteCloser = ioutil.DiscardWriteCloser()
 	}
 	ws.cacheCommitter = committedWriteCloser
 	ws.cacheCloser = committedWriteCloser
-	ws.checksum = NewChecksum()
+
+	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
 	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
@@ -339,7 +349,7 @@ func (w *writeState) Flush() error {
 func (w *writeState) Commit() error {
 	// Verify the checksum. If it does not match, note that the cache writer is
 	// not committed, since that persists the file to cache.
-	if err := w.checksum.Check(w.resourceName.GetDigest()); err != nil {
+	if err := w.checksum.Check(w.resourceName); err != nil {
 		return err
 	}
 
@@ -375,14 +385,16 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 
+			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
-				return s.handleAlreadyExists(ctx, stream, req)
+				return s.handleAlreadyExists(ctx, ht, stream, req)
 			}
 
 			streamState, err = s.initStreamState(ctx, req)
 			if status.IsAlreadyExistsError(err) {
-				return s.handleAlreadyExists(ctx, stream, req)
+				return s.handleAlreadyExists(ctx, ht, stream, req)
 			}
 			if err != nil {
 				return err
@@ -392,7 +404,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 					log.Error(err.Error())
 				}
 			}()
-			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.resourceName.GetDigest())
 			defer func() {
 				uploadTracker.CloseWithBytesTransferred(streamState.offset, int64(bytesUploadedFromClient), streamState.resourceName.GetCompressor(), "byte_stream_server")
@@ -452,35 +463,41 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	}, nil
 }
 
-func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_tracker.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
 		return err
 	}
-	// Bazel 5.0.0 effectively requires that the committed_size match the total
-	// length of the *uploaded* payload. For compressed payloads, the uploaded
-	// payload length is not yet known, because it depends on the compression
-	// parameters used by the client. So we need to read the whole stream from the
-	// client in the compressed case.
-	//
-	// See https://github.com/bazelbuild/bazel/issues/14654 for context.
-	committedSize := r.GetDigest().GetSizeBytes()
-	if r.GetCompressor() != repb.Compressor_IDENTITY {
-		remainingSize := int64(0)
+	clientUploadedBytes := int64(len(firstRequest.Data))
+
+	uploadTracker := ht.TrackUpload(r.GetDigest())
+	defer func() {
+		uploadTracker.CloseWithBytesTransferred(0, clientUploadedBytes, r.GetCompressor(), "byte_stream_server")
+	}()
+
+	// Uncompressed uploads can always short-circuit, returning
+	// the digest size as the committed size.
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
+		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
+	}
+
+	// Bazel pre-5.1.0 doesn't support short-circuiting compressed uploads.
+	// Instead, it expects the committed size to match the size of the
+	// compressed stream. Since there is no unique compressed representation,
+	// the only way to get the compressed stream size is to read the full
+	// stream.
+	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(bazel5_1_0) {
 		if !firstRequest.FinishWrite {
-			// In the case where we read the full stream in order to determine its
-			// size, count it as an upload.
-			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-			uploadTracker := ht.TrackUpload(r.GetDigest())
-			remainingSize, err = s.recvAll(stream)
-			uploadTracker.CloseWithBytesTransferred(0, int64(len(firstRequest.Data))+remainingSize, r.GetCompressor(), "byte_stream_server")
+			n, err := s.recvAll(stream)
+			clientUploadedBytes += n
 			if err != nil {
 				return err
 			}
 		}
-		committedSize = int64(len(firstRequest.Data)) + remainingSize
+		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: clientUploadedBytes})
 	}
-	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: committedSize})
+
+	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: -1})
 }
 
 // recvAll receives the remaining write requests from the client, and returns
@@ -500,14 +517,16 @@ func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, e
 }
 
 type Checksum struct {
-	hash         hash.Hash
-	bytesWritten int64
+	digestFunction repb.DigestFunction_Value
+	hash           hash.Hash
+	bytesWritten   int64
 }
 
-func NewChecksum() *Checksum {
+func NewChecksum(h hash.Hash, digestFunction repb.DigestFunction_Value) *Checksum {
 	return &Checksum{
-		hash:         sha256.New(),
-		bytesWritten: 0,
+		digestFunction: digestFunction,
+		hash:           h,
+		bytesWritten:   0,
 	}
 }
 
@@ -525,10 +544,11 @@ func (s *Checksum) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *Checksum) Check(d *repb.Digest) error {
+func (s *Checksum) Check(r *digest.ResourceName) error {
+	d := r.GetDigest()
 	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
 	if computedDigest != d.GetHash() {
-		return status.DataLossErrorf("Uploaded bytes sha256 hash (%q) did not match digest (%q).", computedDigest, d.GetHash())
+		return status.DataLossErrorf("Hash of uploaded bytes %q [%s] did not match provided digest: %q [%s].", computedDigest, s.digestFunction, d.GetHash(), r.GetDigestFunction())
 	}
 	if s.BytesWritten() != d.GetSizeBytes() {
 		return status.DataLossErrorf("Uploaded bytes length (%d bytes) did not match digest (%d).", s.BytesWritten(), d.GetSizeBytes())

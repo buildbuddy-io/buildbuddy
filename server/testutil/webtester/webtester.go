@@ -1,6 +1,7 @@
 package webtester
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -14,6 +15,21 @@ import (
 	"github.com/tebeka/selenium/chrome"
 )
 
+var (
+	// To debug webdriver tests visually in your local environment:
+	//
+	// 1. Run the test with --config=webdriver-debug, which sets the
+	//   --webdriver_debug flag below as well as some other necessary flags.
+	//
+	// 2. Optionally, set --webdriver_end_of_test_delay=1h to extend the
+	//    end-of-test wait duration, and set --test_filter=NameOfTest to debug
+	//    a specific failing test.
+
+	debug               = flag.Bool("webdriver_debug", false, "Enable debug mode for webdriver tests.")
+	endOfTestDelay      = flag.Duration("webdriver_end_of_test_delay", 3*time.Second, "How long to wait at the end of failed webdriver tests. Has no effect if --webdriver_debug is not set.")
+	implicitWaitTimeout = flag.Duration("webdriver_implicit_wait_timeout", 1*time.Second, "Max time webtester should wait to find an element.")
+)
+
 // WebTester wraps selenium.WebDriver, failing the test instead of returning
 // errors for all of its API methods.
 type WebTester struct {
@@ -24,20 +40,33 @@ type WebTester struct {
 // New returns a WebTester scoped to the given test. It registers a cleanup
 // function to record a screenshot if the test fails.
 func New(t *testing.T) *WebTester {
-	driver, err := webtest.NewWebDriverSession(selenium.Capabilities{
-		chrome.CapabilitiesKey: chrome.Capabilities{
-			Args: []string{
-				// `--disable-dev-shm-usage` and `--no-sandbox` are a fix for
-				// "DevToolsActivePort file doesn't exist" on docker
-				// https://stackoverflow.com/questions/50642308
-				"--disable-dev-shm-usage", "--no-sandbox",
-				// Window size is specified as a flag as a workaround for
-				// `SetWindowSize` returning an error in headless mode
-				// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
-				"--window-size=1920,1000",
-			},
-		},
-	})
+	// Note, the chromeArgs and chromedriverArgs below are appended to the
+	// default args defined here:
+	// https://github.com/bazelbuild/rules_webtesting/blob/1460fa2b9a4307765cdf4989019a92ed6e65e51f/browsers/chromium-local.json
+	chromeArgs := []string{
+		// Window size is specified as a flag as a workaround for
+		// `SetWindowSize` returning an error in headless mode
+		// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
+		"--window-size=1920,1000",
+	}
+	chromedriverArgs := []string{}
+	if *debug {
+		// Remove the --headless arg applied to the "chromium-local" browser
+		// that we import from rules_webtesting.
+		// Note, the "REMOVE:" syntax is a feature of rules_webtesting, not
+		// chrome.
+		chromeArgs = append(chromeArgs, "REMOVE:--headless")
+		// Add --verbose to chromedriver so that if it fails to start, we can
+		// see the logs from Chrome with the root cause (e.g. missing system
+		// deps, missing DISPLAY environment variable for X server, etc.)
+		chromedriverArgs = append(chromedriverArgs, "--verbose")
+	}
+
+	capabilities := selenium.Capabilities{
+		chrome.CapabilitiesKey: chrome.Capabilities{Args: chromeArgs},
+		"google:wslConfig":     map[string]any{"args": chromedriverArgs},
+	}
+	driver, err := webtest.NewWebDriverSession(capabilities)
 	require.NoError(t, err, "failed to create webdriver session")
 	// Allow webdriver to wait a short period before giving up on finding an
 	// element. In most cases, Selenium's default heuristics for marking a page
@@ -48,7 +77,7 @@ func New(t *testing.T) *WebTester {
 	// never be located.
 	//
 	// See also https://stackoverflow.com/q/11001030
-	driver.SetImplicitWaitTimeout(1 * time.Second)
+	driver.SetImplicitWaitTimeout(*implicitWaitTimeout)
 	wt := &WebTester{t, driver}
 	t.Cleanup(func() {
 		err := wt.screenshot("END_OF_TEST")
@@ -56,6 +85,9 @@ func New(t *testing.T) *WebTester {
 		// the webdriver if the screenshot fails.
 		assert.NoError(t, err, "failed to take end-of-test screenshot")
 
+		if *debug && t.Failed() {
+			time.Sleep(*endOfTestDelay)
+		}
 		err = driver.Quit()
 		require.NoError(t, err)
 	})
@@ -66,6 +98,21 @@ func New(t *testing.T) *WebTester {
 func (wt *WebTester) Get(url string) {
 	err := wt.driver.Get(url)
 	require.NoError(wt.t, err)
+}
+
+// Returns the current URL, fails if there is an error.
+func (wt *WebTester) CurrentURL() string {
+	url, err := wt.driver.CurrentURL()
+	require.NoError(wt.t, err)
+	return url
+}
+
+// Returns the <body> element of the current page. Exactly one body element
+// must exist, otherwise the test fails.
+func (wt *WebTester) FindBody() *Element {
+	el, err := wt.driver.FindElement(selenium.ByTagName, "body")
+	require.NoError(wt.t, err)
+	return &Element{wt.t, el}
 }
 
 // Find returns the element matching the given CSS selector. Exactly one
@@ -85,6 +132,24 @@ func (wt *WebTester) FindAll(cssSelector string) []*Element {
 		out[i] = &Element{wt.t, el}
 	}
 	return out
+}
+
+// FindByDebugID returns the element matching the given debug-id selector. Exactly one
+// element must be matched, otherwise the test fails.
+//
+// It's recommended to use the debug-id attribute for webdriver tests. Using CSS names, IDs, or classes
+// can be brittle when element style is changed. debug-ids are only used for webdriver tests and should be stable
+func (wt *WebTester) FindByDebugID(debugID string) *Element {
+	el, err := wt.driver.FindElement(selenium.ByCSSSelector, `[debug-id="`+debugID+`"]`)
+	require.NoError(wt.t, err)
+	return &Element{wt.t, el}
+}
+
+// AssertNotFound asserts the provided CSS selector does not exist in the DOM.
+func (wt *WebTester) AssertNotFound(cssSelector string) {
+	els, err := wt.driver.FindElements(selenium.ByCSSSelector, cssSelector)
+	require.NoError(wt.t, err)
+	require.Empty(wt.t, els)
 }
 
 // Screenshot takes a screenshot and saves it in the test outputs directory. The
@@ -149,6 +214,34 @@ func (el *Element) GetAttribute(name string) string {
 	return val
 }
 
+// SendKeys types into the element.
+func (el *Element) SendKeys(keys string) {
+	err := el.webElement.SendKeys(keys)
+	require.NoError(el.t, err)
+}
+
+// Find returns the child element matching the given CSS selector. Exactly one
+// element must be matched, otherwise the test fails.
+func (el *Element) Find(cssSelector string) *Element {
+	child, err := el.webElement.FindElement(selenium.ByCSSSelector, cssSelector)
+	require.NoError(el.t, err)
+	return &Element{t: el.t, webElement: child}
+}
+
+func (el *Element) FirstSelectedOption() *Element {
+	options, err := el.webElement.FindElements(selenium.ByCSSSelector, "option")
+	require.NoError(el.t, err)
+	for _, option := range options {
+		selected, err := option.IsSelected()
+		require.NoError(el.t, err)
+		if selected {
+			return &Element{t: el.t, webElement: option}
+		}
+	}
+	require.FailNow(el.t, "no options were selected")
+	return nil
+}
+
 // ===
 // Utility functions that don't directly correspond with WebElement APIs
 // ===
@@ -168,12 +261,33 @@ func HasClass(el *Element, class string) bool {
 // BuildBuddy-specific functionality
 // ===
 
-// Login uses the Web app to log into BuildBuddy as the default self-auth user.
-// It expects that no user is currently logged in, and that self-auth is
-// enabled.
-func Login(wt *WebTester, appBaseURL string) {
-	wt.Get(appBaseURL)
-	wt.Find(".login-button").Click()
+type Target interface {
+	// HTTPURL is the HTTP endpoint of the target.
+	// Ex: http://localhost:8080
+	HTTPURL() string
+}
+
+type SSOTarget interface {
+	Target
+	// SSOSlug is the slug of the org that should be used for SSO login.
+	SSOSlug() string
+}
+
+func Login(wt *WebTester, target Target) {
+	wt.Get(target.HTTPURL())
+
+	// If the target supports SSO login, prefer that.
+	if target, ok := target.(SSOTarget); ok {
+		wt.FindByDebugID("sso-button").Click()
+		wt.FindByDebugID("sso-slug").SendKeys(target.SSOSlug())
+		wt.FindByDebugID("sso-button").Click()
+	} else {
+		// Otherwise attempt self-auth.
+		wt.FindByDebugID("login-button").Click()
+	}
+
+	// Login can have a delay. Wait for the sidebar before proceeding.
+	wt.Find(".sidebar-footer")
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,
@@ -212,12 +326,28 @@ var (
 	// WithEnableCache is a setup page option that checks the "enable cache"
 	// checkbox.
 	WithEnableCache SetupPageOption = func(wt *WebTester) {
-		checkbox := wt.Find("#cache")
-		if !checkbox.IsSelected() {
-			checkbox.Click()
+		enableCacheCheckbox := wt.Find("#cache")
+		if !enableCacheCheckbox.IsSelected() {
+			enableCacheCheckbox.Click()
+		}
+
+		fullCacheRadioButton := wt.Find("#cache-full")
+		if !fullCacheRadioButton.IsSelected() {
+			fullCacheRadioButton.Click()
 		}
 	}
 )
+
+// WithAPIKeySelection returns a setup page option that selects a given API key
+// from the dropdown.
+func WithAPIKeySelection(label string) SetupPageOption {
+	return func(wt *WebTester) {
+		picker := wt.Find(`.credential-picker`)
+		picker.SendKeys(label)
+		selectedOption := picker.FirstSelectedOption()
+		require.Equal(wt.t, label, selectedOption.Text())
+	}
+}
 
 // GetBazelBuildFlags uses the Web app to navigate to the setup page and get the
 // Bazel config flags recommended by BuildBuddy. Options can be passed to select

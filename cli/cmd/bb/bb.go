@@ -5,20 +5,27 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/download"
+	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/metadata"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/picker"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
+	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
+	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -47,6 +54,15 @@ func run() (exitCode int, err error) {
 	// (--verbose, etc.)
 	args := log.Configure(os.Args[1:])
 
+	// Make sure startup args are always in the format --foo=bar.
+	args, err = parser.CanonicalizeStartupArgs(args)
+	if err != nil {
+		return -1, err
+	}
+
+	// Expand command shortcuts like b=>build, t=>test, etc.
+	args = shortcuts.HandleShortcuts(args)
+
 	// Show help if applicable.
 	exitCode, err = help.HandleHelp(args)
 	if err != nil || exitCode >= 0 {
@@ -74,8 +90,34 @@ func run() (exitCode int, err error) {
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
-	// TODO: Convert this to (exitCode, err) convention
-	args = login.HandleLogin(args)
+	exitCode, err = login.HandleLogin(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = login.HandleLogout(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = fix.HandleFix(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = ask.HandleAsk(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = add.HandleAdd(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = download.HandleDownload(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = upload.HandleUpload(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
 
 	// If none of the CLI subcommand handlers were triggered, assume we have a
 	// bazel invocation.
@@ -108,10 +150,11 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 
+	// Show a picker if target argument is omitted.
+	args = picker.HandlePicker(args)
+
 	// Parse args.
-	// Split out passthrough args and don't let plugins modify them,
-	// since those are intended to be passed to the built binary as-is.
-	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(args)
+	bazelArgs, execArgs := arg.SplitExecutableArgs(args)
 	// TODO: Expanding configs results in a long explicit command line in the BB
 	// UI. Need to find a way to override the explicit command line in the UI so
 	// that it reflects the args passed to the CLI, not the wrapped Bazel
@@ -124,7 +167,10 @@ func run() (exitCode int, err error) {
 	// Fiddle with Bazel args
 	// TODO(bduffany): model these as "built-in" plugins
 	args = tooltag.ConfigureToolTag(args)
-	args = login.ConfigureAPIKey(args)
+	args, err = login.ConfigureAPIKey(args)
+	if err != nil {
+		return -1, err
+	}
 
 	// Prepare convenience env vars for plugins
 	if err := plugin.PrepareEnv(); err != nil {
@@ -137,11 +183,14 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 	for _, p := range plugins {
-		args, err = p.PreBazel(args)
+		args, execArgs, err = p.PreBazel(args, execArgs)
 		if err != nil {
 			return -1, err
 		}
 	}
+
+	// For the ask command, we want to save some flags from the most recent invocation.
+	args = ask.SaveFlags(args)
 
 	// Note: sidecar is configured after pre-bazel plugins, since pre-bazel
 	// plugins may change the value of bes_backend, remote_cache,
@@ -150,7 +199,7 @@ func run() (exitCode int, err error) {
 
 	// Handle remote bazel. Note, pre-bazel hooks apply to remote bazel, but not
 	// output handlers or post-bazel hooks.
-	args = remotebazel.HandleRemoteBazel(args, passthroughArgs)
+	args = remotebazel.HandleRemoteBazel(args, execArgs)
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
@@ -170,7 +219,7 @@ func run() (exitCode int, err error) {
 	log.Debugf("bb initialized in %s", time.Since(start))
 	outputPath := filepath.Join(tempDir, "bazel.log")
 	exitCode, err = plugin.RunBazeliskWithPlugins(
-		arg.JoinPassthroughArgs(args, passthroughArgs),
+		arg.JoinExecutableArgs(args, execArgs),
 		outputPath, plugins)
 	if err != nil {
 		return -1, err

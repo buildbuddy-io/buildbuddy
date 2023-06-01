@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 const (
@@ -58,7 +58,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		return &elpb.GetEventLogChunkResponse{}, nil
 	}
 
-	invocationInProgress := inv.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
+	invocationInProgress := inv.InvocationStatus == int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
 	eventLogPath := GetEventLogPathFromInvocationIdAndAttempt(req.InvocationId, inv.Attempt)
 

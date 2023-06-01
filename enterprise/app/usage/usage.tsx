@@ -12,12 +12,12 @@ export interface UsageProps {
 
 interface State {
   response?: usage.GetUsageResponse;
-  selectedPeriod?: string;
+  selectedPeriod: usage.Usage;
   loading?: boolean;
 }
 
 export default class UsageComponent extends React.Component<UsageProps, State> {
-  state: State = {};
+  state: State = { selectedPeriod: usage.Usage.create({}) };
 
   componentDidMount() {
     document.title = "Usage | BuildBuddy";
@@ -29,7 +29,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
         if (response.usage.length === 0) {
           throw new Error("Server did not return usage data.");
         }
-        this.setState({ response, selectedPeriod: response.usage[0].period });
+        this.setState({ response, selectedPeriod: response.usage[0] });
       })
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
@@ -37,15 +37,15 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
 
   private onChangePeriod(e: React.ChangeEvent<HTMLSelectElement>) {
     const selectedPeriod = e.target.value;
-    this.setState({ selectedPeriod });
+    this.setState({
+      // Value comes directly from the response, it's a bug if we don't find it.
+      selectedPeriod: this.state.response?.usage.find((v) => v.period === selectedPeriod) || usage.Usage.create({}),
+    });
   }
 
   render() {
-    const usage = this.state.response
-      ? this.state.response.usage.find((usage) => usage.period === this.state.selectedPeriod)
-      : null;
-
-    const orgName = this.props.user.selectedGroup?.name;
+    const orgName = this.props.user?.selectedGroup.name;
+    const period = this.state.selectedPeriod;
 
     return (
       <div className="usage-page">
@@ -61,7 +61,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   <div>
                     {orgName && <div className="org-name">{orgName}</div>}
                     <div className="selected-period-label">
-                      BuildBuddy usage for <span className="usage-period">{usage.period} (UTC)</span>
+                      BuildBuddy usage for <span className="usage-period">{period.period} (UTC)</span>
                     </div>
                   </div>
                   <Select title="Usage period" onChange={this.onChangePeriod.bind(this)}>
@@ -75,17 +75,17 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                 </div>
                 <div className="usage-period-table">
                   <div className="usage-resource-name">Invocations</div>
-                  <div className="usage-value">{formatWithCommas(usage.invocations)}</div>
+                  <div className="usage-value">{formatWithCommas(period.invocations)}</div>
                   <div className="usage-resource-name">Action cache hits</div>
-                  <div className="usage-value">{formatWithCommas(usage.actionCacheHits)}</div>
+                  <div className="usage-value">{formatWithCommas(period.actionCacheHits)}</div>
                   <div className="usage-resource-name">Content addressable storage cache hits</div>
-                  <div className="usage-value">{formatWithCommas(usage.casCacheHits)}</div>
+                  <div className="usage-value">{formatWithCommas(period.casCacheHits)}</div>
                   <div className="usage-resource-name">Total bytes downloaded from cache</div>
-                  <div className="usage-value" title={formatWithCommas(usage.totalDownloadSizeBytes)}>
-                    {formatBytes(usage.totalDownloadSizeBytes)}
+                  <div className="usage-value" title={formatWithCommas(period.totalDownloadSizeBytes)}>
+                    {formatBytes(period.totalDownloadSizeBytes)}
                   </div>
                   <div className="usage-resource-name">Linux remote execution duration</div>
-                  <div className="usage-value">{formatMinutes(Number(usage.linuxExecutionDurationUsec))}</div>
+                  <div className="usage-value">{formatMinutes(Number(period.linuxExecutionDurationUsec))}</div>
                 </div>
               </div>
             </div>

@@ -11,6 +11,7 @@ container_image(
         "//tools/probers/bazelrbe",
         "@cloudprober",
     ],
+    tags = ["manual"],
     tars = [
         "//server/util/bazel:bazel_binaries_tar",
     ],

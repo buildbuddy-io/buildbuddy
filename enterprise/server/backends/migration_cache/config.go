@@ -41,7 +41,6 @@ type PebbleCacheConfig struct {
 	BlockCacheSizeBytes         int64                   `yaml:"block_cache_size_bytes"`
 	MaxInlineFileSizeBytes      int64                   `yaml:"max_inline_file_size_bytes"`
 	AtimeUpdateThreshold        *time.Duration          `yaml:"atime_update_threshold"`
-	AtimeWriteBatchSize         int                     `yaml:"atime_write_batch_size"`
 	AtimeBufferSize             *int                    `yaml:"atime_buffer_size"`
 	MinEvictionAge              *time.Duration          `yaml:"min_eviction_age"`
 	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression"`

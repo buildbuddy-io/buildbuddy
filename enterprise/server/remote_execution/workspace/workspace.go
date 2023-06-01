@@ -80,7 +80,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		dirPerms = 0777
 	}
 	if err := os.MkdirAll(rootDir, dirPerms); err != nil {
-		return nil, status.UnavailableErrorf("failed to create workspace at %q", rootDir)
+		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
 	}
 
 	return &Workspace{
@@ -155,7 +155,8 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
+	execReq := ws.task.GetExecuteRequest()
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), tree, ws.rootDir, opts)
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
@@ -231,7 +232,7 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 
 // UploadOutputs uploads any outputs created by the last executed command
 // as well as the command's stdout and stderr.
-func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -243,6 +244,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 
 	bsClient := ws.env.GetByteStreamClient()
 	instanceName := ws.task.GetExecuteRequest().GetInstanceName()
+	digestFunction := ws.task.GetExecuteRequest().GetDigestFunction()
 
 	var txInfo *dirtools.TransferInfo
 	var stdoutDigest, stderrDigest *repb.Digest
@@ -251,7 +253,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	eg.Go(func() error {
 		// Errors uploading stderr/stdout are swallowed.
 		var err error
-		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, bytes.NewReader(cmdResult.Stdout))
+		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to upload stdout: %s", err)
 		}
@@ -260,7 +262,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	eg.Go(func() error {
 		// Errors uploading stderr/stdout are swallowed.
 		var err error
-		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, bytes.NewReader(cmdResult.Stderr))
+		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to upload stderr: %s", err)
 		}
@@ -268,7 +270,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	})
 	eg.Go(func() error {
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, ws.Path(), actionResult)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.Path(), cmd, actionResult)
 		return err
 	})
 	if err := eg.Wait(); err != nil {

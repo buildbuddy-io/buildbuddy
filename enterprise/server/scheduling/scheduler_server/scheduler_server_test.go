@@ -123,10 +123,15 @@ func TestSchedulerServerGetPoolInfoSelfHosted(t *testing.T) {
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "", p.Name)
 
-	// Linux workflows should still use the shared pool.
-	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, true)
+	// Linux workflows should respect useSelfHosted bool.
+	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, false)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
+	require.Equal(t, "workflows", p.Name)
+
+	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, true)
+	require.NoError(t, err)
+	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "workflows", p.Name)
 }
 
@@ -142,9 +147,14 @@ func TestSchedulerServerGetPoolInfoSelfHostedByDefault(t *testing.T) {
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "", p.Name)
 
-	// Linux workflows should still use the shared pool.
-	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, true)
+	// Linux workflows should respect useSelfHosted bool.
+	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, false)
 	require.NoError(t, err)
 	require.Equal(t, "sharedGroupID", p.GroupID)
+	require.Equal(t, "workflows", p.Name)
+
+	p, err = s.GetPoolInfo(ctx, "linux", "workflows", "WF1234" /*=workflowID*/, true)
+	require.NoError(t, err)
+	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "workflows", p.Name)
 }

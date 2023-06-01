@@ -1,9 +1,5 @@
 FROM gcr.io/cloud-marketplace/google/debian11@sha256:69e2789c9f3d28c6a0f13b25062c240ee7772be1f5e6d41bb4680b63eae6b304
 
-COPY data/firecracker /usr/bin/firecracker
-COPY data/jailer /usr/bin/jailer
-COPY data/stargz-store/v0.11.4 /usr/bin/stargz-store
-
 RUN apt-get update && apt-get install -y \
   rpm curl apt-transport-https ca-certificates gnupg-agent software-properties-common fuse
 
@@ -19,7 +15,7 @@ RUN apt-get update && apt-get install -y umoci iproute2
 # Install podman and skopeo
 RUN echo 'deb https://downloadcontent.opensuse.org/repositories/home:/alvistack/Debian_11/ /' >> /etc/apt/sources.list.d/home:alvistack.list && \
     curl -fsSL https://download.opensuse.org/repositories/home:/alvistack/Debian_11/Release.key | gpg --dearmor >> /etc/apt/trusted.gpg.d/home_alvistack_debian11.gpg && \
-    apt-get update && apt-get -y upgrade && apt-get install -y podman=100:4.3.0-1 skopeo=100:1.10.0-1
+    apt-get update && apt-get -y upgrade && apt-get install -y podman=100:4.5.0-1 skopeo=100:1.12.0-1
 
 # Copy podman registries configuration.
 COPY data/registries.conf /etc/containers/registries.conf

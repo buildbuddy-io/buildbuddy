@@ -85,6 +85,7 @@
 
 .invocation-targets-card .target-row {
   display: contents;
+  user-select: text;
 }
 
 .invocation-targets-card .target-row > * {
@@ -632,11 +633,16 @@
   flex-grow: 10;
 }
 
-.invocation-share-button svg {
+.invocation-share-button svg,
+.invocation-ask-button svg {
   margin-right: 12px;
   margin-left: -4px;
   width: 16px;
   height: 16px;
+}
+
+.filled-button.invocation-ask-button {
+  background-color: #2196f3;
 }
 
 .invocation-share-dialog .row {
@@ -998,4 +1004,9 @@ svg.invocation-query-graph .nodes rect {
 
 .invocation .build-logs-card .loading.loading-dark {
   background: transparent;
+}
+
+.invocation .more-buttons button {
+  margin-top: 16px;
+  margin-right: 16px;
 }

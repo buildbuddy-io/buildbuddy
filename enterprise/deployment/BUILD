@@ -61,3 +61,5 @@ container_push(
     tag_file = "//deployment:image_tag_file",
     tags = ["manual"],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

@@ -1,10 +1,18 @@
 .markdown a {
   color: #000;
-  background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(84,110,122 ,.3)" /></svg>');
+  background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(84,110,122 ,0.5)" /></svg>');
   background-size: 1px 1px;
-  background-position: 0 calc(1em + 1px);
+  background-position: 0 calc(1em + 2px);
   font-weight: 500;
   background-repeat: repeat-x;
+  transition: all 0.1s ease-in-out;
+  padding-bottom: 1px;
+}
+
+.markdown a:hover {
+  background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(3,169,244 ,0.9)" /></svg>');
+  background-position: 0 calc(1em + 1px);
+  background-size: 1px 2px;
 }
 
 html[data-theme="dark"] .markdown a {
@@ -41,4 +49,20 @@ a code {
   background-image: none !important;
   box-shadow: -4px 0px 0px 0px white, 4px 0px 0px 0px white;
   margin: 0 4px;
+}
+
+.markdown h1 {
+  letter-spacing: -0.025em;
+}
+
+.markdown h2 {
+  letter-spacing: -0.015em;
+}
+
+.markdown p {
+  line-height: 1.75;
+}
+
+.docs-doc-page .markdown li {
+  margin-bottom: 1em;
 }

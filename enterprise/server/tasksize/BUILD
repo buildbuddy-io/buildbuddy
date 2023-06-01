@@ -1,6 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//visibility:public"])
+# gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "@buildbuddy_internal//:__subpackages__",
+])
 
 go_library(
     name = "tasksize",
@@ -13,6 +17,7 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/environment",
         "//server/metrics",
+        "//server/util/authutil",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/status",

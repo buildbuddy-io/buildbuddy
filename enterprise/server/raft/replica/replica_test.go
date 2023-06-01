@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -26,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
@@ -106,7 +106,7 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 }
 
 func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) interfaces.CommittedWriteCloser {
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(t, err)
 	fileMetadataKey, err := key.Bytes(filestore.Version2)
@@ -159,7 +159,7 @@ func randomRecord(t *testing.T, partition string, sizeBytes int64) (*rfpb.FileRe
 	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   resource.CacheType_CAS,
+			CacheType:   rspb.CacheType_CAS,
 			PartitionId: partition,
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -308,7 +308,7 @@ func TestReplicaCAS(t *testing.T) {
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
 	fr := rt.writeRandom(header, defaultPartition, 100)
 
-	fs := filestore.New(filestore.Opts{})
+	fs := filestore.New()
 	key, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
 
@@ -498,7 +498,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   resource.CacheType_CAS,
+			CacheType:   rspb.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -565,7 +565,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   resource.CacheType_CAS,
+			CacheType:   rspb.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -716,7 +716,7 @@ func TestFindSplitPoint(t *testing.T) {
 			d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
 			fileRecord := &rfpb.FileRecord{
 				Isolation: &rfpb.Isolation{
-					CacheType:   resource.CacheType_CAS,
+					CacheType:   rspb.CacheType_CAS,
 					PartitionId: partitionID,
 					GroupId:     interfaces.AuthAnonymousUser,
 				},

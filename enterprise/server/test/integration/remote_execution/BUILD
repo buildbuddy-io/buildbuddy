@@ -8,7 +8,7 @@ go_test(
     data = [
         "//enterprise/server/test/integration/remote_execution/command:testcommand",
     ],
-    shard_count = 32,
+    shard_count = 11,
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
@@ -38,3 +38,5 @@ go_test(
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

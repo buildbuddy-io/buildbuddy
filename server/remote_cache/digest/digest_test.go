@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -42,7 +43,7 @@ func TestParseResourceName(t *testing.T) {
 		{ // download, resource with instance name
 			resourceName: "my_instance_name/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			matcher:      downloadRegex,
-			wantParsed:   NewResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "my_instance_name"),
+			wantParsed:   newCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "my_instance_name"),
 		},
 		{ // download, resource with zstd compression
 			resourceName: "/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
@@ -57,21 +58,31 @@ func TestParseResourceName(t *testing.T) {
 		{ // download, resource with digest only
 			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			matcher:      downloadRegex,
-			wantParsed:   NewResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, ""),
+			wantParsed:   newCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, ""),
 		},
 		{ // upload, UUID and instance name
 			resourceName: "instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			matcher:      uploadRegex,
-			wantParsed:   NewResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "instance_name"),
+			wantParsed:   newCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "instance_name"),
 		},
 		{ // upload, UUID, instance name, and compression
 			resourceName: "instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			matcher:      uploadRegex,
 			wantParsed:   newZstdResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "instance_name"),
 		},
+		{ // action
+			resourceName: "instance_name/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      actionCacheRegex,
+			wantParsed:   newCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "instance_name"),
+		},
+		{ // invalid action
+			resourceName: "instance_name/blobs/notac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      actionCacheRegex,
+			wantError:    status.InvalidArgumentError(""),
+		},
 	}
 	for _, tc := range cases {
-		gotParsed, gotErr := parseResourceName(tc.resourceName, tc.matcher)
+		gotParsed, gotErr := parseResourceName(tc.resourceName, tc.matcher, rspb.CacheType_CAS)
 		if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {
 			t.Errorf("parseResourceName(%q) got err %v; want %v", tc.resourceName, gotErr, tc.wantError)
 			continue
@@ -86,8 +97,13 @@ func TestParseResourceName(t *testing.T) {
 	}
 }
 
+func newCASResourceName(d *repb.Digest, instanceName string) *ResourceName {
+	r := NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	return r
+}
+
 func newZstdResourceName(d *repb.Digest, instanceName string) *ResourceName {
-	r := NewResourceName(d, instanceName)
+	r := NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	return r
 }

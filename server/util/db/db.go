@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/rds/rdsutils"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -30,6 +31,7 @@ import (
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
 	"gorm.io/driver/mysql"
+	_ "gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 
 	// Allow for "cloudsql" type connections that support workload identity.
@@ -43,6 +45,7 @@ import (
 
 	awssession "github.com/aws/aws-sdk-go/aws/session"
 	gomysql "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	gosqlite "github.com/mattn/go-sqlite3"
 )
 
@@ -72,8 +75,9 @@ var (
 	logQueries             = flag.Bool("database.log_queries", false, "If true, log all queries")
 	slowQueryThreshold     = flag.Duration("database.slow_query_threshold", 500*time.Millisecond, "Queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
-	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
-	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	autoMigrateDB             = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDBAndExit      = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	printSchemaChangesAndExit = flag.Bool("database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
 )
 
 type AdvancedConfig struct {
@@ -88,45 +92,146 @@ type AdvancedConfig struct {
 }
 
 // dnsFormatter generates DSN strings from structured options.
-type dsnFormatter struct {
-	Driver   string
-	Endpoint string
-	Username string
-	Password string
-	DBName   string
-	Params   string
+type dsnFormatter interface {
+	String() string
+	Driver() string
+	Endpoint() string
+	Username() string
+	SetPassword(pw string)
+	AddParam(key, val string)
+	Clone() dsnFormatter
 }
 
-func (df *dsnFormatter) AddParam(key, val string) {
-	if df.Params != "" {
-		df.Params += "&"
+func newDSNFormatter(ac *AdvancedConfig) (dsnFormatter, error) {
+	switch ac.Driver {
+	case mysqlDriver:
+		return newMysqlDSNFormatter(ac)
+	case sqliteDriver:
+		return newSqliteDSNFormatter(ac)
+	default:
+		return nil, status.UnimplementedErrorf("newDSNFormatter does not support driver: %s", ac.Driver)
 	}
-	df.Params += fmt.Sprintf("%s=%s", key, val)
 }
 
-func (df *dsnFormatter) String() string {
-	endpoint := df.Endpoint
-	if df.Driver == mysqlDriver {
-		endpoint = fmt.Sprintf("tcp(%s)", df.Endpoint)
+type sqliteDSNFormatter struct {
+	endpoint string
+	username string
+	password string
+	dbName   string
+	params   string
+}
+
+func newSqliteDSNFormatter(ac *AdvancedConfig) (*sqliteDSNFormatter, error) {
+	return &sqliteDSNFormatter{
+		endpoint: ac.Endpoint,
+		username: ac.Username,
+		password: ac.Password,
+		dbName:   ac.DBName,
+		params:   ac.Params,
+	}, nil
+}
+
+func (s *sqliteDSNFormatter) AddParam(key, val string) {
+	if s.params != "" {
+		s.params += "&"
 	}
+	s.params += fmt.Sprintf("%s=%s", key, val)
+}
+
+func (s *sqliteDSNFormatter) String() string {
 
 	b := strings.Builder{}
-	if df.Username != "" && df.Password != "" {
-		b.WriteString(df.Username)
+	if s.username != "" && s.password != "" {
+		b.WriteString(s.username)
 		b.WriteString(":")
-		b.WriteString(df.Password)
+		b.WriteString(s.password)
 		b.WriteString("@")
 	}
-	b.WriteString(endpoint)
-	if df.DBName != "" {
+	b.WriteString(s.endpoint)
+	if s.dbName != "" {
 		b.WriteString("/")
-		b.WriteString(df.DBName)
+		b.WriteString(s.dbName)
 	}
-	if df.Params != "" {
+	if s.params != "" {
 		b.WriteString("?")
-		b.WriteString(df.Params)
+		b.WriteString(s.params)
 	}
 	return b.String()
+}
+
+func (_ *sqliteDSNFormatter) Driver() string {
+	return sqliteDriver
+}
+
+func (s *sqliteDSNFormatter) Endpoint() string {
+	return s.endpoint
+}
+
+func (s *sqliteDSNFormatter) Username() string {
+	return s.username
+}
+
+func (s *sqliteDSNFormatter) SetPassword(pw string) {
+	s.password = pw
+}
+
+func (s *sqliteDSNFormatter) Clone() dsnFormatter {
+	c := *s
+	return &c
+}
+
+type mysqlDSNFormatter struct {
+	cfg *gomysql.Config
+}
+
+func newMysqlDSNFormatter(ac *AdvancedConfig) (*mysqlDSNFormatter, error) {
+	cfg := gomysql.NewConfig()
+	cfg.User = ac.Username
+	cfg.Passwd = ac.Password
+	cfg.Net = "tcp"
+	cfg.Addr = ac.Endpoint
+	cfg.DBName = ac.DBName
+	if ac.Params != "" {
+		pcfg, err := gomysql.ParseDSN("/_?" + ac.Params)
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("Params are invalid mysql connection params: %s", err)
+		}
+		cfg.Params = pcfg.Params
+	} else {
+		cfg.Params = make(map[string]string, 0)
+	}
+	return &mysqlDSNFormatter{cfg: cfg}, nil
+}
+
+func (m *mysqlDSNFormatter) AddParam(key, val string) {
+	if m.cfg.Params[key] != "" {
+		m.cfg.Params[key] += ","
+	}
+	m.cfg.Params[key] += val
+}
+
+func (m *mysqlDSNFormatter) String() string {
+	return m.cfg.FormatDSN()
+}
+
+func (_ *mysqlDSNFormatter) Driver() string {
+	return mysqlDriver
+}
+
+func (m *mysqlDSNFormatter) Endpoint() string {
+	return m.cfg.Addr
+}
+
+func (m *mysqlDSNFormatter) Username() string {
+	return m.cfg.User
+}
+
+func (m *mysqlDSNFormatter) SetPassword(pw string) {
+	m.cfg.Passwd = pw
+}
+
+func (m *mysqlDSNFormatter) Clone() dsnFormatter {
+	return &mysqlDSNFormatter{cfg: m.cfg.Clone()}
 }
 
 type DBHandle struct {
@@ -244,7 +349,7 @@ func makeStartSpanBeforeFn(spanName string) func(db *gorm.DB) {
 	}
 }
 
-func recordMetricstBeforeFn(db *gorm.DB) {
+func recordMetricsBeforeFn(db *gorm.DB) {
 	if db.DryRun || db.Statement == nil {
 		return
 	}
@@ -303,14 +408,7 @@ func recordSpanAfterFn(db *gorm.DB) {
 
 // instrumentGORM adds GORM callbacks that populate query metrics.
 func instrumentGORM(gdb *gorm.DB) {
-	// Add callback that runs before other callbacks that records when the operation began.
-	// We use this to calculate how long a query takes to run.
-	gdb.Callback().Create().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Delete().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Query().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Raw().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Row().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Update().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
+	gormutil.InstrumentMetrics(gdb, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 
 	gdb.Callback().Create().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:create"))
 	gdb.Callback().Delete().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:delete"))
@@ -318,14 +416,6 @@ func instrumentGORM(gdb *gorm.DB) {
 	gdb.Callback().Raw().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:raw"))
 	gdb.Callback().Row().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:row"))
 	gdb.Callback().Update().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:update"))
-
-	// Add callback that runs after other callbacks that records executed queries and their durations.
-	gdb.Callback().Create().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Delete().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Query().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Raw().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Row().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Update().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 
 	gdb.Callback().Create().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
 	gdb.Callback().Delete().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
@@ -443,23 +533,23 @@ func (fd *fixedDSNDataSource) DSN() (string, error) {
 
 // awsIAMDataSource generates the DSN using short-lived AWS IAM auth tokens.
 type awsIAMDataSource struct {
-	baseDSN *dsnFormatter
+	baseDSN dsnFormatter
 	region  string
 	session *awssession.Session
 }
 
 func (aid *awsIAMDataSource) DriverName() string {
-	return aid.baseDSN.Driver
+	return aid.baseDSN.Driver()
 }
 
 func (aid *awsIAMDataSource) DSN() (string, error) {
 	creds := aid.session.Config.Credentials
-	token, err := rdsutils.BuildAuthToken(aid.baseDSN.Endpoint, aid.region, aid.baseDSN.Username, creds)
+	token, err := rdsutils.BuildAuthToken(aid.baseDSN.Endpoint(), aid.region, aid.baseDSN.Username(), creds)
 	if err != nil {
 		return "", status.UnavailableErrorf("could not obtain AWS IAM auth token: %s", err)
 	}
-	dsn := *aid.baseDSN
-	dsn.Password = token
+	dsn := aid.baseDSN.Clone()
+	dsn.SetPassword(token)
 	return dsn.String(), nil
 }
 
@@ -483,17 +573,17 @@ func loadAWSRDSCACerts(fileResolver fs.FS) (*x509.CertPool, error) {
 func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
 	if *advancedConfig != (AdvancedConfig{}) {
 		ac := advancedConfig
-		dsn := &dsnFormatter{
-			Driver:   ac.Driver,
-			Endpoint: ac.Endpoint,
-			Username: ac.Username,
-			Password: ac.Password,
-			DBName:   ac.DBName,
-			Params:   ac.Params,
+		dsn, err := newDSNFormatter(ac)
+		if err != nil {
+			return nil, err
 		}
 
 		if ac.Endpoint == "" {
 			return nil, status.FailedPreconditionError("endpoint is required")
+		}
+
+		if ac.Driver == mysqlDriver {
+			dsn.AddParam("sql_mode", "ANSI_QUOTES")
 		}
 
 		if ac.UseAWSIAM {
@@ -536,6 +626,21 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 			return nil, fmt.Errorf("malformed db connection string")
 		}
 		driverName, connString := parts[0], parts[1]
+		switch driverName {
+		case mysqlDriver:
+			cfg, err := gomysql.ParseDSN(connString)
+			if err != nil {
+				return nil, fmt.Errorf("malformed mySQL connection string: %s", err)
+			}
+			if cfg.Params == nil {
+				cfg.Params = make(map[string]string, 1)
+			}
+			if cfg.Params["sql_mode"] != "" {
+				cfg.Params["sql_mode"] += ","
+			}
+			cfg.Params["sql_mode"] += "ANSI_QUOTES"
+			connString = cfg.FormatDSN()
+		}
 		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
 	}
 
@@ -635,6 +740,8 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
 
+	tables.RegisterTables()
+
 	if env.GetFileResolver() != nil {
 		// Verify that the AWS RDS certs are properly packaged.
 		// They won't actually be used unless the AWS IAM feature is enabled.
@@ -664,16 +771,26 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	}
 	go statsRecorder.poll()
 
-	if *autoMigrateDBAndExit {
-		if err := runMigrations(driverName, primaryDB); err != nil {
-			log.Fatalf("Database auto-migration failed: %s", err)
+	if *autoMigrateDB || *autoMigrateDBAndExit || *printSchemaChangesAndExit {
+		sqlStrings := make([]string, 0)
+		if *printSchemaChangesAndExit {
+			primaryDB.Logger = logger.Default.LogMode(logger.Silent)
+			if err := gormutil.RegisterLogSQLCallback(primaryDB, &sqlStrings); err != nil {
+				return nil, err
+			}
 		}
-		log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
-		os.Exit(0)
-	}
-	if *autoMigrateDB {
+
 		if err := runMigrations(driverName, primaryDB); err != nil {
 			return nil, err
+		}
+
+		if *printSchemaChangesAndExit {
+			gormutil.PrintMigrationSchemaChanges(sqlStrings)
+		}
+
+		if *autoMigrateDBAndExit || *printSchemaChangesAndExit {
+			log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit or --database.print_schema_changes_and_exit.")
+			os.Exit(0)
 		}
 	}
 

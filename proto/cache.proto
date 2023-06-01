@@ -10,7 +10,7 @@ import "proto/context.proto";
 import "proto/remote_execution.proto";
 import "proto/resource.proto";
 
-// Next Tag: 16
+// Next Tag: 17
 message CacheStats {
   // Server-side Action-cache stats.
   int64 action_cache_hits = 1;
@@ -49,6 +49,9 @@ message CacheStats {
   // The approximate time savings of a build based on
   // the sum of execution time of cached objects.
   int64 total_cached_action_exec_usec = 11;
+
+  // The sum of execution time of actions that missed the action cache.
+  int64 total_uncached_action_exec_usec = 16;
 }
 
 // Request to retrieve detailed per-request cache stats.
@@ -206,6 +209,13 @@ message ScoreCard {
 
     // The type of cache relevant to this result.
     resource.CacheType cache_type = 14;
+
+    // The details of the execution that originally produced this result.
+
+    // When the worker started executing the action command.
+    google.protobuf.Timestamp execution_start_timestamp = 15;
+    // When the worker completed executing the action command.
+    google.protobuf.Timestamp execution_completed_timestamp = 16;
   }
 
   // In the interest of saving space, we only show cache misses.
@@ -229,4 +239,16 @@ message GetCacheMetadataResponse {
   int64 last_access_usec = 3;
   int64 last_modify_usec = 4;
   int64 digest_size_bytes = 5;
+}
+
+// Used to cache GetTree responses.
+message DirectoryWithDigest {
+  reserved 2;
+
+  build.bazel.remote.execution.v2.Directory directory = 1;
+  resource.ResourceName resource_name = 3;
+}
+
+message TreeCache {
+  repeated DirectoryWithDigest children = 1;
 }

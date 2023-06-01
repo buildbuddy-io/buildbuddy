@@ -5,4 +5,8 @@ go_library(
     srcs = ["mockstore.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/mockstore",
     visibility = ["//visibility:public"],
+    deps = [
+        "//server/interfaces",
+        "//server/util/status",
+    ],
 )

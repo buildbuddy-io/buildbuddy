@@ -54,7 +54,6 @@ executor:
   # If we don't actually have the memory, we'll OOM, which is OK
   # for testing purposes.
   memory_bytes: 10_000_000_000
-  context_based_shutdown_enabled: true
 auth:
   oauth_providers:
     - issuer_url: 'https://auth.test.buildbuddy.io'

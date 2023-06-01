@@ -10,13 +10,14 @@ import {
   Line,
   Legend,
   Tooltip,
+  TooltipProps,
   Cell,
-  YAxisProps,
 } from "recharts";
 
 interface Props {
   title: string;
   data: any[];
+  id?: string;
 
   extractLabel: (datum: any) => string;
   formatHoverLabel: (datum: any) => string;
@@ -38,40 +39,46 @@ interface Props {
   onSecondaryBarClicked?: (date: string) => void;
 }
 
-const TrendsChartTooltip = ({
+interface TrendsChartTooltipProps extends TooltipProps<any, any> {
+  labelFormatter: (datum: any) => string;
+  valueFormatter?: (datum: number) => string;
+  secondaryValueFormatter?: (datum: number) => string;
+  extractSecondaryValue?: (datum: any) => number;
+}
+
+function TrendsChartTooltip({
   active,
   payload,
   labelFormatter,
   valueFormatter,
   secondaryValueFormatter,
   extractSecondaryValue,
-}: any) => {
-  if (active) {
-    return (
-      <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
-        <div className="trend-chart-hover-value">
-          <div>{valueFormatter ? valueFormatter(payload[0].value) : payload[0].value}</div>
-          {extractSecondaryValue && (
-            <div>
-              {secondaryValueFormatter
-                ? secondaryValueFormatter(extractSecondaryValue(payload[0].payload))
-                : extractSecondaryValue(payload[0].payload)}
-            </div>
-          )}
-        </div>
-      </div>
-    );
+}: TrendsChartTooltipProps) {
+  if (!active || !payload || payload.length < 1) {
+    return null;
   }
-
-  return null;
-};
+  return (
+    <div className="trend-chart-hover">
+      <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
+      <div className="trend-chart-hover-value">
+        <div>{valueFormatter ? valueFormatter(payload[0].value) : payload[0].value}</div>
+        {extractSecondaryValue && (
+          <div>
+            {secondaryValueFormatter
+              ? secondaryValueFormatter(extractSecondaryValue(payload[0].payload))
+              : extractSecondaryValue(payload[0].payload)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default class TrendsChartComponent extends React.Component<Props> {
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
     return (
-      <div className="trend-chart">
+      <div id={this.props.id} className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={this.props.data}>
@@ -115,7 +122,7 @@ export default class TrendsChartComponent extends React.Component<Props> {
                 <Cell
                   cursor={this.props.onBarClicked ? "pointer" : "default"}
                   key={`cell-${index}`}
-                  onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : null}
+                  onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : undefined}
                 />
               ))}
             </Bar>
@@ -147,7 +154,7 @@ export default class TrendsChartComponent extends React.Component<Props> {
                         ? this.props.onSecondaryBarClicked.bind(this, date)
                         : this.props.onBarClicked
                         ? this.props.onBarClicked.bind(this, date)
-                        : null
+                        : undefined
                     }
                   />
                 ))}

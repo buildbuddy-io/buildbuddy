@@ -6,10 +6,7 @@ exports_files(glob(["*.css"]))
 
 ts_library(
     name = "digest",
-    srcs = glob([
-        "*.ts",
-        "*.tsx",
-    ]),
+    srcs = ["digest.tsx"],
     strict = True,
     deps = [
         "//app/format",

@@ -31,8 +31,9 @@ var (
 )
 
 type Partition struct {
-	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
-	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	ID                  string `yaml:"id" json:"id" usage:"The ID of the partition."`
+	MaxSizeBytes        int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	EncryptionSupported bool   `yaml:"encryption_supported" json:"encryption_supported" usage:"Whether encrypted data can be stored on this partition."`
 }
 
 type PartitionMapping struct {
@@ -48,13 +49,14 @@ func EnsureDirectoryExists(dir string) error {
 	return nil
 }
 
-func DeleteLocalFileIfExists(filename string) {
-	_, err := os.Stat(filename)
-	if err == nil {
-		if err := os.Remove(filename); err != nil {
-			log.Warningf("Error deleting file %q: %s", filename, err)
-		}
+// RemoveIfExists attempts to remove the given named file or (empty) directory,
+// ignoring IsNotExist errors.
+func RemoveIfExists(filename string) error {
+	err := os.Remove(filename)
+	if os.IsNotExist(err) {
+		return nil
 	}
+	return err
 }
 
 func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
@@ -73,7 +75,11 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 	// We defer a cleanup function that would delete our tempfile here --
 	// that way if the write is truncated (say, because it's too big) we
 	// still remove the tmp file.
-	defer DeleteLocalFileIfExists(tmpFileName)
+	defer func() {
+		if err := RemoveIfExists(tmpFileName); err != nil {
+			log.Warningf("Failed to delete %s: %s", tmpFileName, err)
+		}
+	}()
 
 	if err := os.WriteFile(tmpFileName, data, 0644); err != nil {
 		return 0, err
@@ -241,7 +247,9 @@ func (w *writeMover) Close() error {
 	if !w.tmpFileIsClosed {
 		w.File.Close()
 	}
-	DeleteLocalFileIfExists(w.File.Name())
+	if err := RemoveIfExists(w.File.Name()); err != nil {
+		log.Warningf("Failed to delete %s: %s", w.File.Name(), err)
+	}
 	return nil
 }
 

@@ -1,9 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = [
-    "//enterprise:__subpackages__",
-    "//tools/vmstart:__pkg__",
-])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "container",
@@ -15,6 +12,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/util/authutil",
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/perms",

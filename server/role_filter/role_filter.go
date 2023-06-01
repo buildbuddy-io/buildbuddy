@@ -60,13 +60,23 @@ var (
 		"SearchInvocation",
 		"GetInvocationStat",
 		"GetTrend",
+		"GetStatHeatmap",
+		"GetStatDrilldown",
+		"GetSuggestion",
+		"SearchExecution",
 		// Per-invocation actions
 		"UpdateInvocation",
 		"DeleteInvocation",
 		"CancelExecutions",
 		"ExecuteWorkflow",
-		// Setup
+		// Org API keys (implementation only returns developer-visible keys
+		// for developers; admins can see all keys).
 		"GetApiKeys",
+		// User-level API keys
+		"GetUserApiKeys",
+		"CreateUserApiKey",
+		"UpdateUserApiKey",
+		"DeleteUserApiKey",
 		// Remote Bazel
 		"Run",
 	}
@@ -80,7 +90,16 @@ var (
 		"UpdateGroupUsers",
 		// Org GitHub account link management
 		"UnlinkGitHubAccount",
-		// API key management
+		// Org GitHub app link management
+		"LinkGitHubAppInstallation",
+		"GetGitHubAppInstallations",
+		"UnlinkGitHubAppInstallation",
+		// Org GitHub repo management
+		"GetAccessibleGitHubRepos",
+		"GetLinkedGitHubRepos",
+		"LinkGitHubRepo",
+		"UnlinkGitHubRepo",
+		// Org API key management
 		"CreateApiKey",
 		"UpdateApiKey",
 		"DeleteApiKey",
@@ -98,6 +117,9 @@ var (
 		"GetExecutionNodes",
 		// BuildBuddy usage data
 		"GetUsage",
+		// Encryption.
+		"GetEncryptionConfig",
+		"SetEncryptionConfig",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different

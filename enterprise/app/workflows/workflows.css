@@ -106,14 +106,25 @@
   margin-bottom: 8px;
 }
 
-.workflows-page .workflow-dropdown-container {
+.workflows-page .workflow-buttons-container {
   margin-left: auto;
-  position: relative;
-  align-self: start;
 }
 
-.workflows-page .copied-to-clipboard {
-  color: #aaa;
+.workflows-page .workflow-button-container {
+  position: relative;
+}
+
+.workflows-page .upgrade-notice {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #757575;
+  display: flex;
+  gap: 4px;
+}
+
+.workflows-page .upgrade-notice .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .workflows-page .workflow-item-row .git-merge-icon {
@@ -123,12 +134,40 @@
   margin-right: 8px;
 }
 
-.delete-workflow-dialog .dialog-body > :not(:last-child) {
-  margin-bottom: 16px;
+.workflows-page .run-workflow-input {
+  padding: 12px;
 }
 
-.delete-workflow-dialog .error {
-  color: #f44336;
+.workflows-page .run-workflow-input .title {
+  font-weight: 600;
+  font-size: 15px;
+  background: white;
+  padding: 4px;
+}
+
+.workflows-page .run-workflow-input button {
+  margin-top: 8px;
+}
+
+.workflows-page .run-clean-container {
+  display: flex;
+  align-items: center;
+  padding: 8px 0px;
+}
+
+.workflows-page .run-clean-container span {
+  padding-left: 8px;
+}
+
+.action-error-hovercard {
+  width: 30%;
+  margin: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-size: 14px;
+  backdrop-filter: blur(3px);
 }
 
 /* CREATE WORKFLOW PAGE */
@@ -169,10 +208,40 @@
 .workflows-github-import .content-container {
   width: 600px;
   max-width: 100%;
+  padding-top: 32px;
 }
 
 .workflows-github-import .content-container > :not(:last-child) {
   margin-bottom: 8px;
+}
+
+.workflows-github-import .install-app-banner .banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workflows-github-import .install-app-banner .base-button {
+  align-self: start;
+}
+
+.workflows-github-import .repo-search {
+  display: flex;
+  gap: 8px;
+}
+
+.workflows-github-import .repo-search.repo-search {
+  margin-bottom: 16px;
+}
+
+.workflows-github-import .repos-loading {
+  margin-top: 16px;
+}
+
+.workflows-github-import .owner-picker {
+  flex-shrink: 0;
+  min-width: 180px;
+  max-width: 260px;
 }
 
 .workflows-github-import .repo-list {
@@ -185,6 +254,7 @@
   justify-content: space-between;
   padding: 8px 0;
   border-bottom: 1px solid #eee;
+  min-height: 40px;
 }
 
 .workflows-github-import .repo-item > :not(:last-child) {
@@ -234,6 +304,7 @@
   font-weight: 600;
   font-size: 14px;
   opacity: 0.7;
+  gap: 8px;
 }
 
 .workflows-github-import .create-other svg {

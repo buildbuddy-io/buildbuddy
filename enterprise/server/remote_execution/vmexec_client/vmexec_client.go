@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -17,6 +18,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -41,6 +43,10 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	stderrw := io.Writer(&stderr)
 	if stdio.Stderr != nil {
 		stderrw = stdio.Stderr
+	}
+	if *commandutil.DebugStreamCommandOutputs {
+		stdoutw = io.MultiWriter(os.Stdout, stdoutw)
+		stderrw = io.MultiWriter(os.Stderr, stderrw)
 	}
 	req := &vmxpb.ExecRequest{
 		WorkingDirectory: workDir,
@@ -85,7 +91,10 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 		for {
 			msg, err := stream.Recv()
 			if err == io.EOF {
-				return nil
+				if res == nil {
+					return status.InternalErrorf("unexpected EOF before receiving command result: %s", err)
+				}
+				return gstatus.ErrorProto(res.GetStatus())
 			}
 			if err != nil {
 				if ctx.Err() == context.DeadlineExceeded {
@@ -115,11 +124,12 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	})
 
 	err = eg.Wait()
-	if res == nil {
-		res = &vmxpb.ExecResponse{ExitCode: commandutil.NoExitCode}
+	exitCode := commandutil.NoExitCode
+	if res != nil {
+		exitCode = int(res.GetExitCode())
 	}
 	result := &interfaces.CommandResult{
-		ExitCode:   int(res.ExitCode),
+		ExitCode:   exitCode,
 		Stderr:     stderr.Bytes(),
 		Stdout:     stdout.Bytes(),
 		Error:      err,

@@ -33,6 +33,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
       urlIdentifier: group.urlIdentifier,
       autoPopulateFromOwnedDomain: Boolean(group.ownedDomain),
       sharingEnabled: group.sharingEnabled,
+      userOwnedKeysEnabled: group.userOwnedKeysEnabled,
       useGroupOwnedExecutors: group.useGroupOwnedExecutors,
       suggestionPreference: group.suggestionPreference,
     });

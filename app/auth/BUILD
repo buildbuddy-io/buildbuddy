@@ -3,16 +3,16 @@ load("//rules/typescript:index.bzl", "ts_library")
 package(default_visibility = ["//visibility:public"])
 
 ts_library(
-    name = "auth",
+    name = "auth_service",
     srcs = ["auth_service.ts"],
+    strict = True,
     deps = [
-        ":user",
+        "//app/auth:user",
         "//app/capabilities",
-        "//app/errors",
+        "//app/errors:error_service",
         "//app/router",
-        "//app/service",
+        "//app/service:rpc_service",
         "//app/util:errors",
-        "//proto:context_ts_proto",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "//proto:user_ts_proto",
@@ -24,10 +24,10 @@ ts_library(
 ts_library(
     name = "user",
     srcs = ["user.ts"],
+    strict = True,
     deps = [
-        "//app/service",
+        "//app/service:rpc_service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
-        "@npm//tslib",
     ],
 )

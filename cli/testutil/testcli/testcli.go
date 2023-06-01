@@ -52,6 +52,20 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// Output is like cmd.Output() except that it allows streaming CLI outputs for
+// debugging purposes.
+func Output(cmd *exec.Cmd) ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	var w io.Writer = buf
+	if *streamOutputs {
+		w = io.MultiWriter(w, os.Stderr)
+		cmd.Stderr = os.Stderr
+	}
+	cmd.Stdout = w
+	err := cmd.Run()
+	return buf.Bytes(), err
+}
+
 // CombinedOutput is like cmd.CombinedOutput() except that it allows streaming
 // CLI outputs for debugging purposes.
 func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {

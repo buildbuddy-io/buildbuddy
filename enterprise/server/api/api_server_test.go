@@ -7,7 +7,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -25,6 +24,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var userMap = testauth.TestUsers("user1", "group1")
@@ -251,9 +251,9 @@ func TestDeleteFile_CAS(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 	if err := s.env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
@@ -285,9 +285,9 @@ func TestDeleteFile_AC(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_AC,
+		CacheType: rspb.CacheType_AC,
 	}
 	if err = env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
@@ -320,9 +320,9 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	// Save file
 	remoteInstanceName := "remote/instance"
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:       d,
-		CacheType:    resource.CacheType_AC,
+		CacheType:    rspb.CacheType_AC,
 		InstanceName: remoteInstanceName,
 	}
 	if err = env.GetCache().Set(ctx, r, buf); err != nil {
@@ -354,9 +354,9 @@ func TestDeleteFile_NonExistentFile(t *testing.T) {
 
 	// Do not write data to the cache
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 
 	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
@@ -382,9 +382,9 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 	if err = s.env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)

@@ -10,6 +10,8 @@ service Api {
   // Raft Meta-API.
   rpc StartCluster(raft.StartClusterRequest)
       returns (raft.StartClusterResponse);
+  rpc CloneCluster(raft.CloneClusterRequest)
+      returns (raft.CloneClusterResponse);
   rpc RemoveData(raft.RemoveDataRequest) returns (raft.RemoveDataResponse);
   rpc AddClusterNode(raft.AddClusterNodeRequest)
       returns (raft.AddClusterNodeResponse);
@@ -20,6 +22,8 @@ service Api {
       returns (raft.SplitClusterResponse);
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
+  rpc TransferLeadership(TransferLeadershipRequest)
+      returns (TransferLeadershipResponse);
 
   // Data API.
   rpc Metadata(MetadataRequest) returns (MetadataResponse);

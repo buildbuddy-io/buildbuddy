@@ -12,8 +12,28 @@ import (
 	xxhash "github.com/cespare/xxhash/v2"
 )
 
-// EvictedCallback is used to get a callback when a cache Entry is evicted
-type EvictedCallback func(value interface{})
+// EvictionReason describes the reason for an entry being evicted from LRU.
+type EvictionReason string
+
+const (
+	// SizeEviction means this was the least recently used entry which had to be
+	// evicted to make room for newer entries.
+	SizeEviction EvictionReason = "size"
+
+	// ManualEviction means this entry was evicted via a call to Remove.
+	ManualEviction EvictionReason = "manual"
+
+	// ConflictEviction means this entry was evicted because it was overwritten
+	// by another element with a matching key.
+	ConflictEviction EvictionReason = "conflict"
+)
+
+// EvictedCallback is a function invoked whenever an LRU entry is evicted or
+// removed.
+//
+// It is passed the value which was removed or evicted, as well the reason for
+// eviction.
+type EvictedCallback func(value interface{}, reason EvictionReason)
 type SizeFn func(value interface{}) int64
 
 // Config specifies how the LRU cache is to be constructed.
@@ -26,16 +46,21 @@ type Config struct {
 	// Maximum amount of data to store in the cache.
 	// The size of each entry is determined by SizeFn.
 	MaxSize int64
+	// Whether adding an item with a key that already exists should update the
+	// existing entry's size and value, instead of evicting the old entry and
+	// invoking the OnEvict callback.
+	UpdateInPlace bool
 }
 
 // LRU implements a non-thread safe fixed size LRU cache
 type LRU struct {
-	sizeFn      SizeFn
-	evictList   *list.List
-	items       map[uint64][]*list.Element
-	onEvict     EvictedCallback
-	maxSize     int64
-	currentSize int64
+	sizeFn        SizeFn
+	evictList     *list.List
+	items         map[uint64][]*list.Element
+	onEvict       EvictedCallback
+	maxSize       int64
+	currentSize   int64
+	updateInPlace bool
 }
 
 // Entry is used to hold a value in the evictList
@@ -54,12 +79,13 @@ func NewLRU(config *Config) (interfaces.LRU, error) {
 		return nil, status.InvalidArgumentError("SizeFn is required")
 	}
 	c := &LRU{
-		currentSize: 0,
-		maxSize:     config.MaxSize,
-		evictList:   list.New(),
-		items:       make(map[uint64][]*list.Element),
-		onEvict:     config.OnEvict,
-		sizeFn:      config.SizeFn,
+		currentSize:   0,
+		maxSize:       config.MaxSize,
+		evictList:     list.New(),
+		items:         make(map[uint64][]*list.Element),
+		onEvict:       config.OnEvict,
+		sizeFn:        config.SizeFn,
+		updateInPlace: config.UpdateInPlace,
 	}
 	return c, nil
 }
@@ -92,7 +118,7 @@ func (c *LRU) Purge() {
 	for k, vals := range c.items {
 		for _, v := range vals {
 			if c.onEvict != nil {
-				c.onEvict(v.Value.(*Entry).value)
+				c.onEvict(v.Value.(*Entry).value, SizeEviction)
 			}
 		}
 		delete(c.items, k)
@@ -106,15 +132,24 @@ func (c *LRU) Add(key, value interface{}) bool {
 	if !ok {
 		return false
 	}
-	// Check for existing item
-	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.evictList.MoveToFront(ent)
-		ent.Value.(*Entry).value = value
-		return true
-	}
 
-	// Add new item
-	c.addItem(pk, ck, value, true /*=front*/)
+	if ent, ok := c.lookupItem(pk, ck); ok {
+		if c.updateInPlace {
+			// Replace the existing item, moving it to the front.
+			oldSize := c.sizeFn(ent.Value.(*Entry).value)
+			newSize := c.sizeFn(value)
+			c.currentSize += (newSize - oldSize)
+			c.evictList.MoveToFront(ent)
+			ent.Value.(*Entry).value = value
+		} else {
+			// Remove the existing item and re-insert
+			c.removeElement(ent, ConflictEviction)
+			c.addItem(pk, ck, value, c.sizeFn(value), true /*=front*/)
+		}
+	} else {
+		// Add new item
+		c.addItem(pk, ck, value, c.sizeFn(value), true /*=front*/)
+	}
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -122,25 +157,41 @@ func (c *LRU) Add(key, value interface{}) bool {
 	return true
 }
 
-// PushBack adds a value to the back of the cache. Returns true if the key was added.
+// PushBack adds a value to the back of the cache, but only if there is
+// sufficient capacity.
+//
+// This is useful for populating the cache initially, by iterating over existing
+// items in MRU to LRU order and repeatedly calling PushBack on each item.
+//
+// Returns true if the key was added.
 func (c *LRU) PushBack(key, value interface{}) bool {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return false
 	}
-	// Check for existing item
+
+	size := c.sizeFn(value)
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		ent.Value.(*Entry).value = value
-		return true
+		// Update or replace the existing item if there is capacity.
+		sizeDelta := size - c.sizeFn(ent.Value.(*Entry).value)
+		if c.currentSize+sizeDelta > c.maxSize {
+			return false
+		}
+		if c.updateInPlace {
+			ent.Value.(*Entry).value = value
+			c.currentSize += sizeDelta
+			return true
+		}
+		// Remove the existing item.
+		c.removeElement(ent, ConflictEviction)
+	}
+
+	if c.currentSize+size > c.maxSize {
+		return false
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, false /*=front*/)
-
-	for c.currentSize > c.maxSize {
-		c.removeOldest()
-		return false
-	}
+	c.addItem(pk, ck, value, size, false /*=front*/)
 	return true
 }
 
@@ -198,17 +249,18 @@ func (c *LRU) Remove(key interface{}) (present bool) {
 		return false
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.removeElement(ent)
+		c.removeElement(ent, ManualEviction)
 		return true
 	}
 	return false
 }
 
 // RemoveOldest removes the oldest item from the cache.
+// The OnEvict callback treats this as a SizeEviction.
 func (c *LRU) RemoveOldest() (interface{}, bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
-		c.removeElement(ent)
+		c.removeElement(ent, SizeEviction)
 		kv := ent.Value.(*Entry)
 		return kv.value, true
 	}
@@ -232,7 +284,7 @@ func (c *LRU) MaxSize() int64 {
 func (c *LRU) removeOldest() {
 	ent := c.evictList.Back()
 	if ent != nil {
-		c.removeElement(ent)
+		c.removeElement(ent, SizeEviction)
 	}
 }
 
@@ -251,7 +303,7 @@ func (c *LRU) lookupItem(key, conflictKey uint64) (*list.Element, bool) {
 
 // addElement adds a new item to the cache. It does not perform any
 // size checks.
-func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool) {
+func (c *LRU) addItem(key, conflictKey uint64, value interface{}, size int64, front bool) {
 	// Add new item
 	kv := &Entry{key, conflictKey, value}
 	var element *list.Element
@@ -261,7 +313,7 @@ func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool) {
 		element = c.evictList.PushBack(kv)
 	}
 	c.items[key] = append(c.items[key], element)
-	c.currentSize += c.sizeFn(value)
+	c.currentSize += size
 }
 
 func (c *LRU) removeItem(key, conflictKey uint64) {
@@ -288,12 +340,12 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 }
 
 // removeElement is used to remove a given list element from the cache
-func (c *LRU) removeElement(e *list.Element) {
+func (c *LRU) removeElement(e *list.Element, reason EvictionReason) {
 	c.evictList.Remove(e)
 	kv := e.Value.(*Entry)
 	c.removeItem(kv.key, kv.conflictKey)
 	c.currentSize -= c.sizeFn(kv.value)
 	if c.onEvict != nil {
-		c.onEvict(kv.value)
+		c.onEvict(kv.value, reason)
 	}
 }

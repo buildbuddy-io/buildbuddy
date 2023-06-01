@@ -56,10 +56,10 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -212,8 +212,8 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 }
 
 func registerInternalGRPCServices(grpcServer *grpc.Server, env environment.Env) {
-	if registryServer := env.GetRegistryServer(); registryServer != nil {
-		rgpb.RegisterRegistryServer(grpcServer, registryServer)
+	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
+		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
 	}
 }
 
@@ -381,6 +381,10 @@ func StartAndRunServices(env environment.Env) {
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
+	if gha := env.GetGitHubApp(); gha != nil {
+		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.WebhookHandler()))
+		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.OAuthHandler()))
+	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), *port, grpc_server.GRPCPort())
@@ -391,7 +395,9 @@ func StartAndRunServices(env environment.Env) {
 		Handler: env.GetMux(),
 	}
 
+	env.GetHTTPServerWaitGroup().Add(1)
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		defer env.GetHTTPServerWaitGroup().Done()
 		err := server.Shutdown(ctx)
 		return err
 	})
@@ -430,7 +436,7 @@ func StartAndRunServices(env environment.Env) {
 			sslServer.ListenAndServeTLS("", "")
 		}()
 		go func() {
-			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), interceptors.RedirectIfNotForwardedHTTPS(env, sslHandler))
+			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.

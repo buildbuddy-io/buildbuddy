@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
+	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -25,11 +25,13 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
@@ -84,7 +86,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		return nil, status.InvalidArgumentErrorf("InvocationSelector must contain a valid invocation_id or commit_sha")
 	}
 
-	q := query_builder.NewQuery(`SELECT * FROM Invocations`)
+	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
 	q = q.AddWhereClause(`group_id = ?`, user.GetGroupID())
 	if req.GetSelector().GetInvocationId() != "" {
 		q = q.AddWhereClause(`invocation_id = ?`, req.GetSelector().GetInvocationId())
@@ -407,19 +409,19 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	}
 	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
 
-	var resourceName *resource.ResourceName
+	var resourceName *rspb.ResourceName
 	if digest.IsActionCacheResourceName(urlStr) {
 		parsedRN, err := digest.ParseActionCacheResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
 		}
-		resourceName = digest.NewACResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName()).ToProto()
+		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_AC, parsedRN.GetDigestFunction()).ToProto()
 	} else if digest.IsDownloadResourceName(urlStr) {
 		parsedRN, err := digest.ParseDownloadResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
 		}
-		resourceName = digest.NewCASResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName()).ToProto()
+		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_CAS, parsedRN.GetDigestFunction()).ToProto()
 	} else {
 		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
 	}
@@ -477,4 +479,51 @@ func actionMatchesActionSelector(action *apipb.Action, selector *apipb.ActionSel
 		(selector.TargetLabel == "" || selector.TargetLabel == action.GetTargetLabel()) &&
 		(selector.ConfigurationId == "" || selector.ConfigurationId == action.GetId().ConfigurationId) &&
 		(selector.ActionId == "" || selector.ActionId == action.GetId().ActionId)
+}
+
+func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkflowRequest) (*apipb.ExecuteWorkflowResponse, error) {
+	user, err := s.checkPreconditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if user.GetGroupID() == "" {
+		return nil, status.InternalErrorf("authenticated user's group ID is empty")
+	}
+
+	wfs := s.env.GetWorkflowService()
+	requestCtx := requestcontext.ProtoRequestContextFromContext(ctx)
+
+	wfID := wfs.GetLegacyWorkflowIDForGitRepository(user.GetGroupID(), req.GetRepoUrl())
+	r := &workflow.ExecuteWorkflowRequest{
+		RequestContext: requestCtx,
+		WorkflowId:     wfID,
+		ActionNames:    req.GetActionNames(),
+		PushedRepoUrl:  req.GetRepoUrl(),
+		PushedBranch:   req.GetRef(),
+		TargetRepoUrl:  req.GetRepoUrl(),
+		TargetBranch:   req.GetRef(),
+		Clean:          req.GetClean(),
+		Visibility:     req.GetVisibility(),
+	}
+	rsp, err := wfs.ExecuteWorkflow(ctx, r)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that the legacy Workflow product"+
+				" is not supported for this API. See https://www.buildbuddy.io/docs/workflows-setup/ for more information"+
+				" on how to correctly setup Workflows.", req.GetRepoUrl())
+		}
+		return nil, err
+	}
+
+	actionStatuses := make([]*apipb.ExecuteWorkflowResponse_ActionStatus, len(rsp.GetActionStatuses()))
+	for i, as := range rsp.GetActionStatuses() {
+		actionStatuses[i] = &apipb.ExecuteWorkflowResponse_ActionStatus{
+			ActionName:   as.ActionName,
+			InvocationId: as.InvocationId,
+			Status:       as.Status,
+		}
+	}
+	return &apipb.ExecuteWorkflowResponse{
+		ActionStatuses: actionStatuses,
+	}, nil
 }

@@ -19,7 +19,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -32,11 +31,13 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
 	region                   = flag.String("cache.s3.region", "", "The AWS region.")
 	bucket                   = flag.String("cache.s3.bucket", "", "The AWS S3 bucket to store files in.")
+	pathPrefix               = flag.String("cache.s3.path_prefix", "", "Prefix inside the AWS S3 bucket to store files")
 	credentialsProfile       = flag.String("cache.s3.credentials_profile", "", "A custom credentials profile to use.")
 	ttlDays                  = flag.Int64("cache.s3.ttl_days", 0, "The period after which cache files should be TTLd. Disabled if 0.")
 	webIdentityTokenFilePath = flag.String("cache.s3.web_identity_token_file", "", "The file path to the web identity token file.")
@@ -62,6 +63,7 @@ var (
 type S3Cache struct {
 	s3         *s3.S3
 	bucket     *string
+	pathPrefix string
 	downloader *s3manager.Downloader
 	uploader   *s3manager.Uploader
 	ttlInDays  int64
@@ -118,6 +120,7 @@ func NewS3Cache() (*S3Cache, error) {
 	s3c := &S3Cache{
 		s3:         svc,
 		bucket:     aws.String(*bucket),
+		pathPrefix: *pathPrefix,
 		downloader: s3manager.NewDownloader(sess),
 		uploader:   s3manager.NewUploader(sess),
 		ttlInDays:  *ttlDays,
@@ -224,17 +227,18 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 	return err
 }
 
-func (s3c *S3Cache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
-	hash, err := digest.Validate(r.GetDigest())
-	if err != nil {
+func (s3c *S3Cache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
+	rn := digest.ResourceNameFromProto(r)
+	if err := rn.Validate(); err != nil {
 		return "", err
 	}
+	hash := rn.GetDigest().GetHash()
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
 	isolationPrefix := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()))
-	k := filepath.Join(userPrefix, isolationPrefix, hash, hash)
+	k := filepath.Join(s3c.pathPrefix, userPrefix, isolationPrefix, hash, hash)
 	return k, nil
 }
 
@@ -251,7 +255,7 @@ func isNotFoundErr(err error) bool {
 	}
 }
 
-func (s3c *S3Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (s3c *S3Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -276,13 +280,13 @@ func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte
 	return buff.Bytes(), err
 }
 
-func (s3c *S3Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (s3c *S3Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, r := range resources {
-		fetchFn := func(r *resource.ResourceName) {
+		fetchFn := func(r *rspb.ResourceName) {
 			eg.Go(func() error {
 				data, err := s3c.Get(ctx, r)
 				if err != nil {
@@ -304,7 +308,7 @@ func (s3c *S3Cache) GetMulti(ctx context.Context, resources []*resource.Resource
 	return foundMap, nil
 }
 
-func (s3c *S3Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (s3c *S3Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return err
@@ -322,11 +326,11 @@ func (s3c *S3Cache) Set(ctx context.Context, r *resource.ResourceName, data []by
 	return err
 }
 
-func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for r, data := range kvs {
-		setFn := func(r *resource.ResourceName, data []byte) {
+		setFn := func(r *rspb.ResourceName, data []byte) {
 			eg.Go(func() error {
 				return s3c.Set(ctx, r, data)
 			})
@@ -341,7 +345,7 @@ func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName
 	return nil
 }
 
-func (s3c *S3Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (s3c *S3Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return err
@@ -393,7 +397,7 @@ func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time)
 	return true
 }
 
-func (s3c *S3Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (s3c *S3Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	var err error
 	defer timer.ObserveContains(err)
@@ -417,7 +421,7 @@ func (s3c *S3Cache) Contains(ctx context.Context, r *resource.ResourceName) (boo
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access time
-func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (s3c *S3Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	metadata, err := s3c.metadata(ctx, r)
 	if err != nil {
 		return nil, err
@@ -429,7 +433,7 @@ func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*in
 
 	// TODO - Add digest size support for AC
 	digestSizeBytes := int64(-1)
-	if r.GetCacheType() == resource.CacheType_CAS {
+	if r.GetCacheType() == rspb.CacheType_CAS {
 		digestSizeBytes = *metadata.ContentLength
 	}
 
@@ -440,7 +444,7 @@ func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*in
 	}, nil
 }
 
-func (s3c *S3Cache) metadata(ctx context.Context, r *resource.ResourceName) (*s3.HeadObjectOutput, error) {
+func (s3c *S3Cache) metadata(ctx context.Context, r *rspb.ResourceName) (*s3.HeadObjectOutput, error) {
 	key, err := s3c.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -463,13 +467,13 @@ func (s3c *S3Cache) metadata(ctx context.Context, r *resource.ResourceName) (*s3
 	return head, nil
 }
 
-func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, r := range resources {
-		fetchFn := func(r *resource.ResourceName) {
+		fetchFn := func(r *rspb.ResourceName) {
 			eg.Go(func() error {
 				exists, err := s3c.Contains(ctx, r)
 				if err != nil {
@@ -493,7 +497,7 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*resource.Resou
 	return missing, nil
 }
 
-func (s3c *S3Cache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (s3c *S3Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -552,7 +556,7 @@ func (w *waitForUploadWriteCloser) Close() error {
 	return nil
 }
 
-func (s3c *S3Cache) Writer(ctx context.Context, rn *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (s3c *S3Cache) Writer(ctx context.Context, rn *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	k, err := s3c.key(ctx, rn)
 	if err != nil {
 		return nil, err
@@ -593,4 +597,8 @@ func (s3c *S3Cache) Stop() error {
 
 func (s3c *S3Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
+}
+
+func (s3c *S3Cache) SupportsEncryption(ctx context.Context) bool {
+	return false
 }

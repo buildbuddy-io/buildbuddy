@@ -26,10 +26,15 @@ message Isolation {
   string group_id = 4;
 }
 
+message Encryption {
+  string key_id = 1;
+}
+
 message FileRecord {
   Isolation isolation = 1;
   build.bazel.remote.execution.v2.Digest digest = 2;
   build.bazel.remote.execution.v2.Compressor.Value compressor = 3;
+  Encryption encryption = 4;
 }
 
 message StorageMetadata {
@@ -64,6 +69,7 @@ message StorageMetadata {
 message FileMetadata {
   FileRecord file_record = 1;
   StorageMetadata storage_metadata = 2;
+  EncryptionMetadata encryption_metadata = 6;
 
   // If data is compressed, this will be the compressed size
   int64 stored_size_bytes = 3;
@@ -73,6 +79,11 @@ message FileMetadata {
 
   // Last modify time of the record
   int64 last_modify_usec = 5;
+}
+
+message EncryptionMetadata {
+  string encryption_key_id = 1;
+  int64 version = 2;
 }
 
 message PartitionMetadata {
@@ -86,6 +97,20 @@ message PartitionMetadata {
 
 message PartitionMetadatas {
   repeated PartitionMetadata metadata = 1;
+}
+
+// Next tag: 4
+message VersionMetadata {
+  // The int64 representation of a PebbleKeyVersion.
+  // This is the minimum version of data stored in the DB.
+  int64 min_version = 1;
+
+  // The int64 representation of a PebbleKeyVersion.
+  // This is the maximum version of data stored in the DB.
+  int64 max_version = 3;
+
+  // The time when the version was last changed.
+  int64 last_modify_usec = 2;
 }
 
 message FileDeleteRequest {
@@ -444,6 +469,13 @@ message StartClusterResponse {
   BatchCmdResponse batch = 1;
 }
 
+message CloneClusterRequest {
+  uint64 source_range_id = 1;
+  uint64 dest_range_id = 2;
+}
+
+message CloneClusterResponse {}
+
 message RemoveDataRequest {
   uint64 cluster_id = 1;
   uint64 node_id = 2;
@@ -571,3 +603,10 @@ message GetMultiResponse {
   }
   repeated Data data = 1;
 }
+
+message TransferLeadershipRequest {
+  uint64 cluster_id = 1;
+  uint64 target_node_id = 2;
+}
+
+message TransferLeadershipResponse {}

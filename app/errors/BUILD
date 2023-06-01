@@ -3,14 +3,11 @@ load("//rules/typescript:index.bzl", "ts_library")
 package(default_visibility = ["//visibility:public"])
 
 ts_library(
-    name = "errors",
-    srcs = glob([
-        "*.tsx",
-        "*.ts",
-    ]),
+    name = "error_service",
+    srcs = ["error_service.ts"],
     strict = True,
     deps = [
-        "//app/alert",
+        "//app/alert:alert_service",
         "//app/router",
         "//app/util:errors",
     ],

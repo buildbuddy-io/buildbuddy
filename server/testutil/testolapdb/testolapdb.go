@@ -2,10 +2,13 @@ package testolapdb
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -28,6 +31,10 @@ func (h *Handle) DB(ctx context.Context) *gorm.DB {
 	return nil
 }
 
+func (h *Handle) RawWithOptions(ctx context.Context, opts interfaces.OLAPDBOptions, sql string, values ...interface{}) *gorm.DB {
+	return nil
+}
+
 func (h *Handle) DateFromUsecTimestamp(fieldNmae string, timezoneOffsetMinutes int32) string {
 	return ""
 }
@@ -44,6 +51,10 @@ func (h *Handle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvoca
 	}
 	h.executionIDsByInvID.Store(inv.GetInvocationId(), executionIDs)
 	return nil
+}
+
+func (h *Handle) FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error {
+	return errors.New("Not implemented")
 }
 
 func (h *Handle) GetExecutionIDsByInvID(t *testing.T, invID string) []string {
