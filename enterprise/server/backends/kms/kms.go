@@ -1,6 +1,7 @@
 package kms
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -40,8 +41,10 @@ var (
 	masterKeyURI              = flag.String("keystore.master_key_uri", "", "The master key URI (see tink docs for example)")
 	enableGCPClient           = flag.Bool("keystore.gcp.enabled", false, "Whether GCP KMS support should be enabled. Implicitly enabled if the master key URI references a GCP KMS URI.")
 	gcpCredentialsFile        = flag.String("keystore.gcp.credentials_file", "", "A path to a gcp JSON credentials file that will be used to authenticate.")
+	gcpCredentials            = flag.String("keystore.gcp.credentials", "", "GCP JSON credentials that will be used to authenticate.")
 	enableAWSClient           = flag.Bool("keystore.aws.enabled", false, "Whether AWS KMS support should be enabled. Implicitly enabled if the master key URI references an AWS KMS URI.")
 	awsCredentialsFile        = flag.String("keystore.aws.credentials_file", "", "A path to a AWS CSV credentials file that will be used to authenticate. If not specified, credentials will be retrieved as described by https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html")
+	awsCredentials            = flag.String("keystore.aws.credentials", "", "AWS CSV credentials that will be used to authenticate. If not specified, credentials will be retrieved as described by https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html")
 	localInsecureKMSDirectory = flag.String("keystore.local_insecure_kms_directory", "", "For development only. If set, keys in format local-insecure-kms://[id] are read from this directory.")
 )
 
@@ -94,9 +97,14 @@ func (k *KMS) initGCPClient(ctx context.Context) error {
 	}
 
 	opts := make([]option.ClientOption, 0)
+	if *gcpCredentialsFile != "" && *gcpCredentials != "" {
+		return status.FailedPreconditionError("GCP KMS credentials should be specified either via file or directly, but not both")
+	}
 	if *gcpCredentialsFile != "" {
 		log.Debugf("KMS: using GCP credentials file: %q", *gcpCredentialsFile)
 		opts = append(opts, option.WithCredentialsFile(*gcpCredentialsFile))
+	} else if *gcpCredentials != "" {
+		opts = append(opts, option.WithCredentialsJSON([]byte(*gcpCredentials)))
 	}
 	client, err := gcpkms.NewClientWithOptions(ctx, gcpKMSPrefix, opts...)
 	if err != nil {
@@ -136,10 +144,15 @@ func (k *KMS) initAWSClient(ctx context.Context) error {
 	}
 
 	k.awsClients = make(map[string]registry.KMSClient)
-	if *awsCredentialsFile != "" {
-		log.Debugf("KMS: using AWS credentials file: %q", *awsCredentialsFile)
+	if *awsCredentialsFile != "" && *awsCredentials != "" {
+		return status.FailedPreconditionError("AWS KMS credentials should be specified either via file or directly, but not both")
+	}
+	if *awsCredentialsFile != "" || *awsCredentials != "" {
+		if *awsCredentialsFile != "" {
+			log.Debugf("KMS: using AWS credentials file: %q", *awsCredentialsFile)
+		}
 		// Verify the credential file format is valid.
-		_, err := loadAWSCreds(*awsCredentialsFile)
+		_, err := loadAWSCreds()
 		if err != nil {
 			return status.FailedPreconditionErrorf("AWS credentials file not valid: %s", err)
 		}
@@ -160,13 +173,18 @@ func (k *KMS) initLocalInsecureKMSClient(ctx context.Context) error {
 	return nil
 }
 
-func loadAWSCreds(file string) (*awscreds.Value, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, err
+func loadAWSCreds() (*awscreds.Value, error) {
+	var credsData []byte
+	if *awsCredentials != "" {
+		credsData = []byte(*awsCredentials)
+	} else {
+		data, err := os.ReadFile(*awsCredentialsFile)
+		if err != nil {
+			return nil, err
+		}
+		credsData = data
 	}
-	defer f.Close()
-	rs, err := csv.NewReader(f).ReadAll()
+	rs, err := csv.NewReader(bytes.NewReader(credsData)).ReadAll()
 	if err != nil {
 		return nil, err
 	}
@@ -184,8 +202,8 @@ func loadAWSCreds(file string) (*awscreds.Value, error) {
 
 // For some reason, the tink library does not support aws credential files with
 // 2 columns so we manually create the AWS SDK client.
-func createAWSClientWithCreds(arn *awsKMSARN, credsFile string) (registry.KMSClient, error) {
-	credValue, err := loadAWSCreds(credsFile)
+func createAWSClientWithCreds(arn *awsKMSARN) (registry.KMSClient, error) {
+	credValue, err := loadAWSCreds()
 	if err != nil {
 		return nil, status.UnknownErrorf("could not load credentials file: %s", err)
 	}
@@ -215,8 +233,8 @@ func (k *KMS) clientForURI(uri string) (registry.KMSClient, error) {
 		if ok {
 			return client, nil
 		}
-		if *awsCredentialsFile != "" {
-			client, err = createAWSClientWithCreds(arn, *awsCredentialsFile)
+		if *awsCredentialsFile != "" || *awsCredentials != "" {
+			client, err = createAWSClientWithCreds(arn)
 		} else {
 			client, err = awskms.NewClient(arn.uriLocationPrefix)
 		}
