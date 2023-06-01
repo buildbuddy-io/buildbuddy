@@ -1436,7 +1436,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		if err := c.parseOOMError(); err != nil {
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}
-		if err := c.parseSegFault(); err != nil {
+		if err := c.parseSegFault(result); err != nil {
 			log.CtxWarningf(ctx, "Segfault occurred during task execution (recycled=%v) : %s", c.recycled, err)
 		}
 	}()
@@ -1696,11 +1696,11 @@ func (c *FirecrackerContainer) parseOOMError() error {
 }
 
 // parseSegFault looks for segfaults in the kernel logs and returns an error if found.
-func (c *FirecrackerContainer) parseSegFault() error {
-	tail := string(c.vmLog.Tail())
-	if !strings.Contains(tail, "segfault") {
+func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult) error {
+	if !strings.Contains(string(cmdResult.Stderr), "SIGSEGV") {
 		return nil
 	}
+	tail := string(c.vmLog.Tail())
 	// Logs contain "\r\n"; convert these to universal line endings.
 	tail = strings.ReplaceAll(tail, "\r\n", "\n")
 	return status.InternalErrorf("process hit a segfault:\n%s", tail)
