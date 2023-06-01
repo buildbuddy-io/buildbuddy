@@ -1,7 +1,7 @@
 version: "3.3"
 services:
   prometheus:
-    image: prom/prometheus:v2.22.2
+    image: prom/prometheus:v2.36.2
     volumes:
       - ${PWD}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     command:
