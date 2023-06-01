@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "create_org",
     srcs = ["create_org.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/components/banner",
@@ -25,7 +24,6 @@ ts_library(
 ts_library(
     name = "edit_org",
     srcs = ["edit_org.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/components/button",
@@ -42,7 +40,6 @@ ts_library(
 ts_library(
     name = "join_org",
     srcs = ["join_org.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/components/button",
@@ -59,7 +56,6 @@ ts_library(
 ts_library(
     name = "org_form",
     srcs = ["org_form.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -76,7 +72,6 @@ ts_library(
 ts_library(
     name = "org_join_requests",
     srcs = ["org_join_requests.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/components/button",
@@ -92,7 +87,6 @@ ts_library(
 ts_library(
     name = "org_members",
     srcs = ["org_members.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",

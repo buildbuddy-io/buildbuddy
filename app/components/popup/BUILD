@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "popup",
     srcs = ["popup.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//react",

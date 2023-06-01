@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "banner",
     srcs = ["banner.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//lucide-react",

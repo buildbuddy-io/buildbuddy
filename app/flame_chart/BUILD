@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "flame_chart",
     srcs = ["flame_chart.tsx"],
-    strict = True,
     deps = [
         "//app/capabilities",
         "//app/components/scrollbar",
@@ -33,7 +32,6 @@ ts_jasmine_node_test(
 ts_library(
     name = "flame_chart_model",
     srcs = ["flame_chart_model.ts"],
-    strict = True,
     deps = [
         "//app/capabilities",
         "//app/flame_chart:profile_model",
@@ -46,11 +44,9 @@ ts_library(
 ts_library(
     name = "profile_model",
     srcs = ["profile_model.ts"],
-    strict = True,
 )
 
 ts_library(
     name = "style_constants",
     srcs = ["style_constants.ts"],
-    strict = True,
 )

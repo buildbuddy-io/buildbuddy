@@ -7,7 +7,6 @@ exports_files(["settings.css"])
 ts_library(
     name = "settings",
     srcs = ["settings.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -35,7 +34,6 @@ ts_library(
 ts_library(
     name = "github_link",
     srcs = ["github_link.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
@@ -61,7 +59,6 @@ ts_library(
 ts_library(
     name = "user_github_link",
     srcs = ["user_github_link.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
@@ -85,7 +82,6 @@ ts_library(
 ts_library(
     name = "github_complete_installation",
     srcs = ["github_complete_installation.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",

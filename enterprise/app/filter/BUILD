@@ -5,7 +5,6 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 ts_library(
     name = "filter",
     srcs = ["filter.tsx"],
-    strict = True,
     deps = [
         "//app/capabilities",
         "//app/components/button",
