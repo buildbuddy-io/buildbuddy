@@ -313,19 +313,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:uFYs0rkVtEwZ6PlVQAXkBrIvWtIljMG8YR67LGiopeY=",
         version = "v0.29.0",
     )
-
     go_repository(
         name = "com_github_bazelbuild_bazelisk",
-        build_directives = [
-            "gazelle:resolve github.com/bgentry/go-netrc @com_github_bgentry_go_netrc//netrc:go_default_library",
-        ],
         importpath = "github.com/bazelbuild/bazelisk",
-        # TODO: Remove once https://github.com/bazelbuild/bazelisk/pull/396 is
+        # TODO: Remove once https://github.com/bazelbuild/bazelisk/pull/472 is
         # upstreamed
         patch_args = ["-p1"],
-        patches = ["@{}//buildpatches:bazelisk.patch".format(workspace_name)],
-        sum = "h1:dmESc1UeF8iqJTOPxlPw2DH9ykZEMwdlL/jQ+UrW7fY=",
-        version = "v1.11.0",
+        patches = ["@{}//buildpatches:bazelisk-netrc.patch".format(workspace_name)],
+        sum = "h1:TDt+a1PYrnBF9on3WRJUisXXFhCMrhcNo8OebyS5Q34=",
+        version = "v1.17.0",
     )
     go_repository(
         name = "com_github_bazelbuild_buildtools",
@@ -336,7 +332,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:DraHsDqTYhf6w1369EEdFyA5hjJnGX88xNJRv1+20E0=",
         version = "v0.0.0-20230111132423-06e8e2436a75",
     )
-
     go_repository(
         name = "com_github_bazelbuild_rules_go",
         importpath = "github.com/bazelbuild/rules_go",
@@ -375,7 +370,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=",
         version = "v1.0.1",
     )
-
+    go_repository(
+        name = "com_github_bgentry_go_netrc",
+        importpath = "github.com/bgentry/go-netrc",
+        sum = "h1:xDfNPAt8lFiC1UJrqV3uuy861HCTo708pDMbjHHdCas=",
+        version = "v0.0.0-20140422174119-9fd32a8b3d3d",
+    )
     go_repository(
         name = "com_github_bgentry_speakeasy",
         importpath = "github.com/bgentry/speakeasy",
