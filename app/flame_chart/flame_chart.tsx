@@ -10,7 +10,6 @@ import { BlockModel, buildFlameChartModel, FlameChartModel, LineModel } from "./
 import { Profile } from "./profile_model";
 import {
   BLOCK_HEIGHT,
-  TIME_SERIES_HEIGHT,
   INITIAL_END_TIME_SECONDS,
   SECTION_LABEL_HEIGHT,
   TIMESTAMP_FONT_SIZE,
@@ -527,7 +526,7 @@ class HoveredRefLine extends React.Component<HoveredRefLineState> {
   render() {
     const { line } = this.state;
     if (!line) return <></>;
-    let roundedSeconds = Math.round(this.state?.seconds || 0);
+    let roundedSeconds = Math.round((this.state?.seconds || 0) / line.dt || 0) * line.dt;
     let point = line.pointsByXCoord.get(roundedSeconds) || null;
     if (!point) return <></>;
     return (
@@ -570,7 +569,7 @@ class HoveredLineInfo extends React.Component<HoveredLineInfoState> {
   render() {
     const { line } = this.state;
     if (!line) return <></>;
-    let roundedSeconds = Math.round(this.state?.seconds || 0);
+    let roundedSeconds = Math.round((this.state?.seconds || 0) / line.dt) * line.dt;
     let point = line.pointsByXCoord.get(roundedSeconds) || null;
     if (!point) return <></>;
     const {

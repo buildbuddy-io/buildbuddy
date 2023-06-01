@@ -108,6 +108,7 @@ type RealEnv struct {
 	crypterService                   interfaces.Crypter
 	sociArtifactStoreServer          socipb.SociArtifactStoreServer
 	sociArtifactStoreClient          socipb.SociArtifactStoreClient
+	singleFlightDeduper              interfaces.SingleFlightDeduper
 	metricsGroupRegisteries          interfaces.MetricsGroupRegisteries
 	promQuerier                      interfaces.PromQuerier
 }
@@ -613,9 +614,18 @@ func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
 	r.sociArtifactStoreServer = s
 }
 
+func (r *RealEnv) GetSingleFlightDeduper() interfaces.SingleFlightDeduper {
+	return r.singleFlightDeduper
+}
+
+func (r *RealEnv) SetSingleFlightDeduper(d interfaces.SingleFlightDeduper) {
+	r.singleFlightDeduper = d
+}
+
 func (r *RealEnv) GetMetricsGroupRegistries() interfaces.MetricsGroupRegisteries {
 	return r.metricsGroupRegisteries
 }
+
 func (r *RealEnv) SetMetricsGroupRegistries(gr interfaces.MetricsGroupRegisteries) {
 	r.metricsGroupRegisteries = gr
 }

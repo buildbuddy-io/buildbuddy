@@ -1,10 +1,12 @@
 package invocation_format_test
 
 import (
+	"strings"
 	"testing"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,19 +33,36 @@ func makeTagSlice(args ...string) []*inpb.Invocation_Tag {
 }
 
 func TestSplitAndTrimTags(t *testing.T) {
+	longTag := "l" + strings.Repeat("o", 158) + "ng"
+	lotsOfWhitespace := strings.Repeat(" ", 255)
+	tooLong := status.InvalidArgumentError("Tag list is too long.")
 	for _, testCase := range []struct {
-		input    string
-		expected []*inpb.Invocation_Tag
+		input         string
+		truncate      bool
+		expected      []*inpb.Invocation_Tag
+		expectedError error
 	}{
-		{"", makeTagSlice()},
-		{",", makeTagSlice()},
-		{",  ,,,", makeTagSlice()},
-		{"beef", makeTagSlice("beef")},
-		{"  beef ", makeTagSlice("beef")},
-		{"beef,beer", makeTagSlice("beef", "beer")},
-		{" art , beef, beer , cheese..,ten dollars,,", makeTagSlice("art", "beef", "beer", "cheese..", "ten dollars")},
+		{"", false, makeTagSlice(), nil},
+		{",", false, makeTagSlice(), nil},
+		{",  ,,,", false, makeTagSlice(), nil},
+		{"beef", false, makeTagSlice("beef"), nil},
+		{"  beef ", false, makeTagSlice("beef"), nil},
+		{"beef,beer", false, makeTagSlice("beef", "beer"), nil},
+		{" art , beef, beer , cheese..,ten dollars,,", false, makeTagSlice("art", "beef", "beer", "cheese..", "ten dollars"), nil},
+		{" art , beef, beer , cheese..,ten dollars,,", true, makeTagSlice("art", "beef", "beer", "cheese..", "ten dollars"), nil},
+		{longTag + ",short1", false, makeTagSlice(longTag, "short1"), nil},
+		{longTag, true, nil, tooLong},
+		{longTag + ",short1", true, nil, tooLong},
+		{"short1,short2," + longTag + ",short3", true, nil, tooLong},
+		{"lots of whitespace" + lotsOfWhitespace + "," + lotsOfWhitespace + "and,more,tags", true, makeTagSlice("lots of whitespace", "and", "more", "tags"), nil},
 	} {
-		assert.Equal(t, testCase.expected, invocation_format.SplitAndTrimTags(testCase.input))
+		tags, err := invocation_format.SplitAndTrimTags(testCase.input, testCase.truncate)
+		assert.Equal(t, tags, testCase.expected)
+		if testCase.expectedError == nil {
+			assert.Nil(t, err)
+		} else {
+			assert.EqualError(t, err, testCase.expectedError.Error())
+		}
 	}
 }
 

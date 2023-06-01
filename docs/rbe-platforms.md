@@ -41,6 +41,14 @@ You can then pass this configuration to BuildBuddy RBE with the following flag:
 
 This assumes you've placed this rule in your root BUILD file. If you place it elsewhere, make sure to update the path accordingly.
 
+### ENTRYPOINT and CMD
+
+Remote build actions will be run in your container via `CMD`, so note that any `CMD` instructions in your Dockerfile will be ignored.
+`ENTRYPOINT`, on the other hand, is not ignored, so make sure that the container image's `ENTRYPOINT` is either unset,
+or is a wrapper that is compatible with your build actions' commands.
+
+For more information, see [Understand how CMD and ENTRYPOINT interact](https://docs.docker.com/engine/reference/builder/#understand-how-cmd-and-entrypoint-interact).
+
 ### Passing credentials for Docker images
 
 You can use images from private container registries by adding the following

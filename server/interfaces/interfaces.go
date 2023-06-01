@@ -1125,6 +1125,12 @@ type Crypter interface {
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (Decryptor, error)
 }
 
+// Provides a duplicate function call suppression mechanism, just like the
+// singleflight package.
+type SingleFlightDeduper interface {
+	Do(ctx context.Context, key string, work func() ([]byte, error)) ([]byte, error)
+}
+
 type MetricsGroupRegisteries interface {
 	GetOrCreateRegistry(groupID string) (*prometheus.Registry, error)
 }

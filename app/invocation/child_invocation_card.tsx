@@ -42,7 +42,9 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
                 href={`/invocation/${result.invocation.invocationId}`}
                 className="list-grid"
                 onClick={
-                  !this.props.linksDisabled && this.handleCommandClicked.bind(this, result.invocation.invocationId)
+                  this.props.linksDisabled
+                    ? undefined
+                    : this.handleCommandClicked.bind(this, result.invocation?.invocationId ?? "")
                 }>
                 <div className={`${!this.props.linksDisabled && "clickable"} target`}>
                   <span className="target-status-icon">{this.props.icon}</span> {result.invocation.bazelCommand}

@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -43,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -259,10 +259,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	if err := registry.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-
 	if err := kms.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -273,6 +269,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := crypter_service.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := dsingleflight.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := sociartifactstore.Register(realEnv); err != nil {

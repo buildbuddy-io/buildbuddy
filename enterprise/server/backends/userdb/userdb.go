@@ -67,6 +67,7 @@ var (
 
 func newAPIKeyToken() string {
 	// NB: Keep in sync with BuildBuddyServer#redactAPIKeys, which relies on this exact impl.
+	// NB: Keep in sync with authdb.maxAPIKeyLength
 	return randomToken(20)
 }
 
@@ -380,7 +381,7 @@ func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.A
 	if err != nil {
 		return nil, err
 	}
-	keyPerms := 0
+	keyPerms := int32(0)
 	if userID == "" {
 		keyPerms = perms.GROUP_READ | perms.GROUP_WRITE
 	} else {

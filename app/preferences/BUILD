@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "preferences",
     srcs = ["preferences.ts"],
-    strict = True,
     deps = [
         "//app/capabilities",
     ],

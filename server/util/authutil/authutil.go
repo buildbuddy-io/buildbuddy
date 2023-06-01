@@ -1,9 +1,22 @@
 package authutil
 
 import (
+	"fmt"
+
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+
+	gstatus "google.golang.org/grpc/status"
+)
+
+const (
+	// missingCredentialsErrorReason is the error reason constant used to
+	// identify errors that are due to missing credentials.
+	missingCredentialsErrorReason = "MISSING_CREDENTIALS"
 )
 
 // AuthorizeGroupRole checks whether the given user has any of the allowed roles
@@ -31,6 +44,25 @@ func AuthorizeGroupRole(u interfaces.UserInfo, groupID string, allowedRoles role
 	return nil
 }
 
+// AnonymousUserError returns an error indicating that the user is not
+// authenticated due to credentials being missing from the request.
+func AnonymousUserError(msg string) error {
+	info := &errdetails.ErrorInfo{Reason: missingCredentialsErrorReason}
+	status := gstatus.New(codes.Unauthenticated, msg)
+	if d, err := status.WithDetails(info); err != nil {
+		alert.UnexpectedEvent("failed_to_set_status_details", "Failed to set gRPC status details for AnonymousUserError")
+		return status.Err()
+	} else {
+		return d.Err()
+	}
+}
+
+// AnonymousUserError returns an error indicating that the user is not
+// authenticated due to credentials being missing from the request.
+func AnonymousUserErrorf(format string, args ...any) error {
+	return AnonymousUserError(fmt.Sprintf(format, args...))
+}
+
 // IsAnonymousUserError can be used to check whether an error returned by
 // functions which return the authenticated user (such as AuthenticatedUser or
 // AuthenticateSelectedGroupID) is due to an anonymous user accessing the
@@ -38,5 +70,15 @@ func AuthorizeGroupRole(u interfaces.UserInfo, groupID string, allowedRoles role
 // where anonymous usage is explicitly enabled in the app config, and we support
 // anonymous usage for the part of the service where this is used.
 func IsAnonymousUserError(err error) bool {
-	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
+	for _, detail := range gstatus.Convert(err).Proto().GetDetails() {
+		info := &errdetails.ErrorInfo{}
+		if err := detail.UnmarshalTo(info); err != nil {
+			// not an ErrorInfo detail; ignore.
+			continue
+		}
+		if info.GetReason() == missingCredentialsErrorReason {
+			return true
+		}
+	}
+	return false
 }

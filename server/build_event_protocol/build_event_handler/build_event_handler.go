@@ -936,18 +936,15 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	// We only allow initial sequence numbers greater than one in the case where
 	// Bazel failed to receive all of our ACKs after we finalized an invocation
 	// (marking it complete). In that case we just void the channel and ACK all
-	// events without doing any work. Otherwise, we treat it as a client error.
+	// events without doing any work.
 	if e.initialSequenceNumber > firstExpectedSequenceNumber {
-		in, err := e.env.GetInvocationDB().LookupInvocation(e.ctx, iid)
-		if err != nil {
-			return status.WrapErrorf(err, "build event had unexpected initial sequence number %d, and failed to look up existing invocation", seqNo)
-		}
-		if in.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) {
-			log.Infof("Voiding EventChannel for invocation %s: invocation is already finalized", iid)
-			e.isVoid = true
-			return nil
-		}
-		return status.InvalidArgumentErrorf("received initial sequence number %d for build event stream retry of incomplete invocation, but expected sequence number %d", seqNo, firstExpectedSequenceNumber)
+		// TODO: once https://github.com/bazelbuild/bazel/pull/18437 lands in
+		// Bazel, log an error if the client attempt number is 1 in this case,
+		// since today we're relying on Bazel to always start sending events
+		// starting from sequence number 1 in the first attempt.
+		log.Infof("Voiding EventChannel for invocation %s: build event stream starts with sequence number > %d (%d), which likely means Bazel is retrying an invocation that we already finalized.", iid, firstExpectedSequenceNumber, e.initialSequenceNumber)
+		e.isVoid = true
+		return nil
 	}
 
 	if isFinalEvent(event.OrderedBuildEvent) {
@@ -1112,7 +1109,9 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	}
 	e.redactor.RedactMetadata(event.BuildEvent)
 	// Accumulate a subset of invocation fields in memory.
-	e.beValues.AddEvent(event.BuildEvent)
+	if err := e.beValues.AddEvent(event.BuildEvent); err != nil {
+		return err
+	}
 
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
@@ -1389,7 +1388,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 					return err
 				}
 				redactor.RedactMetadata(event.BuildEvent)
-				beValues.AddEvent(event.BuildEvent)
+				if err := beValues.AddEvent(event.BuildEvent); err != nil {
+					return err
+				}
 			}
 			events = append(events, event)
 			switch p := event.BuildEvent.Payload.(type) {
@@ -1531,7 +1532,9 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
 	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
 	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
-	out.Tags = invocation_format.SplitAndTrimTags(i.Tags)
+	// Don't bother with validation here; just give the user whatever the DB
+	// claims the tags are.
+	out.Tags, _ = invocation_format.SplitAndTrimTags(i.Tags, false)
 	return out
 }
 

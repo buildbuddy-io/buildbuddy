@@ -40,7 +40,10 @@ export default class ChildInvocations extends React.Component<ChildInvocationPro
         }
         continue;
       }
-      const durationMillis = durationToMillisWithFallback(completedEvent.duration, completedEvent.durationMillis);
+      const durationMillis = durationToMillisWithFallback(
+        completedEvent?.duration,
+        +(completedEvent?.durationMillis ?? 0)
+      );
 
       const result = { invocation, durationMillis };
       if (completedEvent.exitCode === 0) {

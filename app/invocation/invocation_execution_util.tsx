@@ -25,11 +25,13 @@ export type ExecutionStatus = {
   className?: string;
 };
 
-export function getExecutionStatus(execution: execution_stats.IExecution): ExecutionStatus {
+export function getExecutionStatus(execution: execution_stats.Execution): ExecutionStatus {
   if (execution.stage === ExecutionStage.Value.COMPLETED) {
-    if (execution.status.code !== 0) {
+    if (execution.status?.code !== 0) {
       return {
-        name: `Error (${GRPC_STATUS_LABEL_BY_CODE[execution.status.code] || "UNKNOWN"})`,
+        name: `Error (${
+          execution.status?.code ? GRPC_STATUS_LABEL_BY_CODE[execution.status.code] || "UNKNOWN" : "UNKNOWN"
+        })`,
         icon: <AlertCircle className="icon red" />,
       };
     }
@@ -50,8 +52,8 @@ export function subtractTimestamp(
   timestampB?: google_ts.protobuf.ITimestamp | null
 ) {
   if (!timestampA || !timestampB) return NaN;
-  let microsA = +timestampA.seconds * 1000000 + +timestampA.nanos / 1000;
-  let microsB = +timestampB.seconds * 1000000 + +timestampB.nanos / 1000;
+  let microsA = +(timestampA.seconds ?? 0) * 1000000 + +(timestampA.nanos ?? 0) / 1000;
+  let microsB = +(timestampB.seconds ?? 0) * 1000000 + +(timestampB.nanos ?? 0) / 1000;
   return microsA - microsB;
 }
 

@@ -6,11 +6,12 @@ import { Profile, parseProfile } from "../flame_chart/profile_model";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
-import { Clock, HelpCircle } from "lucide-react";
+import { Clock } from "lucide-react";
 import errorService from "../errors/error_service";
 import format from "../format/format";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
 interface Props {
   model: InvocationModel;
@@ -71,8 +72,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     }
   }
 
-  getProfileFile() {
-    return this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
+  getProfileFile(): build_event_stream.File | undefined {
+    return this.props.model.buildToolLogs?.log.find((log: build_event_stream.File) => log.uri);
   }
 
   isTimingEnabled() {
@@ -87,11 +88,14 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     let profileFile = this.getProfileFile();
     let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
-    let isGzipped = compressionOption === undefined ? profileFile.name?.endsWith(".gz") : compressionOption == "1";
+    let isGzipped =
+      compressionOption === undefined ? (profileFile?.name ?? "").endsWith(".gz") : compressionOption == "1";
+
+    if (!profileFile?.uri) return;
 
     this.setState({ loading: true });
     rpcService
-      .fetchBytestreamFile(profileFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
+      .fetchBytestreamFile(profileFile.uri, this.props.model.getId() ?? "", isGzipped ? "arraybuffer" : "json")
       .then((contents: any) => {
         if (isGzipped) {
           contents = parseProfile(pako.inflate(contents, { to: "string" }));
@@ -104,9 +108,12 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   downloadProfile() {
     let profileFile = this.getProfileFile();
+    if (!profileFile?.uri) {
+      return;
+    }
 
     try {
-      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile?.uri, this.props.model.getId());
+      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile.uri, this.props.model.getId() ?? "");
     } catch {
       console.error("Error downloading bytestream timing profile");
     }
@@ -263,11 +270,13 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              <div className="button">
-                <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
-                  Download profile
-                </Button>
-              </div>
+              {Boolean(this.getProfileFile()?.uri) && (
+                <div className="button">
+                  <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
+                    Download profile
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="sort-controls">
               <div className="sort-control">

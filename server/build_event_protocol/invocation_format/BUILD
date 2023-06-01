@@ -18,6 +18,7 @@ go_test(
     deps = [
         ":invocation_format",
         "//proto:invocation_go_proto",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
     ],
 )

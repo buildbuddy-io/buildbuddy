@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -53,9 +55,12 @@ var (
 	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
 	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
 
-	// TODO(iain): delete the streamableImages flag
+	// TODO(iain): delete executor.podman.run_soci_snapshotter flag once
+	// the snapshotter doesn't need root permissions to run.
+	runSociSnapshotter    = flag.Bool("executor.podman.run_soci_snapshotter", true, "If true, runs the soci snapshotter locally if needed for image streaming.")
 	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all podman images are streamed using soci artifacts generated and stored in the apps.")
-	streamableImages      = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
+	// TODO(iain): delete the streamableImages flag
+	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
@@ -122,6 +127,7 @@ func runSociStore(ctx context.Context) {
 		cmd.Run()
 
 		log.Infof("Detected soci store crash, restarting")
+		metrics.PodmanSociStoreCrashes.Inc()
 		// If the store crashed, the path must be unmounted to recover.
 		syscall.Unmount(sociStorePath, 0)
 
@@ -131,7 +137,9 @@ func runSociStore(ctx context.Context) {
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if *imageStreamingEnabled || len(*streamableImages) > 0 {
-		go runSociStore(env.GetServerContext())
+		if *runSociSnapshotter {
+			go runSociStore(env.GetServerContext())
+		}
 
 		// Configures podman to check soci store for image data.
 		storageConf := `
@@ -519,13 +527,22 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	if *imageStreamingEnabled && c.sociArtifactStoreClient != nil {
+		startTime := time.Now()
 		if err := c.getSociArtifacts(ctx, creds); err != nil {
 			return err
 		}
+		metrics.PodmanGetSociArtifactsLatencyUsec.
+			With(prometheus.Labels{metrics.ContainerImageTag: c.image}).
+			Observe(float64(time.Now().Sub(startTime).Microseconds()))
 	}
+
+	startTime := time.Now()
 	if err := c.pullImage(ctx, creds); err != nil {
 		return err
 	}
+	metrics.PodmanColdImagePullLatencyMsec.
+		With(prometheus.Labels{metrics.ContainerImageTag: c.image}).
+		Observe(float64(time.Now().Sub(startTime).Milliseconds()))
 	ps.pulled = true
 	return nil
 }
@@ -553,7 +570,9 @@ func (c *podmanCommandContainer) getSociArtifacts(ctx context.Context, creds con
 	}
 	resp, err := c.sociArtifactStoreClient.GetArtifacts(ctx, &req)
 	if err != nil {
-		return err
+		log.Infof("Error fetching soci artifacts %v", err)
+		// Fall back to pulling the image without streaming.
+		return nil
 	}
 	for _, artifact := range resp.Artifacts {
 		if artifact.Type == socipb.Type_UNKNOWN_TYPE {

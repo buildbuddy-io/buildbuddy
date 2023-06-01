@@ -134,10 +134,13 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
 
 function canWrite(user: User, invocation: invocation.Invocation) {
   const acl = invocation.acl;
-  if (acl.ownerPermissions.write && acl.userId.id === user.displayUser.userId.id) {
+  if (!acl) {
+    return false;
+  }
+  if (acl.ownerPermissions?.write && acl.userId && acl.userId.id === user.displayUser.userId?.id) {
     return true;
   }
-  if (acl.groupPermissions.write) {
+  if (acl.groupPermissions?.write) {
     return user.groups.some((group) => group.id === acl.groupId);
   }
   return false;

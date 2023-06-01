@@ -56,7 +56,6 @@ ts_library(
 ts_library(
     name = "cache_requests_card",
     srcs = ["cache_requests_card.tsx"],
-    strict = False,
     deps = [
         "//app/capabilities",
         "//app/components/button",
@@ -89,7 +88,6 @@ ts_library(
 ts_library(
     name = "child_invocation_card",
     srcs = ["child_invocation_card.tsx"],
-    strict = False,
     deps = [
         "//app/format",
         "//app/router",
@@ -102,7 +100,6 @@ ts_library(
 ts_library(
     name = "child_invocations",
     srcs = ["child_invocations.tsx"],
-    strict = False,
     deps = [
         "//app/invocation:child_invocation_card",
         "//app/invocation:invocation_model",
@@ -116,7 +113,6 @@ ts_library(
 ts_library(
     name = "invocation_action_card",
     srcs = ["invocation_action_card.tsx"],
-    strict = False,
     deps = [
         "//app/components/digest",
         "//app/components/link",
@@ -136,7 +132,6 @@ ts_library(
 ts_library(
     name = "invocation_action_input_node",
     srcs = ["invocation_action_input_node.tsx"],
-    strict = False,
     deps = [
         "//app/components/digest",
         "//proto:remote_execution_ts_proto",
@@ -149,7 +144,6 @@ ts_library(
 ts_library(
     name = "invocation_artifacts_card",
     srcs = ["invocation_artifacts_card.tsx"],
-    strict = False,
     deps = [
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
@@ -164,7 +158,6 @@ ts_library(
 ts_library(
     name = "invocation_breakdown_card",
     srcs = ["invocation_breakdown_card.tsx"],
-    strict = False,
     deps = [
         "//app/format",
         "//app/util:color",
@@ -251,7 +244,6 @@ ts_library(
 ts_library(
     name = "invocation_details_card",
     srcs = ["invocation_details_card.tsx"],
-    strict = False,
     deps = [
         "//app/alert:alert_service",
         "//app/invocation:invocation_model",
@@ -268,7 +260,6 @@ ts_library(
 ts_library(
     name = "invocation_error_card",
     srcs = ["invocation_error_card.tsx"],
-    strict = False,
     deps = [
         "//app/invocation:invocation_model",
         "@npm//@types/react",
@@ -280,7 +271,6 @@ ts_library(
 ts_library(
     name = "invocation_execution_card",
     srcs = ["invocation_execution_card.tsx"],
-    strict = False,
     deps = [
         "//app/components/button",
         "//app/components/select",
@@ -298,13 +288,13 @@ ts_library(
 ts_library(
     name = "invocation_execution_table",
     srcs = ["invocation_execution_table.tsx"],
-    strict = False,
     deps = [
         "//app/components/digest",
         "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_execution_util",
         "//proto:execution_stats_ts_proto",
+        "//proto:remote_execution_ts_proto",
         "@npm//@types/react",
         "@npm//react",
     ],
@@ -313,7 +303,6 @@ ts_library(
 ts_library(
     name = "invocation_execution_util",
     srcs = ["invocation_execution_util.tsx"],
-    strict = False,
     deps = [
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
@@ -339,7 +328,6 @@ ts_library(
 ts_library(
     name = "invocation_filter",
     srcs = ["invocation_filter.tsx"],
-    strict = False,
     deps = [
         "//app/components/filter_input",
         "//app/router",
@@ -362,7 +350,6 @@ ts_library(
 ts_library(
     name = "invocation_logs_model",
     srcs = ["invocation_logs_model.tsx"],
-    strict = False,
     deps = [
         "//app/errors:error_service",
         "//app/service:rpc_service",
@@ -374,7 +361,6 @@ ts_library(
 ts_library(
     name = "invocation_menu",
     srcs = ["invocation_menu.tsx"],
-    strict = False,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -399,7 +385,6 @@ ts_library(
 ts_library(
     name = "invocation_model",
     srcs = ["invocation_model.tsx"],
-    strict = False,
     deps = [
         "//app/capabilities",
         "//app/favicon",
@@ -427,7 +412,6 @@ ts_library(
 ts_library(
     name = "invocation_not_found",
     srcs = ["invocation_not_found.tsx"],
-    strict = False,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -444,7 +428,6 @@ ts_library(
 ts_library(
     name = "invocation_overview",
     srcs = ["invocation_overview.tsx"],
-    strict = False,
     deps = [
         "//app/auth:auth_service",
         "//app/components/link",
@@ -476,7 +459,6 @@ ts_library(
 ts_library(
     name = "invocation_raw_logs_card",
     srcs = ["invocation_raw_logs_card.tsx"],
-    strict = False,
     deps = [
         "//app/components/button",
         "//app/components/filter_input",
@@ -492,7 +474,6 @@ ts_library(
 ts_library(
     name = "invocation_share_button",
     srcs = ["invocation_share_button.tsx"],
-    strict = False,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
@@ -556,7 +537,6 @@ ts_library(
 ts_library(
     name = "invocation_targets_card",
     srcs = ["invocation_targets_card.tsx"],
-    strict = False,
     deps = [
         "//app/alert:alert_service",
         "//app/components/link",
@@ -573,7 +553,6 @@ ts_library(
 ts_library(
     name = "invocation_timing_card",
     srcs = ["invocation_timing_card.tsx"],
-    strict = False,
     deps = [
         "//app/components/button",
         "//app/docs:setup_code",
@@ -585,6 +564,7 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_suggestion_card",
         "//app/service:rpc_service",
+        "//proto:build_event_stream_ts_proto",
         "@npm//@types/pako",
         "@npm//@types/react",
         "@npm//lucide-react",
@@ -597,7 +577,6 @@ ts_library(
 ts_library(
     name = "scorecard_card",
     srcs = ["scorecard_card.tsx"],
-    strict = False,
     deps = [
         "//app/invocation:invocation_model",
         "//app/router",

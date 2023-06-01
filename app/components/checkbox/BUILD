@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "checkbox",
     srcs = ["checkbox.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//react",

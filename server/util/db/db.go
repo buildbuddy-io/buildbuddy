@@ -92,45 +92,146 @@ type AdvancedConfig struct {
 }
 
 // dnsFormatter generates DSN strings from structured options.
-type dsnFormatter struct {
-	Driver   string
-	Endpoint string
-	Username string
-	Password string
-	DBName   string
-	Params   string
+type dsnFormatter interface {
+	String() string
+	Driver() string
+	Endpoint() string
+	Username() string
+	SetPassword(pw string)
+	AddParam(key, val string)
+	Clone() dsnFormatter
 }
 
-func (df *dsnFormatter) AddParam(key, val string) {
-	if df.Params != "" {
-		df.Params += "&"
+func newDSNFormatter(ac *AdvancedConfig) (dsnFormatter, error) {
+	switch ac.Driver {
+	case mysqlDriver:
+		return newMysqlDSNFormatter(ac)
+	case sqliteDriver:
+		return newSqliteDSNFormatter(ac)
+	default:
+		return nil, status.UnimplementedErrorf("newDSNFormatter does not support driver: %s", ac.Driver)
 	}
-	df.Params += fmt.Sprintf("%s=%s", key, val)
 }
 
-func (df *dsnFormatter) String() string {
-	endpoint := df.Endpoint
-	if df.Driver == mysqlDriver {
-		endpoint = fmt.Sprintf("tcp(%s)", df.Endpoint)
+type sqliteDSNFormatter struct {
+	endpoint string
+	username string
+	password string
+	dbName   string
+	params   string
+}
+
+func newSqliteDSNFormatter(ac *AdvancedConfig) (*sqliteDSNFormatter, error) {
+	return &sqliteDSNFormatter{
+		endpoint: ac.Endpoint,
+		username: ac.Username,
+		password: ac.Password,
+		dbName:   ac.DBName,
+		params:   ac.Params,
+	}, nil
+}
+
+func (s *sqliteDSNFormatter) AddParam(key, val string) {
+	if s.params != "" {
+		s.params += "&"
 	}
+	s.params += fmt.Sprintf("%s=%s", key, val)
+}
+
+func (s *sqliteDSNFormatter) String() string {
 
 	b := strings.Builder{}
-	if df.Username != "" && df.Password != "" {
-		b.WriteString(df.Username)
+	if s.username != "" && s.password != "" {
+		b.WriteString(s.username)
 		b.WriteString(":")
-		b.WriteString(df.Password)
+		b.WriteString(s.password)
 		b.WriteString("@")
 	}
-	b.WriteString(endpoint)
-	if df.DBName != "" {
+	b.WriteString(s.endpoint)
+	if s.dbName != "" {
 		b.WriteString("/")
-		b.WriteString(df.DBName)
+		b.WriteString(s.dbName)
 	}
-	if df.Params != "" {
+	if s.params != "" {
 		b.WriteString("?")
-		b.WriteString(df.Params)
+		b.WriteString(s.params)
 	}
 	return b.String()
+}
+
+func (_ *sqliteDSNFormatter) Driver() string {
+	return sqliteDriver
+}
+
+func (s *sqliteDSNFormatter) Endpoint() string {
+	return s.endpoint
+}
+
+func (s *sqliteDSNFormatter) Username() string {
+	return s.username
+}
+
+func (s *sqliteDSNFormatter) SetPassword(pw string) {
+	s.password = pw
+}
+
+func (s *sqliteDSNFormatter) Clone() dsnFormatter {
+	c := *s
+	return &c
+}
+
+type mysqlDSNFormatter struct {
+	cfg *gomysql.Config
+}
+
+func newMysqlDSNFormatter(ac *AdvancedConfig) (*mysqlDSNFormatter, error) {
+	cfg := gomysql.NewConfig()
+	cfg.User = ac.Username
+	cfg.Passwd = ac.Password
+	cfg.Net = "tcp"
+	cfg.Addr = ac.Endpoint
+	cfg.DBName = ac.DBName
+	if ac.Params != "" {
+		pcfg, err := gomysql.ParseDSN("/_?" + ac.Params)
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("Params are invalid mysql connection params: %s", err)
+		}
+		cfg.Params = pcfg.Params
+	} else {
+		cfg.Params = make(map[string]string, 0)
+	}
+	return &mysqlDSNFormatter{cfg: cfg}, nil
+}
+
+func (m *mysqlDSNFormatter) AddParam(key, val string) {
+	if m.cfg.Params[key] != "" {
+		m.cfg.Params[key] += ","
+	}
+	m.cfg.Params[key] += val
+}
+
+func (m *mysqlDSNFormatter) String() string {
+	return m.cfg.FormatDSN()
+}
+
+func (_ *mysqlDSNFormatter) Driver() string {
+	return mysqlDriver
+}
+
+func (m *mysqlDSNFormatter) Endpoint() string {
+	return m.cfg.Addr
+}
+
+func (m *mysqlDSNFormatter) Username() string {
+	return m.cfg.User
+}
+
+func (m *mysqlDSNFormatter) SetPassword(pw string) {
+	m.cfg.Passwd = pw
+}
+
+func (m *mysqlDSNFormatter) Clone() dsnFormatter {
+	return &mysqlDSNFormatter{cfg: m.cfg.Clone()}
 }
 
 type DBHandle struct {
@@ -432,23 +533,23 @@ func (fd *fixedDSNDataSource) DSN() (string, error) {
 
 // awsIAMDataSource generates the DSN using short-lived AWS IAM auth tokens.
 type awsIAMDataSource struct {
-	baseDSN *dsnFormatter
+	baseDSN dsnFormatter
 	region  string
 	session *awssession.Session
 }
 
 func (aid *awsIAMDataSource) DriverName() string {
-	return aid.baseDSN.Driver
+	return aid.baseDSN.Driver()
 }
 
 func (aid *awsIAMDataSource) DSN() (string, error) {
 	creds := aid.session.Config.Credentials
-	token, err := rdsutils.BuildAuthToken(aid.baseDSN.Endpoint, aid.region, aid.baseDSN.Username, creds)
+	token, err := rdsutils.BuildAuthToken(aid.baseDSN.Endpoint(), aid.region, aid.baseDSN.Username(), creds)
 	if err != nil {
 		return "", status.UnavailableErrorf("could not obtain AWS IAM auth token: %s", err)
 	}
-	dsn := *aid.baseDSN
-	dsn.Password = token
+	dsn := aid.baseDSN.Clone()
+	dsn.SetPassword(token)
 	return dsn.String(), nil
 }
 
@@ -472,13 +573,9 @@ func loadAWSRDSCACerts(fileResolver fs.FS) (*x509.CertPool, error) {
 func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
 	if *advancedConfig != (AdvancedConfig{}) {
 		ac := advancedConfig
-		dsn := &dsnFormatter{
-			Driver:   ac.Driver,
-			Endpoint: ac.Endpoint,
-			Username: ac.Username,
-			Password: ac.Password,
-			DBName:   ac.DBName,
-			Params:   ac.Params,
+		dsn, err := newDSNFormatter(ac)
+		if err != nil {
+			return nil, err
 		}
 
 		if ac.Endpoint == "" {

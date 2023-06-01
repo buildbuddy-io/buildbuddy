@@ -1,5 +1,5 @@
 import capabilities from "../../../app/capabilities/capabilities";
-import { formatPreviousDateRange, formatDateRange } from "../../../app/format/format";
+import { differenceInCalendarDays, formatDateRange, formatPreviousDateRange } from "../../../app/format/format";
 import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -179,6 +179,12 @@ export function isExecutionMetric(m: stat_filter.Metric): boolean {
 export function formatPreviousDateRangeFromSearchParams(search: URLSearchParams): string {
   const { startDate, endDate } = getDisplayDateRange(search);
   return formatPreviousDateRange(startDate, endDate);
+}
+
+export function getDayCountStringFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  const diff = differenceInCalendarDays(startDate, endDate) + 1;
+  return diff == 1 ? "1 day" : `${diff} days`;
 }
 
 export function formatDateRangeFromSearchParams(search: URLSearchParams): string {

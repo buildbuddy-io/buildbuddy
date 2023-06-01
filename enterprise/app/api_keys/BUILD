@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "api_keys",
     srcs = ["api_keys.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",

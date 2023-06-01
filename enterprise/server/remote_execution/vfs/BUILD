@@ -8,7 +8,12 @@ package(default_visibility = [
 
 go_library(
     name = "vfs",
-    srcs = ["vfs.go"],
+    srcs = [
+        "vfs.go",
+        "vfs_darwin.go",
+        "vfs_linux_amd64.go",
+        "vfs_linux_arm64.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs",
     deps = [
         "//proto:vfs_go_proto",

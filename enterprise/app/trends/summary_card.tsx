@@ -1,5 +1,5 @@
 import React from "react";
-import { List, Cloud } from "lucide-react";
+import { Cpu, Hash, Package } from "lucide-react";
 
 import * as format from "../../../app/format/format";
 import { stats } from "../../../proto/stats_ts_proto";
@@ -7,6 +7,7 @@ import {
   isAnyNonDateFilterSet,
   formatDateRangeFromSearchParams,
   formatPreviousDateRangeFromSearchParams,
+  getDayCountStringFromSearchParams,
 } from "../filter/filter_util";
 
 interface Props {
@@ -17,7 +18,13 @@ interface Props {
 
 function renderDelta(currentValue: number, previousValue: number): JSX.Element {
   const rawPercentage = (currentValue - previousValue) / previousValue;
+
+  if (Math.abs(Math.round(rawPercentage * 100)) < 1) {
+    return <span className={"trend-change unchanged"}>roughly unchanged</span>;
+  }
+
   const percentClass = rawPercentage > 0 ? "up" : "down";
+
   return (
     <span className={"trend-change " + percentClass}>
       {percentClass} {format.percent(Math.abs(rawPercentage))}%
@@ -45,6 +52,11 @@ export default class TrendsSummaryCard extends React.Component<Props> {
 
   render() {
     const cacheRequestTotal = +this.props.currentPeriod.acCacheHits + +this.props.currentPeriod.acCacheMisses;
+    const cacheHitRate = +this.props.currentPeriod.acCacheHits / cacheRequestTotal;
+    const previousCacheRequestTotal =
+      +(this.props.previousPeriod?.acCacheHits ?? 0) + +(this.props.previousPeriod?.acCacheMisses ?? 0);
+    const previousCacheHitRate = +(this.props.previousPeriod?.acCacheHits ?? 0) / previousCacheRequestTotal;
+    const formattedTimePeriod = getDayCountStringFromSearchParams(this.props.search);
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">
@@ -55,7 +67,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
           <a className="card trend-summary-group" href="#builds">
             <div>
               <div className="trend-headline-stat">
-                <List size="27" className="icon"></List>
+                <Hash size="27" className="icon"></Hash>
                 <span className="trend-headline-text">{format.count(this.props.currentPeriod.numBuilds)} builds</span>
               </div>
               {this.props.previousPeriod &&
@@ -64,25 +76,36 @@ export default class TrendsSummaryCard extends React.Component<Props> {
           </a>
           <a href="#cache" className="card trend-summary-group">
             <div className="trend-headline-stat">
-              <Cloud size="27" className="icon"></Cloud>
+              <Package size="27" className="icon"></Package>
+              <span className="trend-headline-text">{format.percent(cacheHitRate)}% AC hit rate</span>
+            </div>
+            {this.props.previousPeriod && previousCacheRequestTotal > 0 && (
+              <div className="trend-sub-item">
+                {cacheRequestTotal > 0 && (
+                  <span>
+                    That's {renderDelta(cacheHitRate, previousCacheHitRate)} from the previous {formattedTimePeriod},
+                    when your action cache hit rate was <strong>{format.percent(previousCacheHitRate)}%</strong>
+                  </span>
+                )}
+                {"."}
+              </div>
+            )}
+          </a>
+          <a href="#savings" className="card trend-summary-group">
+            <div className="trend-headline-stat">
+              <Cpu size="27" className="icon"></Cpu>
               <span className="trend-headline-text">
-                {format.durationMillis(+this.props.currentPeriod.cpuMicrosSaved / 1000)} CPU saved
+                {format.cpuSavingsSec(+this.props.currentPeriod.cpuMicrosSaved / 1000000)} saved
               </span>
             </div>
             <div className="trend-sub-item">
               <span>
-                That's <strong>{format.durationMillis(+this.props.currentPeriod.cpuMicrosSaved / 8000)}</strong> not
-                waiting for code to compile on an 8-core machine.
+                That's at least{" "}
+                <span className="trend-change up">
+                  {format.durationMillis(+this.props.currentPeriod.cpuMicrosSaved / 8000)}
+                </span>{" "}
+                not waiting for code to compile on an 8-core machine in the last {formattedTimePeriod}.
               </span>
-            </div>
-            <div className="trend-sub-item">
-              {cacheRequestTotal > 0 && (
-                <span>
-                  Your action cache hit rate is{" "}
-                  <strong>{format.percent(+this.props.currentPeriod.acCacheHits / cacheRequestTotal)}%</strong>
-                </span>
-              )}
-              {"."}
             </div>
           </a>
         </div>

@@ -85,6 +85,7 @@
 
 .invocation-targets-card .target-row {
   display: contents;
+  user-select: text;
 }
 
 .invocation-targets-card .target-row > * {

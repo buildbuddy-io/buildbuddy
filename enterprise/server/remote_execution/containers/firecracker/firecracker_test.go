@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -132,10 +131,22 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	fc, err := filecache.NewFileCache(testRootDir, fileCacheSize)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
+
+	// Some tests need iptables which is in /usr/sbin.
+	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	require.NoError(t, err)
+
 	return env
 }
 
 func tempJailerRoot(t *testing.T) string {
+	// When running this test on the bare executor pool, ensure the jailer root
+	// is under /buildbuddy so that it's on the same device as the executor data
+	// dir (with action workspaces and filecache).
+	if testfs.Exists(t, "/buildbuddy", "") {
+		*testExecutorRoot = "/buildbuddy/test-executor-root"
+	}
+
 	if *testExecutorRoot != "" {
 		cleanExecutorRoot(t, *testExecutorRoot)
 		return *testExecutorRoot
@@ -453,10 +464,9 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	// Make sure the container can at least send packets via the default route.
-	defaultRouteIP, err := networking.FindDefaultRouteIP(ctx)
-	require.NoError(t, err, "failed to find default route IP")
-	cmd := &repb.Command{Arguments: []string{"ping", "-c1", defaultRouteIP}}
+	// Make sure the container can send packets to something external of the VM
+	googleDNS := "8.8.8.8"
+	cmd := &repb.Command{Arguments: []string{"ping", "-c1", googleDNS}}
 
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -480,7 +490,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Contains(t, string(res.Stdout), "64 bytes from "+defaultRouteIP)
+	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
 }
 
 func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {

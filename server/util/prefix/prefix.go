@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -19,26 +20,26 @@ func addPrefix(prefix, key string) string {
 }
 
 func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (string, error) {
-	if auth := env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil {
-			if u.GetGroupID() == "" {
-				return "", status.PermissionDeniedErrorf("Attempting to write to cache as a user with no group.")
-			}
-			return addPrefix(u.GetGroupID(), key), nil
-		}
+	auth := env.GetAuthenticator()
+	// Note: authenticator can't be nil, even in the OSS version (we use
+	// NullAuthenticator insteadof nil).
+	u, err := auth.AuthenticatedUser(ctx)
+	if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+		return addPrefix(interfaces.AuthAnonymousUser, key), nil
 	}
-
-	if !env.GetAuthenticator().AnonymousUsageEnabled() {
-		return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	if err != nil {
+		return "", err
 	}
-
-	return addPrefix(interfaces.AuthAnonymousUser, key), nil
+	if u.GetGroupID() == "" {
+		return "", status.PermissionDeniedErrorf("Attempting to write to cache as a user with no group.")
+	}
+	return addPrefix(u.GetGroupID(), key), nil
 }
 
 func AttachUserPrefixToContext(ctx context.Context, env environment.Env) (context.Context, error) {
 	prefix, err := userPrefixCacheKey(ctx, env, "")
-	if err != nil && !env.GetAuthenticator().AnonymousUsageEnabled() {
-		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	if err != nil {
+		return nil, err
 	}
 	return context.WithValue(ctx, userPrefix, prefix), nil
 }

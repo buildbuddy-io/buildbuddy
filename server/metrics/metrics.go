@@ -178,6 +178,9 @@ const (
 
 	// Name of service the health check is running for (Ex "distributed_cache" or "sql_primary").
 	HealthCheckName = "health_check_name"
+
+	/// Container image tag.
+	ContainerImageTag = "container_image_tag"
 )
 
 const (
@@ -2015,6 +2018,45 @@ var (
 	}, []string{
 		PebbleOperation,
 	})
+
+	// Temporary metric to verify AC sampling behavior.
+	PebbleCacheGroupIDSampleCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_groupid_sample_count",
+		Help:      "The number of times a group has been selected for key sampling.",
+	}, []string{
+		GroupID,
+	})
+
+	/// ## Podman metrics
+
+	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "podman",
+		Name:      "soci_store_crash_count",
+		Help:      "Total number of times the soci store binary crashed and was restarted.",
+	})
+
+	PodmanGetSociArtifactsLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "podman",
+		Name:      "get_soci_artifacts_latency_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 100*time.Minute, 10),
+		Help:      "The latency of retrieving SOCI artifacts from the app and storing them locally per image, in microseconds. Note this is slightly different than the latency of the GetArtifacts RPC as the artifacts must be fetched from the cache and stored locally, which adds some additional time.",
+	}, []string{
+		ContainerImageTag,
+	})
+
+	PodmanColdImagePullLatencyMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "podman",
+		Name:      "image_pull_latency_msec",
+		Buckets:   durationMsecBuckets(1*time.Millisecond, 100*time.Minute, 10),
+		Help:      "The latency of 'cold' podman pull requests per image, in milliseconds. 'Cold' means the image hasn't been pulled by this executor previously.",
+	}, []string{
+		ContainerImageTag,
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in
@@ -2032,4 +2074,8 @@ func exponentialBucketRange(min, max, factor float64) []float64 {
 
 func durationUsecBuckets(min, max time.Duration, factor float64) []float64 {
 	return exponentialBucketRange(float64(min.Microseconds()), float64(max.Microseconds()), factor)
+}
+
+func durationMsecBuckets(min, max time.Duration, factor float64) []float64 {
+	return exponentialBucketRange(float64(min.Milliseconds()), float64(max.Milliseconds()), factor)
 }

@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "setup",
     srcs = ["setup.tsx"],
-    strict = True,
     deps = [
         "//app/capabilities",
         "//app/docs:setup_code",
@@ -21,7 +20,6 @@ ts_library(
 ts_library(
     name = "setup_code",
     srcs = ["setup_code.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",

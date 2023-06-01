@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "terminal",
     srcs = ["terminal.tsx"],
-    strict = True,
     deps = [
         "//app/components/input",
         "//app/components/spinner",

@@ -54,6 +54,11 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
   }
 
   private onClickRerun(clean: boolean) {
+    // Buttons isn't clickable in this case; just making strict TS happy.
+    if (!this.props.model.workflowConfigured) {
+      return;
+    }
+
     this.inFlightRpc?.cancel();
 
     this.setState({ isMenuOpen: false, isDialogOpen: false, isLoading: true });

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 	"testing"
 
@@ -20,7 +21,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -67,11 +68,16 @@ func TestIndexExists(t *testing.T) {
 		Hash:      "ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
 		SizeBytes: 99024,
 	}
+	serializedSociIndexResourceName, err := digest.NewResourceName(&sociIndexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
+	require.NoError(t, err)
 
-	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json")
-	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc")
-	writeFileContentsToCache(ctx, t, env, &ztocDigest2, "test_data/ztocs/ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c.ztoc")
-	env.GetBlobstore().WriteBlob(ctx, "soci-index-dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b", []byte("7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea/1225"))
+	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json", rspb.CacheType_CAS)
+	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc", rspb.CacheType_CAS)
+	writeFileContentsToCache(ctx, t, env, &ztocDigest2, "test_data/ztocs/ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c.ztoc", rspb.CacheType_CAS)
+	writeDataToCache(ctx, t, env,
+		getSociIndexKey(t, "sha256:dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b"),
+		[]byte(serializedSociIndexResourceName),
+		rspb.CacheType_AC)
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
 	require.NoError(t, err)
@@ -94,6 +100,7 @@ func TestIndexExists(t *testing.T) {
 		},
 	}
 	assert.True(t, proto.Equal(&expected, actual))
+	assert.Equal(t, 0, r.blobsGot)
 	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest1))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest2))
@@ -123,11 +130,16 @@ func TestIndexPartiallyExists(t *testing.T) {
 		Hash:      "ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
 		SizeBytes: 99024,
 	}
+	serializedSociIndexResourceName, err := digest.NewResourceName(&sociIndexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
+	require.NoError(t, err)
 
-	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json")
-	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc")
+	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json", rspb.CacheType_CAS)
+	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc", rspb.CacheType_CAS)
 	// Don't write the second ztoc (ffc7a...) to the cache.
-	env.GetBlobstore().WriteBlob(ctx, "soci-index-dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b", []byte("7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea/1225"))
+	writeDataToCache(ctx, t, env,
+		getSociIndexKey(t, "sha256:dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b"),
+		[]byte(serializedSociIndexResourceName),
+		rspb.CacheType_AC)
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
 	require.NoError(t, err)
@@ -150,6 +162,7 @@ func TestIndexPartiallyExists(t *testing.T) {
 		},
 	}
 	assert.True(t, proto.Equal(&expected, actual))
+	assert.Equal(t, 2, r.blobsGot)
 	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest1))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest2))
@@ -201,6 +214,16 @@ func TestIndexDoesNotExist(t *testing.T) {
 		},
 	}
 	assert.True(t, proto.Equal(&expected, actual))
+	assert.Equal(t, 2, r.blobsGot)
+	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
+	assert.True(t, cacheContains(ctx, t, env, &ztocDigest1))
+	assert.True(t, cacheContains(ctx, t, env, &ztocDigest2))
+
+	r.blobsGot = 0
+	actual, err = store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
+	require.NoError(t, err)
+	assert.True(t, proto.Equal(&expected, actual))
+	assert.Equal(t, 0, r.blobsGot)
 	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest1))
 	assert.True(t, cacheContains(ctx, t, env, &ztocDigest2))
@@ -256,13 +279,21 @@ func appendLayer(t *testing.T, image v1.Image, filename string) v1.Image {
 	return image
 }
 
-func pushImage(t *testing.T, r containerRegistry, image v1.Image, imageName string) string {
+func pushImage(t *testing.T, r *containerRegistry, image v1.Image, imageName string) string {
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
 	err = remote.Write(ref, image)
 	require.NoError(t, err)
 	return fullImageName
+}
+
+func getSociIndexKey(t *testing.T, imageConfigHash string) *repb.Digest {
+	imageHash, err := v1.NewHash(imageConfigHash)
+	require.NoError(t, err)
+	indexCacheKey, err := sociIndexKey(imageHash)
+	require.NoError(t, err)
+	return indexCacheKey
 }
 
 func cacheContains(ctx context.Context, t *testing.T, env *testenv.TestEnv, d *repb.Digest) bool {
@@ -272,42 +303,63 @@ func cacheContains(ctx context.Context, t *testing.T, env *testenv.TestEnv, d *r
 	return contains
 }
 
-func writeFileContentsToCache(ctx context.Context, t *testing.T, env *testenv.TestEnv, d *repb.Digest, filename string) {
+func writeFileContentsToCache(ctx context.Context, t *testing.T, env *testenv.TestEnv, d *repb.Digest, filename string, cacheType rspb.CacheType) {
 	data, err := ioutil.ReadFile(filename)
 	require.NoError(t, err)
-	resourceName := digest.NewResourceName(d, "" /*=instanceName -- not used */, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	writeDataToCache(ctx, t, env, d, data, cacheType)
+}
+
+func writeDataToCache(ctx context.Context, t *testing.T, env *testenv.TestEnv, d *repb.Digest, data []byte, cacheType rspb.CacheType) {
+	resourceName := digest.NewResourceName(d, "" /*=instanceName -- not used */, cacheType, repb.DigestFunction_SHA256)
 	require.NoError(t, env.GetCache().Set(ctx, resourceName.ToProto(), data))
 }
 
-func setup(t *testing.T) (*testenv.TestEnv, *SociArtifactStore, containerRegistry, context.Context) {
+func setup(t *testing.T) (*testenv.TestEnv, *SociArtifactStore, *containerRegistry, context.Context) {
 	env := testenv.GetTestEnv(t)
 	env.SetDefaultRedisClient(testredis.Start(t).Client())
+	env.SetSingleFlightDeduper(&deduper{})
 	reg := runContainerRegistry(t)
-	err, store := NewSociArtifactStore(env)
+	err, store := newSociArtifactStore(env)
 	require.NoError(t, err)
 	ctx, err := prefix.AttachUserPrefixToContext(context.TODO(), env)
 	require.NoError(t, err)
 	return env, store, reg, ctx
 }
 
-func runContainerRegistry(t *testing.T) containerRegistry {
+func runContainerRegistry(t *testing.T) *containerRegistry {
 	handler := registry.New()
-	r := containerRegistry{
-		host: "localhost",
-		port: testport.FindFree(t),
+	registry := containerRegistry{
+		host:     "localhost",
+		port:     testport.FindFree(t),
+		blobsGot: 0,
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
-	server := &http.Server{Handler: mux}
-	lis, err := net.Listen("tcp", r.Address())
+
+	// Wrap the container registry so we can verify which blobs are fetched.
+	f := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			matches, err := regexp.MatchString("/v2/.*/blobs/sha256:.*", r.URL.Path)
+			require.NoError(t, err)
+			if matches {
+				registry.blobsGot = registry.blobsGot + 1
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+	server := &http.Server{Handler: f}
+	lis, err := net.Listen("tcp", registry.Address())
 	require.NoError(t, err)
 	go func() { _ = server.Serve(lis) }()
-	return r
+	return &registry
 }
 
 type containerRegistry struct {
 	host string
 	port int
+
+	// Number of blobs requested using GET
+	blobsGot int
 }
 
 func (r *containerRegistry) Address() string {
@@ -316,4 +368,13 @@ func (r *containerRegistry) Address() string {
 
 func (r *containerRegistry) ImageAddress(imageName string) string {
 	return fmt.Sprintf("%s:%d/%s", r.host, r.port, imageName)
+}
+
+// A deduper implementation that doesn't do any de-duping as it's not required
+// for this test.
+type deduper struct {
+}
+
+func (d *deduper) Do(_ context.Context, _ string, work func() ([]byte, error)) ([]byte, error) {
+	return work()
 }

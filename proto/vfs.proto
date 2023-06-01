@@ -11,6 +11,7 @@ message Attrs {
   int64 size = 1;
   uint32 perm = 2;
   bool immutable = 3;
+  uint32 nlink = 4;
 }
 
 message SymlinkEntry {
@@ -167,11 +168,47 @@ message SymlinkRequest {
 
 message SymlinkResponse {}
 
+message LinkRequest {
+  string path = 1;
+  string target = 2;
+}
+
+message LinkResponse {
+  Attrs attrs = 1;
+}
+
 message UnlinkRequest {
   string path = 1;
 }
 
 message UnlinkResponse {}
+
+message FileLock {
+  uint64 start = 1;
+  uint64 end = 2;
+  uint32 typ = 3;
+  uint32 pid = 4;
+}
+
+message GetLkRequest {
+  uint64 handle_id = 1;
+  uint64 owner = 2;
+  FileLock file_lock = 3;
+  uint32 flags = 4;
+}
+
+message GetLkResponse {
+  FileLock file_lock = 1;
+}
+
+message SetLkRequest {
+  uint64 handle_id = 1;
+  uint64 owner = 2;
+  FileLock file_lock = 3;
+  uint32 flags = 4;
+}
+
+message SetLkResponse {}
 
 // FileSystem is Virtual File System API that follows the FUSE API.
 // Refer to the FUSE API documentation for details of specific operations.
@@ -203,9 +240,9 @@ service FileSystem {
   // duplicated. Errors from this op are returned to the file system user.
   rpc Flush(FlushRequest) returns (FlushResponse);
 
-  //  Release is called on a file handle when there are no more file descriptor
-  //  references left. Any errors returned here are not visible to the file
-  //  system user.
+  // Release is called on a file handle when there are no more file descriptor
+  // references left. Any errors returned here are not visible to the file
+  // system user.
   rpc Release(ReleaseRequest) returns (ReleaseResponse);
 
   // CopyFileRange copies data between two open file handles on the server which
@@ -217,6 +254,11 @@ service FileSystem {
   rpc Rename(RenameRequest) returns (RenameResponse);
   rpc Mkdir(MkdirRequest) returns (MkdirResponse);
   rpc Rmdir(RmdirRequest) returns (RmdirResponse);
+  rpc Link(LinkRequest) returns (LinkResponse);
   rpc Symlink(SymlinkRequest) returns (SymlinkResponse);
   rpc Unlink(UnlinkRequest) returns (UnlinkResponse);
+
+  rpc GetLk(GetLkRequest) returns (GetLkResponse);
+  rpc SetLk(SetLkRequest) returns (SetLkResponse);
+  rpc SetLkw(SetLkRequest) returns (SetLkResponse);
 }
