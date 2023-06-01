@@ -86,7 +86,7 @@ go_test(
     srcs = ["usage_test.go"],
     args = [
         "--testenv.database_type=postgres",
-        # "--testenv.reuse_server",
+        "--testenv.reuse_server",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
