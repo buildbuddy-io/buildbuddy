@@ -59,6 +59,7 @@ import (
 
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
 var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
+var firecrackerDebugMode = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 
 const (
@@ -368,7 +369,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 			ScratchDiskSizeMb: opts.ScratchDiskSizeMB,
 			EnableNetworking:  opts.EnableNetworking,
 			InitDockerd:       opts.InitDockerd,
-			DebugMode:         opts.DebugMode,
+			DebugMode:         *firecrackerDebugMode,
 		},
 		loader:             loader,
 		jailerRoot:         opts.JailerRoot,

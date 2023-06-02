@@ -42,10 +42,6 @@ type ContainerOpts struct {
 	// They are here primarily for debugging and running
 	// VMs outside of the normal action-execution framework.
 
-	// DebugMode runs init in debugmode and enables stdin/stdout so
-	// that machines can be logged into via the console.
-	DebugMode bool
-
 	// ForceVMIdx forces a machine to use a particular vm index,
 	// allowing for multiple locally-started VMs to avoid using
 	// conflicting network interfaces.
