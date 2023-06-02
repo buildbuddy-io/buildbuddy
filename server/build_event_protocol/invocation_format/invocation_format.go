@@ -48,7 +48,7 @@ func ShortFormatPatterns(patterns []string) string {
 // of tags would be longer than 160 characters, an error is returned.
 func SplitAndTrimAndDedupeTags(tags string, validate bool) ([]*invocation.Invocation_Tag, error) {
 	if len(tags) == 0 {
-		return []*invocation.Invocation_Tag{}, nil
+		return nil, nil
 	}
 	splitTags := strings.Split(tags, ",")
 	totalLength := 0
