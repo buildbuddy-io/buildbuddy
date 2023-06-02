@@ -17,5 +17,6 @@ go_library(
         "//server/util/log",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
