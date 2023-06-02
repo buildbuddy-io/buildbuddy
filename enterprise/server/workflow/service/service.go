@@ -1028,7 +1028,7 @@ func runnerBinaryFile() (*os.File, error) {
 }
 
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
-	k, err := ws.env.GetUserDB().GetAPIKeyForInternalUseOnly(ctx, wf.GroupID)
+	k, err := ws.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, wf.GroupID)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to get API key for workflow")
 	}

@@ -452,11 +452,11 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 }
 
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	tableKeys, err := userDB.GetAPIKeys(ctx, req.GetGroupId())
+	tableKeys, err := authDB.GetAPIKeys(ctx, req.GetGroupId())
 	if err != nil {
 		return nil, err
 	}
@@ -476,11 +476,11 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 }
 
 func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	k, err := userDB.CreateAPIKey(
+	k, err := authDB.CreateAPIKey(
 		ctx, req.GetGroupId(), req.GetLabel(), req.GetCapability(),
 		req.GetVisibleToDevelopers())
 	if err != nil {
@@ -517,8 +517,8 @@ func (s *BuildBuddyServer) authorizeInvocationWrite(ctx context.Context, invocat
 }
 
 func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	tk := &tables.APIKey{
@@ -527,30 +527,30 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 		Capabilities:        capabilities.ToInt(req.GetCapability()),
 		VisibleToDevelopers: req.GetVisibleToDevelopers(),
 	}
-	if err := userDB.UpdateAPIKey(ctx, tk); err != nil {
+	if err := authDB.UpdateAPIKey(ctx, tk); err != nil {
 		return nil, err
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
 }
 
 func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApiKeyRequest) (*akpb.DeleteApiKeyResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if err := userDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
+	if err := authDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
 
 func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil || !userDB.GetUserOwnedKeysEnabled() {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	groupID := req.GetGroupId()
-	tableKeys, err := userDB.GetUserAPIKeys(ctx, groupID)
+	tableKeys, err := authDB.GetUserAPIKeys(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -570,11 +570,11 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 }
 
 func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil || !userDB.GetUserOwnedKeysEnabled() {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	k, err := userDB.CreateUserAPIKey(ctx, req.GetGroupId(), req.GetLabel(), req.GetCapability())
+	k, err := authDB.CreateUserAPIKey(ctx, req.GetGroupId(), req.GetLabel(), req.GetCapability())
 	if err != nil {
 		return nil, err
 	}
@@ -591,8 +591,8 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 }
 
 func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil || !userDB.GetUserOwnedKeysEnabled() {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	updates := &tables.APIKey{
@@ -601,18 +601,18 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 		Capabilities:        capabilities.ToInt(req.GetCapability()),
 		VisibleToDevelopers: req.GetVisibleToDevelopers(),
 	}
-	if err := userDB.UpdateAPIKey(ctx, updates); err != nil {
+	if err := authDB.UpdateAPIKey(ctx, updates); err != nil {
 		return nil, err
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
 }
 
 func (s *BuildBuddyServer) DeleteUserApiKey(ctx context.Context, req *akpb.DeleteApiKeyRequest) (*akpb.DeleteApiKeyResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil || !userDB.GetUserOwnedKeysEnabled() {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if err := userDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
+	if err := authDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
@@ -701,15 +701,15 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	if auth == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 
 	// List user-owned keys first.
 	var userKeys []*tables.APIKey
-	if userDB.GetUserOwnedKeysEnabled() {
-		keys, err := userDB.GetUserAPIKeys(ctx, groupID)
+	if authDB.GetUserOwnedKeysEnabled() {
+		keys, err := authDB.GetUserAPIKeys(ctx, groupID)
 		// PermissionDenied means the Group doesn't have user-owned API keys
 		// enabled; ignore.
 		if err != nil && !status.IsPermissionDeniedError(err) {
@@ -718,7 +718,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 		userKeys = keys
 	}
 	// Then list group-owned keys
-	groupKeys, err := userDB.GetAPIKeys(ctx, groupID)
+	groupKeys, err := authDB.GetAPIKeys(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -1154,11 +1154,11 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	if err != nil {
 		return nil, err
 	}
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	groupKey, err := userDB.GetAPIKeyForInternalUseOnly(ctx, in.GroupID)
+	groupKey, err := authDB.GetAPIKeyForInternalUseOnly(ctx, in.GroupID)
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
 	}
@@ -1168,10 +1168,10 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	// If we couldn't find any group-level keys, look up user-level keys for
 	// the authenticated user. This handles the edge case where an org
 	// *only* has user-level keys.
-	if !userDB.GetUserOwnedKeysEnabled() {
+	if !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.NotFoundErrorf("the organization does not have any API keys configured")
 	}
-	apiKeys, err := userDB.GetUserAPIKeys(ctx, in.GroupID)
+	apiKeys, err := authDB.GetUserAPIKeys(ctx, in.GroupID)
 	if err != nil {
 		return nil, err
 	}

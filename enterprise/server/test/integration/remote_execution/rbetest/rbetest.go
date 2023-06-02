@@ -243,11 +243,11 @@ func NewRBETestEnv(t *testing.T) *Env {
 	ctx := context.Background()
 	ctxUS1, err := auth.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
-	keys, err := testEnv.GetUserDB().GetAPIKeys(ctxUS1, groupID)
+	keys, err := testEnv.GetAuthDB().GetAPIKeys(ctxUS1, groupID)
 	require.NoError(t, err)
 	key := keys[0]
 	key.Capabilities |= int32(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY)
-	err = testEnv.GetUserDB().UpdateAPIKey(ctxUS1, key)
+	err = testEnv.GetAuthDB().UpdateAPIKey(ctxUS1, key)
 	require.NoError(t, err)
 
 	// Note: This root data dir (under which all executors' data is placed) does
@@ -684,6 +684,7 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, envOpts), rbeEnv: r}
 	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
 	env.SetDBHandle(r.testEnv.GetDBHandle())
+	env.SetAuthDB(r.testEnv.GetAuthDB())
 	env.SetUserDB(r.testEnv.GetUserDB())
 	env.SetInvocationDB(r.testEnv.GetInvocationDB())
 
