@@ -42,7 +42,7 @@ func TestSplitAndTrimTags(t *testing.T) {
 		expected      []*inpb.Invocation_Tag
 		expectedError error
 	}{
-		{"", false, makeTagSlice(), nil},
+		{"", false, nil, nil},
 		{",", false, makeTagSlice(), nil},
 		{",  ,,,", false, makeTagSlice(), nil},
 		{"beef", false, makeTagSlice("beef"), nil},
