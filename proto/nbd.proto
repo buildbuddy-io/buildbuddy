@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package nbd;
+
+// Remote block device service.
+//
+// Clients can use this service to read and write blocks from a remote device
+// that serves the underlying block data.
+//
+// Servers are responsible for writing and serving the block data to persistent
+// storage.
+service BlockDevice {
+  // Returns metadata for a device label. The label is a well-known value by
+  // both the client and server that corresponds to a desired device.
+  rpc Metadata(MetadataRequest) returns (MetadataResponse);
+
+  // Reads a block from a device with a given ID.
+  rpc Read(ReadRequest) returns (ReadResponse);
+
+  // Writes a block to a device with a given ID.
+  rpc Write(WriteRequest) returns (WriteResponse);
+}
+
+message DeviceMetadata {
+  // The device ID to be included in IO requests.
+  uint64 device_id = 1;
+
+  // The device label used to identify the device in metadata requests.
+  // Ex: "scratchfs"
+  string label = 2;
+
+  // The size of the block device in bytes.
+  uint64 size_bytes = 3;
+
+  // The filesystem type to be used in mount(2) operations, such as "ext4".
+  string filesystem_type = 4;
+}
+
+message MetadataRequest {
+  // The unique label of the device to fetch metadata for.
+  // Ex: "scratchfs"
+  string label = 1;
+}
+
+message MetadataResponse {
+  // The metadata for the requested device.
+  DeviceMetadata device_metadata = 1;
+}
+
+message ReadRequest {
+  // The ID of the device to read from.
+  uint64 device_id = 1;
+
+  // The offset at which to start reading.
+  uint64 offset = 2;
+
+  // The number of bytes to read.
+  uint64 length = 3;
+}
+
+message ReadResponse {
+  // The stored data with the requested offset and length.
+  bytes data = 1;
+}
+
+message WriteRequest {
+  // The device to read from.
+  uint64 device_id = 1;
+
+  // The offset at which to write the data.
+  uint64 offset = 2;
+
+  // The data to write.
+  bytes data = 3;
+}
+
+message WriteResponse {}
