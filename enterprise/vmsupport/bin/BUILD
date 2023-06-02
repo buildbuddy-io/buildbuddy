@@ -23,7 +23,7 @@ genrule(
 
 genrule(
     name = "vmlinux_copy",
-    srcs = ["@org_kernel_git_linux_kernel-vmlinux-5.4.0//file:downloaded"],
+    srcs = ["@org_kernel_git_linux_kernel-vmlinux//file:downloaded"],
     outs = ["vmlinux"],
     cmd = "cp $(SRCS) $@",
 )
