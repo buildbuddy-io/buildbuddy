@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -95,6 +96,8 @@ func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 func main() {
 	flag.Parse()
 
+	flagutil.SetValueForFlagName("executor.firecracker_debug_mode", true, nil, false)
+
 	rand.Seed(time.Now().Unix())
 
 	env := getToolEnv()
@@ -125,7 +128,6 @@ func main() {
 		MemSizeMB:              2500,
 		ScratchDiskSizeMB:      100,
 		EnableNetworking:       true,
-		DebugMode:              true,
 		ForceVMIdx:             vmIdx,
 		JailerRoot:             "/tmp/remote_build/",
 	}
