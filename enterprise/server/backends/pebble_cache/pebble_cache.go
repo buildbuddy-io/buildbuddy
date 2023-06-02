@@ -1251,9 +1251,10 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 			PartitionId:        partID,
 			GroupId:            groupID,
 		},
-		Digest:     r.GetDigest(),
-		Compressor: r.GetCompressor(),
-		Encryption: encryption,
+		Digest:         r.GetDigest(),
+		Compressor:     r.GetCompressor(),
+		Encryption:     encryption,
+		DigestFunction: r.GetDigestFunction(),
 	}, nil
 }
 
