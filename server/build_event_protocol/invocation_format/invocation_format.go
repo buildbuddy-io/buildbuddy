@@ -65,6 +65,9 @@ func SplitAndTrimAndDedupeTags(tags string, validate bool) ([]*invocation.Invoca
 			out = append(out, &invocation.Invocation_Tag{Name: trimmed})
 		}
 	}
+	if len(out) == 0 {
+		return nil, nil
+	}
 	return out, nil
 }
 

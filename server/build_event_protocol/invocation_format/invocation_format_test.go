@@ -25,6 +25,9 @@ func TestShortFormatPatterns(t *testing.T) {
 }
 
 func makeTagSlice(args ...string) []*inpb.Invocation_Tag {
+	if len(args) == 0 {
+		return nil
+	}
 	out := make([]*inpb.Invocation_Tag, len(args))
 	for i, tag := range args {
 		out[i] = &inpb.Invocation_Tag{Name: tag}
@@ -32,7 +35,7 @@ func makeTagSlice(args ...string) []*inpb.Invocation_Tag {
 	return out
 }
 
-func TestSplitAndTrimTags(t *testing.T) {
+func TestSplitAndTrimAndDedupeTags(t *testing.T) {
 	longTag := "l" + strings.Repeat("o", 158) + "ng"
 	lotsOfWhitespace := strings.Repeat(" ", 255)
 	tooLong := status.InvalidArgumentError("Tag list is too long.")
@@ -42,7 +45,7 @@ func TestSplitAndTrimTags(t *testing.T) {
 		expected      []*inpb.Invocation_Tag
 		expectedError error
 	}{
-		{"", false, nil, nil},
+		{"", false, makeTagSlice(), nil},
 		{",", false, makeTagSlice(), nil},
 		{",  ,,,", false, makeTagSlice(), nil},
 		{"beef", false, makeTagSlice("beef"), nil},
