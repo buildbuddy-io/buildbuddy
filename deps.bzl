@@ -6380,8 +6380,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "org_kernel_git_linux_kernel-vmlinux-5.4.0",
-        sha256 = "fc81fa0933db7977b5e1d4b9ff3a757914b579c7812b63f9cdcabc035c7057e0",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-5.4.0"],
+        name = "org_kernel_git_linux_kernel-vmlinux",
+        sha256 = "57fb3f81d91709c9fe36ba420ca29042eac314f931ade2218daf085b031cf40f",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.4-57fb3f81d91709c9fe36ba420ca29042eac314f931ade2218daf085b031cf40f"],
         executable = True,
     )
