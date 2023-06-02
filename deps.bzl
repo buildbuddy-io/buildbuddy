@@ -323,7 +323,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         # TODO: Remove once https://github.com/bazelbuild/bazelisk/pull/396 is
         # upstreamed
         patch_args = ["-p1"],
-        patches = ["//buildpatches:bazelisk.patch"],
+        patches = ["@{}//buildpatches:bazelisk.patch".format(workspace_name)],
         sum = "h1:dmESc1UeF8iqJTOPxlPw2DH9ykZEMwdlL/jQ+UrW7fY=",
         version = "v1.11.0",
     )
@@ -332,7 +332,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/bazelbuild/buildtools",
         patch_args = ["-p1"],
         patch_tool = "patch --ignore-whitespace",
-        patches = ["//buildpatches:buildifier.patch"],
+        patches = ["@{}//buildpatches:buildifier.patch".format(workspace_name)],
         sum = "h1:DraHsDqTYhf6w1369EEdFyA5hjJnGX88xNJRv1+20E0=",
         version = "v0.0.0-20230111132423-06e8e2436a75",
     )
@@ -5777,7 +5777,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "gorm.io/driver/clickhouse",
         patch_args = ["-p1"],
         patch_tool = "patch",
-        patches = ["//buildpatches:gorm_clickhouse.patch"],
+        patches = ["@{}//buildpatches:gorm_clickhouse.patch".format(workspace_name)],
         sum = "h1:vt7WkXX0u5SeCDyR4w/Jz0ce25/tYqgoP3UUERgMZmY=",
         version = "v0.4.2",
     )
