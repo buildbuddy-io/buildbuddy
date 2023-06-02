@@ -231,6 +231,9 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if (*certFile == "" && *cert == "") || (*keyFile == "" && *key == "") {
 		return nil, status.NotFoundError("No SAML Configured")
 	}
+	if *certFile != "" && *cert != "" {
+		return nil, status.FailedPreconditionError("SAML cert should be specified as a file or directly, but not both")
+	}
 	if *keyFile != "" && *key != "" {
 		return nil, status.FailedPreconditionError("SAML key should be specified as a file or directly, but not both")
 	}
