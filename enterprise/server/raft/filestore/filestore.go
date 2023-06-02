@@ -311,7 +311,7 @@ func (pmk *PebbleKey) parseVersion3(parts [][]byte) error {
 }
 
 func (pmk *PebbleKey) parseVersion4(parts [][]byte) error {
-	digestFunctionString := "0"
+	digestFunctionString := "1"
 
 	switch len(parts) {
 	// CAS artifact
@@ -342,7 +342,8 @@ func (pmk *PebbleKey) parseVersion4(parts [][]byte) error {
 
 	// Parse hash type string back into a digestFunction enum.
 	intDigestFunction, err := strconv.Atoi(digestFunctionString)
-	if err != nil {
+	if err != nil || intDigestFunction == 0 {
+		// It is an error for a v4 key to have a 0 digestFunction value.
 		return parseError(parts)
 	}
 	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
@@ -483,6 +484,10 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 }
 
 func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
+	if r.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
+		return PebbleKey{}, status.FailedPreconditionError("FileRecord did not have a digestFunction set")
+	}
+
 	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
 		return PebbleKey{}, err
