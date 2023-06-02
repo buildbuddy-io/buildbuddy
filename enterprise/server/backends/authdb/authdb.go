@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -145,6 +146,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 		}
 		return nil, err
 	}
+	log.Infof("Group %q successfully authed using write_token", login)
 	return akg, nil
 }
 
