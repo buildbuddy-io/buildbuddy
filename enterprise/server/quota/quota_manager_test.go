@@ -642,7 +642,8 @@ func TestRemoveNamespace(t *testing.T) {
 
 func TestQuotaManagerApplyBucket(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	env.SetAuthDB(authdb.NewAuthDB(env, env.GetDBHandle()))
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	env.SetAuthDB(adb)
 	udb, err := userdb.NewUserDB(env, env.GetDBHandle())
 	require.NoError(t, err)
 	env.SetUserDB(udb)

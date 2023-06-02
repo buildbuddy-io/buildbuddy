@@ -22,6 +22,7 @@ go_library(
         "//server/util/random",
         "//server/util/role",
         "//server/util/status",
+        "@org_golang_x_crypto//chacha20",
     ],
 )
 

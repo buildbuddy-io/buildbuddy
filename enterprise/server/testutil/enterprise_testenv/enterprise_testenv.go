@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type Options struct {
@@ -47,7 +48,9 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 
-	env.SetAuthDB(authdb.NewAuthDB(env, env.GetDBHandle()))
+	db, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+	env.SetAuthDB(db)
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
 	if err != nil {
 		assert.FailNow(t, "could not create user DB", err.Error())
