@@ -203,12 +203,11 @@ func TestRPCMalformedWrite(t *testing.T) {
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a malformed upload (incorrect digest) is rejected.
-	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	instanceNameDigest, buf := testdigest.RandomCASResourceBuf(t, 1000)
 	buf[0] = ^buf[0] // flip bits in byte to corrupt digest.
 
 	readSeeker := bytes.NewReader(buf)
-	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	_, err := cachetools.UploadFromReader(ctx, bsClient, digest.ResourceNameFromProto(instanceNameDigest), readSeeker)
 	if !status.IsDataLossError(err) {
 		t.Fatalf("Expected data loss error but got %s", err)
 	}
@@ -221,9 +220,9 @@ func TestRPCTooLongWrite(t *testing.T) {
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a malformed upload (wrong bytesize) is rejected.
-	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-	d.SizeBytes += 1 // increment expected byte count by 1 to trigger mismatch.
-	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	rnProto, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	rnProto.Digest.SizeBytes += 1 // increment expected byte count by 1 to trigger mismatch.
+	instanceNameDigest := digest.ResourceNameFromProto(rnProto)
 
 	readSeeker := bytes.NewReader(buf)
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
