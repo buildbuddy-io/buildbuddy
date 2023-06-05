@@ -838,7 +838,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
-		printCommandLine(ar.reporter, *bazelCommand, args...)
 		// Transparently set the invocation ID from the one we computed ahead of
 		// time. The UI is expecting this invocation ID so that it can render a
 		// BuildBuddy invocation URL for each bazel_command that is executed.
@@ -857,7 +856,25 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
-		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
+		var runErr error
+		isTest := strings.Contains(ar.action.Name, "maggie")
+		if isTest {
+			var buf bytes.Buffer
+			w := io.MultiWriter(ar.reporter, &buf)
+			tokens, err := shlex.Split(bazelCmd)
+			if err != nil {
+				return err
+			}
+
+			printCommandLine(ar.reporter, tokens[0], tokens[1:]...)
+			runErr = runCommand(ctx, tokens[0], tokens[1:], ar.action.Env, "" /*=dir*/, w)
+			output := string(buf.Bytes())
+			log.Warningf("Maggie output: %s", output)
+		} else {
+			printCommandLine(ar.reporter, *bazelCommand, args...)
+			runErr = runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
+		}
+
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
