@@ -611,7 +611,7 @@ func RemoveEmptyMapsFromYAMLMap(m map[string]any) map[string]any {
 	return m
 }
 
-func expandValue(value string) (string, error) {
+func expandStringValue(value string) (string, error) {
 	ctx := context.Background()
 	var expandErr error
 	expandedValue := os.Expand(value, func(s string) string {
@@ -635,46 +635,47 @@ func expandValue(value string) (string, error) {
 	return expandedValue, nil
 }
 
+func expandValue(value any) (any, error) {
+	switch cv := value.(type) {
+	case map[string]any:
+		if err := expandMapValues(cv); err != nil {
+			return nil, err
+		}
+		return value, nil
+	case []any:
+		if err := expandSliceValues(cv); err != nil {
+			return nil, err
+		}
+		return value, nil
+	case string:
+		ev, err := expandStringValue(cv)
+		if err != nil {
+			return nil, err
+		}
+		return ev, nil
+	default:
+		return value, nil
+	}
+}
+
 func expandSliceValues(yamlSlice []any) error {
 	for i, v := range yamlSlice {
-		switch cv := v.(type) {
-		case map[string]any:
-			if err := expandMapValues(cv); err != nil {
-				return err
-			}
-		case []any:
-			if err := expandSliceValues(yamlSlice); err != nil {
-				return err
-			}
-		case string:
-			ev, err := expandValue(cv)
-			if err != nil {
-				return err
-			}
-			yamlSlice[i] = ev
+		ev, err := expandValue(v)
+		if err != nil {
+			return err
 		}
+		yamlSlice[i] = ev
 	}
 	return nil
 }
 
 func expandMapValues(yamlMap map[string]any) error {
 	for k, v := range yamlMap {
-		switch cv := v.(type) {
-		case map[string]any:
-			if err := expandMapValues(cv); err != nil {
-				return err
-			}
-		case []any:
-			if err := expandSliceValues(cv); err != nil {
-				return err
-			}
-		case string:
-			ev, err := expandValue(cv)
-			if err != nil {
-				return err
-			}
-			yamlMap[k] = ev
+		ev, err := expandValue(v)
+		if err != nil {
+			return err
 		}
+		yamlMap[k] = ev
 	}
 	return nil
 }
