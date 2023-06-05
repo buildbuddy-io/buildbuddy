@@ -20,6 +20,14 @@ service BlockDevice {
   rpc Write(WriteRequest) returns (WriteResponse);
 }
 
+// Filesystem format of a particular block device.
+enum FilesystemType {
+  UNKNOWN_FILESYSTEM_TYPE = 0;
+
+  // ext4 filesystem.
+  EXT4_FILESYSTEM_TYPE = 1;
+}
+
 message DeviceMetadata {
   // The human readable name of the device. This is pre-agreed upon by the
   // client and server, and does not have to be globally unique; the same name
@@ -31,8 +39,8 @@ message DeviceMetadata {
   // The size of the block device in bytes.
   int64 size_bytes = 2;
 
-  // The filesystem type to be used in mount(2) operations, such as "ext4".
-  string filesystem_type = 3;
+  // The filesystem type to be used in mount(2) operations.
+  FilesystemType filesystem_type = 3;
 }
 
 message MetadataRequest {
