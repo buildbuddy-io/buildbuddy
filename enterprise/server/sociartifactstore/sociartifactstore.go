@@ -47,7 +47,7 @@ import (
 
 var (
 	layerStorage       = flag.String("soci_artifact_store.layer_storage", "/tmp/", "Directory in which to store pulled container image layers for indexing by soci artifact store.")
-	sociIndexCacheSeed = flag.String("soci_artifact_store.cache_seed", "socicache-05262023", "If set, this seed is hashed with container image IDs to generate cache keys storing soci indexes.")
+	sociIndexCacheSeed = flag.String("soci_artifact_store.cache_seed", "socicache-06052023", "If set, this seed is hashed with container image IDs to generate cache keys storing soci indexes.")
 )
 
 const (
