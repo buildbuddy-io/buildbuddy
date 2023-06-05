@@ -4,10 +4,18 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Tue, 30 May 2023 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Mon, 05 Jun 2023 11:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Providing Control Over Cache Encryption]]></title>
+            <link>https://www.buildbuddy.io/blog/customer-managed-encryption-keys</link>
+            <guid>https://www.buildbuddy.io/blog/customer-managed-encryption-keys</guid>
+            <pubDate>Mon, 05 Jun 2023 11:00:00 GMT</pubDate>
+            <description><![CDATA[We are announcing a feature that allows customers to control how their data is encrypted in in our cache.]]></description>
+            <category>product security encryption enterprise</category>
+        </item>
         <item>
             <title><![CDATA[Buck2 Unboxing]]></title>
             <link>https://www.buildbuddy.io/blog/buck2-review</link>
