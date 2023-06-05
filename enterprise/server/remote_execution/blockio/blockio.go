@@ -45,7 +45,12 @@ type Mmap struct {
 	data []byte
 }
 
-func NewMmap(f *os.File) (*Mmap, error) {
+// NewMmap returns an Mmap for an existing file.
+func NewMmap(path string) (*Mmap, error) {
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
 	s, err := f.Stat()
 	if err != nil {
 		return nil, err
