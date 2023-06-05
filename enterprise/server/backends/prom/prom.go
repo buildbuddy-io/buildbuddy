@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -26,63 +25,35 @@ type promQuerier struct {
 	api promapi.API
 }
 
-func newQuerier() (*promQuerier, error) {
-	if len(*address) == 0 {
-		return nil, nil
-	}
-	c, err := api.NewClient(api.Config{
-		Address: *address,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &promQuerier{
-		api: promapi.NewAPI(c),
-	}, nil
-}
-
 type bbMetricsCollector struct {
 	env             environment.Env
 	groupID         string
 	InvocationCount *prometheus.Desc
 }
 
-type metricsGroupRegistryManager struct {
-	env               environment.Env
-	registryByGroupID sync.Map // groupID -> registry
-}
-
-func newMetricsGroupRegistry(env environment.Env) *metricsGroupRegistryManager {
-	return &metricsGroupRegistryManager{
-		env:               env,
-		registryByGroupID: sync.Map{},
-	}
-}
-
 func Register(env environment.Env) error {
-	q, err := newQuerier()
+	if len(*address) == 0 {
+		return nil
+	}
+	c, err := api.NewClient(api.Config{
+		Address: *address,
+	})
 	if err != nil {
 		return status.InternalErrorf("failed to configure prom querier: %s", err)
 	}
+	q := &promQuerier{
+		api: promapi.NewAPI(c),
+	}
 	env.SetPromQuerier(q)
-
-	m := newMetricsGroupRegistry(env)
-	env.SetMetricsGroupRegistries(m)
 	return nil
 }
 
-func (m *metricsGroupRegistryManager) GetOrCreateRegistry(groupID string) (*prometheus.Registry, error) {
-	rInterface, loaded := m.registryByGroupID.LoadOrStore(groupID, prometheus.NewRegistry())
-	reg, ok := rInterface.(*prometheus.Registry)
-	if !ok {
-		log.Errorf("unable to read prometheus registry for group ID %q", groupID)
-	}
-	if !loaded {
-		err := reg.Register(newCollector(m.env, groupID))
-		if err != nil {
-			log.Errorf("unable to register prometheus registry for group ID %q:%s", groupID, err)
-			return nil, err
-		}
+func NewRegistry(env environment.Env, groupID string) (*prometheus.Registry, error) {
+	reg := prometheus.NewRegistry()
+	err := reg.Register(newCollector(env, groupID))
+	if err != nil {
+		log.Errorf("unable to register prometheus registry for group ID %q:%s", groupID, err)
+		return nil, err
 	}
 	return reg, nil
 }

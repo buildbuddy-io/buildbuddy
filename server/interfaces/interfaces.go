@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
@@ -1129,10 +1128,6 @@ type Crypter interface {
 // singleflight package.
 type SingleFlightDeduper interface {
 	Do(ctx context.Context, key string, work func() ([]byte, error)) ([]byte, error)
-}
-
-type MetricsGroupRegisteries interface {
-	GetOrCreateRegistry(groupID string) (*prometheus.Registry, error)
 }
 
 type PromQuerier interface {

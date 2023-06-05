@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
@@ -483,17 +484,18 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	// query prometheus
-	regs := s.env.GetMetricsGroupRegistries()
-	if regs == nil {
-		http.Error(w, "API not enabled", http.StatusNotImplemented)
-		return
-	}
-	reg, err := regs.GetOrCreateRegistry(userInfo.GetGroupID())
+	reg, err := prom.NewRegistry(s.env, userInfo.GetGroupID())
 	if err != nil {
 		http.Error(w, "unable to get registry", http.StatusInternalServerError)
 		return
 	}
-	handler := promhttp.HandlerFor(reg, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError, Registry: reg})
+	opts := promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+		Registry:      reg,
+		// Gzip is handlered by intercepters already.
+		DisableCompression: true,
+	}
+	handler := promhttp.HandlerFor(reg, opts)
 	handler.ServeHTTP(w, r)
 }
 

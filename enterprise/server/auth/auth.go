@@ -88,6 +88,11 @@ const (
 	authorityHeader          = ":authority"
 	basicAuthHeader          = "authorization"
 
+	// The key is stored in HTTP Authroization header as follows:
+	// Authorization: x-buildbuddy-api-key <api-key>
+	authorizationHeader = "Authorization"
+	authScheme          = "x-buildbuddy-api-key"
+
 	// The key that the current access token expiration time is stored under in the context.
 	contextTokenExpiryKey = "auth.tokenExpiry"
 
@@ -974,6 +979,12 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*Claims, *userToken, error) {
 	ctx := r.Context()
 	if apiKey := r.Header.Get(APIKeyHeader); apiKey != "" {
+		claims, err := a.claimsFromAPIKey(ctx, apiKey)
+		return claims, nil, err
+	}
+
+	if authHeader := r.Header.Get(authorizationHeader); authHeader != "" {
+		apiKey := strings.TrimPrefix(authHeader, authScheme+" ")
 		claims, err := a.claimsFromAPIKey(ctx, apiKey)
 		return claims, nil, err
 	}
