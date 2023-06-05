@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package nbd;
+
+// Remote block device service.
+//
+// Clients can use this service to read and write blocks from a remote device
+// that serves the underlying block data.
+//
+// Servers are responsible for writing and serving the block data to persistent
+// storage.
+service BlockDevice {
+  // Returns metadata for a device.
+  rpc Metadata(MetadataRequest) returns (MetadataResponse);
+
+  // Reads a block from a device with a given ID.
+  rpc Read(ReadRequest) returns (ReadResponse);
+
+  // Writes a block to a device with a given ID.
+  rpc Write(WriteRequest) returns (WriteResponse);
+}
+
+// Filesystem format of a particular block device.
+enum FilesystemType {
+  UNKNOWN_FILESYSTEM_TYPE = 0;
+
+  // ext4 filesystem.
+  EXT4_FILESYSTEM_TYPE = 1;
+}
+
+message DeviceMetadata {
+  // The human readable name of the device. This is pre-agreed upon by the
+  // client and server, and does not have to be globally unique; the same name
+  // can refer to different underlying storage instances depending on the
+  // client/server identity.
+  // Ex: "workspacefs".
+  string name = 1;
+
+  // The size of the block device in bytes.
+  int64 size_bytes = 2;
+
+  // The filesystem type to be used in mount(2) operations.
+  FilesystemType filesystem_type = 3;
+}
+
+message MetadataRequest {
+  // The name of the device to fetch metadata for.
+  // Ex: "scratchfs"
+  string name = 1;
+}
+
+message MetadataResponse {
+  // The metadata for the requested device.
+  DeviceMetadata device_metadata = 1;
+}
+
+message ReadRequest {
+  // The name of the device to read from.
+  string name = 1;
+
+  // The offset at which to start reading.
+  int64 offset = 2;
+
+  // The number of bytes to read.
+  int64 length = 3;
+}
+
+message ReadResponse {
+  // The stored data with the requested offset and length.
+  bytes data = 1;
+}
+
+message WriteRequest {
+  // The name of the device to read from.
+  string name = 1;
+
+  // The offset at which to write the data.
+  int64 offset = 2;
+
+  // The data to write.
+  bytes data = 3;
+}
+
+message WriteResponse {}
