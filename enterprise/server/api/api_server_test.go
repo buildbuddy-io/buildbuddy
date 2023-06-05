@@ -250,11 +250,7 @@ func TestDeleteFile_CAS(t *testing.T) {
 	s := NewAPIServer(env)
 
 	// Save file
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	if err := s.env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +258,7 @@ func TestDeleteFile_CAS(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
-	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+	casURI := fmt.Sprintf("blobs/%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -284,11 +280,7 @@ func TestDeleteFile_AC(t *testing.T) {
 	s := NewAPIServer(env)
 
 	// Save file
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_AC,
-	}
+	r, buf := testdigest.RandomACResourceBuf(t, 100)
 	if err = env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +288,7 @@ func TestDeleteFile_AC(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
-	acURI := fmt.Sprintf("blobs/ac/%s/%d", d.GetHash(), d.GetSizeBytes())
+	acURI := fmt.Sprintf("blobs/ac/%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -319,12 +311,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 
 	// Save file
 	remoteInstanceName := "remote/instance"
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &rspb.ResourceName{
-		Digest:       d,
-		CacheType:    rspb.CacheType_AC,
-		InstanceName: remoteInstanceName,
-	}
+	r, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_AC, remoteInstanceName)
 	if err = env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +319,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
-	acURI := fmt.Sprintf("%s/blobs/ac/%s/%d", remoteInstanceName, d.GetHash(), d.GetSizeBytes())
+	acURI := fmt.Sprintf("%s/blobs/ac/%s/%d", remoteInstanceName, r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -353,13 +340,8 @@ func TestDeleteFile_NonExistentFile(t *testing.T) {
 	s := NewAPIServer(env)
 
 	// Do not write data to the cache
-	d, _ := testdigest.NewRandomDigestBuf(t, 100)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
-
-	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	casURI := fmt.Sprintf("blobs/%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -381,11 +363,7 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 	s := NewAPIServer(env)
 
 	// Save file
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	if err = s.env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +371,7 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
-	acURI := fmt.Sprintf("/blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+	acURI := fmt.Sprintf("/blobs/%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -419,9 +397,8 @@ func TestDeleteFile_InvalidAuth(t *testing.T) {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
 
 	s := NewAPIServer(env)
-	d, _ := testdigest.NewRandomDigestBuf(t, 100)
-
-	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	casURI := fmt.Sprintf("blobs/%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
@@ -437,9 +414,8 @@ func TestDeleteFile_InvalidURI(t *testing.T) {
 	}
 
 	s := NewAPIServer(env)
-	d, _ := testdigest.NewRandomDigestBuf(t, 100)
-
-	uriNonParsableFormat := fmt.Sprintf("non-valid-blob-type/%s/%d", d.GetHash(), d.GetSizeBytes())
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	uriNonParsableFormat := fmt.Sprintf("non-valid-blob-type/%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: uriNonParsableFormat})
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err))

@@ -19,6 +19,7 @@ go_test(
     tags = ["manual"],  # This won't work on mac.
     deps = [
         ":ext4",
+        "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",
         "//server/testutil/testfs",
