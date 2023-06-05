@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
@@ -295,43 +294,34 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 		// Update the usage row, but only if collection period data has not already
 		// been written (for example, if the previous flush failed to delete the
 		// data from Redis).
-		return tx.Model(&tables.Usage{}).Where(`
-			group_id = ?
-			AND period_start_usec = ?
-			AND region = ?
-			AND final_before_usec <= ?
+		return tx.Exec(`
+			UPDATE "Usages"
+			SET
+				final_before_usec = ?,
+				invocations = invocations + ?,
+				cas_cache_hits = cas_cache_hits + ?,
+				action_cache_hits = action_cache_hits + ?,
+				total_download_size_bytes = total_download_size_bytes + ?,
+				linux_execution_duration_usec = linux_execution_duration_usec + ?,
+				mac_execution_duration_usec = mac_execution_duration_usec + ?
+			WHERE
+				group_id = ?
+				AND period_start_usec = ?
+				AND region = ?
+				AND final_before_usec <= ?
 		`,
+			c.End().UnixMicro(),
+			tu.Invocations,
+			tu.CASCacheHits,
+			tu.ActionCacheHits,
+			tu.TotalDownloadSizeBytes,
+			tu.LinuxExecutionDurationUsec,
+			tu.MacExecutionDurationUsec,
 			tu.GroupID,
 			tu.PeriodStartUsec,
 			tu.Region,
 			c.Start().UnixMicro(),
-		).Updates(map[string]interface{}{
-			"final_before_usec": tu.FinalBeforeUsec,
-			"invocations": gorm.Expr(
-				`invocations + ?`,
-				tu.Invocations,
-			),
-			"cas_cache_hits": gorm.Expr(
-				`cas_cache_hits + ?`,
-				tu.CASCacheHits,
-			),
-			"action_cache_hits": gorm.Expr(
-				`action_cache_hits + ?`,
-				tu.ActionCacheHits,
-			),
-			"total_download_size_bytes": gorm.Expr(
-				`total_download_size_bytes + ?`,
-				tu.TotalDownloadSizeBytes,
-			),
-			"linux_execution_duration_usec": gorm.Expr(
-				`linux_execution_duration_usec + ?`,
-				tu.LinuxExecutionDurationUsec,
-			),
-			"mac_execution_duration_usec": gorm.Expr(
-				`mac_execution_duration_usec + ?`,
-				tu.MacExecutionDurationUsec,
-			),
-		}).Error
+		).Error
 	})
 }
 
