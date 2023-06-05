@@ -174,11 +174,8 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	testSize := int64(10000000)
-	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
-	rn := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
+	readSeeker := bytes.NewReader(buf)
 
 	// Remote-write the random bytes to the cache (with a prefix).
 	wc, err := c.RemoteWriter(ctx, peer, noHandoff, rn)
@@ -189,7 +186,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if writeCounts[d.GetHash()] != 1 {
+	if writeCounts[rn.GetDigest().GetHash()] != 1 {
 		t.Fatalf("Snitch cache was not written to. It should have been.")
 	}
 
@@ -203,7 +200,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if writeCounts[d.GetHash()] != 1 {
+	if writeCounts[rn.GetDigest().GetHash()] != 1 {
 		t.Fatalf("Snitch cache was written to, but digest already existed.")
 	}
 }
@@ -229,11 +226,8 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	testSize := int64(10000000)
-	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
-	rn := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_AC,
-	}
+	rn, buf := testdigest.RandomACResourceBuf(t, testSize)
+	readSeeker := bytes.NewReader(buf)
 
 	// Remote-write the random bytes to the cache (with a prefix).
 	wc, err := c.RemoteWriter(ctx, peer, noHandoff, rn)
@@ -244,7 +238,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if writeCounts[d.GetHash()] != 1 {
+	if writeCounts[rn.GetDigest().GetHash()] != 1 {
 		t.Fatalf("Snitch cache was not written to. It should have been.")
 	}
 
@@ -258,7 +252,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if writeCounts[d.GetHash()] != 2 {
+	if writeCounts[rn.GetDigest().GetHash()] != 2 {
 		t.Fatalf("Snitch cache should have been written to twice.")
 	}
 }
@@ -337,11 +331,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	size := int64(10)
-	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	r, buf := testdigest.RandomCASResourceBuf(t, size)
 	err = te.GetCache().Set(ctx, r, buf)
 	require.NoError(t, err)
 
@@ -441,11 +431,8 @@ func TestWriteAlreadyExists(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	testSize := int64(10000000)
-	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
-	rn := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
+	readSeeker := bytes.NewReader(buf)
 
 	// Remote-write the random bytes to the cache (with a prefix).
 	wc, err := c.RemoteWriter(ctx, peer, noHandoff, rn)
@@ -456,7 +443,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if writeCounts[d.GetHash()] != 1 {
+	if writeCounts[rn.GetDigest().GetHash()] != 1 {
 		t.Fatalf("Snitch cache was not written to. It should have been.")
 	}
 
@@ -470,7 +457,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if writeCounts[d.GetHash()] != 1 {
+	if writeCounts[rn.GetDigest().GetHash()] != 1 {
 		t.Fatalf("Snitch cache was written to, but digest already existed.")
 	}
 }
@@ -521,11 +508,9 @@ func TestReadWrite_Compressed(t *testing.T) {
 		waitUntilServerIsAlive(peer)
 
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		writeRN := &rspb.ResourceName{
-			Digest:     d,
-			CacheType:  rspb.CacheType_CAS,
-			Compressor: tc.writeCompression,
-		}
+		resourceName := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		resourceName.SetCompressor(tc.writeCompression)
+		writeRN := resourceName.ToProto()
 		compressedBuf := compression.CompressZstd(nil, buf)
 
 		wc, err := c.RemoteWriter(ctx, peer, noHandoff, writeRN)
@@ -768,14 +753,9 @@ func TestFindMissing(t *testing.T) {
 		var missingResources []*rspb.ResourceName
 		var missingDigests []*repb.Digest
 		for i := 0; i < tc.numMissingDigests; i++ {
-			d, _ := testdigest.NewRandomDigestBuf(t, 1000)
-			r := &rspb.ResourceName{
-				Digest:       d,
-				CacheType:    rspb.CacheType_CAS,
-				InstanceName: remoteInstanceName,
-			}
+			r, _ := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, remoteInstanceName)
 			missingResources = append(missingResources, r)
-			missingDigests = append(missingDigests, d)
+			missingDigests = append(missingDigests, r.GetDigest())
 		}
 
 		remoteMissing, err := c.RemoteFindMissing(ctx, peer, isolation, append(existingDigests, missingResources...))
@@ -907,15 +887,8 @@ func TestDelete(t *testing.T) {
 	}
 	waitUntilServerIsAlive(peer)
 
-	remoteInstanceName := "remote/instance"
-
 	// Write to the cache (with a prefix)
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &rspb.ResourceName{
-		Digest:       d,
-		CacheType:    rspb.CacheType_CAS,
-		InstanceName: remoteInstanceName,
-	}
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = te.GetCache().Set(ctx, r, buf)
 	if err != nil {
 		t.Fatal(err)
@@ -949,19 +922,9 @@ func TestMetadata(t *testing.T) {
 	}
 	waitUntilServerIsAlive(peer)
 
-	remoteInstanceName := "remote/instance"
-	isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
-
+	isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS}
 	// Write to the cache
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	r := &rspb.ResourceName{
-		Digest:       d,
-		CacheType:    rspb.CacheType_CAS,
-		InstanceName: remoteInstanceName,
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = te.GetCache().Set(ctx, r, buf)
 	if err != nil {
 		t.Fatal(err)
@@ -971,8 +934,8 @@ func TestMetadata(t *testing.T) {
 	cacheproxyMetadata, err := c.Metadata(ctx, &dcpb.MetadataRequest{
 		Isolation: isolation,
 		Key: &dcpb.Key{
-			Key:       d.GetHash(),
-			SizeBytes: d.GetSizeBytes(),
+			Key:       r.GetDigest().GetHash(),
+			SizeBytes: r.GetDigest().GetSizeBytes(),
 		},
 		Resource: r,
 	})

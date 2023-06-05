@@ -1222,7 +1222,8 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	var inputRootDigest *repb.Digest
 	if opts.SimulateMissingDigest {
 		// Generate a digest, but don't upload it.
-		inputRootDigest, _ = testdigest.NewRandomDigestBuf(r.t, 1234)
+		rn, _ := testdigest.RandomCASResourceBuf(r.t, 1234)
+		inputRootDigest = rn.GetDigest()
 	} else {
 		if opts.InputRootDir != "" {
 			inputRootDigest = r.uploadInputRoot(ctx, opts.InputRootDir)

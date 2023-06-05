@@ -94,16 +94,9 @@ func TestIsolation(t *testing.T) {
 
 	for _, test := range tests {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r1 := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    test.cacheType1,
-			InstanceName: test.instanceName1,
-		}
-		r2 := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    test.cacheType2,
-			InstanceName: test.instanceName2,
-		}
+		r1 := digest.NewResourceName(d, test.instanceName1, test.cacheType1, repb.DigestFunction_SHA256).ToProto()
+		r2 := digest.NewResourceName(d, test.instanceName2, test.cacheType2, repb.DigestFunction_SHA256).ToProto()
+
 		// Set() the bytes in cache1.
 		err := mc.Set(ctx, r1, buf)
 		if err != nil {
@@ -148,35 +141,32 @@ func TestGetSet(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
-		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r, buf := testdigest.RandomCASResourceBuf(t, testSize)
+
 		// Set() the bytes in the cache.
 		err := mc.Set(ctx, r, buf)
 		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
 		rbuf, err := mc.Get(ctx, r)
 		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error getting %q from cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		if r.GetDigest().GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
 	}
 }
 
-func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
-	m := make(map[*repb.Digest][]byte)
+func randomResources(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte {
+	m := make(map[*rspb.ResourceName][]byte)
 	for _, size := range sizes {
-		d, buf := testdigest.NewRandomDigestBuf(t, size)
-		m[d] = buf
+		r, buf := testdigest.RandomCASResourceBuf(t, size)
+		m[r] = buf
 	}
 	return m
 }
@@ -188,30 +178,29 @@ func TestMultiGetSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := getAnonContext(t)
-	digests := randomDigests(t, 10, 20, 11, 30, 40)
-	rns := digest.ResourceNameMap(rspb.CacheType_CAS, "", digests)
-	if err := mc.SetMulti(ctx, rns); err != nil {
+	rnBufs := randomResources(t, 10, 20, 11, 30, 40)
+	if err := mc.SetMulti(ctx, rnBufs); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
-	digestKeys := make([]*rspb.ResourceName, 0, len(digests))
-	for d := range rns {
-		digestKeys = append(digestKeys, d)
+	keys := make([]*rspb.ResourceName, 0, len(rnBufs))
+	for rn := range rnBufs {
+		keys = append(keys, rn)
 	}
-	m, err := mc.GetMulti(ctx, digestKeys)
+	m, err := mc.GetMulti(ctx, keys)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
-	for d := range digests {
-		rbuf, ok := m[d]
+	for rn := range rnBufs {
+		rbuf, ok := m[rn.GetDigest()]
 		if !ok {
-			t.Fatalf("Multi-get failed to return expected digest: %q", d.GetHash())
+			t.Fatalf("Multi-get failed to return expected digest: %q", rn.GetDigest().GetHash())
 		}
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match multi-set value: %q", d2.GetHash(), d.GetHash())
+		if rn.GetDigest().GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match multi-set value: %q", d2.GetHash(), rn.GetDigest().GetHash())
 		}
 	}
 }
@@ -227,15 +216,13 @@ func TestReadWrite(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
-		d, r := testdigest.NewRandomDigestReader(t, testSize)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
+		r := bytes.NewReader(buf)
+
 		// Use Writer() to set the bytes in the cache.
 		wc, err := mc.Writer(ctx, rn)
 		if err != nil {
-			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error getting %q writer: %s", rn.GetDigest().GetHash(), err.Error())
 		}
 		if _, err := io.Copy(wc, r); err != nil {
 			t.Fatalf("Error copying bytes to cache: %s", err.Error())
@@ -249,11 +236,11 @@ func TestReadWrite(t *testing.T) {
 		// Use Reader() to get the bytes from the cache.
 		reader, err := mc.Reader(ctx, rn, 0, 0)
 		if err != nil {
-			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error getting %q reader: %s", rn.GetDigest().GetHash(), err.Error())
 		}
 		d2 := testdigest.ReadDigestAndClose(t, reader)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		if rn.GetDigest().GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), rn.GetDigest().GetHash())
 		}
 	}
 }
@@ -264,11 +251,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	ctx := getAnonContext(t)
 	size := int64(10)
-	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	r, buf := testdigest.RandomCASResourceBuf(t, size)
 	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
@@ -290,17 +273,13 @@ func TestSizeLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := getAnonContext(t)
-	digestBufs := randomDigests(t, 400, 400, 400)
-	digestKeys := make([]*rspb.ResourceName, 0, len(digestBufs))
-	for d, buf := range digestBufs {
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
+	rnBufs := randomResources(t, 400, 400, 400)
+	digestKeys := make([]*rspb.ResourceName, 0, len(rnBufs))
+	for rn, buf := range rnBufs {
+		if err := mc.Set(ctx, rn, buf); err != nil {
+			t.Fatalf("Error setting %q in cache: %s", rn.GetDigest().GetHash(), err.Error())
 		}
-		if err := mc.Set(ctx, r, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
-		digestKeys = append(digestKeys, r)
+		digestKeys = append(digestKeys, rn)
 	}
 	// Expect the last *2* digests to be present.
 	// The first digest should have been evicted.
@@ -330,17 +309,13 @@ func TestLRU(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := getAnonContext(t)
-	digestBufs := randomDigests(t, 400, 400)
-	digestKeys := make([]*rspb.ResourceName, 0, len(digestBufs))
-	for d, buf := range digestBufs {
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
+	rnBufs := randomResources(t, 400, 400)
+	digestKeys := make([]*rspb.ResourceName, 0, len(rnBufs))
+	for rn, buf := range rnBufs {
+		if err := mc.Set(ctx, rn, buf); err != nil {
+			t.Fatalf("Error setting %q in cache: %s", rn.GetDigest().GetHash(), err.Error())
 		}
-		if err := mc.Set(ctx, r, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
-		digestKeys = append(digestKeys, r)
+		digestKeys = append(digestKeys, rn)
 	}
 	// Now "use" the first digest written so it is most recently used.
 	ok, err := mc.Contains(ctx, digestKeys[0])
@@ -352,11 +327,7 @@ func TestLRU(t *testing.T) {
 	}
 	// Now write one more digest, which should evict the oldest digest,
 	// (the second one we wrote).
-	d, buf := testdigest.NewRandomDigestBuf(t, 400)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	r, buf := testdigest.RandomCASResourceBuf(t, 400)
 	if err := mc.Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +349,7 @@ func TestLRU(t *testing.T) {
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 		if r.GetDigest().GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
 	}
 }
