@@ -168,6 +168,28 @@ message Invocation {
 
   // The role played by this invocation. Ex: "CI"
   string role = 19;
+
+  // The git branch that this invocation was for.
+  string branch_name = 20;
+
+  // The invocation's build metadata. Only included if include_metadata = true.
+  repeated InvocationMetadata build_metadata = 21;
+
+  // The invocation's workspace status.
+  // Only included if include_metadata = true.
+  repeated InvocationMetadata workspace_status = 22;
+
+  // Bazel exit code name for the invocation.
+  // At the time of writing, valid exit code names are listed here:
+  // https://github.com/bazelbuild/bazel/blob/b3602eb14cf27494a0a754bc215ec2b94d13d89b/src/main/java/com/google/devtools/build/lib/util/ExitCode.java#L42-L72
+  // Ex: "INTERRUPTED".
+  string bazel_exit_code = 23;
+}
+
+// Key value pair containing invocation metadata.
+message InvocationMetadata {
+  string key = 1;
+  string value = 2;
 }
 ```
 
