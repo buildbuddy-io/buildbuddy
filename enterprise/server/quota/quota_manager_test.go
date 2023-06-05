@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -641,6 +642,7 @@ func TestRemoveNamespace(t *testing.T) {
 
 func TestQuotaManagerApplyBucket(t *testing.T) {
 	env := testenv.GetTestEnv(t)
+	env.SetAuthDB(authdb.NewAuthDB(env, env.GetDBHandle()))
 	udb, err := userdb.NewUserDB(env, env.GetDBHandle())
 	require.NoError(t, err)
 	env.SetUserDB(udb)

@@ -30,6 +30,7 @@ go_test(
     srcs = ["quota_manager_test.go"],
     embed = [":quota"],
     deps = [
+        "//enterprise/server/backends/authdb",
         "//enterprise/server/backends/userdb",
         "//proto:quota_go_proto",
         "//server/environment",
