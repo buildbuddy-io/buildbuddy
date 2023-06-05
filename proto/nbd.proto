@@ -30,7 +30,7 @@ message DeviceMetadata {
   string label = 2;
 
   // The size of the block device in bytes.
-  uint64 size_bytes = 3;
+  int64 size_bytes = 3;
 
   // The filesystem type to be used in mount(2) operations, such as "ext4".
   string filesystem_type = 4;
@@ -52,10 +52,10 @@ message ReadRequest {
   uint64 device_id = 1;
 
   // The offset at which to start reading.
-  uint64 offset = 2;
+  int64 offset = 2;
 
   // The number of bytes to read.
-  uint64 length = 3;
+  int64 length = 3;
 }
 
 message ReadResponse {
@@ -68,7 +68,7 @@ message WriteRequest {
   uint64 device_id = 1;
 
   // The offset at which to write the data.
-  uint64 offset = 2;
+  int64 offset = 2;
 
   // The data to write.
   bytes data = 3;
