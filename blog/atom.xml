@@ -17,7 +17,10 @@
             <name>Vadim Berezniker</name>
             <uri>https://www.linkedin.com/in/vadimberezniker/</uri>
         </author>
-        <category label="product security encryption enterprise" term="product security encryption enterprise"/>
+        <category label="product" term="product"/>
+        <category label="security" term="security"/>
+        <category label="encryption" term="encryption"/>
+        <category label="enterprise" term="enterprise"/>
     </entry>
     <entry>
         <title type="html"><![CDATA[Buck2 Unboxing]]></title>

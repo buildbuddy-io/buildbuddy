@@ -14,7 +14,10 @@
             <guid>https://www.buildbuddy.io/blog/customer-managed-encryption-keys</guid>
             <pubDate>Mon, 05 Jun 2023 11:00:00 GMT</pubDate>
             <description><![CDATA[We are announcing a feature that allows customers to control how their data is encrypted in in our cache.]]></description>
-            <category>product security encryption enterprise</category>
+            <category>product</category>
+            <category>security</category>
+            <category>encryption</category>
+            <category>enterprise</category>
         </item>
         <item>
             <title><![CDATA[Buck2 Unboxing]]></title>
