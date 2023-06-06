@@ -31,7 +31,7 @@ const (
 var (
 	// Flag names to ignore when generating a YAML map or populating flags
 	// (e.g. the flag specifying the path to the config file)
-	ignoreSet = make(map[string]struct{})
+	IgnoreSet = make(map[string]struct{})
 
 	nilableKinds = map[reflect.Kind]struct{}{
 		reflect.Chan:      {},
@@ -64,14 +64,14 @@ func generateWordWrapRegexByIndentationLevel(targetLineLength, minWrapLength int
 // IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
 // populating flags from YAML input.
 func IgnoreFlagForYAML(name string) {
-	ignoreSet[name] = struct{}{}
+	IgnoreSet[name] = struct{}{}
 }
 
 // IgnoreFilter is a filter that checks flags against IgnoreSet.
 func IgnoreFilter(flg *flag.Flag) bool {
 	keys := strings.Split(flg.Name, ".")
 	for i := range keys {
-		if _, ok := ignoreSet[strings.Join(keys[:i+1], ".")]; ok {
+		if _, ok := IgnoreSet[strings.Join(keys[:i+1], ".")]; ok {
 			return false
 		}
 	}
@@ -836,7 +836,7 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 				}
 			}
 			p := append(prefix, k)
-			if _, ok := ignoreSet[strings.Join(p, ".")]; ok {
+			if _, ok := IgnoreSet[strings.Join(p, ".")]; ok {
 				return nil
 			}
 			if err := populateFlagsFromYAML(v, p, n, setFlags, appendSlice); err != nil {
@@ -846,7 +846,7 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 		return nil
 	}
 	name := strings.Join(prefix, ".")
-	if _, ok := ignoreSet[name]; ok {
+	if _, ok := IgnoreSet[name]; ok {
 		return nil
 	}
 
