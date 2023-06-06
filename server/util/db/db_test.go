@@ -83,7 +83,7 @@ func TestParseDataSource(t *testing.T) {
 	require.Equal(t, "postgresql", ds.DriverName())
 	dsn, err = ds.DSN()
 	require.NoError(t, err)
-	require.Equal(t, "postgres://user:pass@host:9097/db?sslmode=disable", dsn)
+	require.Equal(t, "postgres://user:pass@host:9097/db", dsn)
 
 	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
 		Driver:   "postgresql",
@@ -97,5 +97,5 @@ func TestParseDataSource(t *testing.T) {
 	require.Equal(t, "postgresql", ds.DriverName())
 	dsn, err = ds.DSN()
 	require.NoError(t, err)
-	require.Equal(t, "postgres://user:pass@host:9097/db?foo=bar&sslmode=disable", dsn)
+	require.Equal(t, "postgres://user:pass@host:9097/db?foo=bar", dsn)
 }

@@ -257,7 +257,6 @@ func newPostgresDSNFormatter(ac *AdvancedConfig) (*postgresDSNFormatter, error) 
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Params %s for postgres are not valid: %s", params, err)
 	}
-	params.Add("sslmode", "disable")
 	return &postgresDSNFormatter{
 		host:     host,
 		port:     port,
@@ -668,6 +667,10 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 		dsn, err := newDSNFormatter(ac)
 		if err != nil {
 			return nil, err
+		}
+
+		if ac.Endpoint == "" {
+			return nil, status.FailedPreconditionError("endpoint is required")
 		}
 
 		if ac.Driver == mysqlDriver {

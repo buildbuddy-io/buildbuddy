@@ -869,23 +869,7 @@ func updateInBatches(db *gorm.DB, baseQuery string, batchSize int64) error {
 }
 
 func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
-	var updateInvocationStmt, countPrimaryKeyStmt string
-	switch db.Dialector.Name() {
-	case mysqlDialect:
-		updateInvocationStmt = `UPDATE "Invocations" SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
-		countPrimaryKeyStmt = `
-			SELECT 
-				COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
-			WHERE 
-				table_schema = schema() AND 
-				column_key = 'PRI' AND 
-				table_name='TargetStatuses'`
-
-	case postgresDialect:
-		// nop; we will never have postgres data without the uuid filled.
-	default:
-		log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
-	}
+	updateInvocationStmt := `UPDATE "Invocations" SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
 	if err := updateInBatches(db, updateInvocationStmt, 10000); err != nil {
 		return err
 	}
@@ -910,6 +894,14 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	// Check whether primary keys exist for TargetStatuses before dropping the primary key;
 	// Otherwise dropping primary keys will fail.
 	var primaryKeyCount int32
+	countPrimaryKeyStmt := `
+		SELECT 
+			COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		WHERE 
+			table_schema = schema() AND 
+			column_key = 'PRI' AND 
+			table_name='TargetStatuses'`
+
 	if err := db.Raw(countPrimaryKeyStmt).Scan(&primaryKeyCount).Error; err != nil {
 		return err
 	}
