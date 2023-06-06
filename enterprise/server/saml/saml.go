@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -25,7 +26,9 @@ import (
 
 var (
 	certFile = flag.String("auth.saml.cert_file", "", "Path to a PEM encoded certificate file used for SAML auth.")
+	cert     = flag.String("auth.saml.cert", "", "PEM encoded certificate used for SAML auth.")
 	keyFile  = flag.String("auth.saml.key_file", "", "Path to a PEM encoded certificate key file used for SAML auth.")
+	key      = flag.String("auth.saml.key", "", "PEM encoded certificate key used for SAML auth.")
 )
 
 const (
@@ -225,10 +228,36 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if ok {
 		return provider, nil
 	}
-	if *certFile == "" || *keyFile == "" {
+	if (*certFile == "" && *cert == "") || (*keyFile == "" && *key == "") {
 		return nil, status.NotFoundError("No SAML Configured")
 	}
-	keyPair, err := tls.LoadX509KeyPair(*certFile, *keyFile)
+	if *certFile != "" && *cert != "" {
+		return nil, status.FailedPreconditionError("SAML cert should be specified as a file or directly, but not both")
+	}
+	if *keyFile != "" && *key != "" {
+		return nil, status.FailedPreconditionError("SAML key should be specified as a file or directly, but not both")
+	}
+	var certData []byte
+	if *cert != "" {
+		certData = []byte(*cert)
+	} else {
+		data, err := os.ReadFile(*certFile)
+		if err != nil {
+			return nil, err
+		}
+		certData = data
+	}
+	var keyData []byte
+	if *key != "" {
+		keyData = []byte(*key)
+	} else {
+		data, err := os.ReadFile(*keyFile)
+		if err != nil {
+			return nil, err
+		}
+		keyData = data
+	}
+	keyPair, err := tls.X509KeyPair(certData, keyData)
 	if err != nil {
 		return nil, err
 	}

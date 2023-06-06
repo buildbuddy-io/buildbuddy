@@ -33,7 +33,9 @@ var (
 	keyFile          = flag.String("ssl.key_file", "", "Path to a PEM encoded key file to use for TLS if not using ACME.")
 	selfSigned       = flag.Bool("ssl.self_signed", false, "If true, a self-signed cert will be generated for TLS termination.")
 	clientCACertFile = flag.String("ssl.client_ca_cert_file", "", "Path to a PEM encoded certificate authority file used to issue client certificates for mTLS auth.")
+	clientCACert     = flag.String("ssl.client_ca_cert", "", "PEM encoded certificate authority used to issue client certificates for mTLS auth.")
 	clientCAKeyFile  = flag.String("ssl.client_ca_key_file", "", "Path to a PEM encoded certificate authority key file used to issue client certificates for mTLS auth.")
+	clientCAKey      = flag.String("ssl.client_ca_key", "", "PEM encoded certificate authority key used to issue client certificates for mTLS auth.")
 	clientCertExp    = flag.Duration("ssl.client_cert_lifespan", 365*100*24*time.Hour, "The duration client certificates are valid for. Ex: '730h' for one month. If not set, defaults to 100 years.")
 	hostWhitelist    = flagutil.New("ssl.host_whitelist", []string{}, "Cloud-Only")
 	enableSSL        = flag.Bool("ssl.enable_ssl", false, "Whether or not to enable SSL/TLS on gRPC connections (gRPCS).")
@@ -106,8 +108,36 @@ func NewSSLService(env environment.Env) (*SSLService, error) {
 func (s *SSLService) populateTLSConfig() error {
 	clientCACertPool := x509.NewCertPool()
 
-	if *clientCACertFile != "" && *clientCAKeyFile != "" {
-		cert, key, err := loadX509KeyPair(*clientCACertFile, *clientCAKeyFile)
+	if (*clientCACertFile != "" || *clientCACert != "") && (*clientCAKeyFile != "" || *clientCAKey != "") {
+		if *clientCACertFile != "" && *clientCACert != "" {
+			return status.FailedPreconditionError("Authority cert should be specified as a file or directly, but not both")
+		}
+		if *clientCAKeyFile != "" && *clientCAKey != "" {
+			return status.FailedPreconditionError("Authority key should be specified as a file or directly, but not both")
+		}
+
+		var certData []byte
+		if *clientCACert != "" {
+			certData = []byte(*clientCACert)
+		} else {
+			data, err := os.ReadFile(*clientCACertFile)
+			if err != nil {
+				return err
+			}
+			certData = data
+		}
+		var keyData []byte
+		if *clientCAKey != "" {
+			keyData = []byte(*clientCAKey)
+		} else {
+			data, err := os.ReadFile(*clientCAKeyFile)
+			if err != nil {
+				return err
+			}
+			keyData = data
+		}
+
+		cert, key, err := loadX509KeyPair(certData, keyData)
 		if err != nil {
 			return err
 		}
@@ -349,19 +379,9 @@ func (s *SSLService) ValidateCert(certString string) (string, string, error) {
 	return cert.Subject.CommonName, cert.Subject.SerialNumber, nil
 }
 
-func loadX509KeyPair(certFile, keyFile string) (*x509.Certificate, *rsa.PrivateKey, error) {
-	cf, err := os.ReadFile(certFile)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	kf, err := os.ReadFile(keyFile)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	cpb, _ := pem.Decode(cf)
-	kpb, _ := pem.Decode(kf)
+func loadX509KeyPair(certData, keyData []byte) (*x509.Certificate, *rsa.PrivateKey, error) {
+	cpb, _ := pem.Decode(certData)
+	kpb, _ := pem.Decode(keyData)
 	crt, err := x509.ParseCertificate(cpb.Bytes)
 	if err != nil {
 		return nil, nil, err
