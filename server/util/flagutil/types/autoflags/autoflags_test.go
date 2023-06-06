@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 type unsupportedFlagValue struct{}
@@ -31,6 +32,17 @@ func replaceFlagsForTesting(t *testing.T) *flag.FlagSet {
 	})
 
 	return flags
+}
+
+func replaceIgnoreSetForTesting(t *testing.T) map[string]struct{} {
+	oldIgnoreSet := flagyaml.IgnoreSet
+	flagyaml.IgnoreSet = make(map[string]struct{})
+
+	t.Cleanup(func() {
+		flagyaml.IgnoreSet = oldIgnoreSet
+	})
+
+	return flagyaml.IgnoreSet
 }
 
 func TestNew(t *testing.T) {
@@ -191,4 +203,16 @@ func TestNew(t *testing.T) {
 	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{"struct_slice": {}}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, *structSlice)
+}
+
+func TestYAMLIgnoreTag(t *testing.T) {
+	_ = replaceFlagsForTesting(t)
+	_ = replaceIgnoreSetForTesting(t)
+	flagBool := New("bool", false, "", YAMLIgnoreTag)
+
+	yamlData := `
+	bool: true
+`
+	flagyaml.PopulateFlagsFromData(yamlData)
+	assert.Equal(t, false, *flagBool)
 }
