@@ -28,7 +28,7 @@ func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.Read
 	return d, r
 }
 
-func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
+func newRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 	d, rs := NewRandomDigestReader(t, sizeBytes)
 	buf, err := io.ReadAll(rs)
 	if err != nil {
@@ -38,7 +38,7 @@ func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 }
 
 func NewRandomResourceAndBuf(t testing.TB, sizeBytes int64, cacheType rspb.CacheType, instanceName string) (*rspb.ResourceName, []byte) {
-	d, buf := NewRandomDigestBuf(t, sizeBytes)
+	d, buf := newRandomDigestBuf(t, sizeBytes)
 	return digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_SHA256).ToProto(), buf
 }
 
