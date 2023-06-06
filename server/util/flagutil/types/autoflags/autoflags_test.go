@@ -213,6 +213,6 @@ func TestYAMLIgnoreTag(t *testing.T) {
 	yamlData := `
 	bool: true
 `
-	flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	flagyaml.PopulateFlagsFromData(yamlData)
 	assert.Equal(t, false, *flagBool)
 }
