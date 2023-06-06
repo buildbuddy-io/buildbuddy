@@ -66,7 +66,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     inProgress: false,
     error: null,
 
-    model: new InvocationModel(),
+    model: InvocationModel.modelFromInvocations([]),
 
     keyboardShortcutHandle: "",
   };

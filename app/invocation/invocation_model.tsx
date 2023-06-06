@@ -23,7 +23,7 @@ export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
 export const InvocationStatus = invocation_status.InvocationStatus;
 
 export default class InvocationModel {
-  invocations: invocation.Invocation[] = [];
+  readonly invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
   scoreCard?: cache.ScoreCard;
   botSuggestions: string[] = [];
@@ -74,9 +74,12 @@ export default class InvocationModel {
 
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
+  private constructor(primaryInvocation: invocation.Invocation, others: invocation.Invocation[]) {
+    this.invocations = [primaryInvocation, ...others];
+  }
+
   static modelFromInvocations(invocations: invocation.Invocation[]) {
-    let model = new InvocationModel();
-    model.invocations = invocations as invocation.Invocation[];
+    let model = new InvocationModel(invocations[0]!, invocations);
     model.cacheStats = invocations
       .map((invocation) => invocation.cacheStats)
       .filter((cacheStat) => !!cacheStat) as cache.CacheStats[];
@@ -235,7 +238,7 @@ export default class InvocationModel {
   }
 
   getUser(possessive: boolean) {
-    let invocationUser = this.invocations.find(() => true)?.user;
+    let invocationUser = this.invocations[0].user;
     if (invocationUser) {
       return possessive ? `${invocationUser}'s` : invocationUser;
     }
@@ -287,7 +290,7 @@ export default class InvocationModel {
   }
 
   getId(): string | undefined {
-    return this.invocations.find(() => true)?.invocationId;
+    return this.invocations[1].invocationId;
   }
 
   getAttempt() {
