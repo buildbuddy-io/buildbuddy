@@ -5,7 +5,6 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 ts_library(
     name = "group_search",
     srcs = ["group_search.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/components/dialog:simple_modal_dialog",

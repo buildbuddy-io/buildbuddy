@@ -59,6 +59,7 @@ import (
 
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
 var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
+var firecrackerDebugMode = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 
 const (
@@ -296,6 +297,9 @@ type FirecrackerContainer struct {
 	// Whether networking has been set up (and needs to be cleaned up).
 	isNetworkSetup bool
 
+	// Whether the VM was recycled.
+	recycled bool
+
 	// dockerClient is used to optimize image pulls by reusing image layers from
 	// the Docker cache as well as deduping multiple requests for the same image.
 	dockerClient *dockerclient.Client
@@ -365,7 +369,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 			ScratchDiskSizeMb: opts.ScratchDiskSizeMB,
 			EnableNetworking:  opts.EnableNetworking,
 			InitDockerd:       opts.InitDockerd,
-			DebugMode:         opts.DebugMode,
+			DebugMode:         *firecrackerDebugMode,
 		},
 		loader:             loader,
 		jailerRoot:         opts.JailerRoot,
@@ -1433,6 +1437,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		if err := c.parseOOMError(); err != nil {
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}
+		if err := c.parseSegFault(result); err != nil {
+			log.CtxWarningf(ctx, "Segfault occurred during task execution (recycled=%v) : %s", c.recycled, err)
+		}
 	}()
 
 	execDone := make(chan struct{})
@@ -1606,6 +1613,8 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 		log.CtxDebugf(ctx, "Unpause took %s", time.Since(start))
 	}()
 
+	c.recycled = true
+
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/)
 }
@@ -1685,6 +1694,17 @@ func (c *FirecrackerContainer) parseOOMError() error {
 		}
 	}
 	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines)
+}
+
+// parseSegFault looks for segfaults in the kernel logs and returns an error if found.
+func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult) error {
+	if !strings.Contains(string(cmdResult.Stderr), "SIGSEGV") {
+		return nil
+	}
+	tail := string(c.vmLog.Tail())
+	// Logs contain "\r\n"; convert these to universal line endings.
+	tail = strings.ReplaceAll(tail, "\r\n", "\n")
+	return status.InternalErrorf("process hit a segfault:\n%s", tail)
 }
 
 // VMLog retains the tail of the VM log.

@@ -23,15 +23,15 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 	// What we are testing here is that for every version a key can be
 	// written at, it can also be re-read and rewritten at every other version.
 	for i := filestore.UndefinedKeyVersion; i < filestore.TestingMaxKeyVersion; i++ {
-		d, _ := testdigest.NewRandomDigestBuf(t, 100)
+		r, _ := testdigest.RandomACResourceBuf(t, 100)
 		fr := &rfpb.FileRecord{
 			Isolation: &rfpb.Isolation{
-				CacheType:          rspb.CacheType_AC,
+				CacheType:          r.GetCacheType(),
 				RemoteInstanceName: "remote_instance_name",
 				PartitionId:        partitionID,
 				GroupId:            testGroupID,
 			},
-			Digest: d,
+			Digest: r.GetDigest(),
 		}
 		if i%2 == 0 {
 			fr.Isolation.CacheType = rspb.CacheType_CAS

@@ -323,7 +323,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         # TODO: Remove once https://github.com/bazelbuild/bazelisk/pull/396 is
         # upstreamed
         patch_args = ["-p1"],
-        patches = ["//buildpatches:bazelisk.patch"],
+        patches = ["@{}//buildpatches:bazelisk.patch".format(workspace_name)],
         sum = "h1:dmESc1UeF8iqJTOPxlPw2DH9ykZEMwdlL/jQ+UrW7fY=",
         version = "v1.11.0",
     )
@@ -332,7 +332,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/bazelbuild/buildtools",
         patch_args = ["-p1"],
         patch_tool = "patch --ignore-whitespace",
-        patches = ["//buildpatches:buildifier.patch"],
+        patches = ["@{}//buildpatches:buildifier.patch".format(workspace_name)],
         sum = "h1:DraHsDqTYhf6w1369EEdFyA5hjJnGX88xNJRv1+20E0=",
         version = "v0.0.0-20230111132423-06e8e2436a75",
     )
@@ -5777,7 +5777,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "gorm.io/driver/clickhouse",
         patch_args = ["-p1"],
         patch_tool = "patch",
-        patches = ["//buildpatches:gorm_clickhouse.patch"],
+        patches = ["@{}//buildpatches:gorm_clickhouse.patch".format(workspace_name)],
         sum = "h1:vt7WkXX0u5SeCDyR4w/Jz0ce25/tYqgoP3UUERgMZmY=",
         version = "v0.4.2",
     )
@@ -6380,8 +6380,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "org_kernel_git_linux_kernel-vmlinux-5.4.0",
-        sha256 = "fc81fa0933db7977b5e1d4b9ff3a757914b579c7812b63f9cdcabc035c7057e0",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-5.4.0"],
+        name = "org_kernel_git_linux_kernel-vmlinux",
+        sha256 = "57fb3f81d91709c9fe36ba420ca29042eac314f931ade2218daf085b031cf40f",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.4-57fb3f81d91709c9fe36ba420ca29042eac314f931ade2218daf085b031cf40f"],
         executable = True,
     )

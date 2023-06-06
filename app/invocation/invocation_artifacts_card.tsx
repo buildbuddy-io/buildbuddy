@@ -19,14 +19,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     numPages: 1,
   };
 
-  handleArtifactClicked(outputUri: string, outputFilename: string, event: MouseEvent) {
+  handleArtifactClicked(outputUri: string, outputFilename: string, event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
     if (!outputUri) return false;
 
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
-      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.model.getId());
+      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.model.getId() ?? "");
     }
   }
 
@@ -37,23 +37,23 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
   render() {
     type Target = {
       label: string;
-      outputs: build_event_stream.IFile[];
+      outputs: build_event_stream.File[];
       // The number of outputs hidden due to paging limits.
-      hiddenOutputCount?: number;
+      hiddenOutputCount: number;
     };
     const filteredTargets = this.props.model.succeeded
       .map((event) => ({
-        label: event.id.targetCompleted.label,
+        label: event.id?.targetCompleted?.label ?? "",
         outputs: this.props.model
           .getFiles(event)
           .filter(
             (output) =>
               !this.props.filter ||
-              event.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
+              event.id?.targetCompleted?.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
               output.name.toLowerCase().includes(this.props.filter.toLowerCase())
           ),
       }))
-      .filter((target) => target.outputs.length);
+      .filter((target) => target.label && target.outputs.length);
 
     const visibleTargets: Target[] = [];
     let visibleOutputCount = 0;
@@ -87,7 +87,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                   {target.outputs.map((output) => (
                     <div className="artifact-line">
                       <a
-                        href={rpcService.getBytestreamUrl(output.uri, this.props.model.getId(), {
+                        href={rpcService.getBytestreamUrl(output.uri, this.props.model.getId() ?? "", {
                           filename: output.name,
                         })}
                         className="artifact-name"

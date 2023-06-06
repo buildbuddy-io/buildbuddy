@@ -87,7 +87,6 @@ var (
 	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
 	bareEnableStats           = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
-	firecrackerDebugMode      = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
 )
 
 const (
@@ -1099,7 +1098,6 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			EnableNetworking:       true,
 			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
-			DebugMode:              *firecrackerDebugMode,
 		}
 		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, task.GetExecutionTask(), opts)
 		if err != nil {

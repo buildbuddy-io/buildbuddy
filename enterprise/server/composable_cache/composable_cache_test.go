@@ -28,12 +28,8 @@ func testEnvAndContext(t *testing.T) (environment.Env, context.Context) {
 	return te, ctx
 }
 
-func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeBytes int64) *repb.Digest {
-	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeBytes int64) *rspb.ResourceName {
+	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 	w, err := c.Writer(ctx, r)
 	require.NoError(t, err)
 	_, err = w.Write(buf)
@@ -42,7 +38,7 @@ func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeByte
 	require.NoError(t, err)
 	err = w.Close()
 	require.NoError(t, err)
-	return d
+	return r
 }
 
 func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *rspb.ResourceName) {
@@ -69,11 +65,7 @@ func TestReadThrough(t *testing.T) {
 	// Write a digest into the inner cache and check that it gets written to
 	// outer cache on read.
 	{
-		d := writeDigest(ctx, t, inner, 99)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r := writeDigest(ctx, t, inner, 99)
 
 		// Check that we can read the digest through the composable cache.
 		readAndVerifyDigest(ctx, t, c, r)
@@ -85,11 +77,7 @@ func TestReadThrough(t *testing.T) {
 	// Write a digest that doesn't fit into the outer cache and test that we can
 	// still read it from the composable cache.
 	{
-		d := writeDigest(ctx, t, inner, 100)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r := writeDigest(ctx, t, inner, 100)
 
 		// Check that we can read the digest through the composable cache.
 		readAndVerifyDigest(ctx, t, c, r)
@@ -97,11 +85,7 @@ func TestReadThrough(t *testing.T) {
 
 	// Perform a partial read and check that outer has the correct (full) blob.
 	{
-		d := writeDigest(ctx, t, inner, 99)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn := writeDigest(ctx, t, inner, 99)
 
 		r, err := c.Reader(ctx, rn, 0, 0)
 		require.NoError(t, err)

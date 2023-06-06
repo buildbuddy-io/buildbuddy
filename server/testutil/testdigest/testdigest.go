@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
@@ -37,14 +37,17 @@ func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 	return d, buf
 }
 
-func RandomCASResourceBuf(t testing.TB, sizeBytes int64) (*resource.ResourceName, []byte) {
+func NewRandomResourceAndBuf(t testing.TB, sizeBytes int64, cacheType rspb.CacheType, instanceName string) (*rspb.ResourceName, []byte) {
 	d, buf := NewRandomDigestBuf(t, sizeBytes)
-	return &resource.ResourceName{Digest: d, CacheType: resource.CacheType_CAS}, buf
+	return digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_SHA256).ToProto(), buf
 }
 
-func RandomACResourceBuf(t testing.TB, sizeBytes int64) (*resource.ResourceName, []byte) {
-	d, buf := NewRandomDigestBuf(t, sizeBytes)
-	return &resource.ResourceName{Digest: d, CacheType: resource.CacheType_AC}, buf
+func RandomCASResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []byte) {
+	return NewRandomResourceAndBuf(t, sizeBytes, rspb.CacheType_CAS, "" /*instanceName*/)
+}
+
+func RandomACResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []byte) {
+	return NewRandomResourceAndBuf(t, sizeBytes, rspb.CacheType_AC, "" /*instanceName*/)
 }
 
 func ReadDigestAndClose(t *testing.T, r io.ReadCloser) *repb.Digest {

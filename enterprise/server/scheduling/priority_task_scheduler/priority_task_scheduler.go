@@ -289,7 +289,9 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 }
 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
-	ctx = context.WithValue(ctx, "x-buildbuddy-jwt", execTask.GetJwt())
+	if execTask.GetJwt() != "" {
+		ctx = context.WithValue(ctx, "x-buildbuddy-jwt", execTask.GetJwt())
+	}
 	rmd := execTask.GetRequestMetadata()
 	if rmd == nil {
 		rmd = &repb.RequestMetadata{ToolInvocationId: execTask.GetInvocationId()}

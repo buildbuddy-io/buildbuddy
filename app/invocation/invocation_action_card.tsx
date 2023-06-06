@@ -18,14 +18,14 @@ interface Props {
 
 interface State {
   action?: build.bazel.remote.execution.v2.Action;
-  loadingAction?: boolean;
+  loadingAction: boolean;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
-  inputDirs?: InputNode[];
-  treeShaToExpanded?: Map<string, boolean>;
-  treeShaToChildrenMap?: Map<string, InputNode[]>;
+  inputDirs: InputNode[];
+  treeShaToExpanded: Map<string, boolean>;
+  treeShaToChildrenMap: Map<string, InputNode[]>;
   stderr?: string;
   stdout?: string;
 }
@@ -45,17 +45,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchAction() {
     this.setState({ loadingAction: true });
-    const digest = parseDigest(this.props.search.get("actionDigest"));
+    const digest = parseDigest(this.props.search.get("actionDigest") ?? "");
     const actionUrl = `bytestream://${this.getCacheAddress()}/blobs/${digest.hash}/${digest.sizeBytes ?? 1}`;
     rpcService
-      .fetchBytestreamFile(actionUrl, this.props.model.getId(), "arraybuffer")
+      .fetchBytestreamFile(actionUrl, this.props.model.getId() ?? "", "arraybuffer")
       .then((buffer: any) => {
         let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
         this.setState({
           action: action,
         });
         this.fetchCommand(action);
-        this.fetchInputRoot(action.inputRootDigest);
+        this.fetchInputRoot(action.inputRootDigest ?? build.bazel.remote.execution.v2.Digest.create({}));
       })
       .catch((e) => console.error("Failed to fetch action:", e))
       .finally(() => this.setState({ loadingAction: false }));
@@ -65,7 +65,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     let inputRootFile =
       "bytestream://" + this.getCacheAddress() + "/blobs/" + rootDigest.hash + "/" + rootDigest.sizeBytes;
     rpcService
-      .fetchBytestreamFile(inputRootFile, this.props.model.getId(), "arraybuffer")
+      .fetchBytestreamFile(inputRootFile, this.props.model.getId() ?? "", "arraybuffer")
       .then((buffer: any) => {
         let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         let inputDirs: InputNode[] = tempRoot.directories.map(
@@ -88,15 +88,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (digestParam == null) {
       digestParam = this.props.search.get("actionDigest");
     }
-    const digest = parseDigest(digestParam);
+    const digest = parseDigest(digestParam ?? "");
     const actionResultUrl = `actioncache://${this.getCacheAddress()}/blobs/ac/${digest.hash}/${digest.sizeBytes ?? 1}`;
     rpcService
-      .fetchBytestreamFile(actionResultUrl, this.props.model.getId(), "arraybuffer")
+      .fetchBytestreamFile(actionResultUrl, this.props.model.getId() ?? "", "arraybuffer")
       .then((buffer: any) => {
+        const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
         this.setState({
-          actionResult: build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer)),
+          actionResult: actionResult,
         });
-        this.fetchStdoutAndStderr(this.state.actionResult);
+        this.fetchStdoutAndStderr(actionResult);
       })
       .catch((e) => console.error("Failed to fetch action result:", e));
   }
@@ -106,12 +107,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "bytestream://" +
       this.getCacheAddress() +
       "/blobs/" +
-      actionResult.stdoutDigest.hash +
+      actionResult.stdoutDigest?.hash +
       "/" +
-      actionResult.stdoutDigest.sizeBytes;
+      actionResult.stdoutDigest?.sizeBytes;
 
     rpcService
-      .fetchBytestreamFile(stdoutUrl, this.props.model.getId())
+      .fetchBytestreamFile(stdoutUrl, this.props.model.getId() ?? "")
       .then((content: string) => {
         this.setState({
           stdout: content,
@@ -123,11 +124,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "bytestream://" +
       this.getCacheAddress() +
       "/blobs/" +
-      actionResult.stderrDigest.hash +
+      actionResult.stderrDigest?.hash +
       "/" +
-      actionResult.stderrDigest.sizeBytes;
+      actionResult.stderrDigest?.sizeBytes;
     rpcService
-      .fetchBytestreamFile(stderrUrl, this.props.model.getId())
+      .fetchBytestreamFile(stderrUrl, this.props.model.getId() ?? "")
       .then((content: string) => {
         this.setState({
           stderr: content,
@@ -141,11 +142,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "bytestream://" +
       this.getCacheAddress() +
       "/blobs/" +
-      action.commandDigest.hash +
+      action.commandDigest?.hash +
       "/" +
-      action.commandDigest.sizeBytes;
+      action.commandDigest?.sizeBytes;
     rpcService
-      .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
+      .fetchBytestreamFile(commandFile, this.props.model.getId() ?? "", "arraybuffer")
       .then((buffer: any) => {
         this.setState({
           command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
@@ -165,11 +166,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  handleOutputFileClicked(file: build.bazel.remote.execution.v2.IOutputFile) {
+  handleOutputFileClicked(file: build.bazel.remote.execution.v2.OutputFile) {
     rpcService.downloadBytestreamFile(
       file.path,
-      "bytestream://" + this.getCacheAddress() + "/blobs/" + file.digest.hash + "/" + file.digest.sizeBytes,
-      this.props.model.getId()
+      "bytestream://" + this.getCacheAddress() + "/blobs/" + file.digest?.hash + "/" + file.digest?.sizeBytes,
+      this.props.model.getId() ?? ""
     );
   }
 
@@ -190,50 +191,50 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private renderTimelines() {
-    const metadata = this.state.actionResult.executionMetadata;
+    const metadata = this.state.actionResult?.executionMetadata;
 
     type TimelineEvent = { name: string; color: string; timestamp: any };
     const events: TimelineEvent[] = [
       {
         name: "Queued",
         color: "#607D8B",
-        timestamp: metadata.queuedTimestamp,
+        timestamp: metadata?.queuedTimestamp,
       },
       {
         name: "Initializing",
         color: "#673AB7",
-        timestamp: metadata.workerStartTimestamp,
+        timestamp: metadata?.workerStartTimestamp,
       },
       {
         name: "Downloading inputs",
         color: "#FF6F00",
-        timestamp: metadata.inputFetchStartTimestamp,
+        timestamp: metadata?.inputFetchStartTimestamp,
       },
       {
         name: "Preparing runner",
         color: "#673AB7",
-        timestamp: metadata.inputFetchCompletedTimestamp,
+        timestamp: metadata?.inputFetchCompletedTimestamp,
       },
       {
         name: "Executing",
         color: "#1E88E5",
-        timestamp: metadata.executionStartTimestamp,
+        timestamp: metadata?.executionStartTimestamp,
       },
       {
         name: "Preparing for upload",
         color: "#673AB7",
-        timestamp: metadata.executionCompletedTimestamp,
+        timestamp: metadata?.executionCompletedTimestamp,
       },
       {
         name: "Uploading outputs",
         color: "#FF6F00",
-        timestamp: metadata.outputUploadStartTimestamp,
+        timestamp: metadata?.outputUploadStartTimestamp,
       },
       // End marker -- not actually rendered.
       {
         name: "Upload complete",
         color: "",
-        timestamp: metadata.outputUploadCompletedTimestamp,
+        timestamp: metadata?.outputUploadCompletedTimestamp,
       },
     ];
 
@@ -284,7 +285,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   handleFileClicked(node: InputNode) {
-    let digestString = node.obj.digest.hash + "/" + node.obj.digest.sizeBytes;
+    let digestString = node.obj.digest?.hash + "/" + node.obj.digest?.sizeBytes;
     let dirUrl = "bytestream://" + this.getCacheAddress() + "/blobs/" + digestString;
 
     if (this.state.treeShaToExpanded.get(digestString)) {
@@ -293,11 +294,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
     if (node.type == "file") {
-      rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getId());
+      rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getId() ?? "");
       return;
     }
     rpcService
-      .fetchBytestreamFile(dirUrl, this.props.model.getId(), "arraybuffer")
+      .fetchBytestreamFile(dirUrl, this.props.model.getId() ?? "", "arraybuffer")
       .then((buffer: any) => {
         let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         this.state.treeShaToExpanded.set(digestString, true);
@@ -358,7 +359,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   render() {
-    const digest = parseDigest(this.props.search.get("actionDigest"));
+    const digest = parseDigest(this.props.search.get("actionDigest") ?? "");
 
     return (
       <div className="invocation-action-card">
@@ -383,12 +384,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div className="action-property-title">Cacheable</div>
                       <div>{!this.state.action.doNotCache ? "True" : "False"}</div>
                     </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Input root digest</div>
-                      <div>
-                        <DigestComponent digest={this.state.action.inputRootDigest} expanded={true} />
+                    {this.state.action.inputRootDigest && (
+                      <div className="action-section">
+                        <div className="action-property-title">Input root digest</div>
+                        <div>
+                          <DigestComponent digest={this.state.action.inputRootDigest} expanded={true} />
+                        </div>
                       </div>
-                    </div>
+                    )}
                     <div className="action-section">
                       <div
                         title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
@@ -445,13 +448,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         <div className="action-section">
                           <div className="action-property-title">Platform properties</div>
                           <div className="action-list">
-                            {this.state.command.platform.properties.map((property) => (
+                            {this.state.command?.platform?.properties.map((property) => (
                               <div>
                                 <span className="prop-name">{property.name}</span>
                                 <span className="prop-value">={property.value}</span>
                               </div>
                             ))}
-                            {!this.state.command.platform.properties.length && <div>(Default)</div>}
+                            {!this.state.command?.platform?.properties.length && <div>(Default)</div>}
                           </div>
                         </div>
                       </div>
@@ -539,7 +542,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 </span>
                                 <span className="prop-link">{file.path}</span>
                                 {file.isExecutable && <span className="detail"> (executable)</span>}
-                                <DigestComponent digest={file.digest} />
+                                {file.digest && <DigestComponent digest={file.digest} />}
                               </div>
                             ))}
                           </div>

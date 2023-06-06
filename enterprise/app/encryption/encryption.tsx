@@ -330,7 +330,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
                   <DialogTitle>Confirm disabling encryption</DialogTitle>
                 </DialogHeader>
                 <DialogBody>
-                  <p>Are you sure you want to disable encryption using the customer managed key?</p>
+                  <p>Are you sure you want to disable encryption using the customer-managed key?</p>
                   <p>Previously encrypted artifacts stored in the cache will no longer be accessible.</p>
                   <p>This action is irreversible. </p>
                   {this.state.disablingError && (
@@ -359,9 +359,9 @@ export default class EncryptionComponent extends React.Component<{}, State> {
         )}
         {!this.state.encryptionEnabled && (
           <div>
-            <p>Customer managed encryption keys are not currently enabled for this organization.</p>
+            <p>Customer-managed encryption keys are not currently enabled for this organization.</p>
             <p>
-              To enable the use of customer managed encryption keys, you will need to provide a reference to a key
+              To enable the use of customer-managed encryption keys, you will need to provide a reference to a key
               managed by a supported Key Management System.
             </p>
             <form className="kms-form">

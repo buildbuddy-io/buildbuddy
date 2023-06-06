@@ -322,6 +322,55 @@ type AuthDB interface {
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
 	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
+
+	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
+	// group. It is only to be used in situations where the user has a
+	// pre-authorized grant to access resources on behalf of the org, such as a
+	// publicly shared invocation. The returned API key must only be used to
+	// access internal resources and must not be returned to the caller.
+	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
+
+	// API Keys API.
+	//
+	// All of these functions authenticate the user if applicable and
+	// authorize access to the relevant user IDs, group IDs, and API keys,
+	// taking the group role into account.
+	//
+	// Any operations involving user-level keys return an error if user-level
+	// keys are not enabled by the org.
+
+	// GetAPIKeys returns group-level API keys that the user is authorized to
+	// access.
+	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// CreateAPIKey creates a group-level API key.
+	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+
+	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
+	// checking that the user has admin rights on the group. This should only
+	// be used when a new group is being created.
+	CreateAPIKeyWithoutAuthCheck(tx *gorm.DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+
+	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
+	GetUserOwnedKeysEnabled() bool
+
+	// GetUserAPIKeys returns all user-owned API keys within a group.
+	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// CreateUserAPIKey creates a user-owned API key within the group.
+	CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
+
+	// GetAPIKey returns an API key by ID. The key may be user-owned or
+	// group-owned.
+	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
+
+	// UpdateAPIKey updates an API key by ID. The key may be user-owned or
+	// group-owned.
+	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
+
+	// DeleteAPIKey deletes an API key by ID. The key may be user-owned or
+	// group-owned.
+	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 }
 
 type UserDB interface {
@@ -365,50 +414,6 @@ type UserDB interface {
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 	// DeleteUserGitHubToken deletes the authenticated user's GitHub token.
 	DeleteUserGitHubToken(ctx context.Context) error
-
-	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
-	// group. It is only to be used in situations where the user has a
-	// pre-authorized grant to access resources on behalf of the org, such as a
-	// publicly shared invocation. The returned API key must only be used to
-	// access internal resources and must not be returned to the caller.
-	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
-
-	// API Keys API.
-	//
-	// All of these functions authenticate the user if applicable and
-	// authorize access to the relevant user IDs, group IDs, and API keys,
-	// taking the group role into account.
-	//
-	// Any operations involving user-level keys return an error if user-level
-	// keys are not enabled by the org.
-
-	// GetAPIKeys returns group-level API keys that the user is authorized to
-	// access.
-	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
-
-	// CreateAPIKey creates a group-level API key.
-	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
-
-	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
-	GetUserOwnedKeysEnabled() bool
-
-	// GetUserAPIKeys returns all user-owned API keys within a group.
-	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
-
-	// CreateUserAPIKey creates a user-owned API key within the group.
-	CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
-
-	// GetAPIKey returns an API key by ID. The key may be user-owned or
-	// group-owned.
-	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
-
-	// UpdateAPIKey updates an API key by ID. The key may be user-owned or
-	// group-owned.
-	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
-
-	// DeleteAPIKey deletes an API key by ID. The key may be user-owned or
-	// group-owned.
-	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 
 	// Secrets API
 

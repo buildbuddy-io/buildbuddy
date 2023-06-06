@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -940,12 +941,10 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 
 	if acceptJWT {
 		// Check if we're already authenticated from incoming headers.
-		if claims, err := a.authenticatedUser(ctx); err == nil {
-			return claims, nil
-		}
+		return a.authenticatedUser(ctx)
 	}
 
-	return nil, status.UnauthenticatedError("gRPC request is missing credentials.")
+	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")
 }
 
 // AuthenticatedGRPCContext attempts to authenticate the gRPC request using peer info,
@@ -1090,12 +1089,12 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 	// user not found error.
 	err, ok := ctx.Value(contextUserErrorKey).(error)
 	if !ok || err == nil {
-		return nil, status.UnauthenticatedError(userNotFoundMsg)
+		return nil, authutil.AnonymousUserError(userNotFoundMsg)
 	}
 
 	// if there was an error set on the context, and it was an
 	// Unauthenticated or PermissionDeniedError, then the FE can handle it,
-	// so pass it through.
+	// so pass it through. This includes anonymous user errors.
 	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
 		return nil, err
 	}
@@ -1379,7 +1378,7 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 		return claims, nil
 	}
 	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, status.UnauthenticatedError(userNotFoundMsg)
+	return nil, authutil.AnonymousUserError(userNotFoundMsg)
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {

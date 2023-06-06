@@ -754,6 +754,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     );
   }
 
+  shouldShowDrilldownChart(type: stats.DrilldownType, numEntries: number) {
+    if (type == stats.DrilldownType.TAG_DRILLDOWN_TYPE) {
+      return capabilities.config.tagsUiEnabled && numEntries > 0;
+    } else {
+      return numEntries > 1;
+    }
+  }
+
   render() {
     return (
       <div className="trend-chart">
@@ -807,7 +815,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                       <div className="container nopadding-dense">
                         {this.state.drilldownData.chart.map(
                           (chart) =>
-                            chart.entry.length > 1 && (
+                            this.shouldShowDrilldownChart(chart.drilldownType, chart.entry.length) && (
                               <div className="drilldown-page-dd-chart">
                                 <div className="drilldown-page-dd-chart-title">
                                   {this.formatDrilldownType(chart.drilldownType)}
@@ -873,7 +881,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   )}
                   {this.state.eventData?.executions && (
                     <InvocationExecutionTable
-                      executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.IExecution)}
+                      executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.Execution)}
                       invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}></InvocationExecutionTable>
                   )}
                 </div>

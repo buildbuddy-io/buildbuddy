@@ -25,6 +25,9 @@ func TestShortFormatPatterns(t *testing.T) {
 }
 
 func makeTagSlice(args ...string) []*inpb.Invocation_Tag {
+	if len(args) == 0 {
+		return nil
+	}
 	out := make([]*inpb.Invocation_Tag, len(args))
 	for i, tag := range args {
 		out[i] = &inpb.Invocation_Tag{Name: tag}
@@ -32,7 +35,7 @@ func makeTagSlice(args ...string) []*inpb.Invocation_Tag {
 	return out
 }
 
-func TestSplitAndTrimTags(t *testing.T) {
+func TestSplitAndTrimAndDedupeTags(t *testing.T) {
 	longTag := "l" + strings.Repeat("o", 158) + "ng"
 	lotsOfWhitespace := strings.Repeat(" ", 255)
 	tooLong := status.InvalidArgumentError("Tag list is too long.")
@@ -46,6 +49,8 @@ func TestSplitAndTrimTags(t *testing.T) {
 		{",", false, makeTagSlice(), nil},
 		{",  ,,,", false, makeTagSlice(), nil},
 		{"beef", false, makeTagSlice("beef"), nil},
+		{"beef,cheese, beef ", false, makeTagSlice("beef", "cheese"), nil},
+		{"beef, beef", false, makeTagSlice("beef"), nil},
 		{"  beef ", false, makeTagSlice("beef"), nil},
 		{"beef,beer", false, makeTagSlice("beef", "beer"), nil},
 		{" art , beef, beer , cheese..,ten dollars,,", false, makeTagSlice("art", "beef", "beer", "cheese..", "ten dollars"), nil},
@@ -56,8 +61,8 @@ func TestSplitAndTrimTags(t *testing.T) {
 		{"short1,short2," + longTag + ",short3", true, nil, tooLong},
 		{"lots of whitespace" + lotsOfWhitespace + "," + lotsOfWhitespace + "and,more,tags", true, makeTagSlice("lots of whitespace", "and", "more", "tags"), nil},
 	} {
-		tags, err := invocation_format.SplitAndTrimTags(testCase.input, testCase.truncate)
-		assert.Equal(t, tags, testCase.expected)
+		tags, err := invocation_format.SplitAndTrimAndDedupeTags(testCase.input, testCase.truncate)
+		assert.Equal(t, testCase.expected, tags)
 		if testCase.expectedError == nil {
 			assert.Nil(t, err)
 		} else {

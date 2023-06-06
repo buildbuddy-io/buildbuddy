@@ -9,7 +9,7 @@ import Link from "../components/link/link";
 interface Props {
   model: InvocationModel;
   icon: JSX.Element;
-  buildEvents: build_event_stream.IBuildEvent[];
+  buildEvents: build_event_stream.BuildEvent[];
   pastVerb: string;
   presentVerb: string;
   pageSize: number;
@@ -38,13 +38,13 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
   render() {
     let events = this.props.buildEvents.filter(
       (target) =>
-        !this.props.filter || target.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase())
+        !this.props.filter || target.id?.targetCompleted?.label.toLowerCase().includes(this.props.filter.toLowerCase())
     );
     const rootCauseEvents = events.filter((event) =>
-      this.props.model.rootCauseTargetLabels.has(event.id.targetCompleted.label)
+      this.props.model.rootCauseTargetLabels.has(event.id?.targetCompleted?.label ?? "")
     );
     const otherEvents = events.filter(
-      (event) => !this.props.model.rootCauseTargetLabels.has(event.id.targetCompleted.label)
+      (event) => !this.props.model.rootCauseTargetLabels.has(event.id?.targetCompleted?.label ?? "")
     );
     events = [...rootCauseEvents, ...otherEvents];
 
@@ -59,7 +59,7 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
               className="copy-icon"
               onClick={this.handleCopyClicked.bind(
                 this,
-                events.map((target) => target.id.targetCompleted.label).join(" ")
+                events.map((target) => target.id?.targetCompleted?.label ?? "").join(" ")
               )}
             />
           </div>
@@ -68,24 +68,26 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
               {events
                 .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
                 .map((target) => (
-                  <Link className="target-row" href={`?target=${encodeURIComponent(target.id.targetCompleted.label)}`}>
+                  <Link
+                    className="target-row"
+                    href={`?target=${encodeURIComponent(target.id?.targetCompleted?.label ?? "")}`}>
                     <div
                       title={`${
-                        this.props.model.configuredMap.get(target.id.targetCompleted.label)?.buildEvent.configured
-                          .targetKind
+                        this.props.model.configuredMap.get(target.id?.targetCompleted?.label ?? "")?.buildEvent
+                          ?.configured?.targetKind
                       } ${this.props.model.getTestSize(
-                        this.props.model.configuredMap.get(target.id.targetCompleted.label)?.buildEvent.configured
-                          .testSize
+                        this.props.model.configuredMap.get(target.id?.targetCompleted?.label ?? "")?.buildEvent
+                          ?.configured?.testSize
                       )}`}
                       className="target">
                       <span className="target-status-icon">{this.props.icon}</span>{" "}
-                      <span className="target-label">{target.id.targetCompleted.label}</span>{" "}
-                      {this.props.model.rootCauseTargetLabels.has(target.id.targetCompleted.label) && (
+                      <span className="target-label">{target.id?.targetCompleted?.label}</span>{" "}
+                      {this.props.model.rootCauseTargetLabels.has(target.id?.targetCompleted?.label ?? "") && (
                         <span className="root-cause-badge">Root cause</span>
                       )}
                     </div>
                     <div className="target-duration">
-                      {this.props.model.getRuntime(target.id.targetCompleted.label)}
+                      {this.props.model.getRuntime(target.id?.targetCompleted?.label ?? "")}
                     </div>
                   </Link>
                 ))}

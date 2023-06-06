@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "format",
     srcs = ["format.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/long",
         "@npm//@types/moment",

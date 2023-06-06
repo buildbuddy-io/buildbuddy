@@ -6,7 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 )
 
 func NewNullAuthenticator(anonymousUsageEnabled bool, adminGroupID string) *NullAuthenticator {
@@ -46,7 +46,7 @@ func (a *NullAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 }
 
 func (a *NullAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
-	return nil, status.UnauthenticatedError("Auth not implemented")
+	return nil, authutil.AnonymousUserError("Auth not implemented")
 }
 
 func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) error {

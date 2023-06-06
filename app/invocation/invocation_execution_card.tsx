@@ -25,7 +25,7 @@ interface Props {
 
 interface State {
   loading: boolean;
-  executions: execution_stats.IExecution[];
+  executions: execution_stats.Execution[];
   sort: string;
   direction: "asc" | "desc";
   statusFilter: string;
@@ -63,7 +63,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
   fetchExecution() {
     let request = new execution_stats.GetExecutionRequest();
     request.executionLookup = new execution_stats.ExecutionLookup();
-    request.executionLookup.invocationId = this.props.model.getId();
+    request.executionLookup.invocationId = this.props.model.getId() ?? "";
     let inProgressBeforeRequestWasMade = this.props.inProgress;
     rpcService.service.getExecution(request).then((response) => {
       this.setState({ executions: response.execution, loading: false });
@@ -85,7 +85,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     }, 3000);
   }
 
-  sort(a: execution_stats.IExecution, b: execution_stats.IExecution) {
+  sort(a: execution_stats.Execution, b: execution_stats.Execution): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
@@ -102,51 +102,51 @@ export default class ExecutionCardComponent extends React.Component<Props, State
         return uploadDuration(first) - uploadDuration(second);
       case "files-downloaded":
         return (
-          +first?.executedActionMetadata?.ioStats?.fileDownloadCount -
-          +second?.executedActionMetadata?.ioStats?.fileDownloadCount
+          +(first.executedActionMetadata?.ioStats?.fileDownloadCount ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileDownloadCount ?? 0)
         );
       case "files-uploaded":
         return (
-          +first?.executedActionMetadata?.ioStats?.fileUploadCount -
-          +second?.executedActionMetadata?.ioStats?.fileUploadCount
+          +(first.executedActionMetadata?.ioStats?.fileUploadCount ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileUploadCount ?? 0)
         );
       case "file-size-downloaded":
         return (
-          +first?.executedActionMetadata?.ioStats?.fileDownloadSizeBytes -
-          +second?.executedActionMetadata?.ioStats?.fileDownloadSizeBytes
+          +(first.executedActionMetadata?.ioStats?.fileDownloadSizeBytes ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileDownloadSizeBytes ?? 0)
         );
       case "file-size-uploaded":
         return (
-          +first?.executedActionMetadata?.ioStats?.fileUploadSizeBytes -
-          +second?.executedActionMetadata?.ioStats?.fileUploadSizeBytes
+          +(first.executedActionMetadata?.ioStats?.fileUploadSizeBytes ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileUploadSizeBytes ?? 0)
         );
       case "queue-start":
         return subtractTimestamp(
-          first?.executedActionMetadata?.queuedTimestamp,
-          second?.executedActionMetadata?.queuedTimestamp
+          first.executedActionMetadata?.queuedTimestamp,
+          second.executedActionMetadata?.queuedTimestamp
         );
       case "execution-start":
         return subtractTimestamp(
-          first?.executedActionMetadata?.workerStartTimestamp,
-          second?.executedActionMetadata?.workerStartTimestamp
+          first.executedActionMetadata?.workerStartTimestamp,
+          second.executedActionMetadata?.workerStartTimestamp
         );
       case "execution-end":
         return subtractTimestamp(
-          first?.executedActionMetadata?.workerCompletedTimestamp,
-          second?.executedActionMetadata?.workerCompletedTimestamp
+          first.executedActionMetadata?.workerCompletedTimestamp,
+          second.executedActionMetadata?.workerCompletedTimestamp
         );
       case "worker":
-        return second?.executedActionMetadata?.worker.localeCompare(first?.executedActionMetadata?.worker);
+        return second.executedActionMetadata?.worker.localeCompare(first.executedActionMetadata?.worker ?? "") ?? NaN;
       case "command":
-        return second?.commandSnippet.localeCompare(first?.commandSnippet);
+        return second.commandSnippet.localeCompare(first.commandSnippet);
       case "action":
-        return second?.actionDigest?.hash.localeCompare(first?.actionDigest?.hash);
+        return second?.actionDigest?.hash.localeCompare(first?.actionDigest?.hash ?? "") ?? NaN;
       default:
         // Within COMPLETED actions, sort first by gRPC code (OK, DEADLINE_EXCEEDED, etc.)
         // then by exit code.
         if (first.stage === ExecutionStage.Value.COMPLETED && first.stage === second.stage) {
-          if (second.status.code !== first.status.code) {
-            return second.status.code - first.status.code;
+          if (second.status?.code !== first.status?.code) {
+            return (second.status?.code ?? NaN) - (first.status?.code ?? NaN);
           }
           return second.exitCode - first.exitCode;
         }
@@ -162,13 +162,13 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     } as Record<keyof State, any>);
   }
 
-  handleSortChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
     this.setState({
       sort: event.target.value,
     });
   }
 
-  handleStatusFilterChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleStatusFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
     this.setState({
       statusFilter: event.target.value,
     });
@@ -209,7 +209,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
       .filter(
         (action) =>
           !this.props.filter ||
-          `${action.actionDigest.hash}/${action.actionDigest.sizeBytes}`
+          `${action.actionDigest?.hash ?? ""}/${action.actionDigest?.sizeBytes ?? ""}`
             .toLowerCase()
             .includes(this.props.filter.toLowerCase()) ||
           action.commandSnippet.toLowerCase().includes(this.props.filter.toLowerCase())
@@ -291,7 +291,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
               {filteredActions.length ? (
                 <InvocationExecutionTable
                   executions={filteredActions.sort(this.sort.bind(this)).slice(0, this.state.limit)}
-                  invocationIdProvider={() => this.props.model.getId()}></InvocationExecutionTable>
+                  invocationIdProvider={() => this.props.model.getId() ?? ""}></InvocationExecutionTable>
               ) : (
                 <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}

@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "digest",
     srcs = ["digest.tsx"],
-    strict = True,
     deps = [
         "//app/format",
         "@npm//@types/long",

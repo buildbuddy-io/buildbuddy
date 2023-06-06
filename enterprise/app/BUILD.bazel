@@ -89,7 +89,6 @@ sha(
 ts_library(
     name = "app",
     srcs = ["app.tsx"],
-    strict = True,
     deps = [
         "//enterprise/app/root",
         "@npm//@types/react",

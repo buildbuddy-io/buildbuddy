@@ -5,7 +5,6 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 ts_library(
     name = "encryption",
     srcs = ["encryption.tsx"],
-    strict = True,
     deps = [
         "//app/components/button",
         "//app/components/dialog",
