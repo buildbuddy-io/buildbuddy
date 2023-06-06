@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/auth",
+        "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/memcache",
         "//enterprise/server/backends/redis_cache",

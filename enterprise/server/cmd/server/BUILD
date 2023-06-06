@@ -17,6 +17,7 @@ go_library(
         "//enterprise/server/api",
         "//enterprise/server/auth",
         "//enterprise/server/backends/authdb",
+        "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/kms",

@@ -241,7 +241,7 @@ string_alias2: "moo"
 string_alias3: "oink"
 string_alias: "meow"
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, "meow", *flagString)
 
@@ -263,7 +263,7 @@ string_slice_alias3:
 string_slice_alias:
   - "meow"
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"test", "squeak", "woof", "moo", "oink", "ribbit", "meow"}, *flagStringSlice)
 
@@ -274,7 +274,7 @@ string_slice_alias:
 	yamlData = `
 string_alias: "meow"
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, "meow", *flagString)
 
@@ -286,7 +286,7 @@ string_alias: "meow"
 	yamlData = `
 string_alias: "meow"
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, "moo", *flagString)
 
@@ -298,7 +298,7 @@ string_alias: "meow"
 	yamlData = `
 string: "meow"
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, "moo", *flagString)
 
@@ -310,7 +310,7 @@ string: "meow"
 	yamlData = `
 string_alias: "meow"
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, "moo", *flagString)
 
@@ -451,7 +451,7 @@ deprecated_string: "moo"
 deprecated_string_slice:
   - "hey"
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, *flagInt, 7)
 	assert.Equal(t, *flagString, "moo")
@@ -514,7 +514,7 @@ deprecated_string: "moo"
 deprecated_string_slice:
   - "hey"
 `
-	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData(yamlData)
 	require.NoError(t, err)
 	assert.Equal(t, *flagInt, 7)
 	assert.Equal(t, *flagString, "moo")
