@@ -40,7 +40,7 @@ var (
 	enableAPI            = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
 	enableCache          = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
 	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
-	enableMetricsAPI     = flag.Bool("enable_metrics_api", true, "If true, enable access to metrics API.")
+	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", true, "If true, enable access to metrics API.")
 )
 
 type APIServer struct {
@@ -474,12 +474,10 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 	}
 	userInfo, err := s.checkPreconditions(r.Context())
 	if err != nil {
-		log.Errorf("invalid api key to get metrics: %s", err)
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
 	}
 	if userInfo.GetGroupID() == "" {
-		log.Errorf("invalid api key to get metrics: %s", err)
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
 	}
