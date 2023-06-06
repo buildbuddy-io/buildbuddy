@@ -15,6 +15,7 @@ go_library(
         "//server/rpc/interceptors",
         "//server/testutil/testfs",
         "//server/testutil/testmysql",
+        "//server/testutil/testpostgres",
         "//server/util/db",
         "//server/util/grpc_client",
         "//server/util/healthcheck",

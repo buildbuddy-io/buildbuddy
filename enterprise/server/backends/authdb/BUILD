@@ -42,3 +42,59 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+go_test(
+    name = "authdb_test_mysql",
+    srcs = ["authdb_test.go"],
+    args = [
+        "--testenv.database_type=mysql",
+        "--testenv.reuse_server",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+    },
+    tags = ["docker"],
+    deps = [
+        "//enterprise/server/testutil/enterprise_testauth",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//server/environment",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/util/db",
+        "//server/util/role",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "authdb_test_postgres",
+    srcs = ["authdb_test.go"],
+    args = [
+        "--testenv.database_type=postgres",
+        "--testenv.reuse_server",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+    },
+    tags = ["docker"],
+    deps = [
+        "//enterprise/server/testutil/enterprise_testauth",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//server/environment",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/util/db",
+        "//server/util/role",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

@@ -442,8 +442,8 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 
 	q := query_builder.NewQuery(`
 			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status, ug.role
-			FROM "Users" AS u JOIN "UserGroups" AS ug`)
-	q = q.AddWhereClause(`u.user_id = ug.user_user_id AND ug.group_group_id = ?`, groupID)
+			FROM "Users" AS u JOIN "UserGroups" AS ug ON u.user_id = ug.user_user_id`)
+	q = q.AddWhereClause(`ug.group_group_id = ?`, groupID)
 
 	o := query_builder.OrClauses{}
 	for _, s := range statuses {

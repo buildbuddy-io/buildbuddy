@@ -49,3 +49,73 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+go_test(
+    name = "userdb_test_mysql",
+    srcs = ["userdb_test.go"],
+    args = [
+        "--testenv.database_type=mysql",
+        "--testenv.reuse_server",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+    },
+    shard_count = 5,
+    tags = ["docker"],
+    deps = [
+        ":userdb",
+        "//enterprise/server/testutil/enterprise_testauth",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:api_key_go_proto",
+        "//proto:group_go_proto",
+        "//proto:user_id_go_proto",
+        "//server/environment",
+        "//server/interfaces",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/capabilities",
+        "//server/util/role",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "userdb_test_postgres",
+    srcs = ["userdb_test.go"],
+    args = [
+        "--testenv.database_type=postgres",
+        "--testenv.reuse_server",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+    },
+    shard_count = 5,
+    tags = ["docker"],
+    deps = [
+        ":userdb",
+        "//enterprise/server/testutil/enterprise_testauth",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:api_key_go_proto",
+        "//proto:group_go_proto",
+        "//proto:user_id_go_proto",
+        "//server/environment",
+        "//server/interfaces",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/capabilities",
+        "//server/util/role",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

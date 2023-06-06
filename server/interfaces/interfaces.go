@@ -269,7 +269,6 @@ type DBHandle interface {
 	ReadRow(ctx context.Context, out interface{}, where ...interface{}) error
 	UTCMonthFromUsecTimestamp(fieldName string) string
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
-	InsertIgnoreModifier() string
 	SelectForUpdateModifier() string
 	SetNowFunc(now func() time.Time)
 	IsDuplicateKeyError(err error) bool

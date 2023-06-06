@@ -36,3 +36,47 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+go_test(
+    name = "invocationdb_test_mysql",
+    srcs = ["invocationdb_test.go"],
+    args = [
+        "--testenv.database_type=mysql",
+        "--testenv.reuse_server",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+    },
+    tags = ["docker"],
+    deps = [
+        ":invocationdb",
+        "//server/tables",
+        "//server/testutil/testenv",
+        "//server/util/db",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "invocationdb_test_postgres",
+    srcs = ["invocationdb_test.go"],
+    args = [
+        "--testenv.database_type=postgres",
+        "--testenv.reuse_server",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+    },
+    tags = ["docker"],
+    deps = [
+        ":invocationdb",
+        "//server/tables",
+        "//server/testutil/testenv",
+        "//server/util/db",
+        "@com_github_stretchr_testify//require",
+    ],
+)
