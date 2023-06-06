@@ -14,12 +14,7 @@ import (
 
 // As this flag determines the YAML file we read the config from, it can't
 // meaningfully be specified in the YAML config file.
-var configPath = flagutil.New(
-	"config_file",
-	"/config.yaml",
-	"The path to a buildbuddy config file",
-	flagutil.YAMLIgnoreTag,
-)
+var configPath = flagutil.New("config_file", "/config.yaml", "The path to a buildbuddy config file", flagutil.YAMLIgnoreTag)
 
 func Path() string {
 	return *configPath
