@@ -1,7 +1,6 @@
 package config
 
 import (
-	"flag"
 	"os"
 	"os/signal"
 	"syscall"
