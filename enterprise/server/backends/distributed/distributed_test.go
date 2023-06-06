@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -127,11 +128,7 @@ func TestBasicReadWrite(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
@@ -214,13 +211,10 @@ func TestReadWrite_Compression(t *testing.T) {
 
 			for i := 0; i < 10; i++ {
 				// Do a write, and ensure it was written to all nodes.
-				d, buf := testdigest.NewRandomDigestBuf(t, 100)
+				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+				writeRN := proto.Clone(rn).(*rspb.ResourceName)
+				writeRN.Compressor = tc.writeCompression
 				compressedBuf := compression.CompressZstd(nil, buf)
-				writeRN := &rspb.ResourceName{
-					Digest:     d,
-					CacheType:  rspb.CacheType_CAS,
-					Compressor: tc.writeCompression,
-				}
 
 				bufToWrite := buf
 				if tc.writeCompression == repb.Compressor_ZSTD {
@@ -229,11 +223,8 @@ func TestReadWrite_Compression(t *testing.T) {
 				err := distributedCaches[i%3].Set(ctx, writeRN, bufToWrite)
 				require.NoError(t, err)
 
-				readRN := &rspb.ResourceName{
-					Digest:     d,
-					CacheType:  rspb.CacheType_CAS,
-					Compressor: tc.readCompression,
-				}
+				readRN := proto.Clone(rn).(*rspb.ResourceName)
+				readRN.Compressor = tc.readCompression
 				bufToRead := buf
 				if tc.readCompression == repb.Compressor_ZSTD {
 					bufToRead = compressedBuf
@@ -259,7 +250,6 @@ func TestContains(t *testing.T) {
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
 	}
-	remoteInstanceName := "remote"
 
 	// Setup a distributed cache, 3 nodes, R = 3.
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
@@ -282,12 +272,7 @@ func TestContains(t *testing.T) {
 	waitForReady(t, config3.ListenAddr)
 
 	// Do a write - should be written to all nodes
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	rn1 := &rspb.ResourceName{
-		Digest:       d,
-		InstanceName: remoteInstanceName,
-		CacheType:    rspb.CacheType_AC,
-	}
+	rn1, buf := testdigest.RandomACResourceBuf(t, 100)
 	if err := dc1.Set(ctx, rn1, buf); err != nil {
 		require.NoError(t, err)
 	}
@@ -338,11 +323,7 @@ func TestContains_NotWritten(t *testing.T) {
 	waitForReady(t, config3.ListenAddr)
 
 	// Data is not written - no nodes should contain it
-	d, _ := testdigest.NewRandomDigestBuf(t, 100)
-	r := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
 
 	c, err := dc1.Contains(ctx, r)
 	require.NoError(t, err)
@@ -392,17 +373,13 @@ func TestReadMaxOffset(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	// Do a write, and ensure it was written to all nodes.
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	rn := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 
 	if err := distributedCaches[0].Set(ctx, rn, buf); err != nil {
 		t.Fatal(err)
 	}
 
-	reader, err := distributedCaches[1].Reader(ctx, rn, d.GetSizeBytes(), 0)
+	reader, err := distributedCaches[1].Reader(ctx, rn, rn.GetDigest().GetSizeBytes(), 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", distributedCaches[1]), err)
 	}
@@ -445,11 +422,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	// Do a write, and ensure it was written to all nodes.
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	rn := &rspb.ResourceName{
-		Digest:    d,
-		CacheType: rspb.CacheType_CAS,
-	}
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	if err := distributedCaches[0].Set(ctx, rn, buf); err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +432,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	reader, err := distributedCaches[1].Reader(ctx, rn, offset, limit)
 	require.NoError(t, err)
 
-	readBuf := make([]byte, d.GetSizeBytes())
+	readBuf := make([]byte, rn.GetDigest().GetSizeBytes())
 	n, err := io.ReadFull(reader, readBuf)
 	require.EqualValues(t, limit, n)
 	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
@@ -519,11 +492,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
 		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -592,11 +561,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	resourcesWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
 		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -663,11 +628,7 @@ func TestBackfill(t *testing.T) {
 	resourcesWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
 		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -749,11 +710,7 @@ func TestContainsMulti(t *testing.T) {
 	resourcesWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
@@ -811,23 +768,15 @@ func TestMetadata(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000,
 	}
 	for i, testSize := range testSizes {
-		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		rn := &rspb.ResourceName{
-			InstanceName: "blah",
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-		}
-		// Set() the bytes in the cache.
+		rn, buf := testdigest.NewRandomResourceAndBuf(t, testSize, rspb.CacheType_CAS, "blah")
 		err := distributedCaches[i%3].Set(ctx, rn, buf)
 		require.NoError(t, err)
 
 		for _, dc := range distributedCaches {
 			// Metadata should return true size of the blob, regardless of queried size.
-			md, err := dc.Metadata(ctx, &rspb.ResourceName{
-				Digest:       &repb.Digest{Hash: d.GetHash(), SizeBytes: 1},
-				InstanceName: "blah",
-				CacheType:    rspb.CacheType_CAS,
-			})
+			rn2 := proto.Clone(rn).(*rspb.ResourceName)
+			rn2.Digest.SizeBytes = 1
+			md, err := dc.Metadata(ctx, rn2)
 			require.NoError(t, err)
 			require.Equal(t, testSize, md.StoredSizeBytes)
 		}
@@ -876,11 +825,7 @@ func TestFindMissing(t *testing.T) {
 	resourcesWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
@@ -891,13 +836,9 @@ func TestFindMissing(t *testing.T) {
 	resourcesNotWritten := make([]*rspb.ResourceName, 0)
 	digestsNotWritten := make([]*repb.Digest, 0)
 	for i := 0; i < 100; i++ {
-		d, _ := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		resourcesNotWritten = append(resourcesNotWritten, rn)
-		digestsNotWritten = append(digestsNotWritten, d)
+		digestsNotWritten = append(digestsNotWritten, rn.GetDigest())
 	}
 
 	allResources := append(resourcesWritten, resourcesNotWritten...)
@@ -956,18 +897,11 @@ func TestGetMulti(t *testing.T) {
 	resourcesWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
-		resourcesWritten = append(resourcesWritten, &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		})
+		resourcesWritten = append(resourcesWritten, rn)
 	}
 
 	for _, baseCache := range baseCaches {
@@ -1059,11 +993,7 @@ func TestHintedHandoff(t *testing.T) {
 	digestsWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
 		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -1159,11 +1089,7 @@ func TestDelete(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
@@ -1220,11 +1146,7 @@ func TestDelete_NonExistentFile(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	for i := 0; i < 100; i++ {
-		d, _ := testdigest.NewRandomDigestBuf(t, 100)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 
 		// Do a delete on a file that does not exist.
 		err := distributedCaches[i%3].Delete(ctx, rn)

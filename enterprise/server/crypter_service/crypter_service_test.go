@@ -709,7 +709,7 @@ func TestConfigAPI(t *testing.T) {
 	userCtx, err := auther.WithAuthenticatedUser(context.Background(), userID)
 	require.NoError(t, err)
 
-	apiKeys, err := env.GetUserDB().GetAPIKeys(userCtx, groupID)
+	apiKeys, err := env.GetAuthDB().GetAPIKeys(userCtx, groupID)
 	require.NoError(t, err)
 	apiKeyCtx := auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
 

@@ -65,7 +65,6 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
 
     const configuredEvent = this.props.model.workflowConfigured;
 
-    // TODO(Maggie): Deprecate ExecuteWorkflowResponse.InvocationID field
     this.inFlightRpc = rpcService.service
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({

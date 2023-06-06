@@ -1539,7 +1539,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
 	// Don't bother with validation here; just give the user whatever the DB
 	// claims the tags are.
-	out.Tags, _ = invocation_format.SplitAndTrimTags(i.Tags, false)
+	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
 	return out
 }
 

@@ -131,6 +131,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 			BranchName:    ti.BranchName,
 			CommitSha:     ti.CommitSHA,
 			Role:          ti.Role,
+			BazelExitCode: ti.BazelExitCode,
 		}
 
 		invocations = append(invocations, apiInvocation)

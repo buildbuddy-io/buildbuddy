@@ -60,11 +60,7 @@ type digestBuf struct {
 func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestBuf {
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, digestSizeBytes)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r, buf := testdigest.RandomCASResourceBuf(t, digestSizeBytes)
 		digestBufs = append(digestBufs, &digestBuf{
 			d:   r,
 			buf: buf,

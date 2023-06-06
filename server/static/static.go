@@ -160,7 +160,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		QuotaManagementEnabled:                 env.GetQuotaManager() != nil,
 		SecretsEnabled:                         env.GetSecretService() != nil,
 		TestOutputManifestsEnabled:             *testOutputManifestsEnabled,
-		UserOwnedKeysEnabled:                   env.GetUserDB() != nil && env.GetUserDB().GetUserOwnedKeysEnabled(),
+		UserOwnedKeysEnabled:                   env.GetAuthDB() != nil && env.GetAuthDB().GetUserOwnedKeysEnabled(),
 		TrendsHeatmapEnabled:                   iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:                   *patternFilterEnabled,
 		BotSuggestionsEnabled:                  env.GetSuggestionService() != nil,

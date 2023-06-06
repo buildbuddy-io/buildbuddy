@@ -23,11 +23,12 @@ before submitting any changes.
 
 ### VM crashes / `DebugMode`
 
-You can configure Firecracker with `DebugMode: true` to see more detailed
+You can run Firecracker in debug mode to see more detailed
 VM logs, including logs from the init binary and vmexec server.
-When testing, you can set this manually in the container options.
-When running the executor, you can configure debug mode with
-`--executor.firecracker_debug_mode=true`.
+
+To run in debug mode, set `--executor.firecracker_debug_mode=true`
+on the executor, or pass `--test_arg=--executor.firecracker_debug_mode=true`
+to `bazel test`.
 
 It's useful to use debug mode whenever the executor can't connect
 to the VM (indicating the VM might have crashed).

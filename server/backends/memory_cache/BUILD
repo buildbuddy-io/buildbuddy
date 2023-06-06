@@ -35,5 +35,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/prefix",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
     ],
 )
