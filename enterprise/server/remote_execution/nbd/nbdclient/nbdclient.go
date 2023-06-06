@@ -197,8 +197,8 @@ func (d *ClientDevice) Mount(path string) error {
 	return nil
 }
 
-// Unmount unmounts the device from its current mount path. It does not
-// disconnect the NBD device.
+// Unmount unmounts the device from its current mount path and disconnects the
+// device.
 func (d *ClientDevice) Unmount() error {
 	if d.mountPath == "" {
 		return status.FailedPreconditionError("not mounted")
