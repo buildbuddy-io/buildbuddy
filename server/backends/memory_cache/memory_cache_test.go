@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -93,11 +94,17 @@ func TestIsolation(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r1 := digest.NewResourceName(d, test.instanceName1, test.cacheType1, repb.DigestFunction_SHA256).ToProto()
-		r2 := digest.NewResourceName(d, test.instanceName2, test.cacheType2, repb.DigestFunction_SHA256).ToProto()
+		r, buf := testdigest.RandomCASResourceBuf(t, 100)
+		r1 := proto.Clone(r).(*rspb.ResourceName)
+		r1.InstanceName = test.instanceName1
+		r1.CacheType = test.cacheType1
+
+		r2 := proto.Clone(r).(*rspb.ResourceName)
+		r2.InstanceName = test.instanceName2
+		r2.CacheType = test.cacheType2
 
 		// Set() the bytes in cache1.
+		d := r1.GetDigest()
 		err := mc.Set(ctx, r1, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())

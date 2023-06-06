@@ -507,8 +507,8 @@ func TestReadWrite_Compressed(t *testing.T) {
 		}
 		waitUntilServerIsAlive(peer)
 
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		resourceName := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		resourceName := digest.ResourceNameFromProto(rn)
 		resourceName.SetCompressor(tc.writeCompression)
 		writeRN := resourceName.ToProto()
 		compressedBuf := compression.CompressZstd(nil, buf)
@@ -527,11 +527,9 @@ func TestReadWrite_Compressed(t *testing.T) {
 		err = wc.Close()
 		require.NoError(t, err)
 
-		readRN := &rspb.ResourceName{
-			Digest:     d,
-			CacheType:  rspb.CacheType_CAS,
-			Compressor: tc.readCompression,
-		}
+		readResource := digest.ResourceNameFromProto(rn)
+		readResource.SetCompressor(tc.readCompression)
+		readRN := readResource.ToProto()
 		r, err := c.RemoteReader(ctx, peer, readRN, 0, 0)
 		require.NoError(t, err)
 
