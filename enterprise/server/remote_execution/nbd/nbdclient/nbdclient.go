@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -63,7 +62,7 @@ func dialHost() (*grpc.ClientConn, error) {
 	return grpc.Dial("vsock", grpc.WithContextDialer(dialer), grpc.WithInsecure())
 }
 
-// NewClientDevice returns a client to the host device with the given ID.
+// NewClientDevice returns a client to the host device with the given name.
 func NewClientDevice(ctx context.Context, name string) (*ClientDevice, error) {
 	conn, err := dialHost()
 	if err != nil {
@@ -83,8 +82,7 @@ func NewClientDevice(ctx context.Context, name string) (*ClientDevice, error) {
 // DevicePath returns the /dev/nbd* path for this device, such as "/dev/nbd0"
 func (d *ClientDevice) DevicePath() string {
 	if d.device == nil {
-		// TODO: don't panic
-		panic("device is not yet created")
+		fatalf("called DevicePath() before device is created")
 	}
 	return fmt.Sprintf("/dev/nbd%d", d.device.Index)
 }
@@ -102,25 +100,24 @@ func (d *ClientDevice) updateMetadata(ctx context.Context) error {
 	})
 }
 
-// CreateDevice connects a free network block device such as "/dev/nbd0" to this
-// client device.
+// createDevice connects a free network block device such as "/dev/nbd0" to this
+// client device and waits for the device to become ready.
 //
 // Note that the kernel pre-allocates a fixed number of inactive nbd devices
 // according to the kernel config. "Creating" the device here just means that we
 // are activating one of these existing devices, connecting it to this
 // ClientDevice instance.
 func (d *ClientDevice) createDevice() error {
+	if d.device != nil {
+		return status.FailedPreconditionError("device is already created")
+	}
+
 	start := time.Now()
 
-	// Using background context here since cancelling the context will
-	// disconnect the device, and it needs to stay connected for the lifetime of
-	// the VM or until we explicitly disconnect it (for hot-swapping).
-	ctx := context.Background()
-
+	ctx := d.ctx
 	if err := d.updateMetadata(ctx); err != nil {
 		return err
 	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	idx, wait, err := nbd.Loopback(ctx, d, uint64(d.metadata.GetSizeBytes()))
 	if err != nil {
@@ -145,7 +142,7 @@ func (d *ClientDevice) waitForReady(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, readyCheckTimeout)
 	defer cancel()
 
-	f, err := os.Open(fmt.Sprintf("/sys/block/%s/size", filepath.Base(d.DevicePath())))
+	f, err := os.Open(fmt.Sprintf("/sys/block/nbd%d/size", d.device.Index))
 	if err != nil {
 		return err
 	}
@@ -175,24 +172,20 @@ func (d *ClientDevice) waitForReady(ctx context.Context) error {
 	}
 }
 
-// Mount connects the NBD device if not already connected, updates the device
-// size parameter to match its current backing file size (according to the host
-// server), and mounts the client device to the given directory path. The
+// Mount connects the NBD device and mounts it to the given directory path. The
 // directory must already exist.
 func (d *ClientDevice) Mount(path string) error {
 	if d.mountPath != "" {
 		return status.FailedPreconditionError("already mounted")
 	}
-	d.mountPath = path
-	if d.device == nil {
-		if err := d.createDevice(); err != nil {
-			return status.WrapError(err, "failed to create device")
-		}
+	if err := d.createDevice(); err != nil {
+		return status.WrapError(err, "failed to create device")
 	}
 	fstype := filesystemTypeString(d.metadata.GetFilesystemType())
 	if err := syscall.Mount(d.DevicePath(), path, fstype, syscall.MS_RELATIME, "" /*=data*/); err != nil {
 		return status.InternalErrorf("failed to mount %s (type %s) to %s: %s", d.DevicePath(), fstype, path, err)
 	}
+	d.mountPath = path
 	log.Infof("Mounted %s (type %s) to %s", d.DevicePath(), d.metadata.GetName(), path)
 	return nil
 }
