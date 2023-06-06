@@ -268,13 +268,13 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 }
 
 func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID string, sizeBytes int64) *rfpb.FileRecord {
-	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
+	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 	fr := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: groupID,
 		},
-		Digest: d,
+		Digest: r.GetDigest(),
 	}
 
 	fs := filestore.New()
@@ -283,7 +283,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	_, err := ts.APIClient.Get(ctx, ts.GRPCAddress)
 	require.NoError(t, err)
 
-	writeCloserMetadata := fs.InlineWriter(ctx, d.GetSizeBytes())
+	writeCloserMetadata := fs.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
 	bytesWritten, err := writeCloserMetadata.Write(buf)
 	require.NoError(t, err)
 

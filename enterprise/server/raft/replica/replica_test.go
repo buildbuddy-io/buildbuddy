@@ -156,14 +156,14 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 }
 
 func randomRecord(t *testing.T, partition string, sizeBytes int64) (*rfpb.FileRecord, []byte) {
-	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
+	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rspb.CacheType_CAS,
+			CacheType:   r.GetCacheType(),
 			PartitionId: partition,
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		Digest: d,
+		Digest: r.GetDigest(),
 	}, buf
 }
 
@@ -487,10 +487,10 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	writeDefaultRangeDescriptor(t, em, repl)
 
 	// Write a file to the replica's data dir.
-	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 
 	store = store.WithFileReadFn(func(fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
-		if fileRecord.GetDigest().GetHash() == d.GetHash() {
+		if fileRecord.GetDigest().GetHash() == r.GetDigest().GetHash() {
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}
 		return nil, status.NotFoundError("File not found")
@@ -502,7 +502,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		Digest: d,
+		Digest: r.GetDigest(),
 	}
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
 
@@ -515,7 +515,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
 	require.NoError(t, err)
-	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
+	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 
 	// Create a snapshot of the replica.
 	snapI, err := repl.PrepareSnapshot()
@@ -544,7 +544,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	// Verify that the file is readable.
 	readCloser, err = repl2.Reader(ctx, header, fileRecord, 0, 0)
 	require.NoError(t, err)
-	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
+	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }
 
 func TestReplicaFileWriteDelete(t *testing.T) {
@@ -562,14 +562,14 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	writeDefaultRangeDescriptor(t, em, repl)
 
 	// Write a file to the replica's data dir.
-	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		Digest: d,
+		Digest: r.GetDigest(),
 	}
 
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
@@ -584,7 +584,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	{
 		readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
 		require.NoError(t, err)
-		require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
+		require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 	}
 	// Delete the file.
 	{
@@ -713,14 +713,14 @@ func TestFindSplitPoint(t *testing.T) {
 	writeFiles := func(partitionID string, count int, sizeBytes int64) {
 		for i := 0; i < count; i++ {
 			// Write a file to the replica's data dir.
-			d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
+			r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 			fileRecord := &rfpb.FileRecord{
 				Isolation: &rfpb.Isolation{
 					CacheType:   rspb.CacheType_CAS,
 					PartitionId: partitionID,
 					GroupId:     interfaces.AuthAnonymousUser,
 				},
-				Digest: d,
+				Digest: r.GetDigest(),
 			}
 			header := &rfpb.Header{RangeId: 1, Generation: 1}
 			writeCommitter := writer(t, em, repl, header, fileRecord)

@@ -354,8 +354,8 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		if err := disk.EnsureDirectoryExists(parentDir); err != nil {
 			t.Fatal(err)
 		}
-		d, buf := testdigest.NewRandomDigestBuf(t, fileSizeBytes)
-		fullPath := filepath.Join(parentDir, d.GetHash()+".txt")
+		r, buf := testdigest.RandomCASResourceBuf(t, fileSizeBytes)
+		fullPath := filepath.Join(parentDir, r.GetDigest().GetHash()+".txt")
 		if err := os.WriteFile(fullPath, buf, 0660); err != nil {
 			t.Fatal(err)
 		}

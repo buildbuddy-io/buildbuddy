@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -17,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -31,7 +29,6 @@ var (
 
 func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "auth.enable_anonymous_usage", true)
 	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
@@ -71,8 +68,8 @@ func getCacheConfig(t *testing.T, listenAddr string, join []string) *raft_cache.
 		RootDir:       testfs.MakeTempDir(t),
 		ListenAddress: listenAddr,
 		Join:          join,
-		HTTPPort:      testport.FindFree(t),
-		GRPCPort:      testport.FindFree(t),
+		HTTPAddr:      localAddr(t),
+		GRPCAddr:      localAddr(t),
 	}
 }
 
@@ -208,12 +205,7 @@ func TestReaderAndWriter(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: "remote/instance/name",
-		}
+		r, buf := testdigest.RandomCASResourceBuf(t, 100)
 		writeDigest(t, ctx, rc1, r, buf)
 		readAndCompareDigest(t, ctx, rc1, r)
 	}
@@ -260,8 +252,7 @@ func TestCacheShutdown(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := digest.NewResourceName(d, "remote/instance/name", rspb.CacheType_CAS).ToProto()
+		rn, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "remote/instance/name")
 		writeDigest(t, ctx, rc1, rn, buf)
 		digestsWritten = append(digestsWritten, rn)
 	}
@@ -272,8 +263,7 @@ func TestCacheShutdown(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := digest.NewResourceName(d, "remote/instance/name", rspb.CacheType_CAS).ToProto()
+		rn, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "remote/instance/name")
 		writeDigest(t, ctx, rc1, rn, buf)
 		digestsWritten = append(digestsWritten, rn)
 	}
@@ -329,12 +319,7 @@ func TestDistributedRanges(t *testing.T) {
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: "remote/instance/name",
-		}
+		r, buf := testdigest.RandomCASResourceBuf(t, 100)
 		writeDigest(t, ctx, rc, r, buf)
 	}
 
@@ -384,12 +369,7 @@ func TestFindMissingBlobs(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: "remote/instance/name",
-		}
+		r, buf := testdigest.RandomCASResourceBuf(t, 100)
 		digestsWritten = append(digestsWritten, r)
 		writeDigest(t, ctx, rc1, r, buf)
 	}
@@ -397,15 +377,9 @@ func TestFindMissingBlobs(t *testing.T) {
 	missingDigests := make([]*rspb.ResourceName, 0)
 	expectedMissingHashes := make([]string, 0)
 	for i := 0; i < 10; i++ {
-		d, _ := testdigest.NewRandomDigestBuf(t, 100)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: "remote/instance/name",
-		}
-
+		r, _ := testdigest.RandomCASResourceBuf(t, 100)
 		missingDigests = append(missingDigests, r)
-		expectedMissingHashes = append(expectedMissingHashes, d.GetHash())
+		expectedMissingHashes = append(expectedMissingHashes, r.GetDigest().GetHash())
 	}
 
 	rns := append(digestsWritten, missingDigests...)

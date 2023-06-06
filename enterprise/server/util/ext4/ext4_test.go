@@ -13,6 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 func randomDir(subDirs []string) string {
@@ -40,12 +42,12 @@ func TestE2E(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		parentDir := filepath.Join(rootDir, randomDir(allowedPaths))
 		disk.EnsureDirectoryExists(parentDir)
-		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		dest := filepath.Join(parentDir, d.GetHash())
+		r, buf := testdigest.RandomCASResourceBuf(t, 1000)
+		dest := filepath.Join(parentDir, r.GetDigest().GetHash())
 		if err := os.WriteFile(dest, buf, 0644); err != nil {
 			t.Fatal(err)
 		}
-		pathHashMap[dest] = d.GetHash()
+		pathHashMap[dest] = r.GetDigest().GetHash()
 	}
 
 	// Make the random directory into an ext4 image.
