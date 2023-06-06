@@ -169,8 +169,12 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 				return disconnectWithErr(err)
 			}
 			for _, stream := range forwardingStreams {
-				// Intentionally ignore errors here -- proxying is best effort.
-				stream.Send(in)
+				err := stream.Send(in)
+				// Async proxying is best effort--only handle errors in synchronous mode
+				if s.synchronous && err != nil {
+					closeForwardingStreams(forwardingStreams)
+					return disconnectWithErr(err)
+				}
 			}
 			acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
 		}
