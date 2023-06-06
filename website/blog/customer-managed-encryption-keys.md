@@ -8,7 +8,7 @@ date: 2023-06-05:11:00:00
 author_url: https://www.linkedin.com/in/vadimberezniker/
 author_image_url: https://avatars.githubusercontent.com/u/1335358?v=4
 image: /img/blog/cmek.png
-tags: [product security encryption enterprise]
+tags: [product, security, encryption, enterprise]
 ---
 
 BuildBuddy enables fast builds by providing a high-performance cache that stores and serves artifacts, such as the
