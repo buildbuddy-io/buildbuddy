@@ -58,28 +58,66 @@ func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 		expectedMilliCPU    int64
 		expectedDiskBytes   int64
 	}{
-		{"small", platform.BareContainerType, false /*=initDockerd*/, 20 * 1e6, 600, tasksize.DefaultFreeDiskEstimate},
-		{"enormous", platform.BareContainerType, false /*=initDockerd*/, 800 * 1e6, 1000, tasksize.DefaultFreeDiskEstimate},
-		{"small", platform.FirecrackerContainerType, false /*=initDockerd*/, 20*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes, 600, tasksize.DefaultFreeDiskEstimate},
-		{"enormous", platform.FirecrackerContainerType, true /*=initDockerd*/, 800*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes + tasksize.DockerInFirecrackerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate + tasksize.DockerInFirecrackerAdditionalDiskEstimateBytes},
+		{
+			size:                "small",
+			isolationType:       platform.BareContainerType,
+			initDockerd:         false,
+			expectedMemoryBytes: 20 * 1e6,
+			expectedMilliCPU:    600,
+			expectedDiskBytes:   tasksize.DefaultFreeDiskEstimate,
+		},
+		{
+			size:                "enormous",
+			isolationType:       platform.BareContainerType,
+			initDockerd:         false,
+			expectedMemoryBytes: 800 * 1e6,
+			expectedMilliCPU:    1000,
+			expectedDiskBytes:   tasksize.DefaultFreeDiskEstimate,
+		},
+		{
+			size:                "small",
+			isolationType:       platform.FirecrackerContainerType,
+			initDockerd:         false,
+			expectedMemoryBytes: tasksize.FirecrackerMinMemoryBytes,
+			expectedMilliCPU:    600,
+			expectedDiskBytes:   tasksize.DefaultFreeDiskEstimate,
+		},
+		{
+			size:                "medium",
+			isolationType:       platform.FirecrackerContainerType,
+			initDockerd:         false,
+			expectedMemoryBytes: 100*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes,
+			expectedMilliCPU:    1000,
+			expectedDiskBytes:   tasksize.DefaultFreeDiskEstimate,
+		},
+		{
+			size:                "enormous",
+			isolationType:       platform.FirecrackerContainerType,
+			initDockerd:         true,
+			expectedMemoryBytes: 800*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes + tasksize.DockerInFirecrackerAdditionalMemEstimateBytes,
+			expectedMilliCPU:    1000,
+			expectedDiskBytes:   tasksize.DefaultFreeDiskEstimate + tasksize.DockerInFirecrackerAdditionalDiskEstimateBytes,
+		},
 	} {
-		ts := tasksize.Estimate(&repb.ExecutionTask{
-			Command: &repb.Command{
-				Platform: &repb.Platform{
-					Properties: []*repb.Platform_Property{
-						{Name: "workload-isolation-type", Value: string(testCase.isolationType)},
-						{Name: "init-dockerd", Value: fmt.Sprintf("%v", testCase.initDockerd)},
+		t.Run(fmt.Sprintf("%s_%s", testCase.size, testCase.isolationType), func(t *testing.T) {
+			ts := tasksize.Estimate(&repb.ExecutionTask{
+				Command: &repb.Command{
+					Platform: &repb.Platform{
+						Properties: []*repb.Platform_Property{
+							{Name: "workload-isolation-type", Value: string(testCase.isolationType)},
+							{Name: "init-dockerd", Value: fmt.Sprintf("%v", testCase.initDockerd)},
+						},
+					},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "TEST_SIZE", Value: testCase.size},
 					},
 				},
-				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-					{Name: "TEST_SIZE", Value: testCase.size},
-				},
-			},
-		})
+			})
 
-		assert.Equal(t, testCase.expectedMemoryBytes, ts.EstimatedMemoryBytes)
-		assert.Equal(t, testCase.expectedMilliCPU, ts.EstimatedMilliCpu)
-		assert.Equal(t, testCase.expectedDiskBytes, ts.EstimatedFreeDiskBytes)
+			assert.Equal(t, testCase.expectedMemoryBytes, ts.EstimatedMemoryBytes)
+			assert.Equal(t, testCase.expectedMilliCPU, ts.EstimatedMilliCpu)
+			assert.Equal(t, testCase.expectedDiskBytes, ts.EstimatedFreeDiskBytes)
+		})
 	}
 
 }
