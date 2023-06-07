@@ -78,6 +78,6 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 fi
 
 # Add a newline to the end of .yaml files if not present.
-find . -type f -name "*.yaml" ! -path "./.git/*" ! -path "./bazel-*/" -exec $SED -i '$a\' {} +
+find . -type f -name "*.yaml" ! -path "./.git/*" ! -path "./bazel-*" -exec $SED -i '$a\' {} +
 
 echo 'All done!'
