@@ -46,6 +46,8 @@ const (
 
 	// Additional resources needed depending on task characteristics
 
+	FirecrackerMinMemoryMB    = int64(200)
+	FirecrackerMinMemoryBytes = int64(FirecrackerMinMemoryMB * 1e6)
 	// FirecrackerAdditionalMemEstimateBytes represents the overhead incurred by
 	// the firecracker runtime. It was computed as the minimum memory needed to
 	// execute a trivial task (i.e. pwd) in Firecracker, multiplied by ~1.5x so
@@ -333,6 +335,9 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 	}
 	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
 		memEstimate += FirecrackerAdditionalMemEstimateBytes
+		if memEstimate < FirecrackerMinMemoryBytes {
+			memEstimate = FirecrackerMinMemoryBytes
+		}
 		// Note: props.InitDockerd is only supported for docker-in-firecracker.
 		if props.InitDockerd {
 			freeDiskEstimate += DockerInFirecrackerAdditionalDiskEstimateBytes
