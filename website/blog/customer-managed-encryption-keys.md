@@ -34,7 +34,7 @@ that is used to protect your BuildBuddy data.
 If the customer-managed key in the composite master key is revoked, your data can no longer be decrypted by BuildBuddy -
 providing a level of security and control above BuildBuddy’s standard level of encryption that is controlled by GCP.
 
-This dual-key encryption model, together with BuildBuddy’s built-in user authentication enabled three levels of data
+This dual-key encryption model, together with BuildBuddy’s built-in user authentication enables three levels of data
 protection.
 
 ## Technical Details
