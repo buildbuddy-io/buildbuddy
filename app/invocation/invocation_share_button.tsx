@@ -77,7 +77,7 @@ export default class InvocationShareButtonComponent extends React.Component<
   }
 
   private getInvocation(): invocation.Invocation | undefined {
-    return this.props.model.invocations.find((invocation) => invocation.invocationId === this.props.invocationId);
+    return this.props.model.getInvocations().find((invocation) => invocation.invocationId === this.props.invocationId);
   }
 
   private onShareButtonClick() {

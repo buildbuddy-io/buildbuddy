@@ -44,7 +44,7 @@ interface State {
   inProgress: boolean;
   error: BuildBuddyError | null;
 
-  model: InvocationModel;
+  model?: InvocationModel;
 
   keyboardShortcutHandle: string;
 }
@@ -65,9 +65,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     loading: true,
     inProgress: false,
     error: null,
-
-    model: InvocationModel.modelFromInvocations([]),
-
     keyboardShortcutHandle: "",
   };
 
@@ -106,10 +103,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // Update model subscription
     if (this.state.model !== prevState.model) {
       this.modelChangedSubscription?.unsubscribe();
-      this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
+      if (this.state.model) {
+        this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
+      }
     }
     // Update title and favicon
-    if (this.state.model.invocations?.length) {
+    if (this.state.model) {
       document.title = `${this.state.model.getUser(
         true
       )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
@@ -136,9 +135,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {
         console.log(response);
-        const model = InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]);
+        if (!response.invocation || response.invocation.length === 0) {
+          throw new BuildBuddyError("NotFound", "Invocation not found.");
+        }
+        const model = InvocationModel.modelFromInvocations(response.invocation[0], response.invocation.slice(1));
         // Only show the in-progress screen if we don't have any events yet.
-        const showInProgressScreen = model.isInProgress() && !response.invocation[0]?.event?.length;
+        const showInProgressScreen = model.isInProgress() && !response.invocation[0].event?.length;
         this.setState({
           inProgress: showInProgressScreen,
           model: model,
@@ -159,17 +161,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }, 3000);
   }
 
-  getBuildLogs() {
-    if (!this.state.model.hasChunkedEventLogs()) {
+  getBuildLogs(model: InvocationModel): string {
+    if (!model.hasChunkedEventLogs()) {
       // Use the inlined console buffer if this invocation was created before
       // log chunking existed.
-      return this.state.model.invocations[0]?.consoleBuffer ?? "";
+      return model.getPrimaryInvocation().consoleBuffer;
     }
     return this.logsModel?.getLogs() ?? "";
   }
 
-  areBuildLogsLoading() {
-    if (!this.state.model.hasChunkedEventLogs()) {
+  areBuildLogsLoading(model: InvocationModel) {
+    if (!model.hasChunkedEventLogs()) {
       return false;
     }
     return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
@@ -180,7 +182,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       return <div className="loading"></div>;
     }
 
-    if (this.state.error) {
+    if (this.state.error || !this.state.model) {
       return (
         <InvocationNotFoundComponent
           invocationId={this.props.invocationId}
@@ -200,7 +202,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       let actionEvents: invocation.InvocationEvent[] =
         completed?.buildEvent?.children
           .flatMap((child) =>
-            (this.state.model.actionMap.get(child?.actionCompleted?.label ?? "") ?? []).filter(
+            (this.state.model!.actionMap.get(child?.actionCompleted?.label ?? "") ?? []).filter(
               (event) =>
                 event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
                 event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
@@ -235,12 +237,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
-      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model.invocations[0]?.attempt ?? 0));
+      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model?.getPrimaryInvocation().attempt ?? 0));
     };
 
     const suggestions = getSuggestions({
       model: this.state.model,
-      buildLogs: this.getBuildLogs(),
+      buildLogs: this.getBuildLogs(this.state.model),
       user: this.props.user,
     });
 
@@ -299,14 +301,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
-            <QueryGraphCardComponent buildLogs={this.getBuildLogs()} />
+            <QueryGraphCardComponent buildLogs={this.getBuildLogs(this.state.model)} />
           )}
 
           {(activeTab === "all" || activeTab == "log") && (
             <BuildLogsCardComponent
               dark={!this.props.preferences.lightTerminalEnabled}
-              value={this.getBuildLogs()}
-              loading={this.areBuildLogsLoading()}
+              value={this.getBuildLogs(this.state.model)}
+              loading={this.areBuildLogsLoading(this.state.model)}
               expanded={activeTab == "log"}
               fullLogsFetcher={fetchBuildLogs}
             />

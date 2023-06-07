@@ -20,7 +20,7 @@ export default class InvocationButtons extends React.Component<InvocationButtons
   };
 
   private canRerunWorkflow() {
-    if (!this.props.user?.groups.some((group) => group.id === this.props.model.invocations[0]?.acl?.groupId)) {
+    if (!this.props.user?.groups.some((group) => group.id === this.props.model.getPrimaryInvocation().acl?.groupId)) {
       return false;
     }
 

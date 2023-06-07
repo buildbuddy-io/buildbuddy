@@ -75,7 +75,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
       return <></>;
     }
 
-    const invocation = this.props.model.invocations[0];
+    const invocation = this.props.model.getPrimaryInvocation();
     const hasWritePermissions = this.props.user && invocation && canWrite(this.props.user, invocation);
 
     return (
