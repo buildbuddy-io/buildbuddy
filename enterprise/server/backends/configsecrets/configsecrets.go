@@ -6,11 +6,11 @@ package configsecrets
 
 import (
 	"context"
-	"flag"
 	"fmt"
 
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2/google"
@@ -19,29 +19,17 @@ import (
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 )
 
-const (
-	configSecretProviderFlagName            = "config_secrets.provider"
-	configSecretsGCPProjectFlagName         = "config_secrets.gcp.project_id"
-	configSecretsGCPCredentialsFileFlagName = "config_secrets.gcp.credentials_file"
-)
-
 var (
 	// Note that all the flags here must be set on the command line and not via
 	// a config file since config file parsing depends on secret integration
 	// being already configured.
 
-	configSecretProvider = flag.String(configSecretProviderFlagName, "", "Secrets provider to use for config variable substitution. Currently only 'gcp' is supported.")
+	configSecretProvider = flagutil.New("config_secrets.provider", "", "Secrets provider to use for config variable substitution. Currently only 'gcp' is supported.", flagutil.YAMLIgnoreTag)
 
 	// GCP flags.
-	configSecretsGCPProject         = flag.String(configSecretsGCPProjectFlagName, "", "GCP project from which secrets will be loaded.")
-	configSecretsGCPCredentialsFile = flag.String(configSecretsGCPCredentialsFileFlagName, "", "Credentials to use when communicating with the secrets store. If not specified, Application Default Credentials are used.")
+	configSecretsGCPProject         = flagutil.New("config_secrets.gcp.project_id", "", "GCP project from which secrets will be loaded.", flagutil.YAMLIgnoreTag)
+	configSecretsGCPCredentialsFile = flagutil.New("config_secrets.gcp.credentials_file", "", "Credentials to use when communicating with the secrets store. If not specified, Application Default Credentials are used.", flagutil.YAMLIgnoreTag)
 )
-
-func init() {
-	yaml.IgnoreFlagForYAML(configSecretProviderFlagName)
-	yaml.IgnoreFlagForYAML(configSecretsGCPProjectFlagName)
-	yaml.IgnoreFlagForYAML(configSecretsGCPCredentialsFileFlagName)
-}
 
 type gcpProvider struct {
 	client *secretmanager.Client

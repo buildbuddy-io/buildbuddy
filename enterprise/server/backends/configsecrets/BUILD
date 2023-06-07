@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",
+        "//server/util/flagutil",
         "//server/util/flagutil/yaml",
         "//server/util/status",
         "@com_google_cloud_go_secretmanager//apiv1",
