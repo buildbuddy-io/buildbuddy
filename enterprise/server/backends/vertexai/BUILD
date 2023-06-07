@@ -5,6 +5,7 @@ go_library(
     srcs = ["vertexai.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/vertexai",
     deps = [
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_x_oauth2//google",
