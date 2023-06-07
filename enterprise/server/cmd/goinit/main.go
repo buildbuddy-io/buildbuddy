@@ -346,8 +346,6 @@ func main() {
 		}
 	}
 	die(sysctl(map[string]string{
-		// Default value, but set it explicitly to be sure.
-		"fs.inotify.max_user_instances": "128",
 		// Set to 1% of the 8GB memory.
 		// See https://github.com/torvalds/linux/blob/929ed21dfdb6ee94391db51c9eedb63314ef6847/fs/notify/inotify/inotify_user.c#L838-L844
 		// for more info
