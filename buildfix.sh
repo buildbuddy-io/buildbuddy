@@ -69,4 +69,15 @@ if ((GAZELLE)); then
   USE_BAZEL_VERSION="buildbuddy-io/$CLI_LATEST_VERSION" bazel fix
 fi
 
+SED="sed"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  # The OS X version of sed behaves differently than the GNU version. Use gsed
+  # on OS X to make up for this. If this fails, install it with:
+  #     `brew install gnu-sed`
+  SED="gsed"
+fi
+
+# Add a newline to the end of .yaml files if not present.
+find . -type f -name "*.yaml" ! -path "./.git/*" ! -path "./bazel-*/" -exec $SED -i '$a\' {} +
+
 echo 'All done!'
