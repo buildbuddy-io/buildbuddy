@@ -15,3 +15,4 @@ export const POINT_RADIUS = 2;
 
 // Keep in sync with CSS
 export const VERTICAL_SCROLLBAR_WIDTH = 14;
+export const HORIZONTAL_SCROLLBAR_HEIGHT = 14;

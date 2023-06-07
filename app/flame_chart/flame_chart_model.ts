@@ -18,6 +18,7 @@ export type FlameChartModel = {
   sections: SectionDecorationModel[];
   blocks: BlockModel[];
   lines: LineModel[];
+  lineSections: SectionDecorationModel[];
 };
 
 export type SectionDecorationModel = {
@@ -67,6 +68,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
   const timelines = buildThreadTimelines(events, { visibilityThreshold });
   const timeSeries = buildTimeSeries(events);
   const sections: SectionDecorationModel[] = [];
+  const lineSections: SectionDecorationModel[] = [];
   const blocks: BlockModel[] = [];
   const lines: LineModel[] = [];
 
@@ -106,6 +108,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
   }
 
   if (capabilities.config.timeseriesChartsInTimingProfileEnabled) {
+    currentThreadY = 0;
     let index = 0;
     for (const { name, events } of timeSeries) {
       const points = new Map<number, PointModel>();
@@ -159,7 +162,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
         pointsByXCoord: points,
         dt: dt,
       });
-      sections.push({
+      lineSections.push({
         name: name,
         y: currentThreadY,
         height: sectionHeight,
@@ -173,5 +176,6 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
     sections,
     blocks,
     lines,
+    lineSections,
   };
 }
