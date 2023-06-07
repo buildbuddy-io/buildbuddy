@@ -37,6 +37,9 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
         return <Timer className="icon" />;
       case "not-run":
         return <CircleSlash className="icon" />;
+      default:
+        // Render nothing.
+        return undefined;
     }
   }
 
@@ -48,8 +51,7 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
         <div className="icon-container">{this.renderStatusIcon()}</div>
         <div className="command">{this.props.result.invocation.bazelCommand}</div>
         <div className="duration">
-          {typeof this.props.result.durationMillis === "number" &&
-            format.durationMillis(this.props.result.durationMillis)}
+          {this.props.result.durationMillis !== undefined && format.durationMillis(this.props.result.durationMillis)}
         </div>
       </Link>
     );
