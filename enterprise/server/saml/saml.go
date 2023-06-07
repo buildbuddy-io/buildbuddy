@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/crewjam/saml/samlsp"
@@ -26,9 +27,9 @@ import (
 
 var (
 	certFile = flag.String("auth.saml.cert_file", "", "Path to a PEM encoded certificate file used for SAML auth.")
-	cert     = flag.String("auth.saml.cert", "", "PEM encoded certificate used for SAML auth.")
+	cert     = flagutil.New("auth.saml.cert", "", "PEM encoded certificate used for SAML auth.", flagutil.SecretTag)
 	keyFile  = flag.String("auth.saml.key_file", "", "Path to a PEM encoded certificate key file used for SAML auth.")
-	key      = flag.String("auth.saml.key", "", "PEM encoded certificate key used for SAML auth.")
+	key      = flagutil.New("auth.saml.key", "", "PEM encoded certificate key used for SAML auth.", flagutil.SecretTag)
 )
 
 const (

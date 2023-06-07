@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/tink/go/core/registry"
@@ -41,10 +42,10 @@ var (
 	masterKeyURI              = flag.String("keystore.master_key_uri", "", "The master key URI (see tink docs for example)")
 	enableGCPClient           = flag.Bool("keystore.gcp.enabled", false, "Whether GCP KMS support should be enabled. Implicitly enabled if the master key URI references a GCP KMS URI.")
 	gcpCredentialsFile        = flag.String("keystore.gcp.credentials_file", "", "A path to a gcp JSON credentials file that will be used to authenticate.")
-	gcpCredentials            = flag.String("keystore.gcp.credentials", "", "GCP JSON credentials that will be used to authenticate.")
+	gcpCredentials            = flagutil.New("keystore.gcp.credentials", "", "GCP JSON credentials that will be used to authenticate.", flagutil.SecretTag)
 	enableAWSClient           = flag.Bool("keystore.aws.enabled", false, "Whether AWS KMS support should be enabled. Implicitly enabled if the master key URI references an AWS KMS URI.")
 	awsCredentialsFile        = flag.String("keystore.aws.credentials_file", "", "A path to a AWS CSV credentials file that will be used to authenticate. If not specified, credentials will be retrieved as described by https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html")
-	awsCredentials            = flag.String("keystore.aws.credentials", "", "AWS CSV credentials that will be used to authenticate. If not specified, credentials will be retrieved as described by https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html")
+	awsCredentials            = flagutil.New("keystore.aws.credentials", "", "AWS CSV credentials that will be used to authenticate. If not specified, credentials will be retrieved as described by https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html", flagutil.SecretTag)
 	localInsecureKMSDirectory = flag.String("keystore.local_insecure_kms_directory", "", "For development only. If set, keys in format local-insecure-kms://[id] are read from this directory.")
 )
 

@@ -57,7 +57,7 @@ type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" json:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
 	ClientID     string `yaml:"client_id" json:"client_id" usage:"The oauth client ID."`
 	ClientSecret string `yaml:"client_secret" json:"client_secret" usage:"The oauth client secret." config:"secret"`
-	Slug         string `yaml:"slug" json:"slug" usage:"The slug of this OIDC Provider."`
+	Slug         string `yaml:"slug" json:"slug" usage:"The slug of this OIDC Provider." config:"secret"`
 }
 
 const (
