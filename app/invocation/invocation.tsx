@@ -269,8 +269,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
         {!isBazelInvocation && (
           <div className="container">
             <div className="workflow-details-header">
-              <h2>Runner details (advanced)</h2>
-              <div>Details from the runner that executed all workflow steps.</div>
+              <h2>Runner results (advanced)</h2>
+              <div>Raw output from the runner instance that executed the Bazel commands.</div>
             </div>
           </div>
         )}
