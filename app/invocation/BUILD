@@ -89,10 +89,11 @@ ts_library(
     name = "child_invocation_card",
     srcs = ["child_invocation_card.tsx"],
     deps = [
+        "//app/components/link",
         "//app/format",
-        "//app/router",
         "//proto:build_event_stream_ts_proto",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
     ],
 )
@@ -105,7 +106,6 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/util:proto",
         "@npm//@types/react",
-        "@npm//lucide-react",
         "@npm//react",
     ],
 )

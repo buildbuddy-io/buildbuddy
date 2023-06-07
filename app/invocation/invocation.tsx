@@ -260,7 +260,20 @@ export default class InvocationComponent extends React.Component<Props, State> {
               user={this.props.user}
             />
           )}
+          {!isBazelInvocation && (
+            <div className="container">
+              <ChildInvocations model={this.state.model} />
+            </div>
+          )}
         </div>
+        {!isBazelInvocation && (
+          <div className="container">
+            <div className="workflow-details-header">
+              <h2>Runner details (advanced)</h2>
+              <div>Details from the runner that executed all workflow steps.</div>
+            </div>
+          </div>
+        )}
         <div className="container nopadding-dense">
           <InvocationTabsComponent
             tab={this.props.tab}
@@ -286,9 +299,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
-          {(this.state.model.workflowConfigured || this.state.model.childInvocationsConfigured) &&
-            (activeTab === "all" || activeTab === "commands") && <ChildInvocations model={this.state.model} />}
-
           {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
@@ -304,6 +314,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "all" || activeTab == "log") && (
             <BuildLogsCardComponent
+              title={isBazelInvocation ? "Build logs" : "Runner logs"}
               dark={!this.props.preferences.lightTerminalEnabled}
               value={this.getBuildLogs()}
               loading={this.areBuildLogsLoading()}
