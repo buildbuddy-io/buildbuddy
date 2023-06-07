@@ -4,7 +4,6 @@ import capabilities from "../capabilities/capabilities";
 import {
   BLOCK_HEIGHT,
   BLOCK_VERTICAL_GAP,
-  TIME_SERIES_VERTICAL_GAP,
   SECTION_LABEL_HEIGHT,
   SECTION_PADDING_BOTTOM,
   SECTION_PADDING_TOP,
@@ -110,16 +109,11 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
   if (capabilities.config.timeseriesChartsInTimingProfileEnabled) {
     currentThreadY = 0;
     let index = 0;
+    const sectionHeight = SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP + SECTION_PADDING_BOTTOM + TIME_SERIES_HEIGHT;
     for (const { name, events } of timeSeries) {
       const points = new Map<number, PointModel>();
-      const sectionHeight =
-        SECTION_LABEL_HEIGHT +
-        SECTION_PADDING_TOP +
-        SECTION_PADDING_BOTTOM +
-        TIME_SERIES_VERTICAL_GAP +
-        TIME_SERIES_HEIGHT;
-      let lowerBoundY = currentThreadY + sectionHeight;
-      let upperBoundY = currentThreadY + SECTION_LABEL_HEIGHT;
+      let lowerBoundY = currentThreadY + SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP + TIME_SERIES_HEIGHT;
+      let upperBoundY = currentThreadY + SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP;
 
       const darkColor = getMaterialChartColor(index);
       const lightColor = getLightMaterialChartColor(index);

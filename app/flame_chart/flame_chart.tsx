@@ -12,10 +12,13 @@ import {
   BLOCK_HEIGHT,
   INITIAL_END_TIME_SECONDS,
   SECTION_LABEL_HEIGHT,
+  SECTION_PADDING_TOP,
   TIMESTAMP_FONT_SIZE,
   TIMESTAMP_HEADER_SIZE,
   VERTICAL_SCROLLBAR_WIDTH,
   HORIZONTAL_SCROLLBAR_HEIGHT,
+  LINE_CHART_BORDER_TOP,
+  TIME_SERIES_HEIGHT,
 } from "./style_constants";
 import capabilities from "../capabilities/capabilities";
 
@@ -425,7 +428,11 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               }}>
               <g ref={this.gridlinesRef}></g>
             </svg>
-            <div className="viewport" ref={this.viewportRef} onMouseDown={this.onMouseDown.bind(this)}>
+            <div
+              className="viewport"
+              ref={this.viewportRef}
+              onMouseDown={this.onMouseDown.bind(this)}
+              style={{ height: "70%" }}>
               <div
                 style={{
                   position: "absolute",
@@ -478,11 +485,15 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                 }}
               />
             </div>
-            <div className="viewport" ref={this.lineChartsViewportRef} onMouseDown={this.onMouseDown.bind(this)}>
+            <div
+              className="viewport"
+              ref={this.lineChartsViewportRef}
+              onMouseDown={this.onMouseDown.bind(this)}
+              style={{ borderTop: "${LINE_CHART_BORDER_TOP}px solid #eee", height: "30%" }}>
               <div
                 style={{
                   position: "absolute",
-                  top: TIMESTAMP_HEADER_SIZE,
+                  top: 0,
                   left: 0,
                   right: 0,
                   pointerEvents: "none",
@@ -503,18 +514,16 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                 </div>
               </div>
               <svg style={{ position: "absolute" }} ref={this.barsContainerRef} className="tracks">
-                <g transform={`translate(0 ${TIMESTAMP_HEADER_SIZE})`}>
-                  <g ref={this.linesContainerRef} transform={`scale(${this.secondsPerX} 1)`}>
-                    <FlameChartLines
-                      lines={this.chartModel.lines}
-                      onHover={this.onHoverLine.bind(this)}
-                      onMouseMove={this.onLinesMouseMove.bind(this)}
-                      onMouseLeave={this.onLinesMouseLeave.bind(this)}
-                    />
-                    {capabilities.config.timeseriesChartsInTimingProfileEnabled && (
-                      <HoveredRefLine ref={this.hoveredRefLineRef} />
-                    )}
-                  </g>
+                <g ref={this.linesContainerRef} transform={`scale(${this.secondsPerX} 1)`}>
+                  <FlameChartLines
+                    lines={this.chartModel.lines}
+                    onHover={this.onHoverLine.bind(this)}
+                    onMouseMove={this.onLinesMouseMove.bind(this)}
+                    onMouseLeave={this.onLinesMouseLeave.bind(this)}
+                  />
+                  {capabilities.config.timeseriesChartsInTimingProfileEnabled && (
+                    <HoveredRefLine ref={this.hoveredRefLineRef} />
+                  )}
                 </g>
               </svg>
             </div>
@@ -784,6 +793,7 @@ class FlameChartLines extends React.Component<FlameChartLinesProps> {
               height={line.lowerBoundY - line.upperBoundY}
               vectorEffect="non-scaling-stroke"
               fill="transparent"
+              stroke-opacity="0"
             />
           </g>
         ))}
