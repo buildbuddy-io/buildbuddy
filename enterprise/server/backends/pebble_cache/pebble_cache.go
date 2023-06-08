@@ -1252,9 +1252,9 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 			GroupId:            groupID,
 		},
 		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
 		Compressor:     r.GetCompressor(),
 		Encryption:     encryption,
-		DigestFunction: r.GetDigestFunction(),
 	}, nil
 }
 
@@ -1737,10 +1737,11 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
 	if shouldCompress {
 		r = &rspb.ResourceName{
-			Digest:       r.GetDigest(),
-			InstanceName: r.GetInstanceName(),
-			Compressor:   repb.Compressor_ZSTD,
-			CacheType:    r.GetCacheType(),
+			Digest:         r.GetDigest(),
+			DigestFunction: r.GetDigestFunction(),
+			InstanceName:   r.GetInstanceName(),
+			Compressor:     repb.Compressor_ZSTD,
+			CacheType:      r.GetCacheType(),
 		}
 	}
 
@@ -2335,6 +2336,7 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 		Digest: &repb.Digest{
 			Hash: string(buf.Bytes()),
 		},
+		DigestFunction: repb.DigestFunction_SHA256,
 	})
 	if err != nil {
 		return nil, err

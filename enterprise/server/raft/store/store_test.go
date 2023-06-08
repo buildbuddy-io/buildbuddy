@@ -275,7 +275,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: groupID,
 		},
-		Digest: d,
+		Digest:         d,
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 
