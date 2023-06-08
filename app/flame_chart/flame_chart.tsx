@@ -432,7 +432,11 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               className="viewport"
               ref={this.viewportRef}
               onMouseDown={this.onMouseDown.bind(this)}
-              style={{ height: "70%" }}>
+              style={{
+                borderBottom: `${LINE_CHART_BORDER_TOP}px solid #ddd`,
+                height: `calc(60% - ${HORIZONTAL_SCROLLBAR_HEIGHT}px`,
+                overflowX: "initial",
+              }}>
               <div
                 style={{
                   position: "absolute",
@@ -489,7 +493,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               className="viewport"
               ref={this.lineChartsViewportRef}
               onMouseDown={this.onMouseDown.bind(this)}
-              style={{ borderTop: "${LINE_CHART_BORDER_TOP}px solid #eee", height: "30%" }}>
+              style={{ height: "40%", position: "relative" }}>
               <div
                 style={{
                   position: "absolute",
@@ -786,14 +790,12 @@ class FlameChartLines extends React.Component<FlameChartLinesProps> {
           <g>
             <path {...line.pathProps} vectorEffect="non-scaling-stroke" />
             <rect
+              className="transparent-rect"
               key={i}
               data-index={i}
               y={line.upperBoundY}
               width={line.upperBoundX}
               height={line.lowerBoundY - line.upperBoundY}
-              vectorEffect="non-scaling-stroke"
-              fill="transparent"
-              stroke-opacity="0"
             />
           </g>
         ))}

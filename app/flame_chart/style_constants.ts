@@ -11,7 +11,7 @@ export const INITIAL_END_TIME_SECONDS = 1;
 export const BLOCK_HEIGHT = 16;
 export const TIME_SERIES_HEIGHT = 44;
 export const POINT_RADIUS = 2;
-export const LINE_CHART_BORDER_TOP = 2;
+export const LINE_CHART_BORDER_TOP = 10;
 
 // Keep in sync with CSS
 export const VERTICAL_SCROLLBAR_WIDTH = 14;

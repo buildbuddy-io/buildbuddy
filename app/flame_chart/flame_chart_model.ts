@@ -112,8 +112,8 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
     const sectionHeight = SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP + SECTION_PADDING_BOTTOM + TIME_SERIES_HEIGHT;
     for (const { name, events } of timeSeries) {
       const points = new Map<number, PointModel>();
-      let lowerBoundY = currentThreadY + SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP + TIME_SERIES_HEIGHT;
-      let upperBoundY = currentThreadY + SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP;
+      let lowerBoundY = currentThreadY + sectionHeight;
+      let upperBoundY = lowerBoundY - TIME_SERIES_HEIGHT;
 
       const darkColor = getMaterialChartColor(index);
       const lightColor = getLightMaterialChartColor(index);
