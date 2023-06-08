@@ -69,7 +69,7 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubCl
 }
 
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
-	if role := r.buildEventAccumulator.Role(); !(role == "CI" || role == "CI_RUNNER") {
+	if role := r.buildEventAccumulator.Invocation().GetRole(); !(role == "CI" || role == "CI_RUNNER") {
 		return
 	}
 
@@ -129,13 +129,13 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		}
 
 		// TODO(siggisim): Kick these into a queue or something (but maintain order).
-		repoURL := r.buildEventAccumulator.RepoURL()
+		repoURL := r.buildEventAccumulator.Invocation().GetRepoUrl()
 		ownerRepo, err := gitutil.OwnerRepoFromRepoURL(repoURL)
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to report GitHub status: %s", err)
 			break
 		}
-		commitSHA := r.buildEventAccumulator.CommitSHA()
+		commitSHA := r.buildEventAccumulator.Invocation().GetCommitSha()
 		if ownerRepo != "" && commitSHA != "" {
 			err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
 			if err != nil {

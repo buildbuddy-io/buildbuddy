@@ -83,20 +83,8 @@ func (a *fakeAccumulator) Invocation() *inpb.Invocation {
 	}
 }
 
-func (a *fakeAccumulator) Role() string {
-	return a.role
-}
-
-func (a *fakeAccumulator) RepoURL() string {
-	return a.repoURL
-}
-
 func (a *fakeAccumulator) StartTime() time.Time {
 	return time.Now()
-}
-
-func (a *fakeAccumulator) CommitSHA() string {
-	return ""
 }
 
 func (a *fakeAccumulator) DisableCommitStatusReporting() bool {

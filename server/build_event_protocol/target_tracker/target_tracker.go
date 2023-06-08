@@ -198,7 +198,7 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms
 		// Stop write test targets to MySQL when writes to OLAP DB is enabled
 		return nil
 	}
-	repoURL := t.buildEventAccumulator.RepoURL()
+	repoURL := t.buildEventAccumulator.Invocation().GetRepoUrl()
 	knownTargets, err := readRepoTargets(ctx, t.env, repoURL)
 	if err != nil {
 		return err
@@ -252,7 +252,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 		// Stop write test targets to MySQL when writes to OLAP DB is enabled
 		return nil
 	}
-	repoURL := t.buildEventAccumulator.RepoURL()
+	repoURL := t.buildEventAccumulator.Invocation().GetRepoUrl()
 	invocationUUID, err := uuid.StringToBytes(t.invocationID())
 	if err != nil {
 		return err
@@ -295,12 +295,12 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 		log.CtxInfo(ctx, "skip writing test target statuses to OLAPDB because group_id is empty")
 		return nil
 	}
-	repoURL := t.buildEventAccumulator.RepoURL()
+	repoURL := t.buildEventAccumulator.Invocation().GetRepoUrl()
 	if repoURL == "" {
 		log.CtxInfo(ctx, "skip writing test target status because repo_url is empty")
 		return nil
 	}
-	commitSHA := t.buildEventAccumulator.CommitSHA()
+	commitSHA := t.buildEventAccumulator.Invocation().GetCommitSha()
 	if commitSHA == "" {
 		log.CtxInfo(ctx, "skip writing test target status because commit_sha is empty")
 		return nil
@@ -341,7 +341,7 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			StartTimeUsec:  testStartTimeUsec,
 			DurationUsec:   target.totalDuration.Microseconds(),
 			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
-			Role:           t.buildEventAccumulator.Role(),
+			Role:           t.buildEventAccumulator.Invocation().GetRole(),
 			Command:        t.buildEventAccumulator.Invocation().GetCommand(),
 		})
 	}
@@ -408,7 +408,7 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not a test", t.invocationID())
 		return
 	}
-	if t.buildEventAccumulator.Role() != "CI" {
+	if t.buildEventAccumulator.Invocation().GetRole() != "CI" {
 		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not a CI build", t.invocationID())
 		return
 	}
@@ -432,7 +432,7 @@ func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_
 		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.invocationID())
 		return
 	}
-	if t.buildEventAccumulator.Role() != "CI" {
+	if t.buildEventAccumulator.Invocation().GetRole() != "CI" {
 		log.CtxDebugf(ctx, "Not tracking target statuses for %q because it's not a CI build", t.invocationID())
 		return
 	}
