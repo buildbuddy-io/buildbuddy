@@ -231,8 +231,8 @@ func (d *ClientDevice) ReadAt(p []byte, off int64) (int, error) {
 			"block device server returned too many bytes (0x%x) for read at offset=0x%x length=0x%x",
 			len(res.Data), len(p), off)
 	}
-	copy(p, res.Data)
-	return len(res.Data), nil
+	n := copy(p, res.Data)
+	return n, nil
 }
 
 func (d *ClientDevice) WriteAt(p []byte, off int64) (int, error) {
