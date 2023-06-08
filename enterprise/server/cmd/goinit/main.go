@@ -17,6 +17,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
@@ -47,6 +48,7 @@ var (
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
+	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -210,6 +212,10 @@ func main() {
 		die(runVMExecServer(rootContext))
 		return
 	}
+	if *isVMVFS {
+		die(vmvfs.Run())
+		return
+	}
 
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
@@ -250,11 +256,6 @@ func main() {
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
 
-	// TODO(bduffany): Spawn vmvfs via the init binary like we do for vmexec, to
-	// save scratch disk space. I tried it, but for some reason the fuse library
-	// panics saying that "/dev/null" doesn't exist:
-	// https://github.com/hanwen/go-fuse/blob/915cf5413cdef5370ae3f953f8eb4cd9ac176d5c/splice/splice.go#L57
-	die(copyFile("/vmvfs", "/mnt/vmvfs", 0555))
 	die(copyFile("/init", "/mnt/init", 0555))
 
 	log.Debugf("switching root!")
@@ -397,7 +398,7 @@ func main() {
 		return cmd.Run()
 	})
 	eg.Go(func() error {
-		cmd := exec.CommandContext(ctx, "/vmvfs")
+		cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmvfs")...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()

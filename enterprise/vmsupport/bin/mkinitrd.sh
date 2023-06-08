@@ -8,7 +8,6 @@ RANDOM_STR=$(
 ROOT_DIR="${RANDOM_STR}"
 mkdir -p "${ROOT_DIR}"
 cp "${GOINIT}" "${ROOT_DIR}/init"
-cp "${VMVFS}" "${ROOT_DIR}/vmvfs"
 
 abspath() {
   if ! [[ "$1" =~ ^/ ]]; then
@@ -22,5 +21,5 @@ FSPATH="$(abspath "$1")"
 CPIO="$(abspath "$CPIO")"
 (
   cd "$ROOT_DIR"
-  "$CPIO" -out "$FSPATH" -- init vmvfs
+  "$CPIO" -out "$FSPATH" -- init
 )

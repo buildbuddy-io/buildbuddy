@@ -199,6 +199,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
+	res.UsageStats = nil
 	assert.Equal(t, expectedResult, res)
 }
 
@@ -431,7 +432,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	} else {
 		assert.Equal(t, "overlay", scratchFSU.GetFstype())
 		assert.Equal(t, "overlayfs:/scratch/bbvmroot", scratchFSU.GetSource())
-		const approxInitialScratchDiskSizeBytes = 60e6
+		const approxInitialScratchDiskSizeBytes = 40e6
 		assert.InDelta(
 			t, approxInitialScratchDiskSizeBytes+scratchTestFileSizeBytes,
 			scratchFSU.GetUsedBytes(),
