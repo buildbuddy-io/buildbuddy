@@ -1367,7 +1367,11 @@ func TestNoEarlyEviction(t *testing.T) {
 	}
 }
 
-func TestLRU(t *testing.T) {
+func testLRU(t *testing.T, testACEviction bool) {
+	if testACEviction {
+		flags.Set(t, "cache.pebble.active_key_version", 3)
+		flags.Set(t, "cache.pebble.ac_eviction_enabled", true)
+	}
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -1380,25 +1384,27 @@ func TestLRU(t *testing.T) {
 	atimeUpdateThreshold := time.Duration(0) // update atime on every access
 	atimeBufferSize := 0                     // blocking channel of atime updates
 	minEvictionAge := time.Duration(0)       // no min eviction age
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+	opts := &pebble_cache.Options{
 		RootDirectory:               rootDir,
 		MaxSizeBytes:                maxSizeBytes,
 		AtimeUpdateThreshold:        &atimeUpdateThreshold,
 		AtimeBufferSize:             &atimeBufferSize,
 		MinEvictionAge:              &minEvictionAge,
 		MinBytesAutoZstdCompression: maxSizeBytes,
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
 	pc.Start()
-	defer pc.Stop()
 
 	quartile := numDigests / 4
 
 	resourceKeys := make([]*rspb.ResourceName, numDigests)
 	for i := range resourceKeys {
-		r, buf := testdigest.RandomCASResourceBuf(t, 100)
+		cacheType := rspb.CacheType_CAS
+		if testACEviction && i%2 == 0 {
+			cacheType = rspb.CacheType_AC
+		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "")
 		resourceKeys[i] = r
 		if err := pc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
@@ -1423,12 +1429,22 @@ func TestLRU(t *testing.T) {
 
 	// Write more data.
 	for i := 0; i < quartile; i++ {
-		r, buf := testdigest.RandomCASResourceBuf(t, 100)
+		cacheType := rspb.CacheType_CAS
+		if testACEviction && i%2 == 0 {
+			cacheType = rspb.CacheType_AC
+		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "")
 		resourceKeys = append(resourceKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
 		}
 	}
+
+	pc.Stop()
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
 
 	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
@@ -1453,7 +1469,7 @@ func TestLRU(t *testing.T) {
 			sample += d.GetHash()
 			sample += ", "
 		}
-		log.Printf("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
+		log.Infof("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
 	}
 
 	// None of the files "used" just before adding more should have been
@@ -1466,6 +1482,14 @@ func TestLRU(t *testing.T) {
 	require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2]))
 	require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
 	require.Greater(t, len(evictionsByQuartile[3]), 0)
+}
+
+func TestLRU(t *testing.T) {
+	testLRU(t, false /*=testACEviction*/)
+}
+
+func TestLRUWithACEviction(t *testing.T) {
+	testLRU(t, true /*=testACEviction*/)
 }
 
 func TestStartupScan(t *testing.T) {
