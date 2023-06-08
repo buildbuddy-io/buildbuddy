@@ -21,8 +21,9 @@ var (
 )
 
 const (
-	sqliteDialect = "sqlite"
-	mysqlDialect  = "mysql"
+	sqliteDialect   = "sqlite"
+	mysqlDialect    = "mysql"
+	postgresDialect = "postgres"
 )
 
 type tableDescriptor struct {
@@ -116,7 +117,7 @@ type Invocation struct {
 	ActionCount                    int64
 	Perms                          int32 `gorm:"index:perms;default:NULL"`
 	CreatedWithCapabilities        int32
-	RedactionFlags                 int32 `gorm:"default:NULL;default:NULL"`
+	RedactionFlags                 int32 `gorm:"default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                int64
 	ActionCacheMisses              int64
@@ -815,7 +816,8 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		return nil, err
 	}
 	if m.HasTable("TargetStatuses") && !hasUUIDAsPK {
-		if db.Dialector.Name() == sqliteDialect {
+		switch db.Dialector.Name() {
+		case sqliteDialect:
 			// Rename the TargetStatuses table with invocation_pk as the primary key,
 			// so that during auto migration, SQLite can create TargetStatuses table with new
 			// primary keys.
@@ -823,7 +825,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			postMigrate = append(postMigrate, func() error {
 				return postMigrateInvocationUUIDForSQLite(db)
 			})
-		} else if db.Dialector.Name() == mysqlDialect {
+		case mysqlDialect:
 			versionStr := ""
 			if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
 				return nil, err
@@ -832,7 +834,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			postMigrate = append(postMigrate, func() error {
 				return postMigrateInvocationUUIDForMySQL(db)
 			})
-		} else {
+		default:
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
 	}
@@ -997,10 +999,10 @@ func PostAutoMigrate(db *gorm.DB) error {
 		"invocations_stats_role_index":        `("group_id", "role", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
 	}
 	prefixIndicesByDialect := map[string]map[string]string{
-		mysqlDialect: map[string]string{
+		mysqlDialect: {
 			"invocations_test_grid_query_command_index": `("group_id" (25), "role" (10), "repo_url", "command" (10), "created_at_usec" DESC)`,
 		},
-		sqliteDialect: map[string]string{
+		sqliteDialect: {
 			"invocations_test_grid_query_command_index": `("group_id", "role", "repo_url", "command" , "created_at_usec" DESC)`,
 		},
 	}
@@ -1092,6 +1094,8 @@ func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
 		checkPrimaryKeyStmt = `SELECT COUNT(*) FROM PRAGMA_TABLE_INFO(?) WHERE pk > 0 AND name = ?`
 	case mysqlDialect:
 		checkPrimaryKeyStmt = `SELECT COUNT(*) from INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = SCHEMA() AND column_key = 'PRI' and table_name=? and column_name=?`
+	case postgresDialect:
+		checkPrimaryKeyStmt = `SELECT COUNT(*) from information_schema.table_constraints NATURAL JOIN information_schema.key_column_usage WHERE constraint_schema = current_schema() and constraint_type = 'PRIMARY KEY' AND table_name=? AND column_name=?`
 	default:
 		return false, status.InternalErrorf("unsupported db dialect %q", dialect)
 	}

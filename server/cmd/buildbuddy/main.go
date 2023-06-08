@@ -24,6 +24,7 @@ var (
 func main() {
 	version.Print()
 
+	flag.Parse()
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}

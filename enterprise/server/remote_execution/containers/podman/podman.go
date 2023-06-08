@@ -540,9 +540,11 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 	if err := c.pullImage(ctx, creds); err != nil {
 		return err
 	}
+	pullLatency := time.Now().Sub(startTime)
+	log.Infof("podman pulled image %s in %s", c.image, pullLatency)
 	metrics.PodmanColdImagePullLatencyMsec.
 		With(prometheus.Labels{metrics.ContainerImageTag: c.image}).
-		Observe(float64(time.Now().Sub(startTime).Milliseconds()))
+		Observe(float64(pullLatency.Milliseconds()))
 	ps.pulled = true
 	return nil
 }

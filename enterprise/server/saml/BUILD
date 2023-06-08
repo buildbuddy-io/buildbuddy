@@ -13,6 +13,7 @@ go_library(
         "//server/interfaces",
         "//server/nullauth",
         "//server/tables",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@com_github_crewjam_saml//samlsp",

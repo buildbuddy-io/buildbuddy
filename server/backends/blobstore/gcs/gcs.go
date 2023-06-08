@@ -9,6 +9,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -20,6 +21,7 @@ var (
 	// GCS flags
 	gcsBucket          = flag.String("storage.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
 	gcsCredentialsFile = flag.String("storage.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
+	gcsCredentials     = flagutil.New("storage.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flagutil.SecretTag)
 	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 )
 
@@ -41,9 +43,15 @@ func UseGCSBlobStore() bool {
 
 func NewGCSBlobStore(ctx context.Context) (*GCSBlobStore, error) {
 	opts := make([]option.ClientOption, 0)
+	if *gcsCredentials != "" && *gcsCredentialsFile != "" {
+		return nil, status.FailedPreconditionError("GCS credentials should be specified either via file or directly, but not both")
+	}
 	if *gcsCredentialsFile != "" {
 		log.Debugf("Found GCS credentials file: %q", *gcsCredentialsFile)
 		opts = append(opts, option.WithCredentialsFile(*gcsCredentialsFile))
+	}
+	if *gcsCredentials != "" {
+		opts = append(opts, option.WithCredentialsJSON([]byte(*gcsCredentials)))
 	}
 
 	gcsClient, err := storage.NewClient(ctx, opts...)

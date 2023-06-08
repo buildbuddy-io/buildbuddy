@@ -38,6 +38,7 @@ import (
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 )
@@ -275,6 +276,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 			PartitionId: groupID,
 		},
 		Digest: d,
+		DigestFunction: repb.DigestFunction_SHA256,
 	}
 
 	fs := filestore.New()

@@ -214,7 +214,7 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
 	require.NoError(t, err)
-	keys, err := env.GetUserDB().GetAPIKeys(adminCtx, groupID)
+	keys, err := adb.GetAPIKeys(adminCtx, groupID)
 	require.NoError(t, err)
 	key := keys[0]
 	key.UserID = admin.UserID
@@ -312,7 +312,7 @@ func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env)
 		if role.Role(u.Groups[0].Role) != role.Admin {
 			continue
 		}
-		keys, err := env.GetUserDB().GetAPIKeys(authCtx, u.Groups[0].Group.GroupID)
+		keys, err := env.GetAuthDB().GetAPIKeys(authCtx, u.Groups[0].Group.GroupID)
 		require.NoError(t, err)
 		allKeys = append(allKeys, keys...)
 	}

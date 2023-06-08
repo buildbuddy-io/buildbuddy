@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -31,7 +33,7 @@ import (
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
 	"gorm.io/driver/mysql"
-	_ "gorm.io/driver/postgres"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 
 	// Allow for "cloudsql" type connections that support workload identity.
@@ -45,13 +47,14 @@ import (
 
 	awssession "github.com/aws/aws-sdk-go/aws/session"
 	gomysql "github.com/go-sql-driver/mysql"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	gopostgres "github.com/jackc/pgx/v5/stdlib"
 	gosqlite "github.com/mattn/go-sqlite3"
 )
 
 const (
-	sqliteDriver = "sqlite3"
-	mysqlDriver  = "mysql"
+	sqliteDriver   = "sqlite3"
+	mysqlDriver    = "mysql"
+	postgresDriver = "postgresql"
 
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
@@ -81,7 +84,7 @@ var (
 )
 
 type AdvancedConfig struct {
-	Driver    string `yaml:"driver" usage:"The driver to use: one of sqlite3 or mysql."`
+	Driver    string `yaml:"driver" usage:"The driver to use: one of sqlite3, mysql, or postgresql."`
 	Endpoint  string `yaml:"endpoint" usage:"Typically the host:port combination of the database server."`
 	Username  string `yaml:"username" usage:"Username to use when connecting."`
 	Password  string `yaml:"password" usage:"Password to use when connecting. Not used if AWS IAM is enabled."`
@@ -108,6 +111,8 @@ func newDSNFormatter(ac *AdvancedConfig) (dsnFormatter, error) {
 		return newMysqlDSNFormatter(ac)
 	case sqliteDriver:
 		return newSqliteDSNFormatter(ac)
+	case postgresDriver:
+		return newPostgresDSNFormatter(ac)
 	default:
 		return nil, status.UnimplementedErrorf("newDSNFormatter does not support driver: %s", ac.Driver)
 	}
@@ -232,6 +237,88 @@ func (m *mysqlDSNFormatter) SetPassword(pw string) {
 
 func (m *mysqlDSNFormatter) Clone() dsnFormatter {
 	return &mysqlDSNFormatter{cfg: m.cfg.Clone()}
+}
+
+type postgresDSNFormatter struct {
+	host     string
+	port     string
+	user     string
+	password string
+	dbname   string
+	params   map[string][]string
+}
+
+func newPostgresDSNFormatter(ac *AdvancedConfig) (*postgresDSNFormatter, error) {
+	host, port, err := net.SplitHostPort(ac.Endpoint)
+	if err != nil {
+		return nil, status.FailedPreconditionErrorf("Endpoint %s for postgres is not valid: %s", ac.Endpoint, err)
+	}
+	params, err := url.ParseQuery(ac.Params)
+	if err != nil {
+		return nil, status.FailedPreconditionErrorf("Params %s for postgres are not valid: %s", params, err)
+	}
+	return &postgresDSNFormatter{
+		host:     host,
+		port:     port,
+		user:     ac.Username,
+		password: ac.Password,
+		dbname:   ac.DBName,
+		params:   params,
+	}, nil
+}
+
+func (p *postgresDSNFormatter) AddParam(key, val string) {
+	p.params[key] = append(p.params[key], val)
+}
+
+func (p *postgresDSNFormatter) String() string {
+	var user *url.Userinfo
+	if p.password != "" {
+		user = url.UserPassword(p.user, p.password)
+	} else if p.user != "" {
+		user = url.User(p.user)
+	}
+	host := p.host
+	if p.port != "" {
+		host = net.JoinHostPort(p.host, p.port)
+	}
+	dbname := p.dbname
+	if !strings.HasPrefix(dbname, "/") {
+		dbname = "/" + dbname
+	}
+	dsn := url.URL{
+		Scheme:   "postgres",
+		Host:     host,
+		User:     user,
+		Path:     dbname,
+		RawQuery: url.Values(p.params).Encode(),
+	}
+	return dsn.String()
+}
+
+func (_ *postgresDSNFormatter) Driver() string {
+	return postgresDriver
+}
+
+func (p *postgresDSNFormatter) Endpoint() string {
+	return net.JoinHostPort(p.host, p.port)
+}
+
+func (p *postgresDSNFormatter) Username() string {
+	return p.user
+}
+
+func (p *postgresDSNFormatter) SetPassword(pw string) {
+	p.password = pw
+}
+
+func (p *postgresDSNFormatter) Clone() dsnFormatter {
+	c := *p
+	c.params = make(map[string][]string, len(p.params))
+	for k, v := range p.params {
+		copy(c.params[k], v)
+	}
+	return &c
 }
 
 type DBHandle struct {
@@ -460,6 +547,8 @@ func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfi
 		drv = &gosqlite.SQLiteDriver{}
 	case mysqlDriver:
 		drv = &gomysql.MySQLDriver{}
+	case postgresDriver:
+		drv = &gopostgres.Driver{}
 	default:
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
@@ -477,6 +566,8 @@ func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfi
 		// Newer versions of GORM use a smaller default size (191) to account for InnoDB index limits
 		// that don't apply to modern MysQL installations.
 		dialector = mysql.New(mysql.Config{Conn: db, DefaultStringSize: 255})
+	case postgresDriver:
+		dialector = postgres.Dialector{Config: &postgres.Config{Conn: db}}
 	default:
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
@@ -627,6 +718,11 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 		}
 		driverName, connString := parts[0], parts[1]
 		switch driverName {
+		case "postgres":
+			driverName = postgresDriver
+			fallthrough
+		case postgresDriver:
+			connString = datasource
 		case mysqlDriver:
 			cfg, err := gomysql.ParseDSN(connString)
 			if err != nil {
@@ -839,10 +935,17 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 // Epoch) to a month in UTC time, formatted as "YYYY-MM".
 func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
 	timestampExpr := fieldName + `/1000000`
-	if h.driver == sqliteDriver {
+	switch h.driver {
+	case sqliteDriver:
 		return `STRFTIME('%Y-%m', ` + timestampExpr + `, 'unixepoch')`
+	case mysqlDriver:
+		return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
+	case postgresDriver:
+		return `TO_CHAR(TO_TIMESTAMP(` + timestampExpr + `), 'YYYY-MM')`
+	default:
+		log.Errorf("Driver %s is not supported by UTCMonthFromUsecTimestamp.", h.driver)
+		return `UNIMPLEMENTED`
 	}
-	return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
 }
 
 // DateFromUsecTimestamp returns an SQL expression that converts the value
@@ -853,25 +956,17 @@ func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
 func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string {
 	offsetUsec := int64(timezoneOffsetMinutes) * 60 * 1e6
 	timestampExpr := fmt.Sprintf("(%s + (%d))/1000000", fieldName, -offsetUsec)
-	if h.driver == sqliteDriver {
+	switch h.driver {
+	case sqliteDriver:
 		return fmt.Sprintf("DATE(%s, 'unixepoch')", timestampExpr)
+	case mysqlDriver:
+		return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
+	case postgresDriver:
+		return `TO_TIMESTAMP(` + timestampExpr + `)::DATE`
+	default:
+		log.Errorf("Driver %s is not supported by DateFromUsecTimestamp.", h.driver)
+		return `UNIMPLEMENTED`
 	}
-	return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
-}
-
-// InsertIgnoreModifier returns SQL that can be placed after the
-// INSERT command to ignore duplicate keys when inserting.
-//
-// Example:
-//
-//	`INSERT `+db.InsertIgnoreModifier()+` INTO MyTable
-//	 (potentially_already_existing_key)
-//	 VALUES ("key_value")`
-func (h *DBHandle) InsertIgnoreModifier() string {
-	if h.driver == sqliteDriver {
-		return "OR IGNORE"
-	}
-	return "IGNORE"
 }
 
 // SelectForUpdateModifier returns SQL that can be placed after the

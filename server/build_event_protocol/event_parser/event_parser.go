@@ -466,7 +466,7 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 }
 func (sep *StreamingEventParser) setTags(value string, priority int) error {
 	if *tagsEnabled && sep.priority.Tags <= priority {
-		tags, err := invocation_format.SplitAndTrimTags(value, true)
+		tags, err := invocation_format.SplitAndTrimAndDedupeTags(value, true)
 		if err != nil {
 			return err
 		}
