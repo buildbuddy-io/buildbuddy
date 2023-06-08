@@ -109,6 +109,7 @@ type RealEnv struct {
 	sociArtifactStoreServer          socipb.SociArtifactStoreServer
 	sociArtifactStoreClient          socipb.SociArtifactStoreClient
 	singleFlightDeduper              interfaces.SingleFlightDeduper
+	promQuerier                      interfaces.PromQuerier
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -615,6 +616,14 @@ func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
 func (r *RealEnv) GetSingleFlightDeduper() interfaces.SingleFlightDeduper {
 	return r.singleFlightDeduper
 }
+
 func (r *RealEnv) SetSingleFlightDeduper(d interfaces.SingleFlightDeduper) {
 	r.singleFlightDeduper = d
+}
+
+func (r *RealEnv) GetPromQuerier() interfaces.PromQuerier {
+	return r.promQuerier
+}
+func (r *RealEnv) SetPromQuerier(q interfaces.PromQuerier) {
+	r.promQuerier = q
 }

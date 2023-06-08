@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/proto"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
@@ -38,6 +40,7 @@ var (
 	enableAPI            = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
 	enableCache          = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
 	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
+	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", false, "If true, enable access to metrics API.")
 )
 
 type APIServer struct {
@@ -435,8 +438,12 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	return &apipb.DeleteFileResponse{}, nil
 }
 
+func (s *APIServer) GetFileHandler() http.Handler {
+	return http.HandlerFunc(s.handleGetFileRequest)
+}
+
 // Handle streaming http GetFile request since protolet doesn't handle streaming rpcs yet.
-func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.checkPreconditions(r.Context()); err != nil {
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
@@ -455,6 +462,40 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *APIServer) GetMetricsHandler() http.Handler {
+	return http.HandlerFunc(s.handleGetMetricsRequest)
+}
+
+func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Request) {
+	if !*enableMetricsAPI {
+		http.Error(w, "API not enabled", http.StatusNotImplemented)
+		return
+	}
+	userInfo, err := s.checkPreconditions(r.Context())
+	if err != nil {
+		http.Error(w, "Invalid API key", http.StatusUnauthorized)
+		return
+	}
+	if userInfo.GetGroupID() == "" {
+		http.Error(w, "Invalid API key", http.StatusUnauthorized)
+		return
+	}
+	// query prometheus
+	reg, err := prom.NewRegistry(s.env, userInfo.GetGroupID())
+	if err != nil {
+		http.Error(w, "unable to get registry", http.StatusInternalServerError)
+		return
+	}
+	opts := promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+		Registry:      reg,
+		// Gzip is handlered by intercepters already.
+		DisableCompression: true,
+	}
+	handler := promhttp.HandlerFor(reg, opts)
+	handler.ServeHTTP(w, r)
 }
 
 // Returns true if a selector has an empty target ID or matches the target's ID or tag

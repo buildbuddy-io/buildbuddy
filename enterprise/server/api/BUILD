@@ -7,6 +7,7 @@ go_library(
     srcs = ["api_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/api",
     deps = [
+        "//enterprise/server/backends/prom",
         "//proto:api_key_go_proto",
         "//proto:build_event_stream_go_proto",
         "//proto:eventlog_go_proto",
@@ -29,6 +30,7 @@ go_library(
         "//server/util/query_builder",
         "//server/util/request_context",
         "//server/util/status",
+        "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@org_golang_google_protobuf//proto",
     ],
 )

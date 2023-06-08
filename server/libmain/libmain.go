@@ -376,7 +376,8 @@ func StartAndRunServices(env environment.Env) {
 		}
 		mux.Handle("/api/v1/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/api/v1/", apiProtoHandlers))
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
-		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api))
+		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api.GetFileHandler()))
+		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
 	}
 
 	if wfs := env.GetWorkflowService(); wfs != nil {

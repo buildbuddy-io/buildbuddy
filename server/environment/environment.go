@@ -160,4 +160,6 @@ type Env interface {
 	SetSociArtifactStoreServer(socipb.SociArtifactStoreServer)
 	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
 	SetSingleFlightDeduper(interfaces.SingleFlightDeduper)
+	GetPromQuerier() interfaces.PromQuerier
+	SetPromQuerier(interfaces.PromQuerier)
 }

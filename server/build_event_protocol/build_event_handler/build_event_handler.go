@@ -814,7 +814,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if err != nil {
 		return err
 	}
-	recordInvocationMetrics(ti)
+	e.recordInvocationMetrics(ti)
 	updated, err := e.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
 		return err
@@ -883,12 +883,25 @@ func invocationStatusLabel(ti *tables.Invocation) string {
 	return "unknown"
 }
 
-func recordInvocationMetrics(ti *tables.Invocation) {
+func (e *EventChannel) getGroupIDForMetrics() string {
+	auth := e.env.GetAuthenticator()
+	if auth == nil {
+		return ""
+	}
+	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return userInfo.GetGroupID()
+}
+
+func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 	statusLabel := invocationStatusLabel(ti)
 	metrics.InvocationCount.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
 		metrics.BazelExitCode:         ti.BazelExitCode,
 		metrics.BazelCommand:          ti.Command,
+		metrics.GroupID:               e.getGroupIDForMetrics(),
 	}).Inc()
 	metrics.InvocationDurationUs.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,

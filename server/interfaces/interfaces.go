@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
+	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -452,7 +453,8 @@ type UsageTracker interface {
 
 type ApiService interface {
 	apipb.ApiServiceServer
-	http.Handler
+	GetFileHandler() http.Handler
+	GetMetricsHandler() http.Handler
 	CacheEnabled() bool
 }
 
@@ -1130,6 +1132,10 @@ type Crypter interface {
 // singleflight package.
 type SingleFlightDeduper interface {
 	Do(ctx context.Context, key string, work func() ([]byte, error)) ([]byte, error)
+}
+
+type PromQuerier interface {
+	FetchMetrics(ctx context.Context, groupID string) (model.Vector, error)
 }
 
 // ConfigSecretProvider provides secrets interpolation into configs.
