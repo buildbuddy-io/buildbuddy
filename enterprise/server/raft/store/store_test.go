@@ -38,7 +38,6 @@ import (
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 )
 
@@ -271,10 +270,11 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 	fr := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rspb.CacheType_CAS,
+			CacheType:   r.GetCacheType(),
 			PartitionId: groupID,
 		},
-		Digest: r.GetDigest(),
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
 	}
 
 	fs := filestore.New()

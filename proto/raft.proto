@@ -35,6 +35,7 @@ message FileRecord {
   build.bazel.remote.execution.v2.Digest digest = 2;
   build.bazel.remote.execution.v2.Compressor.Value compressor = 3;
   Encryption encryption = 4;
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 5;
 }
 
 message StorageMetadata {

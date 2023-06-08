@@ -912,27 +912,13 @@ func TestCompression(t *testing.T) {
 	inlineD, err := digest.Compute(bytes.NewReader(inlineBlob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	compressedRN := &rspb.ResourceName{
-		Digest:     d,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_ZSTD,
-	}
-	decompressedRN := &rspb.ResourceName{
-		Digest:     d,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_IDENTITY,
-	}
+	decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+	compressedRN.Compressor = repb.Compressor_ZSTD
 
-	compressedInlineRN := &rspb.ResourceName{
-		Digest:     inlineD,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_ZSTD,
-	}
-	decompressedInlineRN := &rspb.ResourceName{
-		Digest:     inlineD,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_IDENTITY,
-	}
+	decompressedInlineRN := digest.NewResourceName(inlineD, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	compressedInlineRN := proto.Clone(decompressedInlineRN).(*rspb.ResourceName)
+	compressedInlineRN.Compressor = repb.Compressor_ZSTD
 
 	testCases := []struct {
 		name             string
@@ -1059,11 +1045,7 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 		// Note: Digest is of uncompressed contents
 		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
-		decompressedRN := &rspb.ResourceName{
-			Digest:     d,
-			CacheType:  rspb.CacheType_CAS,
-			Compressor: repb.Compressor_IDENTITY,
-		}
+		decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 
 		// Write non-compressed data to cache
 		wc, err := pc.Writer(ctx, decompressedRN)
@@ -1076,12 +1058,9 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 		err = wc.Close()
 		require.NoError(t, err)
 
-		// Read data in compressed form
-		compressedRN := &rspb.ResourceName{
-			Digest:     d,
-			CacheType:  rspb.CacheType_CAS,
-			Compressor: repb.Compressor_ZSTD,
-		}
+		compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+		compressedRN.Compressor = repb.Compressor_ZSTD
+
 		reader, err := pc.Reader(ctx, compressedRN, 0, 0)
 		require.NoError(t, err)
 		defer reader.Close()
@@ -1117,11 +1096,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			// Note: Digest is of uncompressed contents
 			d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
-			decompressedRN := &rspb.ResourceName{
-				Digest:     d,
-				CacheType:  rspb.CacheType_CAS,
-				Compressor: repb.Compressor_IDENTITY,
-			}
+			decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 
 			// Write non-compressed data to cache
 			wc, err := pc.Writer(ctx, decompressedRN)
@@ -1135,11 +1110,9 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			require.NoError(t, err)
 
 			// Read data in compressed form
-			compressedRN := &rspb.ResourceName{
-				Digest:     d,
-				CacheType:  rspb.CacheType_CAS,
-				Compressor: repb.Compressor_ZSTD,
-			}
+			compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+			compressedRN.Compressor = repb.Compressor_ZSTD
+
 			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
 			require.NoError(t, err)
 			defer reader.Close()
@@ -1190,11 +1163,7 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 
 	// Write decompressed bytes to the cache. Because blob compression is enabled, pebble should compress before writing
 	for d, blob := range digestBlobs {
-		rn := &rspb.ResourceName{
-			Digest:     d,
-			Compressor: repb.Compressor_IDENTITY,
-			CacheType:  rspb.CacheType_CAS,
-		}
+		rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 		err = pc.Set(ctx, rn, blob)
 		require.NoError(t, err)
 	}
@@ -1203,11 +1172,7 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 
 	// All reads should succeed. Nothing should've been evicted
 	for d, blob := range digestBlobs {
-		rn := &rspb.ResourceName{
-			Digest:     d,
-			Compressor: repb.Compressor_IDENTITY,
-			CacheType:  rspb.CacheType_CAS,
-		}
+		rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 		data, err := pc.Get(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(blob, data))
@@ -1223,16 +1188,9 @@ func TestCompressionOffset(t *testing.T) {
 	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	compressedRN := &rspb.ResourceName{
-		Digest:     d,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_ZSTD,
-	}
-	decompressedRN := &rspb.ResourceName{
-		Digest:     d,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_IDENTITY,
-	}
+	decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+	compressedRN.Compressor = repb.Compressor_ZSTD
 
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
@@ -1627,11 +1585,8 @@ func TestDeleteOrphans(t *testing.T) {
 
 	// Check that all of the deleted digests are not in the cache.
 	for _, dt := range deletedDigests {
-		_, err := pc2.Get(ctx, &rspb.ResourceName{
-			Digest:       dt.digest,
-			CacheType:    dt.cacheType,
-			InstanceName: "remoteInstanceName",
-		})
+		rn := digest.NewResourceName(dt.digest, "remoteInstanceName", dt.cacheType, repb.DigestFunction_SHA256).ToProto()
+		_, err := pc2.Get(ctx, rn)
 		require.True(t, status.IsNotFoundError(err), "digest %q should not be in the cache", dt.digest.GetHash())
 	}
 
@@ -1651,11 +1606,8 @@ func TestDeleteOrphans(t *testing.T) {
 
 	// Check that all of the non-deleted items are still fetchable.
 	for _, dt := range digests {
-		_, err = pc2.Get(ctx, &rspb.ResourceName{
-			Digest:       dt.digest,
-			CacheType:    dt.cacheType,
-			InstanceName: "remoteInstanceName",
-		})
+		rn := digest.NewResourceName(dt.digest, "remoteInstanceName", dt.cacheType, repb.DigestFunction_SHA256).ToProto()
+		_, err = pc2.Get(ctx, rn)
 		require.NoError(t, err)
 	}
 
@@ -1762,11 +1714,7 @@ func TestMigrateVersions(t *testing.T) {
 			j += 1
 
 			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-			resourceName := &rspb.ResourceName{
-				Digest:       d,
-				CacheType:    rspb.CacheType_CAS,
-				InstanceName: remoteInstanceName,
-			}
+			resourceName := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 
 			exists, err := pc2.Contains(ctx, resourceName)
 			require.NoError(t, err)
@@ -2026,8 +1974,9 @@ func TestEncryptionAndCompression(t *testing.T) {
 	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	compressedRN := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS, Compressor: repb.Compressor_ZSTD}
-	decompressedRN := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS, Compressor: repb.Compressor_IDENTITY}
+	decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+	compressedRN.Compressor = repb.Compressor_ZSTD
 
 	testCases := []struct {
 		name             string

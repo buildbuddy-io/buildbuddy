@@ -25,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
@@ -163,7 +164,8 @@ func randomRecord(t *testing.T, partition string, sizeBytes int64) (*rfpb.FileRe
 			PartitionId: partition,
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		Digest: r.GetDigest(),
+		Digest:         r.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
 	}, buf
 }
 
@@ -502,7 +504,8 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		Digest: r.GetDigest(),
+		Digest:         r.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
 	}
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
 
@@ -569,7 +572,8 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		Digest: r.GetDigest(),
+		Digest:         r.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
 	}
 
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
@@ -720,7 +724,8 @@ func TestFindSplitPoint(t *testing.T) {
 					PartitionId: partitionID,
 					GroupId:     interfaces.AuthAnonymousUser,
 				},
-				Digest: r.GetDigest(),
+				Digest:         r.GetDigest(),
+				DigestFunction: repb.DigestFunction_SHA256,
 			}
 			header := &rfpb.Header{RangeId: 1, Generation: 1}
 			writeCommitter := writer(t, em, repl, header, fileRecord)

@@ -42,6 +42,7 @@ go_test(
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
+        "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/testutil/testdigest",
