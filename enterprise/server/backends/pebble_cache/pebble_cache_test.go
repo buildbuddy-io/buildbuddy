@@ -1400,11 +1400,11 @@ func testLRU(t *testing.T, testACEviction bool) {
 
 	resourceKeys := make([]*rspb.ResourceName, numDigests)
 	for i := range resourceKeys {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS}
+		cacheType := rspb.CacheType_CAS
 		if testACEviction && i%2 == 0 {
-			r.CacheType = rspb.CacheType_AC
+			cacheType = rspb.CacheType_AC
 		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "")
 		resourceKeys[i] = r
 		if err := pc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
@@ -1429,11 +1429,11 @@ func testLRU(t *testing.T, testACEviction bool) {
 
 	// Write more data.
 	for i := 0; i < quartile; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS}
+		cacheType := rspb.CacheType_CAS
 		if testACEviction && i%2 == 0 {
-			r.CacheType = rspb.CacheType_AC
+			cacheType = rspb.CacheType_AC
 		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "")
 		resourceKeys = append(resourceKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
