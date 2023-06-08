@@ -134,7 +134,7 @@ const matchers: SuggestionMatcher[] = [
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (!buildLogs.includes("DEADLINE_EXCEEDED")) return null;
     if (model.optionsMap.get("remote_timeout") && Number(model.optionsMap.get("remote_timeout")) >= 600) return null;
-    if (!model.isComplete() || model.invocations[0]?.success) return null;
+    if (!model.isComplete() || model.getPrimaryInvocation().success) return null;
 
     return {
       level: SuggestionLevel.ERROR,
@@ -445,8 +445,8 @@ const matchers: SuggestionMatcher[] = [
     if (!model.isBazelInvocation()) return null;
 
     if (!capabilities.config.testDashboardEnabled) return null;
-    if (model.invocations[0]?.role !== "CI") return null;
-    if (model.invocations[0]?.command !== "test") return null;
+    if (model.getPrimaryInvocation().role !== "CI") return null;
+    if (model.getPrimaryInvocation().command !== "test") return null;
     if (model.getCommit() && model.getRepo()) return null;
 
     const missing = [

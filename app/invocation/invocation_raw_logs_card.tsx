@@ -41,16 +41,16 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
   }
 
   handleDownloadClicked() {
-    const json = JSON.stringify(this.props.model.invocations[0]?.event, null, 2);
+    const json = JSON.stringify(this.props.model.getPrimaryInvocation().event, null, 2);
     const uri = "data:application/json;base64," + window.btoa(json);
     const link = document.createElement("a");
     link.href = uri;
-    link.download = `${this.props.model.invocations[0]?.invocationId}_raw.json`;
+    link.download = `${this.props.model.getPrimaryInvocation().invocationId}_raw.json`;
     link.click();
   }
 
   render() {
-    let filteredEvents = this.props.model.invocations.flatMap((invocation) =>
+    let filteredEvents = this.props.model.getInvocations().flatMap((invocation: invocation.Invocation) =>
       invocation.event
         .map((event) => {
           let json = JSON.stringify((event.buildEvent as any).toJSON(), null, 4);

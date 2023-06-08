@@ -23,7 +23,8 @@ export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
 export const InvocationStatus = invocation_status.InvocationStatus;
 
 export default class InvocationModel {
-  invocations: invocation.Invocation[] = [];
+  // The invocations array is guaranteed to have at least 1 invocation.
+  private readonly invocations: invocation.Invocation[];
   cacheStats: cache.CacheStats[] = [];
   scoreCard?: cache.ScoreCard;
   botSuggestions: string[] = [];
@@ -74,14 +75,17 @@ export default class InvocationModel {
 
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
-  static modelFromInvocations(invocations: invocation.Invocation[]) {
-    let model = new InvocationModel();
-    model.invocations = invocations as invocation.Invocation[];
-    model.cacheStats = invocations
+  private constructor(primaryInvocation: invocation.Invocation, others: invocation.Invocation[]) {
+    this.invocations = [primaryInvocation, ...others];
+  }
+
+  static modelFromInvocations(primaryInvocation: invocation.Invocation, others: invocation.Invocation[]) {
+    const model = new InvocationModel(primaryInvocation, others);
+    model.cacheStats = model.invocations
       .map((invocation) => invocation.cacheStats)
       .filter((cacheStat) => !!cacheStat) as cache.CacheStats[];
 
-    for (let invocation of invocations) {
+    for (let invocation of model.invocations) {
       if (invocation.scoreCard) model.scoreCard = invocation.scoreCard;
       for (let cl of invocation.structuredCommandLine) {
         model.structuredCommandLine.push(cl as command_line.CommandLine);
@@ -211,7 +215,7 @@ export default class InvocationModel {
     for (let log of model.toolLogs?.log || []) {
       model.toolLogMap.set(log.name, new TextDecoder().decode(log.contents || new Uint8Array()));
     }
-    for (let commandLine of model.structuredCommandLine || []) {
+    for (let commandLine of model.structuredCommandLine) {
       for (let section of commandLine.sections || []) {
         for (let option of section.optionList?.option || []) {
           model.optionsMap.set(option.optionName, option.optionValue);
@@ -235,7 +239,7 @@ export default class InvocationModel {
   }
 
   getUser(possessive: boolean) {
-    let invocationUser = this.invocations.find(() => true)?.user;
+    let invocationUser = this.getPrimaryInvocation().user;
     if (invocationUser) {
       return possessive ? `${invocationUser}'s` : invocationUser;
     }
@@ -264,42 +268,46 @@ export default class InvocationModel {
 
     if (!groups?.length) return null;
 
-    const invocation = this.invocations[0];
-    if (!invocation) return null;
-
+    const invocation = this.getPrimaryInvocation();
     return groups.find((group) => group.id === invocation.acl?.groupId) || null;
   }
 
   isAnonymousInvocation(): boolean {
-    return this.invocations.find(() => true)?.acl?.groupId === "";
+    return this.getPrimaryInvocation().acl?.groupId === "";
   }
 
   hasCacheWriteCapability(): boolean {
     return Boolean(
-      this.invocations
-        .find(() => true)
-        ?.createdWithCapabilities?.some(
-          (existingCapability) =>
-            existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY ||
-            existingCapability == api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY
-        )
+      this.getPrimaryInvocation().createdWithCapabilities?.some(
+        (existingCapability) =>
+          existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY ||
+          existingCapability == api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY
+      )
     );
   }
 
-  getId(): string | undefined {
-    return this.invocations.find(() => true)?.invocationId;
+  getId(): string {
+    return this.getPrimaryInvocation().invocationId;
+  }
+
+  getPrimaryInvocation(): invocation.Invocation {
+    return this.invocations[0];
+  }
+
+  getInvocations(): invocation.Invocation[] {
+    return this.invocations;
   }
 
   getAttempt() {
-    return this.invocations.find(() => true)?.attempt;
+    return this.getPrimaryInvocation().attempt;
   }
 
   getHost() {
-    return this.invocations.find(() => true)?.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+    return this.getPrimaryInvocation().host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
   }
 
   getTags(): invocation.Invocation.Tag[] {
-    return (capabilities.config.tagsUiEnabled && this.invocations.find(() => true)?.tags) || [];
+    return (capabilities.config.tagsUiEnabled && this.getPrimaryInvocation().tags) || [];
   }
 
   booleanCommandLineOption(name: string, defaultValue = false): boolean {
@@ -385,11 +393,11 @@ export default class InvocationModel {
   }
 
   getGithubRepo() {
-    return this.invocations.find(() => true)?.repoUrl || "";
+    return this.getPrimaryInvocation().repoUrl || "";
   }
 
   getGithubSHA() {
-    return this.invocations.find(() => true)?.commitSha || "";
+    return this.getPrimaryInvocation().commitSha || "";
   }
 
   getGithubRef() {
@@ -397,7 +405,7 @@ export default class InvocationModel {
   }
 
   getGithubBranch() {
-    return this.invocations.find(() => true)?.branchName || "";
+    return this.getPrimaryInvocation().branchName || "";
   }
 
   getGithubRun() {
@@ -417,7 +425,7 @@ export default class InvocationModel {
   }
 
   getRole(): string {
-    return this.invocations.find(() => true)?.role ?? "";
+    return this.getPrimaryInvocation().role ?? "";
   }
 
   isWorkflowInvocation() {
@@ -452,7 +460,7 @@ export default class InvocationModel {
 
   getAllPatterns(patternLimit?: number) {
     let patterns =
-      this.invocations.find(() => true)?.pattern ||
+      this.getPrimaryInvocation().pattern ||
       this.expanded?.id?.pattern?.pattern ||
       this.aborted?.id?.pattern?.pattern ||
       [];
@@ -486,7 +494,7 @@ export default class InvocationModel {
     if (this.toolLogMap.has("elapsed time")) {
       return +this.toolLogMap.get("elapsed time")! * 1000000;
     }
-    return +(this.invocations.find(() => true)?.durationUsec ?? 0);
+    return +(this.getPrimaryInvocation().durationUsec ?? 0);
   }
 
   getDurationSeconds() {
@@ -500,7 +508,7 @@ export default class InvocationModel {
   }
 
   getTiming() {
-    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
+    let invocationStatus = this.getPrimaryInvocation().invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return "disconnected";
     }
@@ -511,7 +519,7 @@ export default class InvocationModel {
   }
 
   getStatus() {
-    const invocation = this.invocations[0];
+    const invocation = this.getPrimaryInvocation();
     if (!invocation) return "";
 
     switch (invocation.invocationStatus) {
@@ -527,7 +535,7 @@ export default class InvocationModel {
   }
 
   getStatusClass() {
-    const invocation = this.invocations[0];
+    const invocation = this.getPrimaryInvocation();
     if (!invocation) return "";
 
     switch (invocation.invocationStatus) {
@@ -543,15 +551,15 @@ export default class InvocationModel {
   }
 
   isComplete() {
-    return this.invocations[0]?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
+    return this.getPrimaryInvocation().invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 
   isInProgress() {
-    return this.invocations[0]?.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
+    return this.getPrimaryInvocation().invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
   getFaviconType() {
-    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
+    let invocationStatus = this.getPrimaryInvocation().invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
     }
@@ -565,7 +573,7 @@ export default class InvocationModel {
   }
 
   getStatusIcon() {
-    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
+    let invocationStatus = this.getPrimaryInvocation().invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
     }
@@ -634,18 +642,18 @@ export default class InvocationModel {
   }
 
   getLinks(): { linkUrl: string; linkText: string }[] {
-    let links = this.buildMetadataMap?.get("BUILDBUDDY_LINKS")?.split(",");
+    let links = this.buildMetadataMap.get("BUILDBUDDY_LINKS")?.split(",");
     const filtered: { linkUrl: string; linkText: string }[] =
       links
         ?.flatMap((link) => {
-          const groups = link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups;
+          const groups = link.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups;
           if (groups?.linkUrl) {
             return { linkUrl: groups.linkUrl, linkText: groups.linkText };
           } else {
             return [];
           }
         })
-        ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || [];
+        .filter((link) => link.linkUrl.startsWith("http://") || link.linkUrl.startsWith("https://")) || [];
     return filtered;
   }
 
@@ -665,7 +673,7 @@ export default class InvocationModel {
   }
 
   hasChunkedEventLogs(): boolean {
-    return this.invocations[0]?.hasChunkedEventLogs || false;
+    return this.getPrimaryInvocation().hasChunkedEventLogs || false;
   }
 
   fetchSuggestions(service: string) {
@@ -673,7 +681,7 @@ export default class InvocationModel {
     if (service == "openai") {
       req.service = suggestion.SuggestionService.OPENAI;
     }
-    req.invocationId = this.getId() ?? "";
+    req.invocationId = this.getId();
     return rpcService.service
       .getSuggestion(req)
       .then((res) => {
