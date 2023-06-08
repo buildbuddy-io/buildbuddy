@@ -38,8 +38,6 @@ import (
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 )
 
@@ -269,14 +267,14 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 }
 
 func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID string, sizeBytes int64) *rfpb.FileRecord {
-	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
+	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 	fr := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rspb.CacheType_CAS,
+			CacheType:   r.GetCacheType(),
 			PartitionId: groupID,
 		},
-		Digest:         d,
-		DigestFunction: repb.DigestFunction_SHA256,
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
 	}
 
 	fs := filestore.New()
@@ -285,7 +283,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	_, err := ts.APIClient.Get(ctx, ts.GRPCAddress)
 	require.NoError(t, err)
 
-	writeCloserMetadata := fs.InlineWriter(ctx, d.GetSizeBytes())
+	writeCloserMetadata := fs.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
 	bytesWritten, err := writeCloserMetadata.Write(buf)
 	require.NoError(t, err)
 
