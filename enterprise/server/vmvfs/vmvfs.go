@@ -1,8 +1,7 @@
-package main
+package vmvfs
 
 import (
 	"context"
-	"flag"
 	"net"
 	"os"
 	"sync"
@@ -91,22 +90,21 @@ func (s *vfsServer) Finish(ctx context.Context, request *vmfspb.FinishRequest) (
 	return &vmfspb.FinishResponse{}, nil
 }
 
-func main() {
-	flag.Parse()
-
+func Run() error {
 	ctx := context.Background()
 	listener, err := vsock.NewGuestListener(ctx, vsock.VMVFSPort)
 	if err != nil {
-		log.Fatalf("Error listening on vsock port: %s", err)
+		return status.WrapError(err, "error listening on vsock port")
 	}
 	log.Infof("Starting VM VFS listener on vsock port: %d", vsock.VMVFSPort)
 	server := grpc.NewServer()
 	vmService, err := NewServer()
 	if err != nil {
-		log.Fatalf("Error starting server: %s", err)
+		return status.WrapError(err, "failed to start server")
 	}
 	vmfspb.RegisterFileSystemServer(server, vmService)
 	if err := server.Serve(listener); err != nil {
-		log.Fatalf("Serve failed: %s", err)
+		return status.WrapError(err, "failed to serve")
 	}
+	return nil
 }
