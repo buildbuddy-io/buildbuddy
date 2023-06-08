@@ -130,18 +130,24 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <Clock className="icon" />
             {this.props.model.getTiming()}
           </div>
-          <div className="detail clickable" onClick={this.handleUserClicked.bind(this)}>
-            <UserIcon className="icon" />
-            {this.props.model.getUser(false)}
-          </div>
-          <div className="detail clickable" onClick={this.handleHostClicked.bind(this)}>
-            <HardDrive className="icon" />
-            {this.props.model.getHost()}
-          </div>
-          <div className="detail">
-            <Wrench className="icon" />
-            {this.props.model.getTool()}
-          </div>
+          {isBazelInvocation && (
+            <div className="detail clickable" onClick={this.handleUserClicked.bind(this)}>
+              <UserIcon className="icon" />
+              {this.props.model.getUser(false)}
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div className="detail clickable" onClick={this.handleHostClicked.bind(this)}>
+              <HardDrive className="icon" />
+              {this.props.model.getHost()}
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div className="detail">
+              <Wrench className="icon" />
+              {this.props.model.getTool()}
+            </div>
+          )}
           {this.props.model.getToolTag() && (
             <div className="detail">
               <Terminal className="icon" />
@@ -182,10 +188,12 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               {this.props.model.getFetchURLs().length} fetches
             </div>
           )}
-          <div className="detail">
-            <Cpu className="icon" />
-            {this.props.model.getCPU()}
-          </div>
+          {isBazelInvocation && (
+            <div className="detail">
+              <Cpu className="icon" />
+              {this.props.model.getCPU()}
+            </div>
+          )}
           {isBazelInvocation && (
             <div className="detail">
               <Zap className="icon" />

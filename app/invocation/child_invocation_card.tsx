@@ -1,60 +1,59 @@
 import React from "react";
 import format from "../format/format";
-import router from "../router/router";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { CheckCircle, PlayCircle, XCircle, CircleSlash, Timer } from "lucide-react";
+import Link from "../components/link/link";
+
+export type CommandStatus = "failed" | "succeeded" | "in-progress" | "queued" | "not-run";
 
 export type BazelCommandResult = {
-  invocation:
-    | build_event_stream.WorkflowConfigured.IInvocationMetadata
-    | build_event_stream.ChildInvocationsConfigured.IInvocationMetadata;
+  status: CommandStatus;
+  invocation: InvocationMetadata;
   durationMillis?: number;
 };
 
+export type InvocationMetadata =
+  | build_event_stream.WorkflowConfigured.IInvocationMetadata
+  | build_event_stream.ChildInvocationsConfigured.IInvocationMetadata;
+
 export type ChildInvocationCardProps = {
-  status: string;
-  results: BazelCommandResult[];
-  className: string;
-  icon: JSX.Element;
-  linksDisabled?: boolean;
+  result: BazelCommandResult;
 };
 
 export default class ChildInvocationCard extends React.Component<ChildInvocationCardProps> {
-  private handleCommandClicked(invocationId: string, e: React.MouseEvent) {
-    // TODO(siggisim): Switch this to using the <Link> component
-    if (e.metaKey || e.ctrlKey) {
-      return;
+  private isClickable() {
+    return this.props.result.status !== "queued" && this.props.result.status !== "not-run";
+  }
+
+  private renderStatusIcon() {
+    switch (this.props.result.status) {
+      case "succeeded":
+        return <CheckCircle className="icon" />;
+      case "failed":
+        return <XCircle className="icon" />;
+      case "in-progress":
+        return <PlayCircle className="icon" />;
+      case "queued":
+        return <Timer className="icon" />;
+      case "not-run":
+        return <CircleSlash className="icon" />;
+      default:
+        // Render nothing.
+        return undefined;
     }
-    e.preventDefault();
-    router.navigateTo(`/invocation/${invocationId}`);
   }
 
   render() {
     return (
-      <div className={`card ${this.props.className}`}>
-        {this.props.icon}
-        <div className="content">
-          <div className="title">
-            {this.props.results.length} command{this.props.results.length === 1 || "s"} {this.props.status}
-          </div>
-          <div className="details">
-            {this.props.results.map((result) => (
-              <a
-                href={`/invocation/${result.invocation.invocationId}`}
-                className="list-grid"
-                onClick={
-                  this.props.linksDisabled
-                    ? undefined
-                    : this.handleCommandClicked.bind(this, result.invocation?.invocationId ?? "")
-                }>
-                <div className={`${!this.props.linksDisabled && "clickable"} target`}>
-                  <span className="target-status-icon">{this.props.icon}</span> {result.invocation.bazelCommand}
-                </div>
-                <div>{typeof result.durationMillis === "number" && format.durationMillis(result.durationMillis)}</div>
-              </a>
-            ))}
-          </div>
+      <Link
+        className={`child-invocation-card status-${this.props.result.status} ${this.isClickable() ? "clickable" : ""}`}
+        href={this.isClickable() ? `/invocation/${this.props.result.invocation.invocationId}` : undefined}>
+        <div className="icon-container">{this.renderStatusIcon()}</div>
+        <div className="command">{this.props.result.invocation.bazelCommand}</div>
+        <div className="duration">
+          {this.props.result.durationMillis !== undefined && format.durationMillis(this.props.result.durationMillis)}
         </div>
-      </div>
+      </Link>
     );
   }
 }
