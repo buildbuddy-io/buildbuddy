@@ -37,6 +37,9 @@ const (
 	VMVFSPort = 25416
 	// HostVFSServerPort is the host gRPC port for the VFS server that handles requests forwarded from the FUSE-based fs.
 	HostVFSServerPort = 25410
+	// HostBlockDeviceServerPort is the host gRPC port for the block device
+	// server that handles requests forwarded from the VM-local NBD server.
+	HostBlockDeviceServerPort = 25411
 )
 
 // GetContextID returns ths next available vsock context ID.
