@@ -26,7 +26,12 @@ import (
 const (
 	PartitionDirectoryPrefix = "PT"
 	groupIDPrefix            = "GR"
-	anonGroupID              = "GR74042147050500190371"
+
+	// Data owned by the ANON user will be assigned to this groupID. This
+	// ensures that our stored data has a uniform format, which allows
+	// eviction to work correctly. This value should not ever need to
+	// change, but there is little harm in changing it.
+	anonGroupID = "GR74042147050500190371"
 )
 
 // returns partitionID, groupID, isolation, remote_instance_name, hash
@@ -311,7 +316,7 @@ func (pmk *PebbleKey) parseVersion3(parts [][]byte) error {
 }
 
 func (pmk *PebbleKey) parseVersion4(parts [][]byte) error {
-	digestFunctionString := "1"
+	digestFunctionString := ""
 
 	switch len(parts) {
 	// CAS artifact
