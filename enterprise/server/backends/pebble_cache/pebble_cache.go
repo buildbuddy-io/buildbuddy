@@ -1935,6 +1935,10 @@ type partitionEvictor struct {
 	// item count.
 	groupIDApproxCounts []groupIDApproxCount
 
+	// A random pseudo group ID we assign for ANON data so that we can sample
+	// it like any other group ID.
+	anonPseudoGroupID string
+
 	atimeBufferSize int
 	minEvictionAge  time.Duration
 }
@@ -1945,19 +1949,20 @@ type versionGetter interface {
 
 func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:              &sync.Mutex{},
-		part:            part,
-		fileStorer:      fileStorer,
-		blobDir:         blobDir,
-		dbGetter:        dbg,
-		locker:          locker,
-		versionGetter:   vg,
-		accesses:        accesses,
-		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
-		clock:           clock,
-		atimeBufferSize: atimeBufferSize,
-		minEvictionAge:  minEvictionAge,
-		cacheName:       cacheName,
+		mu:                &sync.Mutex{},
+		part:              part,
+		fileStorer:        fileStorer,
+		blobDir:           blobDir,
+		dbGetter:          dbg,
+		locker:            locker,
+		versionGetter:     vg,
+		accesses:          accesses,
+		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:             clock,
+		atimeBufferSize:   atimeBufferSize,
+		minEvictionAge:    minEvictionAge,
+		cacheName:         cacheName,
+		anonPseudoGroupID: fmt.Sprintf("GR%020d", random.RandUint64()),
 	}
 	l, err := approxlru.New(&approxlru.Opts[*evictionKey]{
 		SamplePoolSize:     *samplePoolSize,
@@ -2028,6 +2033,14 @@ func (e *partitionEvictor) sampleGroupID() (string, error) {
 	var key filestore.PebbleKey
 	if _, err := key.FromBytes(iter.Key()); err != nil {
 		return "", err
+	}
+
+	// The special ANON group doesn't follow the regular group key format, so it
+	// won't be found through regular sampling. To get around this, we make up
+	// a random group ID for it and pretend it exists in the keyspace so that
+	// it can be sampled like any other group.
+	if randomGroupID < e.anonPseudoGroupID && (key.GroupID() == "" || key.GroupID() > e.anonPseudoGroupID) {
+		return interfaces.AuthAnonymousUser, nil
 	}
 
 	// We hit a key without a group ID (i.e. a CAS entry).
