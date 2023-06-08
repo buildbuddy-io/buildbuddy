@@ -40,7 +40,7 @@ var (
 	enableAPI            = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
 	enableCache          = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
 	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
-	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", true, "If true, enable access to metrics API.")
+	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", false, "If true, enable access to metrics API.")
 )
 
 type APIServer struct {
