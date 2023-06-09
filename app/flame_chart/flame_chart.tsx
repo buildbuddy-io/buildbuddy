@@ -433,7 +433,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               ref={this.viewportRef}
               onMouseDown={this.onMouseDown.bind(this)}
               style={{
-                borderBottom: `${LINE_CHART_BORDER_TOP}px solid #ddd`,
+                borderBottom: `${LINE_CHART_BORDER_TOP}px solid #9E9E9E`,
                 height: `calc(60% - ${HORIZONTAL_SCROLLBAR_HEIGHT}px`,
                 overflowX: "initial",
               }}>

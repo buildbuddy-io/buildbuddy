@@ -9,7 +9,7 @@ export const BLOCK_VERTICAL_GAP = 1;
 
 export const INITIAL_END_TIME_SECONDS = 1;
 export const BLOCK_HEIGHT = 16;
-export const TIME_SERIES_HEIGHT = 44;
+export const TIME_SERIES_HEIGHT = 40;
 export const POINT_RADIUS = 2;
 export const LINE_CHART_BORDER_TOP = 10;
 
