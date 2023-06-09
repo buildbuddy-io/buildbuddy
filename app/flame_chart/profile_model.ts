@@ -188,7 +188,7 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   }
 
   for (const event of events) {
-    event.tid = threadNameToTidMap.get(threadNameByTid.get(event.tid) || "") || -1;
+    event.tid = threadNameToTidMap.get(threadNameByTid.get(event.tid) || "") ?? -1;
   }
 
   events.sort(eventComparator);
