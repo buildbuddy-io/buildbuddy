@@ -226,8 +226,15 @@ Example:
 
 ## Tags
 
-You can add free-text tags to a build by passing a comma-separated string to the `TAGS` build metadata flag.
+You can add multiple free-text tags to a build by passing a comma-separated string to the `TAGS` build metadata flag.
 
+Example:
+
+```
+--build_metadata=TAGS="foo,bar,baz"
+```
+
+You can filter by these tags on build history pages and the trends page. Note that when filtering by tags, you will not see in-progress and disconnected builds.
 
 ## Environment variable redacting
 
