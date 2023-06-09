@@ -15,6 +15,9 @@ import {
   TIMESTAMP_FONT_SIZE,
   TIMESTAMP_HEADER_SIZE,
   VERTICAL_SCROLLBAR_WIDTH,
+  HORIZONTAL_SCROLLBAR_HEIGHT,
+  LINE_CHART_BORDER_TOP,
+  TIME_SERIES_HEIGHT,
 } from "./style_constants";
 import capabilities from "../capabilities/capabilities";
 
@@ -45,9 +48,12 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private rulerRef = React.createRef<HTMLDivElement>();
   private viewportRef = React.createRef<HTMLDivElement>();
+  private lineChartsViewportRef = React.createRef<HTMLDivElement>();
   private barsContainerRef = React.createRef<SVGSVGElement>();
+  private gridlinesContainerRef = React.createRef<SVGSVGElement>();
   private headerRef = React.createRef<SVGGElement>();
-  private contentContainerRef = React.createRef<SVGGElement>();
+  private blocksContainerRef = React.createRef<SVGGElement>();
+  private linesContainerRef = React.createRef<SVGGElement>();
   private gridlinesRef = React.createRef<SVGGElement>();
   private debugRef = React.createRef<HTMLPreElement>();
   private horizontalScrollbarRef = React.createRef<HorizontalScrollbar>();
@@ -56,9 +62,12 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private hoveredRefLineRef = React.createRef<HoveredRefLine>();
 
   private viewport!: HTMLDivElement;
+  private lineChartsViewport!: HTMLDivElement;
   private barsContainerSvg!: SVGSVGElement;
+  private gridlinesContainerSvg!: SVGSVGElement;
   private header!: SVGGElement;
-  private contentContainer!: SVGGElement;
+  private blocksContainer!: SVGGElement;
+  private linesContainer!: SVGGElement;
   private gridlines!: SVGGElement;
 
   private horizontalScrollbar!: HorizontalScrollbar;
@@ -86,9 +95,12 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     if (!this.chartModel) return;
 
     this.viewport = this.viewportRef.current!;
+    this.lineChartsViewport = this.lineChartsViewportRef.current!;
     this.barsContainerSvg = this.barsContainerRef.current!;
+    this.gridlinesContainerSvg = this.gridlinesContainerRef.current!;
     this.header = this.headerRef.current!;
-    this.contentContainer = this.contentContainerRef.current!;
+    this.blocksContainer = this.blocksContainerRef.current!;
+    this.linesContainer = this.linesContainerRef.current!;
     this.gridlines = this.gridlinesRef.current!;
 
     this.horizontalScrollbar = this.horizontalScrollbarRef.current!;
@@ -283,7 +295,11 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   private updateDOM() {
-    this.contentContainer.setAttribute(
+    this.blocksContainer.setAttribute(
+      "transform",
+      `translate(${-this.scrollLeft} 0) scale(${this.secondsPerX * this.screenPixelsPerSecond.value} 1)`
+    );
+    this.linesContainer.setAttribute(
       "transform",
       `translate(${-this.scrollLeft} 0) scale(${this.secondsPerX * this.screenPixelsPerSecond.value} 1)`
     );
@@ -308,10 +324,13 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
           scrollLeft: this.scrollLeft.toJson(),
           mouse: this.mouse,
           timeline: {
-            transform: this.contentContainer.getAttribute("transform"),
+            blocksTransform: this.blocksContainer.getAttribute("transform"),
+            linesTransform: this.linesContainer.getAttribute("transform"),
             endTimeSeconds: this.endTimeSeconds,
             rightBoundarySeconds: this.viewportRightEdgeSeconds,
           },
+          barsContainerHeight: this.barsContainerSvg.clientHeight,
+          gridlinesContainerHeight: this.gridlinesContainerSvg.clientHeight,
         },
         null,
         2
@@ -356,7 +375,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
       line.setAttribute("x1", String(x));
       line.setAttribute("x2", String(x));
       line.setAttribute("y1", "0");
-      line.setAttribute("y2", String(this.barsContainerSvg.clientHeight));
+      line.setAttribute("y2", String(this.gridlinesContainerSvg.clientHeight - HORIZONTAL_SCROLLBAR_HEIGHT));
       line.setAttribute("vector-effect", "non-scaling-stroke");
       // TODO: adjust gridline color based on order of magnitude?
       line.setAttribute("stroke", "#ccc");
@@ -397,6 +416,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
         <div className="flame-chart">
           <div className="timeline" style={{ position: "relative" }}>
             <svg
+              ref={this.gridlinesContainerRef}
               style={{
                 pointerEvents: "none",
                 position: "absolute",
@@ -407,7 +427,15 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               }}>
               <g ref={this.gridlinesRef}></g>
             </svg>
-            <div className="viewport" ref={this.viewportRef} onMouseDown={this.onMouseDown.bind(this)}>
+            <div
+              className="viewport"
+              ref={this.viewportRef}
+              onMouseDown={this.onMouseDown.bind(this)}
+              style={{
+                borderBottom: `${LINE_CHART_BORDER_TOP}px solid #9E9E9E`,
+                height: `calc(60% - ${HORIZONTAL_SCROLLBAR_HEIGHT}px`,
+                overflowX: "initial",
+              }}>
               <div
                 style={{
                   position: "absolute",
@@ -431,24 +459,15 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                   ))}
                 </div>
               </div>
-              <svg style={{ position: "absolute" }} ref={this.barsContainerRef} className="tracks">
+              <svg style={{ position: "absolute" }} className="tracks">
                 <g transform={`translate(0 ${TIMESTAMP_HEADER_SIZE})`}>
-                  <g ref={this.contentContainerRef} transform={`scale(${this.secondsPerX} 1)`}>
+                  <g ref={this.blocksContainerRef} transform={`scale(${this.secondsPerX} 1)`}>
                     <FlameChartBlocks
                       blocks={this.chartModel.blocks}
                       onHover={this.onHoverBlock.bind(this)}
                       onMouseMove={this.onBlocksMouseMove.bind(this)}
                       onMouseLeave={this.onBlocksMouseLeave.bind(this)}
                     />
-                    <FlameChartLines
-                      lines={this.chartModel.lines}
-                      onHover={this.onHoverLine.bind(this)}
-                      onMouseMove={this.onLinesMouseMove.bind(this)}
-                      onMouseLeave={this.onLinesMouseLeave.bind(this)}
-                    />
-                    {capabilities.config.timeseriesChartsInTimingProfileEnabled && (
-                      <HoveredRefLine ref={this.hoveredRefLineRef} />
-                    )}
                   </g>
                 </g>
               </svg>
@@ -468,6 +487,48 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                   margin: 0,
                 }}
               />
+            </div>
+            <div
+              className="viewport"
+              ref={this.lineChartsViewportRef}
+              onMouseDown={this.onMouseDown.bind(this)}
+              style={{ height: "40%", position: "relative" }}>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  pointerEvents: "none",
+                }}>
+                <div className="flame-chart-sections">
+                  {this.chartModel.lineSections.map(({ name, height }, i) => (
+                    <div
+                      key={i}
+                      className="flame-chart-section"
+                      style={{
+                        height,
+                      }}>
+                      <div className="flame-chart-section-header" style={{ height: SECTION_LABEL_HEIGHT }}>
+                        {name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <svg style={{ position: "absolute" }} ref={this.barsContainerRef} className="tracks">
+                <g ref={this.linesContainerRef} transform={`scale(${this.secondsPerX} 1)`}>
+                  <FlameChartLines
+                    lines={this.chartModel.lines}
+                    onHover={this.onHoverLine.bind(this)}
+                    onMouseMove={this.onLinesMouseMove.bind(this)}
+                    onMouseLeave={this.onLinesMouseLeave.bind(this)}
+                  />
+                  {capabilities.config.timeseriesChartsInTimingProfileEnabled && (
+                    <HoveredRefLine ref={this.hoveredRefLineRef} />
+                  )}
+                </g>
+              </svg>
             </div>
             <svg
               style={{
@@ -728,13 +789,12 @@ class FlameChartLines extends React.Component<FlameChartLinesProps> {
           <g>
             <path {...line.pathProps} vectorEffect="non-scaling-stroke" />
             <rect
+              className="transparent-rect"
               key={i}
               data-index={i}
               y={line.upperBoundY}
               width={line.upperBoundX}
               height={line.lowerBoundY - line.upperBoundY}
-              vectorEffect="non-scaling-stroke"
-              fill="transparent"
             />
           </g>
         ))}

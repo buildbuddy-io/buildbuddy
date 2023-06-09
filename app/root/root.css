@@ -1835,7 +1835,7 @@ code .comment {
   background: #f9f9f9;
   position: relative;
   width: 100%;
-  height: 600px;
+  height: 900px;
   margin: 24px 0;
 
   border-radius: 4px 2px 4px;
@@ -1961,9 +1961,9 @@ code .comment {
   top: 0;
   left: 0;
   width: 100%;
-  height: 100%;
   position: relative;
   overflow: scroll;
+  /* NOTE: Height is set in JS */
 }
 
 .flame-chart .tracks {
@@ -1976,6 +1976,12 @@ code .comment {
   stroke-width: 1;
   stroke: white;
   vector-effect: non-scaling-stroke;
+}
+
+.flame-chart .transparent-rect {
+  stroke-width: 0;
+  vector-effect: non-scaling-stroke;
+  fill: transparent;
 }
 
 .flame-chart rect.hover {

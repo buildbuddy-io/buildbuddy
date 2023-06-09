@@ -4,7 +4,6 @@ import capabilities from "../capabilities/capabilities";
 import {
   BLOCK_HEIGHT,
   BLOCK_VERTICAL_GAP,
-  TIME_SERIES_VERTICAL_GAP,
   SECTION_LABEL_HEIGHT,
   SECTION_PADDING_BOTTOM,
   SECTION_PADDING_TOP,
@@ -18,6 +17,7 @@ export type FlameChartModel = {
   sections: SectionDecorationModel[];
   blocks: BlockModel[];
   lines: LineModel[];
+  lineSections: SectionDecorationModel[];
 };
 
 export type SectionDecorationModel = {
@@ -67,6 +67,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
   const timelines = buildThreadTimelines(events, { visibilityThreshold });
   const timeSeries = buildTimeSeries(events);
   const sections: SectionDecorationModel[] = [];
+  const lineSections: SectionDecorationModel[] = [];
   const blocks: BlockModel[] = [];
   const lines: LineModel[] = [];
 
@@ -106,17 +107,13 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
   }
 
   if (capabilities.config.timeseriesChartsInTimingProfileEnabled) {
+    currentThreadY = 0;
     let index = 0;
+    const sectionHeight = SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP + SECTION_PADDING_BOTTOM + TIME_SERIES_HEIGHT;
     for (const { name, events } of timeSeries) {
       const points = new Map<number, PointModel>();
-      const sectionHeight =
-        SECTION_LABEL_HEIGHT +
-        SECTION_PADDING_TOP +
-        SECTION_PADDING_BOTTOM +
-        TIME_SERIES_VERTICAL_GAP +
-        TIME_SERIES_HEIGHT;
       let lowerBoundY = currentThreadY + sectionHeight;
-      let upperBoundY = currentThreadY + SECTION_LABEL_HEIGHT;
+      let upperBoundY = lowerBoundY - TIME_SERIES_HEIGHT;
 
       const darkColor = getMaterialChartColor(index);
       const lightColor = getLightMaterialChartColor(index);
@@ -159,7 +156,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
         pointsByXCoord: points,
         dt: dt,
       });
-      sections.push({
+      lineSections.push({
         name: name,
         y: currentThreadY,
         height: sectionHeight,
@@ -173,5 +170,6 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
     sections,
     blocks,
     lines,
+    lineSections,
   };
 }
