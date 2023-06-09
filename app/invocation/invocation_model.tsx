@@ -493,8 +493,6 @@ export default class InvocationModel {
   }
 
   getStatus() {
-    if (!this.invocation) return "";
-
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         return this.invocation.success ? "Succeeded" : "Failed";
@@ -508,8 +506,6 @@ export default class InvocationModel {
   }
 
   getStatusClass() {
-    if (!this.invocation) return "";
-
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         return this.invocation.success ? "success" : "failure";
