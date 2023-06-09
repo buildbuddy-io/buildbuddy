@@ -645,7 +645,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 }
 
 function areResultsAvailable(model: InvocationModel): boolean {
-  return model.getPrimaryInvocation().invocationStatus !== invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS;
+  return model.invocation.invocationStatus !== invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS;
 }
 
 const RequestsCardContainer: React.FC<JSX.IntrinsicElements["div"]> = ({ className, children, ...props }) => (

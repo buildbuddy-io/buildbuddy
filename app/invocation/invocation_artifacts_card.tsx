@@ -26,7 +26,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
-      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.model.getId() ?? "");
+      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.model.getId());
     }
   }
 
@@ -87,7 +87,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                   {target.outputs.map((output) => (
                     <div className="artifact-line">
                       <a
-                        href={rpcService.getBytestreamUrl(output.uri, this.props.model.getId() ?? "", {
+                        href={rpcService.getBytestreamUrl(output.uri, this.props.model.getId(), {
                           filename: output.name,
                         })}
                         className="artifact-name"
