@@ -216,7 +216,7 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 
 ## Custom Links
 
-You can add custom links to the BuildBuddy overview page using the `BUILDBUDDY_LINKS` build metadata flag. These links must be comma separated, and in the form [link text](https://linkurl.com). Urls must begin with either `http://` or `https://`.
+You can add custom links to the BuildBuddy overview page using the `BUILDBUDDY_LINKS` build metadata flag. These links must be comma separated, and in the form `[link text](https://linkurl.com)`. Urls must begin with either `http://` or `https://`.
 
 Example:
 
