@@ -224,6 +224,11 @@ Example:
 --build_metadata=BUILDBUDDY_LINKS="[Search Github](https://github.com/search),[GCP Dashboard](https://console.cloud.google.com/home/dashboard)"
 ```
 
+## Tags
+
+You can add free-text tags to a build by passing a comma-separated string to the `TAGS` build metadata flag.
+
+
 ## Environment variable redacting
 
 By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR` `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID`, `BUILDKITE_BUILD_URL`, `BUILDKITE_JOB_ID`, `CIRCLE_REPOSITORY_URL`, `GITHUB_REPOSITORY`, `BUILDKITE_REPO`, `TRAVIS_REPO_SLUG`, `GIT_URL`,
