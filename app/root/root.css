@@ -1971,7 +1971,6 @@ code .comment {
 .flame-chart .transparent-rect {
   stroke-width: 0;
   vector-effect: non-scaling-stroke;
-  vector-effect: non-scaling-stroke;
   fill: transparent;
 }
 
