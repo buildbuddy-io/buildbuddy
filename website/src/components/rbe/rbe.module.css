@@ -29,7 +29,8 @@
 .deploymentModelDescription {
   font-size: 20px;
   line-height: 34px;
-  font-weight: 400;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 @media (max-width: 512px) {

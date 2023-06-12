@@ -61,9 +61,9 @@
   display: block;
   width: calc(100% - 32px);
   color: #fff;
-  background-color: #263238;
+  background: #263238;
   text-align: center;
-  border-radius: 8px;
+  border-radius: 64px;
   padding: 16px;
   margin: 16px;
 }

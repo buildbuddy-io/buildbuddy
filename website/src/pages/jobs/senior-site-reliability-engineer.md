@@ -35,7 +35,7 @@ This is a unique opportunity to shape the future of how engineers build and test
 - Siggi Simonarson - GitHub: @siggisim, Twitter: @siggi
 - Brandon Duffany - GitHub: @bduffany, Twitter: @brandon_duffany
 - Vadim Berezniker - GitHub: @vadimberezniker
-- And the rest of the [team here](/team)
+- And the rest of the **[team here](/team)**
 
 ## What's it like to work at BuildBuddy?
 

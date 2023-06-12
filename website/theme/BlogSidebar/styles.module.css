@@ -23,6 +23,8 @@
 
 .sidebarItemLink {
   color: var(--ifm-font-color-base);
+  font-weight: 500;
+  color: #86868b;
 }
 .sidebarItemLink:hover {
   color: var(--ifm-color-primary);

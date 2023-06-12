@@ -10,7 +10,7 @@ let form = {
   phone: React.createRef<HTMLInputElement>(),
   linkedin: React.createRef<HTMLInputElement>(),
   github: React.createRef<HTMLInputElement>(),
-  blurb: React.createRef<HTMLInputElement>(),
+  blurb: React.createRef<HTMLTextAreaElement>(),
   button: React.createRef<HTMLButtonElement>(),
 };
 
@@ -23,7 +23,7 @@ function Component() {
       <input ref={form.phone} placeholder="Phone number" />
       <input ref={form.linkedin} placeholder="LinkedIn Profile" />
       <input ref={form.github} placeholder="Github Profile" />
-      <textarea ref={form.blurb} className={styles.span2} placeholder="(Optional) Anything else?" />
+      <textarea ref={form.blurb} className={styles.span2} placeholder="[Optional] Anything else?" />
       <button
         ref={form.button}
         onClick={() => sendMessage()}
