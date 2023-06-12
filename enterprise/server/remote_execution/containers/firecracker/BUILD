@@ -29,8 +29,10 @@ go_library(
             "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/blockio",
             "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/remote_execution/nbd/nbdserver",
             "//enterprise/server/remote_execution/snaploader",
             "//enterprise/server/remote_execution/vmexec_client",
             "//enterprise/server/util/container",
@@ -69,6 +71,46 @@ go_test(
     name = "firecracker_test",
     timeout = "long",
     srcs = ["firecracker_test.go"],
+    tags = [
+        "manual",  # Don't include this target in wildcard patterns
+        "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
+    ],
+    deps = [
+        ":firecracker",
+        "//enterprise:bundle",
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/workspace",
+        "//enterprise/server/util/ext4",
+        "//proto:remote_execution_go_proto",
+        "//server/backends/disk_cache",
+        "//server/interfaces",
+        "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/content_addressable_storage_server",
+        "//server/testutil/testauth",
+        "//server/testutil/testdigest",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/disk",
+        "//server/util/fileresolver",
+        "//server/util/log",
+        "//server/util/status",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
+    ],
+)
+
+# TODO(bduffany): once NBD is fully enabled, set NBD flag(s) on
+# firecracker_test and remove this one.
+go_test(
+    name = "firecracker_test_nbd",
+    timeout = "long",
+    srcs = ["firecracker_test.go"],
+    args = [
+        "--executor.firecracker_enable_nbd=true",
+    ],
     tags = [
         "manual",  # Don't include this target in wildcard patterns
         "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment

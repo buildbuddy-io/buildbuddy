@@ -42,7 +42,7 @@ import (
 const (
 	busyboxImage = "docker.io/library/busybox:latest"
 	// Alternate image to use if getting rate-limited by docker hub
-	// busyboxImage = "gcr.io/google-containers/busybox:latest"
+	// busyboxImage = "quay.io/quay/busybox:latest"
 
 	ubuntuImage              = "marketplace.gcr.io/google/ubuntu2004"
 	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
@@ -273,7 +273,6 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
 	path := filepath.Join(workDir, "world.txt")
 	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
@@ -291,11 +290,9 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
 		t.Fatalf("unable to pull image: %s", err)
 	}
-
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		t.Fatalf("unable to Create container: %s", err)
 	}
@@ -305,37 +302,55 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		}
 	})
 
+	cmd := &repb.Command{
+		// Run a script that increments /workspace/count (on workspacefs) and
+		// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+		// This will let us test whether the scratchfs is sticking around across
+		// runs, and whether workspacefs is being correctly reset across runs.
+		Arguments: []string{"sh", "-c", `
+			for dir in /workspace /root; do
+				(
+					cd "$dir"
+					if [[ -e ./count ]]; then
+						count=$(cat ./count)
+						count=$((count+1))
+						printf "$count" > ./count
+					else
+						printf 0 > ./count
+					fi
+					echo "$PWD/count: $(cat count)"
+				)
+			done
+		`},
+	}
+
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+
+	assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
+
 	// Try pause, unpause, exec several times.
-	for i := 0; i < 3; i++ {
+	for i := 1; i <= 3; i++ {
 		if err := c.Pause(ctx); err != nil {
 			t.Fatalf("unable to pause container: %s", err)
 		}
+
+		countBefore := rand.Intn(100)
+		err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
+		require.NoError(t, err)
+
 		if err := c.Unpause(ctx); err != nil {
 			t.Fatalf("unable to unpause container: %s", err)
 		}
 
-		cmd := &repb.Command{
-			Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-				{Name: "GREETING", Value: "Hello"},
-			},
-		}
-		expectedResult := &interfaces.CommandResult{
-			ExitCode: 0,
-			Stdout:   []byte("Hello world"),
-			Stderr:   []byte("foo"),
-		}
-
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
-		if res.Error != nil {
-			t.Fatalf("error: %s", res.Error)
-		}
-		res.UsageStats = nil
-		assert.Equal(t, expectedResult, res)
+		require.NoError(t, res.Error)
+
+		assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 	}
 }
 
-func TestFirecrackerFileMapping(t *testing.T) {
+func TestFirecrackerComplexFileMapping(t *testing.T) {
 	numFiles := 100
 	fileSizeBytes := int64(1_000_000)
 	scratchTestFileSizeBytes := int64(50_000_000)
@@ -414,7 +429,11 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		assert.Fail(t, "/workspace disk usage was not reported")
 	} else {
 		assert.Equal(t, "ext4", workspaceFSU.GetFstype())
-		assert.Equal(t, "/dev/vdc", workspaceFSU.GetSource())
+		assert.True(t,
+			workspaceFSU.GetSource() == "/dev/vdc" ||
+				workspaceFSU.GetSource() == "/dev/nbd1",
+			"unexpected workspace mount source %s", workspaceFSU.GetSource(),
+		)
 		assert.InDelta(
 			t, workspaceFSU.GetUsedBytes(),
 			// Expected size is twice the input size, since we duplicate the inputs.
