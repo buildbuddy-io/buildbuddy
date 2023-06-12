@@ -88,6 +88,21 @@ go_register_toolchains(
 
 gazelle_dependencies()
 
+# Golang staticcheck
+
+http_archive(
+    name = "com_github_sluongng_nogo_analyzer",
+    sha256 = "a74a5e44751d292d17bd879e5aa8b40baa94b5dc2f043df1e3acbb3e23ead073",
+    strip_prefix = "nogo-analyzer-0.0.2",
+    urls = [
+        "https://github.com/sluongng/nogo-analyzer/archive/refs/tags/v0.0.2.tar.gz",
+    ],
+)
+
+load("@com_github_sluongng_nogo_analyzer//staticcheck:deps.bzl", "staticcheck")
+
+staticcheck()
+
 # Node
 
 http_archive(
