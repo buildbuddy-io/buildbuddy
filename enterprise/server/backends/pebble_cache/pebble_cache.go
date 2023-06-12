@@ -3,21 +3,24 @@ package pebble_cache
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
+	"math/big"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -31,12 +34,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/cockroachdb/pebble"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -73,8 +78,15 @@ var (
 	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 50, "Maximum number of entries to evict per second (per partition).")
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 
+	// ac eviction flags
+	acEvictionEnabled       = flag.Bool("cache.pebble.ac_eviction_enabled", false, "Whether AC eviction is enabled.")
+	groupIDSamplingEnabled  = flag.Bool("cache.pebble.groupid_sampling_enabled", false, "Whether AC entries are sampled and exported via metrics. Not yet used for eviction.")
+	samplesPerGroupID       = flag.Int("cache.pebble.samples_per_groupid", 20, "How many samples to use when approximating AC item count for groups.")
+	groupIDSamplesOnStartup = flag.Int("cache.pebble.num_groupid_samples_on_startup", 10, "How many group IDs to sample to on startup.")
+	groupIDSampleFrequency  = flag.Duration("cache.pebble_groupid_sample_frequency", 5*time.Second, "How often to perform a new group ID / approximate count sampling.")
+
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
-	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 1000, "QPS limit for data version migration")
+	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
 
 	// Compression related flags
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
@@ -139,6 +151,8 @@ type Options struct {
 	AtimeUpdateThreshold *time.Duration
 	AtimeBufferSize      *int
 	MinEvictionAge       *time.Duration
+
+	Clock clockwork.Clock
 }
 
 type sizeUpdate struct {
@@ -172,9 +186,10 @@ type PebbleCache struct {
 	migrators    []keyMigrator
 
 	env    environment.Env
-	db     *pebble.DB
-	leaser pebbleutil.Leaser
+	db     pebble.IPebbleDB
+	leaser pebble.Leaser
 	locker lockmap.Locker
+	clock  clockwork.Clock
 
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
@@ -193,6 +208,8 @@ type PebbleCache struct {
 	bufferPool *bytebufferpool.Pool
 
 	minBytesAutoZstdCompression int64
+
+	oldMetrics pebble.Metrics
 }
 
 type keyMigrator interface {
@@ -216,6 +233,22 @@ func (m *v1ToV2Migrator) FromVersion() filestore.PebbleKeyVersion {
 }
 func (m *v1ToV2Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version2 }
 func (m *v1ToV2Migrator) Migrate(val []byte) []byte             { return val }
+
+type v2ToV3Migrator struct{}
+
+func (m *v2ToV3Migrator) FromVersion() filestore.PebbleKeyVersion {
+	return filestore.Version2
+}
+func (m *v2ToV3Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version3 }
+func (m *v2ToV3Migrator) Migrate(val []byte) []byte             { return val }
+
+type v3ToV4Migrator struct{}
+
+func (m *v3ToV4Migrator) FromVersion() filestore.PebbleKeyVersion {
+	return filestore.Version3
+}
+func (m *v3ToV4Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version4 }
+func (m *v3ToV4Migrator) Migrate(val []byte) []byte             { return val }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
 // the provided env.
@@ -359,6 +392,10 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	clock := opts.Clock
+	if clock == nil {
+		clock = clockwork.NewRealClock()
+	}
 	pc := &PebbleCache{
 		name:                        opts.Name,
 		rootDirectory:               opts.RootDirectory,
@@ -372,8 +409,9 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		minEvictionAge:              *opts.MinEvictionAge,
 		env:                         env,
 		db:                          db,
-		leaser:                      pebbleutil.NewDBLeaser(db),
+		leaser:                      pebble.NewDBLeaser(db),
 		locker:                      lockmap.New(),
+		clock:                       clock,
 		brokenFilesDone:             make(chan struct{}),
 		orphanedFilesDone:           make(chan struct{}),
 		eg:                          &errgroup.Group{},
@@ -382,7 +420,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		edits:                       make(chan *sizeUpdate, 1000),
 		accesses:                    make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:                    make([]*partitionEvictor, len(opts.Partitions)),
-		fileStorer:                  filestore.New(filestore.Opts{}),
+		fileStorer:                  filestore.New(),
 		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
 	}
@@ -418,6 +456,14 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		if pc.activeDatabaseVersion() >= filestore.Version2 {
 			// Migrate keys from 1->2.
 			pc.migrators = append(pc.migrators, &v1ToV2Migrator{})
+		}
+		if pc.activeDatabaseVersion() >= filestore.Version3 {
+			// Migrate keys from 2->3.
+			pc.migrators = append(pc.migrators, &v2ToV3Migrator{})
+		}
+		if pc.activeDatabaseVersion() >= filestore.Version4 {
+			// Migrate keys from 3->4.
+			pc.migrators = append(pc.migrators, &v3ToV4Migrator{})
 		}
 	}
 
@@ -458,7 +504,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
 			if err != nil {
 				return err
 			}
@@ -519,7 +565,7 @@ func (p *PebbleCache) databaseVersionMetadata() (*rfpb.VersionMetadata, error) {
 	}
 	defer db.Close()
 
-	buf, err := pebbleutil.GetCopy(db, p.databaseVersionKey())
+	buf, err := pebble.GetCopy(db, p.databaseVersionKey())
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			// If the key is not present in the DB; return an empty
@@ -575,7 +621,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 	newVersionMetadata := proto.Clone(oldVersionMetadata).(*rfpb.VersionMetadata)
 	newVersionMetadata.MinVersion = int64(minVersion)
 	newVersionMetadata.MaxVersion = int64(maxVersion)
-	newVersionMetadata.LastModifyUsec = time.Now().UnixMicro()
+	newVersionMetadata.LastModifyUsec = p.clock.Now().UnixMicro()
 
 	buf, err := proto.Marshal(newVersionMetadata)
 	if err != nil {
@@ -587,7 +633,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 		return err
 	}
 	defer db.Close()
-	if err := db.Set(versionKey, buf, &pebble.WriteOptions{Sync: true}); err != nil {
+	if err := db.Set(versionKey, buf, pebble.Sync); err != nil {
 		return err
 	}
 
@@ -621,7 +667,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
 	}
-	md.LastAccessUsec = time.Now().UnixMicro()
+	md.LastAccessUsec = p.clock.Now().UnixMicro()
 	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
@@ -630,7 +676,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if err != nil {
 		return err
 	}
-	return db.Set(keyBytes, protoBytes, &pebble.WriteOptions{Sync: false})
+	return db.Set(keyBytes, protoBytes, pebble.NoSync)
 }
 
 func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
@@ -1186,16 +1232,7 @@ func (p *PebbleCache) encryptionEnabled(ctx context.Context, partitionID string)
 		return false, status.FailedPreconditionError("encryption requested, but crypter not available")
 	}
 
-	for _, p := range p.partitions {
-		if p.ID == partitionID {
-			if !p.EncryptionSupported {
-				return false, status.FailedPreconditionError("encryption enabled, but writing to a partition that doesn't support encryption")
-			}
-			return true, nil
-		}
-	}
-
-	return false, status.InvalidArgumentError("partition not found")
+	return true, nil
 }
 
 func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {
@@ -1206,6 +1243,20 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 
 	groupID, partID := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 
+	encryptionEnabled, err := p.encryptionEnabled(ctx, partID)
+	if err != nil {
+		return nil, err
+	}
+
+	var encryption *rfpb.Encryption
+	if encryptionEnabled {
+		ak, err := p.env.GetCrypter().ActiveKey(ctx)
+		if err != nil {
+			return nil, status.UnavailableErrorf("encryption key not available: %s", err)
+		}
+		encryption = &rfpb.Encryption{KeyId: ak.GetEncryptionKeyId()}
+	}
+
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
 			CacheType:          r.GetCacheType(),
@@ -1213,8 +1264,10 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 			PartitionId:        partID,
 			GroupId:            groupID,
 		},
-		Digest:     r.GetDigest(),
-		Compressor: r.GetCompressor(),
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+		Compressor:     r.GetCompressor(),
+		Encryption:     encryption,
 	}, nil
 }
 
@@ -1224,7 +1277,7 @@ func (p *PebbleCache) blobDir() string {
 	return filePath
 }
 
-func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter *pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
+func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
 	fileMetadata := &rfpb.FileMetadata{}
 	var lastErr error
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
@@ -1232,7 +1285,7 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter *pe
 		if err != nil {
 			return nil, -1, err
 		}
-		lastErr = pebbleutil.LookupProto(iter, keyBytes, fileMetadata)
+		lastErr = pebble.LookupProto(iter, keyBytes, fileMetadata)
 		if lastErr == nil {
 			return fileMetadata, version, nil
 		}
@@ -1240,14 +1293,14 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter *pe
 	return nil, -1, lastErr
 }
 
-func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter *pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
+func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
 	md, _, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
 	return md, err
 }
 
 // iterHasKey returns a bool indicating if the provided iterator has the
 // exact key specified.
-func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey) (bool, error) {
+func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) (bool, error) {
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
@@ -1262,7 +1315,7 @@ func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey)
 
 func readFileMetadata(reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
-	buf, err := pebbleutil.GetCopy(reader, keyBytes)
+	buf, err := pebble.GetCopy(reader, keyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -1317,7 +1370,6 @@ func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool,
 	if err != nil {
 		return false, err
 	}
-	log.Debugf("Pebble contains %s is %t", key.String(), found)
 	return found, nil
 }
 
@@ -1417,28 +1469,9 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 
 	buf := &bytes.Buffer{}
 	for _, r := range resources {
-		fileRecord, err := p.makeFileRecord(ctx, r)
-		if err != nil {
-			return nil, err
-		}
-		key, err := p.fileStorer.PebbleKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-
-		unlockFn := p.locker.RLock(key.LockID())
-		fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
-		unlockFn()
-		if err != nil {
-			continue
-		}
-
-		rc, err := p.reader(ctx, r, key, fileMetadata, 0, 0)
+		rc, err := p.reader(ctx, iter, r, 0, 0)
 		if err != nil {
 			if status.IsNotFoundError(err) || os.IsNotExist(err) {
-				unlockFn := p.locker.Lock(key.LockID())
-				p.handleMetadataMismatch(ctx, err, key, fileMetadata)
-				unlockFn()
 				continue
 			}
 			return nil, err
@@ -1530,7 +1563,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 		return err
 	}
 
-	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
+	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
 	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*fileMetadata.GetStoredSizeBytes())
@@ -1623,31 +1656,8 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, r)
+	rc, err := p.reader(ctx, iter, r, uncompressedOffset, limit)
 	if err != nil {
-		return nil, err
-	}
-
-	key, err := p.fileStorer.PebbleKey(fileRecord)
-	if err != nil {
-		return nil, err
-	}
-
-	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	unlockFn := p.locker.RLock(key.LockID())
-	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
-	unlockFn()
-	if err != nil {
-		return nil, err
-	}
-
-	rc, err := p.reader(ctx, r, key, fileMetadata, uncompressedOffset, limit)
-	if err != nil {
-		if status.IsNotFoundError(err) || os.IsNotExist(err) {
-			unlockFn := p.locker.Lock(key.LockID())
-			p.handleMetadataMismatch(ctx, err, key, fileMetadata)
-			unlockFn()
-		}
 		return nil, err
 	}
 
@@ -1657,7 +1667,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	if err != nil {
 		return nil, err
 	}
-	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
+	return pebble.ReadCloserWithFunc(rc, db.Close), nil
 }
 
 type writeCloser struct {
@@ -1740,10 +1750,11 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
 	if shouldCompress {
 		r = &rspb.ResourceName{
-			Digest:       r.GetDigest(),
-			InstanceName: r.GetInstanceName(),
-			Compressor:   repb.Compressor_ZSTD,
-			CacheType:    r.GetCacheType(),
+			Digest:         r.GetDigest(),
+			DigestFunction: r.GetDigestFunction(),
+			InstanceName:   r.GetInstanceName(),
+			Compressor:     repb.Compressor_ZSTD,
+			CacheType:      r.GetCacheType(),
 		}
 	}
 
@@ -1779,7 +1790,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
 	cwc.CloseFn = db.Close
 	cwc.CommitFn = func(bytesWritten int64) error {
-		now := time.Now().UnixMicro()
+		now := p.clock.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
 			FileRecord:         fileRecord,
 			StorageMetadata:    wcm.Metadata(),
@@ -1815,7 +1826,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 			return err
 		}
 
-		if err = db.Set(keyBytes, protoBytes, &pebble.WriteOptions{Sync: false}); err == nil {
+		if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
 			partitionID := fileRecord.GetIsolation().GetPartitionId()
 			p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
@@ -1834,7 +1845,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, r.GetDigest(), wc)
 		if err != nil {
 			_ = wc.Close()
-			return nil, err
+			return nil, status.UnavailableErrorf("encryptor not available: %s", err)
 		}
 		encryptionMetadata = ewc.Metadata()
 		wc = ewc
@@ -1906,22 +1917,41 @@ func (k *evictionKey) String() string {
 	return string(k.bytes)
 }
 
+type groupIDApproxCount struct {
+	groupID         string
+	count           int64
+	cumulativeCount int64
+}
+
 type partitionEvictor struct {
 	mu            *sync.Mutex
 	part          disk.Partition
 	fileStorer    filestore.Store
 	cacheName     string
 	blobDir       string
-	dbGetter      pebbleutil.Leaser
+	dbGetter      pebble.Leaser
 	locker        lockmap.Locker
 	versionGetter versionGetter
 	accesses      chan<- *accessTimeUpdate
 	rng           *rand.Rand
+	clock         clockwork.Clock
 
 	lru       *approxlru.LRU[*evictionKey]
 	sizeBytes int64
 	casCount  int64
 	acCount   int64
+
+	// Total approximate number of items stored under sampled group IDs.
+	// This is the sum of all the counts in the slice below.
+	groupIDApproxTotalCount int64
+
+	// List of sampled group IDs and their approximate item counts, sorted by
+	// item count.
+	groupIDApproxCounts []groupIDApproxCount
+
+	// A random pseudo group ID we assign for ANON data so that we can sample
+	// it like any other group ID.
+	anonPseudoGroupID string
 
 	atimeBufferSize int
 	minEvictionAge  time.Duration
@@ -1931,20 +1961,22 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, locker lockmap.Locker, vg versionGetter, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:              &sync.Mutex{},
-		part:            part,
-		fileStorer:      fileStorer,
-		blobDir:         blobDir,
-		dbGetter:        dbg,
-		locker:          locker,
-		versionGetter:   vg,
-		accesses:        accesses,
-		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
-		atimeBufferSize: atimeBufferSize,
-		minEvictionAge:  minEvictionAge,
-		cacheName:       cacheName,
+		mu:                &sync.Mutex{},
+		part:              part,
+		fileStorer:        fileStorer,
+		blobDir:           blobDir,
+		dbGetter:          dbg,
+		locker:            locker,
+		versionGetter:     vg,
+		accesses:          accesses,
+		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:             clock,
+		atimeBufferSize:   atimeBufferSize,
+		minEvictionAge:    minEvictionAge,
+		cacheName:         cacheName,
+		anonPseudoGroupID: fmt.Sprintf("GR%020d", random.RandUint64()),
 	}
 	l, err := approxlru.New(&approxlru.Opts[*evictionKey]{
 		SamplePoolSize:     *samplePoolSize,
@@ -1977,8 +2009,141 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	pe.acCount = acCount
 	pe.lru.UpdateSizeBytes(sizeBytes)
 
+	// Sample some random groups at startup so that eviction has something to
+	// work with.
+	// AC eviction requires version 2 or higher.
+	if vg.minDatabaseVersion() >= filestore.Version2 && (*groupIDSamplingEnabled || *acEvictionEnabled) {
+		for i := 0; i < *groupIDSamplesOnStartup; i++ {
+			pe.updateGroupIDApproxCounts()
+		}
+	}
+
 	log.Infof("Pebble Cache: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
 	return pe, nil
+}
+
+func (e *partitionEvictor) sampleGroupID() (string, error) {
+	if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
+		return "", status.FailedPreconditionErrorf("AC eviction requires at least version 2")
+	}
+	db, err := e.dbGetter.DB()
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
+	iter := db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	defer iter.Close()
+
+	randomGroupID := fmt.Sprintf("GR%020d", random.RandUint64())
+	randomKey := e.partitionKeyPrefix() + "/" + randomGroupID
+	if !iter.SeekGE([]byte(randomKey)) {
+		return "", status.NotFoundError("did not find key")
+	}
+
+	var key filestore.PebbleKey
+	if _, err := key.FromBytes(iter.Key()); err != nil {
+		return "", err
+	}
+
+	// The special ANON group doesn't follow the regular group key format, so it
+	// won't be found through regular sampling. To get around this, we make up
+	// a random group ID for it and pretend it exists in the keyspace so that
+	// it can be sampled like any other group.
+	if randomGroupID < e.anonPseudoGroupID && (key.GroupID() == "" || key.GroupID() > e.anonPseudoGroupID) {
+		return interfaces.AuthAnonymousUser, nil
+	}
+
+	// We hit a key without a group ID (i.e. a CAS entry).
+	if key.GroupID() == "" {
+		return "", status.NotFoundErrorf("did not find key")
+	}
+
+	return key.GroupID(), nil
+}
+
+// maximum value of a 32 byte hash, represented as a big int
+var maxHashAsBigInt = big.NewInt(0).SetBytes([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+
+func keyToBigInt(key filestore.PebbleKey) (*big.Int, error) {
+	hash, err := hex.DecodeString(key.Hash())
+	if err != nil {
+		return nil, status.UnknownErrorf("could not parse key %q hash: %s", key.Hash(), err)
+	}
+
+	for len(hash) < 32 {
+		hash = append(hash, 0)
+	}
+	if len(hash) > 32 {
+		hash = hash[:32]
+	}
+
+	return big.NewInt(0).SetBytes(hash), nil
+}
+
+// approximates the number of items in a group by measuring the distance
+// between adjacent keys over n keys and then taking the median value.
+func (e *partitionEvictor) approxGroupItemCount(groupID string) (int64, error) {
+	if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
+		return 0, status.FailedPreconditionErrorf("AC eviction requires at least version 2")
+	}
+	db, err := e.dbGetter.DB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	groupPrefix := []byte(fmt.Sprintf("%s/%s/", e.partitionKeyPrefix(), filestore.FixedWidthGroupID(groupID)))
+	lower, upper := keys.Range(groupPrefix)
+
+	iter := db.NewIter(&pebble.IterOptions{
+		LowerBound: lower,
+		UpperBound: upper,
+	})
+	defer iter.Close()
+
+	if !iter.First() {
+		return 0, nil
+	}
+
+	var approxCounts []int64
+	prevKeyAsNum := big.NewInt(0)
+
+	for len(approxCounts) < *samplesPerGroupID {
+		var key filestore.PebbleKey
+		_, err := key.FromBytes(iter.Key())
+		if err != nil {
+			return 0, status.UnknownErrorf("could not parse key %q: %s", string(iter.Key()), err)
+		}
+
+		keyAsNum, err := keyToBigInt(key)
+		if err != nil {
+			return 0, err
+		}
+		if keyAsNum.Cmp(prevKeyAsNum) != 0 {
+			gap := big.NewInt(0).Sub(keyAsNum, prevKeyAsNum)
+			approxCount := big.NewInt(0).Div(maxHashAsBigInt, gap)
+			if !approxCount.IsInt64() {
+				log.Warningf("cannot represent %s as an int64", approxCount)
+			} else {
+				approxCounts = append(approxCounts, approxCount.Int64())
+			}
+			prevKeyAsNum = keyAsNum
+		}
+
+		// If we exhausted all the keys in the group, then we don't need to
+		// guess the count since we have the exact count.
+		if !iter.Next() {
+			return int64(len(approxCounts)), nil
+		}
+	}
+
+	slices.Sort(approxCounts)
+	approxCount := approxCounts[len(approxCounts)/2]
+	return approxCount, nil
 }
 
 func (e *partitionEvictor) updateMetrics() {
@@ -2073,7 +2238,7 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*rfpb.PartitionMetadata, e
 	}
 	defer db.Close()
 
-	partitionMDBuf, err := pebbleutil.GetCopy(db, partitionMetadataKey(e.part.ID))
+	partitionMDBuf, err := pebble.GetCopy(db, partitionMetadataKey(e.part.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -2085,17 +2250,17 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*rfpb.PartitionMetadata, e
 	return partitionMD, nil
 }
 
-func (e *partitionEvictor) writePartitionMetadata(db pebbleutil.IPebbleDB, md *rfpb.PartitionMetadata) error {
+func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *rfpb.PartitionMetadata) error {
 	bs, err := proto.Marshal(md)
 	if err != nil {
 		return err
 	}
 	unlockFn := e.locker.Lock(string(partitionMetadataKey(e.part.ID)))
 	defer unlockFn()
-	return db.Set(partitionMetadataKey(e.part.ID), bs, &pebble.WriteOptions{Sync: true})
+	return db.Set(partitionMetadataKey(e.part.ID), bs, pebble.Sync)
 }
 
-func (e *partitionEvictor) flushPartitionMetadata(db pebbleutil.IPebbleDB) error {
+func (e *partitionEvictor) flushPartitionMetadata(db pebble.IPebbleDB) error {
 	sizeBytes, casCount, acCount := e.Counts()
 	return e.writePartitionMetadata(db, &rfpb.PartitionMetadata{
 		SizeBytes: sizeBytes,
@@ -2169,7 +2334,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 
 var digestChars = []byte("abcdef1234567890")
 
-func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
+func (e *partitionEvictor) randomKey(digestLength int, groupID string, cacheType rspb.CacheType) ([]byte, error) {
 	version := e.versionGetter.minDatabaseVersion()
 	buf := bytes.NewBuffer(make([]byte, 0, digestLength))
 	for i := 0; i < digestLength; i++ {
@@ -2178,12 +2343,14 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 
 	key, err := e.fileStorer.PebbleKey(&rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rspb.CacheType_CAS,
+			CacheType:   cacheType,
 			PartitionId: e.part.ID,
+			GroupId:     groupID,
 		},
 		Digest: &repb.Digest{
 			Hash: string(buf.Bytes()),
 		},
+		DigestFunction: repb.DigestFunction_SHA256,
 	})
 	if err != nil {
 		return nil, err
@@ -2259,6 +2426,40 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 	return false, atime, nil
 }
 
+func (e *partitionEvictor) randomGroupForEvictionSampling() (string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.groupIDApproxCounts) == 0 {
+		return "", status.NotFoundErrorf("no groups available")
+	}
+
+	n := rand.Int63n(e.groupIDApproxTotalCount)
+	pos, _ := slices.BinarySearchFunc(e.groupIDApproxCounts, groupIDApproxCount{cumulativeCount: n}, func(a, b groupIDApproxCount) int {
+		if a.cumulativeCount < b.cumulativeCount {
+			return -1
+		} else if a.cumulativeCount > b.cumulativeCount {
+			return 1
+		}
+		return 0
+	})
+	if pos == len(e.groupIDApproxCounts) {
+		return "", status.NotFoundErrorf("strange, did not find group in list, looking for %d\n%s", n, e.formatGroupIDApproxCounts())
+	}
+	return e.groupIDApproxCounts[pos].groupID, nil
+}
+
+func (e *partitionEvictor) sampleGroup() {
+	if !*groupIDSamplingEnabled {
+		return
+	}
+
+	groupID, err := e.randomGroupForEvictionSampling()
+	if err != nil {
+		log.Warningf("could not sample group: %s", err)
+	}
+	metrics.PebbleCacheGroupIDSampleCount.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
+}
+
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -2273,12 +2474,28 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 	iter.SeekGE(start)
 	defer iter.Close()
 
+	if !*acEvictionEnabled {
+		e.sampleGroup()
+	}
+
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
 
 	// generate k random digests and for each:
 	//   - seek to the next valid key, and return that file record
 	for i := 0; i < k*2; i++ {
-		randKey, err := e.randomKey(64)
+		groupID := ""
+		cacheType := rspb.CacheType_CAS
+		if i%2 == 1 && *acEvictionEnabled {
+			gid, err := e.randomGroupForEvictionSampling()
+			if err == nil {
+				cacheType = rspb.CacheType_AC
+				groupID = gid
+			} else {
+				log.Warningf("no groups to sample for %q", e.part.ID)
+			}
+		}
+
+		randKey, err := e.randomKey(64, groupID, cacheType)
 		if err != nil {
 			log.Errorf("Error generating random key: %s", err)
 			continue
@@ -2287,38 +2504,66 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 		if !valid {
 			continue
 		}
+
 		var key filestore.PebbleKey
 		if _, err := key.FromBytes(iter.Key()); err != nil {
 			return nil, err
 		}
 
-		fileMetadata := &rfpb.FileMetadata{}
-		unlockFn := e.locker.RLock(key.LockID())
-		err = proto.Unmarshal(iter.Value(), fileMetadata)
-		unlockFn()
-		if err != nil {
-			return nil, err
-		}
+		for {
+			fileMetadata := &rfpb.FileMetadata{}
+			unlockFn := e.locker.RLock(key.LockID())
+			err = proto.Unmarshal(iter.Value(), fileMetadata)
+			unlockFn()
+			if err != nil {
+				return nil, err
+			}
 
-		atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-		age := time.Since(atime)
-		if age < e.minEvictionAge {
-			continue
-		}
+			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+			age := e.clock.Since(atime)
 
-		keyBytes := make([]byte, len(iter.Key()))
-		copy(keyBytes, iter.Key())
-		sample := &approxlru.Sample[*evictionKey]{
-			Key: &evictionKey{
-				bytes:           keyBytes,
-				storageMetadata: fileMetadata.GetStorageMetadata(),
-			},
-			SizeBytes: fileMetadata.GetStoredSizeBytes(),
-			Timestamp: atime,
-		}
+			if age >= e.minEvictionAge {
+				keyBytes := make([]byte, len(iter.Key()))
+				copy(keyBytes, iter.Key())
+				sample := &approxlru.Sample[*evictionKey]{
+					Key: &evictionKey{
+						bytes:           keyBytes,
+						storageMetadata: fileMetadata.GetStorageMetadata(),
+					},
+					SizeBytes: fileMetadata.GetStoredSizeBytes(),
+					Timestamp: atime,
+				}
 
-		samples = append(samples, sample)
-		if len(samples) == k {
+				samples = append(samples, sample)
+			}
+
+			if !iter.Next() {
+				break
+			}
+
+			// Check if the next key is for the same digest in which case
+			// include it as a possible eviction candidate.
+			//
+			// This can happen for example if there are multiple AC entries
+			// with different "remote instance name hash" values:
+			//   PTfoo/GR123/foobar/ac/123
+			//   PTfoo/GR123/foobar/ac/456
+			// We want to consider both keys for eviction, not just the first
+			// one.
+			//
+			// The same situation can occur after enabling or disabling
+			// encryption which can produce multiple keys with the same hash
+			// prefix.
+			var nextKey filestore.PebbleKey
+			if _, err := nextKey.FromBytes(iter.Key()); err != nil {
+				return nil, err
+			}
+			if nextKey.Hash() != key.Hash() {
+				break
+			}
+			key = nextKey
+		}
+		if len(samples) >= k {
 			break
 		}
 	}
@@ -2384,7 +2629,113 @@ func (e *partitionEvictor) partitionKeyPrefix() string {
 	return filestore.PartitionDirectoryPrefix + e.part.ID
 }
 
+func (e *partitionEvictor) formatGroupIDApproxCounts() string {
+	var sb strings.Builder
+	cumulativeCount := int64(0)
+	for _, v := range e.groupIDApproxCounts {
+		cumulativeCount += v.count
+		if cumulativeCount != v.cumulativeCount {
+			sb.WriteString(fmt.Sprintf("CUMULATIVE COUNT MISMATCH, expected %d but was %d\n", cumulativeCount, v.cumulativeCount))
+		}
+		sb.WriteString(fmt.Sprintf("%23s %20d %20d\n", v.groupID, v.count, v.cumulativeCount))
+	}
+	if cumulativeCount != e.groupIDApproxTotalCount {
+		sb.WriteString(fmt.Sprintf("TOTAL COUNT MISMATCH %d vs %d\n", cumulativeCount, e.groupIDApproxTotalCount))
+	}
+	return sb.String()
+}
+
+// samples a random group ID and updates the approximate count for that group
+func (e *partitionEvictor) updateGroupIDApproxCounts() {
+	randomGroupID, err := e.sampleGroupID()
+	if status.IsNotFoundError(err) {
+		return
+	}
+	if err != nil {
+		log.Warningf("could not sample group ID: %s", err)
+		return
+	}
+
+	approxCount, err := e.approxGroupItemCount(randomGroupID)
+	if err != nil {
+		log.Warningf("could not approximate group count for %s: %s", randomGroupID, err)
+		return
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Delete the group if it's already in the list.
+	deleteIdx := -1
+	for i, w := range e.groupIDApproxCounts {
+		if w.groupID == randomGroupID {
+			deleteIdx = i
+			e.groupIDApproxCounts = append(e.groupIDApproxCounts[:i], e.groupIDApproxCounts[i+1:]...)
+			e.groupIDApproxTotalCount -= w.count
+			break
+		}
+	}
+
+	e.groupIDApproxTotalCount += approxCount
+	insertIdx, _ := slices.BinarySearchFunc(e.groupIDApproxCounts, groupIDApproxCount{count: approxCount}, func(a, b groupIDApproxCount) int {
+		if a.count < b.count {
+			return -1
+		}
+		if a.count > b.count {
+			return 1
+		}
+		return 0
+	})
+	w := groupIDApproxCount{groupID: randomGroupID, count: approxCount}
+	e.groupIDApproxCounts = append(e.groupIDApproxCounts[:insertIdx], append([]groupIDApproxCount{w}, e.groupIDApproxCounts[insertIdx:]...)...)
+
+	// Update cumulative counts starting from the lowest affected index.
+	lowestAffectedIdx := insertIdx
+	if deleteIdx != -1 && deleteIdx < lowestAffectedIdx {
+		lowestAffectedIdx = deleteIdx
+	}
+	for i := lowestAffectedIdx; i < len(e.groupIDApproxCounts); i++ {
+		if i == 0 {
+			e.groupIDApproxCounts[i].cumulativeCount = e.groupIDApproxCounts[i].count
+		} else {
+			e.groupIDApproxCounts[i].cumulativeCount = e.groupIDApproxCounts[i-1].cumulativeCount + e.groupIDApproxCounts[i].count
+		}
+	}
+}
+
+func (e *partitionEvictor) startGroupIDSampler(quitChan chan struct{}) {
+	if *activeKeyVersion < int64(filestore.Version2) {
+		return
+	}
+
+	lastLog := time.Now()
+
+	go func() {
+		for {
+			select {
+			case <-quitChan:
+				return
+			case <-time.After(*groupIDSampleFrequency):
+				if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
+					continue
+				}
+				e.updateGroupIDApproxCounts()
+
+				// temporary -- log the approximate counts so that we can verify
+				// tracking is working as intended.
+				if time.Since(lastLog) > 10*time.Minute {
+					log.Infof("Group ID approx counts:\n%s", e.formatGroupIDApproxCounts())
+					lastLog = time.Now()
+				}
+			}
+		}
+	}()
+}
+
 func (e *partitionEvictor) run(quitChan chan struct{}) error {
+	if *groupIDSamplingEnabled {
+		e.startGroupIDSampler(quitChan)
+	}
 	e.lru.Start()
 	<-quitChan
 	e.lru.Stop()
@@ -2410,6 +2761,57 @@ func (p *PebbleCache) periodicFlushPartitionMetadata(quitChan chan struct{}) {
 	}
 }
 
+func (p *PebbleCache) updatePebbleMetrics() error {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	m := db.Metrics()
+	om := p.oldMetrics
+
+	// Compaction related metrics.
+	incCompactionMetric := func(compactionType string, oldValue, newValue int64) {
+		lbls := prometheus.Labels{metrics.CompactionType: compactionType}
+		metrics.PebbleCachePebbleCompactCount.With(lbls).Add(float64(newValue - oldValue))
+	}
+	incCompactionMetric("default", om.Compact.DefaultCount, m.Compact.DefaultCount)
+	incCompactionMetric("delete_only", om.Compact.DeleteOnlyCount, m.Compact.DeleteOnlyCount)
+	incCompactionMetric("elision_only", om.Compact.ElisionOnlyCount, m.Compact.ElisionOnlyCount)
+	incCompactionMetric("move", om.Compact.MoveCount, m.Compact.MoveCount)
+	incCompactionMetric("read", om.Compact.ReadCount, m.Compact.ReadCount)
+	incCompactionMetric("rewrite", om.Compact.RewriteCount, m.Compact.RewriteCount)
+	metrics.PebbleCachePebbleCompactEstimatedDebtBytes.Set(float64(m.Compact.EstimatedDebt))
+	metrics.PebbleCachePebbleCompactInProgressBytes.Set(float64(m.Compact.InProgressBytes))
+	metrics.PebbleCachePebbleCompactInProgress.Set(float64(m.Compact.NumInProgress))
+	metrics.PebbleCachePebbleCompactMarkedFiles.Set(float64(m.Compact.MarkedFiles))
+
+	// Level metrics.
+	for i, l := range m.Levels {
+		ol := om.Levels[i]
+		lbls := prometheus.Labels{metrics.PebbleLevel: strconv.Itoa(i)}
+		metrics.PebbleCachePebbleLevelSublevels.With(lbls).Set(float64(l.Sublevels))
+		metrics.PebbleCachePebbleLevelNumFiles.With(lbls).Set(float64(l.NumFiles))
+		metrics.PebbleCachePebbleLevelSizeBytes.With(lbls).Set(float64(l.Size))
+		metrics.PebbleCachePebbleLevelScore.With(lbls).Set(l.Score)
+		metrics.PebbleCachePebbleLevelBytesInCount.With(lbls).Add(float64(l.BytesIn - ol.BytesIn))
+		metrics.PebbleCachePebbleLevelBytesIngestedCount.With(lbls).Add(float64(l.BytesIngested - ol.BytesIngested))
+		metrics.PebbleCachePebbleLevelBytesMovedCount.With(lbls).Add(float64(l.BytesMoved - ol.BytesMoved))
+		metrics.PebbleCachePebbleLevelBytesReadCount.With(lbls).Add(float64(l.BytesRead - ol.BytesRead))
+		metrics.PebbleCachePebbleLevelBytesCompactedCount.With(lbls).Add(float64(l.BytesCompacted - ol.BytesCompacted))
+		metrics.PebbleCachePebbleLevelBytesFlushedCount.With(lbls).Add(float64(l.BytesFlushed - ol.BytesFlushed))
+		metrics.PebbleCachePebbleLevelTablesCompactedCount.With(lbls).Add(float64(l.TablesCompacted - ol.TablesCompacted))
+		metrics.PebbleCachePebbleLevelTablesFlushedCount.With(lbls).Add(float64(l.TablesFlushed - ol.TablesFlushed))
+		metrics.PebbleCachePebbleLevelTablesIngestedCount.With(lbls).Add(float64(l.TablesIngested - ol.TablesIngested))
+		metrics.PebbleCachePebbleLevelTablesMovedCount.With(lbls).Add(float64(l.TablesMoved - ol.TablesMoved))
+	}
+
+	p.oldMetrics = *m
+
+	return nil
+}
+
 func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 	evictors := make([]*partitionEvictor, len(p.evictors))
 	p.statusMu.Lock()
@@ -2430,6 +2832,10 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 
 			for _, e := range evictors {
 				e.updateMetrics()
+			}
+
+			if err := p.updatePebbleMetrics(); err != nil {
+				log.Warningf("could not update pebble metrics: %s", err)
 			}
 		}
 	}
@@ -2464,9 +2870,25 @@ type readCloser struct {
 	io.Closer
 }
 
-func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+	fileRecord, err := p.makeFileRecord(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	unlockFn := p.locker.RLock(key.LockID())
+	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+	unlockFn()
+	if err != nil {
+		return nil, err
+	}
+
 	blobDir := p.blobDir()
-	requestedCompression := resource.GetCompressor()
+	requestedCompression := r.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
 	if requestedCompression == cachedCompression &&
 		requestedCompression != repb.Compressor_IDENTITY &&
@@ -2497,15 +2919,20 @@ func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, k
 
 	reader, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
+		if status.IsNotFoundError(err) || os.IsNotExist(err) {
+			unlockFn := p.locker.Lock(key.LockID())
+			p.handleMetadataMismatch(ctx, err, key, fileMetadata)
+			unlockFn()
+		}
 		return nil, err
 	}
 	p.sendAtimeUpdate(key, fileMetadata)
 
 	if !rawStorage {
 		if shouldDecrypt {
-			d, err := p.env.GetCrypter().NewDecryptor(ctx, resource.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
+			d, err := p.env.GetCrypter().NewDecryptor(ctx, r.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
 			if err != nil {
-				return nil, err
+				return nil, status.UnavailableErrorf("decryptor not available: %s", err)
 			}
 			reader = d
 		}
@@ -2529,7 +2956,7 @@ func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, k
 
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
 		bufSize := int64(CompressorBufSizeBytes)
-		resourceSize := resource.GetDigest().GetSizeBytes()
+		resourceSize := r.GetDigest().GetSizeBytes()
 		if resourceSize > 0 && resourceSize < bufSize {
 			bufSize = resourceSize
 		}

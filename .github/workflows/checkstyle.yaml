@@ -23,23 +23,9 @@ jobs:
       #   uses: tj-actions/changed-files@v34.4.2
 
       - name: Setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
-          go-version: "1.19.3" # Keep in sync with WORKSPACE
-
-      - name: Mount go cache
-        uses: actions/cache@v2
-        with:
-          # In order:
-          # * Module download cache
-          # * Build cache (Linux)
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.mod') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.mod') }}
-            ${{ runner.os }}-go-
+          go-version: "1.20.5" # Keep in sync with WORKSPACE
 
       - name: gofmt
         run: |
@@ -65,7 +51,8 @@ jobs:
       - name: gazelle
         run: |
           # Invoke gazelle via bb fix for TypeScript support
-          cli/install.sh
+          cli/install.sh tags/5.0.6
+          bb version
           bb fix -mode diff > gazelle-diff.txt || true
           echo "gazelle diff:"
           cat gazelle-diff.txt

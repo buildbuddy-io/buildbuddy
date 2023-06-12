@@ -5,6 +5,7 @@ go_library(
     srcs = ["dsingleflight.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight",
     deps = [
+        "//server/environment",
         "//server/util/log",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",

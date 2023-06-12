@@ -1,5 +1,6 @@
 import React from "react";
 import { ListChildComponentProps } from "react-window";
+import router from "../router/router";
 import { ListData, SpanData, computeRows } from "./text";
 
 export const ROW_HEIGHT_PX = 20;
@@ -18,15 +19,18 @@ export function Row({ data, index, style }: ListChildComponentProps<ListData>) {
     console.error("Row mismatch:", { rowData, rowsForLine });
     return null;
   }
+
+  let selected = router.getLineNumber() === index + 1;
   return (
     <div
+      onClick={() => (location.hash = `${router.getTab()}@${index + 1}`)}
       style={{
         ...style,
         // Set line-height to match row height so that selection highlights
         // are sized properly.
         lineHeight: `${ROW_HEIGHT_PX}px`,
       }}
-      className="terminal-line">
+      className={selected ? "terminal-line selected" : "terminal-line"}>
       {row.map((part, i) => (
         <RowSpan key={i} {...part} isActiveMatch={part.matchIndex === data.activeMatchIndex} />
       ))}

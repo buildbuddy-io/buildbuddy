@@ -101,9 +101,10 @@ func GetCommandAndIndex(args []string) (string, int) {
 // Returns a list of bazel targets specified in the given set of arguments, if any.
 // This function assumes that the arguments are canonicalized.
 func GetTargets(args []string) []string {
+	command := GetCommand(args)
 	nonOptionArgs := []string{}
 	for _, arg := range args {
-		if arg == "--" {
+		if arg == "--" && command == "run" {
 			break
 		}
 		if !strings.HasPrefix(arg, "-") {

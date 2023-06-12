@@ -83,23 +83,15 @@ func (a *fakeAccumulator) Invocation() *inpb.Invocation {
 	}
 }
 
-func (a *fakeAccumulator) Role() string {
-	return a.role
-}
-
-func (a *fakeAccumulator) RepoURL() string {
-	return a.repoURL
-}
-
 func (a *fakeAccumulator) StartTime() time.Time {
 	return time.Now()
 }
 
-func (a *fakeAccumulator) CommitSHA() string {
-	return ""
+func (a *fakeAccumulator) DisableCommitStatusReporting() bool {
+	return false
 }
 
-func (a *fakeAccumulator) DisableCommitStatusReporting() bool {
+func (a *fakeAccumulator) DisableTargetTracking() bool {
 	return false
 }
 
@@ -442,7 +434,7 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 
 func assertTargetsAndTargetStatusesMatch(t *testing.T, te *testenv.TestEnv, expected []Row) {
 	var got []Row
-	query := "SELECT rule_type, label, repo_url, test_size, status, target_type FROM Targets t JOIN TargetStatuses ts ON t.target_id = ts.target_id"
+	query := `SELECT rule_type, label, repo_url, test_size, status, target_type FROM "Targets" t JOIN "TargetStatuses" ts ON t.target_id = ts.target_id`
 	err := te.GetDBHandle().DB(context.Background()).Raw(query).Scan(&got).Error
 	require.NoError(t, err)
 	assert.ElementsMatch(t, got, expected)

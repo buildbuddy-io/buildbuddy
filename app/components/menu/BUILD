@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "menu",
     srcs = ["menu.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//react",

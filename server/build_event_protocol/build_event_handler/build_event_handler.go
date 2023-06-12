@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -78,18 +81,29 @@ const (
 
 	// Exit code in Finished event indicating that the build was interrupted (i.e. killed by user).
 	InterruptedExitCode = 8
+
+	// First sequence number that we expect to see in the ordered build event
+	// stream.
+	firstExpectedSequenceNumber = 1
 )
 
 var (
 	chunkFileSizeBytes     = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
 	enableChunkedEventLogs = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
-	writeToOLAPDBEnabled   = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
+	writeToOLAPDBEnabled   = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
 
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
 		"The time allowed for all metrics collectors across all apps to flush their "+
 			"local cache stats to the backing storage, before finalizing stats in the DB.")
 )
+
+var cacheArtifactsBlobstorePath = path.Join("artifacts", "cache")
+
+type PersistArtifacts struct {
+	URIs              []*url.URL
+	TestActionOutputs bool
+}
 
 type BuildEventHandler struct {
 	env              environment.Env
@@ -191,6 +205,7 @@ type recordStatsTask struct {
 	// files contains a mapping of file digests to file name metadata for files
 	// referenced in the BEP.
 	files            map[string]*build_event_stream.File
+	persist          *PersistArtifacts
 	invocationStatus inspb.InvocationStatus
 }
 
@@ -221,7 +236,7 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 
 // Enqueue enqueues a task for the given invocation's stats to be recorded
 // once they are available.
-func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation) {
+func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation, persist *PersistArtifacts) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -245,6 +260,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 		createdAt:        time.Now(),
 		files:            scorecard.ExtractFiles(invocation),
 		invocationStatus: invocation.GetInvocationStatus(),
+		persist:          persist,
 	}
 	select {
 	case r.tasks <- req:
@@ -404,7 +420,34 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	default:
 		alert.UnexpectedEvent(
 			"webhook_channel_buffer_full",
-			"Failed to notify webhook: channel buffer is full")
+			"Failed to notify webhook: channel buffer is full",
+		)
+	}
+
+	if auth := r.env.GetAuthenticator(); auth != nil {
+		ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
+	}
+	if task.persist.TestActionOutputs {
+		// TODO (zoey): Switch to streaming build events to avoid loading the whole BES into memory
+		inv, err := LookupInvocation(r.env, ctx, task.invocationJWT.id)
+		if err != nil {
+			log.CtxErrorf(ctx, "LookupInvocation failed when attempting to persist test logs: %s", err)
+		}
+		persistTestActionOutputs(ctx, r.env, inv, "test_action_outputs")
+	}
+	for _, uri := range task.persist.URIs {
+		if uri == nil {
+			// no artifact exists to persist
+			continue
+		}
+		if uri.Scheme != "bytestream" {
+			log.CtxErrorf(ctx, "Unsupported scheme to persist artifact: %s", uri.Path)
+			continue
+		}
+		fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
+		if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
+			log.CtxError(ctx, err.Error())
+		}
 	}
 }
 
@@ -429,6 +472,75 @@ func (r *statsRecorder) Stop() {
 	}
 
 	close(r.onStatsRecorded)
+}
+
+func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, path string) error {
+	w, err := env.GetBlobstore().Writer(ctx, path)
+	if err != nil {
+		return status.WrapErrorf(
+			err,
+			"Failed to open writer to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := bytestream.StreamBytestreamFile(ctx, env, uri, w); err != nil {
+		w.Close()
+		return status.WrapErrorf(
+			err,
+			"Failed to stream to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := w.Commit(); err != nil {
+		w.Close()
+		return status.WrapErrorf(
+			err,
+			"Failed to commit to blobstore for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	if err := w.Close(); err != nil {
+		return status.WrapErrorf(
+			err,
+			"Failed to close blobstore writer for path %s to persist cache artifact at %s",
+			path,
+			uri.String(),
+		)
+	}
+	return nil
+}
+
+func persistTestActionOutputs(ctx context.Context, env environment.Env, inv *inpb.Invocation, subpath string) {
+	for _, e := range inv.GetEvent() {
+		p, ok := e.BuildEvent.Payload.(*build_event_stream.BuildEvent_TestResult)
+		if !ok {
+			continue
+		}
+		for _, f := range p.TestResult.TestActionOutput {
+			resultURI, err := url.Parse(f.GetUri())
+			if err != nil {
+				log.Errorf("Error parsing URI for test result: %s", f.GetUri())
+				continue
+			}
+			if resultURI.Scheme != "bytestream" {
+				continue
+			}
+			fullPath := path.Join(inv.GetInvocationId(), cacheArtifactsBlobstorePath, resultURI.Path)
+			if err := persistArtifact(ctx, env, resultURI, fullPath); err != nil {
+				log.Errorf(
+					"Error persisting '%s' for target '%s' for invocation %s: %s",
+					f.Name,
+					e.BuildEvent.Id.GetTestResult().Label,
+					inv.GetInvocationId(),
+					err.Error(),
+				)
+				continue
+			}
+		}
+	}
 }
 
 type notifyWebhookTask struct {
@@ -650,6 +762,7 @@ type EventChannel struct {
 	bufferedEvents                   []*inpb.InvocationEvent
 	unprocessedStartingEvents        map[string]struct{}
 	numDroppedEventsBeforeProcessing uint64
+	initialSequenceNumber            int64
 	hasReceivedEventWithOptions      bool
 	hasReceivedStartedEvent          bool
 	logWriter                        *eventlog.EventLogWriter
@@ -701,7 +814,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if err != nil {
 		return err
 	}
-	recordInvocationMetrics(ti)
+	e.recordInvocationMetrics(ti)
 	updated, err := e.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
 		return err
@@ -721,7 +834,19 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
-	e.statsRecorder.Enqueue(ctx, invocation)
+	persist := &PersistArtifacts{
+		URIs:              make([]*url.URL, 0),
+		TestActionOutputs: e.beValues.HasBytestreamTestActionOutputs(),
+	}
+	if e.beValues.BytestreamProfileURI() != nil {
+		persist.URIs = append(persist.URIs, e.beValues.BytestreamProfileURI())
+	}
+
+	e.statsRecorder.Enqueue(
+		ctx,
+		invocation,
+		persist,
+	)
 	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil
 }
@@ -758,12 +883,25 @@ func invocationStatusLabel(ti *tables.Invocation) string {
 	return "unknown"
 }
 
-func recordInvocationMetrics(ti *tables.Invocation) {
+func (e *EventChannel) getGroupIDForMetrics() string {
+	auth := e.env.GetAuthenticator()
+	if auth == nil {
+		return ""
+	}
+	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return userInfo.GetGroupID()
+}
+
+func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 	statusLabel := invocationStatusLabel(ti)
 	metrics.InvocationCount.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
 		metrics.BazelExitCode:         ti.BazelExitCode,
 		metrics.BazelCommand:          ti.Command,
+		metrics.GroupID:               e.getGroupIDForMetrics(),
 	}).Inc()
 	metrics.InvocationDurationUs.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
@@ -796,6 +934,23 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	seqNo := event.OrderedBuildEvent.SequenceNumber
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId
+
+	if e.initialSequenceNumber == 0 {
+		e.initialSequenceNumber = seqNo
+	}
+	// We only allow initial sequence numbers greater than one in the case where
+	// Bazel failed to receive all of our ACKs after we finalized an invocation
+	// (marking it complete). In that case we just void the channel and ACK all
+	// events without doing any work.
+	if e.initialSequenceNumber > firstExpectedSequenceNumber {
+		// TODO: once https://github.com/bazelbuild/bazel/pull/18437 lands in
+		// Bazel, log an error if the client attempt number is 1 in this case,
+		// since today we're relying on Bazel to always start sending events
+		// starting from sequence number 1 in the first attempt.
+		log.Infof("Voiding EventChannel for invocation %s: build event stream starts with sequence number > %d (%d), which likely means Bazel is retrying an invocation that we already finalized.", iid, firstExpectedSequenceNumber, e.initialSequenceNumber)
+		e.isVoid = true
+		return nil
+	}
 
 	if isFinalEvent(event.OrderedBuildEvent) {
 		return nil
@@ -959,7 +1114,9 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	}
 	e.redactor.RedactMetadata(event.BuildEvent)
 	// Accumulate a subset of invocation fields in memory.
-	e.beValues.AddEvent(event.BuildEvent)
+	if err := e.beValues.AddEvent(event.BuildEvent); err != nil {
+		return err
+	}
 
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
@@ -1105,6 +1262,10 @@ func (e *EventChannel) GetNumDroppedEvents() uint64 {
 	return e.numDroppedEventsBeforeProcessing
 }
 
+func (e *EventChannel) GetInitialSequenceNumber() int64 {
+	return e.initialSequenceNumber
+}
+
 func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
@@ -1232,7 +1393,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 					return err
 				}
 				redactor.RedactMetadata(event.BuildEvent)
-				beValues.AddEvent(event.BuildEvent)
+				if err := beValues.AddEvent(event.BuildEvent); err != nil {
+					return err
+				}
 			}
 			events = append(events, event)
 			switch p := event.BuildEvent.Payload.(type) {
@@ -1299,6 +1462,11 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
+	tags, err := invocation_format.JoinTags(p.Tags)
+	if err != nil {
+		return nil, err
+	}
+	i.Tags = tags
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
@@ -1309,6 +1477,9 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
 		i.Perms |= perms.OTHERS_READ
 	}
+	i.DownloadOutputsOption = int64(p.DownloadOutputsOption)
+	i.RemoteExecutionEnabled = p.RemoteExecutionEnabled
+	i.UploadLocalResultsEnabled = p.UploadLocalResultsEnabled
 	return i, nil
 }
 
@@ -1353,6 +1524,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		TotalDownloadUsec:                 i.TotalDownloadUsec,
 		TotalUploadUsec:                   i.TotalUploadUsec,
 		TotalCachedActionExecUsec:         i.TotalCachedActionExecUsec,
+		TotalUncachedActionExecUsec:       i.TotalUncachedActionExecUsec,
 		DownloadThroughputBytesPerSecond:  i.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:    i.UploadThroughputBytesPerSecond,
 	}
@@ -1362,6 +1534,12 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	}
 	out.Attempt = i.Attempt
 	out.BazelExitCode = i.BazelExitCode
+	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
+	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
+	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
+	// Don't bother with validation here; just give the user whatever the DB
+	// claims the tags are.
+	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
 	return out
 }
 
@@ -1386,5 +1564,6 @@ func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 		Command:          inv.Command,
 		InvocationStatus: inv.InvocationStatus,
 		Success:          inv.Success,
+		Tags:             inv.Tags,
 	}
 }

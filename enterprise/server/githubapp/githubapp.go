@@ -12,10 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -35,11 +37,11 @@ import (
 var (
 	enabled       = flag.Bool("github.app.enabled", false, "Whether to enable the BuildBuddy GitHub app server.")
 	clientID      = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
-	clientSecret  = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.")
+	clientSecret  = flagutil.New("github.app.client_secret", "", "GitHub app OAuth client secret.", flagutil.SecretTag)
 	appID         = flag.String("github.app.id", "", "GitHub app ID.")
 	publicLink    = flag.String("github.app.public_link", "", "GitHub app installation URL.")
-	privateKey    = flag.String("github.app.private_key", "", "GitHub app private key.")
-	webhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.")
+	privateKey    = flagutil.New("github.app.private_key", "", "GitHub app private key.", flagutil.SecretTag)
+	webhookSecret = flagutil.New("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flagutil.SecretTag)
 )
 
 const (
@@ -120,37 +122,41 @@ func (a *GitHubApp) WebhookHandler() http.Handler {
 }
 
 func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
 	b, err := github.ValidatePayload(req, []byte(*webhookSecret))
 	if err != nil {
-		log.Debugf("Failed to validate webhook payload: %s", err)
+		log.CtxDebugf(ctx, "Failed to validate webhook payload: %s", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 	t := github.WebHookType(req)
 	event, err := github.ParseWebHook(t, b)
 	if err != nil {
-		log.Warningf("Failed to parse GitHub webhook payload for %q event: %s", t, err)
+		log.CtxWarningf(ctx, "Failed to parse GitHub webhook payload for %q event: %s", t, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := a.handleWebhookEvent(req.Context(), event); err != nil {
-		log.Errorf("Failed to handle webhook event %q: %s", t, err)
+	// Add delivery ID to context so we can correlate logs with GitHub's webhook
+	// deliveries UI.
+	ctx = log.EnrichContext(ctx, "github_delivery", req.Header.Get("X-GitHub-Delivery"))
+	if err := a.handleWebhookEvent(ctx, t, event); err != nil {
+		log.CtxErrorf(ctx, "Failed to handle webhook event %q: %s", t, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	io.WriteString(w, "OK")
 }
 
-func (a *GitHubApp) handleWebhookEvent(ctx context.Context, event any) error {
+func (a *GitHubApp) handleWebhookEvent(ctx context.Context, eventType string, event any) error {
 	switch event := event.(type) {
 	case *github.InstallationEvent:
-		return a.handleInstallationEvent(ctx, event)
+		return a.handleInstallationEvent(ctx, eventType, event)
 	default:
-		return a.handleWorkflowEvent(ctx, event)
+		return a.handleWorkflowEvent(ctx, eventType, event)
 	}
 }
 
-func (a *GitHubApp) handleInstallationEvent(ctx context.Context, event *github.InstallationEvent) error {
+func (a *GitHubApp) handleInstallationEvent(ctx context.Context, eventType string, event *github.InstallationEvent) error {
 	// Only handling uninstall events for now. We proactively handle this event
 	// by removing references to the installation ID in the DB. Note, however,
 	// that we still need to gracefully handle the case where the installation
@@ -160,20 +166,20 @@ func (a *GitHubApp) handleInstallationEvent(ctx context.Context, event *github.I
 		return nil
 	}
 	result := a.env.GetDBHandle().DB(ctx).Exec(`
-		DELETE FROM GitHubAppInstallations
+		DELETE FROM "GitHubAppInstallations"
 		WHERE installation_id = ?
 	`, event.GetInstallation().GetID())
 	if result.Error != nil {
 		return status.InternalErrorf("failed to delete installation: %s", result.Error)
 	}
 
-	log.Infof(
+	log.CtxInfof(ctx,
 		"Handling GitHub app uninstall event: removed %d installation row(s) for installation %d",
 		result.RowsAffected, event.GetInstallation().GetID())
 	return nil
 }
 
-func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, event any) error {
+func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, eventType string, event any) error {
 	wd, err := gh_webhooks.ParseWebhookData(event)
 	if err != nil {
 		return err
@@ -181,8 +187,10 @@ func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, event any) error {
 	if wd == nil {
 		// Could not parse any webhook data relevant to workflows;
 		// nothing to do.
+		log.CtxInfof(ctx, "No webhook data parsed for %q event", eventType)
 		return nil
 	}
+	log.CtxInfof(ctx, "Parsed webhook data: %s", webhook_data.DebugString(wd))
 	repoURL, err := gitutil.ParseGitHubRepoURL(wd.TargetRepoURL)
 	if err != nil {
 		return err
@@ -193,7 +201,7 @@ func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, event any) error {
 	}{}
 	err = a.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT i.installation_id, r.*
-		FROM GitHubAppInstallations i, GitRepositories r
+		FROM "GitHubAppInstallations" i, "GitRepositories" r
 		WHERE r.repo_url = ?
 		AND i.owner = ?
 		AND i.group_id = r.group_id
@@ -209,18 +217,41 @@ func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, event any) error {
 		ctx, row.GitRepository, wd, tok.GetToken())
 }
 
-func (a *GitHubApp) GetInstallationToken(ctx context.Context, owner string) (string, error) {
-	u, err := perms.AuthenticatedUser(ctx, a.env)
+func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (string, error) {
+	var installation tables.GitHubAppInstallation
+	err := a.env.GetDBHandle().DB(ctx).Raw(`
+		SELECT *
+		FROM "GitHubAppInstallations"
+		WHERE owner = ?
+	`, owner).Take(&installation).Error
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
+		}
+		return "", err
+	}
+	tok, err := a.createInstallationToken(ctx, installation.InstallationID)
+	if err != nil {
+		return "", err
+	}
+	return tok.GetToken(), nil
+}
+
+func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
+	if err := perms.AuthorizeGroupAccess(ctx, a.env, repo.GroupID); err != nil {
+		return "", err
+	}
+	repoURL, err := gitutil.ParseGitHubRepoURL(repo.RepoURL)
 	if err != nil {
 		return "", err
 	}
 	var installation tables.GitHubAppInstallation
 	err = a.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT *
-		FROM GitHubAppInstallations
+		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
-	`, u.GetGroupID(), owner).Take(&installation).Error
+	`, repo.GroupID, repoURL.Owner).Take(&installation).Error
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
@@ -243,7 +274,7 @@ func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.Get
 	db := a.env.GetDBHandle().DB(ctx)
 	rows, err := db.Raw(`
 		SELECT *
-		FROM GitHubAppInstallations
+		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		ORDER BY owner ASC
 	`, u.GetGroupID()).Rows()
@@ -316,7 +347,7 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 	if in.Owner == "" {
 		return status.FailedPreconditionError("owner field is required")
 	}
-	log.Infof(
+	log.CtxInfof(ctx,
 		"Linking GitHub app installation %d (%s) to group %s",
 		in.InstallationID, in.Owner, in.GroupID)
 	return a.env.GetDBHandle().DB(ctx).Transaction(func(tx *db.DB) error {
@@ -324,7 +355,7 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 		// first. That installation must be stale since GitHub only allows
 		// one installation per owner.
 		err := tx.Exec(`
-			DELETE FROM GitHubAppInstallations
+			DELETE FROM "GitHubAppInstallations"
 			WHERE owner = ?`,
 			in.Owner,
 		).Error
@@ -350,7 +381,7 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 		var ti tables.GitHubAppInstallation
 		err := tx.Raw(`
 			SELECT *
-			FROM GitHubAppInstallations
+			FROM "GitHubAppInstallations"
 			WHERE installation_id = ?
 			`+dbh.SelectForUpdateModifier()+`
 		`, req.GetInstallationId()).Take(&ti).Error
@@ -361,7 +392,7 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 			return err
 		}
 		return tx.Exec(`
-			DELETE FROM GitHubAppInstallations
+			DELETE FROM "GitHubAppInstallations"
 			WHERE installation_id = ?
 		`, req.GetInstallationId()).Error
 	})
@@ -378,7 +409,7 @@ func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*
 	}
 	installation := &tables.GitHubAppInstallation{}
 	err = a.env.GetDBHandle().DB(ctx).Raw(`
-		SELECT * FROM GitHubAppInstallations
+		SELECT * FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
 	`, u.GetGroupID(), owner).Take(installation).Error
@@ -399,7 +430,7 @@ func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.GetLinke
 	d := a.env.GetDBHandle().DB(ctx)
 	rows, err := d.Raw(`
 		SELECT *
-		FROM GitRepositories
+		FROM "GitRepositories"
 		WHERE group_id = ?
 		ORDER BY repo_url ASC
 	`, u.GetGroupID()).Rows()
@@ -464,9 +495,9 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoReques
 		RepoUrl:        req.GetRepoUrl(),
 	}
 	if _, err := a.env.GetWorkflowService().DeleteWorkflow(ctx, deleteReq); err != nil {
-		log.Infof("Failed to delete legacy workflow for linked repo: %s", err)
+		log.CtxInfof(ctx, "Failed to delete legacy workflow for linked repo: %s", err)
 	} else {
-		log.Infof("Deleted legacy workflow for linked repo")
+		log.CtxInfof(ctx, "Deleted legacy workflow for linked repo")
 	}
 
 	return &ghpb.LinkRepoResponse{}, nil
@@ -482,7 +513,7 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 		return nil, err
 	}
 	result := a.env.GetDBHandle().DB(ctx).Exec(`
-		DELETE FROM GitRepositories
+		DELETE FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
 	`, u.GetGroupID(), req.GetRepoUrl())
@@ -537,7 +568,7 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 	if req.Query != "" && !foundExactMatch {
 		ir, err := a.findUserRepo(ctx, tu.GithubToken, req.GetInstallationId(), req.Query)
 		if err != nil {
-			log.Debugf("Could not find exact repo match: %s", err)
+			log.CtxDebugf(ctx, "Could not find exact repo match: %s", err)
 		} else {
 			norm, err := gitutil.NormalizeRepoURL(ir.repository.GetCloneURL())
 			if err != nil {

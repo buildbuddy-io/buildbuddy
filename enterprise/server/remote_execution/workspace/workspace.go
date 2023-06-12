@@ -232,7 +232,7 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 
 // UploadOutputs uploads any outputs created by the last executed command
 // as well as the command's stdout and stderr.
-func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -270,7 +270,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	})
 	eg.Go(func() error {
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.Path(), actionResult)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.Path(), cmd, actionResult)
 		return err
 	})
 	if err := eg.Wait(); err != nil {

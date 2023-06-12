@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -64,7 +65,7 @@ type ExecutionWithInvocationId struct {
 }
 
 func (s *ExecutionSearchService) fetchExecutionData(ctx context.Context, groupId string, execIds []string) (map[string]*ExecutionWithInvocationId, error) {
-	q := query_builder.NewQuery("SELECT * FROM Executions")
+	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
 	q.AddWhereClause("execution_id IN ?", execIds)
 	q.AddWhereClause("group_id = ?", groupId)
 	if err := perms.AddPermissionsCheckToQuery(ctx, s.env, q); err != nil {
@@ -129,7 +130,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		return nil, err
 	}
 
-	q := query_builder.NewQuery(`SELECT * FROM Executions`)
+	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
 
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
@@ -167,6 +168,10 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	}
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
 		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
+	}
+	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
+		clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
+		q.AddWhereClause(clause, args...)
 	}
 
 	statusClauses := query_builder.OrClauses{}

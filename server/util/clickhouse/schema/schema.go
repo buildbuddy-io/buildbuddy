@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -108,6 +109,10 @@ type Invocation struct {
 	TotalUncachedActionExecUsec       int64
 	DownloadThroughputBytesPerSecond  int64
 	UploadThroughputBytesPerSecond    int64
+	DownloadOutputsOption             int64
+	UploadLocalResultsEnabled         bool
+	RemoteExecutionEnabled            bool
+	Tags                              []string `gorm:"type:Array(String);"`
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -194,6 +199,7 @@ type Execution struct {
 	Command          string
 	InvocationStatus int64
 	Success          bool
+	Tags             []string `gorm:"type:Array(String);"`
 }
 
 func (e *Execution) TableName() string {
@@ -229,6 +235,7 @@ func (e *Execution) AdditionalFields() []string {
 		"InvocationStatus",
 		"Success",
 		"InvocationLinkType",
+		"Tags",
 	}
 }
 
@@ -411,5 +418,9 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		TotalUncachedActionExecUsec:       ti.TotalUncachedActionExecUsec,
 		DownloadThroughputBytesPerSecond:  ti.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:    ti.UploadThroughputBytesPerSecond,
+		DownloadOutputsOption:             ti.DownloadOutputsOption,
+		UploadLocalResultsEnabled:         ti.UploadLocalResultsEnabled,
+		RemoteExecutionEnabled:            ti.RemoteExecutionEnabled,
+		Tags:                              invocation_format.ConvertDBTagsToOLAP(ti.Tags),
 	}
 }

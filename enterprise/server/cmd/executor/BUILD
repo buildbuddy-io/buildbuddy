@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/auth",
+        "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/memcache",
         "//enterprise/server/backends/redis_cache",
@@ -28,7 +29,6 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/config",
         "//server/environment",
-        "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
@@ -49,7 +49,6 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//encoding/gzip",
         "@org_golang_google_grpc//test/bufconn",
     ],
@@ -95,10 +94,10 @@ container_layer(
     files = [
         ":firecracker",
         ":jailer",
-        "@com_github_iain_macdonald_soci_snapshotter-soci-store-v0.1-linux-amd64//file:soci-store-v0.1-linux-amd64",
+        "@com_github_iain_macdonald_soci_snapshotter-soci-store-v0.2.3-linux-amd64//file:soci-store-v0.2.3-linux-amd64",
     ],
     symlinks = {
-        "/usr/bin/soci-store": "/usr/bin/soci-store-v0.1-linux-amd64",
+        "/usr/bin/soci-store": "/usr/bin/soci-store-v0.2.3-linux-amd64",
     },
 )
 

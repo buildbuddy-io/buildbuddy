@@ -3,7 +3,6 @@ package testmysql
 import (
 	"context"
 	"database/sql"
-	"flag"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -19,18 +18,16 @@ import (
 
 var (
 	targets = map[testing.TB]string{}
-
-	reuseServer = flag.Bool("testmysql.reuse_server", false, "If true, reuse mysql server between tests.")
 )
 
 // GetOrStart starts a new instance for the given test if one is not already
 // running; otherwise it returns the existing target.
-func GetOrStart(t testing.TB) string {
+func GetOrStart(t testing.TB, reuseServer bool) string {
 	target := targets[t]
 	if target != "" {
 		return target
 	}
-	target = Start(t)
+	target = Start(t, reuseServer)
 	targets[t] = target
 	t.Cleanup(func() {
 		delete(targets, t)
@@ -41,11 +38,11 @@ func GetOrStart(t testing.TB) string {
 // Start starts a test-scoped MySQL DB and returns the DB target.
 //
 // Currently requires Docker to be available in the test execution environment.
-func Start(t testing.TB) string {
+func Start(t testing.TB, reuseServer bool) string {
 	const dbName = "buildbuddy-test"
 
 	var port int
-	if *reuseServer {
+	if reuseServer {
 		// List running server processes by name, and if we find one that looks
 		// like `buildbuddy-test-mysql-$PORT`, then return a connection directly
 		// to that port
@@ -84,7 +81,7 @@ func Start(t testing.TB) string {
 		require.NoError(t, err)
 	}
 
-	if !*reuseServer {
+	if !reuseServer {
 		t.Cleanup(func() {
 			containerName := fmt.Sprintf("buildbuddy-test-mysql-%d", port)
 			cmd := exec.Command("docker", "kill", containerName)
@@ -109,7 +106,7 @@ func Start(t testing.TB) string {
 
 		// Drop the DB from the old test and let it be re-created via GORM
 		// auto-migration.
-		if *reuseServer {
+		if reuseServer {
 			ctx := context.Background()
 			conn, err := db.Conn(ctx)
 			require.NoError(t, err)

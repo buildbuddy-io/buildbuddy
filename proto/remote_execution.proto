@@ -1877,7 +1877,7 @@ message DigestFunction {
 
     // The BLAKE3 digest function.
     // See https://github.com/BLAKE3-team/BLAKE3
-    BLAKE3 = 99; // TODO(tylerw): update enum value once this is in remote-apis.
+    BLAKE3 = 9;
   }
 }
 

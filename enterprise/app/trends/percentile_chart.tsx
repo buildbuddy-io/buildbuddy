@@ -15,6 +15,7 @@ import {
 
 export interface PercentilesChartProps {
   title: string;
+  id?: string;
   data: string[];
   extractLabel: (datum: string) => string;
   formatHoverLabel: (datum: string) => string;
@@ -38,7 +39,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
 
   render() {
     return (
-      <div className="trend-chart">
+      <div id={this.props.id} className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart

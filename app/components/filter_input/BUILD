@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "filter_input",
     srcs = ["filter_input.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//lucide-react",

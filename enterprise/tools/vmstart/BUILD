@@ -5,14 +5,12 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_binary(
     name = "vmstart",
     embed = [":vmstart_lib"],
-    visibility = ["//visibility:public"],
 )
 
 go_library(
     name = "vmstart_lib",
     srcs = ["vmstart.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/vmstart",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/firecracker",
@@ -23,6 +21,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/log",

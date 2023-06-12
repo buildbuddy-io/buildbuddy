@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "dialog",
     srcs = ["dialog.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//react",
@@ -18,7 +17,6 @@ ts_library(
 ts_library(
     name = "simple_modal_dialog",
     srcs = ["simple_modal_dialog.tsx"],
-    strict = True,
     deps = [
         "//app/components/button",
         "//app/components/dialog",

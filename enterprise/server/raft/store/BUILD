@@ -68,7 +68,6 @@ go_test(
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
-        "//proto:resource_go_proto",
         "//server/gossip",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",

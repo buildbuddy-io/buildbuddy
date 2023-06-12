@@ -45,7 +45,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -55,13 +54,11 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
-	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 	dockerclient "github.com/docker/docker/client"
@@ -90,8 +87,8 @@ var (
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", true, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
 	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
 	bareEnableStats           = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
-	firecrackerDebugMode      = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
 )
 
 const (
@@ -441,7 +438,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
-	txInfo, err := r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
+	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, actionResult, cmdResult)
 	if err != nil {
 		return err
 	}
@@ -920,6 +917,10 @@ func (p *pool) Warmup(ctx context.Context) {
 func (p *pool) warmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
 	for _, isolation := range platform.GetExecutorProperties().SupportedIsolationTypes {
+		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
+			continue
+		}
+
 		// Warm up the default execution image for all isolation types, as well
 		// as the new Ubuntu 20.04 image.
 		out = append(out, WarmupConfig{
@@ -974,6 +975,10 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if err != nil && !authutil.IsAnonymousUserError(err) {
 		return nil, err
 	}
+	groupID := ""
+	if user != nil {
+		groupID = user.GetGroupID()
+	}
 	if props.RecycleRunner && err != nil {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
@@ -984,7 +989,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	}
 
 	key := &rnpb.RunnerKey{
-		GroupId:             user.GetGroupID(),
+		GroupId:             groupID,
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
 		Platform:            task.GetCommand().GetPlatform(),
 		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
@@ -1007,9 +1012,9 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 
 	debugID, _ := random.RandomString(8)
 	state := &rnpb.RunnerState{
-		RunnerKey:  key,
-		DebugId:    debugID,
-		TaskNumber: 1,
+		RunnerKey:         key,
+		DebugId:           debugID,
+		AssignedTaskCount: 1,
 	}
 	return p.newRunner(ctx, props, st, state)
 }
@@ -1070,7 +1075,7 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 		imageCacheAuth:     p.imageCacheAuth,
 		key:                state.GetRunnerKey(),
 		debugID:            state.GetDebugId(),
-		taskNumber:         state.GetTaskNumber(),
+		taskNumber:         state.GetAssignedTaskCount(),
 		task:               st.GetExecutionTask(),
 		PlatformProperties: props,
 		Container:          ctr,
@@ -1131,7 +1136,11 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			EnableStats:          *podmanEnableStats,
 			EnableImageStreaming: props.EnablePodmanImageStreaming,
 		}
-		ctr = p.podmanProvider.NewContainer(props.ContainerImage, opts)
+		c, err := p.podmanProvider.NewContainer(ctx, props.ContainerImage, opts)
+		if err != nil {
+			return nil, err
+		}
+		ctr = c
 	case platform.FirecrackerContainerType:
 		var vmConfig *fcpb.VMConfiguration
 		savedState := state.GetContainerState().GetFirecrackerState()
@@ -1143,7 +1152,6 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 				ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 				EnableNetworking:  true,
 				InitDockerd:       props.InitDockerd,
-				DebugMode:         *firecrackerDebugMode,
 			}
 		}
 		opts := firecracker.ContainerOpts{
@@ -1155,7 +1163,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			ActionWorkingDirectory: workingDir,
 			JailerRoot:             p.buildRoot,
 		}
-		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, opts)
+		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, task.GetExecutionTask(), opts)
 		if err != nil {
 			return nil, err
 		}

@@ -6,11 +6,12 @@ import { Profile, parseProfile } from "../flame_chart/profile_model";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
-import { Clock, HelpCircle } from "lucide-react";
+import { Clock } from "lucide-react";
 import errorService from "../errors/error_service";
 import format from "../format/format";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
 interface Props {
   model: InvocationModel;
@@ -22,7 +23,8 @@ interface State {
   threadNumPages: number;
   threadToNumEventPagesMap: Map<number, number>;
   threadMap: Map<number, Thread>;
-  durationMap: Map<string, number>;
+  durationByNameMap: Map<string, number>;
+  durationByCategoryMap: Map<string, number>;
   sortBy: string;
   groupBy: string;
   threadPageSize: number;
@@ -52,7 +54,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadNumPages: 1,
     threadToNumEventPagesMap: new Map<number, number>(),
     threadMap: new Map<number, Thread>(),
-    durationMap: new Map<string, number>(),
+    durationByNameMap: new Map<string, number>(),
+    durationByCategoryMap: new Map<string, number>(),
     sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
@@ -69,8 +72,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     }
   }
 
-  getProfileFile() {
-    return this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
+  getProfileFile(): build_event_stream.File | undefined {
+    return this.props.model.buildToolLogs?.log.find((log: build_event_stream.File) => log.uri);
   }
 
   isTimingEnabled() {
@@ -85,11 +88,14 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     let profileFile = this.getProfileFile();
     let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
-    let isGzipped = compressionOption === undefined ? profileFile.name?.endsWith(".gz") : compressionOption == "1";
+    let isGzipped =
+      compressionOption === undefined ? (profileFile?.name ?? "").endsWith(".gz") : compressionOption == "1";
+
+    if (!profileFile?.uri) return;
 
     this.setState({ loading: true });
     rpcService
-      .fetchBytestreamFile(profileFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
+      .fetchBytestreamFile(profileFile.uri, this.props.model.getId() ?? "", isGzipped ? "arraybuffer" : "json")
       .then((contents: any) => {
         if (isGzipped) {
           contents = parseProfile(pako.inflate(contents, { to: "string" }));
@@ -102,9 +108,12 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   downloadProfile() {
     let profileFile = this.getProfileFile();
+    if (!profileFile?.uri) {
+      return;
+    }
 
     try {
-      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile?.uri, this.props.model.getId());
+      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile.uri, this.props.model.getId() ?? "");
     } catch {
       console.error("Error downloading bytestream timing profile");
     }
@@ -121,11 +130,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       };
 
       if (event.dur) {
-        if (this.state.durationMap.get(event.name)) {
-          this.state.durationMap.set(event.name, this.state.durationMap.get(event.name) + event.dur);
-        } else {
-          this.state.durationMap.set(event.name, event.dur);
-        }
+        this.state.durationByNameMap.set(event.name, (this.state.durationByNameMap.get(event.name) || 0) + event.dur);
+        this.state.durationByCategoryMap.set(
+          event.cat,
+          (this.state.durationByCategoryMap.get(event.cat) || 0) + event.dur
+        );
       }
 
       if (event.ph == "X") {
@@ -249,7 +258,10 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return (
       <>
         <FlameChart profile={this.state.profile} />
-        <InvocationBreakdownCardComponent durationMap={this.state.durationMap} />
+        <InvocationBreakdownCardComponent
+          durationByNameMap={this.state.durationByNameMap}
+          durationByCategoryMap={this.state.durationByCategoryMap}
+        />
 
         {this.renderTimingSuggestionCard()}
 
@@ -258,11 +270,13 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              <div className="button">
-                <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
-                  Download profile
-                </Button>
-              </div>
+              {Boolean(this.getProfileFile()?.uri) && (
+                <div className="button">
+                  <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
+                    Download profile
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="sort-controls">
               <div className="sort-control">

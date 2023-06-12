@@ -9,6 +9,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -20,6 +21,7 @@ var (
 	// GCS flags
 	gcsBucket          = flag.String("storage.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
 	gcsCredentialsFile = flag.String("storage.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
+	gcsCredentials     = flagutil.New("storage.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flagutil.SecretTag)
 	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 )
 
@@ -41,9 +43,15 @@ func UseGCSBlobStore() bool {
 
 func NewGCSBlobStore(ctx context.Context) (*GCSBlobStore, error) {
 	opts := make([]option.ClientOption, 0)
+	if *gcsCredentials != "" && *gcsCredentialsFile != "" {
+		return nil, status.FailedPreconditionError("GCS credentials should be specified either via file or directly, but not both")
+	}
 	if *gcsCredentialsFile != "" {
 		log.Debugf("Found GCS credentials file: %q", *gcsCredentialsFile)
 		opts = append(opts, option.WithCredentialsFile(*gcsCredentialsFile))
+	}
+	if *gcsCredentials != "" {
+		opts = append(opts, option.WithCredentialsJSON([]byte(*gcsCredentials)))
 	}
 
 	gcsClient, err := storage.NewClient(ctx, opts...)
@@ -82,7 +90,7 @@ func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName s
 }
 
 func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	reader, err := g.bucketHandle.Object(util.BlobPath(blobName)).NewReader(ctx)
+	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			return nil, status.NotFoundError(err.Error())
@@ -98,7 +106,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	writer := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
+	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
 	defer writer.Close()
 	compressedData, err := util.Compress(data)
 	if err != nil {
@@ -115,7 +123,7 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
-	err := g.bucketHandle.Object(util.BlobPath(blobName)).Delete(ctx)
+	err := g.bucketHandle.Object(blobName).Delete(ctx)
 	spn.End()
 	util.RecordDeleteMetrics(gcsLabel, start, err)
 	if err == storage.ErrObjectNotExist {
@@ -126,7 +134,7 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 
 func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err := g.bucketHandle.Object(util.BlobPath(blobName)).Attrs(ctx)
+	_, err := g.bucketHandle.Object(blobName).Attrs(ctx)
 	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false, nil
@@ -139,7 +147,7 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 
 func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	bw := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
+	bw := g.bucketHandle.Object(blobName).NewWriter(ctx)
 
 	zw := util.NewCompressWriter(bw)
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)

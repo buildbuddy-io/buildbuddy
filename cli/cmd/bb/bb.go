@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
@@ -19,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
+	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
@@ -51,6 +54,15 @@ func run() (exitCode int, err error) {
 	// (--verbose, etc.)
 	args := log.Configure(os.Args[1:])
 
+	// Make sure startup args are always in the format --foo=bar.
+	args, err = parser.CanonicalizeStartupArgs(args)
+	if err != nil {
+		return -1, err
+	}
+
+	// Expand command shortcuts like b=>build, t=>test, etc.
+	args = shortcuts.HandleShortcuts(args)
+
 	// Show help if applicable.
 	exitCode, err = help.HandleHelp(args)
 	if err != nil || exitCode >= 0 {
@@ -82,7 +94,19 @@ func run() (exitCode int, err error) {
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
+	exitCode, err = login.HandleLogout(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
 	exitCode, err = fix.HandleFix(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = ask.HandleAsk(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = add.HandleAdd(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
@@ -126,6 +150,9 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 
+	// Show a picker if target argument is omitted.
+	args = picker.HandlePicker(args)
+
 	// Parse args.
 	bazelArgs, execArgs := arg.SplitExecutableArgs(args)
 	// TODO: Expanding configs results in a long explicit command line in the BB
@@ -162,8 +189,8 @@ func run() (exitCode int, err error) {
 		}
 	}
 
-	// Show a picker if target argument is omitted.
-	args = picker.HandlePicker(args)
+	// For the ask command, we want to save some flags from the most recent invocation.
+	args = ask.SaveFlags(args)
 
 	// Note: sidecar is configured after pre-bazel plugins, since pre-bazel
 	// plugins may change the value of bes_backend, remote_cache,

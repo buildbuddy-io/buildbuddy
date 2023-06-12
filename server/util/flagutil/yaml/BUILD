@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/interfaces",
         "//server/util/alert",
         "//server/util/flagutil/common",
         "//server/util/log",
@@ -20,8 +21,10 @@ go_test(
     srcs = ["yaml_test.go"],
     deps = [
         ":yaml",
+        "//server/util/flagutil",
         "//server/util/flagutil/common",
         "//server/util/flagutil/types",
+        "//server/util/status",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

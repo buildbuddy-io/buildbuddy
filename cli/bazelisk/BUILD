@@ -7,7 +7,6 @@ go_library(
     name = "bazelisk",
     srcs = ["bazelisk.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/bazelisk",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/workspace",
@@ -15,3 +14,5 @@ go_library(
         "@com_github_bazelbuild_bazelisk//repositories:go_default_library",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

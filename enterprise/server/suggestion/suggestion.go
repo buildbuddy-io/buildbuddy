@@ -1,14 +1,11 @@
 package suggestion
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"flag"
-	"io"
-	"net/http"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/openai"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/vertexai"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -18,17 +15,21 @@ import (
 	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 )
 
-var apiKey = flag.String("openai.api_key", "", "OpenAI API key")
-var model = flag.String("openai.model", "gpt-3.5-turbo", "OpenAI model name to use. Find them here: https://platform.openai.com/docs/models")
-
 const (
 	// The minimum number of build log lines to fetch. Set this high enough to make sure we get the error logs.
 	minLines = 1000
 	// GPT 3.5 is limited to 4,096 tokens and each token is roughly 4 english characters.
 	// We limit our log inputs to roughly half that to avoid going over any input limits.
 	maxChars = 8000
-	// The endpoint to hit for completions calls: https://platform.openai.com/docs/guides/chat
-	chatCompletionsEndpoint = "https://api.openai.com/v1/chat/completions"
+
+	prompt = "How would you fix this error?"
+
+	// Various vertex model parameters.
+	// For more information about each one, read: https://cloud.google.com/vertex-ai/docs/generative-ai/learn/models
+	vertexTemperature     = 0.2
+	vertexMaxOutputTokens = 1024
+	vertexTopK            = 0.8
+	vertexTopP            = 40
 )
 
 type suggestionService struct {
@@ -36,7 +37,7 @@ type suggestionService struct {
 }
 
 func Register(env environment.Env) error {
-	if *apiKey != "" {
+	if openai.IsConfigured() || vertexai.IsConfigured() {
 		env.SetSuggestionService(New(env))
 	}
 	return nil
@@ -46,6 +47,10 @@ func New(env environment.Env) *suggestionService {
 	return &suggestionService{
 		env: env,
 	}
+}
+
+func (s *suggestionService) MultipleProvidersConfigured() bool {
+	return openai.IsConfigured() && vertexai.IsConfigured()
 }
 
 func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
@@ -73,83 +78,76 @@ func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSugg
 		errorMessage = errorMessage[:maxChars] // Truncate to avoid going over api input limit.
 	}
 
-	data := &completionRequest{Model: *model, Messages: []completionMessage{
-		completionMessage{
-			Role:    "user",
-			Content: "How would you fix this error? " + errorMessage,
-		},
-	}}
-
-	completionResponse, err := getCompletions(data)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(completionResponse.Choices) < 1 {
-		return nil, status.NotFoundError("No suggestions found.")
+	r := ""
+	if openai.IsConfigured() &&
+		(!s.MultipleProvidersConfigured() ||
+			(s.MultipleProvidersConfigured() && req.GetService() == supb.SuggestionService_OPENAI)) {
+		r, err = openaiRequest(errorMessage)
+		if err != nil {
+			return nil, err
+		}
+	} else if vertexai.IsConfigured() {
+		r, err = vertexaiRequest(ctx, errorMessage)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	res := &supb.GetSuggestionResponse{
-		Suggestion: []string{completionResponse.Choices[0].Message.Content},
+		Suggestion: []string{r},
 	}
 
 	return res, nil
 }
 
-// TODO(siggisim): Pull this into its own backend if we want to use this in other places.
-func getCompletions(data *completionRequest) (*completionResponse, error) {
-	jsonData, err := json.Marshal(data)
+func openaiRequest(input string) (string, error) {
+	data := &openai.CompletionRequest{Model: *openai.Model, Messages: []openai.CompletionMessage{
+		openai.CompletionMessage{
+			Role:    "user",
+			Content: prompt + " " + input,
+		},
+	}}
+
+	completionResponse, err := openai.GetCompletions(data)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	postRequest, err := http.NewRequest("POST", chatCompletionsEndpoint, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, err
+	if len(completionResponse.Choices) < 1 {
+		return "", status.NotFoundError("No suggestions found.")
 	}
 
-	postRequest.Header.Set("Content-Type", "application/json")
-	postRequest.Header.Set("Authorization", "Bearer "+*apiKey)
-
-	client := &http.Client{}
-	postResp, err := client.Do(postRequest)
-	if err != nil {
-		return nil, err
-	}
-	defer postResp.Body.Close()
-
-	body, err := io.ReadAll(postResp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if postResp.StatusCode != http.StatusOK {
-		log.Debugf("%+v %+v", postResp.StatusCode, string(body))
-		return nil, status.UnavailableError("Unable to contact suggestion provider.") // todo
-	}
-
-	var response completionResponse
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		return nil, err
-	}
-	return &response, nil
+	return completionResponse.Choices[0].Message.Content, nil
 }
 
-type completionMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
+func vertexaiRequest(ctx context.Context, input string) (string, error) {
+	data := &vertexai.PredictionRequest{Instances: []vertexai.PredictionInstance{
+		{
+			Examples: []string{},
+			Context:  "",
+			Messages: []vertexai.PredictionMessage{
+				{
+					Author:  "user",
+					Content: prompt + " " + input,
+				},
+			},
+		},
+	}, Parameters: vertexai.PredictionParameters{
+		Temperature:     vertexTemperature,
+		MaxOutputTokens: vertexMaxOutputTokens,
+		TopK:            vertexTopK,
+		TopP:            vertexTopP,
+	}}
 
-type completionRequest struct {
-	Model    string              `json:"model"`
-	Messages []completionMessage `json:"messages"`
-}
+	predictionResponse, err := vertexai.GetPrediction(ctx, data)
+	if err != nil {
+		return "", err
+	}
 
-type completionChoice struct {
-	Message completionMessage `json:"message"`
-}
+	if len(predictionResponse.Predictions) < 1 || len(predictionResponse.Predictions[0].Candidates) < 1 {
+		log.Debugf("empty response from vertexai: %+v", predictionResponse)
+		return "", status.NotFoundError("No suggestions found.")
+	}
 
-type completionResponse struct {
-	Choices []completionChoice `json:"choices"`
+	return predictionResponse.Predictions[0].Candidates[0].Content, nil
 }

@@ -4,7 +4,6 @@ go_library(
     name = "metadata",
     srcs = ["metadata.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/metadata",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/log",
@@ -13,3 +12,5 @@ go_library(
         "//server/util/git",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

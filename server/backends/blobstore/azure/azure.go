@@ -101,7 +101,7 @@ func (z *AzureBlobStore) createContainerIfNotExists(ctx context.Context) error {
 }
 
 func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	blobURL := z.containerURL.NewBlockBlobURL(util.BlobPath(blobName))
+	blobURL := z.containerURL.NewBlockBlobURL(blobName)
 	response, err := blobURL.Download(ctx, 0 /*=offset*/, azblob.CountToEnd, azblob.BlobAccessConditions{}, false /*=rangeGetContentMD5*/, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		if z.isAzureError(err, azblob.ServiceCodeBlobNotFound) {
@@ -130,7 +130,7 @@ func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []
 	}
 	n := len(compressedData)
 	start := time.Now()
-	blobURL := z.containerURL.NewBlockBlobURL(util.BlobPath(blobName))
+	blobURL := z.containerURL.NewBlockBlobURL(blobName)
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err = azblob.UploadBufferToBlockBlob(ctx, compressedData, blobURL, azblob.UploadToBlockBlobOptions{})
 	spn.End()
@@ -140,7 +140,7 @@ func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []
 
 func (z *AzureBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
-	blobURL := z.containerURL.NewBlockBlobURL(util.BlobPath(blobName))
+	blobURL := z.containerURL.NewBlockBlobURL(blobName)
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 	spn.End()
@@ -149,7 +149,7 @@ func (z *AzureBlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 }
 
 func (z *AzureBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
-	blobURL := z.containerURL.NewBlockBlobURL(util.BlobPath(blobName))
+	blobURL := z.containerURL.NewBlockBlobURL(blobName)
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if _, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}); err != nil {
@@ -175,7 +175,7 @@ func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interface
 		_, err := azblob.UploadStreamToBlockBlob(
 			ctx,
 			pr,
-			z.containerURL.NewBlockBlobURL(util.BlobPath(blobName)),
+			z.containerURL.NewBlockBlobURL(blobName),
 			azblob.UploadStreamToBlockBlobOptions{},
 		)
 		errch <- err

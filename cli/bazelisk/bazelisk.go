@@ -184,6 +184,29 @@ func ResolveVersion() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// If we're being invoked directly by the CLI, and the .bazelversion file
+	// also has a buildbuddy-io/ header, grab the actual Bazel version rather
+	// than the cli version.
+	if isCLIVersion(rawVersion) {
+		ws, err := workspace.Path()
+		if err != nil {
+			return "", err
+		}
+		parts, err := ParseVersionDotfile(filepath.Join(ws, ".bazelversion"))
+		if err != nil && !os.IsNotExist(err) {
+			return "", err
+		}
+		for len(parts) > 0 && isCLIVersion(parts[0]) {
+			parts = parts[1:]
+		}
+		if len(parts) > 0 {
+			rawVersion = parts[0]
+		} else {
+			rawVersion = "latest"
+		}
+	}
+
 	// TODO: Support forks?
 	fork := ""
 	repos := createRepositories()
@@ -226,7 +249,7 @@ func setBazelVersionImpl() error {
 
 	ws, err := workspace.Path()
 	if err != nil {
-		return err
+		return os.Setenv("USE_BAZEL_VERSION", "latest")
 	}
 	parts, err := ParseVersionDotfile(filepath.Join(ws, ".bazelversion"))
 	if err != nil && !os.IsNotExist(err) {

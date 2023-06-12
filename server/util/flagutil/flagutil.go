@@ -36,7 +36,7 @@ func GetDereferencedValue[T any](name string) (T, error) {
 // `SecretTag` to mark a flag that contains a secret that should be redacted in
 // output, or use `DeprecatedTag(migrationPlan)` to mark a flag that has been
 // deprecated and provide its migration plan.
-func New[T any](name string, defaultValue T, usage string, tags ...autoflags.Tag) *T {
+func New[T any](name string, defaultValue T, usage string, tags ...autoflags.Taggable) *T {
 	return autoflags.New(name, defaultValue, usage, tags...)
 }
 
@@ -46,7 +46,7 @@ func New[T any](name string, defaultValue T, usage string, tags ...autoflags.Tag
 // contains a secret that should be redacted in output, or use
 // `DeprecatedTag(migrationPlan)` to mark a flag that has been deprecated and
 // provide its migration plan.
-func Var[T any](value *T, name string, defaultValue T, usage string, tags ...autoflags.Tag) {
+func Var[T any](value *T, name string, defaultValue T, usage string, tags ...autoflags.Taggable) {
 	autoflags.Var(value, name, defaultValue, usage, tags...)
 }
 
@@ -55,3 +55,6 @@ var SecretTag = autoflags.SecretTag
 
 // Use to mark a flag deprecated.
 var DeprecatedTag = autoflags.DeprecatedTag
+
+// Use to indicate that a flag should ignored by the YAML config parser.
+var YAMLIgnoreTag = autoflags.YAMLIgnoreTag

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -115,7 +114,6 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 			continue
 		}
 		handlerFns[method.Name] = method.Func
-		log.Debugf("Auto-registered HTTP handler for %s", method.Name)
 	}
 
 	bodyParserMiddleware := func(next http.Handler) http.Handler {

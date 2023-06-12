@@ -40,6 +40,10 @@ const (
 	// Path under the CLI storage dir where plugins are saved.
 	pluginsStorageDirName = "plugins"
 
+	// Environment variable whose presence indicates that a script has been
+	// invoked by BB as a plugin.
+	isPluginEnvVar = "IS_BB_PLUGIN"
+
 	installCommandUsage = `
 Usage: bb install [REPO[@VERSION]][:PATH] [--user]
 
@@ -420,9 +424,17 @@ type Plugin struct {
 // LoadAll loads all plugins from the combined user and workspace configs, and
 // ensures that any remote plugins are downloaded.
 func LoadAll(tempDir string) ([]*Plugin, error) {
+	// When invoking a nested bazel invocation from within a plugin,
+	// disable plugins. Otherwise, this can result in infinite recursion.
+	if os.Getenv(isPluginEnvVar) == "1" {
+		return nil, nil
+	}
+
 	ws, err := workspace.Path()
 	if err != nil {
-		return nil, err
+		// If we can't find a workspace file, don't load plugins as we won't
+		// be able to find the buildbuddy.yaml file that defines them.
+		return nil, nil
 	}
 	return loadAll(ws, tempDir)
 }
@@ -469,11 +481,10 @@ func getConfiguredPlugins(workspaceDir string) ([]*Plugin, error) {
 // PrepareEnv sets environment variables for use in plugins.
 func PrepareEnv() error {
 	ws, err := workspace.Path()
-	if err != nil {
-		return err
-	}
-	if err := os.Setenv("BUILD_WORKSPACE_DIRECTORY", ws); err != nil {
-		return err
+	if err == nil {
+		if err := os.Setenv("BUILD_WORKSPACE_DIRECTORY", ws); err != nil {
+			return err
+		}
 	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
@@ -692,6 +703,7 @@ func (p *Plugin) Path() (string, error) {
 func (p *Plugin) commandEnv() []string {
 	env := os.Environ()
 	env = append(env, fmt.Sprintf("PLUGIN_TEMPDIR=%s", p.tempDir))
+	env = append(env, fmt.Sprintf("%s=1", isPluginEnvVar))
 	return env
 }
 
@@ -924,20 +936,11 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 }
 
 func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin) (int, error) {
-	// Write terminal output to stdout, so that commands like
-	// `bb info | grep bazel-bin` will work.
-	// With `bb run` though, we want the build step output to go to stderr,
-	// so things like `bb run :tool | jq ...` don't try to consume the
-	// build progress output.
-	termOutput := os.Stdout
-	if cmd, _ := parser.GetBazelCommandAndIndex(args); cmd == "run" {
-		termOutput = os.Stderr
-	}
-
-	// Build the pipeline of bazel output handlers.
-	// Write to stderr so that build output isn't considered part of the
-	// program's stdout in the `bb run` case.
-	wc, err := PipelineWriter(termOutput, plugins)
+	// Build the pipeline of handle_bazel_output plugins for bazel's stderr
+	// output. We don't allow plugins to handle stdout since it would require
+	// separate plugins for handling stdout and stderr, as well as having
+	// separate pseudoterminals for stdout and stderr.
+	wc, err := PipelineWriter(os.Stderr, plugins)
 	if err != nil {
 		return -1, err
 	}
@@ -949,22 +952,32 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 
 	log.Debugf("Calling bazelisk with %+v", args)
 
-	// Create the output path where the original bazel output will be written,
+	// Create the output file where the original bazel output will be written,
 	// for post-bazel plugins to read.
-	output, err := os.Create(outputPath)
+	outputFile, err := os.Create(outputPath)
 	if err != nil {
 		return -1, fmt.Errorf("failed to create output file: %s", err)
 	}
-	defer output.Close()
+	defer outputFile.Close()
 
 	// If bb's output is connected to a terminal, then allocate a pty so that
 	// bazel thinks it's writing to a terminal, even though we're capturing its
 	// output via a Writer that is not a terminal. This enables ANSI colors,
 	// proper truncation of progress messages, etc.
 	isWritingToTerminal := terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr)
-	w := io.MultiWriter(output, wc)
-	opts := &bazelisk.RunOpts{Stdout: w, Stderr: w}
+	w := io.MultiWriter(outputFile, wc)
+	opts := &bazelisk.RunOpts{
+		Stdout: os.Stdout,
+		Stderr: w,
+	}
 	if isWritingToTerminal {
+		// We're writing to a MultiWriter in order to capture Bazel's output to
+		// a file, but also writing output to a terminal. Hint to bazel that we
+		// are still writing to a terminal, by setting --color=yes --curses=yes
+		// (with lowest priority, in case the user wants to set those flags
+		// themselves).
+		args = terminal.AddTerminalFlags(args)
+
 		ptmx, tty, err := pty.Open()
 		if err != nil {
 			return -1, fmt.Errorf("failed to allocate pty: %s", err)
@@ -980,12 +993,9 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 		// Note: we don't listen to resize events (SIGWINCH) and re-inherit the
 		// size, because Bazel itself doesn't do that currently. So it wouldn't
 		// make a difference either way.
-		opts.Stdout = tty
+		opts.Stdout = os.Stdout
 		opts.Stderr = tty
 		go io.Copy(w, ptmx)
-	} else {
-		opts.Stdout = w
-		opts.Stderr = w
 	}
 
 	return bazelisk.Run(args, opts)

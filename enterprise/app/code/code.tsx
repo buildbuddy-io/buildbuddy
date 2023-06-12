@@ -27,7 +27,7 @@ import { parseLcov } from "../../../app/util/lcov";
 
 interface Props {
   user: User;
-  hash: string;
+  tab: string;
   path: string;
   search: URLSearchParams;
 }

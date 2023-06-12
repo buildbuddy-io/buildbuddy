@@ -9,8 +9,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/bb",
     visibility = ["//visibility:private"],
     deps = [
+        "//cli/add",
         "//cli/analyze",
         "//cli/arg",
+        "//cli/ask",
         "//cli/bazelisk",
         "//cli/cmd/sidecar",
         "//cli/download",
@@ -24,6 +26,7 @@ go_library(
         "//cli/plugin",
         "//cli/printlog",
         "//cli/remotebazel",
+        "//cli/shortcuts",
         "//cli/sidecar",
         "//cli/tooltag",
         "//cli/update",
@@ -110,3 +113,5 @@ go_binary(
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

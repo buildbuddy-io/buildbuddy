@@ -4,7 +4,6 @@ go_library(
     name = "upload",
     srcs = ["upload.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/upload",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/log",
@@ -18,3 +17,5 @@ go_library(
         "@org_golang_google_grpc//metadata",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

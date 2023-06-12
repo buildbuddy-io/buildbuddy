@@ -59,6 +59,33 @@ export function durationSec(duration: number | Long) {
   return `${(milliseconds * 1000).toPrecision(3)}µs`;
 }
 
+export function cpuSavingsSec(duration: number | Long) {
+  let seconds = +duration;
+  if (!seconds || seconds < 0) {
+    return "0 CPU-seconds";
+  }
+
+  if (seconds >= 60 * 60 * 24 * 365) {
+    return `${(seconds / (60 * 60 * 24 * 365)).toPrecision(3)} CPU-years`;
+  }
+  if (seconds >= 60 * 60 * 24 * 30) {
+    return `${(seconds / (60 * 60 * 24 * 30)).toPrecision(3)} CPU-months`;
+  }
+  if (seconds >= 60 * 60 * 24 * 7) {
+    return `${(seconds / (60 * 60 * 24 * 7)).toPrecision(3)} CPU-weeks`;
+  }
+  if (seconds >= 60 * 60 * 24) {
+    return `${(seconds / (60 * 60 * 24)).toPrecision(3)} CPU-days`;
+  }
+  if (seconds >= 60 * 60) {
+    return `${(seconds / (60 * 60)).toPrecision(3)} CPU-hours`;
+  }
+  if (seconds >= 60) {
+    return `${(seconds / 60).toPrecision(3)} CPU-minutes`;
+  }
+  return `${seconds.toPrecision(3)} CPU-seconds`;
+}
+
 export function compactDurationMillis(duration: number | Long) {
   return compactDurationSec(Number(duration) / 1000);
 }
@@ -196,6 +223,23 @@ export function formatDate(date: Date): string {
 
 const DATE_RANGE_SEPARATOR = "\u2013";
 
+export function formatPreviousDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}): string {
+  if (isSameDay(now, endDate)) {
+    if (isSameDay(startDate, LOCAL_EPOCH)) {
+      return "";
+    }
+  }
+
+  if (isSameDay(startDate, endDate)) {
+    if (isSameDay(startDate, now)) {
+      return "yesterday";
+    }
+    return "the day before";
+  }
+
+  return `the previous ${differenceInCalendarDays(startDate, endDate) + 1} days`;
+}
+
 export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {
   let startFormat, endFormat;
 
@@ -257,7 +301,7 @@ export function formatWithCommas(num: number | Long) {
   return (+num).toLocaleString("en-US");
 }
 
-function differenceInCalendarDays(start: Date, end: Date) {
+export function differenceInCalendarDays(start: Date, end: Date) {
   return moment(end).diff(start, "days");
 }
 

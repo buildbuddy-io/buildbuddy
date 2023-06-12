@@ -56,10 +56,10 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -160,6 +160,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}
+	log.Infof("Successfully configured %s database.", dbHandle.DB(context.Background()).Dialector.Name())
 	realEnv.SetDBHandle(dbHandle)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 
@@ -212,8 +213,8 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 }
 
 func registerInternalGRPCServices(grpcServer *grpc.Server, env environment.Env) {
-	if registryServer := env.GetRegistryServer(); registryServer != nil {
-		rgpb.RegisterRegistryServer(grpcServer, registryServer)
+	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
+		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
 	}
 }
 
@@ -375,7 +376,8 @@ func StartAndRunServices(env environment.Env) {
 		}
 		mux.Handle("/api/v1/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/api/v1/", apiProtoHandlers))
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
-		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api))
+		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api.GetFileHandler()))
+		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
 	}
 
 	if wfs := env.GetWorkflowService(); wfs != nil {
@@ -395,7 +397,9 @@ func StartAndRunServices(env environment.Env) {
 		Handler: env.GetMux(),
 	}
 
+	env.GetHTTPServerWaitGroup().Add(1)
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		defer env.GetHTTPServerWaitGroup().Done()
 		err := server.Shutdown(ctx)
 		return err
 	})

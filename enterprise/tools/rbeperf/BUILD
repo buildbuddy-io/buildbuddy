@@ -36,7 +36,6 @@ go_library(
 go_binary(
     name = "rbeperf",
     embed = [":rbeperf_lib"],
-    visibility = ["//visibility:public"],
 )
 
 go_image(

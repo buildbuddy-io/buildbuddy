@@ -9,27 +9,50 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
-type Tag interface {
-	Taggable()
+type Taggable interface {
+	Tag(name string)
 }
 
-type secret struct{}
+type secretTag struct{}
 
-func (s *secret) Taggable() {}
+func (_ *secretTag) Tag(name string) {
+	log.Fatalf(
+		"'secretTag.Taggable' was called for flag '%s', but is not meant to be "+
+			"called for 'secretTag'; tagging a flag as secret is instead handled by "+
+			"'New' or 'Var'.",
+		name,
+	)
+}
 
-var SecretTag = &secret{}
+var SecretTag = &secretTag{}
 
-type deprecated struct {
+type deprecatedTag struct {
 	migrationPlan string
 }
 
-func (d *deprecated) Taggable() {}
-
-func DeprecatedTag(migrationPlan string) *deprecated {
-	return &deprecated{migrationPlan: migrationPlan}
+func (d *deprecatedTag) Tag(name string) {
+	log.Fatalf(
+		"'deprecatedTag.Taggable' was called for flag '%s', but is not meant to "+
+			"be called for 'deprecatedTag'; tagging a flag as deprecated is instead "+
+			"handled by 'New' or 'Var'.",
+		name,
+	)
 }
+
+func DeprecatedTag(migrationPlan string) Taggable {
+	return &deprecatedTag{migrationPlan: migrationPlan}
+}
+
+type yamlIgnoreTag struct{}
+
+func (_ *yamlIgnoreTag) Tag(name string) {
+	flagyaml.IgnoreFlagForYAML(name)
+}
+
+var YAMLIgnoreTag = &yamlIgnoreTag{}
 
 // New declares a new flag named `name` with the specified value `defaultValue`
 // of type `T` and the help text `usage`. It returns a pointer to where the
@@ -37,7 +60,7 @@ func DeprecatedTag(migrationPlan string) *deprecated {
 // `SecretTag` to mark a flag that contains a secret that should be redacted in
 // output, or use `DeprecatedTag(migrationPlan)` to mark a flag that has been
 // deprecated and provide its migration plan.
-func New[T any](name string, defaultValue T, usage string, tags ...Tag) *T {
+func New[T any](name string, defaultValue T, usage string, tags ...Taggable) *T {
 	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 	Var(value, name, defaultValue, usage, tags...)
 	return value
@@ -49,7 +72,7 @@ func New[T any](name string, defaultValue T, usage string, tags ...Tag) *T {
 // contains a secret that should be redacted in output, or use
 // `DeprecatedTag(migrationPlan)` to mark a flag that has been deprecated and
 // provide its migration plan.
-func Var[T any](value *T, name string, defaultValue T, usage string, tags ...Tag) {
+func Var[T any](value *T, name string, defaultValue T, usage string, tags ...Taggable) {
 	switch v := any(value).(type) {
 	case *bool:
 		common.DefaultFlagSet.BoolVar(v, name, any(defaultValue).(bool), usage)
@@ -84,12 +107,12 @@ func Var[T any](value *T, name string, defaultValue T, usage string, tags ...Tag
 	}
 	for _, tg := range tags {
 		switch v := any(tg).(type) {
-		case *secret:
+		case *secretTag:
 			flagtypes.Secret[T](name)
-		case *deprecated:
+		case *deprecatedTag:
 			flagtypes.Deprecate[T](name, v.migrationPlan)
 		default:
-			log.Fatalf("Var was called from flag registry for flag %s with unrecognized tag %#v.", name, tg)
+			tg.Tag(name)
 		}
 	}
 }

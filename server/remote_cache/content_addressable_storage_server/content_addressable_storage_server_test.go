@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -34,6 +35,7 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
@@ -84,9 +86,9 @@ func TestBatchUpdateBlobs(t *testing.T) {
 
 	req := &repb.BatchUpdateBlobsRequest{}
 	for i := 0; i < 100; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
-			Digest: d,
+			Digest: rn.GetDigest(),
 			Data:   buf,
 		})
 	}
@@ -237,23 +239,23 @@ func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	req := &repb.BatchUpdateBlobsRequest{}
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	buf[0] = ^buf[0] // corrupt the data in buf
 	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
-		Digest: d,
+		Digest: rn.GetDigest(),
 		Data:   buf,
 	})
 
-	d2, buf := testdigest.NewRandomDigestBuf(t, 100)
-	d2.SizeBytes += 1 // corrupt the payload size of d2
+	rn2, buf := testdigest.RandomCASResourceBuf(t, 100)
+	rn2.Digest.SizeBytes += 1 // corrupt the payload size of d2
 	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
-		Digest: d2,
+		Digest: rn2.GetDigest(),
 		Data:   buf,
 	})
 
-	d3, buf := testdigest.NewRandomDigestBuf(t, 100)
+	rn3, buf := testdigest.RandomCASResourceBuf(t, 100)
 	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
-		Digest: d3,
+		Digest: rn3.GetDigest(),
 		Data:   buf,
 	})
 
@@ -397,11 +399,11 @@ func TestMalevolentCache(t *testing.T) {
 	clientConn := runCASServer(ctx, te, t)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	set, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
 		Requests: []*repb.BatchUpdateBlobsRequest_Request{
 			{
-				Digest: d,
+				Digest: rn.GetDigest(),
 				Data:   buf,
 			},
 		},
@@ -410,7 +412,7 @@ func TestMalevolentCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, 1, len(set.GetResponses()))
-	assert.Equal(t, d.GetHash(), set.GetResponses()[0].GetDigest().GetHash())
+	assert.Equal(t, rn.GetDigest().GetHash(), set.GetResponses()[0].GetDigest().GetHash())
 	assert.Equal(t, int32(gcodes.OK), set.GetResponses()[0].GetStatus().GetCode())
 }
 
@@ -439,14 +441,14 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 		for n := 0; n < numNodes; n++ {
 			subdir := &repb.Directory{}
 			if d == depth {
-				d, buf := testdigest.NewRandomDigestBuf(t, 100)
+				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf))
 				require.NoError(t, err)
-				fileName := fmt.Sprintf("leaf-file-%s-%d", d.GetHash(), n)
+				fileName := fmt.Sprintf("leaf-file-%s-%d", rn.GetDigest().GetHash(), n)
 				fileNames = append(fileNames, fileName)
 				subdir.Files = append(subdir.Files, &repb.FileNode{
 					Name:   fileName,
-					Digest: d,
+					Digest: rn.GetDigest(),
 				})
 			} else {
 				start := n * branchingFactor
@@ -617,4 +619,71 @@ func TestGetTreeCaching(t *testing.T) {
 
 	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
 	assert.Less(t, fetch2Time, fetch1Time/2)
+}
+
+func hasMissingDigestError(err error) bool {
+	st := gstatus.Convert(err)
+	for _, detail := range st.Details() {
+		switch detail.(type) {
+		case *errdetails.PreconditionFailure:
+			if pf, ok := detail.(*errdetails.PreconditionFailure); ok {
+				if len(pf.Violations) > 0 && pf.Violations[0].GetType() == "MISSING" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func TestGetTreeMissingRoot(t *testing.T) {
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Upload a dir containing fileCount files, and return the file
+	// names and directory digest.
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, _ := uploadDirWithFiles(2, 1)
+	child2Digest, _ := uploadDirWithFiles(2, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "child11",
+				Digest: child1Digest,
+			},
+			&repb.DirectoryNode{
+				Name:   "child2",
+				Digest: child2Digest,
+			},
+		},
+	}
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+	assert.Nil(t, err)
+
+	rootRN := digest.NewResourceName(rootDigest, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	require.NoError(t, te.GetCache().Delete(ctx, rootRN.ToProto()))
+
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
+		InstanceName: instanceName,
+		RootDigest:   rootDigest,
+	})
+	assert.Nil(t, err)
+
+	_, err = stream.Recv()
+	require.Error(t, err)
+	require.True(t, hasMissingDigestError(err))
 }

@@ -51,8 +51,8 @@ actions:
       - "test //..."
 ```
 
-This config is roughly equivalent to the default config that we use if you
-do not have a `buildbuddy.yaml`.
+This config is equivalent to the default config that we use if you
+do not have a `buildbuddy.yaml` file at the root of your repo.
 
 ## Bazel configuration
 

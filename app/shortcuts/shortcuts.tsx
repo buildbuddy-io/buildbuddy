@@ -69,6 +69,10 @@ class Shortcut {
     this.action = action;
   }
 
+  reset() {
+    this.keyComboPosition = 0;
+  }
+
   matchKeyboardEvent(event: KeyboardEvent) {
     if (this.keyCombo[this.keyComboPosition].matches(event)) {
       this.keyComboPosition++;
@@ -99,8 +103,8 @@ class Shortcut {
 }
 
 export class Shortcuts {
-  shortcuts: Map<string, Shortcut> = null;
-  preferences: UserPreferences = null;
+  shortcuts?: Map<string, Shortcut> = undefined;
+  preferences?: UserPreferences = undefined;
 
   public setPreferences(preferences: UserPreferences) {
     this.preferences = preferences;
@@ -111,6 +115,10 @@ export class Shortcuts {
   // no longer invokable. This function will throw an error if the same
   // shortcut is registered multiple times, so if the calling component will
   // unmount and remount, shortcuts should be deregistered and reregistered.
+  //
+  // IMPORTANT: usually you'll want to register shortcuts in componentDidMount
+  // not componentWillMount because componentWillMount can be called when
+  // another component is still mounted, causing shortcut conflicts.
   public register(keyCombo: KeyCombo, action: () => void): string {
     return this.registerSequence([keyCombo], action);
   }
@@ -121,38 +129,60 @@ export class Shortcuts {
   // same shortcut is registered multiple times, so if the calling component
   // will unmount and remount, shortcuts should be deregistered and
   // reregistered.
+  //
+  // IMPORTANT: usually you'll want to register shortcuts in componentDidMount
+  // not componentWillMount because componentWillMount can be called when
+  // another component is still mounted, causing shortcut conflicts.
   public registerSequence(keyCombo: KeyCombo[], action: () => void): string {
-    if (this.shortcuts == null) {
+    if (!this.shortcuts) {
       this.shortcuts = new Map<string, Shortcut>();
-      document.addEventListener(
-        "keydown",
-        function (event: KeyboardEvent) {
-          if (!this.preferences.keyboardShortcutsEnabled) {
-            return;
-          }
-          for (let shortcut of this.shortcuts.values()) {
-            shortcut.matchKeyboardEvent(event);
-          }
-        }.bind(this)
-      );
+      document.addEventListener("keydown", (event: KeyboardEvent) => {
+        if (!this.preferences?.keyboardShortcutsEnabled) {
+          // TODO(iain): instead of reset-alling on keypress, do it on
+          // preference change. Note that this will require breaking the
+          // cyclical dependency between shortcuts & preferences.
+          this.resetAll();
+          return;
+        }
+        // Don't run when typing into a text box.
+        let activeElement = document.activeElement as HTMLInputElement;
+        if (
+          (activeElement.tagName === "INPUT" && activeElement.type === "text") ||
+          activeElement.tagName === "TEXTAREA"
+        ) {
+          this.resetAll();
+          return;
+        }
+        for (let shortcut of this.shortcuts?.values() || []) {
+          shortcut.matchKeyboardEvent(event);
+        }
+      });
     }
 
     let handle = uuid();
     let shortcut = new Shortcut(keyCombo, action);
     for (let otherShortcut of this.shortcuts.values()) {
       if (shortcut.collidesWith(otherShortcut)) {
-        throw new Error("Duplicate keyboard shortcut registered: " + shortcut.keyCombo);
+        // TODO(iain): figure out a way to be notified of these errors.
+        // --> https://github.com/buildbuddy-io/buildbuddy-internal/issues/2242
+        console.warn("Duplicate keyboard shortcut registered: " + shortcut.keyCombo);
       }
     }
     this.shortcuts.set(handle, shortcut);
     return handle;
   }
 
+  resetAll() {
+    for (let shortcut of this.shortcuts?.values() || []) {
+      shortcut.reset();
+    }
+  }
+
   // Deregisters the keyboard shortcut with the provided handle. If the
   // provided keyboard shortcut handle is unrecognized, this function
   // silently returns.
   public deregister(handle: string) {
-    this.shortcuts.delete(handle);
+    this.shortcuts?.delete(handle);
   }
 }
 

@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/util/vsock",
         "//enterprise/server/vmexec",
+        "//enterprise/server/vmvfs:vmvfs_lib",
         "//proto:vmexec_go_proto",
         "//server/util/log",
         "//server/util/retry",

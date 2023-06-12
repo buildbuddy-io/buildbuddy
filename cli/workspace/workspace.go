@@ -14,36 +14,42 @@ var (
 	pathOnce sync.Once
 	pathVal  string
 	pathErr  error
+	basename string
 )
 
 // Path returns the current Bazel workspace path by traversing upwards until
 // we see a WORKSPACE or WORKSPACE.bazel file.
 func Path() (string, error) {
 	pathOnce.Do(func() {
-		pathVal, pathErr = path()
+		pathVal, basename, pathErr = path()
 	})
 	return pathVal, pathErr
 }
 
-func path() (string, error) {
+func PathAndBasename() (string, string, error) {
+	_, _ = Path()
+	return pathVal, basename, pathErr
+}
+
+func path() (string, string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	for {
 		for _, basename := range []string{"WORKSPACE", "WORKSPACE.bazel"} {
 			ex, err := disk.FileExists(context.TODO(), filepath.Join(dir, basename))
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
 			if ex {
-				return dir, nil
+				return dir, basename, nil
 			}
 		}
 		next := filepath.Dir(dir)
 		if dir == next {
 			// We've reached the root dir without finding a WORKSPACE file
-			return "", fmt.Errorf("not within a bazel workspace (could not find WORKSPACE or WORKSPACE.bazel file)")
+			return "", "", fmt.Errorf("not within a bazel workspace (could not find WORKSPACE or WORKSPACE.bazel file)")
 		}
 		dir = next
 	}

@@ -1,6 +1,5 @@
 syntax = "proto3";
 
-import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "proto/acl.proto";
@@ -167,6 +166,9 @@ message ExecutionQuery {
 
   // Stat filters (duration_usec, queue_time_usec, etc.)
   repeated stat_filter.StatFilter filter = 12;
+
+  // Plaintext tags for the invocation (exact match). Ex: "my-cool-tag"
+  repeated string tags = 13;
 }
 
 // Searches executions data for all matching executions.  This request is

@@ -100,6 +100,21 @@ func (wt *WebTester) Get(url string) {
 	require.NoError(wt.t, err)
 }
 
+// Returns the current URL, fails if there is an error.
+func (wt *WebTester) CurrentURL() string {
+	url, err := wt.driver.CurrentURL()
+	require.NoError(wt.t, err)
+	return url
+}
+
+// Returns the <body> element of the current page. Exactly one body element
+// must exist, otherwise the test fails.
+func (wt *WebTester) FindBody() *Element {
+	el, err := wt.driver.FindElement(selenium.ByTagName, "body")
+	require.NoError(wt.t, err)
+	return &Element{wt.t, el}
+}
+
 // Find returns the element matching the given CSS selector. Exactly one
 // element must be matched, otherwise the test fails.
 func (wt *WebTester) Find(cssSelector string) *Element {
@@ -128,6 +143,13 @@ func (wt *WebTester) FindByDebugID(debugID string) *Element {
 	el, err := wt.driver.FindElement(selenium.ByCSSSelector, `[debug-id="`+debugID+`"]`)
 	require.NoError(wt.t, err)
 	return &Element{wt.t, el}
+}
+
+// AssertNotFound asserts the provided CSS selector does not exist in the DOM.
+func (wt *WebTester) AssertNotFound(cssSelector string) {
+	els, err := wt.driver.FindElements(selenium.ByCSSSelector, cssSelector)
+	require.NoError(wt.t, err)
+	require.Empty(wt.t, els)
 }
 
 // Screenshot takes a screenshot and saves it in the test outputs directory. The
@@ -259,11 +281,13 @@ func Login(wt *WebTester, target Target) {
 		wt.FindByDebugID("sso-button").Click()
 		wt.FindByDebugID("sso-slug").SendKeys(target.SSOSlug())
 		wt.FindByDebugID("sso-button").Click()
-		return
+	} else {
+		// Otherwise attempt self-auth.
+		wt.FindByDebugID("login-button").Click()
 	}
 
-	// Otherwise attempt self-auth.
-	wt.FindByDebugID("login-button").Click()
+	// Login can have a delay. Wait for the sidebar before proceeding.
+	wt.Find(".sidebar-footer")
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,

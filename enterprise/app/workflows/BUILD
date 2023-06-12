@@ -7,17 +7,21 @@ exports_files(["workflows.css"])
 ts_library(
     name = "workflows",
     srcs = ["workflows.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
+        "//app/components/banner",
         "//app/components/button",
         "//app/components/button:link_button",
+        "//app/components/checkbox",
         "//app/components/dialog:simple_modal_dialog",
+        "//app/components/input",
         "//app/components/link",
         "//app/components/menu",
         "//app/components/popup",
+        "//app/components/spinner",
+        "//app/components/tooltip",
         "//app/errors:error_service",
         "//app/router",
         "//app/service:rpc_service",
@@ -39,7 +43,6 @@ ts_library(
 ts_library(
     name = "create_workflow",
     srcs = ["create_workflow.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
@@ -60,7 +63,6 @@ ts_library(
 ts_library(
     name = "github_import",
     srcs = ["github_import.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/components/button",
@@ -79,7 +81,6 @@ ts_library(
 ts_library(
     name = "zero_state",
     srcs = ["zero_state.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//react",
@@ -89,7 +90,6 @@ ts_library(
 ts_library(
     name = "github_app_import",
     srcs = ["github_app_import.tsx"],
-    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:user",

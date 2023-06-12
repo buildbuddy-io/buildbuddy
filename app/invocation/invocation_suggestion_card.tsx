@@ -134,7 +134,7 @@ const matchers: SuggestionMatcher[] = [
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (!buildLogs.includes("DEADLINE_EXCEEDED")) return null;
     if (model.optionsMap.get("remote_timeout") && Number(model.optionsMap.get("remote_timeout")) >= 600) return null;
-    if (!model.isComplete() || model.invocations[0]?.success) return null;
+    if (!model.isComplete() || model.getPrimaryInvocation().success) return null;
 
     return {
       level: SuggestionLevel.ERROR,
@@ -412,6 +412,7 @@ const matchers: SuggestionMatcher[] = [
     // with min Bazel version check once issues are fixed.
     return null;
 
+    /* No clue why, but strict TS gets broken by dead code, so this is commented out.
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
 
@@ -436,6 +437,7 @@ const matchers: SuggestionMatcher[] = [
         </>
       ),
     };
+    */
   },
   // Suggest configuring metadata to enable test grid
   ({ model }) => {
@@ -443,8 +445,8 @@ const matchers: SuggestionMatcher[] = [
     if (!model.isBazelInvocation()) return null;
 
     if (!capabilities.config.testDashboardEnabled) return null;
-    if (model.invocations[0]?.role !== "CI") return null;
-    if (model.invocations[0]?.command !== "test") return null;
+    if (model.getPrimaryInvocation().role !== "CI") return null;
+    if (model.getPrimaryInvocation().command !== "test") return null;
     if (model.getCommit() && model.getRepo()) return null;
 
     const missing = [
@@ -478,7 +480,7 @@ export function getSuggestions({
 }: {
   model: InvocationModel;
   buildLogs: string;
-  user: User;
+  user?: User;
 }): Suggestion[] {
   if (!buildLogs || !model || !user) return [];
 
@@ -530,7 +532,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
         {suggestions.map((suggestion) => (
           <SuggestionComponent suggestion={suggestion} />
         ))}
-        {this.props.user.canCall("updateGroup") && (
+        {this.props.user?.canCall("updateGroup") && (
           <TextLink className="settings-link" href="/settings/org/details">
             Suggestion settings
           </TextLink>

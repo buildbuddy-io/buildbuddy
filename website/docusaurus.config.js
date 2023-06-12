@@ -22,10 +22,6 @@ module.exports = {
     ],
     colorMode: {
       disableSwitch: true,
-      switchConfig: {
-        darkIcon: " ",
-        lightIcon: " ",
-      },
     },
     prism: {
       additionalLanguages: ["promql", "protobuf"],
@@ -49,7 +45,10 @@ module.exports = {
           to: "features",
           items: [
             { label: "Build & Test UI", href: "/ui" },
-            { label: "Remote Execution", href: "/remote-execution" },
+            {
+              label: "Remote Execution",
+              href: "/remote-execution",
+            },
             { label: "Remote Cache", href: "/remote-cache" },
             { label: "Workflows", href: "/workflows" },
             { label: "BuildBuddy CLI", href: "/cli" },
@@ -269,13 +268,7 @@ module.exports = {
       },
     ],
   ],
-  scripts: [
-    {
-      id: "warmly-script-loader",
-      src: "https://opps-widget.getwarmly.com/warmly.js?clientId=ff4d871d33dc25dad62ee98e60065bc0",
-      defer: true,
-    },
-  ],
+  scripts: [],
   plugins: [
     [
       "@docusaurus/plugin-ideal-image",

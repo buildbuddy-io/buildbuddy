@@ -13,7 +13,22 @@ import "google/protobuf/duration.proto";
 
 package invocation;
 
-// Next tag: 26
+// User specified option for download outputs from remote cache
+enum DownloadOutputsOption {
+  UNKNOWN_DOWNLOAD_OUTPUTS_OPTION = 0;
+
+  // --remote_cache is not set
+  NONE = 1;
+  // --remote_cache is set and --remote_download_outputs is not set to
+  // "toplevel" or "minimal"
+  ALL = 2;
+  // --remote_download_outputs is set to "toplevel".
+  TOP_LEVEL = 3;
+  // --remote_download_outputs is set to "minimal".
+  MINIMAL = 4;
+}
+
+// Next tag: 31
 message Invocation {
   // The invocation identifier itself.
   string invocation_id = 1;
@@ -100,6 +115,19 @@ message Invocation {
 
   // The capabilities of the user who created the invocation
   repeated api_key.ApiKey.Capability created_with_capabilities = 27;
+
+  // The user's setting of how to download outputs from remote cache.
+  DownloadOutputsOption download_outputs_option = 28;
+
+  // The user's setting of whether to upload local results to remote cache.
+  bool upload_local_results_enabled = 29;
+
+  // The user's setting of whether remote execution is enabled
+  bool remote_execution_enabled = 30;
+  message Tag {
+    string name = 1;
+  }
+  repeated Tag tags = 31;
 }
 
 message InvocationEvent {
@@ -239,6 +267,9 @@ message InvocationQuery {
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 15;
+
+  // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
+  repeated string tags = 16;
 }
 
 message InvocationSort {
@@ -376,6 +407,9 @@ message InvocationStatQuery {
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 13;
+
+  // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
+  repeated string tags = 14;
 }
 
 message GetInvocationStatRequest {

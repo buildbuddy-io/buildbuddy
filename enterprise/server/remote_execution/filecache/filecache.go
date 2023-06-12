@@ -89,11 +89,13 @@ func sizeFn(value interface{}) int64 {
 	return 0
 }
 
-func evictFn(value interface{}) {
+func evictFn(value interface{}, reason lru.EvictionReason) {
 	if v, ok := value.(*entry); ok {
 		syscall.Unlink(v.value)
-		age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
-		metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
+		if reason == lru.SizeEviction {
+			age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
+			metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
+		}
 	}
 }
 
@@ -230,6 +232,14 @@ func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) (hit bo
 func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	// Remove any existing entry. We can't update in-place because if we
+	// overwrite an existing link with different contents, all pointers
+	// to the old link would suddenly change to point to the new content,
+	// which is not good.
+	k := key(node)
+	c.l.Remove(k)
+
 	fp := c.filecachePath(node)
 	if err := fastcopy.FastCopy(existingFilePath, fp); err != nil {
 		log.Warningf("Error adding file to filecache: %s", err.Error())
@@ -241,7 +251,7 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 		value:       fp,
 	}
 	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))
-	c.l.Add(key(node), e)
+	c.l.Add(k, e)
 }
 
 func (c *fileCache) DeleteFile(node *repb.FileNode) bool {

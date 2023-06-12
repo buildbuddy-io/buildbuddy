@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
 package(default_visibility = [
@@ -17,12 +17,14 @@ go_library(
         "//enterprise/server/api",
         "//enterprise/server/auth",
         "//enterprise/server/backends/authdb",
+        "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/kms",
         "//enterprise/server/backends/memcache",
         "//enterprise/server/backends/migration_cache",
         "//enterprise/server/backends/pebble_cache",
+        "//enterprise/server/backends/prom",
         "//enterprise/server/backends/redis_cache",
         "//enterprise/server/backends/redis_client",
         "//enterprise/server/backends/redis_execution_collector",
@@ -39,7 +41,6 @@ go_library(
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/quota",
         "//enterprise/server/raft/cache",
-        "//enterprise/server/registry:registry_lib",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/redis_client",
         "//enterprise/server/saml",
@@ -47,12 +48,14 @@ go_library(
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/secrets",
         "//enterprise/server/selfauth",
+        "//enterprise/server/sociartifactstore",
         "//enterprise/server/splash",
         "//enterprise/server/suggestion",
         "//enterprise/server/tasksize",
         "//enterprise/server/telemetry",
         "//enterprise/server/usage",
         "//enterprise/server/usage_service",
+        "//enterprise/server/util/dsingleflight",
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",
@@ -92,21 +95,9 @@ go_binary(
     embed = [":server_lib"],
 )
 
-container_layer(
-    name = "app_tools",
-    directory = "/usr/bin",
-    files = [
-        "@com_github_iain_macdonald_soci_snapshotter-soci-v0.2.3-linux-amd64//file:soci-v0.2.3-linux-amd64",
-    ],
-    symlinks = {
-        "/usr/bin/soci": "/usr/bin/soci-v0.2.3-linux-amd64",
-    },
-)
-
 container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
-    layers = [":app_tools"],
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml",
         "buildbuddy": "tmp",

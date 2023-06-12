@@ -5,7 +5,10 @@ import format from "../format/format";
 import { getChartColor } from "../util/color";
 
 interface Props {
-  durationMap: Map<string, number>;
+  // The total duration by event names
+  durationByNameMap: Map<string, number>;
+  // The total duration by event categories
+  durationByCategoryMap: Map<string, number>;
 }
 
 interface Datum {
@@ -15,28 +18,29 @@ interface Datum {
 
 export default class InvocationBreakdownCardComponent extends React.Component<Props> {
   render() {
-    let launching = this.props.durationMap.get("Launch Blaze");
-    let total = this.props.durationMap.get("buildTargets");
-    let targets = this.props.durationMap.get("evaluateTargetPatterns");
-    let analysis = this.props.durationMap.get("runAnalysisPhase");
+    let launching = this.props.durationByNameMap.get("Launch Blaze") ?? 0;
+    let total = this.props.durationByNameMap.get("buildTargets") ?? 0;
+    let targets = this.props.durationByNameMap.get("evaluateTargetPatterns") ?? 0;
+    let analysis = this.props.durationByNameMap.get("runAnalysisPhase") ?? 0;
     let building = total - analysis - targets;
 
-    let runningProcess = this.props.durationMap.get("subprocess.run");
-    let compilingSwift = this.props.durationMap.get("SwiftCompile");
-    let compilingObjc = this.props.durationMap.get("ObjcCompile");
-    let executingRemotely = this.props.durationMap.get("execute remotely");
-    let sandboxSetup = this.props.durationMap.get("sandbox.createFileSystem");
-    let sandboxTeardown = this.props.durationMap.get("sandbox.delete");
-    let inputMapping = this.props.durationMap.get("AbstractSpawnStrategy.getInputMapping");
-    let merkleTree = this.props.durationMap.get("MerkleTree.build(ActionInput)");
-    let downloadOuputs = this.props.durationMap.get("download outputs");
-    let uploadMissing = this.props.durationMap.get("upload missing inputs");
-    let uploadOutputs = this.props.durationMap.get("upload outputs");
-    let checkCache = this.props.durationMap.get("check cache hit");
-    let detectModifiedOutput = this.props.durationMap.get("detectModifiedOutputFiles");
-    let stableStatus = this.props.durationMap.get("BazelWorkspaceStatusAction stable-status.txt");
+    let runningProcess = this.props.durationByNameMap.get("subprocess.run") ?? 0;
+    let localActionExecution = this.props.durationByCategoryMap.get("local action execution") ?? 0;
+    let localExecution = runningProcess + localActionExecution;
 
-    let phaseData = [
+    let executingRemotely = this.props.durationByNameMap.get("execute remotely") ?? 0;
+    let sandboxSetup = this.props.durationByNameMap.get("sandbox.createFileSystem") ?? 0;
+    let sandboxTeardown = this.props.durationByNameMap.get("sandbox.delete") ?? 0;
+    let inputMapping = this.props.durationByNameMap.get("AbstractSpawnStrategy.getInputMapping") ?? 0;
+    let merkleTree = this.props.durationByNameMap.get("MerkleTree.build(ActionInput)") ?? 0;
+    let downloadOuputs = this.props.durationByCategoryMap.get("remote output download") ?? 0;
+    let uploadMissing = this.props.durationByNameMap.get("upload missing inputs") ?? 0;
+    let uploadOutputs = this.props.durationByNameMap.get("upload outputs") ?? 0;
+    let checkCache = this.props.durationByNameMap.get("check cache hit") ?? 0;
+    let detectModifiedOutput = this.props.durationByNameMap.get("detectModifiedOutputFiles") ?? 0;
+    let stableStatus = this.props.durationByNameMap.get("BazelWorkspaceStatusAction stable-status.txt") ?? 0;
+
+    let phaseData: Datum[] = [
       { value: launching, name: "Launch" },
       { value: targets, name: "Evaluation" },
       { value: analysis, name: "Analysis" },
@@ -45,8 +49,8 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
 
     phaseData = phaseData.sort((a, b) => b.value - a.value).filter((entry) => entry.value > 0);
 
-    let executionData = [
-      { value: runningProcess, name: "Executing locally" },
+    let executionData: Datum[] = [
+      { value: localExecution, name: "Executing locally" },
       { value: inputMapping, name: "Input mapping" },
       { value: merkleTree, name: "Merkle tree building" },
       { value: sandboxSetup, name: "Local sandbox creation" },
@@ -58,8 +62,6 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
       { value: uploadOutputs, name: "Uploading outputs" },
       { value: detectModifiedOutput, name: "Detect modified output files" },
       { value: stableStatus, name: "Generating stable-status.txt" },
-      { value: compilingSwift, name: "Compiling Swift" },
-      { value: compilingObjc, name: "Compiling Objective-C" },
     ];
 
     executionData = executionData.sort((a, b) => (b?.value || 0) - (a?.value || 0)).filter((entry) => entry.value > 0);

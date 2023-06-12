@@ -8,14 +8,25 @@ message GetSuggestionRequest {
   // Request context.
   context.RequestContext request_context = 1;
 
+  // The type of suggestion being requested.
   SuggestionType type = 2;
 
+  // The id of the invocation for which a suggestion is being requested.
   string invocation_id = 3;
+
+  // The service to use for the suggestion if multiple are configured.
+  SuggestionService service = 4;
 }
 
 enum SuggestionType {
   UNKNOWN_SUGGESTION_TYPE = 0;
   FIX_ERROR = 1;
+}
+
+enum SuggestionService {
+  UNKNOWN_SUGGESTION_SERVICE = 0;
+  VERTEXAI = 1;
+  OPENAI = 2;
 }
 
 message GetSuggestionResponse {

@@ -18,13 +18,12 @@ import (
 
 var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
-	// Temporary flag while the feature is being developed.
-	enableEncryptionSchema = flag.Bool("database.enable_encryption_schema", false, "If true, encryption related tables will be created.")
 )
 
 const (
-	sqliteDialect = "sqlite"
-	mysqlDialect  = "mysql"
+	sqliteDialect   = "sqlite"
+	mysqlDialect    = "mysql"
+	postgresDialect = "postgres"
 )
 
 type tableDescriptor struct {
@@ -116,9 +115,9 @@ type Invocation struct {
 	DurationUsec                   int64
 	UploadThroughputBytesPerSecond int64
 	ActionCount                    int64
-	Perms                          int `gorm:"index:perms;type:int(11);default:NULL"`
+	Perms                          int32 `gorm:"index:perms;default:NULL"`
 	CreatedWithCapabilities        int32
-	RedactionFlags                 int   `gorm:"default:NULL;type:int(11);default:NULL"`
+	RedactionFlags                 int32 `gorm:"default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                int64
 	ActionCacheMisses              int64
@@ -156,9 +155,22 @@ type Invocation struct {
 
 	DownloadThroughputBytesPerSecond int64
 	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
-	Success                          bool   `gorm:"type:tinyint(1)"`
+	Success                          bool
 	Attempt                          uint64 `gorm:"not null;default:0"`
 	BazelExitCode                    string
+
+	// The user-specified setting of how to download outputs from remote cache.
+	// The value maps to invocation.DownloadOutputsOption
+	DownloadOutputsOption int64
+
+	// The user-sepcified setting of whether to upload local results to remote
+	// cache.
+	UploadLocalResultsEnabled bool
+
+	// The user's setting of whether remote execution is enabled.
+	RemoteExecutionEnabled bool
+
+	Tags string
 }
 
 func (i *Invocation) TableName() string {
@@ -208,14 +220,14 @@ type Group struct {
 	GithubToken *string
 	Model
 
-	SharingEnabled       bool `gorm:"default:1;type:tinyint(1)"`
-	UserOwnedKeysEnabled bool `gorm:"not null;default:0;type:tinyint(1)"`
+	SharingEnabled       bool `gorm:"default:1"`
+	UserOwnedKeysEnabled bool `gorm:"not null;default:0"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	UseGroupOwnedExecutors *bool `gorm:"type:tinyint(1)"`
+	UseGroupOwnedExecutors *bool
 
-	CacheEncryptionEnabled bool `gorm:"not null;default:0;type:tinyint(1)"`
+	CacheEncryptionEnabled bool `gorm:"not null;default:0"`
 
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl *string
@@ -336,13 +348,13 @@ type APIKey struct {
 	// The API key token used for authentication.
 	Value string `gorm:"default:NULL;unique;uniqueIndex:api_key_value_index;"`
 	Model
-	Perms int `gorm:"type:int(11);default:NULL"`
+	Perms int32 `gorm:"default:NULL"`
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
 	Capabilities        int32 `gorm:"default:1"`
-	VisibleToDevelopers bool  `gorm:"not null;default:0;type:tinyint(1)"`
+	VisibleToDevelopers bool  `gorm:"not null;default:0"`
 }
 
 func (k *APIKey) TableName() string {
@@ -354,7 +366,7 @@ type Secret struct {
 	GroupID string `gorm:"primaryKey"`
 	Name    string `gorm:"primaryKey"`
 	Value   string `gorm:"type:text"`
-	Perms   int    `gorm:"type:int(11);default:NULL"`
+	Perms   int32  `gorm:"default:NULL"`
 }
 
 func (s *Secret) TableName() string {
@@ -396,7 +408,7 @@ type Execution struct {
 	EstimatedMilliCPU    int64
 
 	// ExecutedActionMetadata (in addition to Worker above)
-	Perms                              int `gorm:"index:executions_perms;type:int(11);default:NULL"`
+	Perms                              int32 `gorm:"index:executions_perms;default:NULL"`
 	QueuedTimestampUsec                int64
 	WorkerStartTimestampUsec           int64
 	WorkerCompletedTimestampUsec       int64
@@ -410,8 +422,8 @@ type Execution struct {
 	StatusCode int32
 	ExitCode   int32
 
-	CachedResult bool `gorm:"type:tinyint(1)"`
-	DoNotCache   bool `gorm:"type:tinyint(1)"`
+	CachedResult bool
+	DoNotCache   bool
 }
 
 func (t *Execution) TableName() string {
@@ -444,10 +456,10 @@ type TelemetryLog struct {
 	BazelUserCount      int64
 	BazelHostCount      int64
 
-	FeatureCacheEnabled bool `gorm:"type:tinyint(1)"`
-	FeatureRBEEnabled   bool `gorm:"type:tinyint(1)"`
-	FeatureAPIEnabled   bool `gorm:"type:tinyint(1)"`
-	FeatureAuthEnabled  bool `gorm:"type:tinyint(1)"`
+	FeatureCacheEnabled bool
+	FeatureRBEEnabled   bool
+	FeatureAPIEnabled   bool
+	FeatureAuthEnabled  bool
 }
 
 func (t *TelemetryLog) TableName() string {
@@ -474,7 +486,7 @@ type Target struct {
 	RepoURL  string
 	Label    string
 	Model
-	Perms int `gorm:"index:target_perms;type:int(11);default:NULL"`
+	Perms int32 `gorm:"index:target_perms;default:NULL"`
 	// TargetID is made up of repoURL + label.
 	TargetID int64 `gorm:"not null;uniqueIndex:target_target_id_group_id_idx,priority:1"`
 }
@@ -517,7 +529,7 @@ type GitHubAppInstallation struct {
 
 	// GroupID is the group linked to the GitHub app installation.
 	GroupID string `gorm:"primaryKey"`
-	Perms   int    `gorm:"not null"`
+	Perms   int32  `gorm:"not null"`
 
 	// InstallationID is the GitHub app installation ID.
 	InstallationID int64 `gorm:"not null"`
@@ -541,7 +553,7 @@ type GitRepository struct {
 	RepoURL string `gorm:"primaryKey;unique"`
 	UserID  string `gorm:"not null"`
 	GroupID string `gorm:"primaryKey"`
-	Perms   int    `gorm:"not null"`
+	Perms   int32  `gorm:"not null"`
 
 	// InstanceNameSuffix is the remote instance name suffix to apply to any
 	// BuildBuddy-initiated invocations within this repo, such as workflows or
@@ -569,7 +581,7 @@ type Workflow struct {
 	AccessToken string `gorm:"size:4096"`
 	WebhookID   string `gorm:"default:NULL;unique;uniqueIndex:workflow_webhook_id_index;"`
 	Model
-	Perms int `gorm:"index:workflow_perms;type:int(11);default:NULL"`
+	Perms int32 `gorm:"index:workflow_perms;default:NULL"`
 	// InstanceNameSuffix is appended to the remote instance name for CI runner
 	// actions associated with this workflow. It can be updated in order to
 	// prevent reusing a bad workspace.
@@ -694,7 +706,7 @@ func (*EncryptionKey) TableName() string {
 type EncryptionKeyVersion struct {
 	Model
 	EncryptionKeyID string `gorm:"primaryKey"`
-	Version         int    `gorm:"primaryKey"`
+	Version         int32  `gorm:"primaryKey"`
 
 	// BuildBuddy portion of the composite key encrypted using the master key.
 	MasterEncryptedKey []byte
@@ -702,6 +714,12 @@ type EncryptionKeyVersion struct {
 	GroupKeyURI string
 	// Group portion of the composite key encrypted using the above group key.
 	GroupEncryptedKey []byte
+
+	// Last time we attempted to encrypt composite key portions using the KMS
+	// keys.
+	LastEncryptionAttemptAtUsec int64 `gorm:"index:last_encryption_attempt_idx"`
+	// Last time the composite key portions were encrypted using the KMS keys.
+	LastEncryptedAtUsec int64
 }
 
 func (*EncryptionKeyVersion) TableName() string {
@@ -723,17 +741,17 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 	// Initialize UserGroups.membership_status to 1 if the column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "membership_status") {
-		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int").Error; err != nil {
+		if err := db.Exec(`ALTER TABLE "UserGroups" ADD membership_status int`).Error; err != nil {
 			return nil, err
 		}
-		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
+		if err := db.Exec(`UPDATE "UserGroups" SET membership_status = ?`, int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
 			return nil, err
 		}
 	}
 	// Initialize UserGroups.role to Admin if the role column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
 		postMigrate = append(postMigrate, func() error {
-			return db.Exec("UPDATE UserGroups SET role = ?", uint32(role.Admin)).Error
+			return db.Exec(`UPDATE "UserGroups" SET role = ?`, uint32(role.Admin)).Error
 		})
 	}
 
@@ -747,7 +765,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		}
 		// Before creating a unique index, need to replace empty strings with NULL.
 		if !m.HasIndex("Groups", "url_identifier_unique_index") {
-			if err := db.Exec(`UPDATE ` + "`Groups`" + ` SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
+			if err := db.Exec(`UPDATE "Groups" SET url_identifier = NULL WHERE url_identifier = ''`).Error; err != nil {
 				return nil, err
 			}
 		}
@@ -756,7 +774,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	// Migrate Groups.APIKey to APIKey rows.
 	if m.HasTable("Groups") && m.HasColumn(&Group{}, "api_key") && !m.HasTable("APIKeys") {
 		postMigrate = append(postMigrate, func() error {
-			rows, err := db.Raw(`SELECT group_id, api_key FROM ` + "`Groups`" + ``).Rows()
+			rows, err := db.Raw(`SELECT group_id, api_key FROM "Groups"`).Rows()
 			if err != nil {
 				return err
 			}
@@ -783,7 +801,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 				}
 
 				if err := db.Exec(
-					`INSERT INTO APIKeys (api_key_id, group_id, perms, value, label) VALUES (?, ?, ?, ?, ?)`,
+					`INSERT INTO "APIKeys" (api_key_id, group_id, perms, value, label) VALUES (?, ?, ?, ?, ?)`,
 					pk, g.GroupID, apiKeyPerms, apiKey, "Default API key").Error; err != nil {
 					return err
 				}
@@ -798,7 +816,8 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		return nil, err
 	}
 	if m.HasTable("TargetStatuses") && !hasUUIDAsPK {
-		if db.Dialector.Name() == sqliteDialect {
+		switch db.Dialector.Name() {
+		case sqliteDialect:
 			// Rename the TargetStatuses table with invocation_pk as the primary key,
 			// so that during auto migration, SQLite can create TargetStatuses table with new
 			// primary keys.
@@ -806,7 +825,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			postMigrate = append(postMigrate, func() error {
 				return postMigrateInvocationUUIDForSQLite(db)
 			})
-		} else if db.Dialector.Name() == mysqlDialect {
+		case mysqlDialect:
 			versionStr := ""
 			if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
 				return nil, err
@@ -815,7 +834,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			postMigrate = append(postMigrate, func() error {
 				return postMigrateInvocationUUIDForMySQL(db)
 			})
-		} else {
+		default:
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
 	}
@@ -825,7 +844,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			if err := m.DropIndex("TargetStatuses", "target_status_invocation_pk"); err != nil {
 				return err
 			}
-			if err := db.Exec("ALTER TABLE TargetStatuses ALTER invocation_pk SET DEFAULT 0").Error; err != nil {
+			if err := db.Exec(`ALTER TABLE "TargetStatuses" ALTER invocation_pk SET DEFAULT 0`).Error; err != nil {
 				return err
 			}
 			return nil
@@ -850,13 +869,13 @@ func updateInBatches(db *gorm.DB, baseQuery string, batchSize int64) error {
 }
 
 func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
-	updateInvocationStmt := `UPDATE Invocations SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
+	updateInvocationStmt := `UPDATE "Invocations" SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
 	if err := updateInBatches(db, updateInvocationStmt, 10000); err != nil {
 		return err
 	}
 	updateTargetStatusStmt := `
-		UPDATE TargetStatuses ts SET invocation_uuid=
-			(SELECT invocation_uuid FROM Invocations i 
+		UPDATE "TargetStatuses" ts SET invocation_uuid=
+			(SELECT invocation_uuid FROM "Invocations" i 
 			WHERE i.invocation_pk=ts.invocation_pk)
 		WHERE invocation_uuid IS NULL`
 	if err := updateInBatches(db, updateTargetStatusStmt, 10000); err != nil {
@@ -867,14 +886,14 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	// a target status has a invocation_pk that's not in Invocations table. It's OK
 	// to delete these target statuses because these target statuses are not showing
 	// up in the UI right now.
-	deleteTargetStatusStmt := `DELETE FROM TargetStatuses WHERE invocation_uuid IS NULL`
+	deleteTargetStatusStmt := `DELETE FROM "TargetStatuses" WHERE invocation_uuid IS NULL`
 	if err := updateInBatches(db, deleteTargetStatusStmt, 10000); err != nil {
 		return err
 	}
 
 	// Check whether primary keys exist for TargetStatuses before dropping the primary key;
 	// Otherwise dropping primary keys will fail.
-	var primaryKeyCount int
+	var primaryKeyCount int32
 	countPrimaryKeyStmt := `
 		SELECT 
 			COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
@@ -887,21 +906,21 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 		return err
 	}
 
-	changePKStmt := "ALTER TABLE TargetStatuses "
+	changePKStmt := `ALTER TABLE "TargetStatuses" `
 	if primaryKeyCount > 0 {
-		// Only drop primarky keys when they exist.
-		changePKStmt += "DROP PRIMARY KEY, "
+		// Only drop primary keys when they exist.
+		changePKStmt += `DROP PRIMARY KEY, `
 	}
-	changePKStmt += "ADD PRIMARY KEY(target_id, invocation_uuid), "
+	changePKStmt += `ADD PRIMARY KEY(target_id, invocation_uuid), `
 
 	isStrictModeEnabled, err := isStrictModeEnabled(db)
 	if err != nil {
 		return err
 	}
 	if isStrictModeEnabled {
-		changePKStmt += "ALGORITHM=INPLACE, LOCK=NONE"
+		changePKStmt += `ALGORITHM=INPLACE, LOCK=NONE`
 	} else {
-		changePKStmt += "ALGORITHM=COPY"
+		changePKStmt += `ALGORITHM=COPY`
 	}
 	if err := db.Exec(changePKStmt).Error; err != nil {
 		return err
@@ -927,10 +946,10 @@ func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
 			if err != nil {
 				return err
 			}
-			if err := db.Exec(`UPDATE TargetStatusesOld SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
+			if err := db.Exec(`UPDATE "TargetStatusesOld" SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
 				return err
 			}
-			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
+			if err := db.Exec(`UPDATE "Invocations" SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
 				return err
 			}
 		}
@@ -942,14 +961,14 @@ func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
 	}
 
 	// Copy data from TargetStatusesOld to the new table
-	insertStmt := `INSERT INTO TargetStatuses
+	insertStmt := `INSERT INTO "TargetStatuses"
 			(target_id, invocation_uuid, target_type, test_size, status,
 			start_time_usec, duration_usec, created_at_usec, updated_at_usec)
 		SELECT 
 			target_id, invocation_uuid, target_type, test_size, status,
 			start_time_usec, duration_usec, created_at_usec, updated_at_usec 
 		FROM 
-			TargetStatusesOld`
+			"TargetStatusesOld"`
 
 	if err := db.Exec(insertStmt).Error; err != nil {
 		return err
@@ -969,22 +988,22 @@ func dropIndexIfExists(m gorm.Migrator, table, indexName string) {
 // Manual migration called after auto-migration.
 func PostAutoMigrate(db *gorm.DB) error {
 	invocationIndices := map[string]string{
-		"invocations_trends_query_index":      "(`group_id`, `updated_at_usec`)",
-		"invocations_trends_query_role_index": "(`group_id`, `role`, `updated_at_usec`)",
-		"invocations_stats_group_id_index":    "(`group_id`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_user_index":        "(`group_id`, `user`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_host_index":        "(`group_id`, `host`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_repo_index":        "(`group_id`, `repo_url`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_branch_index":      "(`group_id`, `branch_name`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_commit_index":      "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_stats_role_index":        "(`group_id`, `role`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_trends_query_index":      `("group_id", "updated_at_usec")`,
+		"invocations_trends_query_role_index": `("group_id", "role", "updated_at_usec")`,
+		"invocations_stats_group_id_index":    `("group_id", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_user_index":        `("group_id", "user", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_host_index":        `("group_id", "host", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_repo_index":        `("group_id", "repo_url", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_branch_index":      `("group_id", "branch_name", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_commit_index":      `("group_id", "commit_sha", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_stats_role_index":        `("group_id", "role", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
 	}
 	prefixIndicesByDialect := map[string]map[string]string{
-		mysqlDialect: map[string]string{
-			"invocations_test_grid_query_command_index": "(`group_id` (25), `role` (10), `repo_url`, `command` (10), `created_at_usec` DESC)",
+		mysqlDialect: {
+			"invocations_test_grid_query_command_index": `("group_id" (25), "role" (10), "repo_url", "command" (10), "created_at_usec" DESC)`,
 		},
-		sqliteDialect: map[string]string{
-			"invocations_test_grid_query_command_index": "(`group_id`, `role`, `repo_url`, `command` , `created_at_usec` DESC)",
+		sqliteDialect: {
+			"invocations_test_grid_query_command_index": `("group_id", "role", "repo_url", "command" , "created_at_usec" DESC)`,
 		},
 	}
 	prefixIndexes, ok := prefixIndicesByDialect[db.Dialector.Name()]
@@ -995,7 +1014,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 	}
 
 	executionIndices := map[string]string{
-		"executions_created_at_usec_index": "(`created_at_usec`)",
+		"executions_created_at_usec_index": `("created_at_usec")`,
 	}
 
 	indicesByTable := map[string]map[string]string{
@@ -1010,7 +1029,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 				if m.HasIndex(tableName, indexName) {
 					continue
 				}
-				err := db.Exec(fmt.Sprintf("CREATE INDEX `%s` ON `%s`%s", indexName, tableName, cols)).Error
+				err := db.Exec(fmt.Sprintf(`CREATE INDEX "%s" ON "%s" %s`, indexName, tableName, cols)).Error
 				if err != nil {
 					log.Errorf("Error creating %s on table %q: %s", indexName, tableName, err)
 				}
@@ -1065,7 +1084,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 }
 
 func dropColumnInPlaceForMySQL(db *gorm.DB, table Table, column string) error {
-	return db.Exec("ALTER TABLE `" + table.TableName() + "` DROP COLUMN " + column + ", ALGORITHM=INPLACE, LOCK=NONE").Error
+	return db.Exec(`ALTER TABLE "` + table.TableName() + `" DROP COLUMN ` + column + `, ALGORITHM=INPLACE, LOCK=NONE`).Error
 }
 
 func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
@@ -1075,6 +1094,8 @@ func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
 		checkPrimaryKeyStmt = `SELECT COUNT(*) FROM PRAGMA_TABLE_INFO(?) WHERE pk > 0 AND name = ?`
 	case mysqlDialect:
 		checkPrimaryKeyStmt = `SELECT COUNT(*) from INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = SCHEMA() AND column_key = 'PRI' and table_name=? and column_name=?`
+	case postgresDialect:
+		checkPrimaryKeyStmt = `SELECT COUNT(*) from information_schema.table_constraints NATURAL JOIN information_schema.key_column_usage WHERE constraint_schema = current_schema() and constraint_type = 'PRIMARY KEY' AND table_name=? AND column_name=?`
 	default:
 		return false, status.InternalErrorf("unsupported db dialect %q", dialect)
 	}
@@ -1103,10 +1124,8 @@ func RegisterTables() {
 	registerTable("AK", &APIKey{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
-	if *enableEncryptionSchema {
-		registerTable("EK", &EncryptionKey{})
-		registerTable("EV", &EncryptionKeyVersion{})
-	}
+	registerTable("EK", &EncryptionKey{})
+	registerTable("EV", &EncryptionKeyVersion{})
 	registerTable("EX", &Execution{})
 	registerTable("GH", &GitHubAppInstallation{})
 	registerTable("GR", &Group{})

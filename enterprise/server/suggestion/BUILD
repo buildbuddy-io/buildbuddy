@@ -7,6 +7,8 @@ go_library(
     srcs = ["suggestion.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion",
     deps = [
+        "//enterprise/server/backends/openai",
+        "//enterprise/server/backends/vertexai",
         "//proto:eventlog_go_proto",
         "//proto:suggestion_go_proto",
         "//server/environment",

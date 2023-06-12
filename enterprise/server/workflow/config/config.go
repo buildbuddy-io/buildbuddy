@@ -108,22 +108,21 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-// GetDefault returns the default workflow config, which tests all targets
-// when pushing any branch.
-func GetDefault() *BuildBuddyConfig {
+// GetDefault returns the default workflow config, which tests all targets when
+// pushing the repo's default branch, or whenever any pull request is updated
+// with a new commit.
+func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
+	var pushTriggerBranches []string
+	if targetRepoDefaultBranch != "" {
+		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
+	}
 	return &BuildBuddyConfig{
 		Actions: []*Action{
 			{
 				Name: "Test all targets",
 				Triggers: &Triggers{
-					Push: &PushTrigger{Branches: []string{"*"}},
-
-					// TODO(bduffany): Add a PullRequest trigger to the default config
-					// once we figure out a way to prevent workflows from being run twice
-					// on each push to a PR branch. If this were enabled as-is, then we'd
-					// get one "push" event associated with the push to the PR branch, and
-					// one "pull_request" event with a "synchronized" action associated
-					// with the PR.
+					Push:        &PushTrigger{Branches: pushTriggerBranches},
+					PullRequest: &PullRequestTrigger{Branches: []string{"*"}},
 				},
 				// Note: default Bazel flags are written by the runner to ~/.bazelrc
 				BazelCommands: []string{"test //..."},

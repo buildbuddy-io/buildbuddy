@@ -1,6 +1,7 @@
 import React from "react";
 
 import Layout from "@theme/Layout";
+import { BlogPostProvider } from "@docusaurus/theme-common/internal";
 import BlogPostItem from "@theme/BlogPostItem";
 import Link from "@docusaurus/Link";
 import type { Props } from "@theme/BlogTagsPostsPage";
@@ -29,14 +30,11 @@ function pluralizePosts(count: number): string {
 }
 
 function BlogTagsPostPage(props: Props): JSX.Element {
-  const { metadata, items, sidebar } = props;
-  const { allTagsPath, name: tagName, count } = metadata;
+  const { listMetadata, items, sidebar, tag } = props;
+  const { allTagsPath, label, count } = tag;
 
   return (
-    <Layout
-      title={`Posts tagged "${tagName}"`}
-      description={`Blog | Tagged "${tagName}"`}
-      wrapperClassName="blog-wrapper">
+    <Layout title={`Posts tagged "${label}"`} description={`Blog | Tagged "${label}"`} wrapperClassName="blog-wrapper">
       <div className="container margin-vert--lg">
         <div className="row">
           <div className="col col--1"></div>
@@ -45,8 +43,8 @@ function BlogTagsPostPage(props: Props): JSX.Element {
               <Translate
                 id="theme.blog.tagTitle"
                 description="The title of the page for a blog tag"
-                values={{ nPosts: pluralizePosts(count), tagName }}>
-                {'{nPosts} tagged with "{tagName}"'}
+                values={{ nPosts: pluralizePosts(count), label }}>
+                {'{nPosts} tagged with "{label}"'}
               </Translate>
             </h1>
             <Link href={allTagsPath}>
@@ -56,14 +54,17 @@ function BlogTagsPostPage(props: Props): JSX.Element {
             </Link>
             <div className="margin-vert--xl">
               {items.map(({ content: BlogPostContent }) => (
-                <BlogPostItem
+                <BlogPostProvider
                   key={BlogPostContent.metadata.permalink}
                   frontMatter={BlogPostContent.frontMatter}
                   assets={BlogPostContent.assets}
                   metadata={BlogPostContent.metadata}
+                  content={BlogPostContent}
                   truncated>
-                  <BlogPostContent />
-                </BlogPostItem>
+                  <BlogPostItem truncated>
+                    <BlogPostContent />
+                  </BlogPostItem>
+                </BlogPostProvider>
               ))}
             </div>
           </main>

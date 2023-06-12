@@ -1,5 +1,4 @@
 load("@aspect_rules_swc//swc:swc.bzl", "swc_transpiler")
-load("@build_bazel_rules_nodejs//internal/common:copy_to_bin.bzl", "copy_to_bin")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild")
 load("@npm//@bazel/typescript:index.bzl", "ts_project")
 load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
@@ -10,20 +9,17 @@ def _swc(**kwargs):
         **kwargs
     )
 
-def ts_library(name, srcs, strict = False, **kwargs):
-    tsconfig = "//:tsconfig"
-    if strict:
-        tsconfig = "//:tsconfig_strict"
+def ts_library(name, srcs, **kwargs):
     ts_project(
         name = name,
-        tsconfig = tsconfig,
+        tsconfig = "//:tsconfig",
         composite = True,
         transpiler = _swc,
         srcs = srcs,
         **kwargs
     )
 
-def ts_jasmine_node_test(name, srcs, deps = [], size = "small", strict = False, **kwargs):
+def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
     if len(srcs) != 1:
         fail("srcs must contain exactly one TS source file")
 
@@ -33,7 +29,6 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", strict = False, 
     # do code-splitting properly on commonjs modules that are produced by SWC.
     ts_library(
         name = "%s_esm" % name,
-        strict = strict,
         testonly = 1,
         srcs = srcs,
         deps = deps + ["@npm//@types/jasmine"],

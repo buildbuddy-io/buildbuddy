@@ -20,14 +20,10 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "b18e85b0d6686f5072752cb5adc98f9a44efeb9f02181a59e040e092017e58c2",
-    strip_prefix = "rules_go-d756ad91feb9ca43800e781ab29c117623abed90",
-    # Version 0.39.0 has a bug in its go_sdk detection that was fixed in
-    # https://github.com/bazelbuild/rules_go/commit/d756ad91feb9ca43800e781ab29c117623abed90
-    #
-    # TODO: update to 0.39.1 or 0.40.0 with that fix.
+    sha256 = "6dc2da7ab4cf5d7bfc7c949776b1b7c733f05e56edc4bcd9022bb249d2e2a996",
     urls = [
-        "https://github.com/bazelbuild/rules_go/archive/d756ad91feb9ca43800e781ab29c117623abed90.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.39.1/rules_go-v0.39.1.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.39.1/rules_go-v0.39.1.zip",
     ],
 )
 
@@ -54,32 +50,36 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchai
 
 go_rules_dependencies()
 
+# Register multiple Go SDKs so that we can perform cross-compilation remotely.
+# i.e. We might want to trigger a Linux AMD64 Go build remotely from a MacOS ARM64 laptop.
+#
+# Reference: https://github.com/bazelbuild/rules_go/issues/3540.
 go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
-    version = "1.19.3",  # Keep in sync with .github/workflows/checkstyle.yaml
+    version = "1.20.5",  # Keep in sync with .github/workflows/checkstyle.yaml
 )
 
 go_download_sdk(
     name = "go_sdk_linux_arm64",
     goarch = "arm64",
     goos = "linux",
-    version = "1.19.3",
+    version = "1.20.5",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
-    version = "1.19.3",
+    version = "1.20.5",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin_arm64",
     goarch = "arm64",
     goos = "darwin",
-    version = "1.19.3",
+    version = "1.20.5",
 )
 
 go_register_toolchains(
@@ -92,8 +92,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "build_bazel_rules_nodejs",
-    sha256 = "2b2004784358655f334925e7eadc7ba80f701144363df949b3293e1ae7a2fb7b",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.4.0/rules_nodejs-5.4.0.tar.gz"],
+    sha256 = "94070eff79305be05b7699207fbac5d2608054dd53e6109f7d00d923919ff45a",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-5.8.2.tar.gz"],
 )
 
 load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
@@ -104,7 +104,7 @@ load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
 nodejs_register_toolchains(
     name = "nodejs",
-    node_version = "16.9.0",
+    node_version = "16.19.0",
 )
 
 load("@rules_nodejs//nodejs:yarn_repositories.bzl", "yarn_repositories")
@@ -144,11 +144,9 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    patch_args = ["-p1"],
-    patches = ["//buildpatches:protobuf.patch"],
-    sha256 = "2118051b4fb3814d59d258533a4e35452934b1ddb41230261c9543384cbb4dfc",
-    strip_prefix = "protobuf-3.22.2",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.22.2.tar.gz"],
+    sha256 = "b29fc5fc13926f347b7a8b676ae1e63f7ccdb92c2fc8ca326bc3a883dcc168ac",
+    strip_prefix = "protobuf-23.0",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v23.0/protobuf-23.0.tar.gz"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -259,9 +257,9 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:34e96e21516698913035a62ef1ce484d91184de8a44209a33c7e134547e20dee",
+    digest = "sha256:3172df37ef8caa768ce74ebbc7f0e2b6a2641d3b35d18659d36f3815e30fe620",
     registry = "gcr.io",
-    repository = "distroless/base-debian11",
+    repository = "distroless/cc-debian11",
 )
 
 # Base image that can be used to build images that are capable of running the Bazel binary.
@@ -327,6 +325,13 @@ http_archive(
     sha256 = "0a824a6e224d9810514f4a2f4a13f09488672ad483bb0e978c16d8a6b3372625",
     strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
+)
+
+# protoc-gen-protobufjs (for .proto to .js codegen)
+http_archive(
+    name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
+    sha256 = "9a43cb8f5353fa6e0858aa694d34e55e395c64703a7370cc116bd4501c46b622",
+    urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.8/protoc-gen-protobufjs-v0.0.8.tar.gz"],
 )
 
 # esbuild (for bundling JS)

@@ -15,9 +15,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -28,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -54,7 +57,7 @@ type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" json:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
 	ClientID     string `yaml:"client_id" json:"client_id" usage:"The oauth client ID."`
 	ClientSecret string `yaml:"client_secret" json:"client_secret" usage:"The oauth client secret." config:"secret"`
-	Slug         string `yaml:"slug" json:"slug" usage:"The slug of this OIDC Provider."`
+	Slug         string `yaml:"slug" json:"slug" usage:"The slug of this OIDC Provider." config:"secret"`
 }
 
 const (
@@ -84,6 +87,11 @@ const (
 	contextBasicAuthErrorKey = "basicauth.error"
 	authorityHeader          = ":authority"
 	basicAuthHeader          = "authorization"
+
+	// The key is stored in HTTP Authroization header as follows:
+	// Authorization: x-buildbuddy-api-key <api-key>
+	authorizationHeader = "Authorization"
+	authScheme          = "x-buildbuddy-api-key"
 
 	// The key that the current access token expiration time is stored under in the context.
 	contextTokenExpiryKey = "auth.tokenExpiry"
@@ -676,6 +684,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKey)
 		if ok {
+			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
 			return d, nil
 		}
 	}
@@ -685,7 +694,10 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	}
 	apkg, err := authDB.GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 	if err == nil && a.apiKeyGroupCache != nil {
+		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
 		a.apiKeyGroupCache.Add(apiKey, apkg)
+	} else {
+		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
 	}
 	return apkg, err
 }
@@ -934,12 +946,10 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 
 	if acceptJWT {
 		// Check if we're already authenticated from incoming headers.
-		if claims, err := a.authenticatedUser(ctx); err == nil {
-			return claims, nil
-		}
+		return a.authenticatedUser(ctx)
 	}
 
-	return nil, status.UnauthenticatedError("gRPC request is missing credentials.")
+	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")
 }
 
 // AuthenticatedGRPCContext attempts to authenticate the gRPC request using peer info,
@@ -969,6 +979,12 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*Claims, *userToken, error) {
 	ctx := r.Context()
 	if apiKey := r.Header.Get(APIKeyHeader); apiKey != "" {
+		claims, err := a.claimsFromAPIKey(ctx, apiKey)
+		return claims, nil, err
+	}
+
+	if authHeader := r.Header.Get(authorizationHeader); authHeader != "" {
+		apiKey := strings.TrimPrefix(authHeader, authScheme+" ")
 		claims, err := a.claimsFromAPIKey(ctx, apiKey)
 		return claims, nil, err
 	}
@@ -1084,12 +1100,12 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 	// user not found error.
 	err, ok := ctx.Value(contextUserErrorKey).(error)
 	if !ok || err == nil {
-		return nil, status.UnauthenticatedError(userNotFoundMsg)
+		return nil, authutil.AnonymousUserError(userNotFoundMsg)
 	}
 
 	// if there was an error set on the context, and it was an
 	// Unauthenticated or PermissionDeniedError, then the FE can handle it,
-	// so pass it through.
+	// so pass it through. This includes anonymous user errors.
 	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
 		return nil, err
 	}
@@ -1373,7 +1389,7 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 		return claims, nil
 	}
 	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, status.UnauthenticatedError(userNotFoundMsg)
+	return nil, authutil.AnonymousUserError(userNotFoundMsg)
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {

@@ -19,7 +19,7 @@ export function usecToTimestamp(usec: number): google_timestamp.protobuf.Timesta
 
 /** Converts a proto timestamp to a local date. */
 export function timestampToDate(timestamp: google_timestamp.protobuf.ITimestamp): Date {
-  const timestampMillis = Math.floor((Number(timestamp.seconds) + Number(timestamp.nanos) / 1e9) * 1e3);
+  const timestampMillis = Math.floor((Number(timestamp.seconds || 0) + Number(timestamp.nanos || 0) / 1e9) * 1e3);
   return new Date(timestampMillis);
 }
 
@@ -46,7 +46,7 @@ export function secondsToDuration(seconds: number): google_duration.protobuf.IDu
  * protos that have been migrated to use the `Timestamp` API.
  */
 export function timestampToDateWithFallback(
-  timestamp: google_timestamp.protobuf.ITimestamp,
+  timestamp: google_timestamp.protobuf.ITimestamp | null | undefined,
   timestampMillisFallback: number | Long
 ): Date {
   if (timestamp) return timestampToDate(timestamp);
@@ -60,7 +60,7 @@ export function timestampToDateWithFallback(
  * migrated to use the `Duration` API.
  */
 export function durationToMillisWithFallback(
-  duration: google_duration.protobuf.IDuration,
+  duration: google_duration.protobuf.IDuration | null | undefined,
   fallbackMillis: number | Long
 ): number {
   if (duration) return durationToMillis(duration);

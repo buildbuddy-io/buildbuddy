@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -16,11 +16,4 @@ go_library(
         "@com_github_mdlayher_vsock//:vsock",
         "@org_golang_google_grpc//:go_default_library",
     ],
-)
-
-go_binary(
-    name = "vmvfs",
-    embed = [":vmvfs_lib"],
-    pure = "on",
-    static = "on",
 )

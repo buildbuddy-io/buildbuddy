@@ -116,10 +116,10 @@ var (
 	triggerEvent       = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL      = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
 	pushedBranch       = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	prNumber           = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
 	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
-	targetCommitSHA    = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
 	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
@@ -446,14 +446,6 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 func main() {
 	if err := run(); err != nil {
 		if result, ok := err.(*actionResult); ok {
-
-			// If this is a workflow, kill-signal the current process on certain exit
-			// codes (rather than exiting) so that the workflow action is
-			// retried.
-			if *workflowID != "" && result.exitCode == bazelLocalEnvironmentalErrorExitCode {
-				syscall.Kill(0, syscall.SIGKILL)
-			}
-
 			os.Exit(result.exitCode)
 		}
 		log.Errorf("%s", err)
@@ -785,6 +777,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	} else {
 		buildMetadata.Metadata["ROLE"] = "HOSTED_BAZEL"
 	}
+	if *prNumber != 0 {
+		buildMetadata.Metadata["PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
+	}
+	if *targetRepoURL != "" {
+		buildMetadata.Metadata["REPO_URL"] = *targetRepoURL
+	}
+	if *pushedRepoURL != *targetRepoURL {
+		buildMetadata.Metadata["FORK_REPO_URL"] = *pushedRepoURL
+	}
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}
@@ -857,6 +858,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+		}
+
+		// If this is a workflow, kill-signal the current process on certain
+		// exit codes (rather than exiting) so that the workflow action is
+		// retried. Note that we do this immediately after the Bazel command is
+		// completed so that the outer workflow invocation gets disconnected
+		// rather than finishing with an error.
+		if *workflowID != "" && exitCode == bazelLocalEnvironmentalErrorExitCode {
+			syscall.Kill(os.Getpid(), syscall.SIGKILL)
 		}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
@@ -1354,13 +1364,17 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 		return err
 	}
 	_ = f.Close()
-	if err := git(ctx, ws.log, "apply", "--verbose", patchFileName); err != nil {
+	if _, err := git(ctx, ws.log, "apply", "--verbose", patchFileName); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
+	if *pushedBranch == "" && *targetBranch == "" {
+		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `target_branch` to be set")
+	}
+
 	// Fetch the pushed and target branches from their respective remotes.
 	// "base" here is referring to the repo on which the workflow is configured.
 	// "fork" is referring to the forked repo, if the runner was triggered by a
@@ -1393,13 +1407,13 @@ func (ws *workspace) sync(ctx context.Context) error {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 		checkoutLocalBranchName = *pushedBranch
 	} else {
-		if *targetBranch != "" {
-			checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-			checkoutLocalBranchName = *targetBranch
-		} else {
-			checkoutRef = *targetCommitSHA
-			checkoutLocalBranchName = "local"
-		}
+		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
+		checkoutLocalBranchName = *targetBranch
+	}
+
+	// If a commit is set, use it
+	if *commitSHA != "" {
+		checkoutRef = *commitSHA
 	}
 
 	// Clean up in case a previous workflow made a mess.
@@ -1412,21 +1426,31 @@ func (ws *workspace) sync(ctx context.Context) error {
 	for _, path := range *gitCleanExclude {
 		cleanArgs = append(cleanArgs, "-e", path)
 	}
-	if err := git(ctx, ws.log, cleanArgs...); err != nil {
+	if _, err := git(ctx, ws.log, cleanArgs...); err != nil {
 		return err
 	}
-	// Create the branch if it doesn't already exist, then update it to point to
-	// the pushed branch tip.
-	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
+
+	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
+	if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
 		return err
 	}
+
+	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
+	if *commitSHA == "" {
+		headCommitSHA, err := git(ctx, ws.log, "rev-parse", "HEAD")
+		if err != nil {
+			return err
+		}
+		*commitSHA = headCommitSHA
+	}
+
 	// Merge the target branch (if different from the pushed branch) so that the
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
+		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
-			if err := git(ctx, ws.log, "merge", "--abort"); err != nil {
+			if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 				errMsg += "\n" + err.Output
 			}
 			// Make note of the merge conflict and abort. We'll run all actions and each
@@ -1463,7 +1487,7 @@ func (ws *workspace) config(ctx context.Context) error {
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
 		// Don't show the config output.
-		if err := git(ctx, io.Discard, "config", kv[0], kv[1]); err != nil {
+		if _, err := git(ctx, io.Discard, "config", kv[0], kv[1]); err != nil {
 			return err
 		}
 	}
@@ -1496,11 +1520,11 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
 	// Don't show `git remote add` command or the error message since the URL may
 	// contain the repo access token.
-	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
+	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
 	fetchArgs := append([]string{"fetch", "--filter=blob:none", "--force", remoteName}, branches...)
-	if err := git(ctx, ws.log, fetchArgs...); err != nil {
+	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
 	return nil
@@ -1524,14 +1548,15 @@ func isAlreadyUpToDate(err error) bool {
 	return ok && strings.Contains(gitErr.Output, "up to date")
 }
 
-func git(ctx context.Context, out io.Writer, args ...string) *gitError {
+func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError) {
 	var buf bytes.Buffer
 	w := io.MultiWriter(out, &buf)
 	printCommandLine(out, "git", args...)
 	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
-		return &gitError{err, string(buf.Bytes())}
+		return "", &gitError{err, string(buf.Bytes())}
 	}
-	return nil
+	output := string(buf.Bytes())
+	return strings.TrimSpace(output), nil
 }
 
 func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
@@ -1579,6 +1604,13 @@ func writeBazelrc(path, invocationID string) error {
 	if *workflowID != "" {
 		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)
 	}
+	if *prNumber != 0 {
+		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
+		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
+	}
+	if *pushedRepoURL != *targetRepoURL {
+		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
+	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
@@ -1611,7 +1643,10 @@ func readConfig() (*config.BuildBuddyConfig, error) {
 	f, err := os.Open(config.FilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return config.GetDefault(), nil
+			// Note: targetRepoDefaultBranch is only used to compute triggers,
+			// but we don't read triggers in the CI runner (since the runner is
+			// already triggered). So we exclude the default branch here.
+			return config.GetDefault("" /*=targetRepoDefaultBranch*/), nil
 		}
 		return nil, status.FailedPreconditionErrorf("open %q: %s", config.FilePath, err)
 	}

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "config": {
+    "mediaType": "application/vnd.amazon.soci.index.v1+json",
+    "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "size": 2
+  },
+  "layers": [
+    {
+      "mediaType": "application/octet-stream",
+      "digest": "sha256:85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2",
+      "size": 99024,
+      "annotations": {
+        "com.amazon.soci.image-layer-digest": "sha256:64c41441ac5ce31a9eb7939a2322015c05afc8fa631c7f7cf5e5b14c73d9bf49",
+        "com.amazon.soci.image-layer-mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip"
+      }
+    },
+    {
+      "mediaType": "application/octet-stream",
+      "digest": "sha256:ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
+      "size": 99024,
+      "annotations": {
+        "com.amazon.soci.image-layer-digest": "sha256:ae97859e70356aa8ffc46329f5e98d1078acaf754bbffc40907bbea18b2c6f5a",
+        "com.amazon.soci.image-layer-mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip"
+      }
+    }
+  ],
+  "subject": {
+    "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+    "digest": "sha256:1c3a8719d58c87979fe094dad303d0dd3f0419e6e566e4dbdb08ccbde0aec0ae",
+    "size": 915
+  },
+  "annotations": { "com.amazon.soci.build-tool-identifier": "BuildBuddy SOCI Artifact Store v0.1" }
+}

@@ -33,6 +33,7 @@ html {
     "Droid Sans", "Helvetica Neue", sans-serif;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  padding: 0;
 }
 
 html:root {
@@ -77,7 +78,8 @@ html[data-theme="dark"] .footer--dark {
   text-align: center;
 }
 
-.docs-wrapper {
+.plugin-blog .main-wrapper,
+.docs-wrapper .main-wrapper {
   width: 100%;
   max-width: calc(1296 + 16px);
   padding: 0 8px;
@@ -85,7 +87,8 @@ html[data-theme="dark"] .footer--dark {
 }
 
 @media (min-width: 997px) {
-  .docs-wrapper {
+  .plugin-blog .main-wrapper,
+  .docs-wrapper .main-wrapper {
     max-width: calc(1296px + 48px);
     padding: 0 24px;
   }
@@ -104,8 +107,8 @@ svg[aria-hidden="true"] {
   display: block;
 }
 
-.docs-wrapper svg[aria-hidden="true"],
-.theme-edit-this-page svg[aria-hidden="true"] {
+.theme-edit-this-page svg[aria-hidden="true"],
+article svg[aria-hidden="true"] {
   display: inline;
 }
 

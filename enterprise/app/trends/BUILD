@@ -7,11 +7,9 @@ exports_files(["trends.css"])
 ts_library(
     name = "trends",
     srcs = ["trends.tsx"],
-    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
-        "//app/components/button:checkbox_button",
         "//app/format",
         "//app/router",
         "//app/service:rpc_service",
@@ -21,6 +19,7 @@ ts_library(
         "//enterprise/app/trends:cache_chart",
         "//enterprise/app/trends:drilldown_page",
         "//enterprise/app/trends:percentile_chart",
+        "//enterprise/app/trends:summary_card",
         "//enterprise/app/trends:trends_chart",
         "//proto:stats_ts_proto",
         "@npm//@types/moment",
@@ -35,7 +34,6 @@ ts_library(
 ts_library(
     name = "cache_chart",
     srcs = ["cache_chart.tsx"],
-    strict = True,
     deps = [
         "//app/format",
         "@npm//@types/react",
@@ -48,10 +46,10 @@ ts_library(
 ts_library(
     name = "drilldown_page",
     srcs = ["drilldown_page.tsx"],
-    strict = True,
     deps = [
         "//app/auth:user",
         "//app/capabilities",
+        "//app/components/banner",
         "//app/components/button",
         "//app/components/select",
         "//app/components/spinner",
@@ -84,7 +82,6 @@ ts_library(
 ts_library(
     name = "heatmap",
     srcs = ["heatmap.tsx"],
-    strict = True,
     deps = [
         "//app/components/tooltip",
         "//proto:stats_ts_proto",
@@ -104,7 +101,6 @@ ts_library(
 ts_library(
     name = "percentile_chart",
     srcs = ["percentile_chart.tsx"],
-    strict = True,
     deps = [
         "//app/format",
         "@npm//@types/react",
@@ -115,9 +111,22 @@ ts_library(
 )
 
 ts_library(
+    name = "summary_card",
+    srcs = ["summary_card.tsx"],
+    deps = [
+        "//app/format",
+        "//enterprise/app/filter:filter_util",
+        "//proto:stats_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
     name = "trends_chart",
     srcs = ["trends_chart.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//react",

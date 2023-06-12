@@ -17,6 +17,7 @@ import {
 interface Props {
   title: string;
   data: any[];
+  id?: string;
 
   extractLabel: (datum: any) => string;
   formatHoverLabel: (datum: any) => string;
@@ -77,7 +78,7 @@ export default class TrendsChartComponent extends React.Component<Props> {
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
     return (
-      <div className="trend-chart">
+      <div id={this.props.id} className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={this.props.data}>

@@ -12,7 +12,7 @@ interface Props {
 }
 
 interface State {
-  limit: number;
+  limit?: number;
 }
 
 const defaultPageSize = 1;
@@ -24,7 +24,6 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
 
   handleMoreInvocationClicked() {
     this.setState({
-      ...this.state,
       limit: this.state.limit ? undefined : defaultPageSize,
     });
   }
@@ -61,7 +60,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     return this.quote(
       [
         "bazel",
-        this.props.model.started?.command,
+        this.props.model.started?.command ?? "",
         ...(this.props.model.expanded?.id?.pattern?.pattern || []),
         ...(options || []),
       ].filter((value) => value)
@@ -82,7 +81,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
       }
     }
 
-    return this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.explicitCmdLine);
+    return this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.explicitCmdLine ?? []);
   }
 
   render() {
@@ -141,6 +140,10 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section-title">Tool</div>
               <div>{this.props.model.getTool()}</div>
             </div>
+            <div className="invocation-section">
+              <div className="invocation-section-title">Tool tag</div>
+              <div>{this.props.model.getToolTag()}</div>
+            </div>
             {isBazelInvocation && (
               <>
                 <div className="invocation-section">
@@ -163,7 +166,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                   <div className="invocation-section-title">Targets</div>
                   <div>
                     {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
-                    {!!this.props.model.buildMetrics?.targetMetrics.targetsConfigured && (
+                    {!!this.props.model.buildMetrics?.targetMetrics?.targetsConfigured && (
                       <span> ({this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured)</span>
                     )}
                   </div>
@@ -171,15 +174,15 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="invocation-section">
                   <div className="invocation-section-title">Actions</div>
                   <div>
-                    {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
-                    {!!this.props.model.buildMetrics?.actionSummary.actionsCreated && (
+                    {this.props.model.buildMetrics?.actionSummary?.actionsExecuted} actions
+                    {!!this.props.model.buildMetrics?.actionSummary?.actionsCreated && (
                       <span> ({this.props.model.buildMetrics?.actionSummary.actionsCreated} created)</span>
                     )}
                   </div>
                 </div>
                 <div className="invocation-section">
                   <div className="invocation-section-title">Packages</div>
-                  <div>{this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages</div>
+                  <div>{this.props.model.buildMetrics?.packageMetrics?.packagesLoaded} packages</div>
                 </div>
               </>
             )}
@@ -284,13 +287,13 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                       className="copy-icon"
                       onClick={this.handleCopyClicked.bind(
                         this,
-                        `${this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.cmdLine)}`
+                        `${this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.cmdLine ?? [])}`
                       )}
                     />
                   </div>
                   <div className="invocation-section">
                     <code className="wrap">
-                      {this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.cmdLine)}
+                      {this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.cmdLine ?? [])}
                     </code>
                   </div>
                 </div>
@@ -323,7 +326,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                                 For custom flags like --@repo//foo:bar=true or --//foo:bar=true,
                                 render as plain text. For other flags, link to Bazel docs.
                               */}
-                              {option.optionName.startsWith("//") || option.optionName.startsWith("@") ? (
+                              {option.optionName?.startsWith("//") || option.optionName?.startsWith("@") ? (
                                 <span className="invocation-option-name">{option.optionName}</span>
                               ) : (
                                 <a
@@ -366,7 +369,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
 
 function ensureNameAndValue(option: command_line.IOption): command_line.IOption {
   if (option.optionName) return option;
-  if (!option.combinedForm.startsWith("--")) return option;
+  if (!option.combinedForm?.startsWith("--")) return option;
 
   if (!option.combinedForm.includes("=")) {
     return { ...option, optionName: option.combinedForm.substring(2), optionValue: undefined };

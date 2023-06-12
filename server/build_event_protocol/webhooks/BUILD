@@ -10,6 +10,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/db",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_protobuf//encoding/protojson",

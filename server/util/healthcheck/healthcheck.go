@@ -12,10 +12,14 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 )
@@ -46,6 +50,25 @@ type HealthChecker struct {
 	mu            sync.RWMutex // protects: readyToServe, shuttingDown
 	readyToServe  bool
 	shuttingDown  bool
+}
+
+// Creates a new health checker function that checks the provided GRPC client
+// connection, returning: no error (healthy) when the connection is ready or
+// idle, and unhealthy otherwise. If the connection is idle when the health
+// checker runs, the health checker attempts to reconnect it.
+func NewGRPCHealthCheck(conn *grpc.ClientConn) interfaces.CheckerFunc {
+	return interfaces.CheckerFunc(
+		func(ctx context.Context) error {
+			connState := conn.GetState()
+			if connState == connectivity.Ready {
+				return nil
+			} else if connState == connectivity.Idle {
+				conn.Connect()
+				return nil
+			}
+			return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
+		},
+	)
 }
 
 func NewHealthChecker(serverType string) *HealthChecker {
@@ -182,8 +205,15 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 			statusDataMu.Unlock()
 
 			if err != nil {
+				metrics.HealthCheck.With(prometheus.Labels{
+					metrics.HealthCheckName: name,
+				}).Set(0)
 				return status.UnavailableErrorf("Service %s is unhealthy: %s", name, err)
 			}
+
+			metrics.HealthCheck.With(prometheus.Labels{
+				metrics.HealthCheckName: name,
+			}).Set(1)
 			return nil
 		})
 	}

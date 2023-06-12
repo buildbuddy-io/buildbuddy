@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
+	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -191,6 +192,7 @@ type BuildEventChannel interface {
 	FinalizeInvocation(iid string) error
 	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
 	GetNumDroppedEvents() uint64
+	GetInitialSequenceNumber() int64
 	Close()
 }
 
@@ -268,7 +270,6 @@ type DBHandle interface {
 	ReadRow(ctx context.Context, out interface{}, where ...interface{}) error
 	UTCMonthFromUsecTimestamp(fieldName string) string
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
-	InsertIgnoreModifier() string
 	SelectForUpdateModifier() string
 	SetNowFunc(now func() time.Time)
 	IsDuplicateKeyError(err error) bool
@@ -321,6 +322,55 @@ type AuthDB interface {
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
 	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
+
+	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
+	// group. It is only to be used in situations where the user has a
+	// pre-authorized grant to access resources on behalf of the org, such as a
+	// publicly shared invocation. The returned API key must only be used to
+	// access internal resources and must not be returned to the caller.
+	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
+
+	// API Keys API.
+	//
+	// All of these functions authenticate the user if applicable and
+	// authorize access to the relevant user IDs, group IDs, and API keys,
+	// taking the group role into account.
+	//
+	// Any operations involving user-level keys return an error if user-level
+	// keys are not enabled by the org.
+
+	// GetAPIKeys returns group-level API keys that the user is authorized to
+	// access.
+	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// CreateAPIKey creates a group-level API key.
+	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+
+	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
+	// checking that the user has admin rights on the group. This should only
+	// be used when a new group is being created.
+	CreateAPIKeyWithoutAuthCheck(tx *gorm.DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+
+	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
+	GetUserOwnedKeysEnabled() bool
+
+	// GetUserAPIKeys returns all user-owned API keys within a group.
+	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// CreateUserAPIKey creates a user-owned API key within the group.
+	CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
+
+	// GetAPIKey returns an API key by ID. The key may be user-owned or
+	// group-owned.
+	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
+
+	// UpdateAPIKey updates an API key by ID. The key may be user-owned or
+	// group-owned.
+	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
+
+	// DeleteAPIKey deletes an API key by ID. The key may be user-owned or
+	// group-owned.
+	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 }
 
 type UserDB interface {
@@ -365,50 +415,6 @@ type UserDB interface {
 	// DeleteUserGitHubToken deletes the authenticated user's GitHub token.
 	DeleteUserGitHubToken(ctx context.Context) error
 
-	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
-	// group. It is only to be used in situations where the user has a
-	// pre-authorized grant to access resources on behalf of the org, such as a
-	// publicly shared invocation. The returned API key must only be used to
-	// access internal resources and must not be returned to the caller.
-	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
-
-	// API Keys API.
-	//
-	// All of these functions authenticate the user if applicable and
-	// authorize access to the relevant user IDs, group IDs, and API keys,
-	// taking the group role into account.
-	//
-	// Any operations involving user-level keys return an error if user-level
-	// keys are not enabled by the org.
-
-	// GetAPIKeys returns group-level API keys that the user is authorized to
-	// access.
-	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
-
-	// CreateAPIKey creates a group-level API key.
-	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
-
-	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
-	GetUserOwnedKeysEnabled() bool
-
-	// GetUserAPIKeys returns all user-owned API keys within a group.
-	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
-
-	// CreateUserAPIKey creates a user-owned API key within the group.
-	CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
-
-	// GetAPIKey returns an API key by ID. The key may be user-owned or
-	// group-owned.
-	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
-
-	// UpdateAPIKey updates an API key by ID. The key may be user-owned or
-	// group-owned.
-	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
-
-	// DeleteAPIKey deletes an API key by ID. The key may be user-owned or
-	// group-owned.
-	DeleteAPIKey(ctx context.Context, apiKeyID string) error
-
 	// Secrets API
 
 	GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error)
@@ -447,7 +453,8 @@ type UsageTracker interface {
 
 type ApiService interface {
 	apipb.ApiServiceServer
-	http.Handler
+	GetFileHandler() http.Handler
+	GetMetricsHandler() http.Handler
 	CacheEnabled() bool
 }
 
@@ -469,6 +476,11 @@ type WorkflowService interface {
 
 	// WorkflowsPoolName returns the name of the executor pool to use for workflow actions.
 	WorkflowsPoolName() string
+
+	// GetLegacyWorkflowIDForGitRepository generates an artificial workflow ID so that legacy Workflow structs
+	// can be created from GitRepositories to play nicely with the pre-existing architecture
+	// that expects the legacy format
+	GetLegacyWorkflowIDForGitRepository(groupID string, repoURL string) string
 }
 
 type GitHubApp interface {
@@ -484,10 +496,15 @@ type GitHubApp interface {
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
 
-	// GetInstallationToken returns an installation token for the installation
-	// associated with the authenticated group ID and the given installation
-	// owner (GitHub username or org name).
-	GetInstallationToken(ctx context.Context, owner string) (string, error)
+	// GetInstallationTokenForStatusReportingOnly returns an installation token
+	// for the installation associated with the given installation owner (GitHub
+	// username or org name). It does not authorize the authenticated group ID,
+	// so should be used for status reporting only.
+	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (string, error)
+
+	// GetRepositoryInstallationToken returns an installation token for the given
+	// GitRepository.
+	GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error)
 
 	// WebhookHandler returns the GitHub webhook HTTP handler.
 	WebhookHandler() http.Handler
@@ -561,6 +578,11 @@ type WebhookData struct {
 	// Ex: "https://github.com/acme-inc/acme"
 	TargetRepoURL string
 
+	// TargetRepoDefaultBranch is the default / main branch of the target repo.
+	// The default branch can be configured in the repo settings on GitHub.
+	// Ex: "main"
+	TargetRepoDefaultBranch string
+
 	// TargetBranch is the branch associated with the event that determines whether
 	// actions should be triggered. For push events this is the branch that was
 	// pushed to. For pull_request events this is the base branch into which the PR
@@ -571,6 +593,10 @@ type WebhookData struct {
 	// IsTargetRepoPublic reflects whether the target repo is publicly visible via
 	// the git provider.
 	IsTargetRepoPublic bool
+
+	// PullRequestNumber is the PR number if applicable.
+	// Ex: 123
+	PullRequestNumber int64
 
 	// PullRequestAuthor is the user name of the author of the pull request,
 	// if applicable.
@@ -1032,12 +1058,22 @@ type AEAD interface {
 	Decrypt(ciphertext, associatedData []byte) ([]byte, error)
 }
 
+type KMSType int
+
+const (
+	KMSTypeLocalInsecure KMSType = iota
+	KMSTypeGCP
+	KMSTypeAWS
+)
+
 // A KMS is a Key Managment Service (typically a cloud provider or external
 // service) that manages keys that can be fetched and used to encrypt/decrypt
 // data.
 type KMS interface {
 	FetchMasterKey() (AEAD, error)
 	FetchKey(uri string) (AEAD, error)
+
+	SupportedTypes() []KMSType
 }
 
 // SecretService manages secrets for an org.
@@ -1070,6 +1106,7 @@ type ExecutionCollector interface {
 // SuggestionService enables fetching of suggestions.
 type SuggestionService interface {
 	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
+	MultipleProvidersConfigured() bool
 }
 
 type Encryptor interface {
@@ -1085,6 +1122,23 @@ type Crypter interface {
 	SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error)
 	GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error)
 
+	ActiveKey(ctx context.Context) (*rfpb.EncryptionMetadata, error)
+
 	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (Decryptor, error)
+}
+
+// Provides a duplicate function call suppression mechanism, just like the
+// singleflight package.
+type SingleFlightDeduper interface {
+	Do(ctx context.Context, key string, work func() ([]byte, error)) ([]byte, error)
+}
+
+type PromQuerier interface {
+	FetchMetrics(ctx context.Context, groupID string) (model.Vector, error)
+}
+
+// ConfigSecretProvider provides secrets interpolation into configs.
+type ConfigSecretProvider interface {
+	GetSecret(ctx context.Context, name string) ([]byte, error)
 }

@@ -4,7 +4,6 @@ go_library(
     name = "sidecar",
     srcs = ["sidecar.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/cache_proxy",
@@ -28,3 +27,5 @@ go_library(
         "@org_golang_google_grpc//reflection",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

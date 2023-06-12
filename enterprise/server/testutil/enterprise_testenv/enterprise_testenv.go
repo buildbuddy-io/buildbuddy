@@ -47,11 +47,11 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 
+	env.SetAuthDB(authdb.NewAuthDB(env, env.GetDBHandle()))
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
 	if err != nil {
 		assert.FailNow(t, "could not create user DB", err.Error())
 	}
 	env.SetUserDB(userDB)
-	env.SetAuthDB(authdb.NewAuthDB(env, env.GetDBHandle()))
 	return env
 }

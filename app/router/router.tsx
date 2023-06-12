@@ -4,67 +4,23 @@ import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
 
-// Query params for the global filter.
-// These should be preserved when navigating between pages in the app.
-
-export const ROLE_PARAM_NAME = "role";
-export const STATUS_PARAM_NAME = "status";
-export const START_DATE_PARAM_NAME = "start";
-export const END_DATE_PARAM_NAME = "end";
-export const LAST_N_DAYS_PARAM_NAME = "days";
-
-export const USER_PARAM_NAME = "user";
-export const REPO_PARAM_NAME = "repo";
-export const BRANCH_PARAM_NAME = "branch";
-export const COMMIT_PARAM_NAME = "commit";
-export const HOST_PARAM_NAME = "host";
-export const COMMAND_PARAM_NAME = "command";
-export const PATTERN_PARAM_NAME = "pattern";
-export const MINIMUM_DURATION_PARAM_NAME = "min-dur";
-export const MAXIMUM_DURATION_PARAM_NAME = "max-dur";
-
-// Sort params for the global filter.
-
-export const SORT_BY_PARAM_NAME = "sort-by";
-export const SORT_ORDER_PARAM_NAME = "sort-order";
-
-const GLOBAL_FILTER_PARAM_NAMES = [
-  ROLE_PARAM_NAME,
-  STATUS_PARAM_NAME,
-  START_DATE_PARAM_NAME,
-  END_DATE_PARAM_NAME,
-  LAST_N_DAYS_PARAM_NAME,
-
-  USER_PARAM_NAME,
-  REPO_PARAM_NAME,
-  BRANCH_PARAM_NAME,
-  COMMIT_PARAM_NAME,
-  HOST_PARAM_NAME,
-  COMMAND_PARAM_NAME,
-  PATTERN_PARAM_NAME,
-  MINIMUM_DURATION_PARAM_NAME,
-  MAXIMUM_DURATION_PARAM_NAME,
-];
-
-const GLOBAL_SORT_PARAM_NAMES = [SORT_BY_PARAM_NAME, SORT_ORDER_PARAM_NAME];
-
-const PERSISTENT_URL_PARAMS = [...GLOBAL_FILTER_PARAM_NAMES, ...GLOBAL_SORT_PARAM_NAMES];
+import { GLOBAL_FILTER_PARAM_NAMES, PERSISTENT_URL_PARAMS } from "./router_params";
 
 class Router {
   register(pathChangeHandler: VoidFunction) {
-    history.pushState = ((f) =>
-      function pushState() {
-        var ret = f.apply(this, arguments);
-        pathChangeHandler();
-        return ret;
-      })(history.pushState);
+    const oldPushState = history.pushState;
+    history.pushState = (data: any, unused: string, url?: string | URL): void => {
+      oldPushState.apply(history, [data, unused, url]);
+      pathChangeHandler();
+      return undefined;
+    };
 
-    history.replaceState = ((f) =>
-      function replaceState() {
-        var ret = f.apply(this, arguments);
-        pathChangeHandler();
-        return ret;
-      })(history.replaceState);
+    const oldReplaceState = history.replaceState;
+    history.replaceState = (data: any, unused: string, url?: string | URL): void => {
+      oldReplaceState.apply(history, [data, unused, url]);
+      pathChangeHandler();
+      return undefined;
+    };
 
     window.addEventListener("popstate", () => {
       pathChangeHandler();
@@ -104,6 +60,10 @@ class Router {
     const newUrl = new URL(url, window.location.href);
 
     const matchedPath = getMatchedPath(newUrl.pathname);
+    if (matchedPath === null) {
+      alert("Requested path not found.");
+      return;
+    }
     const unavailableMsg = getUnavailableMessage(matchedPath);
     if (unavailableMsg && !capabilities.canNavigateToPath(matchedPath)) {
       alert(unavailableMsg);
@@ -112,8 +72,9 @@ class Router {
 
     // Preserve persistent URL params.
     for (const key of PERSISTENT_URL_PARAMS) {
-      if (!newUrl.searchParams.get(key) && oldUrl.searchParams.get(key)) {
-        newUrl.searchParams.set(key, oldUrl.searchParams.get(key));
+      const oldParam = oldUrl.searchParams.get(key);
+      if (!newUrl.searchParams.get(key) && oldParam) {
+        newUrl.searchParams.set(key, oldParam);
       }
     }
 
@@ -228,6 +189,10 @@ class Router {
 
   navigateToCommitHistory(commit: string) {
     this.navigateTo(Path.commitHistoryPath + commit);
+  }
+
+  navigateToTagHistory(tag: string) {
+    this.navigateTo(Path.home + "?tag=" + tag);
   }
 
   navigateToCreateOrg() {
@@ -347,6 +312,23 @@ class Router {
 
   canAccessOrgSecretsPage(user?: User) {
     return Boolean(user?.canCall("listSecrets"));
+  }
+
+  getTab() {
+    let tab = window.location.hash.split("@")[0];
+    return tab == "#" ? "" : tab;
+  }
+
+  getLineNumber() {
+    let hashParts = location.hash.split("@");
+    if (hashParts.length > 1) {
+      return parseInt(hashParts[1]);
+    }
+    return undefined;
+  }
+
+  canAccessEncryptionPage(user?: User) {
+    return Boolean(user?.canCall("getEncryptionConfig"));
   }
 
   /**

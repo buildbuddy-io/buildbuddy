@@ -3,6 +3,7 @@ import React from "react";
 import { TerminalComponent } from "../terminal/terminal";
 
 interface Props {
+  title: string;
   value: string;
   loading: boolean;
   expanded: boolean;
@@ -21,7 +22,7 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
         <div className="content">
           <div className="details">
             <TerminalComponent
-              title={<div className="title">Build logs</div>}
+              title={<div className="title">{this.props.title}</div>}
               loading={this.props.loading}
               value={this.props.value}
               lightTheme={!this.props.dark}

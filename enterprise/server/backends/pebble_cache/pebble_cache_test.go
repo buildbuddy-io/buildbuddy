@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/cockroachdb/pebble"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -128,17 +129,9 @@ func TestACIsolation(t *testing.T) {
 	pc.Start()
 	defer pc.Stop()
 
-	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
-	r1 := &rspb.ResourceName{
-		Digest:       d1,
-		CacheType:    rspb.CacheType_AC,
-		InstanceName: "foo",
-	}
-	r2 := &rspb.ResourceName{
-		Digest:       d1,
-		CacheType:    rspb.CacheType_AC,
-		InstanceName: "bar",
-	}
+	r1, buf1 := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_AC, "foo")
+	r2 := proto.Clone(r1).(*rspb.ResourceName)
+	r2.InstanceName = "bar"
 
 	require.Nil(t, pc.Set(ctx, r1, buf1))
 	require.Nil(t, pc.Set(ctx, r2, []byte("evilbuf")))
@@ -211,27 +204,21 @@ func TestIsolation(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r1 := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    test.cacheType1,
-			InstanceName: test.instanceName1,
-		}
+		r1, buf := testdigest.NewRandomResourceAndBuf(t, 100, test.cacheType1, test.instanceName1)
 		// Set() the bytes in cache1.
 		err = pc.Set(ctx, r1, buf)
 		require.NoError(t, err)
 
+		r2 := proto.Clone(r1).(*rspb.ResourceName)
+		r2.InstanceName = test.instanceName2
+		r2.CacheType = test.cacheType2
 		// Get() the bytes from cache2.
-		rbuf, err := pc.Get(ctx, &rspb.ResourceName{
-			Digest:       d,
-			InstanceName: test.instanceName2,
-			CacheType:    test.cacheType2,
-		})
+		rbuf, err := pc.Get(ctx, r2)
 		if test.shouldBeShared {
 			// if the caches should be shared but there was an error
 			// getting the digest: fail.
 			if err != nil {
-				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+				t.Fatalf("Error getting %q from cache: %s", r1.GetDigest().GetHash(), err.Error())
 			}
 
 			// Compute a digest for the bytes returned.
@@ -240,14 +227,14 @@ func TestIsolation(t *testing.T) {
 				t.Fatalf("Error computing digest: %s", err.Error())
 			}
 
-			if d.GetHash() != d2.GetHash() {
-				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+			if r1.GetDigest().GetHash() != d2.GetHash() {
+				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r1.GetDigest().GetHash())
 			}
 		} else {
 			// if the caches should *not* be shared but there was
 			// no error getting the digest: fail.
 			if err == nil {
-				t.Fatalf("Got %q from cache, but should have been isolated.", d.GetHash())
+				t.Fatalf("Got %q from cache, but should have been isolated.", r1.GetDigest().GetHash())
 			}
 		}
 	}
@@ -270,26 +257,22 @@ func TestGetSet(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r, buf := testdigest.RandomCASResourceBuf(t, testSize)
 		// Set() the bytes in the cache.
 		err := pc.Set(ctx, r, buf)
 		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
 		rbuf, err := pc.Get(ctx, r)
 		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error getting %q from cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		if r.GetDigest().GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
 	}
 }
@@ -323,8 +306,7 @@ func TestDupeWrites(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			d, buf := testdigest.NewRandomDigestBuf(t, test.size)
-			r := &rspb.ResourceName{Digest: d, CacheType: test.cacheType}
+			r, buf := testdigest.NewRandomResourceAndBuf(t, test.size, test.cacheType, "" /*instanceName*/)
 
 			w1, err := pc.Writer(ctx, r)
 			require.NoError(t, err)
@@ -352,8 +334,8 @@ func TestDupeWrites(t *testing.T) {
 
 			// Compute a digest for the bytes returned.
 			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
-			if d.GetHash() != d2.GetHash() {
-				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+			if r.GetDigest().GetHash() != d2.GetHash() {
+				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 			}
 		})
 	}
@@ -401,36 +383,26 @@ func TestIsolateByGroupIds(t *testing.T) {
 	{
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		// CAS records should not have group ID or remote instance name in their file path
-		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: instanceName,
-		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err := pc.Get(ctx, r)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(buf, rbuf))
-		hash := d.GetHash()
+		hash := r.GetDigest().GetHash()
 		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, partitionID, hash[:4], hash)
 		_, err = os.Stat(expectedFilename)
 		require.NoError(t, err)
 
 		// AC records should have group ID and remote instance hash in their file path
-		d, buf = testdigest.NewRandomDigestBuf(t, 1000)
-		r = &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_AC,
-			InstanceName: instanceName,
-		}
+		r, buf = testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err = pc.Get(ctx, r)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(buf, rbuf))
 		instanceNameHash := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(instanceName))))
-		hash = d.GetHash()
+		hash = r.GetDigest().GetHash()
 		expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/ac/%s/%v/%v", rootDir, partitionID, testGroup, instanceNameHash, hash[:4], hash)
 		_, err = os.Stat(expectedFilename)
 		require.NoError(t, err)
@@ -439,18 +411,13 @@ func TestIsolateByGroupIds(t *testing.T) {
 	// Anon user should use the default partition.
 	{
 		ctx := getAnonContext(t, te)
-		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: instanceName,
-		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err := pc.Get(ctx, r)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(buf, rbuf))
-		hash := d.GetHash()
+		hash := r.GetDigest().GetHash()
 		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, pebble_cache.DefaultPartitionID, hash[:4], hash)
 		_, err = os.Stat(expectedFilename)
 		require.NoError(t, err)
@@ -510,15 +477,13 @@ func TestCopyPartitionData(t *testing.T) {
 			if i > 5 {
 				size = 1000
 			}
-			d, buf := testdigest.NewRandomDigestBuf(t, size)
-			r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+			r, buf := testdigest.NewRandomResourceAndBuf(t, size, rspb.CacheType_CAS, instanceName)
 			defaultResources = append(defaultResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
 		}
 		for i := 0; i < 10; i++ {
-			d, buf := testdigest.NewRandomDigestBuf(t, 100)
-			r := digest.NewResourceName(d, instanceName, rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
+			r, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_AC, instanceName)
 			defaultResources = append(defaultResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
@@ -529,15 +494,13 @@ func TestCopyPartitionData(t *testing.T) {
 	{
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		for i := 0; i < 10; i++ {
-			d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-			r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+			r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 			customResources = append(customResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
 		}
 		for i := 0; i < 10; i++ {
-			d, buf := testdigest.NewRandomDigestBuf(t, 100)
-			r := digest.NewResourceName(d, instanceName, rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
+			r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
 			customResources = append(customResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
@@ -647,18 +610,13 @@ func TestIsolateAnonUsers(t *testing.T) {
 	// Anon user should use matching anon partition.
 	{
 		ctx := getAnonContext(t, te)
-		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: instanceName,
-		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err := pc.Get(ctx, r)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(buf, rbuf))
-		hash := d.GetHash()
+		hash := r.GetDigest().GetHash()
 		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, partitionID, hash[:4], hash)
 		_, err = os.Stat(expectedFilename)
 		require.NoError(t, err)
@@ -668,18 +626,13 @@ func TestIsolateAnonUsers(t *testing.T) {
 	{
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		// CAS records should not have group ID or remote instance name in their file path
-		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: instanceName,
-		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err := pc.Get(ctx, r)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(buf, rbuf))
-		hash := d.GetHash()
+		hash := r.GetDigest().GetHash()
 		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, pebble_cache.DefaultPartitionID, hash[:4], hash)
 		_, err = os.Stat(expectedFilename)
 		require.NoError(t, err)
@@ -736,16 +689,13 @@ func TestMetadata(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		for _, testSize := range testSizes {
-			d, buf := testdigest.NewRandomDigestBuf(t, testSize)
+			r, buf := testdigest.RandomCASResourceBuf(t, testSize)
+			r.CacheType = tc.cacheType
+			r.Compressor = tc.compressor
 
 			dataToWrite := buf
 			if tc.compressor == repb.Compressor_ZSTD {
 				dataToWrite = compression.CompressZstd(nil, buf)
-			}
-			r := &rspb.ResourceName{
-				Digest:     d, // Digest contains uncompressed size
-				CacheType:  tc.cacheType,
-				Compressor: tc.compressor,
 			}
 
 			// Set data in the cache.
@@ -753,11 +703,8 @@ func TestMetadata(t *testing.T) {
 			require.NoError(t, err, tc.name)
 
 			// Metadata should return correct size, regardless of queried size.
-			digestWrongSize := &repb.Digest{Hash: d.GetHash(), SizeBytes: 1}
-			rWrongSize := &rspb.ResourceName{
-				Digest:    digestWrongSize,
-				CacheType: tc.cacheType,
-			}
+			rWrongSize := proto.Clone(r).(*rspb.ResourceName)
+			rWrongSize.Digest.SizeBytes = 1
 
 			md, err := pc.Metadata(ctx, rWrongSize)
 			require.NoError(t, err, tc.name)
@@ -795,11 +742,7 @@ func TestMetadata(t *testing.T) {
 func randomDigests(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte {
 	m := make(map[*rspb.ResourceName][]byte)
 	for _, size := range sizes {
-		d, buf := testdigest.NewRandomDigestBuf(t, size)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, size)
 		m[rn] = buf
 	}
 	return m
@@ -863,15 +806,11 @@ func TestReadWrite(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		rn := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
 		// Use Writer() to set the bytes in the cache.
 		wc, err := pc.Writer(ctx, rn)
 		if err != nil {
-			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error getting %q writer: %s", rn.GetDigest().GetHash(), err.Error())
 		}
 		_, err = wc.Write(buf)
 		require.NoError(t, err)
@@ -884,11 +823,11 @@ func TestReadWrite(t *testing.T) {
 		// Use Reader() to get the bytes from the cache.
 		reader, err := pc.Reader(ctx, rn, 0, 0)
 		if err != nil {
-			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error getting %q reader: %s", rn.GetDigest().GetHash(), err.Error())
 		}
 		d2 := testdigest.ReadDigestAndClose(t, reader)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		if rn.GetDigest().GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), rn.GetDigest().GetHash())
 		}
 	}
 }
@@ -909,14 +848,10 @@ func TestSizeLimit(t *testing.T) {
 
 	resourceKeys := make([]*rspb.ResourceName, 0, 150000)
 	for i := 0; i < 150; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 		resourceKeys = append(resourceKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 	}
 
@@ -977,27 +912,13 @@ func TestCompression(t *testing.T) {
 	inlineD, err := digest.Compute(bytes.NewReader(inlineBlob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	compressedRN := &rspb.ResourceName{
-		Digest:     d,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_ZSTD,
-	}
-	decompressedRN := &rspb.ResourceName{
-		Digest:     d,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_IDENTITY,
-	}
+	decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+	compressedRN.Compressor = repb.Compressor_ZSTD
 
-	compressedInlineRN := &rspb.ResourceName{
-		Digest:     inlineD,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_ZSTD,
-	}
-	decompressedInlineRN := &rspb.ResourceName{
-		Digest:     inlineD,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_IDENTITY,
-	}
+	decompressedInlineRN := digest.NewResourceName(inlineD, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	compressedInlineRN := proto.Clone(decompressedInlineRN).(*rspb.ResourceName)
+	compressedInlineRN.Compressor = repb.Compressor_ZSTD
 
 	testCases := []struct {
 		name             string
@@ -1124,11 +1045,7 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 		// Note: Digest is of uncompressed contents
 		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
-		decompressedRN := &rspb.ResourceName{
-			Digest:     d,
-			CacheType:  rspb.CacheType_CAS,
-			Compressor: repb.Compressor_IDENTITY,
-		}
+		decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 
 		// Write non-compressed data to cache
 		wc, err := pc.Writer(ctx, decompressedRN)
@@ -1141,12 +1058,9 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 		err = wc.Close()
 		require.NoError(t, err)
 
-		// Read data in compressed form
-		compressedRN := &rspb.ResourceName{
-			Digest:     d,
-			CacheType:  rspb.CacheType_CAS,
-			Compressor: repb.Compressor_ZSTD,
-		}
+		compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+		compressedRN.Compressor = repb.Compressor_ZSTD
+
 		reader, err := pc.Reader(ctx, compressedRN, 0, 0)
 		require.NoError(t, err)
 		defer reader.Close()
@@ -1182,11 +1096,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			// Note: Digest is of uncompressed contents
 			d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
-			decompressedRN := &rspb.ResourceName{
-				Digest:     d,
-				CacheType:  rspb.CacheType_CAS,
-				Compressor: repb.Compressor_IDENTITY,
-			}
+			decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 
 			// Write non-compressed data to cache
 			wc, err := pc.Writer(ctx, decompressedRN)
@@ -1200,11 +1110,9 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			require.NoError(t, err)
 
 			// Read data in compressed form
-			compressedRN := &rspb.ResourceName{
-				Digest:     d,
-				CacheType:  rspb.CacheType_CAS,
-				Compressor: repb.Compressor_ZSTD,
-			}
+			compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+			compressedRN.Compressor = repb.Compressor_ZSTD
+
 			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
 			require.NoError(t, err)
 			defer reader.Close()
@@ -1255,11 +1163,7 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 
 	// Write decompressed bytes to the cache. Because blob compression is enabled, pebble should compress before writing
 	for d, blob := range digestBlobs {
-		rn := &rspb.ResourceName{
-			Digest:     d,
-			Compressor: repb.Compressor_IDENTITY,
-			CacheType:  rspb.CacheType_CAS,
-		}
+		rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 		err = pc.Set(ctx, rn, blob)
 		require.NoError(t, err)
 	}
@@ -1268,11 +1172,7 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 
 	// All reads should succeed. Nothing should've been evicted
 	for d, blob := range digestBlobs {
-		rn := &rspb.ResourceName{
-			Digest:     d,
-			Compressor: repb.Compressor_IDENTITY,
-			CacheType:  rspb.CacheType_CAS,
-		}
+		rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 		data, err := pc.Get(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(blob, data))
@@ -1288,16 +1188,9 @@ func TestCompressionOffset(t *testing.T) {
 	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	compressedRN := &rspb.ResourceName{
-		Digest:     d,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_ZSTD,
-	}
-	decompressedRN := &rspb.ResourceName{
-		Digest:     d,
-		CacheType:  rspb.CacheType_CAS,
-		Compressor: repb.Compressor_IDENTITY,
-	}
+	decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+	compressedRN.Compressor = repb.Compressor_ZSTD
 
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
@@ -1364,25 +1257,19 @@ func TestFindMissing(t *testing.T) {
 	pc.Start()
 	defer pc.Stop()
 
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
-	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	notSetR1, _ := testdigest.RandomCASResourceBuf(t, 100)
+	notSetR2, _ := testdigest.RandomCASResourceBuf(t, 100)
 
-	err = pc.Set(ctx, &rspb.ResourceName{
-		Digest:       d,
-		CacheType:    rspb.CacheType_AC,
-		InstanceName: "remote",
-	}, buf)
+	err = pc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
-	digests := []*repb.Digest{d, notSetD1, notSetD2}
-	rns := digest.ResourceNames(rspb.CacheType_AC, "remote", digests)
+	rns := []*rspb.ResourceName{r, notSetR1, notSetR2}
 	missing, err := pc.FindMissing(ctx, rns)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
+	require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
 
-	digests = []*repb.Digest{d}
-	rns = digest.ResourceNames(rspb.CacheType_AC, "remote", digests)
+	rns = []*rspb.ResourceName{r}
 	missing, err = pc.FindMissing(ctx, rns)
 	require.NoError(t, err)
 	require.Empty(t, missing)
@@ -1421,14 +1308,10 @@ func TestNoEarlyEviction(t *testing.T) {
 	// Should be able to add 10 things without anything getting evicted
 	resourceKeys := make([]*rspb.ResourceName, numDigests)
 	for i := 0; i < numDigests; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, digestSize)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r, buf := testdigest.RandomCASResourceBuf(t, digestSize)
 		resourceKeys[i] = r
 		if err := pc.Set(ctx, r, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
+			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
 		}
 	}
 
@@ -1442,7 +1325,11 @@ func TestNoEarlyEviction(t *testing.T) {
 	}
 }
 
-func TestLRU(t *testing.T) {
+func testLRU(t *testing.T, testACEviction bool) {
+	if testACEviction {
+		flags.Set(t, "cache.pebble.active_key_version", 3)
+		flags.Set(t, "cache.pebble.ac_eviction_enabled", true)
+	}
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -1455,32 +1342,30 @@ func TestLRU(t *testing.T) {
 	atimeUpdateThreshold := time.Duration(0) // update atime on every access
 	atimeBufferSize := 0                     // blocking channel of atime updates
 	minEvictionAge := time.Duration(0)       // no min eviction age
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+	opts := &pebble_cache.Options{
 		RootDirectory:               rootDir,
 		MaxSizeBytes:                maxSizeBytes,
 		AtimeUpdateThreshold:        &atimeUpdateThreshold,
 		AtimeBufferSize:             &atimeBufferSize,
 		MinEvictionAge:              &minEvictionAge,
 		MinBytesAutoZstdCompression: maxSizeBytes,
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
 	pc.Start()
-	defer pc.Stop()
 
 	quartile := numDigests / 4
 
 	resourceKeys := make([]*rspb.ResourceName, numDigests)
 	for i := range resourceKeys {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
+		cacheType := rspb.CacheType_CAS
+		if testACEviction && i%2 == 0 {
+			cacheType = rspb.CacheType_AC
 		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "")
 		resourceKeys[i] = r
 		if err := pc.Set(ctx, r, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
+			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
 		}
 	}
 
@@ -1502,16 +1387,22 @@ func TestLRU(t *testing.T) {
 
 	// Write more data.
 	for i := 0; i < quartile; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
+		cacheType := rspb.CacheType_CAS
+		if testACEviction && i%2 == 0 {
+			cacheType = rspb.CacheType_AC
 		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 100, cacheType, "")
 		resourceKeys = append(resourceKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
+			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
 		}
 	}
+
+	pc.Stop()
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
 
 	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
@@ -1536,7 +1427,7 @@ func TestLRU(t *testing.T) {
 			sample += d.GetHash()
 			sample += ", "
 		}
-		log.Printf("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
+		log.Infof("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
 	}
 
 	// None of the files "used" just before adding more should have been
@@ -1551,6 +1442,14 @@ func TestLRU(t *testing.T) {
 	require.Greater(t, len(evictionsByQuartile[3]), 0)
 }
 
+func TestLRU(t *testing.T) {
+	testLRU(t, false /*=testACEviction*/)
+}
+
+func TestLRUWithACEviction(t *testing.T) {
+	testLRU(t, true /*=testACEviction*/)
+}
+
 func TestStartupScan(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
@@ -1563,20 +1462,15 @@ func TestStartupScan(t *testing.T) {
 		t.Fatal(err)
 	}
 	pc.Start()
-	digests := make([]*repb.Digest, 0)
+	resources := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 1000; i++ {
 		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_AC,
-			InstanceName: remoteInstanceName,
-		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, remoteInstanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
-		digests = append(digests, d)
+		resources = append(resources, r)
 	}
-	log.Printf("Wrote %d digests", len(digests))
+	log.Printf("Wrote %d digests", len(resources))
 
 	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
@@ -1587,19 +1481,14 @@ func TestStartupScan(t *testing.T) {
 
 	pc2.Start()
 	defer pc2.Stop()
-	for i, d := range digests {
-		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-		rbuf, err := pc2.Get(ctx, &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_AC,
-			InstanceName: remoteInstanceName,
-		})
+	for _, r := range resources {
+		rbuf, err := pc2.Get(ctx, r)
 		require.NoError(t, err)
 
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		if r.GetDigest().GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
 	}
 }
@@ -1628,26 +1517,16 @@ func TestDeleteOrphans(t *testing.T) {
 	}
 	digests := make(map[string]*digestAndType, 0)
 	for i := 0; i < 1000; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: "remoteInstanceName",
-		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
-		digests[d.GetHash()] = &digestAndType{rspb.CacheType_CAS, d}
+		digests[r.GetDigest().GetHash()] = &digestAndType{rspb.CacheType_CAS, r.GetDigest()}
 	}
 	for i := 0; i < 1000; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_AC,
-			InstanceName: "remoteInstanceName",
-		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_AC, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
-		digests[d.GetHash()] = &digestAndType{rspb.CacheType_AC, d}
+		digests[r.GetDigest().GetHash()] = &digestAndType{rspb.CacheType_AC, r.GetDigest()}
 	}
 
 	log.Printf("Wrote %d digests", len(digests))
@@ -1706,11 +1585,8 @@ func TestDeleteOrphans(t *testing.T) {
 
 	// Check that all of the deleted digests are not in the cache.
 	for _, dt := range deletedDigests {
-		_, err := pc2.Get(ctx, &rspb.ResourceName{
-			Digest:       dt.digest,
-			CacheType:    dt.cacheType,
-			InstanceName: "remoteInstanceName",
-		})
+		rn := digest.NewResourceName(dt.digest, "remoteInstanceName", dt.cacheType, repb.DigestFunction_SHA256).ToProto()
+		_, err := pc2.Get(ctx, rn)
 		require.True(t, status.IsNotFoundError(err), "digest %q should not be in the cache", dt.digest.GetHash())
 	}
 
@@ -1730,11 +1606,8 @@ func TestDeleteOrphans(t *testing.T) {
 
 	// Check that all of the non-deleted items are still fetchable.
 	for _, dt := range digests {
-		_, err = pc2.Get(ctx, &rspb.ResourceName{
-			Digest:       dt.digest,
-			CacheType:    dt.cacheType,
-			InstanceName: "remoteInstanceName",
-		})
+		rn := digest.NewResourceName(dt.digest, "remoteInstanceName", dt.cacheType, repb.DigestFunction_SHA256).ToProto()
+		_, err = pc2.Get(ctx, rn)
 		require.NoError(t, err)
 	}
 
@@ -1760,12 +1633,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	pc.Start()
 	resources := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 1000; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		r := &rspb.ResourceName{
-			Digest:       d,
-			CacheType:    rspb.CacheType_CAS,
-			InstanceName: "remoteInstanceName",
-		}
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		resources = append(resources, r)
@@ -1812,15 +1680,10 @@ func TestMigrateVersions(t *testing.T) {
 		pc.Start()
 		for i := 0; i < 1000; i++ {
 			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-			d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-			r := &rspb.ResourceName{
-				Digest:       d,
-				CacheType:    rspb.CacheType_CAS,
-				InstanceName: remoteInstanceName,
-			}
+			r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, remoteInstanceName)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
-			digests = append(digests, d)
+			digests = append(digests, r.GetDigest())
 		}
 		log.Printf("Wrote %d digests", len(digests))
 		time.Sleep(pebble_cache.JanitorCheckPeriod)
@@ -1851,11 +1714,7 @@ func TestMigrateVersions(t *testing.T) {
 			j += 1
 
 			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-			resourceName := &rspb.ResourceName{
-				Digest:       d,
-				CacheType:    rspb.CacheType_CAS,
-				InstanceName: remoteInstanceName,
-			}
+			resourceName := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 
 			exists, err := pc2.Contains(ctx, resourceName)
 			require.NoError(t, err)
@@ -1894,7 +1753,7 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 
 	masterAEAD, err := kmsClient.FetchMasterKey()
 	require.NoError(t, err)
-	encMasterKeyPart, err := masterAEAD.Encrypt(masterKeyPart, nil)
+	encMasterKeyPart, err := masterAEAD.Encrypt(masterKeyPart, []byte(groupID))
 	require.NoError(t, err)
 
 	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
@@ -1921,7 +1780,6 @@ func getCrypterEnv(t *testing.T) (*testenv.TestEnv, string) {
 	kmsDir := testfs.MakeTempDir(t)
 	masterKeyURI := generateKMSKey(t, kmsDir, "masterKey")
 
-	flags.Set(t, "database.enable_encryption_schema", true)
 	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
 	flags.Set(t, "keystore.master_key_uri", masterKeyURI)
 	env := testenv.GetTestEnv(t)
@@ -1947,30 +1805,12 @@ func TestEncryption(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
-	// Customer has encryption enabled but partition does not support encryption.
-	{
-		opts := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
-		pc, err := pebble_cache.NewPebbleCache(te, opts)
-		require.NoError(t, err)
-		err = pc.Start()
-		require.NoError(t, err)
-
-		ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
-		require.NoError(t, err)
-		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-		err = pc.Set(ctx, rn, buf)
-		require.ErrorContains(t, err, "partition that doesn't support encryption")
-
-		err = pc.Stop()
-		require.NoError(t, err)
-	}
-
 	// Customer has encryption enabled, but no keys are available.
 	{
 		opts := &pebble_cache.Options{
 			RootDirectory: rootDir,
 			Partitions: []disk.Partition{{
-				ID: pebble_cache.DefaultPartitionID, EncryptionSupported: true, MaxSizeBytes: maxSizeBytes,
+				ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 			}},
 		}
 		pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2026,6 +1866,71 @@ func TestEncryption(t *testing.T) {
 	}
 }
 
+// The same digest encrypted/unencrypted should be able to co-exist in the
+// cache.
+func TestEncryptedUnencryptedSameDigest(t *testing.T) {
+	flags.Set(t, "cache.pebble.active_key_version", 3)
+
+	te, kmsDir := getCrypterEnv(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{userID: user}
+	auther := testauth.NewTestAuthenticator(users)
+	te.SetAuthenticator(auther)
+
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	ctx := context.Background()
+
+	groupKeyID := "EK456"
+	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+	err := te.GetDBHandle().DB(ctx).Create(key).Error
+	require.NoError(t, err)
+	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	require.NoError(t, err)
+
+	opts := &pebble_cache.Options{
+		RootDirectory: rootDir,
+		Partitions: []disk.Partition{{
+			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
+		}},
+		MaxInlineFileSizeBytes: 1,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	userCtx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+	anonCtx := getAnonContext(t, te)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = pc.Set(anonCtx, rn, buf)
+	require.NoError(t, err)
+	err = pc.Set(userCtx, rn, buf)
+	require.NoError(t, err)
+
+	readBuf, err := pc.Get(userCtx, rn)
+	require.NoError(t, err)
+	if !bytes.Equal(buf, readBuf) {
+		require.FailNow(t, "original text and decrypted text didn't match")
+	}
+
+	readBuf, err = pc.Get(anonCtx, rn)
+	require.NoError(t, err)
+	if !bytes.Equal(buf, readBuf) {
+		require.FailNow(t, "original text and read text didn't match")
+	}
+
+	err = pc.Stop()
+	require.NoError(t, err)
+}
+
 func TestEncryptionAndCompression(t *testing.T) {
 	te, kmsDir := getCrypterEnv(t)
 
@@ -2053,7 +1958,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 	opts := &pebble_cache.Options{
 		RootDirectory: rootDir,
 		Partitions: []disk.Partition{{
-			ID: pebble_cache.DefaultPartitionID, EncryptionSupported: true, MaxSizeBytes: maxSizeBytes,
+			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 		}},
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2069,8 +1974,9 @@ func TestEncryptionAndCompression(t *testing.T) {
 	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	compressedRN := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS, Compressor: repb.Compressor_ZSTD}
-	decompressedRN := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS, Compressor: repb.Compressor_IDENTITY}
+	decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
+	compressedRN.Compressor = repb.Compressor_ZSTD
 
 	testCases := []struct {
 		name             string
@@ -2170,14 +2076,10 @@ func BenchmarkGetMulti(b *testing.B) {
 
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r, buf := testdigest.RandomCASResourceBuf(b, 1000)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
-			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 	}
 
@@ -2223,14 +2125,10 @@ func BenchmarkFindMissing(b *testing.B) {
 
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r, buf := testdigest.RandomCASResourceBuf(b, 1000)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
-			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 	}
 
@@ -2276,14 +2174,10 @@ func BenchmarkContains1(b *testing.B) {
 
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
+		r, buf := testdigest.RandomCASResourceBuf(b, 1000)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
-			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 	}
 
@@ -2319,17 +2213,12 @@ func BenchmarkSet(b *testing.B) {
 	b.ReportAllocs()
 	b.StopTimer()
 	for n := 0; n < b.N; n++ {
-		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
-		r := &rspb.ResourceName{
-			Digest:    d,
-			CacheType: rspb.CacheType_CAS,
-		}
-
+		r, buf := testdigest.RandomCASResourceBuf(b, 1000)
 		b.StartTimer()
 		err := pc.Set(ctx, r, buf)
 		b.StopTimer()
 		if err != nil {
-			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 	}
 }
@@ -2396,4 +2285,103 @@ func TestSupportsEncryption(t *testing.T) {
 	// Second user should be able to use encryption.
 	ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), apiKey2)
 	require.True(t, pc.SupportsEncryption(ctx))
+}
+
+func TestSampling(t *testing.T) {
+	flags.Set(t, "cache.pebble.active_key_version", 3)
+
+	te, kmsDir := getCrypterEnv(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	groupKeyID := "EK123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{userID: user}
+	auther := testauth.NewTestAuthenticator(users)
+	te.SetAuthenticator(auther)
+
+	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+
+	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+	err = te.GetDBHandle().DB(ctx).Create(key).Error
+	require.NoError(t, err)
+	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	require.NoError(t, err)
+
+	rootDir := testfs.MakeTempDir(t)
+	minEvictionAge := 1 * time.Hour
+	clock := clockwork.NewFakeClock()
+
+	opts := &pebble_cache.Options{
+		RootDirectory: rootDir,
+		Partitions: []disk.Partition{{
+			ID: pebble_cache.DefaultPartitionID,
+			// Force all entries to be evicted as soon as they pass the minimum
+			// eviction age.
+			MaxSizeBytes: 2,
+		}},
+		MinEvictionAge: &minEvictionAge,
+		Clock:          clock,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	anonCtx := getAnonContext(t, te)
+	err = pc.Set(anonCtx, rn, buf)
+	require.NoError(t, err)
+
+	// Advance time (to force newer atime) and write the same digest
+	// encrypted. The encrypted key should have the same digest prefix as the
+	// unencrypted key and come before the unencrypted key in lexicographical f
+	// order.
+	clock.Advance(5 * time.Minute)
+	err = pc.Set(ctx, rn, buf)
+	require.NoError(t, err)
+
+	// Write some random digests as well.
+	var randomResources []*rspb.ResourceName
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		anonCtx := getAnonContext(t, te)
+		err = pc.Set(anonCtx, rn, buf)
+		require.NoError(t, err)
+		randomResources = append(randomResources, rn)
+	}
+
+	// Now advance the clock past the min eviction age to allow eviction to
+	// kick in. The unencrypted test digest should be evicted.
+	clock.Advance(minEvictionAge - 1*time.Minute)
+
+	for i := 0; i < 5; i++ {
+		if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// The unencrypted key should no longer exist.
+	unencryptedExists, err := pc.Contains(anonCtx, rn)
+	require.NoError(t, err)
+	require.False(t, unencryptedExists)
+
+	// The encrypted key should still exist.
+	encryptedExists, err := pc.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, encryptedExists)
+
+	// The other random digests should also exist.
+	for _, rr := range randomResources {
+		exists, err := pc.Contains(anonCtx, rr)
+		require.NoError(t, err)
+		require.True(t, exists)
+	}
+
+	err = pc.Stop()
+	require.NoError(t, err)
 }

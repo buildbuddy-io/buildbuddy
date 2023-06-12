@@ -216,13 +216,25 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 
 ## Custom Links
 
-You can add custom links to the BuildBuddy overview page using the `BUILDBUDDY_LINKS` build metadata flag. These links must be comma separated, and in the form [link text](https://linkurl.com). Urls must begin with either `http://` or `https://`.
+You can add custom links to the BuildBuddy overview page using the `BUILDBUDDY_LINKS` build metadata flag. These links must be comma separated, and in the form `[link text](https://linkurl.com)`. Urls must begin with either `http://` or `https://`.
 
 Example:
 
 ```
 --build_metadata=BUILDBUDDY_LINKS="[Search Github](https://github.com/search),[GCP Dashboard](https://console.cloud.google.com/home/dashboard)"
 ```
+
+## Tags
+
+You can add multiple free-text tags to a build by passing a comma-separated string to the `TAGS` build metadata flag.
+
+Example:
+
+```
+--build_metadata=TAGS="foo,bar,baz"
+```
+
+You can filter by these tags on build history pages and the trends page. Note that when filtering by tags, you will not see in-progress and disconnected builds.
 
 ## Environment variable redacting
 

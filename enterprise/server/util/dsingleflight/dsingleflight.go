@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
@@ -54,7 +55,7 @@ type result struct {
 	err  error
 }
 
-type Work func() ([]byte, error)
+type Work = func() ([]byte, error)
 
 func redisLockKey(workKey string) string {
 	return fmt.Sprintf("singleflightLock/{%s}", workKey)
@@ -214,4 +215,12 @@ func (c *Coordinator) DoProto(ctx context.Context, key string, work func() (prot
 		return err
 	}
 	return proto.Unmarshal(bs, out)
+}
+
+func Register(env environment.Env) error {
+	redisClient := env.GetDefaultRedisClient()
+	if redisClient != nil {
+		env.SetSingleFlightDeduper(New(redisClient))
+	}
+	return nil
 }

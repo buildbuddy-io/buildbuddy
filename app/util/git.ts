@@ -25,3 +25,30 @@ export function normalizeRepoURL(url: string): string {
   url = url.replace(/^https?:\/\/(.*?)@/, "");
   return url;
 }
+
+/** RepoURL represents a structured git repo URL. */
+export class RepoURL {
+  constructor(public host: string, public owner: string, public repo: string) {}
+
+  static parse(url: string): RepoURL | undefined {
+    try {
+      const parsed = new URL(normalizeRepoURL(url));
+      const [_empty, owner, repo, ..._ignoreRest] = parsed.pathname.split("/");
+      if (!owner || !repo) {
+        throw new Error("missing /owner/repo in path");
+      }
+      return new RepoURL(parsed.host, owner, repo);
+    } catch (e) {
+      return undefined;
+    }
+  }
+
+  pullRequestLink(pullRequestNumber: number): string {
+    return `${this.toString()}/pull/${pullRequestNumber}`;
+  }
+
+  /** toString returns the normalized repo URL. */
+  toString(): string {
+    return `https://${this.host}/${this.owner}/${this.repo}`;
+  }
+}

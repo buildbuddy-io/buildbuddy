@@ -13,6 +13,7 @@
     "composite": true,
     "target": "ES2016",
     "lib": ["es2017", "es2019", "es2021", "dom", "dom.iterable"],
+    "strict": true,
     "rootDirs": [
       ".",
       "bazel-bin",

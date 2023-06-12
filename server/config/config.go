@@ -1,7 +1,6 @@
 package config
 
 import (
-	"flag"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,15 +11,9 @@ import (
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
-const pathFlagName = "config_file"
-
-var configPath = flag.String(pathFlagName, "/config.yaml", "The path to a buildbuddy config file")
-
-func init() {
-	// As this flag determines the YAML file we read the config from, it can't
-	// meaningfully be specified in the YAML config file.
-	flagyaml.IgnoreFlagForYAML(pathFlagName)
-}
+// As this flag determines the YAML file we read the config from, it can't
+// meaningfully be specified in the YAML config file.
+var configPath = flagutil.New("config_file", "/config.yaml", "The path to a buildbuddy config file", flagutil.YAMLIgnoreTag)
 
 func Path() string {
 	return *configPath
@@ -28,7 +21,6 @@ func Path() string {
 
 // Load parses the flags and loads the config file specified by config.Path().
 func Load() error {
-	flag.Parse()
 	return flagyaml.PopulateFlagsFromFile(Path())
 }
 

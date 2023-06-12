@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
@@ -23,7 +24,7 @@ import (
 
 var (
 	enabled            = flag.Bool("integrations.invocation_upload.enabled", false, "Whether to upload webhook data to the webhook URL configured per-Group. ** Enterprise only **")
-	gcsCredentialsJSON = flag.String("integrations.invocation_upload.gcs_credentials", "", "Credentials JSON for the Google service account used to authenticate when GCS is used as the invocation upload target. ** Enterprise only **")
+	gcsCredentialsJSON = flagutil.New("integrations.invocation_upload.gcs_credentials", "", "Credentials JSON for the Google service account used to authenticate when GCS is used as the invocation upload target. ** Enterprise only **", flagutil.SecretTag)
 )
 
 const (
@@ -59,7 +60,7 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 	row := &struct{ InvocationWebhookURL string }{}
 	err := dbh.RawWithOptions(
 		ctx, db.Opts().WithStaleReads(),
-		"SELECT invocation_webhook_url FROM `Groups` WHERE group_id = ?",
+		`SELECT invocation_webhook_url FROM "Groups" WHERE group_id = ?`,
 		groupID,
 	).Take(row).Error
 	if err != nil {

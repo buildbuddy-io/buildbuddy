@@ -75,9 +75,9 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
       return <></>;
     }
 
-    const invocation = this.props.model.invocations.find(
-      (invocation) => invocation.invocationId === this.props.invocationId
-    );
+    const invocation = this.props.model
+      .getInvocations()
+      .find((invocation) => invocation.invocationId === this.props.invocationId);
     const hasWritePermissions = this.props.user && invocation && canWrite(this.props.user, invocation);
 
     return (
@@ -134,10 +134,13 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
 
 function canWrite(user: User, invocation: invocation.Invocation) {
   const acl = invocation.acl;
-  if (acl.ownerPermissions.write && acl.userId.id === user.displayUser.userId.id) {
+  if (!acl) {
+    return false;
+  }
+  if (acl.ownerPermissions?.write && acl.userId && acl.userId.id === user.displayUser.userId?.id) {
     return true;
   }
-  if (acl.groupPermissions.write) {
+  if (acl.groupPermissions?.write) {
     return user.groups.some((group) => group.id === acl.groupId);
   }
   return false;

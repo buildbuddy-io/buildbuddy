@@ -6,9 +6,9 @@ go_library(
     name = "githubapp",
     srcs = ["githubapp.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/webhooks/github",
+        "//enterprise/server/webhooks/webhook_data",
         "//proto:github_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/github",
@@ -16,6 +16,7 @@ go_library(
         "//server/tables",
         "//server/util/authutil",
         "//server/util/db",
+        "//server/util/flagutil",
         "//server/util/git",
         "//server/util/log",
         "//server/util/perms",

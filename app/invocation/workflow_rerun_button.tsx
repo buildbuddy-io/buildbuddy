@@ -18,21 +18,26 @@ import rpcService, { CancelablePromise } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Spinner from "../components/spinner/spinner";
 import { ChevronDown, RefreshCw } from "lucide-react";
+import Long from "long";
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
 }
 
 type State = {
-  isMenuOpen?: boolean;
-  isDialogOpen?: boolean;
-  isLoading?: boolean;
+  isMenuOpen: boolean;
+  isDialogOpen: boolean;
+  isLoading: boolean;
 };
 
 export default class WorkflowRerunButton extends React.Component<WorkflowRerunButtonProps, State> {
-  state: State = {};
+  state: State = {
+    isMenuOpen: false,
+    isDialogOpen: false,
+    isLoading: false,
+  };
 
-  private inFlightRpc: CancelablePromise;
+  private inFlightRpc?: CancelablePromise;
 
   private onOpenMenu() {
     this.setState({ isMenuOpen: true });
@@ -49,6 +54,11 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
   }
 
   private onClickRerun(clean: boolean) {
+    // Buttons isn't clickable in this case; just making strict TS happy.
+    if (!this.props.model.workflowConfigured) {
+      return;
+    }
+
     this.inFlightRpc?.cancel();
 
     this.setState({ isMenuOpen: false, isDialogOpen: false, isLoading: true });
@@ -59,7 +69,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
           workflowId: configuredEvent.workflowId,
-          actionName: configuredEvent.actionName,
+          actionNames: [configuredEvent.actionName],
           pushedRepoUrl: configuredEvent.pushedRepoUrl,
           pushedBranch: configuredEvent.pushedBranch,
           commitSha: configuredEvent.commitSha,
@@ -67,9 +77,30 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           targetBranch: configuredEvent.targetBranch,
           clean,
           visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
+          pullRequestNumber: Long.fromString(this.props.model.buildMetadataMap.get("PULL_REQUEST_NUMBER") || "0"),
         })
       )
-      .then((response) => router.navigateTo(`/invocation/${response.invocationId}`))
+      .then((response) => {
+        let invocationId = "";
+        let errorMsg = `Failed to execute action ${configuredEvent.actionName}.`;
+
+        response.actionStatuses.forEach(function (actionStatus, _) {
+          if (actionStatus.actionName == configuredEvent.actionName) {
+            if ((actionStatus.status?.code || 0) !== 0 /*OK*/) {
+              errorMsg = actionStatus.status?.message || errorMsg;
+            } else {
+              invocationId = actionStatus.invocationId;
+            }
+            return;
+          }
+        });
+
+        if (invocationId !== "") {
+          router.navigateTo(`/invocation/${invocationId}`);
+        } else {
+          errorService.handleError(errorMsg);
+        }
+      })
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ isLoading: false }));
   }

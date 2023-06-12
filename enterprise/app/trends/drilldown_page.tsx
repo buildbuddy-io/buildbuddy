@@ -6,6 +6,7 @@ import { X, ZoomIn } from "lucide-react";
 import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import HistoryInvocationCardComponent from "../../app/history/history_invocation_card";
@@ -38,20 +39,13 @@ function encodeMetricUrlParam(metric: stat_filter.Metric): string {
 }
 
 function decodeMetricUrlParam(param: string): MetricOption | undefined {
-  let decoded;
   if (param.length < 2) {
     return undefined;
   } else if (param[0] === "e") {
     const metric = Number.parseInt(param.substring(1));
-    if (!metric || !stat_filter.ExecutionMetricType[metric]) {
-      return undefined;
-    }
     return METRIC_OPTIONS.find((v) => metric === v.metric.execution) || undefined;
   } else if (param[0] === "i") {
     const metric = Number.parseInt(param.substring(1));
-    if (!metric || !stat_filter.InvocationMetricType[metric]) {
-      return undefined;
-    }
     return METRIC_OPTIONS.find((v) => metric === v.metric.invocation) || undefined;
   } else {
     return undefined;
@@ -292,6 +286,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
+      tags: filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -328,6 +323,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         commitSha: filterParams.commit,
         command: filterParams.command,
         pattern: filterParams.pattern,
+        tags: filterParams.tags,
         role: filterParams.role || [],
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
@@ -370,6 +366,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         commitSha: filterParams.commit,
         command: filterParams.command,
         pattern: filterParams.pattern,
+        tags: filterParams.tags,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
         groupId: groupId,
@@ -408,7 +405,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   fetch() {
     const filterParams = getProtoFilterParams(this.props.search);
-    this.setState({ loading: true, heatmapData: undefined, drilldownData: undefined, eventData: undefined });
+    this.setState({
+      loading: true,
+      heatmapData: undefined,
+      drilldownData: undefined,
+      eventData: undefined,
+    });
 
     // Build request...
     const heatmapRequest = stats.GetStatHeatmapRequest.create({});
@@ -423,6 +425,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       commitSha: filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
+      tags: filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -521,13 +524,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       );
     }
     if (!query.updatedBefore) {
-      query.updatedBefore = usecToTimestamp(Date.now() * 1000);
+      // Always explicitly set "now" to the start of the next day so that the
+      // length of the last bucket doesn't change on page refresh.  This
+      // prevents weird issues with selections breaking when refreshing.
+      query.updatedBefore = usecToTimestamp(moment().add(1, "day").startOf("day").unix() * 1e6);
     }
-    query.updatedBefore = usecToTimestamp(
-      moment(+query.updatedBefore.seconds * 1000)
-        .endOf("day")
-        .unix() * 1e6
-    );
 
     if (!this.currentZoomFilters) {
       return;
@@ -582,6 +583,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           this.navigateForBarClick("pattern", e.activeLabel);
         }
         return;
+      case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
+        if (capabilities.config.tagsUiEnabled) {
+          this.navigateForBarClick("tag", e.activeLabel);
+        }
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
@@ -605,6 +611,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "branch_name";
       case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         return "pattern";
+      case stats.DrilldownType.TAG_DRILLDOWN_TYPE:
+        return "tag";
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
         return "worker (execution)";
       default:
@@ -746,6 +754,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     );
   }
 
+  shouldShowDrilldownChart(type: stats.DrilldownType, numEntries: number) {
+    if (type == stats.DrilldownType.TAG_DRILLDOWN_TYPE) {
+      return capabilities.config.tagsUiEnabled && numEntries > 0;
+    } else {
+      return numEntries > 1;
+    }
+  }
+
   render() {
     return (
       <div className="trend-chart">
@@ -799,7 +815,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                       <div className="container nopadding-dense">
                         {this.state.drilldownData.chart.map(
                           (chart) =>
-                            chart.entry.length > 1 && (
+                            this.shouldShowDrilldownChart(chart.drilldownType, chart.entry.length) && (
                               <div className="drilldown-page-dd-chart">
                                 <div className="drilldown-page-dd-chart-title">
                                   {this.formatDrilldownType(chart.drilldownType)}
@@ -848,7 +864,15 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                     <div className="history">
                       <div className="container nopadding-dense">
                         {this.state.eventData.invocations.map((invocation) => (
-                          <a href={`/invocation/${invocation.invocationId}`} onClick={(e) => e.preventDefault()}>
+                          <a
+                            href={`/invocation/${invocation.invocationId}`}
+                            onClick={(e) => {
+                              // TODO(siggisim): Switch this to using the <Link> component
+                              if (e.metaKey || e.ctrlKey) {
+                                return;
+                              }
+                              e.preventDefault();
+                            }}>
                             <HistoryInvocationCardComponent invocation={invocation} />
                           </a>
                         ))}
@@ -857,7 +881,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   )}
                   {this.state.eventData?.executions && (
                     <InvocationExecutionTable
-                      executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.IExecution)}
+                      executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.Execution)}
                       invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}></InvocationExecutionTable>
                   )}
                 </div>

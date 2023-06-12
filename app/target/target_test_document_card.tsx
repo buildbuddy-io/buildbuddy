@@ -13,14 +13,13 @@ interface Props {
 
 interface State {
   testLog: string;
-  testDocument: XMLDocument;
+  testDocument?: XMLDocument;
   cacheEnabled: boolean;
 }
 
 export default class TargetTestDocumentCardComponent extends React.Component<Props> {
   state: State = {
     testLog: "",
-    testDocument: null,
     cacheEnabled: true,
   };
 
@@ -35,17 +34,17 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
   }
 
   fetchTestXML() {
-    let testXMLUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find(
+    let testXMLUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.xml"
     )?.uri;
 
     if (!testXMLUrl) {
-      this.setState({ testDocument: null });
+      this.setState({ testDocument: undefined });
       return;
     }
 
     if (!testXMLUrl.startsWith("bytestream://")) {
-      this.setState({ testDocument: null, cacheEnabled: false });
+      this.setState({ testDocument: undefined, cacheEnabled: false });
       return;
     }
 
@@ -58,7 +57,7 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
       })
       .catch(() => {
         this.setState({
-          testDocument: null,
+          testDocument: undefined,
           testLog: "Error loading bytestream test.xml!",
         });
       });
@@ -75,13 +74,13 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
             .map((testSuite) => (
               <div>
                 <div className="stat-cards">
-                  {+testSuite.getAttribute("failures") > 0 && (
+                  {+(testSuite.getAttribute("failures") ?? 0) > 0 && (
                     <div className="card card-failure">
                       <div className="stat">{testSuite.getAttribute("failures") || 0}</div>
                       <div className="stat-label">failed</div>
                     </div>
                   )}
-                  {+testSuite.getAttribute("errors") > 0 && (
+                  {+(testSuite.getAttribute("errors") ?? 0) > 0 && (
                     <div className="card card-broken">
                       <div className="stat">{testSuite.getAttribute("errors") || 0}</div>
                       <div className="stat-label">errors</div>
@@ -89,26 +88,28 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
                   )}
                   <div className="card card-success">
                     <div className="stat">
-                      {+testSuite.getAttribute("tests") -
-                        +testSuite.getAttribute("failures") -
-                        +testSuite.getAttribute("errors") -
-                        +testSuite.getAttribute("skipped") || 0}
+                      {+(testSuite.getAttribute("tests") ?? 0) -
+                        +(testSuite.getAttribute("failures") ?? 0) -
+                        +(testSuite.getAttribute("errors") ?? 0) -
+                        +(testSuite.getAttribute("skipped") ?? 0) || 0}
                     </div>
                     <div className="stat-label">passed</div>
                   </div>
-                  {+testSuite.getAttribute("skipped") > 0 && (
+                  {+(testSuite.getAttribute("skipped") ?? 0) > 0 && (
                     <div className="card card-neutral">
                       <div className="stat">{testSuite.getAttribute("skipped") || 0}</div>
                       <div className="stat-label">skipped</div>
                     </div>
                   )}
-                  <div className="card">
-                    <div className="stat">Run {this.props.testResult.buildEvent.id.testResult.run}</div>
-                    <div className="stat-label">
-                      (Attempt {this.props.testResult.buildEvent.id.testResult.attempt}, Shard{" "}
-                      {this.props.testResult.buildEvent.id.testResult.shard})
+                  {this.props.testResult.buildEvent?.id?.testResult && (
+                    <div className="card">
+                      <div className="stat">Run {this.props.testResult.buildEvent.id.testResult.run}</div>
+                      <div className="stat-label">
+                        (Attempt {this.props.testResult.buildEvent.id.testResult.attempt}, Shard{" "}
+                        {this.props.testResult.buildEvent.id.testResult.shard})
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
                 <TargetTestCasesCardComponent
                   testResult={this.props.testResult}
@@ -141,7 +142,7 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
                   )
                   .map((child) => (
                     <TargetLogCardComponent
-                      contents={child.textContent}
+                      contents={child.textContent ?? ""}
                       title={`${testSuite.getAttribute("name")} ${child.tagName}`}
                       dark={this.props.dark}
                     />

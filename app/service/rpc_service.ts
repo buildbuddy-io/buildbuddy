@@ -86,7 +86,7 @@ class RpcService {
     return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId), responseType || "");
   }
 
-  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {
+  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | ""): Promise<string> {
     return new Promise((resolve, reject) => {
       var request = new XMLHttpRequest();
       request.responseType = responseType;

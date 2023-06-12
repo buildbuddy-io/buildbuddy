@@ -9,8 +9,8 @@ import { pinBottomLeftOffsetFromMouse, MouseCoords, Tooltip } from "../../../app
 
 interface HeatmapProps {
   heatmapData: stats.GetStatHeatmapResponse;
-  width: number;
-  height: number;
+  width: number; // Use getWidth()! react-resize-detector lets this be NaN.
+  height: number; // Use getHeight()! react-resize-detector lets this be NaN.
   valueFormatter: (value: number) => string;
   metricBucketName: string;
   metricBucketFormatter: (value: number) => string;
@@ -121,6 +121,14 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
 
   renderYBucketValue(v: number) {
     return this.props.metricBucketFormatter(v);
+  }
+
+  private getHeight(): number {
+    return 275;
+  }
+
+  private getWidth(): number {
+    return Math.max(this.props.width || 0, 400);
   }
 
   private numHeatmapRows(): number {
@@ -391,7 +399,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     const xTickMod = Math.ceil(numColumns / Math.min(numColumns, width / TICK_LABEL_SPACING_MAGIC_NUMBER));
 
     return (
-      <g color="#666" transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom})`}>
+      <g color="#666" transform={`translate(${CHART_MARGINS.left}, ${this.getHeight() - CHART_MARGINS.bottom})`}>
         <line stroke="#666" x1="0" y1="0" x2={width} y2="0"></line>
         {this.xScaleBand.domain().map((v, i) => {
           const tickX = this.xScaleBand.bandwidth() * i;
@@ -421,7 +429,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return (
       <g
         color="#666"
-        transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom - height})`}>
+        transform={`translate(${CHART_MARGINS.left}, ${this.getHeight() - CHART_MARGINS.bottom - height})`}>
         <line stroke="#666" x1="0" y1="0" x2="0" y2={height}></line>
         {this.yScaleBand.domain().map((v, i) => {
           return (
@@ -451,7 +459,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     let zoomLeftEdge = selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.sideMargin;
     let zoomTopEdge = positioningData.y;
 
-    if (selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.width + 2 * ZOOM_BUTTON_ATTRIBUTES.sideMargin > this.props.width) {
+    if (selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.width + 2 * ZOOM_BUTTON_ATTRIBUTES.sideMargin > this.getWidth()) {
       zoomLeftEdge = positioningData.x - ZOOM_BUTTON_ATTRIBUTES.width - ZOOM_BUTTON_ATTRIBUTES.sideMargin;
     }
 
@@ -470,8 +478,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 
   render() {
-    const width = this.props.width - CHART_MARGINS.left - CHART_MARGINS.right;
-    const height = this.props.height - CHART_MARGINS.top - CHART_MARGINS.bottom;
+    const width = this.getWidth() - CHART_MARGINS.left - CHART_MARGINS.right;
+    const height = this.getHeight() - CHART_MARGINS.top - CHART_MARGINS.bottom;
 
     const xDomain = this.props.heatmapData.timestampBracket.slice(0, -1).map((v) => +v);
     const yDomain = this.props.heatmapData.bucketBracket
@@ -505,8 +513,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
               className="heatmap-svg"
               onMouseDown={(e) => this.onMouseDown(e)}
               onMouseMove={(e) => this.onMouseMove(e)}
-              width={this.props.width}
-              height={275}
+              width={this.getWidth()}
+              height={this.getHeight()}
               ref={this.svgRef}>
               <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`}>
                 <rect fill="#f3f3f3" x="0" y="0" width={width} height={height}></rect>

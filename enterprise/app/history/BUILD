@@ -17,6 +17,7 @@ ts_library(
         "//app/components/tooltip",
         "//app/format",
         "//app/router",
+        "//app/router:router_params",
         "//app/service:rpc_service",
         "//app/shortcuts",
         "//enterprise/app/filter",
@@ -40,6 +41,7 @@ ts_library(
     name = "history_invocation_card",
     srcs = ["history_invocation_card.tsx"],
     deps = [
+        "//app/components/link",
         "//app/format",
         "//app/router",
         "//proto:invocation_status_ts_proto",

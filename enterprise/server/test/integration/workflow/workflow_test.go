@@ -93,7 +93,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 			env.SetGitProviders([]interfaces.GitProvider{gp})
 			workflowService = service.NewWorkflowService(env)
 			env.SetWorkflowService(workflowService)
-			iss := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
+			iss := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
 			env.SetInvocationSearchService(iss)
 		},
 	})
@@ -298,9 +298,10 @@ func TestCreateAndExecute(t *testing.T) {
 	execResp, err := bb.ExecuteWorkflow(ctx, execReq)
 
 	require.NoError(t, err)
-	require.NotEmpty(t, execResp.GetInvocationId())
+	require.Equal(t, 1, len(execResp.GetActionStatuses()))
 
-	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, execResp.GetInvocationId(), inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)
+	invocationID := execResp.GetActionStatuses()[0].InvocationId
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, invocationID, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)
 
 	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
 	require.Equal(t, repoURL, inv.GetRepoUrl())
@@ -309,13 +310,12 @@ func TestCreateAndExecute(t *testing.T) {
 	nActionsFirstRun := actionCount(t, inv)
 
 	// Now run the workflow again and make sure the build is cached.
-
 	execResp, err = bb.ExecuteWorkflow(ctx, execReq)
-
 	require.NoError(t, err)
-	require.NotEmpty(t, execResp.GetInvocationId())
+	require.Equal(t, 1, len(execResp.GetActionStatuses()))
 
-	inv = waitForInvocationStatus(t, ctx, bb, reqCtx, execResp.GetInvocationId(), inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)
+	invocationID = execResp.GetActionStatuses()[0].InvocationId
+	inv = waitForInvocationStatus(t, ctx, bb, reqCtx, invocationID, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)
 
 	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
 	nActionsSecondRun := actionCount(t, inv)

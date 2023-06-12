@@ -37,20 +37,20 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
   }
 
   handleFilterChange(event: any) {
-    this.setState({ ...this.state, filterString: event.target.value });
+    this.setState({ filterString: event.target.value });
   }
 
   handleDownloadClicked() {
-    const json = JSON.stringify(this.props.model.invocations[0]?.event, null, 2);
+    const json = JSON.stringify(this.props.model.getPrimaryInvocation().event, null, 2);
     const uri = "data:application/json;base64," + window.btoa(json);
     const link = document.createElement("a");
     link.href = uri;
-    link.download = `${this.props.model.invocations[0]?.invocationId}_raw.json`;
+    link.download = `${this.props.model.getPrimaryInvocation().invocationId}_raw.json`;
     link.click();
   }
 
   render() {
-    let filteredEvents = this.props.model.invocations.flatMap((invocation) =>
+    let filteredEvents = this.props.model.getInvocations().flatMap((invocation: invocation.Invocation) =>
       invocation.event
         .map((event) => {
           let json = JSON.stringify((event.buildEvent as any).toJSON(), null, 4);
@@ -89,7 +89,7 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
                       <div className="raw-event">
                         <div className="raw-event-title" onClick={this.handleEventClicked.bind(this, event.event)}>
                           [{expanded ? "-" : "+"}] Build event {event.event.sequenceNumber} -{" "}
-                          {Object.keys(event.event.buildEvent)
+                          {Object.keys(event.event.buildEvent ?? {})
                             .filter((key) => key != "id" && key != "children")
                             .join(", ")}
                         </div>

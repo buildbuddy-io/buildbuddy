@@ -61,6 +61,7 @@ import (
 
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
 var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
+var firecrackerDebugMode = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 
 const (
@@ -282,7 +283,8 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 type FirecrackerContainer struct {
 	id          string // a random GUID, unique per-run of firecracker
 	vmIdx       int    // the index of this vm on the host machine
-	snapshotKey *repb.Digest
+	loader      snaploader.Loader
+	snapshotKey *fcpb.SnapshotKey
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -296,6 +298,9 @@ type FirecrackerContainer struct {
 
 	// Whether networking has been set up (and needs to be cleaned up).
 	isNetworkSetup bool
+
+	// Whether the VM was recycled.
+	recycled bool
 
 	// dockerClient is used to optimize image pulls by reusing image layers from
 	// the Docker cache as well as deduping multiple requests for the same image.
@@ -326,7 +331,7 @@ type FirecrackerContainer struct {
 	cancelVmCtx context.CancelFunc
 }
 
-func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
 	vmLog, err := NewVMLog(vmLogTailBufSize)
 	if err != nil {
 		return nil, err
@@ -354,6 +359,10 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	if err := copyStaticFiles(context.Background(), env, opts.JailerRoot); err != nil {
 		return nil, err
 	}
+	loader, err := snaploader.New(env)
+	if err != nil {
+		return nil, err
+	}
 
 	c := &FirecrackerContainer{
 		vmConfig:           opts.VMConfiguration,
@@ -363,6 +372,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
+		loader:             loader,
 		vmLog:              vmLog,
 		imageCacheAuth:     imageCacheAuth,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
@@ -381,7 +391,10 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		if err != nil {
 			return nil, err
 		}
-		c.snapshotKey = snaploader.NewKey(cd.GetHash(), c.id)
+		c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), c.id)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		// vmConfig will be loaded from the snapshot when needed.
 		if opts.VMConfiguration != nil {
@@ -489,22 +502,21 @@ func (c *FirecrackerContainer) State() (*rnpb.ContainerState, error) {
 }
 
 func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, error) {
-	loader, err := snaploader.New(c.env)
-	if err != nil {
-		return "", err
-	}
 	baseDir := filepath.Join(c.getChroot(), "base")
 	if err := disk.EnsureDirectoryExists(baseDir); err != nil {
 		return "", err
 	}
-	if err := loader.UnpackSnapshot(ctx, c.snapshotKey, baseDir); err != nil {
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
+	if err != nil {
 		return "", err
 	}
-
+	if err := c.loader.UnpackSnapshot(ctx, snap, baseDir); err != nil {
+		return "", err
+	}
 	// The base snapshot is no longer useful since we're merging on top
 	// of it and replacing the paused VM snapshot with the new merged
 	// snapshot. Delete it to prevent unnecessary filecache evictions.
-	if err := loader.DeleteSnapshot(ctx, c.snapshotKey); err != nil {
+	if err := c.loader.DeleteSnapshot(ctx, snap); err != nil {
 		log.Warningf("Failed to delete snapshot: %s", err)
 	}
 
@@ -592,7 +604,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
-	opts := &snaploader.LoadSnapshotOptions{
+	opts := &snaploader.CacheSnapshotOptions{
 		VMConfiguration:     c.vmConfig,
 		MemSnapshotPath:     memSnapshotPath,
 		VMStateSnapshotPath: vmStateSnapshotPath,
@@ -604,11 +616,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	}
 
 	snaploaderStart := time.Now()
-	loader, err := snaploader.New(c.env)
-	if err != nil {
-		return err
-	}
-	if err := loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
+	if _, err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
 		return err
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
@@ -624,7 +632,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "LoadSnapshot %s took %s", c.snapshotKey.GetHash(), time.Since(start))
+		log.CtxDebugf(ctx, "LoadSnapshot took %s", time.Since(start))
 	}()
 
 	c.rmOnce = &sync.Once{}
@@ -633,16 +641,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	if err := c.newID(ctx); err != nil {
 		return err
 	}
-
-	loader, err := snaploader.New(c.env)
-	if err != nil {
-		return err
-	}
-	vmCfg, err := loader.GetConfiguration(ctx, c.snapshotKey)
-	if err != nil {
-		return err
-	}
-	c.vmConfig = vmCfg
 
 	var netNS string
 	if c.vmConfig.EnableNetworking {
@@ -712,7 +710,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	if err := loader.UnpackSnapshot(ctx, c.snapshotKey, c.getChroot()); err != nil {
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
+	if err != nil {
+		return status.WrapError(err, "failed to get snapshot")
+	}
+	if err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot()); err != nil {
 		return err
 	}
 
@@ -1451,6 +1453,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		if err := c.parseOOMError(); err != nil {
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}
+		if err := c.parseSegFault(result); err != nil {
+			log.CtxWarningf(ctx, "Segfault occurred during task execution (recycled=%v) : %s", c.recycled, err)
+		}
 	}()
 
 	execDone := make(chan struct{})
@@ -1629,6 +1634,8 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 		log.CtxDebugf(ctx, "Unpause took %s", time.Since(start))
 	}()
 
+	c.recycled = true
+
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/)
 }
@@ -1708,6 +1715,17 @@ func (c *FirecrackerContainer) parseOOMError() error {
 		}
 	}
 	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines)
+}
+
+// parseSegFault looks for segfaults in the kernel logs and returns an error if found.
+func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult) error {
+	if !strings.Contains(string(cmdResult.Stderr), "SIGSEGV") {
+		return nil
+	}
+	tail := string(c.vmLog.Tail())
+	// Logs contain "\r\n"; convert these to universal line endings.
+	tail = strings.ReplaceAll(tail, "\r\n", "\n")
+	return status.InternalErrorf("process hit a segfault:\n%s", tail)
 }
 
 // VMLog retains the tail of the VM log.

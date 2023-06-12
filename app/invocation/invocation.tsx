@@ -44,7 +44,7 @@ interface State {
   inProgress: boolean;
   error: BuildBuddyError | null;
 
-  model: InvocationModel;
+  model?: InvocationModel;
 
   keyboardShortcutHandle: string;
 }
@@ -52,7 +52,7 @@ interface State {
 interface Props {
   user?: User;
   invocationId: string;
-  hash: string;
+  tab: string;
   search: URLSearchParams;
   preferences: UserPreferences;
 }
@@ -65,14 +65,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
     loading: true,
     inProgress: false,
     error: null,
-
-    model: new InvocationModel(),
-
     keyboardShortcutHandle: "",
   };
 
-  private timeoutRef: number;
-  private logsModel: InvocationLogsModel;
+  private timeoutRef: number = 0;
+  private logsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
 
@@ -89,7 +86,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
       next: () => this.forceUpdate(),
     });
     this.logsModel.startFetching();
+  }
 
+  componentDidMount() {
     let handle = shortcuts.register(KeyCombo.u, () => {
       // Used to select the correct invocation on the history page so that
       // selecting an invocation with 'enter' and then going back with 'u' ends
@@ -104,10 +103,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // Update model subscription
     if (this.state.model !== prevState.model) {
       this.modelChangedSubscription?.unsubscribe();
-      this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
+      if (this.state.model) {
+        this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
+      }
     }
     // Update title and favicon
-    if (this.state.model.invocations?.length) {
+    if (this.state.model) {
       document.title = `${this.state.model.getUser(
         true
       )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
@@ -134,9 +135,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {
         console.log(response);
-        const model = InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]);
+        if (!response.invocation || response.invocation.length === 0) {
+          throw new BuildBuddyError("NotFound", "Invocation not found.");
+        }
+        const model = InvocationModel.modelFromInvocations(response.invocation[0], response.invocation.slice(1));
         // Only show the in-progress screen if we don't have any events yet.
-        const showInProgressScreen = model.isInProgress() && !response.invocation[0]?.event?.length;
+        const showInProgressScreen = model.isInProgress() && !response.invocation[0].event?.length;
         this.setState({
           inProgress: showInProgressScreen,
           model: model,
@@ -157,20 +161,20 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }, 3000);
   }
 
-  getBuildLogs() {
-    if (!this.state.model.hasChunkedEventLogs()) {
+  getBuildLogs(model: InvocationModel): string {
+    if (!model.hasChunkedEventLogs()) {
       // Use the inlined console buffer if this invocation was created before
       // log chunking existed.
-      return this.state.model.invocations[0]?.consoleBuffer;
+      return model.getPrimaryInvocation().consoleBuffer;
     }
-    return this.logsModel.getLogs();
+    return this.logsModel?.getLogs() ?? "";
   }
 
-  areBuildLogsLoading() {
-    if (!this.state.model.hasChunkedEventLogs()) {
+  areBuildLogsLoading(model: InvocationModel) {
+    if (!model.hasChunkedEventLogs()) {
       return false;
     }
-    return this.logsModel.isFetching() && !this.logsModel.getLogs();
+    return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
   }
 
   render() {
@@ -178,7 +182,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       return <div className="loading"></div>;
     }
 
-    if (this.state.error) {
+    if (this.state.error || !this.state.model) {
       return (
         <InvocationNotFoundComponent
           invocationId={this.props.invocationId}
@@ -195,16 +199,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
     let targetLabel = this.props.search.get("target");
     if (targetLabel) {
       let completed = this.state.model.completedMap.get(targetLabel);
-      let actionEvents =
-        completed?.buildEvent.children
+      let actionEvents: invocation.InvocationEvent[] =
+        completed?.buildEvent?.children
           .flatMap((child) =>
-            this.state.model.actionMap
-              .get(child?.actionCompleted?.label)
-              ?.filter(
-                (event) =>
-                  event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
-                  event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
-              )
+            (this.state.model!.actionMap.get(child?.actionCompleted?.label ?? "") ?? []).filter(
+              (event) =>
+                event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
+                event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
+            )
           )
           .filter((event) => !!event) || [];
 
@@ -212,12 +214,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
         <TargetComponent
           model={this.state.model}
           invocationId={this.props.invocationId}
-          hash={this.props.hash}
-          files={this.state.model.getFiles(completed?.buildEvent)}
+          tab={this.props.tab}
+          files={completed?.buildEvent ? this.state.model.getFiles(completed.buildEvent) ?? [] : []}
           configuredEvent={this.state.model.configuredMap.get(targetLabel)}
           skippedEvent={this.state.model.skippedMap.get(targetLabel)}
           completedEvent={completed}
-          testResultEvents={this.state.model.testResultMap.get(targetLabel)}
+          testResultEvents={this.state.model.testResultMap.get(targetLabel) ?? []}
           testSummaryEvent={this.state.model.testSummaryMap.get(targetLabel)}
           actionEvents={actionEvents}
           user={this.props.user}
@@ -229,18 +231,18 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }
 
     const activeTab = getActiveTab({
-      hash: this.props.hash,
+      tab: this.props.tab,
       role: this.state.model.getRole(),
       denseMode: this.props.preferences.denseModeEnabled,
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
-      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model.invocations[0]?.attempt ?? 0));
+      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model?.getPrimaryInvocation().attempt ?? 0));
     };
 
     const suggestions = getSuggestions({
       model: this.state.model,
-      buildLogs: this.getBuildLogs(),
+      buildLogs: this.getBuildLogs(this.state.model),
       user: this.props.user,
     });
 
@@ -260,10 +262,23 @@ export default class InvocationComponent extends React.Component<Props, State> {
               user={this.props.user}
             />
           )}
+          {!isBazelInvocation && (
+            <div className="container">
+              <ChildInvocations model={this.state.model} />
+            </div>
+          )}
         </div>
+        {!isBazelInvocation && (
+          <div className="container">
+            <div className="workflow-details-header">
+              <h2>Runner results (advanced)</h2>
+              <div>Raw output from the runner instance that executed the Bazel commands.</div>
+            </div>
+          </div>
+        )}
         <div className="container nopadding-dense">
           <InvocationTabsComponent
-            hash={this.props.hash}
+            tab={this.props.tab}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
             executionsEnabled={this.state.model.getIsRBEEnabled() || this.state.model.isWorkflowInvocation()}
@@ -272,13 +287,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
             <InvocationFilterComponent
-              hash={this.props.hash}
+              tab={this.props.tab}
               search={this.props.search}
               placeholder={activeTab == "execution" ? "Filter by digest or command..." : ""}
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
+          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted?.description && (
             <ErrorCardComponent model={this.state.model} />
           )}
 
@@ -286,27 +301,25 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
-          {(this.state.model.workflowConfigured || this.state.model.childInvocationsConfigured) &&
-            (activeTab === "all" || activeTab === "commands") && <ChildInvocations model={this.state.model} />}
-
           {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
-              filter={this.props.search.get("targetFilter")}
+              filter={this.props.search.get("targetFilter") ?? ""}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
-            <QueryGraphCardComponent buildLogs={this.getBuildLogs()} />
+            <QueryGraphCardComponent buildLogs={this.getBuildLogs(this.state.model)} />
           )}
 
           {(activeTab === "all" || activeTab == "log") && (
             <BuildLogsCardComponent
+              title={isBazelInvocation ? "Build logs" : "Runner logs"}
               dark={!this.props.preferences.lightTerminalEnabled}
-              value={this.getBuildLogs()}
-              loading={this.areBuildLogsLoading()}
+              value={this.getBuildLogs(this.state.model)}
+              loading={this.areBuildLogsLoading(this.state.model)}
               expanded={activeTab == "log"}
               fullLogsFetcher={fetchBuildLogs}
             />
@@ -324,7 +337,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <TargetsComponent
               model={this.state.model}
               mode="passing"
-              filter={this.props.search.get("targetFilter")}
+              filter={this.props.search.get("targetFilter") ?? ""}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
@@ -348,7 +361,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
-              filter={this.props.search.get("artifactFilter")}
+              filter={this.props.search.get("artifactFilter") ?? ""}
               pageSize={activeTab ? largePageSize : smallPageSize}
             />
           )}
@@ -358,7 +371,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               model={this.state.model}
               inProgress={this.state.inProgress}
               search={this.props.search}
-              filter={this.props.search.get("executionFilter")}
+              filter={this.props.search.get("executionFilter") ?? ""}
             />
           )}
 

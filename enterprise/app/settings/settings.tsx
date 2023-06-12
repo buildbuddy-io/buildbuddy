@@ -16,6 +16,7 @@ import UserGitHubLink from "./user_github_link";
 import Banner from "../../../app/components/banner/banner";
 import Link from "../../../app/components/link/link";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
+import EncryptionComponent from "../encryption/encryption";
 
 export interface SettingsProps {
   user: User;
@@ -30,6 +31,7 @@ enum TabId {
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
   OrgSecrets = "org/secrets",
+  OrgCacheEncryption = "org/cache-encryption",
 
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
@@ -144,13 +146,19 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     Secrets
                   </SettingsTab>
                 )}
+                {capabilities.config.customerManagedEncryptionKeysEnabled &&
+                  router.canAccessEncryptionPage(this.props.user) && (
+                    <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
+                      Encryption keys
+                    </SettingsTab>
+                  )}
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
                 <div className="settings-tab-group-subtitle">{this.props.user.displayUser.name?.full}</div>
               </div>
               <div className="settings-tab-group">
-                <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId}>
+                <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId} debugId="personal-preferences">
                   Preferences
                 </SettingsTab>
                 {this.props.user?.selectedGroup?.userOwnedKeysEnabled && (
@@ -202,7 +210,8 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </div>
                   <FilledButton
                     className="settings-button"
-                    onClick={() => this.props.preferences.toggleKeyboardShortcuts()}>
+                    onClick={() => this.props.preferences.toggleKeyboardShortcuts()}
+                    debug-id="keyboard-shortcuts-button">
                     {this.props.preferences.keyboardShortcutsEnabled ? "Disable" : "Enable"} keyboard shortcuts
                   </FilledButton>
                 </>
@@ -301,6 +310,16 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   {activeTabId === TabId.ServerQuota && capabilities.config.quotaManagementEnabled && (
                     <QuotaComponent path={this.props.path} search={this.props.search} />
                   )}
+                  {activeTabId == TabId.OrgCacheEncryption && (
+                    <>
+                      <div className="settings-option-title">Customer-managed encryption keys</div>
+                      <div className="settings-option-description">
+                        Customer-managed encryption keys give you the ability to provide and manage your own encryption
+                        keys that are used for the encryption of your BuildBuddy cache artifacts.
+                      </div>
+                      <EncryptionComponent />
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -314,6 +333,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
 type SettingsTabProps = {
   id: TabId;
   activeTabId: TabId;
+  debugId?: string;
 };
 
 class SettingsTab extends React.Component<SettingsTabProps> {
@@ -321,7 +341,8 @@ class SettingsTab extends React.Component<SettingsTabProps> {
     return (
       <Link
         className={`settings-tab ${this.props.activeTabId === this.props.id ? "active-tab" : ""}`}
-        href={`/settings/${this.props.id}`}>
+        href={`/settings/${this.props.id}`}
+        debug-id={this.props.debugId}>
         {this.props.children}
       </Link>
     );

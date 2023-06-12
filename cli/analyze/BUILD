@@ -4,7 +4,6 @@ go_library(
     name = "analyze",
     srcs = ["analyze.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/analyze",
-    visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
@@ -15,3 +14,5 @@ go_library(
         "@org_golang_x_sync//errgroup",
     ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])

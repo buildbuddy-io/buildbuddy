@@ -7,11 +7,11 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "terminal",
     srcs = ["terminal.tsx"],
-    strict = True,
     deps = [
         "//app/components/input",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/router",
         "//app/terminal:row",
         "//app/terminal:text",
         "//app/util:math",
@@ -31,7 +31,6 @@ ts_library(
 ts_jasmine_node_test(
     name = "text_test",
     srcs = ["text_test.ts"],
-    strict = True,
     deps = [":terminal"],
 )
 
@@ -45,6 +44,7 @@ ts_library(
     name = "row",
     srcs = ["row.tsx"],
     deps = [
+        "//app/router",
         "//app/terminal:text",
         "@npm//@types/react",
         "@npm//@types/react-window",

@@ -60,7 +60,7 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubCl
 	if workflowID := r.buildEventAccumulator.WorkflowID(); workflowID != "" {
 		if dbh := r.env.GetDBHandle(); dbh != nil {
 			workflow := &tables.Workflow{}
-			if err := dbh.DB(ctx).Raw(`SELECT * from Workflows WHERE workflow_id = ?`, workflowID).Take(workflow).Error; err == nil {
+			if err := dbh.DB(ctx).Raw(`SELECT * from "Workflows" WHERE workflow_id = ?`, workflowID).Take(workflow).Error; err == nil {
 				return github.NewGithubClient(r.env, workflow.AccessToken)
 			}
 		}
@@ -69,7 +69,7 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubCl
 }
 
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
-	if role := r.buildEventAccumulator.Role(); !(role == "CI" || role == "CI_RUNNER") {
+	if role := r.buildEventAccumulator.Invocation().GetRole(); !(role == "CI" || role == "CI_RUNNER") {
 		return
 	}
 
@@ -129,19 +129,26 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		}
 
 		// TODO(siggisim): Kick these into a queue or something (but maintain order).
-		repoURL := r.buildEventAccumulator.RepoURL()
+		repoURL := r.buildEventAccumulator.Invocation().GetRepoUrl()
 		ownerRepo, err := gitutil.OwnerRepoFromRepoURL(repoURL)
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to report GitHub status: %s", err)
 			break
 		}
-		commitSHA := r.buildEventAccumulator.CommitSHA()
-		err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
-		if err != nil {
-			log.CtxWarningf(ctx, "Failed to report GitHub status: %s", err)
-			continue
+		commitSHA := r.buildEventAccumulator.Invocation().GetCommitSha()
+		if ownerRepo != "" && commitSHA != "" {
+			err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
+			if err != nil {
+				// Note: using info-level log since this is often due to client
+				// misconfiguration (e.g. user doesn't have BB GitHub app
+				// installed).
+				log.CtxInfof(ctx, "Failed to report GitHub status for %q @ %q: %s", ownerRepo, commitSHA, err)
+				continue
+			}
+			log.CtxInfof(ctx, "Reported GitHub status %q for %q @ %q", payload.State, ownerRepo, commitSHA)
+		} else {
+			log.CtxDebugf(ctx, "Not reporting GitHub status (missing REPO_URL or COMMIT_SHA metadata)")
 		}
-		log.CtxInfof(ctx, "Reported GitHub status %q", payload.State)
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)

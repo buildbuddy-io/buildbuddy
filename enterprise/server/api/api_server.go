@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
+	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -21,9 +23,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/proto"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -36,6 +40,7 @@ var (
 	enableAPI            = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
 	enableCache          = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
 	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
+	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", false, "If true, enable access to metrics API.")
 )
 
 type APIServer struct {
@@ -84,7 +89,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		return nil, status.InvalidArgumentErrorf("InvocationSelector must contain a valid invocation_id or commit_sha")
 	}
 
-	q := query_builder.NewQuery(`SELECT * FROM Invocations`)
+	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
 	q = q.AddWhereClause(`group_id = ?`, user.GetGroupID())
 	if req.GetSelector().GetInvocationId() != "" {
 		q = q.AddWhereClause(`invocation_id = ?`, req.GetSelector().GetInvocationId())
@@ -126,6 +131,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 			BranchName:    ti.BranchName,
 			CommitSha:     ti.CommitSHA,
 			Role:          ti.Role,
+			BazelExitCode: ti.BazelExitCode,
 		}
 
 		invocations = append(invocations, apiInvocation)
@@ -432,8 +438,12 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	return &apipb.DeleteFileResponse{}, nil
 }
 
+func (s *APIServer) GetFileHandler() http.Handler {
+	return http.HandlerFunc(s.handleGetFileRequest)
+}
+
 // Handle streaming http GetFile request since protolet doesn't handle streaming rpcs yet.
-func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.checkPreconditions(r.Context()); err != nil {
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
@@ -452,6 +462,40 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *APIServer) GetMetricsHandler() http.Handler {
+	return http.HandlerFunc(s.handleGetMetricsRequest)
+}
+
+func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Request) {
+	if !*enableMetricsAPI {
+		http.Error(w, "API not enabled", http.StatusNotImplemented)
+		return
+	}
+	userInfo, err := s.checkPreconditions(r.Context())
+	if err != nil {
+		http.Error(w, "Invalid API key", http.StatusUnauthorized)
+		return
+	}
+	if userInfo.GetGroupID() == "" {
+		http.Error(w, "Invalid API key", http.StatusUnauthorized)
+		return
+	}
+	// query prometheus
+	reg, err := prom.NewRegistry(s.env, userInfo.GetGroupID())
+	if err != nil {
+		http.Error(w, "unable to get registry", http.StatusInternalServerError)
+		return
+	}
+	opts := promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+		Registry:      reg,
+		// Gzip is handlered by intercepters already.
+		DisableCompression: true,
+	}
+	handler := promhttp.HandlerFor(reg, opts)
+	handler.ServeHTTP(w, r)
 }
 
 // Returns true if a selector has an empty target ID or matches the target's ID or tag
@@ -477,4 +521,51 @@ func actionMatchesActionSelector(action *apipb.Action, selector *apipb.ActionSel
 		(selector.TargetLabel == "" || selector.TargetLabel == action.GetTargetLabel()) &&
 		(selector.ConfigurationId == "" || selector.ConfigurationId == action.GetId().ConfigurationId) &&
 		(selector.ActionId == "" || selector.ActionId == action.GetId().ActionId)
+}
+
+func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkflowRequest) (*apipb.ExecuteWorkflowResponse, error) {
+	user, err := s.checkPreconditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if user.GetGroupID() == "" {
+		return nil, status.InternalErrorf("authenticated user's group ID is empty")
+	}
+
+	wfs := s.env.GetWorkflowService()
+	requestCtx := requestcontext.ProtoRequestContextFromContext(ctx)
+
+	wfID := wfs.GetLegacyWorkflowIDForGitRepository(user.GetGroupID(), req.GetRepoUrl())
+	r := &workflow.ExecuteWorkflowRequest{
+		RequestContext: requestCtx,
+		WorkflowId:     wfID,
+		ActionNames:    req.GetActionNames(),
+		PushedRepoUrl:  req.GetRepoUrl(),
+		PushedBranch:   req.GetRef(),
+		TargetRepoUrl:  req.GetRepoUrl(),
+		TargetBranch:   req.GetRef(),
+		Clean:          req.GetClean(),
+		Visibility:     req.GetVisibility(),
+	}
+	rsp, err := wfs.ExecuteWorkflow(ctx, r)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that the legacy Workflow product"+
+				" is not supported for this API. See https://www.buildbuddy.io/docs/workflows-setup/ for more information"+
+				" on how to correctly setup Workflows.", req.GetRepoUrl())
+		}
+		return nil, err
+	}
+
+	actionStatuses := make([]*apipb.ExecuteWorkflowResponse_ActionStatus, len(rsp.GetActionStatuses()))
+	for i, as := range rsp.GetActionStatuses() {
+		actionStatuses[i] = &apipb.ExecuteWorkflowResponse_ActionStatus{
+			ActionName:   as.ActionName,
+			InvocationId: as.InvocationId,
+			Status:       as.Status,
+		}
+	}
+	return &apipb.ExecuteWorkflowResponse{
+		ActionStatuses: actionStatuses,
+	}, nil
 }

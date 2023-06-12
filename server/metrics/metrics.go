@@ -153,7 +153,6 @@ const (
 
 	/// The ID of a raft nodehost.
 	RaftNodeHostIDLabel = "node_host_id"
-
 	/// The range ID of a raft region.
 	RaftRangeIDLabel = "range_id"
 
@@ -165,6 +164,23 @@ const (
 
 	/// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
+
+	APIKeyLookupStatus = "status"
+
+	/// Pebble DB compaction type.
+	CompactionType = "compaction_type"
+
+	/// Pebble DB level number.
+	PebbleLevel = "level"
+
+	/// Pebble DB operation type.
+	PebbleOperation = "pebble_op"
+
+	// Name of service the health check is running for (Ex "distributed_cache" or "sql_primary").
+	HealthCheckName = "health_check_name"
+
+	/// Container image tag.
+	ContainerImageTag = "container_image_tag"
 )
 
 const (
@@ -193,6 +209,7 @@ var (
 		InvocationStatusLabel,
 		BazelExitCode,
 		BazelCommand,
+		GroupID,
 	})
 
 	/// #### Examples
@@ -1504,6 +1521,15 @@ var (
 		EventName,
 	})
 
+	HealthCheck = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "health_check",
+		Name:      "status",
+		Help:      "Health check status.",
+	}, []string{
+		HealthCheckName,
+	})
+
 	RPCsHandledTotalByQuotaKey = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "quota",
@@ -1742,6 +1768,295 @@ var (
 	}, []string{
 		PartitionID,
 	})
+
+	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "auth",
+		Name:      "api_key_lookup_count",
+		Help:      "Total number of API key lookups.",
+	}, []string{
+		APIKeyLookupStatus,
+	})
+
+	EncryptionKeyRefreshCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "key_refresh_count",
+		Help:      "Total number of encryption key refresh attempts.",
+	})
+
+	EncryptionKeyRefreshFailureCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "key_refresh_failure_count",
+		Help:      "Total number of unsuccessful encryption key refresh attempts.",
+	})
+
+	EncryptionEncryptedBlockCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "encrypted_block_count",
+		Help:      "Total number of blocks encrypted.",
+	})
+
+	EncryptionEncryptedBlobCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "encrypted_blob_count",
+		Help:      "Total number of blobs encrypted.",
+	})
+
+	EncryptionDecryptedBlockCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "decrypted_block_count",
+		Help:      "Total number of blocks decrypted.",
+	})
+
+	EncryptionDecryptedBlobCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "decrypted_blob_count",
+		Help:      "Total number of blobs decrypted.",
+	})
+
+	EncryptionDecryptionErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "decryption_error_count",
+		Help:      "Total number of decryption errors.",
+	})
+
+	// This metric is in milliseconds because Grafana heatmaps don't display
+	// microsecond durations nicely when they can contain large durations.
+	EncryptionKeyLastEncryptedAgeMsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "encryption",
+		Name:      "key_last_encryption_age_msec",
+		Buckets:   exponentialBucketRange(float64(1*time.Hour.Milliseconds()), float64(7*24*time.Hour.Milliseconds()), 4),
+		Help:      "Age of encrypted keys (i.e. how long it has been since the keys were re-encrypted).",
+	})
+
+	PebbleCachePebbleCompactCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_count",
+		Help:      "Number of compactions performed by the underlying Pebble database.",
+	}, []string{
+		CompactionType,
+	})
+
+	PebbleCachePebbleCompactEstimatedDebtBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_estimated_debt_bytes",
+		Help:      "Estimated number of bytes that need to be compacted for the LMS to reach a stable state.",
+	})
+
+	PebbleCachePebbleCompactInProgressBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_in_progress_bytes",
+		Help:      "Number of bytes present in sstables being written by in-progress compactions.",
+	})
+
+	PebbleCachePebbleCompactInProgress = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_in_progress",
+		Help:      "Number of compactions that are in-progress",
+	})
+
+	PebbleCachePebbleCompactMarkedFiles = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_compact_marked_files",
+		Help:      "Count of files that are marked for compaction.",
+	})
+
+	PebbleCachePebbleLevelSublevels = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_sublevels",
+		Help:      "Number of sublevels within the level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelNumFiles = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_num_files",
+		Help:      "The total number of files in the level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_size_bytes",
+		Help:      "The total size in bytes of the files in the level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelScore = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_score",
+		Help:      "The level's compaction score.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesInCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_in_count",
+		Help:      "The number of incoming bytes from other levels read during compactions. This excludes bytes moved and bytes ingested. For L0 this is the bytes written to the WAL.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesIngestedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_ingested_count",
+		Help:      "The number of bytes ingested.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesMovedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_moved_count",
+		Help:      "The number of bytes moved into the level by a move compaction.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_read_count",
+		Help:      "The number of bytes read for compactions at the level. This includes bytes read from other levels (BytesIn), as well as bytes read for the level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesCompactedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_compacted_count",
+		Help:      "The number of bytes written during compactions.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelBytesFlushedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_bytes_flushed_count",
+		Help:      "The number of bytes written during flushes.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelTablesCompactedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_tables_compacted_count",
+		Help:      "The number of sstables compacted to this level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelTablesFlushedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_tables_flushed_count",
+		Help:      "The number of sstables flushed to this level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelTablesIngestedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_tables_ingested_count",
+		Help:      "The number of sstables ingested into this level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleLevelTablesMovedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_level_tables_moved_count",
+		Help:      "The number of sstables ingested into to this level.",
+	}, []string{
+		PebbleLevel,
+	})
+
+	PebbleCachePebbleOpCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_op_count",
+		Help:      "The number of operations performed against the pebble database.",
+	}, []string{
+		PebbleOperation,
+	})
+
+	PebbleCachePebbleOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_op_latency_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 30*time.Second, 10),
+		Help:      "The latency of operations performed against the pebble database, in microseconds.",
+	}, []string{
+		PebbleOperation,
+	})
+
+	// Temporary metric to verify AC sampling behavior.
+	PebbleCacheGroupIDSampleCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_groupid_sample_count",
+		Help:      "The number of times a group has been selected for key sampling.",
+	}, []string{
+		GroupID,
+	})
+
+	/// ## Podman metrics
+
+	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "podman",
+		Name:      "soci_store_crash_count",
+		Help:      "Total number of times the soci store binary crashed and was restarted.",
+	})
+
+	PodmanGetSociArtifactsLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "podman",
+		Name:      "get_soci_artifacts_latency_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 100*time.Minute, 10),
+		Help:      "The latency of retrieving SOCI artifacts from the app and storing them locally per image, in microseconds. Note this is slightly different than the latency of the GetArtifacts RPC as the artifacts must be fetched from the cache and stored locally, which adds some additional time.",
+	}, []string{
+		ContainerImageTag,
+	})
+
+	PodmanColdImagePullLatencyMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "podman",
+		Name:      "image_pull_latency_msec",
+		Buckets:   durationMsecBuckets(1*time.Millisecond, 100*time.Minute, 10),
+		Help:      "The latency of 'cold' podman pull requests per image, in milliseconds. 'Cold' means the image hasn't been pulled by this executor previously.",
+	}, []string{
+		ContainerImageTag,
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in
@@ -1759,4 +2074,8 @@ func exponentialBucketRange(min, max, factor float64) []float64 {
 
 func durationUsecBuckets(min, max time.Duration, factor float64) []float64 {
 	return exponentialBucketRange(float64(min.Microseconds()), float64(max.Microseconds()), factor)
+}
+
+func durationMsecBuckets(min, max time.Duration, factor float64) []float64 {
+	return exponentialBucketRange(float64(min.Milliseconds()), float64(max.Milliseconds()), factor)
 }

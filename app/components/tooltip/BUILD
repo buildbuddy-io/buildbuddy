@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "tooltip",
     srcs = ["tooltip.tsx"],
-    strict = True,
     deps = [
         "//app/util:math",
         "@npm//@types/react",

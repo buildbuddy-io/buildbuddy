@@ -7,7 +7,6 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "radio",
     srcs = ["radio.tsx"],
-    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//react",

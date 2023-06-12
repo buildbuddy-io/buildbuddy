@@ -198,7 +198,7 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms
 		// Stop write test targets to MySQL when writes to OLAP DB is enabled
 		return nil
 	}
-	repoURL := t.buildEventAccumulator.RepoURL()
+	repoURL := t.buildEventAccumulator.Invocation().GetRepoUrl()
 	knownTargets, err := readRepoTargets(ctx, t.env, repoURL)
 	if err != nil {
 		return err
@@ -252,7 +252,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 		// Stop write test targets to MySQL when writes to OLAP DB is enabled
 		return nil
 	}
-	repoURL := t.buildEventAccumulator.RepoURL()
+	repoURL := t.buildEventAccumulator.Invocation().GetRepoUrl()
 	invocationUUID, err := uuid.StringToBytes(t.invocationID())
 	if err != nil {
 		return err
@@ -295,12 +295,12 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 		log.CtxInfo(ctx, "skip writing test target statuses to OLAPDB because group_id is empty")
 		return nil
 	}
-	repoURL := t.buildEventAccumulator.RepoURL()
+	repoURL := t.buildEventAccumulator.Invocation().GetRepoUrl()
 	if repoURL == "" {
 		log.CtxInfo(ctx, "skip writing test target status because repo_url is empty")
 		return nil
 	}
-	commitSHA := t.buildEventAccumulator.CommitSHA()
+	commitSHA := t.buildEventAccumulator.Invocation().GetCommitSha()
 	if commitSHA == "" {
 		log.CtxInfo(ctx, "skip writing test target status because commit_sha is empty")
 		return nil
@@ -341,7 +341,7 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			StartTimeUsec:  testStartTimeUsec,
 			DurationUsec:   target.totalDuration.Microseconds(),
 			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
-			Role:           t.buildEventAccumulator.Role(),
+			Role:           t.buildEventAccumulator.Invocation().GetRole(),
 			Command:        t.buildEventAccumulator.Invocation().GetCommand(),
 		})
 	}
@@ -408,8 +408,12 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not a test", t.invocationID())
 		return
 	}
-	if t.buildEventAccumulator.Role() != "CI" {
+	if t.buildEventAccumulator.Invocation().GetRole() != "CI" {
 		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not a CI build", t.invocationID())
+		return
+	}
+	if t.buildEventAccumulator.DisableTargetTracking() {
+		log.CtxDebugf(ctx, "Not tracking targets for %q because DISABLE_TARGET_TRACKING is set", t.invocationID())
 		return
 	}
 	permissions, err := t.permissionsFromContext(ctx)
@@ -428,8 +432,12 @@ func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_
 		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.invocationID())
 		return
 	}
-	if t.buildEventAccumulator.Role() != "CI" {
+	if t.buildEventAccumulator.Invocation().GetRole() != "CI" {
 		log.CtxDebugf(ctx, "Not tracking target statuses for %q because it's not a CI build", t.invocationID())
+		return
+	}
+	if t.buildEventAccumulator.DisableTargetTracking() {
+		log.CtxDebugf(ctx, "Not tracking targets for %q because DISABLE_TARGET_TRACKING is set", t.invocationID())
 		return
 	}
 	permissions, err := t.permissionsFromContext(ctx)
@@ -459,7 +467,7 @@ func isTestCommand(command string) bool {
 }
 
 func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx *db.DB) ([]*tables.Target, error) {
-	q := query_builder.NewQuery(`SELECT * FROM Targets as t`)
+	q := query_builder.NewQuery(`SELECT * FROM "Targets" as t`)
 	q = q.AddWhereClause(`t.repo_url = ?`, repoURL)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
@@ -546,7 +554,7 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 			valueArgs = append(valueArgs, nowUsec)
 		}
 		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_targets"), func(tx *db.DB) error {
-			stmt := fmt.Sprintf("INSERT INTO Targets (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
+			stmt := fmt.Sprintf(`INSERT INTO "Targets" (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
 		if err != nil {
@@ -588,7 +596,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, nowUsec)
 		}
 		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_target_statuses"), func(tx *db.DB) error {
-			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
+			stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
 		if err != nil {

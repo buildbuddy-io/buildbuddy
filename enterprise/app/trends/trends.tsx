@@ -7,8 +7,8 @@ import { stats } from "../../../proto/stats_ts_proto";
 import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
 import PercentilesChartComponent from "./percentile_chart";
+import TrendsSummaryCard from "./summary_card";
 import { Subscription } from "rxjs";
-import CheckboxButton from "../../../app/components/button/checkbox_button";
 import FilterComponent from "../filter/filter";
 import capabilities from "../../../app/capabilities/capabilities";
 import { getProtoFilterParams } from "../filter/filter_util";
@@ -20,7 +20,7 @@ const BITS_PER_BYTE = 8;
 
 interface Props {
   user: User;
-  hash: string;
+  tab: string;
   search: URLSearchParams;
 }
 
@@ -30,6 +30,8 @@ interface State {
   dateToStatMap: Map<string, stats.ITrendStat>;
   dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
+  currentSummary?: stats.Summary;
+  previousSummary?: stats.Summary;
   dates: string[];
 }
 
@@ -61,7 +63,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.hash !== prevProps.hash || this.props.search != prevProps.search) {
+    if (
+      this.showingDrilldown(this.props.tab) !== this.showingDrilldown(prevProps.tab) ||
+      this.props.search.toString() != prevProps.search.toString()
+    ) {
       this.fetchStats();
     }
   }
@@ -71,7 +76,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   getSelectedTab(): "charts" | "drilldown" {
-    if (this.props.hash.replace("#", "") === "drilldown") {
+    if (this.props.tab.replace("#", "") === "drilldown") {
       return "drilldown";
     }
     return "charts";
@@ -100,6 +105,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     if (filterParams.commit) request.query.commitSha = filterParams.commit;
     if (filterParams.command) request.query.command = filterParams.command;
     if (filterParams.pattern) request.query.pattern = filterParams.pattern;
+    if (filterParams.tags) request.query.tags = filterParams.tags;
     if (filterParams.status) request.query.status = filterParams.status;
 
     request.query.updatedBefore = filterParams.updatedBefore;
@@ -140,7 +146,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.query.pattern = pattern;
     }
 
-    this.setState({ ...this.state, loading: true });
+    this.setState({ loading: true });
     rpcService.service.getTrend(request).then((response) => {
       console.log(response);
       const dateToStatMap = new Map<string, stats.ITrendStat>();
@@ -152,7 +158,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
         dateToExecutionStatMap.set(stat.name ?? "", stat);
       }
       this.setState({
-        ...this.state,
         stats: response.trendStat,
         dates: getDatesBetween(
           // Start date should always be defined.
@@ -160,6 +165,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
           // End date may not be defined -- default to today.
           request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date()
         ),
+        currentSummary: response.currentSummary || undefined,
+        previousSummary: response.previousSummary || undefined,
         dateToStatMap,
         dateToExecutionStatMap,
         enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
@@ -188,8 +195,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
-  showingDrilldown(): boolean {
-    return (capabilities.config.trendsHeatmapEnabled || false) && this.props.hash === "#drilldown";
+  showingDrilldown(tab: string): boolean {
+    return (capabilities.config.trendsHeatmapEnabled || false) && tab === "#drilldown";
   }
 
   render() {
@@ -214,14 +221,21 @@ export default class TrendsComponent extends React.Component<Props, State> {
               </div>
             </div>
           )}
-          {this.showingDrilldown() && (
+          {this.showingDrilldown(this.props.tab) && (
             <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
           )}
-          {!this.showingDrilldown() && this.state.loading && <div className="loading"></div>}
-          {!this.showingDrilldown() && !this.state.loading && (
+          {!this.showingDrilldown(this.props.tab) && this.state.loading && <div className="loading"></div>}
+          {!this.showingDrilldown(this.props.tab) && !this.state.loading && (
             <>
+              {capabilities.config.trendsSummaryEnabled && this.state.currentSummary && (
+                <TrendsSummaryCard
+                  search={this.props.search}
+                  currentPeriod={this.state.currentSummary}
+                  previousPeriod={this.state.previousSummary}></TrendsSummaryCard>
+              )}
               <TrendsChartComponent
                 title="Builds"
+                id="builds"
                 data={this.state.dates}
                 extractValue={(date) => +(this.getStat(date).totalNumBuilds ?? 0)}
                 extractSecondaryValue={(date) => {
@@ -246,6 +260,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               {this.state.enableInvocationPercentileCharts && (
                 <PercentilesChartComponent
                   title="Build duration"
+                  id="duration"
                   data={this.state.dates}
                   extractLabel={this.formatShortDate}
                   formatHoverLabel={this.formatLongDate}
@@ -260,6 +275,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               {!this.state.enableInvocationPercentileCharts && (
                 <TrendsChartComponent
                   title="Build duration"
+                  id="duration"
                   data={this.state.dates}
                   extractValue={(date) => {
                     let stat = this.getStat(date);
@@ -280,6 +296,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
               <CacheChartComponent
                 title="Action Cache"
+                id="cache"
                 data={this.state.dates}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
@@ -337,6 +354,21 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryLine={true}
                 separateAxis={true}
               />
+
+              {capabilities.config.trendsSummaryEnabled && (
+                <TrendsChartComponent
+                  title="Saved CPU Time"
+                  id="savings"
+                  data={this.state.dates}
+                  extractValue={(date) => +(this.getStat(date).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractLabel={this.formatShortDate}
+                  formatTickValue={format.durationSec}
+                  allowDecimals={false}
+                  formatHoverLabel={this.formatLongDate}
+                  formatHoverValue={(value) => `${format.durationSec(value || 0)} CPU time saved`}
+                  name="saved cpu time"
+                />
+              )}
 
               <TrendsChartComponent
                 title="Users with builds"

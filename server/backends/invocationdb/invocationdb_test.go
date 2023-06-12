@@ -30,7 +30,7 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 		require.True(t, created)
 
 		err = dbh.DB(ctx).Exec(`
-			INSERT INTO InvocationExecutions (invocation_id, execution_id)
+			INSERT INTO "InvocationExecutions" (invocation_id, execution_id)
 			VALUES (?, ?)`, iid, iid+"-execution").Error
 		require.NoError(t, err)
 	}
@@ -42,7 +42,7 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	require.Nil(t, inv)
 	require.True(t, db.IsRecordNotFound(err), "expected RecordNotFound, got: %v", err)
 	err = dbh.DB(ctx).Raw(
-		`SELECT * FROM InvocationExecutions WHERE invocation_id = ?`,
+		`SELECT * FROM "InvocationExecutions" WHERE invocation_id = ?`,
 		"invocation-0",
 	).Take(&tables.InvocationExecution{}).Error
 	require.True(t, db.IsRecordNotFound(err))
@@ -62,7 +62,7 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	require.Equal(t, "//pattern:2", inv.Pattern)
 	ie := &tables.InvocationExecution{}
 	err = dbh.DB(ctx).Raw(
-		`SELECT * FROM InvocationExecutions WHERE invocation_id = ?`,
+		`SELECT * FROM "InvocationExecutions" WHERE invocation_id = ?`,
 		"invocation-2",
 	).Take(ie).Error
 	require.NoError(t, err)

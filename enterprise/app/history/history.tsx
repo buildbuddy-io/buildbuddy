@@ -7,7 +7,8 @@ import LinkButton from "../../../app/components/button/link_button";
 import { Tooltip } from "../../../app/components/tooltip/tooltip";
 import Link from "../../../app/components/link/link";
 import format from "../../../app/format/format";
-import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
+import router from "../../../app/router/router";
+import { ROLE_PARAM_NAME } from "../../../app/router/router_params";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
@@ -26,7 +27,7 @@ interface State {
    * Invocations corresponding to individual invocation cards.
    * Not fetched for aggregate (sliced) views.
    */
-  invocations?: invocation.IInvocation[];
+  invocations?: invocation.Invocation[];
   loadingInvocations?: boolean;
   selectedInvocationId: string;
   selectedInvocationIndex: number;
@@ -34,14 +35,14 @@ interface State {
    * Stats summarizing the fetched invocations.
    * Not fetched for aggregate (sliced) views.
    */
-  summaryStat?: invocation.IInvocationStat;
+  summaryStat?: invocation.InvocationStat;
   loadingSummaryStat?: boolean;
 
   /**
    * Stats fetched for aggregate views.
    * Each stat corresponds to a card displaying the stats for a single repo (or user, etc.)
    */
-  aggregateStats?: invocation.IInvocationStat[];
+  aggregateStats?: invocation.InvocationStat[];
   loadingAggregateStats?: boolean;
 
   hoveredInvocationId?: string;
@@ -59,7 +60,7 @@ interface Props {
   commit?: string;
   user?: User;
   search: URLSearchParams;
-  hash: string;
+  tab: string;
 }
 
 export default class HistoryComponent extends React.Component<Props, State> {
@@ -72,9 +73,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
   refreshSubscription = new Subscription();
 
-  invocationsRpc: CancelablePromise;
-  summaryStatRpc: CancelablePromise;
-  aggregateStatsRpc: CancelablePromise;
+  invocationsRpc?: CancelablePromise;
+  summaryStatRpc?: CancelablePromise;
+  aggregateStatsRpc?: CancelablePromise;
 
   hashToAggregationTypeMap = new Map<string, invocation.AggType>([
     ["#users", invocation.AggType.USER_AGGREGATION_TYPE],
@@ -127,7 +128,12 @@ export default class HistoryComponent extends React.Component<Props, State> {
         commitSha: this.props.commit || filterParams.commit,
         command: filterParams.command,
         pattern: filterParams.pattern,
+        tags: filterParams.tags,
         groupId: this.props.user?.selectedGroup?.id,
+        role: filterParams.role,
+        updatedAfter: filterParams.updatedAfter,
+        updatedBefore: filterParams.updatedBefore,
+        status: filterParams.status,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
       }),
@@ -139,10 +145,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
       count: 126,
     });
-    request.query.role = filterParams.role;
-    request.query.updatedAfter = filterParams.updatedAfter;
-    request.query.updatedBefore = filterParams.updatedBefore;
-    request.query.status = filterParams.status;
 
     this.invocationsRpc = rpcService.service
       .searchInvocation(request)
@@ -150,10 +152,20 @@ export default class HistoryComponent extends React.Component<Props, State> {
         console.log(response);
         this.setState({
           invocations: nextPage
-            ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
+            ? (this.state.invocations || []).concat(response.invocation || [])
             : response.invocation,
           pageToken: response.nextPageToken,
         });
+
+        // Select the invocation id from local storage. This is so that when
+        // navigating around the app, the selected invocation is sticky --
+        // though it gets cleared on refresh or navigation requests. This is
+        // done in the invocation-fetch rPC response because this is async with
+        // the react lifecycle methods.
+        if (localStorage["selected_invocation_id"] !== "" && this.state.invocations != undefined) {
+          this.selectInvocation(localStorage["selected_invocation_id"]);
+          localStorage["selected_invocation_id"] = "";
+        }
       })
       .finally(() => this.setState({ loadingInvocations: false }));
   }
@@ -161,7 +173,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   getAggregateStats() {
     this.setState({ aggregateStats: undefined, loadingAggregateStats: true });
 
-    const aggregationType = this.hashToAggregationTypeMap.get(this.props.hash);
+    const aggregationType = this.hashToAggregationTypeMap.get(this.props.tab);
     const request = new invocation.GetInvocationStatRequest({ aggregationType });
     const filterParams = getProtoFilterParams(this.props.search);
     request.query = new invocation.InvocationStatQuery({
@@ -172,6 +184,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       commitSha: this.props.commit || filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
+      tags: filterParams.tags,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -202,6 +215,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       commitSha: this.props.commit || filterParams.commit,
       command: filterParams.command,
       pattern: filterParams.pattern,
+      tags: filterParams.tags,
       role: filterParams.role,
       updatedAfter: filterParams.updatedAfter,
       updatedBefore: filterParams.updatedBefore,
@@ -218,9 +232,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
     document.title = `${
       this.props.username ||
       this.props.hostname ||
-      format.formatGitUrl(this.props.repo) ||
+      (this.props.repo && format.formatGitUrl(this.props.repo)) ||
       this.props.branch ||
-      format.formatCommitHash(this.props.commit) ||
+      (this.props.commit && format.formatCommitHash(this.props.commit)) ||
       this.props.user?.selectedGroupName()
     } Build History | BuildBuddy`;
 
@@ -244,11 +258,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
         this.selectPreviousInvocation();
       })
     );
-    handles.push(
-      shortcuts.register(KeyCombo.enter, () => {
-        this.navigateToSelectedInvocation();
-      })
-    );
     this.setState({
       keyboardShortcutHandles: handles,
     });
@@ -264,6 +273,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       selectedInvocationIndex: newInvocationIndex,
       selectedInvocationId: newInvocationId,
     });
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   selectPreviousInvocation() {
@@ -276,6 +286,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       selectedInvocationIndex: newInvocationIndex,
       selectedInvocationId: newInvocationId,
     });
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   selectInvocation(invocationId: string) {
@@ -285,7 +296,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
           selectedInvocationIndex: i,
           selectedInvocationId: invocationId,
         });
-        return;
       }
     }
     // Not found, reset the id because it might be invalid.
@@ -295,6 +305,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         selectedInvocationId: "",
       });
     }
+    (document.querySelector(".selected-keyboard-shortcuts") as HTMLElement | undefined)?.focus();
   }
 
   navigateToSelectedInvocation() {
@@ -304,17 +315,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    // Select the invocation id from local storage. This is so that when
-    // navigating around the app, the selected invocation is sticky -- though
-    // it gets cleared on refresh or navigation requests.
-    // This must be done in  componentDidUpdate because the list of invocations
-    // is fetched after componentDidMount.
-    if (localStorage["selected_invocation_id"] !== "" && this.state.invocations != undefined) {
-      this.selectInvocation(localStorage["selected_invocation_id"]);
-      localStorage["selected_invocation_id"] = "";
-    }
-
-    if (this.props.hash !== prevProps.hash || this.props.search !== prevProps.search) {
+    if (this.props.tab !== prevProps.tab || this.props.search !== prevProps.search) {
       this.fetch();
     }
   }
@@ -408,7 +409,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   handleMouseOut(invocation: invocation.IInvocation) {
-    this.setState({ hoveredInvocationId: null });
+    this.setState({ hoveredInvocationId: undefined });
   }
 
   handleLoadNextPageClicked() {
@@ -437,22 +438,22 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   isAggregateView() {
-    return Boolean(this.props.hash);
+    return Boolean(this.props.tab);
   }
 
   render() {
     let scope =
       this.props.username ||
       this.props.hostname ||
-      format.formatCommitHash(this.props.commit) ||
+      (this.props.commit && format.formatCommitHash(this.props.commit)) ||
       this.props.branch ||
-      format.formatGitUrl(this.props.repo);
+      (this.props.repo && format.formatGitUrl(this.props.repo));
     let viewType = "build history";
-    if (this.props.hash == "#users") viewType = "users";
-    if (this.props.hash == "#repos") viewType = "repos";
-    if (this.props.hash == "#branches") viewType = "branches";
-    if (this.props.hash == "#commits") viewType = "commits";
-    if (this.props.hash == "#hosts") viewType = "hosts";
+    if (this.props.tab == "#users") viewType = "users";
+    if (this.props.tab == "#repos") viewType = "repos";
+    if (this.props.tab == "#branches") viewType = "branches";
+    if (this.props.tab == "#commits") viewType = "commits";
+    if (this.props.tab == "#hosts") viewType = "hosts";
 
     // Note: we don't show summary stats for scoped views because the summary stats
     // don't currently get filtered by the scope as well.
@@ -484,33 +485,33 @@ export default class HistoryComponent extends React.Component<Props, State> {
                     {this.props.user?.selectedGroupName()}
                   </span>
                 )}
-                {(this.props.username || this.props.hash == "#users") && (
+                {(this.props.username || this.props.tab == "#users") && (
                   <span onClick={this.handleUsersClicked.bind(this)} className="clickable">
                     Users
                   </span>
                 )}
-                {(this.props.hostname || this.props.hash == "#hosts") && (
+                {(this.props.hostname || this.props.tab == "#hosts") && (
                   <span onClick={this.handleHostsClicked.bind(this)} className="clickable">
                     Hosts
                   </span>
                 )}
-                {(this.props.repo || this.props.hash == "#repos") && (
+                {(this.props.repo || this.props.tab == "#repos") && (
                   <span onClick={this.handleReposClicked.bind(this)} className="clickable">
                     Repos
                   </span>
                 )}
-                {(this.props.branch || this.props.hash == "#branches") && (
+                {(this.props.branch || this.props.tab == "#branches") && (
                   <span onClick={this.handleBranchesClicked.bind(this)} className="clickable">
                     Branches
                   </span>
                 )}
-                {(this.props.commit || this.props.hash == "#commits") && (
+                {(this.props.commit || this.props.tab == "#commits") && (
                   <span onClick={this.handleCommitsClicked.bind(this)} className="clickable">
                     Commits
                   </span>
                 )}
                 {scope && <span>{scope}</span>}
-                {!this.props.username && !this.props.hostname && this.props.hash == "" && (
+                {!this.props.username && !this.props.hostname && this.props.tab == "" && (
                   <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
                 )}
               </div>
@@ -636,7 +637,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
               </div>
             )}
           </div>
-          {Boolean(this.state.invocations?.length) && (
+          {this.state.invocations && this.state.invocations.length > 0 && (
             <div className="container nopadding-dense">
               <div className={`grid ${this.state.invocations.length < 20 ? "grid-grow" : ""}`}>
                 {this.state.invocations.map((invocation) => (
@@ -656,22 +657,20 @@ export default class HistoryComponent extends React.Component<Props, State> {
             </div>
           )}
         </div>
-        {this.props.hash === "#users" && this.props.user.canCall("getGroupUsers") && (
+        {this.props.tab === "#users" && this.props.user?.canCall("getGroupUsers") && (
           <OrgJoinRequestsComponent user={this.props.user} />
         )}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
             {this.state.invocations?.map((invocation) => (
-              <a href={`/invocation/${invocation.invocationId}`} onClick={(e) => e.preventDefault()}>
-                <HistoryInvocationCardComponent
-                  className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
-                  onMouseOver={this.handleMouseOver.bind(this, invocation)}
-                  onMouseOut={this.handleMouseOut.bind(this, invocation)}
-                  invocation={invocation}
-                  isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
-                  isSelectedWithKeyboard={invocation.invocationId === this.state.selectedInvocationId}
-                />
-              </a>
+              <HistoryInvocationCardComponent
+                className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
+                onMouseOver={this.handleMouseOver.bind(this, invocation)}
+                onMouseOut={this.handleMouseOut.bind(this, invocation)}
+                invocation={invocation}
+                isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
+                isSelectedWithKeyboard={invocation.invocationId === this.state.selectedInvocationId}
+              />
             ))}
             {this.state.pageToken && (
               <button
@@ -683,7 +682,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
             )}
             {this.state.aggregateStats?.map((invocationStat) => (
               <HistoryInvocationStatCardComponent
-                type={this.hashToAggregationTypeMap.get(this.props.hash)}
+                type={this.hashToAggregationTypeMap.get(this.props.tab)!}
                 invocationStat={invocationStat}
               />
             ))}
@@ -715,13 +714,16 @@ export default class HistoryComponent extends React.Component<Props, State> {
             <div className="container narrow">
               <div className="empty-state history">
                 <h2>No workflow runs yet!</h2>
-                <p>
-                  Push commits or send pull requests to{" "}
-                  <a href={this.props.repo} target="_new" className="text-link">
-                    {format.formatGitUrl(this.props.repo)}
-                  </a>{" "}
-                  to trigger BuildBuddy workflows.
-                </p>
+                {this.props.repo && (
+                  <p>
+                    Push commits or send pull requests to{" "}
+                    <a href={this.props.repo} target="_new" className="text-link">
+                      {format.formatGitUrl(this.props.repo)}
+                    </a>{" "}
+                    to trigger BuildBuddy workflows.
+                  </p>
+                )}
+                {!this.props.repo && <p>No repository URL was specified.</p>}
                 <p>
                   By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to
                   your main branch and on pull request branches.

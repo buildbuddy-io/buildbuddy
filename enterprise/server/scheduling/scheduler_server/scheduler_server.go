@@ -43,7 +43,6 @@ var (
 	defaultPoolName              = flag.String("remote_execution.default_pool_name", "", "The default executor pool to use if one is not specified.")
 	sharedExecutorPoolGroupID    = flag.String("remote_execution.shared_executor_pool_group_id", "", "Group ID that owns the shared executor pool.")
 	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
-	removeStaleExecutors         = flag.Bool("remote_execution.remove_stale_executors", false, "If true, executors are removed if they are not heard from for a prolonged amount of time.")
 )
 
 const (
@@ -541,7 +540,7 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 			return nil, err
 		}
 
-		if *removeStaleExecutors && time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
+		if time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
 			log.Infof("Removing stale executor %q from pool %+v", id, np.key)
 			if err := np.rdb.HDel(ctx, np.key.redisPoolKey(), id).Err(); err != nil {
 				log.Warningf("could not remove stale executor: %s", err)
@@ -1007,7 +1006,6 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 		}
 	}()
 	return nil
-
 }
 
 func (s *SchedulerServer) redisKeyForExecutorPools(groupID string) string {
@@ -1023,7 +1021,7 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 		return err
 	}
 
-	permissions := 0
+	permissions := int32(0)
 	if s.requireExecutorAuthorization {
 		permissions = perms.GROUP_WRITE | perms.GROUP_READ
 	} else {

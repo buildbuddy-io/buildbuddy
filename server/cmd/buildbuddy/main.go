@@ -24,6 +24,7 @@ var (
 func main() {
 	version.Print()
 
+	flag.Parse()
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
@@ -37,7 +38,7 @@ func main() {
 	telemetryClient.Start()
 	defer telemetryClient.Stop()
 
-	cleanupService := janitor.NewJanitor(env)
+	cleanupService := janitor.NewInvocationJanitor(env)
 	cleanupService.Start()
 	defer cleanupService.Stop()
 

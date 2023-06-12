@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -24,6 +25,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
@@ -95,6 +97,8 @@ func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 func main() {
 	flag.Parse()
 
+	flagutil.SetValueForFlagName("executor.firecracker_debug_mode", true, nil, false)
+
 	rand.Seed(time.Now().Unix())
 
 	env := getToolEnv()
@@ -119,13 +123,14 @@ func main() {
 		vmIdx = *forceVMIdx
 	}
 	opts := firecracker.ContainerOpts{
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			ScratchDiskSizeMb: 100,
+			EnableNetworking:  true,
+		},
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		ScratchDiskSizeMB:      100,
-		EnableNetworking:       true,
-		DebugMode:              true,
 		ForceVMIdx:             vmIdx,
 		JailerRoot:             "/tmp/remote_build/",
 	}
@@ -134,7 +139,7 @@ func main() {
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	// TODO: make snapshotID work again.
 	if *snapshotID != "" {
-		c, err = firecracker.NewContainer(ctx, env, auth, opts)
+		c, err = firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
@@ -142,7 +147,7 @@ func main() {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
 	} else {
-		c, err = firecracker.NewContainer(ctx, env, auth, opts)
+		c, err = firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}

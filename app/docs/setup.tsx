@@ -9,13 +9,12 @@ interface Props {}
 
 interface State {
   menuExpanded: boolean;
-  bazelConfigResponse: bazel_config.GetBazelConfigResponse;
+  bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
 }
 
 export default class SetupComponent extends React.Component<Props> {
   state: State = {
     menuExpanded: false,
-    bazelConfigResponse: null,
   };
 
   componentWillMount() {
@@ -29,7 +28,7 @@ export default class SetupComponent extends React.Component<Props> {
       .getBazelConfig(request)
       .then((response: bazel_config.GetBazelConfigResponse) => {
         console.log(response);
-        this.setState({ ...this.state, bazelConfigResponse: response });
+        this.setState({ bazelConfigResponse: response });
       })
       .catch((e) => error_service.handleError(e));
   }
