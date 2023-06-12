@@ -140,7 +140,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
-		if err := c.LoadSnapshot(ctx, "" /*workspaceFS*/); err != nil {
+		if err := c.LoadSnapshot(ctx); err != nil {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
 	} else {
