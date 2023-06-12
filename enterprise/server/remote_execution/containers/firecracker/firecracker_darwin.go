@@ -65,7 +65,7 @@ func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
 }
 
-func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride string) error {
+func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
