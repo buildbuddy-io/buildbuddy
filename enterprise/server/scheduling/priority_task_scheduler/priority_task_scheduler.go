@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"flag"
+	"io"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,6 +30,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	lrpb "google.golang.org/genproto/googleapis/longrunning"
 )
 
 var (
@@ -311,7 +314,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 
 	execTask := st.ExecutionTask
 	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
-	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
+	clientStream, err := publishOperationWithRetry(ctx, q.env.GetRemoteExecutionClient())
 	if err != nil {
 		log.CtxWarningf(ctx, "Error opening publish operation stream: %s", err)
 		return true, err
@@ -477,4 +480,128 @@ func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskR
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.q.GetAll()
+}
+
+// DO NOT SUBMIT: move to operation.go
+
+// operationStream works like a PublishOperationClient but transparently
+// re-connects the stream when disconnected. The operationStream does not
+// re-dial the backend; instead it depends on the client connection being
+// terminated by an L7 proxy that handles backend connections.
+type operationStream struct {
+	ctx          context.Context
+	client       repb.ExecutionClient
+	clientStream repb.Execution_PublishOperationClient
+	lastMsg      *lrpb.Operation
+}
+
+func publishOperationWithRetry(ctx context.Context, client repb.ExecutionClient) (*operationStream, error) {
+	clientStream, err := client.PublishOperation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &operationStream{
+		ctx:          ctx,
+		client:       client,
+		clientStream: clientStream,
+	}, nil
+}
+
+func (s *operationStream) Context() context.Context {
+	return s.clientStream.Context()
+}
+
+func (s *operationStream) Send(msg *lrpb.Operation) error {
+	// Store the last message so that if we don't get an ACK from the server in
+	// CloseAndRecv, we can re-send the last status message then CloseAndRecv to
+	// attempt a re-ACK.
+	s.lastMsg = msg
+	return s.sendWithRetry(msg)
+}
+
+func (s *operationStream) sendWithRetry(msg *lrpb.Operation) error {
+	var lastErr error
+	// TODO: apply a timeout to the retry?
+	ctx := s.ctx
+	r := retry.DefaultWithContext(ctx)
+	for r.Next() {
+		err := s.clientStream.Send(msg)
+		if err == nil {
+			return nil
+		}
+		if err != io.EOF {
+			return err
+		}
+		lastErr = err
+		log.CtxInfof(ctx, "PublishOperation stream disconnected; attempting to reconnect.")
+		// EOF means we got disconnected; reconnect and retry.
+		if err := s.reconnect(ctx); err != nil {
+			return status.WrapError(err, "failed to reconnect PublishOperation stream")
+		}
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	if s.ctx.Err() != nil {
+		return s.ctx.Err()
+	}
+	// Should never happen, but make sure we still return an error in this case.
+	return status.UnknownError("send: unknown error")
+}
+
+func (s *operationStream) reconnect(ctx context.Context) error {
+	r := retry.DefaultWithContext(ctx)
+	var lastErr error
+	for r.Next() {
+		clientStream, err := s.client.PublishOperation(ctx)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		s.clientStream = clientStream
+		return nil
+	}
+	return lastErr
+}
+
+func (s *operationStream) CloseAndRecv() (*repb.PublishOperationResponse, error) {
+	var lastErr error
+	// TODO: apply a timeout to the retry?
+	ctx := s.ctx
+	r := retry.DefaultWithContext(ctx)
+	for r.Next() {
+		res, err := s.clientStream.CloseAndRecv()
+		if err == nil {
+			return res, nil
+		}
+		if err != io.EOF {
+			return nil, err
+		}
+		lastErr = err
+		log.CtxInfof(ctx, "PublishOperation stream disconnected; attempting to reconnect.")
+		// Stream is broken; reconnect and retry. If this fails, return the
+		// original error.
+		if err := s.reconnect(ctx); err != nil {
+			log.Warningf("Failed to reconnect operation stream: %s", err)
+			break
+		}
+		// Since CloseAndRecv failed, the server isn't guaranteed to have gotten
+		// our last published message, so publish it again. But if that fails,
+		// just return the original error.
+		if s.lastMsg == nil {
+			continue
+		}
+		if err := s.sendWithRetry(s.lastMsg); err != nil {
+			log.Warningf("Failed to retry un-acknowledged operation update: %s", err)
+			break
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	if s.ctx.Err() != nil {
+		return nil, s.ctx.Err()
+	}
+	// Should never happen, but make sure we still return an error in this case.
+	return nil, status.UnknownError("close and recv: unknown error")
 }

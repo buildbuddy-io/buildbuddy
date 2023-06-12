@@ -901,7 +901,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
 		if err != nil {
-			log.CtxErrorf(ctx, "PublishOperation: recv err: %s", err.Error())
+			log.CtxErrorf(ctx, "PublishOperation: recv err: %s", err)
 			return err
 		}
 

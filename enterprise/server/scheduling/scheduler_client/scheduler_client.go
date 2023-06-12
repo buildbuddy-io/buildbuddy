@@ -195,7 +195,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 			for {
 				msg, err := stream.Recv()
 				if err != nil {
-					log.Warningf("Could not read from stream: %s", err)
+					log.Warningf("Could not read RegisterAndStreamWorkResponse from stream: %s", err)
 					close(schedulerMsgs)
 					break
 				}

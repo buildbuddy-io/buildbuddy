@@ -3,6 +3,7 @@ package remote_execution_test
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -29,11 +30,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -1684,4 +1688,80 @@ func TestActionMerging(t *testing.T) {
 	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation4"})
 	op4 := cmd4.WaitAccepted()
 	require.Equal(t, op3, op4, "expected actions to be merged")
+}
+
+func TestAppShutdownDuringExecution(t *testing.T) {
+	// Set a short progress publish interval since we want to test killing an
+	// app while an update stream is in progress, and want to catch the error
+	// early.
+	flags.Set(t, "executor.task_progress_publish_interval", 50*time.Millisecond)
+	flags.Set(t, "remote_execution.task_lease_duration", 50*time.Millisecond)
+	flags.Set(t, "remote_execution.task_lease_grace_period", 50*time.Millisecond)
+
+	rbe := rbetest.NewRBETestEnv(t)
+
+	app1 := rbe.AddBuildBuddyServer()
+	app2 := rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	// Set up a custom StreamDirector that makes sure we choose app1 first,
+	// so that we can test stopping app1 while the task is in progress.
+	var mu sync.Mutex
+	target := app1.GRPCAddress()
+	director := func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		target := target
+		cc, err := grpc_client.DialTarget(target)
+		if err != nil {
+			return nil, nil, err
+		}
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+		}
+		return ctx, cc, nil
+	}
+	rbe.AppProxy.Director = director
+
+	cmd := rbe.ExecuteControlledCommand("test", &rbetest.ExecuteControlledOpts{
+		// Allow reconnecting with WaitExecution since the test will hard stop
+		// the app, which kills the Execute stream.
+		AllowReconnect: true,
+	})
+	cmd.WaitStarted()
+
+	// Maybe give enough time for a few progress updates to be published.
+	randSleepMillis(0, 100)
+
+	// Initiate a graceful shutdown of app 1 and have the proxy to start
+	// directing to app2. As soon as the graceful shutdown starts, the executor
+	// should try to transfer the LeaseTask stream to a different app.
+	mu.Lock()
+	target = app2.GRPCAddress()
+	mu.Unlock()
+	app1.Shutdown()
+
+	// Sleep for a fixed duration to simulate shutdown grace period, followed by
+	// a hard stop of the gRPC server. This delay needs to be at least as long
+	// as the lease duration since the executor is only informed of the shutdown
+	// when attempting to renew the lease.
+	time.Sleep(100 * time.Millisecond)
+	app1.Stop()
+
+	// Maybe let the command continue execution for a bit.
+	randSleepMillis(0, 50)
+
+	cmd.Exit(0)
+	cmd.Wait()
+
+	// Make sure we only ever started a single task execution (the task should
+	// not have been re-executed just because the app went down).
+	require.Equal(
+		t, float64(1), testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount),
+		"only one task should have been started")
+}
+
+func randSleepMillis(min, max int) {
+	r := rand.Int63n(int64(max-min)) + int64(min)
+	time.Sleep(time.Duration(r))
 }

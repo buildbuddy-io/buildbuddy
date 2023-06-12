@@ -11,6 +11,7 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/environment",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",

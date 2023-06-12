@@ -85,10 +85,9 @@ func NewHealthChecker(serverType string) *HealthChecker {
 	sigTerm := make(chan os.Signal)
 	go func() {
 		<-sigTerm
-		close(hc.quit)
+		hc.Shutdown()
 	}()
 	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
-	go hc.handleShutdownFuncs()
 	go func() {
 		for {
 			select {
@@ -119,12 +118,17 @@ func (h *HealthChecker) Statusz(ctx context.Context) string {
 }
 
 func (h *HealthChecker) handleShutdownFuncs() {
-	<-h.quit
-
 	h.mu.Lock()
+	if h.shuttingDown {
+		// already shutting down.
+		h.mu.Unlock()
+		return
+	}
 	h.readyToServe = false
 	h.shuttingDown = true
 	h.mu.Unlock()
+
+	close(h.quit)
 
 	// We use fmt here and below because this code is called from the
 	// signal handler and log.Printf can be a little wonky.
@@ -175,7 +179,7 @@ func (h *HealthChecker) WaitForGracefulShutdown() {
 }
 
 func (h *HealthChecker) Shutdown() {
-	close(h.quit)
+	go h.handleShutdownFuncs()
 }
 
 func (h *HealthChecker) runHealthChecks(ctx context.Context) {

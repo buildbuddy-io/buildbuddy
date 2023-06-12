@@ -51,6 +51,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testolapdb"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
@@ -113,39 +114,40 @@ type Env struct {
 	executorNameCounter uint64
 	envOpts             *enterprise_testenv.Options
 
+	AppProxy     *testgrpc.Proxy
+	appProxyConn *grpc.ClientConn
+
 	UserID1  string
 	GroupID1 string
 	APIKey1  string
 }
 
 func (r *Env) GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient {
-	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].buildBuddyServiceClient
+	return bbspb.NewBuildBuddyServiceClient(r.appProxyConn)
 }
 
 func (r *Env) GetRemoteExecutionClient() repb.ExecutionClient {
-	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].executionClient
+	return repb.NewExecutionClient(r.appProxyConn)
 }
 
 func (r *Env) GetRemoteExecutionTarget() string {
-	server := r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))]
-	return fmt.Sprintf("grpc://localhost:%d", server.port)
+	return r.AppProxy.GRPCTarget()
 }
 
 func (r *Env) GetBuildBuddyServerTarget() string {
-	server := r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))]
-	return fmt.Sprintf("grpc://localhost:%d", server.port)
+	return r.AppProxy.GRPCTarget()
 }
 
 func (r *Env) GetByteStreamClient() bspb.ByteStreamClient {
-	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].byteStreamClient
+	return bspb.NewByteStreamClient(r.appProxyConn)
 }
 
 func (r *Env) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
-	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].casClient
+	return repb.NewContentAddressableStorageClient(r.appProxyConn)
 }
 
 func (r *Env) GetActionResultStorageClient() repb.ActionCacheClient {
-	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].acClient
+	return repb.NewActionCacheClient(r.appProxyConn)
 }
 
 func (r *Env) GetOLAPDBHandle() *testolapdb.Handle {
@@ -180,15 +182,15 @@ type envLike struct {
 }
 
 func (el *envLike) GetByteStreamClient() bspb.ByteStreamClient {
-	return el.r.buildBuddyServers[rand.Intn(len(el.r.buildBuddyServers))].byteStreamClient
+	return bspb.NewByteStreamClient(el.r.appProxyConn)
 }
 
 func (el *envLike) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
-	return el.r.buildBuddyServers[rand.Intn(len(el.r.buildBuddyServers))].casClient
+	return repb.NewContentAddressableStorageClient(el.r.appProxyConn)
 }
 
 func (el *envLike) GetCapabilitiesClient() repb.CapabilitiesClient {
-	return el.r.buildBuddyServers[rand.Intn(len(el.r.buildBuddyServers))].capabilitiesClient
+	return repb.NewCapabilitiesClient(el.r.appProxyConn)
 }
 
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
@@ -264,9 +266,11 @@ func NewRBETestEnv(t *testing.T) *Env {
 		GroupID1:    groupID,
 		APIKey1:     key.Value,
 		rootDataDir: rootDataDir,
+		AppProxy:    testgrpc.StartProxy(t, nil /*=director*/),
 	}
 	rbe.testCommandController = newTestCommandController(t)
 	rbe.rbeClient = rbeclient.New(rbe)
+	rbe.appProxyConn = rbe.AppProxy.Dial()
 
 	t.Cleanup(func() {
 		log.Warningf("Shutting down executors...")
@@ -305,7 +309,7 @@ type buildBuddyServerEnv struct {
 }
 
 func (e *buildBuddyServerEnv) GetSchedulerClient() scpb.SchedulerClient {
-	return e.rbeEnv.buildBuddyServers[0].schedulerClient
+	return scpb.NewSchedulerClient(e.rbeEnv.appProxyConn)
 }
 
 type BuildBuddyServer struct {
@@ -313,20 +317,12 @@ type BuildBuddyServer struct {
 	env  *buildBuddyServerEnv
 	port int
 
+	grpcServer              *grpc.Server
 	schedulerServer         *scheduler_server.SchedulerServer
 	executionServer         repb.ExecutionServer
 	capabilitiesServer      repb.CapabilitiesServer
 	buildBuddyServiceServer *buildbuddy_server.BuildBuddyServer
 	buildEventServer        *build_event_server.BuildEventProtocolServer
-
-	// Clients used by test framework.
-	executionClient         repb.ExecutionClient
-	casClient               repb.ContentAddressableStorageClient
-	byteStreamClient        bspb.ByteStreamClient
-	schedulerClient         scpb.SchedulerClient
-	buildBuddyServiceClient bbspb.BuildBuddyServiceClient
-	acClient                repb.ActionCacheClient
-	capabilitiesClient      repb.CapabilitiesClient
 	olapDBHandle            *testolapdb.Handle
 }
 
@@ -386,14 +382,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	if err != nil {
 		assert.FailNowf(t, "could not connect to BuildBuddy server", err.Error())
 	}
-	server.executionClient = repb.NewExecutionClient(clientConn)
-	env.SetRemoteExecutionClient(server.executionClient)
-	server.casClient = repb.NewContentAddressableStorageClient(clientConn)
-	server.byteStreamClient = bspb.NewByteStreamClient(clientConn)
-	server.schedulerClient = scpb.NewSchedulerClient(clientConn)
-	server.buildBuddyServiceClient = bbspb.NewBuildBuddyServiceClient(clientConn)
-	server.acClient = repb.NewActionCacheClient(clientConn)
-	server.capabilitiesClient = repb.NewCapabilitiesClient(clientConn)
+	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 
 	return server
 }
@@ -404,6 +393,7 @@ func (s *BuildBuddyServer) start() {
 		assert.FailNow(s.t, fmt.Sprintf("could not listen on port %d", s.port), err.Error())
 	}
 	grpcServer, grpcServerRunFunc := s.env.GRPCServer(lis)
+	s.grpcServer = grpcServer
 
 	// Configure services needed by remote execution.
 
@@ -434,6 +424,26 @@ func (s *BuildBuddyServer) start() {
 
 	go grpcServerRunFunc()
 }
+
+func (s *BuildBuddyServer) Shutdown() {
+	s.env.GetHealthChecker().Shutdown()
+}
+
+func (s *BuildBuddyServer) Stop() {
+	s.grpcServer.Stop()
+}
+
+// // ApproximateKill() is a very rough approximation of sending a SIGKILL to the
+// // app, which we cannot actually do because it is running in the same process as
+// // the test. This is useful for testing k8s rollout behavior, in which k8s sends
+// // a SIGKILL to the app if it runs over the max_shutdown_duration. It
+// // disconnects the app from Redis and stops the gRPC server, effectively
+// // disconnecting all incoming RPCs and preventing the app from modifying any RBE
+// // state in Redis.
+// func (s *BuildBuddyServer) ApproximateKill() {
+// 	require.NotNil(s.t, s.grpcServer, "server is not started")
+// 	s.grpcServer.Stop()
+// }
 
 func (s *BuildBuddyServer) GRPCPort() int {
 	return s.port
@@ -642,7 +652,10 @@ type ExecutorOptions struct {
 	// Optional interceptor for command execution results.
 	RunInterceptor
 	// Optional server to be used for task leasing, cache requests, etc
-	// If not specified the executor will connect to a random server.
+	// If not specified the executor will connect to a random server via
+	// the AppProxy.
+	// TODO: see if we can remove this option, as it doesn't represent a more
+	// realistic setup in which the apps are behind an L7 LB.
 	Server                       *BuildBuddyServer
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
 }
@@ -690,6 +703,13 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 
 	server := newBuildBuddyServer(r.t, env, opts)
 	r.buildBuddyServers = append(r.buildBuddyServers, server)
+
+	var serverTargets []string
+	for _, s := range r.buildBuddyServers {
+		serverTargets = append(serverTargets, s.GRPCAddress())
+	}
+	r.AppProxy.Director = testgrpc.RandomDialer(serverTargets...)
+
 	return server
 }
 
@@ -761,14 +781,13 @@ func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
 }
 
 func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
-	buildBuddyServer := options.Server
-	if buildBuddyServer == nil {
-		buildBuddyServer = r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))]
-	}
-
-	clientConn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", buildBuddyServer.port))
-	if err != nil {
-		assert.FailNowf(r.t, "could not create client to BuildBuddy server", err.Error())
+	clientConn := r.appProxyConn
+	if options.Server != nil {
+		var err error
+		clientConn, err = grpc_client.DialTarget(options.Server.GRPCAddress())
+		if err != nil {
+			assert.FailNowf(r.t, "could not create client to BuildBuddy server", err.Error())
+		}
 	}
 
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
@@ -997,7 +1016,7 @@ type CommandResult struct {
 // an execution error. It fails the test immediately if an error occurs that
 // is not a remote execution error.
 func (c *Command) getResult() *CommandResult {
-	timeout := time.NewTimer(defaultWaitTimeout)
+	timeout := time.NewTimer(2 * time.Second) // DO NOT SUBMIT
 	for {
 		select {
 		case result, ok := <-c.StatusChannel():
@@ -1135,7 +1154,8 @@ func (c *ControlledCommand) WaitDisconnected() {
 }
 
 type ExecuteControlledOpts struct {
-	InvocationID string
+	InvocationID   string
+	AllowReconnect bool
 }
 
 // ExecuteControlledCommand anonymously executes a special test command binary
@@ -1160,7 +1180,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not prepare command %q", name), err.Error())
 	}
-
+	cmd.AllowReconnect = opts.AllowReconnect
 	err = cmd.Start(ctx, &rbeclient.StartOpts{SkipCacheLookup: true})
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not execute command %q", name), err.Error())

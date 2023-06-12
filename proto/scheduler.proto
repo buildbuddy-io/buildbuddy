@@ -40,11 +40,16 @@ message LeaseTaskRequest {
   // Optional description of why the task needs to be re-enqueued (may be
   // visible to end user).
   google.rpc.Status re_enqueue_reason = 6;
+
+  // A token required to transfer a currently claimed lease to a new scheduler
+  // instance. It must match the token issued by the app maintaining the current
+  // lease stream.
+  string transfer_token = 7;
 }
 
 message LeaseTaskResponse {
-  // The serialized task will be set in the *first* LeaseTaskResponse returned.
-  // from the server. Subsequent responses will *only* include a lease duration.
+  // The serialized task will be set only in the first LeaseTaskResponse
+  // returned from the server.
   bytes serialized_task = 1;
 
   // The remaining duration of this lease. To continue to hold the lease, the
@@ -54,6 +59,18 @@ message LeaseTaskResponse {
 
   // Whether or not the lease was closed cleanly.
   bool closed_cleanly = 3;
+
+  // A token that should be used to transfer the lease to a different app. When
+  // this appears in the response, clients should perform the following steps
+  // (the order is important):
+  //
+  // 1. Initiate a new LeaseTask stream, setting this transfer_token in the
+  //    initial request.
+  // 2. Wait for the server to send a LeaseTaskResponse, which confirms that
+  //    the transfer was successful.
+  // 3. Close the original stream, and resume stream operations using the newly
+  //    created stream.
+  string transfer_token = 4;
 }
 
 message TaskSize {

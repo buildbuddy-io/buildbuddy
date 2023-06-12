@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
@@ -23,6 +24,7 @@ type TaskLeaser struct {
 	env        environment.Env
 	executorID string
 	taskID     string
+	leaseID    string
 	quit       chan struct{}
 	mu         sync.Mutex // protects stream
 	stream     scpb.Scheduler_LeaseTaskClient
@@ -42,22 +44,123 @@ func NewTaskLeaser(env environment.Env, executorID string, taskID string) *TaskL
 	}
 }
 
-func (t *TaskLeaser) pingServer() ([]byte, error) {
+func (t *TaskLeaser) pingServer(ctx context.Context) ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	req := &scpb.LeaseTaskRequest{
 		ExecutorId: t.executorID,
 		TaskId:     t.taskID,
 	}
-	if err := t.stream.Send(req); err != nil {
-		return nil, err
-	}
-	rsp, err := t.stream.Recv()
+	rsp, err := t.sendRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	if rsp.GetTransferToken() != "" {
+		log.CtxInfof(ctx, "App is shutting down; transferring lease to new app.")
+		if rsp, err = t.transferLease(ctx, rsp.GetTransferToken()); err != nil {
+			return nil, status.WrapError(err, "failed to transfer lease")
+		}
+		log.CtxInfof(ctx, "Successfully transferred lease.")
+	}
 	t.ttl = time.Duration(rsp.GetLeaseDurationSeconds()) * time.Second
 	return rsp.GetSerializedTask(), nil
+}
+
+// transferLease attempts to transfer the lease stream to another scheduler
+// instance.
+func (t *TaskLeaser) transferLease(ctx context.Context, transferToken string) (*scpb.LeaseTaskResponse, error) {
+	oldStream := t.stream
+	defer oldStream.CloseSend()
+
+	newStream, err := t.env.GetSchedulerClient().LeaseTask(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t.stream = newStream
+	req := &scpb.LeaseTaskRequest{
+		ExecutorId:    t.executorID,
+		TaskId:        t.taskID,
+		TransferToken: transferToken,
+	}
+	rsp, err := t.sendRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return rsp, nil
+}
+
+func (t *TaskLeaser) sendRequest(ctx context.Context, req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskResponse, error) {
+	if err := t.stream.Send(req); err != nil {
+		return nil, status.WrapError(err, "failed to send task lease request")
+	}
+	rsp, err := t.stream.Recv()
+	if err != nil {
+		return nil, status.WrapError(err, "failed to receive task lease response")
+	}
+	return rsp, nil
+}
+
+// sendRequest attempts to send req to the server and waits to receive a
+// response. It retries upon disconnect.
+// func (t *TaskLeaser) sendRequest(ctx context.Context, req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskResponse, error) {
+// 	if req.Finalize || req.ReEnqueue {
+// 		// TODO: make Finalize/ReEnqueue idempotent, and allow retrying these
+// 		// too.
+// 		return nil, status.InternalErrorf("retry for Finalize/ReEnqueue is not supported")
+// 	}
+// 	// Retry send and recv until both succeed, or until the lease expires.
+// 	ctx, cancel := context.WithTimeout(ctx, t.ttl)
+// 	defer cancel()
+// 	r := retry.DefaultWithContext(ctx)
+// 	for r.Next() {
+// 		err := t.stream.Send(req)
+// 		if err != nil && err != io.EOF {
+// 			return nil, status.WrapError(err, "failed to send task lease request")
+// 		}
+// 		var res *scpb.LeaseTaskResponse
+// 		if err == nil {
+// 			res, err = t.stream.Recv()
+// 			if err != nil && err != io.EOF {
+// 				return nil, status.WrapError(err, "failed to recv task lease response")
+// 			}
+// 		}
+// 		if err == nil {
+// 			return res, nil
+// 		}
+// 		if t.leaseID == "" {
+// 			// Reconnect is not supported by the app; do nothing.
+// 			return nil, err
+// 		}
+// 		// At this point, either send or recv returned EOF. This means the
+// 		// stream disconnected unexpectedly. So, we should start a new stream
+// 		// and retry the request.
+// 		log.CtxInfo(ctx, "Lost task lease connection; attempting to reconnect.")
+// 		if err := t.reconnect(ctx); err != nil {
+// 			return nil, status.WrapError(err, "failed to reconnect LeaseTask stream")
+// 		}
+// 		continue // attempt retry
+// 	}
+// 	if err := ctx.Err(); err != nil {
+// 		// Timed out.
+// 		return nil, err
+// 	}
+// 	// Should never happen since we should keep retrying until timeout.
+// 	return nil, status.UnknownError("unknown error sending task lease request")
+// }
+
+func (t *TaskLeaser) reconnect(ctx context.Context) error {
+	r := retry.DefaultWithContext(ctx)
+	var lastErr error
+	for r.Next() {
+		stream, err := t.env.GetSchedulerClient().LeaseTask(ctx)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		t.stream = stream
+		return nil
+	}
+	return lastErr
 }
 
 func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
@@ -79,7 +182,7 @@ func (t *TaskLeaser) keepLease(ctx context.Context) {
 			case <-t.quit:
 				return
 			case <-time.After(t.ttl):
-				if _, err := t.pingServer(); err != nil {
+				if _, err := t.pingServer(ctx); err != nil {
 					log.CtxWarningf(ctx, "Error updating lease for task: %q: %s", t.taskID, err.Error())
 					t.cancelFunc()
 					return
@@ -102,7 +205,7 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 		return nil, nil, err
 	}
 	t.stream = stream
-	serializedTask, err := t.pingServer()
+	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
 		t.closed = false
 		defer t.keepLease(ctx)
@@ -140,8 +243,10 @@ func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {
 			req.ReEnqueueReason = s.Proto()
 		}
 	}
+	// TODO(bduffany): ensure that Finalize/ReEnqueue are idempotent so that we
+	// can safely retry if the stream connection is broken.
 	if err := t.stream.Send(req); err != nil {
-		log.CtxWarningf(ctx, "Could not send request: %s", err)
+		log.CtxWarningf(ctx, "Task leaser: failed to send on stream (re-enqueue=%t): %s", req.ReEnqueue, err)
 	}
 	closedCleanly := false
 	for {
