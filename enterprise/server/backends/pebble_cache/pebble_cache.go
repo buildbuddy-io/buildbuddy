@@ -242,6 +242,14 @@ func (m *v2ToV3Migrator) FromVersion() filestore.PebbleKeyVersion {
 func (m *v2ToV3Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version3 }
 func (m *v2ToV3Migrator) Migrate(val []byte) []byte             { return val }
 
+type v3ToV4Migrator struct{}
+
+func (m *v3ToV4Migrator) FromVersion() filestore.PebbleKeyVersion {
+	return filestore.Version3
+}
+func (m *v3ToV4Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version4 }
+func (m *v3ToV4Migrator) Migrate(val []byte) []byte             { return val }
+
 // Register creates a new PebbleCache from the configured flags and sets it in
 // the provided env.
 func Register(env environment.Env) error {
@@ -452,6 +460,10 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		if pc.activeDatabaseVersion() >= filestore.Version3 {
 			// Migrate keys from 2->3.
 			pc.migrators = append(pc.migrators, &v2ToV3Migrator{})
+		}
+		if pc.activeDatabaseVersion() >= filestore.Version4 {
+			// Migrate keys from 3->4.
+			pc.migrators = append(pc.migrators, &v3ToV4Migrator{})
 		}
 	}
 
