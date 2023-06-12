@@ -8,6 +8,11 @@
   line-height: 44px;
 }
 
+.subtitleHeading {
+  color: #000;
+  font-weight: 500;
+}
+
 .team {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -25,13 +30,35 @@
   width: 100%;
 }
 
+.teamMemberHeading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .teamMemberName {
   font-weight: 700;
   font-size: 1.4em;
+  flex-grow: 1;
 }
 
-.teamMemberEmail {
-  font-weight: 600;
+.teamMemberBlurb {
+  font-weight: 500;
+  color: #86868b;
+}
+
+.teamMemberContact {
+  display: flex;
+  gap: 12px;
+}
+
+.teamMemberContact a {
+  color: #86868b;
+}
+
+.teamMemberContact svg {
+  width: 16px;
+  height: 16px;
 }
 
 .button {

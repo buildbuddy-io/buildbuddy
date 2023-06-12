@@ -17,7 +17,8 @@
 .statTitle {
   font-size: 20px;
   line-height: 34px;
-  font-weight: 400;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .quote {
@@ -30,6 +31,15 @@
   font-size: 16px;
   line-height: 22px;
   margin-top: 32px;
+}
+
+.attributionName {
+  font-weight: 800;
+}
+
+.attributionDescription {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 600;
 }
 
 .logo {

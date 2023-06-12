@@ -22,9 +22,10 @@ function Component() {
             burden. All while providing best in class visibility into our builds.”
           </h2>
           <div className={styles.attribution}>
-            <b>Keith Smiley</b>
-            <br />
-            Principal Engineer at Lyft & Lead Maintainer of Bazel's Apple rules
+            <div className={styles.attributionName}>Keith Smiley</div>
+            <div className={styles.attributionDescription}>
+              Principal Engineer at Lyft & Lead Maintainer of Bazel's Apple rules
+            </div>
           </div>
         </div>
       </div>

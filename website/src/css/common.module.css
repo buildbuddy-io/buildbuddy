@@ -25,7 +25,7 @@
 }
 
 .section.sectionGray {
-  background-color: #f8f8f8;
+  background-color: #f5f5f7;
 }
 
 .section.sectionRounded {
@@ -87,7 +87,12 @@
 .subtitle {
   font-size: 20px;
   line-height: 34px;
-  font-weight: 400;
+  font-weight: 500;
+  color: #86868b;
+}
+
+.sectionDark .subtitle {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .pillTitle {
@@ -140,7 +145,7 @@
   background-color: transparent;
   border: 1px solid #eee;
   padding: 18px 32px;
-  border-radius: 6px;
+  border-radius: 64px;
   font-weight: 600;
   font-family: inherit;
   font-size: 16px;

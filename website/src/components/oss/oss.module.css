@@ -10,13 +10,14 @@ div.ossContainer.ossContainer {
   line-height: 56px;
   font-size: 42px;
   font-weight: 700;
-  margin-bottom: 24px;
+  margin-bottom: 8px;
 }
 
 .subtitle {
   font-size: 20px;
   line-height: 34px;
-  font-weight: 400;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 @media (max-width: 460px) {
@@ -113,6 +114,8 @@ div.ossContainer.ossContainer {
 
 .repoDescription {
   margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 400;
 }
 
 .repoLink {

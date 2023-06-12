@@ -18,7 +18,7 @@
   --ifm-navbar-background-color: #fff;
   --ifm-navbar-height: 90px;
   --ifm-navbar-padding-horizontal: 24px;
-  --ifm-navbar-link-color: rgba(0, 0, 0, 0.4);
+  --ifm-navbar-link-color: #86868b;
 
   --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24"><path fill="rgba(0,0,0,1)" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path></svg>');
   --ifm-toc-border-color: transparent;
