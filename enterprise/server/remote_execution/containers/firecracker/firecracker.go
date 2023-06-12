@@ -606,9 +606,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
-// the VM. If workspaceDirOverride is set, it will also hot-swap the workspace
-// drive; otherwise, the workspace will be loaded as-is from the snapshot.
-func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride string) error {
+// the VM.
+func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -730,17 +729,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	})
 	if err != nil {
 		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
-	}
-
-	if workspaceDirOverride != "" {
-		// If the snapshot is being loaded with a different workspaceFS
-		// then handle that now.
-		if err := c.createWorkspaceImage(ctx, workspaceDirOverride); err != nil {
-			return err
-		}
-		if err := c.hotSwapWorkspace(ctx, execClient); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -1616,7 +1604,7 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	c.recycled = true
 
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
-	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/)
+	return c.LoadSnapshot(ctx)
 }
 
 // syncWorkspace creates a new disk image from the given working directory
