@@ -150,11 +150,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
-	blob, err := s.cache.Get(ctx, &rspb.ResourceName{
-		Digest:       d,
-		CacheType:    rspb.CacheType_AC,
-		InstanceName: req.GetInstanceName(),
-	})
+	blob, err := s.cache.Get(ctx, rn.ToProto())
 	if err != nil {
 		ht.TrackMiss(d)
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
