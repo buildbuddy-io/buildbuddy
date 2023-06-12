@@ -60,21 +60,6 @@ func die(err error) {
 	}
 }
 
-func sysctl(conf map[string]string) error {
-	f, err := os.OpenFile("/etc/sysctl.conf", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	for key, value := range conf {
-		if _, err := f.WriteString(fmt.Sprintf("%s=%s\n", key, value)); err != nil {
-			return err
-		}
-	}
-	return exec.Command("/sbin/sysctl", "-p").Run()
-}
-
 func mkdirp(path string, mode fs.FileMode) error {
 	log.Debugf("mkdir %q (mode: %d)", path, mode)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -346,12 +331,12 @@ func main() {
 			die(err)
 		}
 	}
-	die(sysctl(map[string]string{
-		// Set to 1% of the 8GB memory.
-		// See https://github.com/torvalds/linux/blob/929ed21dfdb6ee94391db51c9eedb63314ef6847/fs/notify/inotify/inotify_user.c#L838-L844
-		// for more info
-		"fs.inotify.max_user_watches": "65536",
-	}))
+
+	// Increase file watcher limit to 1% of the default 8GB memory.
+	// See https://github.com/torvalds/linux/blob/929ed21dfdb6ee94391db51c9eedb63314ef6847/fs/notify/inotify/inotify_user.c#L838-L844
+	if err := os.WriteFile("/proc/sys/fs/inotify/max_user_watches", []byte("65536"), 0); err != nil {
+		die(fmt.Errorf("failed to set fs.inotify.max_user_watches: %s", err))
+	}
 
 	if *setDefaultRoute {
 		die(configureDefaultRoute("eth0", "192.168.241.1"))
