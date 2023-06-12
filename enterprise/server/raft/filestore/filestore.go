@@ -494,15 +494,15 @@ func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
 		// TODO(tylerw): remove fallback once all callsites
 		// have been fixed.
 		err := status.FailedPreconditionErrorf("FileRecord %+v did not have a digestFunction set", r)
-                if se, ok := err.(interface {
-                        StackTrace() status.StackTrace
-                }); ok {
-                        stackBuf := ""
+		if se, ok := err.(interface {
+			StackTrace() status.StackTrace
+		}); ok {
+			stackBuf := ""
 			for _, f := range se.StackTrace() {
-                                stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
-                        }
+				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
+			}
 			log.Debugf(stackBuf)
-                }
+		}
 		digestFunction = repb.DigestFunction_SHA256
 	}
 
