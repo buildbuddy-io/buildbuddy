@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -323,6 +324,63 @@ func TestCreateAndExecute(t *testing.T) {
 		t, nActionsSecondRun, nActionsFirstRun,
 		"should execute fewer actions on second run since build should be cached",
 	)
+}
+
+func TestCreateAndExecuteAsync(t *testing.T) {
+	// Try to run a workflow action that takes forever, to test that we don't
+	// have to wait for the action to be completed when `async` is set in the
+	// ExecuteWorkflowRequest.
+	repoContents := repoWithSlowScript()
+	fakeGitProvider := testgit.NewFakeProvider()
+	fakeGitProvider.FileContents = repoContents
+	env, _ := setup(t, fakeGitProvider)
+	bb := env.GetBuildBuddyServiceClient()
+
+	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContents)
+	repoURL := fmt.Sprintf("file://%s", repoPath)
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+
+	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
+		RequestContext: reqCtx,
+		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+	})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, createResp.GetId())
+
+	// actionName should match an action name from buildbuddy.yaml to tell the workflow service which action config to use
+	actionName := "Test action"
+	execReq := &wfpb.ExecuteWorkflowRequest{
+		RequestContext: reqCtx,
+		WorkflowId:     createResp.GetId(),
+		ActionName:     actionName,
+		CommitSha:      commitSHA,
+		PushedRepoUrl:  repoURL,
+		PushedBranch:   "master",
+		TargetRepoUrl:  repoURL,
+		TargetBranch:   "master",
+		Async:          true,
+	}
+
+	// Patch the BES URL so that the workflow invocation can't be successfully
+	// created. The Execute response should still return an OK status, because
+	// we're running with `Async: true`.
+	u, err := url.Parse("grpc://0.1.1.1:1")
+	require.NoError(t, err)
+	flags.Set(t, "app.events_api_url", *u)
+
+	execResp, err := bb.ExecuteWorkflow(ctx, execReq)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(execResp.GetActionStatuses()))
+
+	as := execResp.GetActionStatuses()[0]
+	require.Equal(t, int32(codes.OK), as.GetStatus().GetCode())
+	require.NotEmpty(t, as.GetInvocationId())
 }
 
 func TestCancel(t *testing.T) {
