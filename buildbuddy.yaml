@@ -9,7 +9,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker --build_metadata=TAGS=linux-workflow
+      - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare --build_metadata=TAGS=linux-workflow
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:
@@ -22,7 +22,7 @@ actions:
     # TODO: Fix the tests below on Mac, and re-enable.
     bazel_commands:
       - >-
-        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker --build_metadata=TAGS=mac-workflow
+        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare --build_metadata=TAGS=mac-workflow
         --
         //...
         -//server/backends/disk_cache:all
@@ -68,6 +68,16 @@ actions:
       # TODO(http://go/b/1249): Increase reliability of runner recycling when
       # executing with high concurrency, and remove `--jobs=3`
       - test //... --config=linux-workflows --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3 --build_metadata=TAGS=linux-workflow
+  - name: Baremetal tests
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "master"
+    bazel_commands:
+      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare
 
 plugins:
   - path: cli/plugins/go-deps

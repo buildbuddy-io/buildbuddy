@@ -155,9 +155,10 @@ build --enable_runfiles
 # Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
 build --experimental_inprocess_symlink_creation
 
-# Don't run Docker tests by default, to avoid a hard dependency
-# on Docker for development.
-test --test_tag_filters=-docker
+# Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
+# Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
+# on Docker for development
+test --test_tag_filters=-docker,-bare
 
 # Use C++17 standard for all C++ compilation
 build --host_cxxopt=-std=c++17
