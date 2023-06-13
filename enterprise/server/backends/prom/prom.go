@@ -116,7 +116,7 @@ func (c *bbMetricsCollector) Collect(out chan<- prometheus.Metric) {
 func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) (model.Vector, error) {
 	resultVector, err := q.getCachedMetrics(ctx, groupID)
 	if err != nil {
-		log.Errorf("failed to get cached metrics: %s", err)
+		log.Warningf("failed to get cached metrics: %s", err)
 		// Failed to get metrics from Redis. Let's try query prometheus.
 	}
 	if resultVector != nil {
@@ -133,7 +133,7 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) (model.V
 	}
 	err = q.setMetrics(ctx, groupID, resultVector)
 	if err != nil {
-		log.Errorf("failed to set metrics to redis: %s", err)
+		log.Warningf("failed to set metrics to redis: %s", err)
 	}
 	return resultVector, nil
 }
