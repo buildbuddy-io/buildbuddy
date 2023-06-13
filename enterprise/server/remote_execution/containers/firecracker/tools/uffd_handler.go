@@ -18,7 +18,8 @@ const (
 
 	// Printed from a C script
 	// printf("(hex)%x\n", _IOWR(UFFDIO, _UFFDIO_API, struct uffdio_api));
-	UFFDIO_API = 0xc018aa3f
+	UFFDIO_API      = 0xc018aa3f
+	UFFDIO_REGISTER = 0xc020aa00
 )
 
 type uffdioApi struct {
@@ -28,13 +29,13 @@ type uffdioApi struct {
 }
 
 type uffdioRange struct {
-	Start uintptr
+	Start uint64
 	Len   uint64
 }
 type uffdioRegister struct {
-	Range   uffdioRange
-	Mode    uint32
-	ioctlop uintptr
+	Range  uffdioRange
+	Mode   uint64
+	Ioctls uint64
 }
 
 type uffdMsg struct {
@@ -59,55 +60,46 @@ func main() {
 	//       operation.  This operation allows a handshake between the kernel
 	//       and user space to determine the API version and supported
 	//       features.
+	// https://manpages.ubuntu.com/manpages/bionic/man2/ioctl_userfaultfd.2.html
 	uffdioAPI := uffdioApi{
 		Api:      C.UFFD_API,
 		Features: 0,
 	}
-
-	// Perform an operation on a uffd object by using ioctl
-	// UFFDIO allows a handshake between the kernel and user space to enable the uffd object
-	// https://manpages.ubuntu.com/manpages/bionic/man2/ioctl_userfaultfd.2.html
 	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_API, uintptr(unsafe.Pointer(&uffdioAPI)))
 	if err != 0 {
-		fmt.Printf("Failed to call UFDIO ioctl: %v\n", err)
+		fmt.Printf("Failed to call UFFDIO_API: %v\n", err)
 		os.Exit(1)
 	}
 
-	//// Allocate virtual memory that will be allocated by userfaultfde
-	//pagesToAllocate := 5
-	//// TODO: Should this be the system page size?
-	//pageSize := 2048
-	//addr, mmapErr := syscall.Mmap(0, 0, pageSize*pagesToAllocate, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
-	//if mmapErr != nil {
-	//	fmt.Printf("Failed to allocate virtual memory: %v\n", err)
-	//	os.Exit(1)
-	//}
-	//startMemRange := uintptr(unsafe.Pointer(&addr[0]))
-	//
-	//// Register userfaultfd to listen on the allocated memory range
-	//uffdioRegister := uffdioRegister{
-	//	Range: uffdioRange{
-	//		Start: startMemRange,
-	//		Len:   uint64(pageSize * pagesToAllocate),
-	//	},
-	//	Mode: 0,
-	//}
-	//
-	//// After a successful UFFDIO_API operation, the application then
-	////       registers memory address ranges using the UFFDIO_REGISTER
-	////       ioctl(2) operation.  After successful completion of a
-	////       UFFDIO_REGISTER operation, a page fault occurring in the
-	////       requested memory range, and satisfying the mode defined at the
-	////       registration time, will be forwarded by the kernel to the user-
-	////       space application.  The application can then use the UFFDIO_COPY
-	////       or UFFDIO_ZEROPAGE ioctl(2) operations to resolve the page fault.
-	//registerMacro := iowr(C.UFFDIO, C._UFFDIO_REGISTER, unsafe.Sizeof(uffdioRegister))
-	//_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, registerMacro, uintptr(unsafe.Pointer(&uffdioRegister)))
-	//if err != 0 {
-	//	fmt.Printf("Failed to call UFDIO ioctl: %v\n", err)
-	//	os.Exit(1)
-	//}
-	//
+	// Create virtual memory that will be allocated by userfaultfd
+	pagesToAllocate := 5
+	pageSize := os.Getpagesize()
+	lenToManage := pagesToAllocate * pageSize
+	addr, mmapErr := syscall.Mmap(-1, 0, lenToManage, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
+	if mmapErr != nil {
+		fmt.Printf("Failed to create virtual memory: %v\n", err)
+		os.Exit(1)
+	}
+	defer syscall.Munmap(addr)
+	startAddr := &addr[0]
+	fmt.Printf("Address returned by mmap is %p", startAddr)
+
+	// After a successful UFFDIO_API operation, the application then
+	//       registers memory address ranges using the UFFDIO_REGISTER
+	//       ioctl(2) operation.
+	registerData := uffdioRegister{
+		Range: uffdioRange{
+			Start: uint64(uintptr(unsafe.Pointer(startAddr))),
+			Len:   uint64(lenToManage),
+		},
+		Mode: C.UFFDIO_REGISTER_MODE_MISSING,
+	}
+	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_REGISTER, uintptr(unsafe.Pointer(&registerData)))
+	if err != 0 {
+		fmt.Printf("Failed to call UFFDIO_REGISTER: %v\n", err)
+		os.Exit(1)
+	}
+
 	//// Background thread to handle page faults
 	//go func() {
 	//	for {
