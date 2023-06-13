@@ -1,4 +1,4 @@
-package firecracker
+package main
 
 import (
 	"fmt"
@@ -49,9 +49,14 @@ func main() {
 	uffdioAPI := uffdioApi{
 		Api:      C.UFFD_API,
 		Features: 0,
-		Reserved: [4]uint64{},
 	}
-	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, C.UFFDIO_API, uintptr(unsafe.Pointer(&uffdioAPI)))
+
+	// What's going on here?
+	// - You can perform an operation on a uffd object by using ioctl
+	// - We want to use the UFFDIO function with the uffd object we created
+	// - Here's an explanation of what uffdio api is supposed to do https://manpages.ubuntu.com/manpages/bionic/man2/ioctl_userfaultfd.2.html
+	uffdioAPIMacro := iowr(C.UFFDIO, C._UFFDIO_API, unsafe.Sizeof(uffdioAPI))
+	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, uffdioAPIMacro, uintptr(unsafe.Pointer(&uffdioAPI)))
 	if err != 0 {
 		fmt.Printf("Failed to call UFDIO ioctl: %v\n", err)
 		os.Exit(1)
@@ -85,7 +90,8 @@ func main() {
 	//       registration time, will be forwarded by the kernel to the user-
 	//       space application.  The application can then use the UFFDIO_COPY
 	//       or UFFDIO_ZEROPAGE ioctl(2) operations to resolve the page fault.
-	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, C.UFFDIO_REGISTER, uintptr(unsafe.Pointer(&uffdioRegister)))
+	registerMacro := iowr(C.UFFDIO, C._UFFDIO_REGISTER, unsafe.Sizeof(uffdioRegister))
+	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, registerMacro, uintptr(unsafe.Pointer(&uffdioRegister)))
 	if err != 0 {
 		fmt.Printf("Failed to call UFDIO ioctl: %v\n", err)
 		os.Exit(1)
@@ -104,4 +110,16 @@ func main() {
 			fmt.Printf("Event is %v", event.event)
 		}
 	}()
+}
+
+/*
+_IOWR is used to define an ioctl command for bidirectional data transfer
+It performs bit operations to create a unique identifier for the ioctl command
+
+Stack overflow about this: https://stackoverflow.com/questions/74031563/convert-ioctl-call-in-golang
+*/
+func iowr(typ, number, size uintptr) uintptr {
+	sizeOfPtr := 8
+	return (2 << (sizeOfPtr*8 - 14)) | (typ << 8) | number | (size << 16)
+
 }
