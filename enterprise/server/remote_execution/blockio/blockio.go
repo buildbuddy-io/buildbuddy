@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sys/unix"
 )
 
 // Store models a block-level storage system, which is useful as a backend for a
@@ -51,11 +52,12 @@ func NewMmap(path string) (*Mmap, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 	s, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	data, err := syscall.Mmap(int(f.Fd()), 0, int(s.Size()), syscall.PROT_WRITE, syscall.MAP_PRIVATE)
+	data, err := syscall.Mmap(int(f.Fd()), 0, int(s.Size()), syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
@@ -79,19 +81,15 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) Sync() error {
-	return m.file.Sync()
+	return unix.Msync(m.data, unix.MS_SYNC)
 }
 
 func (m *Mmap) Close() error {
-	if err := syscall.Munmap(m.data); err != nil {
-		_ = m.file.Close()
-		return err
-	}
-	return m.file.Close()
+	return syscall.Munmap(m.data)
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
-	return fileSizeBytes(m.file)
+	return int64(len(m.data)), nil
 }
 
 func fileSizeBytes(f *os.File) (int64, error) {

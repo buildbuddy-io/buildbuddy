@@ -12,21 +12,21 @@ import (
 )
 
 const (
-	backingFileSizeBytes int64 = 1_000_000
+	backingFileSizeBytes int64 = 8192
 )
 
 func TestFile(t *testing.T) {
 	path := makeEmptyBackingFile(t)
 	s, err := blockio.NewFile(path)
 	require.NoError(t, err)
-	testStore(t, s)
+	testStore(t, s, path)
 }
 
 func TestMmap(t *testing.T) {
 	path := makeEmptyBackingFile(t)
 	s, err := blockio.NewMmap(path)
 	require.NoError(t, err)
-	testStore(t, s)
+	testStore(t, s, path)
 }
 
 func makeEmptyBackingFile(t *testing.T) string {
@@ -37,7 +37,7 @@ func makeEmptyBackingFile(t *testing.T) string {
 	return path
 }
 
-func testStore(t *testing.T, s blockio.Store) {
+func testStore(t *testing.T, s blockio.Store, path string) {
 	size, err := s.SizeBytes()
 	require.NoError(t, err, "SizeBytes failed")
 	require.Equal(t, backingFileSizeBytes, size, "unexpected SizeBytes")
@@ -69,6 +69,15 @@ func testStore(t *testing.T, s blockio.Store) {
 	// Make sure we can sync and close without error.
 	err = s.Sync()
 	require.NoError(t, err, "Sync failed")
+
+	// Read back the raw backing file using read(2); it should match our
+	// expected contents. This is especially important for testing mmap, since
+	// Sync() should guarantee that the contents are flushed from memory back
+	// to disk.
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, expectedContent, b)
+
 	err = s.Close()
 	require.NoError(t, err, "Close failed")
 }
