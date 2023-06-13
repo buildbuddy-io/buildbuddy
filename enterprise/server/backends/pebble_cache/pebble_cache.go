@@ -2721,7 +2721,7 @@ func (e *partitionEvictor) startGroupIDSampler(quitChan chan struct{}) {
 }
 
 func (e *partitionEvictor) run(quitChan chan struct{}) error {
-	if *groupIDSamplingEnabled {
+	if *groupIDSamplingEnabled || *acEvictionEnabled {
 		e.startGroupIDSampler(quitChan)
 	}
 	e.lru.Start()
