@@ -2691,11 +2691,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_jackc_pgx_v5",
-        # TODO: Wait for bazel-gazelle-v0.31.0, which will include a fix for the
-        # unix build tag in gazelle.
-        build_directives = [
-            "gazelle:build_tags unix",
-        ],
         importpath = "github.com/jackc/pgx/v5",
         sum = "h1:/NQi8KHMpKWHInxXesC8yD4DhkXPrVhmnwYkjp9AmBA=",
         version = "v5.3.0",
