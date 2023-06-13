@@ -2,14 +2,17 @@ package prom
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -21,8 +24,14 @@ var (
 	address = flag.String("prometheus.address", "", "the address of the promethus HTTP API")
 )
 
+const (
+	redisMetricsKeyPrefix = "exportedMetrics"
+	metricsExpiration     = 10*time.Second - 50*time.Millisecond
+)
+
 type promQuerier struct {
 	api promapi.API
+	rdb redis.UniversalClient
 }
 
 type bbMetricsCollector struct {
@@ -43,6 +52,7 @@ func Register(env environment.Env) error {
 	}
 	q := &promQuerier{
 		api: promapi.NewAPI(c),
+		rdb: env.GetDefaultRedisClient(),
 	}
 	env.SetPromQuerier(q)
 	return nil
@@ -104,11 +114,62 @@ func (c *bbMetricsCollector) Collect(out chan<- prometheus.Metric) {
 }
 
 func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) (model.Vector, error) {
+	resultVector, err := q.getCachedMetrics(ctx, groupID)
+	if err != nil {
+		log.Warningf("failed to get cached metrics: %s", err)
+		// Failed to get metrics from Redis. Let's try query prometheus.
+	}
+	if resultVector != nil {
+		return resultVector, nil
+	}
 	query := fmt.Sprintf("sum by (bazel_command, bazel_exit_code, invocation_status)( buildbuddy_invocation_count{group_id='%s'})", groupID)
 	result, _, err := q.api.Query(ctx, query, time.Now())
 	if err != nil {
 		return nil, err
 	}
-	resultVector := result.(model.Vector)
+	resultVector, ok := result.(model.Vector)
+	if !ok {
+		return nil, status.InternalErrorf("failed to query Prometheus: unexpected type %T", result)
+	}
+	err = q.setMetrics(ctx, groupID, resultVector)
+	if err != nil {
+		log.Warningf("failed to set metrics to redis: %s", err)
+	}
 	return resultVector, nil
+}
+
+func getExportedMetricsKey(groupID string) string {
+	return strings.Join([]string{redisMetricsKeyPrefix, groupID}, "/")
+}
+
+func (q *promQuerier) setMetrics(ctx context.Context, groupID string, vec model.Vector) error {
+	if q.rdb == nil {
+		return nil
+	}
+	key := getExportedMetricsKey(groupID)
+	b, err := json.Marshal(vec)
+	if err != nil {
+		return status.InternalErrorf("failed to marshal json: %s", err)
+	}
+	return q.rdb.Set(ctx, key, string(b), metricsExpiration).Err()
+
+}
+func (q *promQuerier) getCachedMetrics(ctx context.Context, groupID string) (model.Vector, error) {
+	if q.rdb == nil {
+		return nil, nil
+	}
+	key := getExportedMetricsKey(groupID)
+	serializedVector, err := q.rdb.Get(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var vec model.Vector
+	err = json.Unmarshal([]byte(serializedVector), &vec)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to unmarshal json: %s", err)
+	}
+	return vec, nil
 }

@@ -9,6 +9,7 @@ go_library(
         "//server/metrics",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//api",
         "@com_github_prometheus_client_golang//api/prometheus/v1:prometheus",
         "@com_github_prometheus_client_golang//prometheus",
