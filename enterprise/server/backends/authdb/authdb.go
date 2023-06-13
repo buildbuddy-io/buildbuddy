@@ -34,7 +34,7 @@ const (
 	apiKeyNonceLength = 6
 
 	// Encrypted API keys have this prefix in the database.
-	apiKeyEncryptedValuePrefix = "en"
+	apiKeyEncryptedValuePrefix = "en$"
 
 	apiKeyEncryptionBackfillBatchSize = 100
 )
