@@ -444,6 +444,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.1.0",
     )
     go_repository(
+        name = "com_github_boljen_go_bitmap",
+        importpath = "github.com/boljen/go-bitmap",
+        sum = "h1:zsO4lp+bjv5XvPTF58Vq+qgmZEYZttJK+CWtSZhKenI=",
+        version = "v0.0.0-20151001105940-23cd2fb0ce7d",
+    )
+
+    go_repository(
         name = "com_github_bombsimon_wsl_v3",
         importpath = "github.com/bombsimon/wsl/v3",
         sum = "h1:Mka/+kRLoQJq7g2rggtgQsjuI/K5Efd87WX96EWFxjM=",
