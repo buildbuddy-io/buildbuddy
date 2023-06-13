@@ -214,6 +214,12 @@ function Team() {
               <a href="/careers" className={`${common.button} ${common.buttonPrimary} ${styles.button}`}>
                 View open positions
               </a>
+              <Image
+                style={{ backgroundColor: "#202124", padding: "8px", borderRadius: "8px", marginTop: "32px" }}
+                img={require(`../../static/img/team/team.png`)}
+                shouldAutoDownload={() => true}
+                threshold={10000}
+              />
             </div>
           </div>
         </div>
