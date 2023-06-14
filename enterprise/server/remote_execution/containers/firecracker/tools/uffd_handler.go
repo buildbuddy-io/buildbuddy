@@ -5,10 +5,13 @@ import (
 	"os"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 /*
 #include <linux/userfaultfd.h> // For UFFD_API, UFFDIO_API
+#include <linux/poll.h> // For POLLIN
 */
 import "C"
 
@@ -134,7 +137,19 @@ func main() {
 			pageToCopy[i] = 'M'
 		}
 
+		pollFDs := []unix.PollFd{{
+			Fd:     int32(uffd),
+			Events: C.POLLIN,
+		}}
+
 		for {
+			nready, pollErr := unix.Poll(pollFDs, -1)
+			if pollErr != nil {
+				fmt.Printf("Failed to poll UFFD: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Num ready is %d", nready)
+
 			var event uffdMsg
 			_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 			if err != 0 {
