@@ -39,12 +39,17 @@ type uffdioRegister struct {
 }
 
 type uffdMsg struct {
-	Event uint64
-	Addr  uint64
-	Flags uint64
-	Ptid  int32
-	Fd    int32
-	Pid   int32
+	Event uint8
+
+	Reserved1 uint8
+	Reserved2 uint16
+	Reserved3 uint32
+
+	PageFault struct {
+		Flags   uint64
+		Address uint64
+		Ptid    uint32
+	}
 }
 
 func main() {
@@ -100,17 +105,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	//// Background thread to handle page faults
-	//go func() {
-	//	for {
-	//		var event uffdMsg
-	//		_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
-	//		if err != 0 {
-	//			fmt.Printf("Failed to read event: %v\n", err)
-	//			os.Exit(1)
-	//		}
-	//
-	//		fmt.Printf("Event is %v", event.Event)
-	//	}
-	//}()
+	// Background thread to handle page faults
+	go func() {
+		for {
+			var event uffdMsg
+			_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
+			if err != 0 {
+				fmt.Printf("Failed to read event: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Printf("Event is %v", event.Event)
+		}
+	}()
 }
