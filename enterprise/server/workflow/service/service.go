@@ -1289,7 +1289,7 @@ func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf 
 func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID string) error {
 	invocationURL := build_buddy_url.WithPath("/invocation/" + invocationID)
 	invocationURL.RawQuery = "queued=true"
-	status := github.NewGithubStatusPayload(actionName, invocationURL.String(), "Waiting for available worker...", github.PendingState)
+	status := github.NewGithubStatusPayload(actionName, invocationURL.String(), "Queued...", github.PendingState)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
 	if err != nil {
 		return err

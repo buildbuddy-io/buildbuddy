@@ -609,6 +609,7 @@ ts_library(
         "@npm//long",
         "@npm//lucide-react",
         "@npm//react",
+        "@npm//tslib",
     ],
 )
 
