@@ -42,7 +42,7 @@ import (
 const (
 	busyboxImage = "docker.io/library/busybox:latest"
 	// Alternate image to use if getting rate-limited by docker hub
-	// busyboxImage = "quay.io/quay/busybox:latest"
+	// busyboxImage = "gcr.io/google-containers/busybox:latest"
 
 	ubuntuImage              = "marketplace.gcr.io/google/ubuntu2004"
 	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
@@ -273,6 +273,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
 	path := filepath.Join(workDir, "world.txt")
 	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
@@ -290,9 +291,11 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
 		t.Fatalf("unable to pull image: %s", err)
 	}
+
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		t.Fatalf("unable to Create container: %s", err)
 	}

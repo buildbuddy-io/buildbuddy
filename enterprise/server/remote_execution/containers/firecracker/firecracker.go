@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/armon/circbuf"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver"
@@ -802,15 +801,16 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 	}
 
 	if *enableNBD {
-		// Swap out the backing file for the workspace NBD.
+		// Create a new backing store for the new workspace.
+		wd, err := nbdserver.NewExt4Device(c.workspaceFSPath(), workspaceDriveID)
+		if err != nil {
+			return status.WrapError(err, "failed to create new workspace NBD")
+		}
+		// Close the old device and swap in the new one.
 		if err := c.workspaceDevice.Close(); err != nil {
 			log.Warningf("Failed to close workspace nbd: %s", err)
 		}
-		store, err := blockio.NewMmap(c.workspaceFSPath())
-		if err != nil {
-			return status.WrapError(err, "initialize workspace NBD store")
-		}
-		c.workspaceDevice.Store = store
+		c.workspaceDevice = wd
 	} else {
 		chrootRelativeImagePath := filepath.Base(c.workspaceFSPath())
 		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
@@ -1363,6 +1363,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 
 	scratchFSPath := c.scratchFSPath()
 	workspaceFSPath := c.workspaceFSPath()
+
 	// When mounting the workspace image directly as a block device (rather than
 	// as an NBD), the firecracker go SDK expects the disk images to be outside
 	// the chroot, and will move them to the chroot for us. So we place them in

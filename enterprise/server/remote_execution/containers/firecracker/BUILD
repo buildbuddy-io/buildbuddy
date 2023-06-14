@@ -29,7 +29,6 @@ go_library(
             "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
-            "//enterprise/server/remote_execution/blockio",
             "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/remote_execution/container",
             "//enterprise/server/remote_execution/nbd/nbdserver",

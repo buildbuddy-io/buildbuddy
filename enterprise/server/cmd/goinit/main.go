@@ -420,6 +420,7 @@ func runVMExecServer(ctx context.Context) error {
 	}
 	log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes))
+
 	// When NBD is enabled, the VMExec server needs a handle on the workspacefs
 	// ClientDevice so that it can mount/unmount the workspace between actions.
 	// Create the device now and mount it.
