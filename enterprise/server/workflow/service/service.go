@@ -547,24 +547,25 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			defer wg.Done()
 
 			var invocationID string
-			var err error
+			var statusErr error
 			actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
 				ActionName: actionName,
 			}
 			actionStatuses = append(actionStatuses, actionStatus)
 			defer func() {
 				actionStatus.InvocationId = invocationID
-				actionStatus.Status = gstatus.Convert(err).Proto()
+				actionStatus.Status = gstatus.Convert(statusErr).Proto()
 			}()
 
 			if action == nil {
-				err = status.NotFoundErrorf("action %s not found", actionName)
+				statusErr = status.NotFoundErrorf("action %s not found", actionName)
 				return
 			}
 
 			invocationUUID, err := guuid.NewRandom()
 			if err != nil {
-				log.CtxWarningf(ctx, "Could not generate invocation ID for workflow action %s", req.GetActionName())
+				statusErr = status.InternalErrorf("failed to generate invocation ID: %s", err)
+				log.CtxError(ctx, statusErr.Error())
 				return
 			}
 			invocationID = invocationUUID.String()
@@ -574,11 +575,16 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			isTrusted := true
 			executionID, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
 			if err != nil {
-				log.CtxWarningf(ctx, "Could not execute workflow action %s: %s", req.GetActionName(), err)
+				statusErr = status.WrapErrorf(err, "failed to execute workflow action %s", req.GetActionName())
+				log.CtxWarning(ctx, statusErr.Error())
+				return
+			}
+			if req.GetAsync() {
 				return
 			}
 			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
-				log.CtxWarningf(ctx, "Could not create invocation for workflow action %s: %s", req.GetActionName(), err)
+				statusErr = err
+				log.CtxWarning(ctx, statusErr.Error())
 				return
 			}
 		}()
@@ -770,6 +776,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 		case <-time.After(1 * time.Second):
 			break
 		}
+		log.Infof("Polling invocation status...")
 		if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
 			_, err := indb.LookupInvocation(ctx, invocationID)
 			if err == nil {

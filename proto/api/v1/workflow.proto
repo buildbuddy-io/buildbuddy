@@ -30,6 +30,8 @@ message ExecuteWorkflowRequest {
   // Workflow invocations are private by default, but this can be
   // set to "PUBLIC" to make the workflow invocation public.
   string visibility = 5;
+  // If true, start the workflow but do not wait for the status to be returned.
+  bool async = 6;
 }
 
 message ExecuteWorkflowResponse {
@@ -42,10 +44,12 @@ message ExecuteWorkflowResponse {
     // The BuildBuddy invocation ID from executing the action.
     string invocation_id = 2;
 
-    // The GRPC status from executing the action.
+    // The gRPC status from executing the action, or from starting the action if
+    // async is true.
     google.rpc.Status status = 3;
   }
 
-  // A list of the actions executed by the API.
+  // A list of the actions executed by the API, or actions started if async is
+  // true.
   repeated ActionStatus action_statuses = 1;
 }
