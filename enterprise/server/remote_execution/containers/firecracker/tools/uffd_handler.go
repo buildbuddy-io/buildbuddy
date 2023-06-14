@@ -17,9 +17,16 @@ const (
 	SYS_USERFAULTFD = 323
 
 	// Printed from a C script
+	/*
+		#include <stdio.h>
+		#include <fcntl.h>
+		#include <linux/ioctl.h>
+		#include <linux/userfaultfd.h>
+	*/
 	// printf("(hex)%x\n", _IOWR(UFFDIO, _UFFDIO_API, struct uffdio_api));
 	UFFDIO_API      = 0xc018aa3f
 	UFFDIO_REGISTER = 0xc020aa00
+	UFFDIO_COPY     = 0xc028aa03
 )
 
 type uffdioApi struct {
@@ -50,6 +57,14 @@ type uffdMsg struct {
 		Address uint64
 		Ptid    uint32
 	}
+}
+
+type uffdioCopy struct {
+	Dst  uint64 // Source of copy
+	Src  uint64 // Destination of copy
+	Len  uint64 // Number of bytes to copy
+	Mode uint64 // Flags controlling behavior of copy
+	Copy int64  // Number of bytes copied, or negated error
 }
 
 func main() {
@@ -107,6 +122,18 @@ func main() {
 
 	// Background thread to handle page faults
 	go func() {
+		// Create a page that will be copied into the faulting region
+		pageToCopy, mmapErr := syscall.Mmap(-1, 0, pageSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
+		if mmapErr != nil {
+			fmt.Printf("Failed to create virtual memory: %v\n", err)
+			os.Exit(1)
+		}
+		defer syscall.Munmap(pageToCopy)
+
+		for i := range pageToCopy {
+			pageToCopy[i] = 'M'
+		}
+
 		for {
 			var event uffdMsg
 			_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
@@ -115,7 +142,31 @@ func main() {
 				os.Exit(1)
 			}
 
-			fmt.Printf("Event is %v", event.Event)
+			fmt.Printf("Address is %v", event.Event)
+
+			copyData := uffdioCopy{
+				Dst:  event.PageFault.Address,
+				Src:  uint64(uintptr(unsafe.Pointer(&pageToCopy[0]))),
+				Len:  uint64(pageSize),
+				Mode: 0,
+				Copy: 0,
+			}
+
+			_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+			if err != 0 {
+				fmt.Printf("Failed to call UFFDIO_COPY: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}()
+
+	fmt.Println("Down here")
+	l := 0xf
+	c := addr[l]
+	fmt.Printf("Read value %v in main(): ", c)
+	l += 1024
+	c = addr[l]
+	fmt.Printf("Read value %v in main(): ", c)
+	for {
+	}
 }
