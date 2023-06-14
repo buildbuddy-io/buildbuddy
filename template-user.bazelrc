@@ -12,20 +12,28 @@
 ## 3) Update and uncomment the line below accordingly
 #--remote_header=x-buildbuddy-api-key=YOUR_API_KEY
 
-############################
-## Certificate based auth ##
-############################
-## Get your certs by:
-## 1) Logging in or creating an account here: https://app.buildbuddy.io/
-## 2) Click certificate and download certs here: https://app.buildbuddy.io/docs/setup/
-## 3) Uncomment the lines below and place certs in your workspace directory, or update the paths below
-#build --tls_client_certificate=buildbuddy-cert.pem
-#build --tls_client_key=buildbuddy-key.pem
-
-
 #################################
 ## Local toolchain development ##
 #################################
 ## Use when developing the toolchain repo
 ## Uncomment the line below and update the path to point to your local toolchain directory
 #build --override_repository=io_buildbuddy_buildbuddy_toolchain=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/buildbuddy-toolchain/
+
+###############################################
+## Remote build from Mac Laptop on Linux RBE ##
+###############################################
+# Use this config with --config=x (cross build)
+#build:x --config=target-linux
+#
+# Show more actions in the terminal output.
+# When execute build remotely, up-to 100 actions could be running in parallel.
+#build --ui_actions_shown=32
+
+##########
+## Misc ##
+##########
+# Cache your external dependencies downloads
+#build --repository_cache=~/.bazel/repository_cache/
+#
+# Print out test logs if there is any error
+#test --test_output=errors

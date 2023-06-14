@@ -78,6 +78,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           clean,
           visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
           pullRequestNumber: Long.fromString(this.props.model.buildMetadataMap.get("PULL_REQUEST_NUMBER") || "0"),
+          async: true,
         })
       )
       .then((response) => {
@@ -96,7 +97,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
         });
 
         if (invocationId !== "") {
-          router.navigateTo(`/invocation/${invocationId}`);
+          router.navigateTo(`/invocation/${invocationId}?queued=true`);
         } else {
           errorService.handleError(errorMsg);
         }

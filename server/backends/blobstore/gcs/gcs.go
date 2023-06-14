@@ -78,7 +78,11 @@ func (g *GCSBlobStore) bucketExists(ctx context.Context, bucketName string) (boo
 }
 
 func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName string) error {
-	if exists, _ := g.bucketExists(ctx, bucketName); !exists {
+	exists, err := g.bucketExists(ctx, bucketName)
+	if err != nil {
+		log.Infof("Could not check if GCS bucket exists, skipping bucket creation: %s", err)
+	}
+	if err == nil && !exists {
 		log.Infof("Creating storage bucket: %s", bucketName)
 		g.bucketHandle = g.gcsClient.Bucket(bucketName)
 		ctx, spn := tracing.StartSpan(ctx)
