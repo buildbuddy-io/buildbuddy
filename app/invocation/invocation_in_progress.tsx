@@ -2,6 +2,7 @@ import React from "react";
 
 interface Props {
   invocationId: string;
+  title?: React.ReactNode;
 }
 
 export default class InvocationInProgressComponent extends React.Component<Props> {
@@ -12,7 +13,7 @@ export default class InvocationInProgressComponent extends React.Component<Props
           <div className="container">
             <div className="breadcrumbs">Invocation {this.props.invocationId}</div>
             <div className="titles">
-              <div className="title">Invocation in progress...</div>
+              <div className="title">{this.props.title || "Invocation in progress..."}</div>
             </div>
             <div className="details">This page will refresh every few seconds.</div>
           </div>

@@ -119,7 +119,11 @@ class Router {
    */
   setQueryParam(key: string, value: any) {
     const url = new URL(window.location.href);
-    url.searchParams.set(key, String(value));
+    if (value === undefined || value === null) {
+      url.searchParams.delete(key);
+    } else {
+      url.searchParams.set(key, String(value));
+    }
     window.history.replaceState({}, "", url.href);
   }
 

@@ -1263,16 +1263,33 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 	if err != nil {
 		return "", err
 	}
-	log.CtxInfof(ctx, "Started workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
+	log.CtxInfof(ctx, "Enqueued workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
 	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
 		metrics.WebhookEventName: wd.EventName,
 	}).Inc()
+
+	if err := ws.createQueuedStatus(ctx, wf, wd, workflowAction.Name, invocationID); err != nil {
+		log.CtxWarningf(ctx, "Failed to publish workflow action queued status to GitHub: %s", err)
+	}
+
 	return op.GetName(), nil
 }
 
 func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) error {
 	// TODO: Create a help section in the docs that explains this error status, and link to it
 	status := github.NewGithubStatusPayload(actionName, build_buddy_url.String(), "Check requires approving review", github.ErrorState)
+	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
+	if err != nil {
+		return err
+	}
+	ghc := github.NewGithubClient(ws.env, wf.AccessToken)
+	return ghc.CreateStatus(ctx, ownerRepo, wd.SHA, status)
+}
+
+func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID string) error {
+	invocationURL := build_buddy_url.WithPath("/invocation/" + invocationID)
+	invocationURL.RawQuery = "queued=true"
+	status := github.NewGithubStatusPayload(actionName, invocationURL.String(), "Waiting for available worker...", github.PendingState)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
 	if err != nil {
 		return err
