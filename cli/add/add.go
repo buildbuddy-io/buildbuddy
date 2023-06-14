@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -59,21 +58,22 @@ func HandleAdd(args []string) (int, error) {
 		return 1, nil
 	}
 
-	module, resp, err := fetchModuleOrDisambiguate(flags.Args()[0])
+	module, resp, err := FetchModuleOrDisambiguate(flags.Args()[0])
 	if err != nil {
 		return 1, err
 	}
 
 	// TODO(siggisim): Support MODULE.bazel
 	f, err := openOrCreateWorkspaceFile()
+	if err != nil {
+		return 1, err
+	}
 	defer f.Close()
 
 	contents, err := io.ReadAll(f)
 	if err != nil {
 		return 1, err
 	}
-
-	versionKey := fmt.Sprintf("[https://registry.build/%s@%s]", module, resp.LatestReleaseWithWorkspaceSnippet)
 
 	matches := headerRegex.FindAllStringSubmatch(string(contents), -1)
 	for _, m := range matches {
@@ -88,22 +88,24 @@ func HandleAdd(args []string) (int, error) {
 				existingModule, existingVersion, resp.LatestReleaseWithWorkspaceSnippet)
 		}
 	}
+	if strings.Contains(string(contents), resp.Repo.FullName) {
+		return 1, fmt.Errorf("WORKSPACE already contains %s which is likely %s manually installed",
+			resp.Repo.FullName, module)
+	}
 
-	header := fmt.Sprintf(headerTemplate, versionKey)
-	footer := fmt.Sprintf(footerTemplate, versionKey)
-	addition := fmt.Sprintf("\n%s\n\n%+v\n\n%s\n", header, strings.TrimSpace(resp.WorkspaceSnippet), footer)
+	addition := GenerateSnippet(module, resp)
 
 	if _, err := f.WriteString(addition); err != nil {
 		return 1, err
 	}
 
-	log.Printf("Added the following snippet to WORKSPACE:\n%s\n\n", addition)
+	log.Debugf("Added the following snippet to WORKSPACE:\n%s\n\n", addition)
 
 	return 0, nil
 }
 
 // TODO(siggisim): Support specifying a version.
-func fetchModuleOrDisambiguate(module string) (string, *RegistryResponse, error) {
+func FetchModuleOrDisambiguate(module string) (string, *RegistryResponse, error) {
 	res, err := fetch(module)
 	if err != nil {
 		return "", nil, err
@@ -130,6 +132,13 @@ func fetchModuleOrDisambiguate(module string) (string, *RegistryResponse, error)
 		}
 	}
 	return module, res, nil
+}
+
+func GenerateSnippet(module string, resp *RegistryResponse) string {
+	versionKey := fmt.Sprintf("[https://registry.build/%s@%s]", module, resp.LatestReleaseWithWorkspaceSnippet)
+	header := fmt.Sprintf(headerTemplate, versionKey)
+	footer := fmt.Sprintf(footerTemplate, versionKey)
+	return fmt.Sprintf("\n%s\n\n%+v\n\n%s\n", header, strings.TrimSpace(resp.WorkspaceSnippet), footer)
 }
 
 func fetch(module string) (*RegistryResponse, error) {
@@ -193,31 +202,11 @@ func showPicker(modules []Disambiguation) (string, error) {
 }
 
 func openOrCreateWorkspaceFile() (*os.File, error) {
-	workspacePath, basename, err := workspace.PathAndBasename()
+	workspacePath, basename, err := workspace.CreateWorkspaceFileIfNotExists()
 	if err != nil {
-		workspacePath, basename, err = createWorkspaceFile()
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	return os.OpenFile(filepath.Join(workspacePath, basename), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-}
-
-func createWorkspaceFile() (string, string, error) {
-	fileName := "WORKSPACE.bazel"
-	f, err := os.OpenFile(fileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
-	if err != nil {
-		return "", "", err
-	}
-	defer f.Close()
-	workspacePath, err := os.Getwd()
-	if err != nil {
-		return "", "", err
-	}
-	if _, err := f.WriteString(`workspace(name = "` + path.Base(workspacePath) + `")` + "\n"); err != nil {
-		return "", "", err
-	}
-	return workspacePath, fileName, nil
 }
 
 type RegistryResponse struct {
