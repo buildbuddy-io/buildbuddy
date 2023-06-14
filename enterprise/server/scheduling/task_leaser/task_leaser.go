@@ -2,13 +2,13 @@ package task_leaser
 
 import (
 	"context"
-	"flag"
 	"io"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
@@ -17,7 +17,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var apiKey = flag.String("executor.api_key", "", "API Key used to authorize the executor with the BuildBuddy app server.")
+var apiKey = flagutil.New("executor.api_key", "", "API Key used to authorize the executor with the BuildBuddy app server.", flagutil.SecretTag)
 
 type TaskLeaser struct {
 	env        environment.Env

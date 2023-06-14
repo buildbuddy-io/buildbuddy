@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/auth",
         "//proto:scheduler_go_proto",
         "//server/environment",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
