@@ -9,9 +9,9 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -75,7 +75,7 @@ func Configure() error {
 		return status.InvalidArgumentErrorf("unknown config secrets provider %q", *configSecretProvider)
 	}
 
-	yaml.SecretProvider = provider
+	config.SecretProvider = provider
 
 	return nil
 }
