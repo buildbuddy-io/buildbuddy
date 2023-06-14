@@ -101,7 +101,9 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 		SUM(action_cache_hits) AS action_cache_hits,
 		SUM(cas_cache_hits) AS cas_cache_hits,
 		SUM(total_download_size_bytes) AS total_download_size_bytes,
-		SUM(linux_execution_duration_usec) AS linux_execution_duration_usec
+		SUM(linux_execution_duration_usec) AS linux_execution_duration_usec,
+		SUM(total_upload_size_bytes) AS total_upload_size_bytes,
+		SUM(total_cached_action_exec_usec) AS total_cached_action_exec_usec
 		FROM "Usages"
 		WHERE period_start_usec >= ? AND period_start_usec < ?
 		AND group_id = ?
