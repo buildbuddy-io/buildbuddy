@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/translate/yaml",
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/add",
         "//cli/log",
         "//cli/translate/builtins",
         "@in_gopkg_yaml_v2//:yaml_v2",

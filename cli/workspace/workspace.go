@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 )
 
@@ -59,4 +60,31 @@ func path() (string, string, error) {
 func SetForTest(path string) {
 	_, _ = Path()
 	pathVal, pathErr = path, nil
+}
+
+func CreateWorkspaceFileIfNotExists() (string, string, error) {
+	log.Debugf("Checking if workspace file exists")
+	path, base, err := PathAndBasename()
+	if err == nil {
+		return path, base, nil
+	}
+	log.Debugf("Creating workspace file")
+	fileName := "WORKSPACE" // gazelle doesn't like WORKSPACE.bazel...
+	f, err := os.OpenFile(fileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	if err != nil {
+		return "", "", err
+	}
+	defer f.Close()
+	workspacePath, err := os.Getwd()
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := f.WriteString(`workspace(name = "` + filepath.Base(workspacePath) + `")` + "\n"); err != nil {
+		return "", "", err
+	}
+	pathVal = workspacePath
+	basename = fileName
+	pathErr = nil
+	log.Debugf("Created workspace file at %s/%s", pathVal, basename)
+	return pathVal, basename, nil
 }
