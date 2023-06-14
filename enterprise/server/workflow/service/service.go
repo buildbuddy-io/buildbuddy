@@ -687,6 +687,7 @@ func (ws *workflowService) useCleanWorkflow(ctx context.Context, wf *tables.Work
 	wf.InstanceNameSuffix = suffix
 
 	if isRepositoryWorkflowID(wf.WorkflowID) {
+		log.CtxInfof(ctx, "Workflow clean run requested for repo %q (group %s)", wf.RepoURL, wf.GroupID)
 		err = ws.env.GetDBHandle().DB(ctx).Exec(`
 				UPDATE GitRepositories
 				SET instance_name_suffix = ?
@@ -694,6 +695,7 @@ func (ws *workflowService) useCleanWorkflow(ctx context.Context, wf *tables.Work
 			suffix, wf.GroupID, wf.RepoURL,
 		).Error
 	} else {
+		log.CtxInfof(ctx, "Workflow clean run requested for workflow %q (group %s)", wf.WorkflowID, wf.GroupID)
 		err = ws.env.GetDBHandle().DB(ctx).Exec(`
 				UPDATE Workflows
 				SET instance_name_suffix = ?
