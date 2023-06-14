@@ -26,6 +26,7 @@ export default class InvocationLogsModel {
   constructor(private invocationId: string) {}
 
   startFetching() {
+    this.stopFetching();
     this.fetchTail();
   }
 
