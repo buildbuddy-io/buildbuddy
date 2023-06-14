@@ -1093,4 +1093,5 @@ svg.invocation-query-graph .nodes rect {
 .child-invocation-card .duration {
   text-align: right;
   margin-left: auto;
+  white-space: nowrap;
 }
