@@ -114,8 +114,6 @@ type InstallationAuthenticator interface {
 	AnonymousUsageEnabled() bool
 	// Return a slice containing the providers
 	PublicIssuers() []string
-	// Whether SSO is enabled for this authenticator
-	SSOEnabled() bool
 }
 
 type HTTPAuthenticator interface {
@@ -134,6 +132,9 @@ type HTTPAuthenticator interface {
 	//
 	// Application code can retrieve the stored information by calling AuthenticatedUser.
 	AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context
+
+	// Whether SSO is enabled for this authenticator
+	SSOEnabled() bool
 }
 
 type GRPCAuthenticator interface {
