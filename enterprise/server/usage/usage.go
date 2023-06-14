@@ -303,8 +303,8 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 				action_cache_hits = action_cache_hits + ?,
 				total_download_size_bytes = total_download_size_bytes + ?,
 				linux_execution_duration_usec = linux_execution_duration_usec + ?,
-				mac_execution_duration_usec = mac_execution_duration_usec + ?
-				total_upload_size_bytes = total_upload_size_bytes + ?
+				mac_execution_duration_usec = mac_execution_duration_usec + ?,
+				total_upload_size_bytes = total_upload_size_bytes + ?,
 				total_cached_action_exec_usec = total_cached_action_exec_usec + ?
 			WHERE
 				group_id = ?
