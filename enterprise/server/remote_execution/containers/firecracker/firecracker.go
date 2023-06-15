@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
@@ -51,6 +52,7 @@ import (
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	dockerclient "github.com/docker/docker/client"
@@ -284,7 +286,7 @@ type FirecrackerContainer struct {
 	id          string // a random GUID, unique per-run of firecracker
 	vmIdx       int    // the index of this vm on the host machine
 	loader      snaploader.Loader
-	snapshotKey *snaploader.Key
+	snapshotKey *fcpb.SnapshotKey
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -338,6 +340,10 @@ type FirecrackerContainer struct {
 }
 
 func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
+	if opts.VMConfiguration == nil {
+		return nil, status.InvalidArgumentError("missing VMConfiguration")
+	}
+
 	vmLog, err := NewVMLog(vmLogTailBufSize)
 	if err != nil {
 		return nil, err
@@ -371,41 +377,42 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	}
 
 	c := &FirecrackerContainer{
-		vmConfig: &fcpb.VMConfiguration{
-			NumCpus:           opts.NumCPUs,
-			MemSizeMb:         opts.MemSizeMB,
-			ScratchDiskSizeMb: opts.ScratchDiskSizeMB,
-			EnableNetworking:  opts.EnableNetworking,
-			InitDockerd:       opts.InitDockerd,
-			DebugMode:         *firecrackerDebugMode,
-		},
-		loader:             loader,
+		vmConfig:           opts.VMConfiguration,
 		jailerRoot:         opts.JailerRoot,
 		dockerClient:       opts.DockerClient,
 		containerImage:     opts.ContainerImage,
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
+		loader:             loader,
 		vmLog:              vmLog,
 		imageCacheAuth:     imageCacheAuth,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
 		cancelVmCtx:        func() {},
 	}
 
-	if err := c.newID(ctx); err != nil {
-		return nil, err
-	}
 	if opts.ForceVMIdx != 0 {
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	cd, err := digest.ComputeForMessage(c.vmConfig, repb.DigestFunction_SHA256)
-	if err != nil {
-		return nil, status.InternalErrorf("failed to marshal VMConfiguration: %s", err)
-	}
-	c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), c.id)
-	if err != nil {
-		return nil, status.WrapError(err, "failed to compute snapshot key")
+	if opts.SavedState == nil {
+		if err := c.newID(ctx); err != nil {
+			return nil, err
+		}
+		cd, err := digest.ComputeForMessage(c.vmConfig, repb.DigestFunction_SHA256)
+		if err != nil {
+			return nil, err
+		}
+		c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), c.id)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		c.snapshotKey = opts.SavedState.GetSnapshotKey()
+
+		// TODO(bduffany): add version info to snapshots. For example, if a
+		// breaking change is made to the vmexec API, the executor should not
+		// attempt to connect to snapshots that were created before the change.
 	}
 
 	return c, nil
@@ -489,6 +496,20 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 	}
 
 	return eg.Wait()
+}
+
+// State returns the container state to be persisted to disk so that this
+// container can be reconstructed from the state on disk after an executor
+// restart.
+func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
+	state := &rnpb.ContainerState{
+		IsolationType: string(platform.FirecrackerContainerType),
+		FirecrackerState: &rnpb.FirecrackerState{
+			VmConfiguration: c.vmConfig,
+			SnapshotKey:     c.snapshotKey,
+		},
+	}
+	return state, nil
 }
 
 func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, error) {
@@ -698,12 +719,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		ForwardSignals: make([]os.Signal, 0),
 	}
 
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
-	if err != nil {
-		return err
-	}
-	c.vmConfig = snap.GetVMConfiguration()
-
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
@@ -726,6 +741,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
+	if err != nil {
+		return status.WrapError(err, "failed to get snapshot")
+	}
 	if err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot()); err != nil {
 		return err
 	}
@@ -784,7 +803,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
 	if err := ext4.DirectoryToImage(ctx, workspacePath, c.workspaceFSPath(), workspaceDiskSizeBytes); err != nil {
-		return err
+		return status.WrapError(err, "failed to convert workspace dir to ext4 image")
 	}
 	return nil
 }
@@ -1522,7 +1541,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	if c.fsLayout == nil {
 		if err := c.syncWorkspace(ctx); err != nil {
-			result.Error = err
+			result.Error = status.WrapError(err, "failed to sync workspace")
 			return result
 		}
 	} else {
@@ -1642,7 +1661,9 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	}()
 
 	if c.rmOnce == nil {
-		return status.FailedPreconditionError("Attempted to remove a container that is not created")
+		// Container was probably loaded from persisted state and never
+		// unpaused; ignore this type of error.
+		return nil
 	}
 	c.rmOnce.Do(func() {
 		c.rmErr = c.remove(ctx)
@@ -1659,14 +1680,17 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 
 	var lastErr error
 
-	// Note: we don't attempt any kind of clean shutdown here, because at this
-	// point either (a) the VM should be paused and we should have already taken
-	// a snapshot, or (b) we are just calling Remove() to force a cleanup
-	// regardless of VM state (e.g. executor shutdown).
+	if c.machine != nil {
+		// Note: we don't attempt any kind of clean shutdown here, because at this
+		// point either (a) the VM should be paused and we should have already taken
+		// a snapshot, or (b) we are just calling Remove() to force a cleanup
+		// regardless of VM state (e.g. executor shutdown).
 
-	if err := c.machine.StopVMM(); err != nil {
-		log.CtxErrorf(ctx, "Error stopping VMM: %s", err)
-		lastErr = err
+		if err := c.machine.StopVMM(); err != nil {
+			log.CtxErrorf(ctx, "Error stopping VMM: %s", err)
+			lastErr = err
+		}
+		c.machine = nil
 	}
 	if err := c.cleanupNetworking(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error cleaning up networking: %s", err)
@@ -1753,7 +1777,7 @@ func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
 	execClient := vmxpb.NewExecClient(conn)
 
 	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir); err != nil {
-		return err
+		return status.WrapError(err, "failed to create workspace image")
 	}
 	return c.hotSwapWorkspace(ctx, execClient)
 }

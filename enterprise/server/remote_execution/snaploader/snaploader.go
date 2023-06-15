@@ -17,54 +17,34 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-// Key represents a cache key pointing to a snapshot
-// manifest.
-type Key struct {
-	// InstanceName is the remote instance name associated with the snapshot.
-	InstanceName string
-
-	// PlatformHash is the hash of the Platform proto (exec properties)
-	// associated with the VM snapshot.
-	PlatformHash string
-
-	// ConfigurationHash is the hash of the VMConfiguration of the
-	// paused snapshot.
-	ConfigurationHash string
-
-	// RunnerID is the unique ID of the runner that is allowed to access
-	// this snapshot.
-	// TODO: represent readonly ("shareable") snapshots using an empty runner ID.
-	RunnerID string
-}
-
 // NewKey returns the cache key for a snapshot.
-// TODO: include a version number in the key somehow, so that we
+// TODO: include a version number in the key somehow, so that
 // if we make breaking changes e.g. to the vmexec API or firecracker
 // version etc., we can ensure that incompatible snapshots don't get reused.
-func NewKey(task *repb.ExecutionTask, configurationHash, runnerID string) (*Key, error) {
+func NewKey(task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb.SnapshotKey, error) {
 	pd, err := digest.ComputeForMessage(task.GetCommand().GetPlatform(), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to compute platform hash")
 	}
-	return &Key{
+	return &fcpb.SnapshotKey{
 		InstanceName:      task.GetExecuteRequest().GetInstanceName(),
 		PlatformHash:      pd.GetHash(),
 		ConfigurationHash: configurationHash,
-		RunnerID:          runnerID,
+		RunnerId:          runnerID,
 	}, nil
 }
 
 // manifestFileCacheKey returns the filecache key for the snapshot manifest
 // file.
-func (s *Key) manifestFileCacheKey(ctx context.Context, env environment.Env) *repb.FileNode {
+func manifestFileCacheKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) *repb.FileNode {
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
-	return s.artifactFileCacheKey(ctx, env, ".manifest", 1 /*=arbitrary size*/)
+	return artifactFileCacheKey(ctx, env, s, ".manifest", 1 /*=arbitrary size*/)
 }
 
 // artifactFileCacheKey returns the cache key for a particular snapshot
 // artifact.
-func (s *Key) artifactFileCacheKey(ctx context.Context, env environment.Env, name string, sizeBytes int64) *repb.FileNode {
+func artifactFileCacheKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey, name string, sizeBytes int64) *repb.FileNode {
 	var groupID string
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err == nil {
@@ -77,7 +57,7 @@ func (s *Key) artifactFileCacheKey(ctx context.Context, env environment.Env, nam
 	// CAS, then we will need to compute the full digest.
 	return &repb.FileNode{
 		Digest: &repb.Digest{
-			Hash:      hashStrings(groupID, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerID, name),
+			Hash:      hashStrings(groupID, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerId, name),
 			SizeBytes: sizeBytes,
 		},
 	}
@@ -85,7 +65,7 @@ func (s *Key) artifactFileCacheKey(ctx context.Context, env environment.Env, nam
 
 // Snapshot holds a snapshot manifest along with the corresponding cache key.
 type Snapshot struct {
-	key      *Key
+	key      *fcpb.SnapshotKey
 	manifest *fcpb.SnapshotManifest
 }
 
@@ -134,12 +114,12 @@ func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
 type Loader interface {
 	// CacheSnapshot saves a local snapshot with the given key to cache, with the
 	// snapshot configuration and artifact paths specified by opts.
-	CacheSnapshot(ctx context.Context, key *Key, opts *CacheSnapshotOptions) (*Snapshot, error)
+	CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) (*Snapshot, error)
 
 	// GetSnapshot loads the metadata for the snapshot. It does not
 	// unpack any snapshot artifacts.
 	// It returns UnavailableError if the metadata has expired from cache.
-	GetSnapshot(ctx context.Context, key *Key) (*Snapshot, error)
+	GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (*Snapshot, error)
 
 	// UnpackSnapshot unpacks a snapshot to the given directory.
 	// It returns UnavailableError if any snapshot artifacts have expired
@@ -165,8 +145,8 @@ func New(env environment.Env) (Loader, error) {
 	return &FileCacheLoader{env: env}, nil
 }
 
-func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *Key) (*Snapshot, error) {
-	manifestNode := key.manifestFileCacheKey(ctx, l.env)
+func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (*Snapshot, error) {
+	manifestNode := manifestFileCacheKey(ctx, l.env, key)
 	buf, err := filecacheutil.Read(l.env.GetFileCache(), manifestNode)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
@@ -189,14 +169,14 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 
 func (l *FileCacheLoader) DeleteSnapshot(ctx context.Context, snapshot *Snapshot) error {
 	// Manually evict the manifest as well as all referenced files.
-	l.env.GetFileCache().DeleteFile(snapshot.key.manifestFileCacheKey(ctx, l.env))
+	l.env.GetFileCache().DeleteFile(manifestFileCacheKey(ctx, l.env, snapshot.key))
 	for _, fileNode := range snapshot.manifest.Files {
 		l.env.GetFileCache().DeleteFile(fileNode)
 	}
 	return nil
 }
 
-func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *Key, opts *CacheSnapshotOptions) (*Snapshot, error) {
+func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) (*Snapshot, error) {
 	manifest := &fcpb.SnapshotManifest{
 		VmConfiguration: opts.VMConfiguration,
 	}
@@ -208,7 +188,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *Key, opts *Cac
 			return nil, err
 		}
 		filename := filepath.Base(f)
-		fileNode := key.artifactFileCacheKey(ctx, l.env, filename, info.Size())
+		fileNode := artifactFileCacheKey(ctx, l.env, key, filename, info.Size())
 		fileNode.Name = filename
 		l.env.GetFileCache().AddFile(fileNode, f)
 		manifest.Files = append(manifest.Files, fileNode)
@@ -220,7 +200,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *Key, opts *Cac
 	if err != nil {
 		return nil, err
 	}
-	manifestNode := key.manifestFileCacheKey(ctx, l.env)
+	manifestNode := manifestFileCacheKey(ctx, l.env, key)
 	if _, err := filecacheutil.Write(l.env.GetFileCache(), manifestNode, b); err != nil {
 		return nil, err
 	}

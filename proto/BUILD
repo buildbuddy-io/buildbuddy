@@ -269,6 +269,7 @@ proto_library(
     ],
     deps = [
         ":context_proto",
+        ":firecracker_proto",
         ":remote_execution_proto",
     ],
 )
@@ -820,6 +821,7 @@ go_proto_library(
     proto = ":runner_proto",
     deps = [
         ":context_go_proto",
+        ":firecracker_go_proto",
         ":remote_execution_go_proto",
     ],
 )
@@ -1528,6 +1530,15 @@ ts_proto_library(
     proto = ":runner_proto",
     deps = [
         ":context_ts_proto",
+        ":firecracker_ts_proto",
+        ":remote_execution_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "firecracker_ts_proto",
+    proto = ":firecracker_proto",
+    deps = [
         ":remote_execution_ts_proto",
     ],
 )

@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -53,6 +54,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -125,6 +127,9 @@ const (
 	workerProtocolJSONValue = "json"
 	// Value for persisent workers that support the protobuf persistent worker protocol.
 	workerProtocolProtobufValue = "proto"
+
+	// Where to store the RunnerPoolState proto, relative to rootDirectory.
+	stateFileName = "_runner_pool_state.bin"
 )
 
 var (
@@ -226,7 +231,7 @@ type commandRunner struct {
 	// taskNumber starts at 1 and is incremented each time the runner is
 	// assigned a new task. Note: this is not necessarily the same as the number
 	// of tasks that have actually been executed.
-	taskNumber int
+	taskNumber int64
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
@@ -551,7 +556,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	return res.Error
 }
 
-type ContainerProvider func(context.Context, *platform.Properties, *repb.ScheduledTask) (*container.TracedCommandContainer, error)
+type ContainerProvider func(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState, workDir string) (*container.TracedCommandContainer, error)
 
 type PoolOptions struct {
 	// ContainerProvider is an optional implementation overriding
@@ -632,6 +637,11 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 	}
 	p.setLimits()
 	hc.RegisterShutdownFunction(p.Shutdown)
+
+	if err := p.initializeFromSavedState(env.GetServerContext()); err != nil {
+		log.Warningf("Failed to initialize runner pool from saved state: %s", err)
+	}
+
 	return p, nil
 }
 
@@ -845,7 +855,19 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		},
 		ExecutionTask: task,
 	}
-	c, err := p.newContainer(ctx, platProps, st)
+
+	state := &rnpb.RunnerState{
+		// Note: warmup runner is not tied to a group or instance name
+		RunnerKey: &rnpb.RunnerKey{Platform: plat},
+	}
+
+	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{})
+	defer func() {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
+		defer cancel()
+		_ = ws.Remove(ctx)
+	}()
+	c, err := p.newContainer(ctx, platProps, st, state, ws.Path())
 	if err != nil {
 		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, cfg.Image, err)
 		return err
@@ -925,6 +947,15 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
+func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
+	props := platform.ParseProperties(task)
+	// TODO: This mutates the task; find a cleaner way to do this.
+	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
+		return nil, err
+	}
+	return props, nil
+}
+
 // Get returns a runner bound to the the given task. The caller must call
 // TryRecycle on the returned runner when done using it.
 //
@@ -935,11 +966,9 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
 func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
-	executorProps := platform.GetExecutorProperties()
 	task := st.ExecutionTask
-	props := platform.ParseProperties(task)
-	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
+	props, err := p.effectivePlatform(task)
+	if err != nil {
 		return nil, err
 	}
 	user, err := auth.UserFromTrustedJWT(ctx)
@@ -980,6 +1009,22 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			return r, nil
 		}
 	}
+
+	debugID, _ := random.RandomString(8)
+	state := &rnpb.RunnerState{
+		RunnerKey:         key,
+		DebugId:           debugID,
+		AssignedTaskCount: 1,
+	}
+	return p.newRunner(ctx, props, st, state)
+}
+
+// newRunner creates a runner either for the given task (if set) or restores the
+// runner from the given state.ContainerState.
+func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState) (*commandRunner, error) {
+	if st == nil && state.GetContainerState() == nil {
+		return nil, status.FailedPreconditionError("either a task or saved container state is required to create a runner")
+	}
 	wsOpts := &workspace.Opts{
 		Preserve:        props.PreserveWorkspace,
 		CleanInputs:     props.CleanWorkspaceInputs,
@@ -989,7 +1034,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := p.newContainer(ctx, props, st)
+	ctr, err := p.newContainer(ctx, props, st, state, ws.Path())
 	if err != nil {
 		return nil, err
 	}
@@ -1024,21 +1069,26 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			return nil, status.UnavailableErrorf("unable to mount VFS at %q: %s", vfsDir, err)
 		}
 	}
-	debugID, _ := random.RandomString(8)
 	r := &commandRunner{
 		env:                p.env,
 		p:                  p,
 		imageCacheAuth:     p.imageCacheAuth,
-		key:                key,
-		debugID:            debugID,
-		task:               task,
-		taskNumber:         1,
+		key:                state.GetRunnerKey(),
+		debugID:            state.GetDebugId(),
+		taskNumber:         state.GetAssignedTaskCount(),
+		task:               st.GetExecutionTask(),
 		PlatformProperties: props,
 		Container:          ctr,
 		Workspace:          ws,
 		VFS:                fs,
 		VFSServer:          vfsServer,
 	}
+	// If we restored a paused container from state, the initial state should be
+	// set to "paused" rather than the usual "init".
+	if state.GetContainerState() != nil {
+		r.state = paused
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.isShuttingDown {
@@ -1055,7 +1105,13 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	return r, nil
 }
 
-func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
+func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (*container.TracedCommandContainer, error) {
+	if state.GetContainerState() != nil {
+		if props.WorkloadIsolationType != string(platform.FirecrackerContainerType) {
+			return nil, status.UnimplementedErrorf("restoring container state is not implemented for %q isolation", string(props.WorkloadIsolationType))
+		}
+	}
+
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -1086,17 +1142,27 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 		}
 		ctr = c
 	case platform.FirecrackerContainerType:
-		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
+		var vmConfig *fcpb.VMConfiguration
+		savedState := state.GetContainerState().GetFirecrackerState()
+		if savedState == nil {
+			sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
+			vmConfig = &fcpb.VMConfiguration{
+				NumCpus:           int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
+				MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+				ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+				EnableNetworking:  true,
+				InitDockerd:       props.InitDockerd,
+			}
+		} else {
+			vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
+		}
 		opts := firecracker.ContainerOpts{
+			VMConfiguration:        vmConfig,
+			SavedState:             savedState,
 			ContainerImage:         props.ContainerImage,
 			User:                   props.DockerUser,
 			DockerClient:           p.dockerClient,
-			ActionWorkingDirectory: p.hostBuildRoot(),
-			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
-			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-			ScratchDiskSizeMB:      int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-			EnableNetworking:       true,
-			InitDockerd:            props.InitDockerd,
+			ActionWorkingDirectory: workingDir,
 			JailerRoot:             p.buildRoot,
 		}
 		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, task.GetExecutionTask(), opts)
@@ -1230,12 +1296,73 @@ func (p *pool) pausedRunnerMemoryUsageBytes() int64 {
 	return b
 }
 
+func (p *pool) stateFilePath() string {
+	return filepath.Join(*rootDirectory, stateFileName)
+}
+
+func (p *pool) loadState(ctx context.Context) (*rnpb.RunnerPoolState, error) {
+	b, err := disk.ReadFile(ctx, p.stateFilePath())
+	if err != nil {
+		return nil, status.WrapErrorf(err, "failed to read state file %s", p.stateFilePath())
+	}
+	state := &rnpb.RunnerPoolState{}
+	if err := proto.Unmarshal(b, state); err != nil {
+		return nil, status.WrapError(err, "failed to unmarshal state")
+	}
+	if err := os.Remove(p.stateFilePath()); err != nil {
+		return nil, status.InternalErrorf("failed to remove state file %s: %s", p.stateFilePath(), err)
+	}
+	return state, nil
+}
+
+func (p *pool) saveState(ctx context.Context, state *rnpb.RunnerPoolState) error {
+	if len(state.RunnerStates) == 0 {
+		return nil
+	}
+	b, err := proto.Marshal(state)
+	if err != nil {
+		return status.WrapError(err, "failed to marshal state")
+	}
+	if _, err := disk.WriteFile(ctx, p.stateFilePath(), b); err != nil {
+		return status.WrapErrorf(err, "failed to write %s", p.stateFilePath())
+	}
+	return nil
+}
+
+func (p *pool) initializeFromSavedState(ctx context.Context) error {
+	state, err := p.loadState(ctx)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			log.Infof("Runner state file not found at %s", p.stateFilePath())
+			return nil
+		}
+		return err
+	}
+	for _, rs := range state.RunnerStates {
+		nopTask := &repb.ExecutionTask{Command: &repb.Command{Platform: rs.GetRunnerKey().GetPlatform()}}
+		props, err := p.effectivePlatform(nopTask)
+		if err != nil {
+			log.Warningf("Failed to restore runner state: %s", err)
+			continue
+		}
+		r, err := p.newRunner(ctx, props, nil /*=scheduledTask*/, rs)
+		if err != nil {
+			log.Warningf("Failed to restore runner state: %s", err)
+			continue
+		}
+		log.Infof("Restored runner %s from state", r)
+	}
+	log.Infof("Restored %d runner(s) from state file %s", len(p.runners), p.stateFilePath())
+	return nil
+}
+
 // Shutdown removes all runners from the pool and prevents new ones from
 // being added.
 func (p *pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
 	var runnersToRemove []*commandRunner
+	persistedState := &rnpb.RunnerPoolState{}
 	if *contextBasedShutdown {
 		// Remove only paused runners, since active runners should be removed only
 		// after their currently assigned task is canceled due to the shutdown
@@ -1253,6 +1380,33 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		if len(runnersToRemove) > 0 {
 			log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
 		}
+
+		for _, r := range pausedRunners {
+			// TODO: figure out how/whether to preserve the workspace dir during
+			// executor restarts, and remove this check. We exclude this check
+			// for firecracker workflows because they don't use the workspace
+			// disk.
+			if r.PlatformProperties.PreserveWorkspace && !(r.PlatformProperties.WorkflowID != "" && r.PlatformProperties.WorkloadIsolationType == string(platform.FirecrackerContainerType)) {
+				continue
+			}
+
+			containerState, err := r.Container.State(ctx)
+			if status.IsUnimplementedError(err) {
+				continue
+			}
+			if err != nil {
+				log.Warningf("Failed to persist state for runner %s: %s", r, err)
+				continue
+			}
+			runnerState := &rnpb.RunnerState{
+				RunnerKey:      r.key,
+				DebugId:        r.debugID,
+				ContainerState: containerState,
+			}
+			persistedState.RunnerStates = append(persistedState.RunnerStates, runnerState)
+			log.Infof("Persisting state for runner %s", r)
+		}
+
 	} else {
 		runnersToRemove = p.runners
 		p.runners = nil
@@ -1273,6 +1427,15 @@ func (p *pool) Shutdown(ctx context.Context) error {
 			removeResults <- r.RemoveWithTimeout(ctx)
 		}()
 	}
+
+	// Write runner pool state file.
+	if err := p.saveState(ctx, persistedState); err != nil {
+		log.Errorf("Failed to save runner pool state: %s", err)
+	} else {
+		log.Infof("Wrote runner pool state to %s", p.stateFilePath())
+	}
+
+	// Now wait for runners to finish removing.
 	errs := make([]error, 0)
 	for range runnersToRemove {
 		if err := <-removeResults; err != nil {

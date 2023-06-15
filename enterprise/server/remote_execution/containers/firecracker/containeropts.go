@@ -1,10 +1,26 @@
 package firecracker
 
 import (
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	dockerclient "github.com/docker/docker/client"
 )
 
 type ContainerOpts struct {
+	// The static VM configuration which is applied to the VM once and does not
+	// change across snapshots/resumes etc. This is computed from task platform
+	// properties and possibly executor-level properties/configuration that is
+	// applied to all tasks.
+	//
+	// This is not required if SavedState is specified, since the configuration
+	// is stored along with the state.
+	VMConfiguration *fcpb.VMConfiguration
+
+	// Saved state pointing to the snapshot manifest in filecache. When set,
+	// the VMConfiguration will be loaded from the snapshot manifest rather than
+	// the VMConfiguration field.
+	SavedState *rnpb.FirecrackerState
+
 	// The OCI container image. ex "alpine:latest".
 	ContainerImage string
 
@@ -20,23 +36,6 @@ type ContainerOpts struct {
 
 	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string
-
-	// The number of CPUs to allocate to this VM.
-	NumCPUs int64
-
-	// The amount of RAM, in MB, to allocate to this VM.
-	MemSizeMB int64
-
-	// The size of the scratch disk to allocate (for writing files anywhere
-	// outside of the workspace directory, such as /tmp or ~/.cache).
-	ScratchDiskSizeMB int64
-
-	// Whether or not to enable networking.
-	EnableNetworking bool
-
-	// Whether or not to initialize dockerd. Docker must be installed in the
-	// VM image in order for this to work.
-	InitDockerd bool
 
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running

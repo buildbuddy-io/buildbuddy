@@ -12,6 +12,7 @@ go_library(
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
+        "//proto:runner_go_proto",
         "//proto:soci_go_proto",
         "//server/environment",
         "//server/interfaces",

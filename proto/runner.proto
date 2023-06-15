@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "proto/firecracker.proto";
 import "proto/remote_execution.proto";
 
 package runner;
@@ -143,5 +144,8 @@ message ContainerState {
 message FirecrackerState {
   // The snapshot key pointing to the snapshot manifest file in the executor's
   // local cache.
-  build.bazel.remote.execution.v2.Digest snapshot_key = 1;
+  firecracker.SnapshotKey snapshot_key = 1;
+
+  // The static VM configuration.
+  firecracker.VMConfiguration vm_configuration = 2;
 }

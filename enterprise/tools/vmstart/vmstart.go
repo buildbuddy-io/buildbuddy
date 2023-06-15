@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
@@ -122,12 +123,14 @@ func main() {
 		vmIdx = *forceVMIdx
 	}
 	opts := firecracker.ContainerOpts{
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			ScratchDiskSizeMb: 100,
+			EnableNetworking:  true,
+		},
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		ScratchDiskSizeMB:      100,
-		EnableNetworking:       true,
 		ForceVMIdx:             vmIdx,
 		JailerRoot:             "/tmp/remote_build/",
 	}

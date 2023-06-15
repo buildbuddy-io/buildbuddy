@@ -42,6 +42,7 @@ import (
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -819,6 +820,10 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	stats.PeakMemoryBytes = c.stats.peakMemoryUsageBytes
 	c.stats.last = current
 	return stats, nil
+}
+
+func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
+	return nil, status.UnimplementedError("not implemented")
 }
 
 func runPodman(ctx context.Context, subCommand string, stdio *container.Stdio, args ...string) *interfaces.CommandResult {

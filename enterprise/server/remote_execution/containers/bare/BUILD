@@ -11,7 +11,9 @@ go_library(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/procstats",
         "//proto:remote_execution_go_proto",
+        "//proto:runner_go_proto",
         "//server/interfaces",
+        "//server/util/status",
     ],
 )
 

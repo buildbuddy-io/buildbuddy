@@ -22,6 +22,22 @@ message VMConfiguration {
   // TODO: add container_image here?
 }
 
+message SnapshotKey {
+  // Remote instance name associated with the snapshot.
+  string instance_name = 1;
+
+  // SHA256 hash of the Platform proto (exec properties) associated with the VM
+  // snapshot.
+  string platform_hash = 2;
+
+  // SHA256 Hash of the VMConfiguration of the paused snapshot.
+  string configuration_hash = 3;
+
+  // The unique ID of the runner that is allowed to access this snapshot.
+  // TODO: Remove this once "forkable" snapshots are implemented.
+  string runner_id = 4;
+}
+
 // Manifest represents a snapshot's VM configuration along with
 // file pointers to the snapshot artifacts.
 message SnapshotManifest {

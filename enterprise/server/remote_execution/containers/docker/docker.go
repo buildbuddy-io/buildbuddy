@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerclient "github.com/docker/docker/client"
@@ -590,6 +591,10 @@ func (r *dockerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 		// See formula here: https://docs.docker.com/engine/api/v1.41/#operation/ContainerStats
 		MemoryBytes: response.MemoryStats.Usage - response.MemoryStats.Stats.Cache,
 	}, nil
+}
+
+func (r *dockerCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
+	return nil, status.UnimplementedError("not implemented")
 }
 
 // See https://docs.docker.com/engine/api/v1.41/#operation/ContainerStats
