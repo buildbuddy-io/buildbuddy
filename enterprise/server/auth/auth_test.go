@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -207,11 +208,13 @@ func getResponseCookie(response *http.Response, name string) *http.Cookie {
 }
 
 func requireAuthenticationError(t *testing.T, ctx context.Context) {
-	require.NotNil(t, ctx.Value(contextUserErrorKey), "context auth error key should be set")
+	err, _ := authutil.AuthErrorFromContext(ctx)
+	require.NotNil(t, err, "context auth error key should be set")
 	require.Nil(t, ctx.Value(contextTokenStringKey), "context auth jwt token should not be set")
 }
 
 func requireAuthenticated(t *testing.T, ctx context.Context) {
-	require.Nil(t, ctx.Value(contextUserErrorKey), ctx.Value(contextUserErrorKey))
+	err, _ := authutil.AuthErrorFromContext(ctx)
+	require.Nil(t, err, err)
 	require.NotNil(t, ctx.Value(contextTokenStringKey), "context auth jwt token should be set")
 }

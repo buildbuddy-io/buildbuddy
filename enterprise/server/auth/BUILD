@@ -43,6 +43,7 @@ go_test(
     deps = [
         "//enterprise/server/testutil/enterprise_testenv",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
