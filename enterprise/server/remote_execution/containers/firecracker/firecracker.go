@@ -535,6 +535,10 @@ func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, 
 }
 
 func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
+	if c.machine == nil {
+		return status.InternalError("failed to pause VM: machine is not started")
+	}
+
 	if err := c.machine.PauseVM(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
 		return err
