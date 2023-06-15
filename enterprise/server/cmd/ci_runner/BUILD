@@ -12,7 +12,6 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
-        "//enterprise/server/auth",
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
@@ -22,6 +21,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/authutil",
         "//server/util/bazel",
         "//server/util/bazelisk",
         "//server/util/disk",

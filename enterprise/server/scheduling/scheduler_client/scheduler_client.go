@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -230,7 +230,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 // Start registers the executor with the scheduler and maintains that registration until the context is cancelled.
 func (r *Registration) Start(ctx context.Context) {
 	if r.apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, r.apiKey)
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, r.apiKey)
 	}
 
 	go func() {

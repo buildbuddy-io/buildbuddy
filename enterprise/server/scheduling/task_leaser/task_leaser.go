@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -66,7 +66,7 @@ func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 		Reason: reason,
 	}
 	if *apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, *apiKey)
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *apiKey)
 	}
 	_, err := t.env.GetSchedulerClient().ReEnqueueTask(ctx, req)
 	return err
@@ -95,7 +95,7 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 	}
 	leaseTaskCtx := ctx
 	if *apiKey != "" {
-		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, *apiKey)
+		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *apiKey)
 	}
 	stream, err := t.env.GetSchedulerClient().LeaseTask(leaseTaskCtx)
 	if err != nil {

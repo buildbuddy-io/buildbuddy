@@ -1,52 +1,20 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-
-package(default_visibility = ["//enterprise:__subpackages__"])
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "auth",
     srcs = ["auth.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth",
+    visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/selfauth",
-        "//server/endpoint_urls/build_buddy_url",
+        "//enterprise/server/oidc",
         "//server/environment",
         "//server/interfaces",
-        "//server/metrics",
         "//server/nullauth",
-        "//server/tables",
-        "//server/util/alert",
         "//server/util/authutil",
         "//server/util/claims",
-        "//server/util/cookie",
-        "//server/util/flagutil",
-        "//server/util/log",
-        "//server/util/lru",
-        "//server/util/random",
         "//server/util/status",
-        "//server/util/url",
-        "@com_github_coreos_go_oidc//:go-oidc",
         "@com_github_golang_jwt_jwt//:jwt",
-        "@com_github_google_uuid//:uuid",
-        "@com_github_prometheus_client_golang//prometheus",
-        "@org_golang_google_grpc//credentials",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//peer",
-        "@org_golang_x_oauth2//:oauth2",
     ],
 )
 
-go_test(
-    name = "auth_test",
-    size = "small",
-    srcs = ["auth_test.go"],
-    embed = [":auth"],
-    deps = [
-        "//enterprise/server/testutil/enterprise_testenv",
-        "//server/tables",
-        "//server/util/authutil",
-        "//server/util/status",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_x_oauth2//:oauth2",
-    ],
-)
+package(default_visibility = ["//enterprise:__subpackages__"])
