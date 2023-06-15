@@ -39,11 +39,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	godigest "github.com/opencontainers/go-digest"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
-	godigest "github.com/opencontainers/go-digest"
 )
 
 var (
@@ -819,6 +820,10 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	stats.PeakMemoryBytes = c.stats.peakMemoryUsageBytes
 	c.stats.last = current
 	return stats, nil
+}
+
+func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
+	return nil, status.UnimplementedError("not implemented")
 }
 
 func runPodman(ctx context.Context, subCommand string, stdio *container.Stdio, args ...string) *interfaces.CommandResult {

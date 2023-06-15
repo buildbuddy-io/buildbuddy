@@ -332,6 +332,10 @@ type FirecrackerContainer struct {
 }
 
 func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
+	if opts.VMConfiguration == nil {
+		return nil, status.InvalidArgumentError("missing VMConfiguration")
+	}
+
 	vmLog, err := NewVMLog(vmLogTailBufSize)
 	if err != nil {
 		return nil, err
@@ -396,10 +400,6 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 			return nil, err
 		}
 	} else {
-		// vmConfig will be loaded from the snapshot when needed.
-		if opts.VMConfiguration != nil {
-			return nil, status.InvalidArgumentError("cannot set both opts.SavedState and opts.VMConfiguration")
-		}
 		c.snapshotKey = opts.SavedState.GetSnapshotKey()
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
@@ -493,10 +493,13 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 // State returns the container state to be persisted to disk so that this
 // container can be reconstructed from the state on disk after an executor
 // restart.
-func (c *FirecrackerContainer) State() (*rnpb.ContainerState, error) {
+func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
 	state := &rnpb.ContainerState{
-		IsolationType:    string(platform.FirecrackerContainerType),
-		FirecrackerState: &rnpb.FirecrackerState{SnapshotKey: c.snapshotKey},
+		IsolationType: string(platform.FirecrackerContainerType),
+		FirecrackerState: &rnpb.FirecrackerState{
+			VmConfiguration: c.vmConfig,
+			SnapshotKey:     c.snapshotKey,
+		},
 	}
 	return state, nil
 }

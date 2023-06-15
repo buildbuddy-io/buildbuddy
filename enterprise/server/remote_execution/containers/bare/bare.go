@@ -7,8 +7,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 type Opts struct {
@@ -63,4 +65,8 @@ func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
 
 func (c *bareCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
+}
+
+func (c *bareCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
+	return nil, status.UnimplementedError("not implemented")
 }

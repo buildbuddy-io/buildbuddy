@@ -1153,6 +1153,8 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 				EnableNetworking:  true,
 				InitDockerd:       props.InitDockerd,
 			}
+		} else {
+			vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
 		}
 		opts := firecracker.ContainerOpts{
 			VMConfiguration:        vmConfig,
@@ -1314,6 +1316,9 @@ func (p *pool) loadState(ctx context.Context) (*rnpb.RunnerPoolState, error) {
 }
 
 func (p *pool) saveState(ctx context.Context, state *rnpb.RunnerPoolState) error {
+	if len(state.RunnerStates) == 0 {
+		return nil
+	}
 	b, err := proto.Marshal(state)
 	if err != nil {
 		return status.WrapError(err, "failed to marshal state")
@@ -1385,11 +1390,10 @@ func (p *pool) Shutdown(ctx context.Context) error {
 				continue
 			}
 
-			container, ok := r.Container.Delegate.(container.Stater)
-			if !ok {
+			containerState, err := r.Container.State(ctx)
+			if status.IsUnimplementedError(err) {
 				continue
 			}
-			containerState, err := container.State()
 			if err != nil {
 				log.Warningf("Failed to persist state for runner %s: %s", r, err)
 				continue

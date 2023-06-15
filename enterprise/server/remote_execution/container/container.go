@@ -200,14 +200,13 @@ type CommandContainer interface {
 	// container is paused, for the purposes of computing resources used for
 	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
-}
 
-// Stater can optionally be implemented by a CommandContainer to have
-// its state persisted across executor reboots.
-type Stater interface {
 	// State returns the ContainerState to be persisted. This should be a
 	// relatively fast operation since it is called on executor shutdown.
-	State() (*rnpb.ContainerState, error)
+	//
+	// If a container implementation does not support saving and restoring state
+	// across restarts, it can return UNIMPLEMENTED.
+	State(ctx context.Context) (*rnpb.ContainerState, error)
 }
 
 // Stdio specifies standard input / output readers for a command.
@@ -445,6 +444,12 @@ func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.Delegate.Stats(ctx)
+}
+
+func (t *TracedCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer span.End()
+	return t.Delegate.State(ctx)
 }
 
 func NewTracedCommandContainer(delegate CommandContainer) *TracedCommandContainer {
