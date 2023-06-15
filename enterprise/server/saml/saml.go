@@ -13,12 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -104,7 +106,7 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return a.fallback.Login(w, r)
 	}
-	auth.SetCookie(a.env, w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
+	cookie.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
 	session, err := sp.Session.GetSession(r)
 	if session != nil {
 		redirectURL := r.URL.Query().Get(authRedirectParam)
@@ -123,7 +125,7 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		session, err := sp.Session.GetSession(r)
 		if err != nil {
-			return auth.AuthContextWithError(ctx, status.PermissionDeniedErrorf("%s: %s", auth.ExpiredSessionMsg, err.Error()))
+			return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("%s: %s", authutil.ExpiredSessionMsg, err.Error()))
 		}
 		sa, ok := session.(samlsp.SessionWithAttributes)
 		if ok {
@@ -132,8 +134,8 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 			ctx = context.WithValue(ctx, contextSamlSlugKey, a.getSlugFromRequest(r))
 			return ctx
 		}
-	} else if slug := auth.GetCookie(r, slugCookie); slug != "" {
-		return auth.AuthContextWithError(ctx, status.PermissionDeniedErrorf("Error getting service provider for slug %s: %s", slug, err.Error()))
+	} else if slug := cookie.GetCookie(r, slugCookie); slug != "" {
+		return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("Error getting service provider for slug %s: %s", slug, err.Error()))
 	}
 	return a.fallback.AuthenticatedHTTPContext(w, r)
 }
@@ -161,7 +163,7 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 }
 
 func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
-	auth.ClearCookie(a.env, w, slugCookie)
+	cookie.ClearCookie(w, slugCookie)
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		sp.Session.DeleteSession(w, r)
 	}
@@ -171,7 +173,7 @@ func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error
 
 func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
 	if s, _ := a.subjectIDAndSessionFromContext(ctx); s != "" {
-		claims, err := auth.ClaimsFromSubID(ctx, a.env, s)
+		claims, err := claims.ClaimsFromSubID(ctx, a.env, s)
 		return claims, err
 	}
 	return a.fallback.AuthenticatedUser(ctx)
@@ -184,12 +186,12 @@ func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
 		log.Warningf("SAML Auth Failed: %s", err)
-		auth.ClearCookie(a.env, w, slugCookie)
+		cookie.ClearCookie(w, slugCookie)
 		return status.NotFoundErrorf("SAML Auth Failed: %s", err)
 	}
 	// Store slug as a cookie to enable logins directly from the /acs page.
 	slug := r.URL.Query().Get(slugParam)
-	auth.SetCookie(a.env, w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
+	cookie.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
 
 	sp.ServeHTTP(w, r)
 	return nil
@@ -303,7 +305,7 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 func (a *SAMLAuthenticator) getSlugFromRequest(r *http.Request) string {
 	slug := r.URL.Query().Get(slugParam)
 	if slug == "" {
-		slug = auth.GetCookie(r, slugCookie)
+		slug = cookie.GetCookie(r, slugCookie)
 	}
 	return slug
 }

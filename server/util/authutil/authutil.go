@@ -1,6 +1,7 @@
 package authutil
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -17,6 +18,12 @@ const (
 	// missingCredentialsErrorReason is the error reason constant used to
 	// identify errors that are due to missing credentials.
 	missingCredentialsErrorReason = "MISSING_CREDENTIALS"
+
+	// The key any error is stored under if the user could not be
+	// authenticated.
+	contextUserErrorKey = "auth.error"
+
+	ExpiredSessionMsg = "User session expired"
 )
 
 // AuthorizeGroupRole checks whether the given user has any of the allowed roles
@@ -81,4 +88,13 @@ func IsAnonymousUserError(err error) bool {
 		}
 	}
 	return false
+}
+
+func AuthContextWithError(ctx context.Context, err error) context.Context {
+	return context.WithValue(ctx, contextUserErrorKey, err)
+}
+
+func AuthErrorFromContext(ctx context.Context) (error, bool) {
+	err, ok := ctx.Value(contextUserErrorKey).(error)
+	return err, ok
 }
