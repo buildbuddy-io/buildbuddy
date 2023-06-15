@@ -8,11 +8,11 @@ go_library(
     srcs = ["enterprise_testauth.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth",
     deps = [
-        "//enterprise/server/auth",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
         "//server/testutil/testauth",
+        "//server/util/claims",
         "//server/util/request_context",
         "@com_github_stretchr_testify//require",
     ],

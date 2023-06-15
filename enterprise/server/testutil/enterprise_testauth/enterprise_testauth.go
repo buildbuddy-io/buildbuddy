@@ -6,13 +6,13 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/stretchr/testify/require"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -39,7 +39,7 @@ func Configure(t *testing.T, env environment.Env) *testauth.TestAuthenticator {
 			ctx = requestcontext.ContextWithProtoRequestContext(ctx, reqCtx)
 		}
 
-		tu, err := auth.ClaimsFromSubID(ctx, env, u.SubID)
+		tu, err := claims.ClaimsFromSubID(ctx, env, u.SubID)
 		require.NoError(t, err, "failed to get claims from subid %q", u.SubID)
 		return tu
 	}
@@ -47,7 +47,7 @@ func Configure(t *testing.T, env environment.Env) *testauth.TestAuthenticator {
 	a.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
 		akg, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
 		require.NoErrorf(t, err, "failed to look up APIKeyGroup from test API key %q", apiKey)
-		return auth.APIKeyGroupClaims(akg)
+		return claims.APIKeyGroupClaims(akg)
 	}
 
 	env.SetAuthenticator(a)

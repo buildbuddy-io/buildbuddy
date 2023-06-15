@@ -7,7 +7,6 @@ go_library(
     srcs = ["saml.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/saml",
     deps = [
-        "//enterprise/server/auth",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",
