@@ -82,8 +82,20 @@ func main() {
 		fmt.Println("Error accepting data over the socket:", err)
 		return
 	}
-	fmt.Println("Connection made")
-	fmt.Println(string(buf))
+
+	// Parse control msgs
+	var msgs []syscall.SocketControlMessage
+	msgs, err = syscall.ParseSocketControlMessage(buf)
+
+	// convert fds to files
+	for i := 0; i < len(msgs) && err == nil; i++ {
+		var fds []int
+		fds, err = syscall.ParseUnixRights(&msgs[i])
+
+		for _, fd := range fds {
+			fmt.Printf("Fd %v", fd)
+		}
+	}
 
 	//// For now, don't parse the rest of the data from the socket - just see if I can receive the socket
 	//var uffd uintptr
