@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"syscall"
 )
 
 /*
@@ -55,22 +56,34 @@ func main() {
 		return
 	}
 
-	// Accept a UFFD handler from the socket
+	// Wait for firecracker to connect to the socket
+	fmt.Println("Listening for connection")
 	conn, err := listener.Accept()
 	if err != nil {
 		fmt.Println("Error accepting connection:", err)
 		return
 	}
 	unixConn := conn.(*net.UnixConn)
+	fmt.Println("Connection made")
 
-	buffer := make([]byte, 2048)
-	bytesRead, _, _, _, err := unixConn.ReadMsgUnix(buffer, nil)
+	// Get the underlying socket
+	socketFile, err := unixConn.File()
+	if err != nil {
+		fmt.Println("Error getting FD for socket:", err)
+		return
+	}
+	socket := int(socketFile.Fd())
+	defer socketFile.Close()
+
+	// Read data sent from firecracker
+	buf := make([]byte, syscall.CmsgSpace(4))
+	_, _, _, _, err = syscall.Recvmsg(socket, nil, buf, 0)
 	if err != nil {
 		fmt.Println("Error accepting data over the socket:", err)
 		return
 	}
-	data := buffer[:bytesRead]
-	fmt.Println(string(data))
+	fmt.Println("Connection made")
+	fmt.Println(string(buf))
 
 	//// For now, don't parse the rest of the data from the socket - just see if I can receive the socket
 	//var uffd uintptr
