@@ -25,7 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
@@ -1152,7 +1152,7 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	return nil
 }
 
-func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
+func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
 	issuer := GetCookie(r, authIssuerCookie)
 	if issuerParam := r.URL.Query().Get(authIssuerParam); issuerParam != "" {
 		issuer = issuerParam
@@ -1162,20 +1162,17 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
 		auth = a.getAuthConfigForSlug(slug)
 		if auth == nil {
-			redirectWithError(w, r, status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug))
-			return
+			return status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug)
 		}
 		issuer = auth.getIssuer()
 	}
 
 	if issuer == "" {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("No auth issuer set"))
-		return
+		return status.PermissionDeniedErrorf("No auth issuer set")
 	}
 
 	if auth == nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer))
-		return
+		return status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
 	}
 
 	// Set the "state" cookie which will be returned to us by tha authentication
@@ -1185,15 +1182,13 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 	redirectURL := r.URL.Query().Get(authRedirectParam)
 	if err := a.validateRedirectURL(redirectURL); err != nil {
-		redirectWithError(w, r, err)
-		return
+		return err
 	}
 
 	// Redirect to the login provider (and ask for a refresh token).
 	u, err := auth.authCodeURL(state, a.getAuthCodeOptions(r)...)
 	if err != nil {
-		redirectWithError(w, r, err)
-		return
+		return err
 	}
 
 	// Set the redirection URL in a cookie so we can use it after validating
@@ -1205,28 +1200,21 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	SetCookie(a.env, w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
 
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
+	return nil
 }
 
-func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
-	redir := func() {
-		redirURL := r.URL.Query().Get(authRedirectParam)
-		if redirURL == "" {
-			redirURL = "/" // default to redirecting home.
-		}
-		http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
-	}
+func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	clearLoginCookie(a.env, w)
-	defer redir()
 
 	// Attempt to mark the user as logged out in the database by clearing
 	// their access token.
 	jwt := GetCookie(r, jwtCookie)
 	if jwt == "" {
-		return
+		return status.UnauthenticatedError("Logged out!")
 	}
 	sessionID := GetCookie(r, sessionIDCookie)
 	if sessionID == "" {
-		return
+		return status.UnauthenticatedError("Logged out!")
 	}
 
 	if authDB := a.env.GetAuthDB(); authDB != nil {
@@ -1234,61 +1222,54 @@ func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 			log.Errorf("Error clearing user session on logout: %s", err)
 		}
 	}
+	return status.UnauthenticatedError("Logged out!")
 }
 
-func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
+func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 
 	authDB := a.env.GetAuthDB()
 	if authDB == nil {
-		redirectWithError(w, r, status.FailedPreconditionError("AuthDB not configured"))
-		return
+		return status.FailedPreconditionError("AuthDB not configured")
 	}
 
 	// Verify "state" cookie match.
 	if r.FormValue("state") != GetCookie(r, stateCookie) {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), GetCookie(r, stateCookie)))
-		return
+		return status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), GetCookie(r, stateCookie))
 	}
 
 	authError := r.URL.Query().Get("error")
 	if authError != "" {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("Authenticator returned error: %s (%s %s)", authError, r.URL.Query().Get("error_desc"), r.URL.Query().Get("error_description")))
-		return
+		return status.PermissionDeniedErrorf("Authenticator returned error: %s (%s %s)", authError, r.URL.Query().Get("error_desc"), r.URL.Query().Get("error_description"))
 	}
 
 	// Lookup issuer from the cookie we set in /login.
 	issuer := GetCookie(r, authIssuerCookie)
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer))
-		return
+		return status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
 	}
 
 	code := r.URL.Query().Get("code")
 	oauth2Token, err := auth.exchange(ctx, code, a.getAuthCodeOptions(r)...)
 	if err != nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code))
-		return
+		return status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code)
 	}
 
 	// Extract the ID Token (JWT) from OAuth2 token.
 	jwt, ok := oauth2Token.Extra("id_token").(string)
 	if !ok {
-		redirectWithError(w, r, status.PermissionDeniedError("ID Token not present in auth response"))
-		return
+		return status.PermissionDeniedError("ID Token not present in auth response")
 	}
 
 	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true)
 	if err != nil {
-		redirectWithError(w, r, err)
-		return
+		return err
 	}
 
 	guid, err := uuid.NewRandom()
 	if err != nil {
-		redirectWithError(w, r, err)
-		return
+		return err
 	}
 	sessionID := guid.String()
 
@@ -1308,14 +1289,14 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 		sesh.RefreshToken = refreshToken
 	}
 	if err := authDB.InsertOrUpdateUserSession(ctx, sessionID, sesh); err != nil {
-		redirectWithError(w, r, err)
-		return
+		return err
 	}
 	redirURL := GetCookie(r, redirCookie)
 	if redirURL == "" {
 		redirURL = "/" // default to redirecting home.
 	}
 	http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
+	return nil
 }
 
 func parseClaims(token string) (*Claims, error) {

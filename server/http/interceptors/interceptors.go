@@ -6,6 +6,7 @@ import (
 	"flag"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -312,4 +313,18 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		RequestID,
 		RecoverAndAlert,
 	})
+}
+
+type HandlerFunc func(http.ResponseWriter, *http.Request) error
+
+func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	err := f(w, r)
+	if err != nil {
+		redirectWithError(w, r, err)
+	}
+}
+
+func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Warning(err.Error())
+	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 }

@@ -95,16 +95,14 @@ func (a *SAMLAuthenticator) SSOEnabled() bool {
 	return a.fallback.SSOEnabled()
 }
 
-func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
+func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
 	slug := a.getSlugFromRequest(r)
 	if slug == "" {
-		a.fallback.Login(w, r)
-		return
+		return a.fallback.Login(w, r)
 	}
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
-		a.fallback.Login(w, r)
-		return
+		return a.fallback.Login(w, r)
 	}
 	auth.SetCookie(a.env, w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
 	session, err := sp.Session.GetSession(r)
@@ -114,9 +112,10 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 			redirectURL = "/" // default to redirecting home.
 		}
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
-		return
+		return nil
 	}
 	sp.HandleStartAuthFlow(w, r)
+	return nil
 }
 
 func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
@@ -161,12 +160,13 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 	return a.fallback.FillUser(ctx, user)
 }
 
-func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
+func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	auth.ClearCookie(a.env, w, slugCookie)
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		sp.Session.DeleteSession(w, r)
 	}
 	a.fallback.Logout(w, r)
+	return status.UnauthenticatedError("Logged out!")
 }
 
 func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
@@ -177,23 +177,22 @@ func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 	return a.fallback.AuthenticatedUser(ctx)
 }
 
-func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
+func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	if !strings.HasPrefix(r.URL.Path, "/auth/saml/") {
-		a.fallback.Auth(w, r)
-		return
+		return a.fallback.Auth(w, r)
 	}
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
 		log.Warningf("SAML Auth Failed: %s", err)
 		auth.ClearCookie(a.env, w, slugCookie)
-		http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
-		return
+		return status.NotFoundErrorf("SAML Auth Failed: %s", err)
 	}
 	// Store slug as a cookie to enable logins directly from the /acs page.
 	slug := r.URL.Query().Get(slugParam)
 	auth.SetCookie(a.env, w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
 
 	sp.ServeHTTP(w, r)
+	return nil
 }
 
 func (a *SAMLAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
