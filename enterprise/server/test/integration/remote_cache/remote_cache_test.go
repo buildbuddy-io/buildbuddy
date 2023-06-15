@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -72,7 +72,7 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 	}, rsp)
 	require.NoError(t, err)
 	readWriteKey := rsp.ApiKey.Value
-	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readWriteKey)}
+	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", authutil.APIKeyHeader, readWriteKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
 	ctx := context.Background()
@@ -111,7 +111,7 @@ func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing
 	}, rsp)
 	require.NoError(t, err)
 	readOnlyKey := rsp.ApiKey.Value
-	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readOnlyKey)}
+	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", authutil.APIKeyHeader, readOnlyKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
 	ctx := context.Background()
@@ -150,7 +150,7 @@ func TestBuild_RemoteCacheFlags_CasOnlyApiKey_SecondBuildIsNotCached(t *testing.
 	}, rsp)
 	require.NoError(t, err)
 	readOnlyKey := rsp.ApiKey.Value
-	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readOnlyKey)}
+	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", authutil.APIKeyHeader, readOnlyKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
 	ctx := context.Background()
