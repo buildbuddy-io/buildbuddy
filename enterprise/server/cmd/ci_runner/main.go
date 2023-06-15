@@ -20,12 +20,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -464,7 +464,7 @@ func run() error {
 
 	ctx := context.Background()
 	if ws.buildbuddyAPIKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, ws.buildbuddyAPIKey)
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, ws.buildbuddyAPIKey)
 	}
 
 	buildEventReporter, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)

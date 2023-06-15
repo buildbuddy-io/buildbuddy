@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -93,7 +93,7 @@ func (p *Publisher) run(ctx context.Context) error {
 	defer conn.Close()
 	besClient := pepb.NewPublishBuildEventClient(conn)
 	if p.apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, p.apiKey)
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, p.apiKey)
 	}
 	stream, err := besClient.PublishBuildToolEventStream(ctx)
 	if err != nil {
