@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
@@ -41,6 +42,7 @@ const (
 var (
 	path                    = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort              = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
+	enableNBD               = flag.Bool("enable_nbd", false, "Whether to enable network block devices (nbd)")
 	debugMode               = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
@@ -223,12 +225,21 @@ func main() {
 	// We additionally mount the action working directory to /workspace within the
 	// chroot.
 
+	// sysfs is needed in the root dir for block device metadata.
+	die(mkdirp("/sys", 0555))
+	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
+
 	die(mkdirp("/container", 0755))
 	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
 
 	die(mkdirp("/scratch", 0755))
-	die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
-
+	if *enableNBD {
+		scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
+		die(err)
+		die(scratchNBD.Mount("/scratch"))
+	} else {
+		die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
+	}
 	die(mkdirp("/scratch/bbvmroot", 0755))
 	die(mkdirp("/scratch/bbvmwork", 0755))
 
@@ -236,7 +247,11 @@ func main() {
 	die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
 
 	die(mkdirp("/mnt/workspace", 0755))
-	die(mount("/dev/vdc", "/mnt/workspace", "ext4", syscall.MS_RELATIME, ""))
+	if !*enableNBD {
+		die(mount("/dev/vdc", "/mnt/workspace", "ext4", syscall.MS_RELATIME, ""))
+	}
+	// If NBD is enabled, let the vmexec server mount and unmount the workspace
+	// dir, since it runs within the chroot.
 
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
@@ -405,7 +420,18 @@ func runVMExecServer(ctx context.Context) error {
 	}
 	log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes))
-	vmService, err := vmexec.NewServer()
+
+	// When NBD is enabled, the VMExec server needs a handle on the workspacefs
+	// ClientDevice so that it can mount/unmount the workspace between actions.
+	// Create the device now and mount it.
+	var workspaceNBD *nbdclient.ClientDevice
+	if *enableNBD {
+		nbd, err := nbdclient.NewClientDevice(ctx, "workspacefs")
+		die(err)
+		die(nbd.Mount("/workspace"))
+		workspaceNBD = nbd
+	}
+	vmService, err := vmexec.NewServer(workspaceNBD)
 	if err != nil {
 		return err
 	}

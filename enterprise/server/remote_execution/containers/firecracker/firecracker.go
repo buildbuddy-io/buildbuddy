@@ -25,6 +25,7 @@ import (
 	"github.com/armon/circbuf"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
@@ -60,6 +61,7 @@ import (
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
 var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 var firecrackerDebugMode = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
+var enableNBD = flag.Bool("executor.firecracker_enable_nbd", false, "Enables network block devices for firecracker VMs.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 
 const (
@@ -308,6 +310,12 @@ type FirecrackerContainer struct {
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
 
+	// When NBD is enabled, this is the running NBD server that serves the VM
+	// disks.
+	nbdServer       *nbdserver.Server
+	scratchDevice   *nbdserver.Device
+	workspaceDevice *nbdserver.Device
+
 	jailerRoot         string            // the root dir the jailer will work in
 	machine            *fcclient.Machine // the firecracker machine object.
 	vmLog              *VMLog
@@ -505,6 +513,28 @@ func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, 
 	return baseDir, nil
 }
 
+func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
+	if err := c.machine.PauseVM(ctx); err != nil {
+		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
+		return err
+	}
+	// Now that we've paused the VM, it's a good time to Sync the NBD backing
+	// files. This is particularly important when the files are backed with an
+	// mmap. The File backing the mmap may differ from the in-memory contents
+	// until we explicitly call msync.
+	if c.workspaceDevice != nil {
+		if err := c.workspaceDevice.Sync(); err != nil {
+			return status.WrapError(err, "failed to sync workspace device store")
+		}
+	}
+	if c.scratchDevice != nil {
+		if err := c.scratchDevice.Sync(); err != nil {
+			return status.WrapError(err, "failed to sync scratchfs device store")
+		}
+	}
+	return nil
+}
+
 // SaveSnapshot pauses the VM and takes a snapshot, saving the snapshot to
 // cache.
 //
@@ -549,8 +579,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		memSnapshotFile = diffMemSnapshotName
 	}
 
-	if err := c.machine.PauseVM(ctx); err != nil {
-		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
+	if err := c.pauseVM(ctx); err != nil {
 		return err
 	}
 
@@ -701,6 +730,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
+	if err := c.setupNBDServer(ctx); err != nil {
+		return status.WrapError(err, "failed to init nbd server")
+	}
+
 	err = (func() error {
 		_, span := tracing.StartSpan(ctx)
 		defer span.End()
@@ -766,10 +799,25 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 	if _, err := execClient.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
 		return status.WrapError(err, "failed to unmount workspace")
 	}
-	chrootRelativeImagePath := filepath.Base(c.workspaceFSPath())
-	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
-		return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
+
+	if *enableNBD {
+		// Create a new backing store for the new workspace.
+		wd, err := nbdserver.NewExt4Device(c.workspaceFSPath(), workspaceDriveID)
+		if err != nil {
+			return status.WrapError(err, "failed to create new workspace NBD")
+		}
+		// Close the old device and swap in the new one.
+		if err := c.workspaceDevice.Close(); err != nil {
+			log.Warningf("Failed to close workspace nbd: %s", err)
+		}
+		c.workspaceDevice = wd
+	} else {
+		chrootRelativeImagePath := filepath.Base(c.workspaceFSPath())
+		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
+			return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
+		}
 	}
+
 	if _, err := execClient.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{}); err != nil {
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
@@ -809,6 +857,11 @@ func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// scratchFSPath returns the path to the scratch image in the chroot.
+func (c *FirecrackerContainer) scratchFSPath() string {
+	return filepath.Join(c.getChroot(), scratchFSName)
 }
 
 // workspaceFSPath returns the path to the workspace image in the chroot.
@@ -856,6 +909,9 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 	if c.vmConfig.InitDockerd {
 		bootArgs = "-init_dockerd " + bootArgs
 	}
+	if *enableNBD {
+		bootArgs = "-enable_nbd " + bootArgs
+	}
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
 		return nil, err
@@ -877,18 +933,6 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 				PathOnHost:   &containerFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(true),
-			},
-			{
-				DriveID:      fcclient.String(scratchDriveID),
-				PathOnHost:   &scratchFS,
-				IsRootDevice: fcclient.Bool(false),
-				IsReadOnly:   fcclient.Bool(false),
-			},
-			{
-				DriveID:      fcclient.String(workspaceDriveID),
-				PathOnHost:   &workspaceFS,
-				IsRootDevice: fcclient.Bool(false),
-				IsReadOnly:   fcclient.Bool(false),
 			},
 		},
 		VsockDevices: []fcclient.VsockDevice{
@@ -913,6 +957,22 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			Smt:             fcclient.Bool(false),
 			TrackDirtyPages: true,
 		},
+	}
+	if !*enableNBD {
+		cfg.Drives = append(cfg.Drives, []fcmodels.Drive{
+			{
+				DriveID:      fcclient.String(scratchDriveID),
+				PathOnHost:   &scratchFS,
+				IsRootDevice: fcclient.Bool(false),
+				IsReadOnly:   fcclient.Bool(false),
+			},
+			{
+				DriveID:      fcclient.String(workspaceDriveID),
+				PathOnHost:   &workspaceFS,
+				IsRootDevice: fcclient.Bool(false),
+				IsReadOnly:   fcclient.Bool(false),
+			},
+		}...)
 	}
 
 	if c.vmConfig.EnableNetworking {
@@ -1135,6 +1195,46 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
+func (c *FirecrackerContainer) setupNBDServer(ctx context.Context) error {
+	if !*enableNBD {
+		return nil
+	}
+	if c.nbdServer != nil {
+		return nil
+	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	vsockServerPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostBlockDeviceServerPort)
+	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
+		return err
+	}
+
+	sd, err := nbdserver.NewExt4Device(c.scratchFSPath(), scratchDriveID)
+	if err != nil {
+		return err
+	}
+	c.scratchDevice = sd
+	wd, err := nbdserver.NewExt4Device(c.workspaceFSPath(), workspaceDriveID)
+	if err != nil {
+		return err
+	}
+	c.workspaceDevice = wd
+
+	c.nbdServer, err = nbdserver.New(ctx, c.env, sd, wd)
+	if err != nil {
+		return err
+	}
+	lis, err := net.Listen("unix", vsockServerPath)
+	if err != nil {
+		return err
+	}
+	if err := c.nbdServer.Start(lis); err != nil {
+		return status.InternalErrorf("Could not start VFS server: %s", err)
+	}
+	return nil
+}
+
 func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if c.vfsServer != nil {
 		return nil
@@ -1257,7 +1357,23 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	if err != nil {
 		return err
 	}
-	scratchFSPath := filepath.Join(c.tempDir, scratchFSName)
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+		return status.InternalErrorf("failed to create chroot dir: %s", err)
+	}
+
+	scratchFSPath := c.scratchFSPath()
+	workspaceFSPath := c.workspaceFSPath()
+
+	// When mounting the workspace image directly as a block device (rather than
+	// as an NBD), the firecracker go SDK expects the disk images to be outside
+	// the chroot, and will move them to the chroot for us. So we place them in
+	// a temp dir so that the SDK doesn't complain that the chroot paths already
+	// exist when it tries to create them.
+	if !*enableNBD {
+		scratchFSPath = filepath.Join(c.tempDir, scratchFSName)
+		workspaceFSPath = filepath.Join(c.tempDir, workspaceFSName)
+	}
+
 	scratchDiskSizeBytes := ext4.MinDiskImageSizeBytes + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
 	if err := ext4.MakeEmptyImage(ctx, scratchFSPath, scratchDiskSizeBytes); err != nil {
 		return err
@@ -1265,7 +1381,6 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	// Create an empty workspace image initially; the real workspace will be
 	// hot-swapped just before running each command in order to ensure that the
 	// workspace contents are up to date.
-	workspaceFSPath := filepath.Join(c.tempDir, workspaceFSName)
 	if err := ext4.MakeEmptyImage(ctx, workspaceFSPath, ext4.MinDiskImageSizeBytes); err != nil {
 		return err
 	}
@@ -1283,6 +1398,10 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 
 	if err := c.setupVFSServer(ctx); err != nil {
 		return err
+	}
+
+	if err := c.setupNBDServer(ctx); err != nil {
+		return status.WrapError(err, "failed to init nbd server")
 	}
 
 	vmCtx, cancel := context.WithCancel(context.Background())
@@ -1453,7 +1572,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	if c.fsLayout == nil {
 		// Command was successful, let's unpack the files back to our
 		// workspace directory now.
-		if err := c.machine.PauseVM(ctx); err != nil {
+		if err := c.pauseVM(ctx); err != nil {
 			result.Error = status.InternalErrorf("error pausing VM: %s", err)
 			return result
 		}
@@ -1566,6 +1685,18 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if c.vfsServer != nil {
 		c.vfsServer.Stop()
 		c.vfsServer = nil
+	}
+	if c.nbdServer != nil {
+		c.nbdServer.Stop()
+		c.nbdServer = nil
+	}
+	if c.workspaceDevice != nil {
+		c.workspaceDevice.Close()
+		c.workspaceDevice = nil
+	}
+	if c.scratchDevice != nil {
+		c.scratchDevice.Close()
+		c.scratchDevice = nil
 	}
 	return lastErr
 }
