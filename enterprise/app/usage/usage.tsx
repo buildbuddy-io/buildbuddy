@@ -4,7 +4,7 @@ import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import { usage } from "../../../proto/usage_ts_proto";
 import Select, { Option } from "../../../app/components/select/select";
-import { formatWithCommas, bytes as formatBytes } from "../../../app/format/format";
+import { cpuSavingsSec, formatWithCommas, bytes as formatBytes } from "../../../app/format/format";
 
 export interface UsageProps {
   user?: User;
@@ -84,8 +84,18 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   <div className="usage-value" title={formatWithCommas(period.totalDownloadSizeBytes)}>
                     {formatBytes(period.totalDownloadSizeBytes)}
                   </div>
+                  {/*
+                  <div className="usage-resource-name">Total bytes uploaded from cache</div>
+                  <div className="usage-value" title={formatWithCommas(period.totalUploadSizeBytes)}>
+                    {formatBytes(period.totalUploadSizeBytes)}
+                  </div>
+				    */}
                   <div className="usage-resource-name">Linux remote execution duration</div>
                   <div className="usage-value">{formatMinutes(Number(period.linuxExecutionDurationUsec))}</div>
+                  {/*
+                  <div className="usage-resource-name">Saved CPU Time</div>
+                  <div className="usage-value">{cpuSavingsSec(Number(period.totalCachedActionExecUsec))}</div>
+				    */}
                 </div>
               </div>
             </div>
