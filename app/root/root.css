@@ -1690,7 +1690,6 @@ code .comment {
 .dense .card .target-status-icon.target-status-icon {
   flex-grow: 0;
   display: initial;
-  margin-right: 4px;
   width: 16px;
 }
 

@@ -81,6 +81,10 @@
 .invocation-targets-card .targets-table {
   display: grid;
   grid-template-columns: auto max-content;
+
+  --border-color: #eee;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
 }
 
 .invocation-targets-card .target-row {
@@ -89,10 +93,47 @@
 }
 
 .invocation-targets-card .target-row > * {
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  line-height: initial;
+}
+
+.invocation-targets-card .target-row > :first-child {
+  padding-left: 8px;
+}
+
+.invocation-targets-card .target-row > :last-child {
+  padding-right: 8px;
+}
+
+.invocation-targets-card .target-row:hover > * {
+  background: #f5f5f5;
+}
+
+.invocation-targets-card .target-row:not(:last-child) > * {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.invocation-targets-card .target-row > * {
   min-height: 26px;
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.invocation-targets-card .chevron-icon .icon {
+  width: 20px;
+  height: 20px;
+  margin-right: -4px; /* offset flex gap */
+}
+
+.dense .invocation-targets-card .chevron-icon {
+  display: none; /* show target status icon instead */
+}
+
+.dense .invocation-targets-card .title {
+  margin-bottom: 4px;
 }
 
 .invocation-targets-card .target-label {
