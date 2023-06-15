@@ -7,6 +7,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/goinit",
     deps = [
+        "//enterprise/server/remote_execution/nbd/nbdclient",
         "//enterprise/server/util/vsock",
         "//enterprise/server/vmexec",
         "//enterprise/server/vmvfs:vmvfs_lib",

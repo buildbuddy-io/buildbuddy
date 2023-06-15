@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
@@ -33,10 +34,12 @@ const (
 	workspaceMountPath = "/workspace"
 )
 
-type execServer struct{}
+type execServer struct {
+	workspaceNBD *nbdclient.ClientDevice
+}
 
-func NewServer() (*execServer, error) {
-	return &execServer{}, nil
+func NewServer(workspaceNBD *nbdclient.ClientDevice) (*execServer, error) {
+	return &execServer{workspaceNBD: workspaceNBD}, nil
 }
 
 func clearARPCache() error {
@@ -94,6 +97,13 @@ func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.S
 }
 
 func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWorkspaceRequest) (*vmxpb.UnmountWorkspaceResponse, error) {
+	if x.workspaceNBD != nil {
+		if err := x.workspaceNBD.Unmount(); err != nil {
+			return nil, err
+		}
+		return &vmxpb.UnmountWorkspaceResponse{}, nil
+	}
+
 	if err := syscall.Unmount(workspaceMountPath, 0); err != nil {
 		return nil, status.InternalErrorf("unmount failed: %s", err)
 	}
@@ -101,6 +111,13 @@ func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWor
 }
 
 func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
+	if x.workspaceNBD != nil {
+		if err := x.workspaceNBD.Mount(workspaceMountPath); err != nil {
+			return nil, err
+		}
+		return &vmxpb.MountWorkspaceResponse{}, nil
+	}
+
 	if err := syscall.Mount(workspaceDevice, workspaceMountPath, "ext4", syscall.MS_RELATIME, ""); err != nil {
 		return nil, err
 	}

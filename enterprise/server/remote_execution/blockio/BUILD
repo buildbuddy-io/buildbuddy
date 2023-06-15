@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/status",
+        "@org_golang_x_sys//unix",
     ],
 )
 

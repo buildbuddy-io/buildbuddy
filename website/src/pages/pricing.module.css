@@ -19,10 +19,13 @@
 
 .priceTierDescription {
   margin-bottom: 16px;
+  font-weight: 500;
+  color: #86868b;
 }
 
 .priceTierFeatures {
   margin-top: 32px;
+  font-weight: 500;
 }
 
 .price {
@@ -33,7 +36,13 @@
 .priceTierFeatures svg {
   margin-right: 8px;
   flex-shrink: 0;
+  color: #86868b;
 }
+
+.priceTier:last-of-type svg {
+  color: rgb(76, 175, 80);
+}
+
 .priceTierFeatures li {
   padding: 0;
   margin: 0;
@@ -49,6 +58,7 @@
   width: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr 1fr 1fr;
+  font-weight: 500;
 }
 
 .featureGrid div {
@@ -79,15 +89,20 @@ div.featureGridHeader {
 
 .question {
   margin-bottom: 32px;
+  font-weight: 500;
+  color: #86868b;
 }
 
 .questionQuestion {
   font-weight: 700;
   margin-bottom: 16px;
+  color: #000;
+  font-size: 1.3em;
 }
 
 .questions a {
-  font-weight: 700;
+  color: #86868b;
+  text-decoration: underline;
 }
 
 /** Disable self service Tier for now */

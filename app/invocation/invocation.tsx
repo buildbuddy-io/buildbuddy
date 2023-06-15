@@ -85,7 +85,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.logsSubscription = this.logsModel.onChange.subscribe({
       next: () => this.forceUpdate(),
     });
-    this.logsModel.startFetching();
+    if (!this.isQueued()) {
+      this.logsModel.startFetching();
+    }
   }
 
   componentDidMount() {
@@ -99,7 +101,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.setState({ keyboardShortcutHandle: handle });
   }
 
-  componentDidUpdate(_prevProps: Props, prevState: State) {
+  componentDidUpdate(prevProps: Props, prevState: State) {
     // Update model subscription
     if (this.state.model !== prevState.model) {
       this.modelChangedSubscription?.unsubscribe();
@@ -114,9 +116,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
       )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
       faviconService.setFaviconForType(this.state.model.getFaviconType());
     }
-    // If in progress, schedule another fetch
-    if (this.state.model?.isInProgress()) {
+    // If in progress or queued, schedule another fetch
+    if (this.state.model?.isInProgress() || this.isQueued()) {
       this.scheduleRefetch();
+    }
+    // If we transitioned from queued to not queued, start fetching logs.
+    if (this.isQueued(prevProps, prevState) && !this.isQueued()) {
+      this.logsModel?.startFetching();
     }
   }
 
@@ -128,6 +134,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   fetchInvocation() {
+    const wasQueued = this.isQueued();
     let request = new invocation.GetInvocationRequest();
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
@@ -144,7 +151,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
         this.setState({
           inProgress: showInProgressScreen,
           model: model,
+          error: null,
         });
+        if (wasQueued) {
+          router.setQueryParam("queued", null);
+        }
       })
       .catch((error: any) => {
         console.error(error);
@@ -177,9 +188,22 @@ export default class InvocationComponent extends React.Component<Props, State> {
     return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
   }
 
+  isQueued(props = this.props, state = this.state) {
+    return !state.model && props.search.get("queued") === "true";
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading"></div>;
+    }
+
+    if (this.isQueued()) {
+      return (
+        <InvocationInProgressComponent
+          invocationId={this.props.invocationId}
+          title={"Invocation is waiting for an available worker..."}
+        />
+      );
     }
 
     if (this.state.error || !this.state.model) {

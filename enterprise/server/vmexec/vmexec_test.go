@@ -183,7 +183,7 @@ func startExecService(t *testing.T) vmxpb.ExecClient {
 		lis.Close()
 	})
 	server := grpc.NewServer()
-	execServer, err := vmexec.NewServer()
+	execServer, err := vmexec.NewServer(nil /*=workspaceNBD*/)
 	require.NoError(t, err)
 	vmxpb.RegisterExecServer(server, execServer)
 	go server.Serve(lis)

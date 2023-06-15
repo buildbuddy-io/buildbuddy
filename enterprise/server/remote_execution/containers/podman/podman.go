@@ -39,12 +39,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
-	godigest "github.com/opencontainers/go-digest"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	godigest "github.com/opencontainers/go-digest"
 )
 
 var (

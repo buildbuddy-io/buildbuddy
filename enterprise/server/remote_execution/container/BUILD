@@ -33,6 +33,7 @@ go_test(
         ":container",
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
+        "//proto:runner_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

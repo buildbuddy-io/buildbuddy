@@ -24,13 +24,13 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"google.golang.org/grpc/codes"
 
-	dockerclient "github.com/docker/docker/client"
-	dockercontainer "github.com/docker/docker/api/types/container"
-	dockertypes "github.com/docker/docker/api/types"
-	gstatus "google.golang.org/grpc/status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	dockertypes "github.com/docker/docker/api/types"
+	dockercontainer "github.com/docker/docker/api/types/container"
+	dockerclient "github.com/docker/docker/client"
 	units "github.com/docker/go-units"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (

@@ -546,6 +546,7 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 		TargetBranch:   req.GetRef(),
 		Clean:          req.GetClean(),
 		Visibility:     req.GetVisibility(),
+		Async:          req.GetAsync(),
 	}
 	rsp, err := wfs.ExecuteWorkflow(ctx, r)
 	if err != nil {
