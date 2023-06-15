@@ -297,10 +297,10 @@ func renderTemplate(from, into string) {
 
 	repo := from
 	if strings.HasPrefix(from, "github/") {
-		repo = strings.Replace(from, "github/", "https://github.com/", 1)
-	} else if strings.HasPrefix(from, "github.com") {
+		repo = "https://github.com/" + strings.TrimPrefix(from, "github/")
+	} else if strings.HasPrefix(from, "github.com/") {
 		repo = "https://" + from
-	} else if !strings.HasPrefix(from, "https://github.com") {
+	} else if !strings.HasPrefix(from, "https://github.com/") {
 		log.Warnf("unknown template %s", from)
 		return
 	}
