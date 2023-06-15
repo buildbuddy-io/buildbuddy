@@ -295,11 +295,16 @@ func renderTemplate(from, into string) {
 	}
 	log.Debugf("grabbing template from %s and putting it into %q", from, into)
 
-	if !strings.HasPrefix(from, "github/") {
+	repo := from
+	if strings.HasPrefix(from, "github/") {
+		repo = "https://github.com/" + strings.TrimPrefix(from, "github/")
+	} else if strings.HasPrefix(from, "github.com/") {
+		repo = "https://" + from
+	} else if !strings.HasPrefix(from, "https://github.com/") {
 		log.Warnf("unknown template %s", from)
+		return
 	}
-
-	repo := strings.Replace(from, "github/", "https://github.com/", 1)
+	repo = strings.TrimRight(repo, "/")
 
 	cmd := exec.Command("git", "clone", "--depth=1", repo+".git", into)
 	err := cmd.Run()

@@ -106,6 +106,10 @@ func HandleAdd(args []string) (int, error) {
 
 // TODO(siggisim): Support specifying a version.
 func FetchModuleOrDisambiguate(module string) (string, *RegistryResponse, error) {
+	module = strings.Replace(module, "https://", "", 1)
+	module = strings.Replace(module, "github.com/", "github/", 1)
+	module = strings.TrimRight(module, "/")
+
 	res, err := fetch(module)
 	if err != nil {
 		return "", nil, err
