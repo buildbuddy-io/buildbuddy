@@ -107,15 +107,16 @@ const (
 	AuthAnonymousUser = "ANON"
 )
 
-type Authenticator interface {
+type InstallationAuthenticator interface {
 	// The ID of the admin group
 	AdminGroupID() string
 	// Whether or not anonymous usage is enabled
 	AnonymousUsageEnabled() bool
 	// Return a slice containing the providers
 	PublicIssuers() []string
-	// Whether SSO is enabled for this authenticator
-	SSOEnabled() bool
+}
+
+type HTTPAuthenticator interface {
 	// Redirect to configured authentication provider.
 	Login(w http.ResponseWriter, r *http.Request)
 	// Clear any logout state.
@@ -132,6 +133,11 @@ type Authenticator interface {
 	// Application code can retrieve the stored information by calling AuthenticatedUser.
 	AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context
 
+	// Whether SSO is enabled for this authenticator
+	SSOEnabled() bool
+}
+
+type GRPCAuthenticator interface {
 	// AuthenticatedGRPCContext authenticates the user using the credentials present in the gRPC metadata and creates a
 	// child context that contains the result.
 	//
@@ -148,7 +154,9 @@ type Authenticator interface {
 	// long running operation). For all other cases it is better to use the information cached in the context
 	// retrieved via AuthenticatedUser.
 	AuthenticateGRPCRequest(ctx context.Context) (UserInfo, error)
+}
 
+type UserAuthenticator interface {
 	// FillUser may be used to construct an initial tables.User object. It
 	// is filled based on information from the authenticator's JWT.
 	FillUser(ctx context.Context, user *tables.User) error
@@ -157,7 +165,8 @@ type Authenticator interface {
 	//
 	// See AuthenticatedHTTPContext/AuthenticatedGRPCContext for a description of how the context is created.
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
-
+}
+type APIKeyAuthenticator interface {
 	// Parses and returns a BuildBuddy API key from the given string.
 	ParseAPIKeyFromString(string) (string, error)
 
@@ -171,6 +180,14 @@ type Authenticator interface {
 	// AuthContextFromTrustedJWT returns an authenticated context using a JWT
 	// which has been previously authenticated.
 	AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context
+}
+
+type Authenticator interface {
+	InstallationAuthenticator
+	UserAuthenticator
+	HTTPAuthenticator
+	GRPCAuthenticator
+	APIKeyAuthenticator
 }
 
 type BuildBuddyServer interface {
