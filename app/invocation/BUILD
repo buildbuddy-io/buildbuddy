@@ -578,6 +578,7 @@ ts_library(
     name = "scorecard_card",
     srcs = ["scorecard_card.tsx"],
     deps = [
+        "//app/components/link",
         "//app/invocation:invocation_model",
         "//app/router",
         "//proto:cache_ts_proto",

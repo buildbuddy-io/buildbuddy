@@ -64,24 +64,6 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
     this.setState({ repoListLimit: this.state.repoListLimit + REPO_LIST_SHOW_MORE_INCREMENT });
   }
 
-  private onClickWorkflowBreadcrumb(e: React.MouseEvent) {
-    // TODO(siggisim): Switch this to using the <Link> component
-    if (e.metaKey || e.ctrlKey) {
-      return;
-    }
-    e.preventDefault();
-    router.navigateToWorkflows();
-  }
-
-  private onClickAddOther(e: React.MouseEvent) {
-    // TODO(siggisim): Switch this to using the <Link> component
-    if (e.metaKey || e.ctrlKey) {
-      return;
-    }
-    e.preventDefault();
-    router.navigateTo("/workflows/new/custom");
-  }
-
   private getImportedRepoUrls(): Set<string> {
     return new Set(this.state.workflowsResponse?.workflow?.map((workflow) => workflow.repoUrl));
   }
@@ -117,9 +99,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
           <div className="container">
             <div className="breadcrumbs">
               <span>
-                <a href="/workflows/" onClick={this.onClickWorkflowBreadcrumb.bind(this)}>
-                  Workflows
-                </a>
+                <TextLink href="/workflows/">Workflows</TextLink>
               </span>
               <span>Link GitHub repo</span>
             </div>
@@ -161,12 +141,9 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
             </div>
           )}
           <div className="create-other-container">
-            <a
-              className="create-other clickable"
-              href="/workflows/new/custom"
-              onClick={this.onClickAddOther.bind(this)}>
+            <TextLink className="create-other clickable" href="/workflows/new/custom">
               Enter details manually <ArrowRight className="icon" />
-            </a>
+            </TextLink>
           </div>
         </div>
       </div>

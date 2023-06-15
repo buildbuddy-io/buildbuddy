@@ -68,15 +68,6 @@
   height: 24px;
 }
 
-.compare-invocations .invocation-id-tag {
-  padding: 0;
-}
-
-.compare-invocations .invocation-id-tag a {
-  display: flex;
-  padding: 8px 16px;
-}
-
 .compare-invocations .invocation-id-tag-prefix {
   opacity: 0.7;
 }

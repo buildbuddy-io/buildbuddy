@@ -760,7 +760,7 @@ code .comment {
   border-radius: 8px;
 }
 
-.home a {
+.home a:not(.link-button) {
   text-decoration: underline;
 }
 
@@ -822,15 +822,6 @@ code .comment {
   max-width: 256px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.setup .manage-keys-button {
-  padding: 0;
-}
-
-.setup .manage-keys-button a {
-  padding: 8px 16px;
-  text-decoration: none;
 }
 
 .setup .no-api-keys {

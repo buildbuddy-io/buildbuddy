@@ -3,6 +3,7 @@ import InvocationModel from "./invocation_model";
 import { XCircle } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
 import router from "../router/router";
+import { TextLink } from "../components/link/link";
 
 interface Props {
   model: InvocationModel;
@@ -28,18 +29,6 @@ export default class ScorecardCardComponent extends React.Component<Props, State
     this.setState({ resultsLimit: null });
   }
 
-  onClickAction(e: React.MouseEvent) {
-    // TODO(siggisim): Switch this to using the <Link> component
-    if (e.metaKey || e.ctrlKey) {
-      return;
-    }
-    e.preventDefault();
-    const url = (e.target as HTMLAnchorElement).getAttribute("href");
-    if (url) {
-      router.navigateTo(url);
-    }
-  }
-
   render() {
     if (!this.props.model.scoreCard) return null;
 
@@ -58,14 +47,13 @@ export default class ScorecardCardComponent extends React.Component<Props, State
                 <div className="scorecard-target-name">{group.targetId}</div>
                 <div className="scorecard-action-id-list">
                   {group.results.map((result) => (
-                    <a
+                    <TextLink
                       key={result.actionId}
                       href={this.getActionUrl(result.actionId)}
-                      onClick={this.onClickAction.bind(this)}
                       className="scorecard-action-id">
                       {result.actionId}
                       {result.actionMnemonic ? ` (${result.actionMnemonic})` : ""}
-                    </a>
+                    </TextLink>
                   ))}
                   {group.hiddenResultsCount ? (
                     <div className="scorecard-hidden-count">

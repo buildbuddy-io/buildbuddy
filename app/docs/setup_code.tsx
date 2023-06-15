@@ -2,10 +2,10 @@ import React from "react";
 import { bazel_config } from "../../proto/bazel_config_ts_proto";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import FilledButton from "../components/button/button";
+import LinkButton from "../components/button/link_button";
 import Select, { Option } from "../components/select/select";
 import rpcService from "../service/rpc_service";
-import router from "../router/router";
+import Banner from "../components/banner/banner";
 
 interface Props {
   bazelConfigResponse?: bazel_config.IGetBazelConfigResponse;
@@ -201,15 +201,6 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     this.setState({ selectedCredentialIndex: Number(e.target.value) });
   }
 
-  onClickLink(href: string, e: React.MouseEvent<HTMLAnchorElement>) {
-    // TODO(siggisim): Switch this to using the <Link> component
-    if (e.metaKey || e.ctrlKey) {
-      return;
-    }
-    e.preventDefault();
-    router.navigateTo(href);
-  }
-
   private getCreateApiKeyLink(): string | null {
     // If the user is an admin (meaning they can create org-level keys), link to the API keys page.
     if (this.state.user?.isGroupAdmin()) return "/settings/org/api-keys";
@@ -235,11 +226,9 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
           </div>
           {createLink !== null && (
             <div>
-              <FilledButton className="manage-keys-button">
-                <a href={createLink} onClick={this.onClickLink.bind(this, createLink)}>
-                  Manage keys
-                </a>
-              </FilledButton>
+              <LinkButton className="manage-keys-button" href={createLink}>
+                Manage keys
+              </LinkButton>
             </div>
           )}
         </div>
