@@ -315,9 +315,9 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	})
 }
 
-type HandlerFunc func(http.ResponseWriter, *http.Request) error
+type RedirectOnError func(http.ResponseWriter, *http.Request) error
 
-func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (f RedirectOnError) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := f(w, r)
 	if err != nil {
 		log.Warning(err.Error())
