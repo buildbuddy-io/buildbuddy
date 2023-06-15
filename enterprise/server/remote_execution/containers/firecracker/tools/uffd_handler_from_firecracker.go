@@ -29,6 +29,14 @@ type uffdMsg struct {
 	}
 }
 
+type uffdioCopy struct {
+	Dst  uint64 // Source of copy
+	Src  uint64 // Destination of copy
+	Len  uint64 // Number of bytes to copy
+	Mode uint64 // Flags controlling behavior of copy
+	Copy int64  // Number of bytes copied, or negated error
+}
+
 func main() {
 	// Remove any existing socket file
 	socketPath := "/tmp/uffd_socket.sock"
@@ -68,6 +76,19 @@ func main() {
 
 	// Background thread to handle page faults
 	go func() {
+		// Create a page that will be copied into the faulting region
+		pageSize := os.Getpagesize()
+		pageToCopy, mmapErr := syscall.Mmap(-1, 0, pageSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
+		if mmapErr != nil {
+			fmt.Printf("Failed to create virtual memory: %v\n", err)
+			os.Exit(1)
+		}
+		defer syscall.Munmap(pageToCopy)
+
+		for i := range pageToCopy {
+			pageToCopy[i] = 'M'
+		}
+
 		pollFDs := []unix.PollFd{{
 			Fd:     int32(uffd),
 			Events: C.POLLIN,
@@ -89,6 +110,20 @@ func main() {
 			}
 
 			fmt.Printf("Address is %v", event.Event)
+
+			copyData := uffdioCopy{
+				Dst:  event.PageFault.Address,
+				Src:  uint64(uintptr(unsafe.Pointer(&pageToCopy[0]))),
+				Len:  uint64(pageSize),
+				Mode: 0,
+				Copy: 0,
+			}
+
+			_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+			if err != 0 {
+				fmt.Printf("Failed to call UFFDIO_COPY: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}()
 
