@@ -6,12 +6,11 @@ import { X, ZoomIn } from "lucide-react";
 import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
-import Banner from "../../../app/components/banner/banner";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import HistoryInvocationCardComponent from "../../app/history/history_invocation_card";
 import InvocationExecutionTable from "../../../app/invocation/invocation_execution_table";
-import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import FilledButton from "../../../app/components/button/button";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
@@ -864,17 +863,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                     <div className="history">
                       <div className="container nopadding-dense">
                         {this.state.eventData.invocations.map((invocation) => (
-                          <a
-                            href={`/invocation/${invocation.invocationId}`}
-                            onClick={(e) => {
-                              // TODO(siggisim): Switch this to using the <Link> component
-                              if (e.metaKey || e.ctrlKey) {
-                                return;
-                              }
-                              e.preventDefault();
-                            }}>
-                            <HistoryInvocationCardComponent invocation={invocation} />
-                          </a>
+                          <HistoryInvocationCardComponent invocation={invocation} />
                         ))}
                       </div>
                     </div>

@@ -8,25 +8,14 @@ import ExecutorCardComponent from "./executor_card";
 import { Subscription } from "rxjs";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { bazel_config } from "../../../proto/bazel_config_ts_proto";
-import { FilledButton } from "../../../app/components/button/button";
 import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
+import LinkButton from "../../../app/components/button/link_button";
 
 enum FetchType {
   Executors,
   ApiKeys,
   BazelConfig,
-}
-
-function linkHandler(href: string) {
-  return (e: React.MouseEvent) => {
-    // TODO(siggisim): Switch this to using the <Link> component
-    if (e.metaKey || e.ctrlKey) {
-      return;
-    }
-    e.preventDefault();
-    router.navigateTo(href);
-  };
 }
 
 interface ExecutorDeployProps {
@@ -110,11 +99,9 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
             <p>There are no API keys with the executor capability configured for your organization.</p>
             <p>API keys are used to authorize self-hosted executors.</p>
             {this.props.user.canCall("createApiKey") && (
-              <FilledButton className="manage-keys-button">
-                <a href="/settings/org/api-keys" onClick={linkHandler("/settings/org/api-keys")}>
-                  Manage keys
-                </a>
-              </FilledButton>
+              <LinkButton href="/settings/org/api-keys" className="manage-keys-button">
+                Manage keys
+              </LinkButton>
             )}
           </div>
         )}
@@ -131,11 +118,9 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
             <ExecutorDeploy executorKeys={this.props.executorKeys} schedulerUri={this.props.schedulerUri} />
             <h2>3. Default to self-hosted executors in organization settings</h2>
             <p>Enable "Default to self-hosted executors" on the Organization Settings page.</p>
-            <FilledButton className="organization-settings-button">
-              <a href="/settings/" onClick={linkHandler("/settings")}>
-                Open settings
-              </a>
-            </FilledButton>
+            <LinkButton href="/settings/" className="organization-settings-button">
+              Open settings
+            </LinkButton>
           </>
         )}
       </>
@@ -339,11 +324,9 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
                   self-hosted executors" in your organization settings.
                 </div>
                 <div>
-                  <FilledButton className="organization-settings-button">
-                    <a href="/settings/" onClick={linkHandler("/settings")}>
-                      Open settings
-                    </a>
-                  </FilledButton>
+                  <LinkButton href="/settings/" className="organization-settings-button">
+                    Open settings
+                  </LinkButton>
                 </div>
               </Banner>
             )}

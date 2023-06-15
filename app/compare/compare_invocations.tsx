@@ -3,13 +3,13 @@ import { ArrowLeft, Sliders, XCircle } from "lucide-react";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
-import { OutlinedButton } from "../components/button/button";
 import CheckboxButton from "../components/button/checkbox_button";
 import router from "../router/router";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
 import DiffChunk, { DiffChunkData } from "./diff_chunk";
 import { prepareForDiff, PreProcessingOptions } from "./diff_preprocessing";
+import { OutlinedLinkButton } from "../components/button/link_button";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
@@ -218,20 +218,9 @@ export default class CompareInvocationsComponent extends React.Component<Compare
 function InvocationIdTag({ prefix, id }: { prefix: string; id: string }) {
   const href = `/invocation/${id}`;
   return (
-    <OutlinedButton className="invocation-id-tag">
-      <a
-        href={href}
-        onClick={(e: React.MouseEvent) => {
-          // TODO(siggisim): Switch this to using the <Link> component
-          if (e.metaKey || e.ctrlKey) {
-            return;
-          }
-          e.preventDefault();
-          router.navigateTo(href);
-        }}>
-        <div className="invocation-id-tag-prefix">{prefix}:</div> <div className="invocation-id-tag-id">{id}</div>
-      </a>
-    </OutlinedButton>
+    <OutlinedLinkButton className="invocation-id-tag" href={href}>
+      <div className="invocation-id-tag-prefix">{prefix}:</div> <div className="invocation-id-tag-id">{id}</div>
+    </OutlinedLinkButton>
   );
 }
 

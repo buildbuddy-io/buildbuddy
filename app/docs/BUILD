@@ -23,9 +23,9 @@ ts_library(
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
-        "//app/components/button",
+        "//app/components/banner",
+        "//app/components/button:link_button",
         "//app/components/select",
-        "//app/router",
         "//app/service:rpc_service",
         "//proto:bazel_config_ts_proto",
         "@npm//@types/react",

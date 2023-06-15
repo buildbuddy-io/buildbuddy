@@ -97,6 +97,7 @@ ts_library(
         "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/filter_input",
+        "//app/components/link",
         "//app/components/select",
         "//app/components/spinner",
         "//app/errors:error_service",

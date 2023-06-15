@@ -13,6 +13,7 @@ import router from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { normalizeRepoURL } from "../../../app/util/git";
 import { github } from "../../../proto/github_ts_proto";
+import { TextLink } from "../../../app/components/link/link";
 
 type GitHubAppImportProps = {
   user: User;
@@ -149,15 +150,6 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
     this.setState({ repoListLimit: this.state.repoListLimit + REPO_LIST_SHOW_MORE_INCREMENT });
   }
 
-  private onClickWorkflowBreadcrumb(e: React.MouseEvent) {
-    // TODO(siggisim): Switch this to using the <Link> component
-    if (e.metaKey || e.ctrlKey) {
-      return;
-    }
-    e.preventDefault();
-    router.navigateToWorkflows();
-  }
-
   private onClickLinkRepo(repoUrl: string) {
     const linkRequest = github.LinkRepoRequest.create({ repoUrl });
     this.setState({ linkRequest, linkLoading: true });
@@ -252,9 +244,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
           <div className="container">
             <div className="breadcrumbs">
               <span>
-                <a href="/workflows/" onClick={this.onClickWorkflowBreadcrumb.bind(this)}>
-                  Workflows
-                </a>
+                <TextLink href="/workflows/">Workflows</TextLink>
               </span>
               <span>Link GitHub repo</span>
             </div>

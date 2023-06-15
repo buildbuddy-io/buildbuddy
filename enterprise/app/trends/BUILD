@@ -49,7 +49,6 @@ ts_library(
     deps = [
         "//app/auth:user",
         "//app/capabilities",
-        "//app/components/banner",
         "//app/components/button",
         "//app/components/select",
         "//app/components/spinner",

@@ -10,7 +10,7 @@ ts_library(
     deps = [
         "//app/auth:auth_service",
         "//app/components/banner",
-        "//app/components/button",
+        "//app/components/button:link_button",
         "//app/components/select",
         "//app/router",
         "//app/service:rpc_service",
