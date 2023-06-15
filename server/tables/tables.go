@@ -607,6 +607,8 @@ type UsageCounts struct {
 
 	LinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
 	MacExecutionDurationUsec   int64 `gorm:"not null;default:0"`
+	TotalUploadSizeBytes       int64 `gorm:"not null;default:0"`
+	TotalCachedActionExecUsec  int64 `gorm:"not null;default:0"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.

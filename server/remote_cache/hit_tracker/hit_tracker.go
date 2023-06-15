@@ -509,16 +509,27 @@ func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 }
 
 func (h *HitTracker) recordCacheUsage(d *repb.Digest, actionCounter counterType) error {
-	if h.usage == nil || actionCounter != Hit {
+	if h.usage == nil {
 		return nil
 	}
-	c := &tables.UsageCounts{
-		TotalDownloadSizeBytes: d.GetSizeBytes(),
-	}
-	if h.actionCache {
-		c.ActionCacheHits = 1
+	c := &tables.UsageCounts{}
+	if actionCounter == Hit {
+		c.TotalDownloadSizeBytes = d.GetSizeBytes()
+		if h.actionCache {
+			c.ActionCacheHits = 1
+			if md := h.executedActionMetadata; md != nil {
+				execStartTime := md.GetExecutionStartTimestamp().AsTime()
+				execEndTime := md.GetExecutionCompletedTimestamp().AsTime()
+				execDuration := execEndTime.Sub(execStartTime)
+				c.TotalCachedActionExecUsec = execDuration.Microseconds()
+			}
+		} else {
+			c.CASCacheHits = 1
+		}
+	} else if actionCounter == Upload {
+		c.TotalUploadSizeBytes = d.GetSizeBytes()
 	} else {
-		c.CASCacheHits = 1
+		return nil
 	}
 	return h.usage.Increment(h.ctx, c)
 }

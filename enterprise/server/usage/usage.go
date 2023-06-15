@@ -303,7 +303,9 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 				action_cache_hits = action_cache_hits + ?,
 				total_download_size_bytes = total_download_size_bytes + ?,
 				linux_execution_duration_usec = linux_execution_duration_usec + ?,
-				mac_execution_duration_usec = mac_execution_duration_usec + ?
+				mac_execution_duration_usec = mac_execution_duration_usec + ?,
+				total_upload_size_bytes = total_upload_size_bytes + ?,
+				total_cached_action_exec_usec = total_cached_action_exec_usec + ?
 			WHERE
 				group_id = ?
 				AND period_start_usec = ?
@@ -317,6 +319,8 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			tu.TotalDownloadSizeBytes,
 			tu.LinuxExecutionDurationUsec,
 			tu.MacExecutionDurationUsec,
+			tu.TotalUploadSizeBytes,
+			tu.TotalCachedActionExecUsec,
 			tu.GroupID,
 			tu.PeriodStartUsec,
 			tu.Region,
@@ -432,6 +436,12 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	if tu.MacExecutionDurationUsec > 0 {
 		counts["mac_execution_duration_usec"] = tu.MacExecutionDurationUsec
 	}
+	if tu.TotalUploadSizeBytes > 0 {
+		counts["total_upload_size_bytes"] = tu.TotalUploadSizeBytes
+	}
+	if tu.TotalCachedActionExecUsec > 0 {
+		counts["total_cached_action_exec_usec"] = tu.TotalCachedActionExecUsec
+	}
 	return counts, nil
 }
 
@@ -453,5 +463,7 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		TotalDownloadSizeBytes:     hInt64["total_download_size_bytes"],
 		LinuxExecutionDurationUsec: hInt64["linux_execution_duration_usec"],
 		MacExecutionDurationUsec:   hInt64["mac_execution_duration_usec"],
+		TotalUploadSizeBytes:       hInt64["total_upload_size_bytes"],
+		TotalCachedActionExecUsec:  hInt64["total_cached_action_exec_usec"],
 	}, nil
 }
