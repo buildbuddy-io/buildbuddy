@@ -118,11 +118,11 @@ type InstallationAuthenticator interface {
 
 type HTTPAuthenticator interface {
 	// Redirect to configured authentication provider.
-	Login(w http.ResponseWriter, r *http.Request)
+	Login(w http.ResponseWriter, r *http.Request) error
 	// Clear any logout state.
-	Logout(w http.ResponseWriter, r *http.Request)
+	Logout(w http.ResponseWriter, r *http.Request) error
 	// Handle a callback from authentication provider.
-	Auth(w http.ResponseWriter, r *http.Request)
+	Auth(w http.ResponseWriter, r *http.Request) error
 
 	// AuthenticatedHTTPContext authenticates the user using the credentials present in the HTTP request and creates a
 	// child context that contains the results.

@@ -359,9 +359,9 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	if auth := env.GetAuthenticator(); auth != nil {
-		mux.Handle("/login/", interceptors.SetSecurityHeaders(http.HandlerFunc(auth.Login)))
-		mux.Handle("/auth/", interceptors.SetSecurityHeaders(http.HandlerFunc(auth.Auth)))
-		mux.Handle("/logout/", interceptors.SetSecurityHeaders(http.HandlerFunc(auth.Logout)))
+		mux.Handle("/login/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Login)))
+		mux.Handle("/auth/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Auth)))
+		mux.Handle("/logout/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Logout)))
 	}
 
 	if err := github.Register(env); err != nil {

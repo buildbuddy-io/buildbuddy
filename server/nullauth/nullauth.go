@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 func NewNullAuthenticator(anonymousUsageEnabled bool, adminGroupID string) *NullAuthenticator {
@@ -53,16 +54,16 @@ func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 	return nil
 }
 
-func (a *NullAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+func (a *NullAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
+	return status.UnimplementedError("Auth not implemented")
 }
 
-func (a *NullAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+func (a *NullAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
+	return status.UnimplementedError("Auth not implemented")
 }
 
-func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
+	return status.UnimplementedError("Auth not implemented")
 }
 
 func (a *NullAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
