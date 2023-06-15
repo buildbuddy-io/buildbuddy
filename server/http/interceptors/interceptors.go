@@ -320,11 +320,7 @@ type HandlerFunc func(http.ResponseWriter, *http.Request) error
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := f(w, r)
 	if err != nil {
-		redirectWithError(w, r, err)
+		log.Warning(err.Error())
+		http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 	}
-}
-
-func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Warning(err.Error())
-	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 }

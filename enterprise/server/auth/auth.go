@@ -1372,8 +1372,3 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 	return nil, authutil.AnonymousUserError(userNotFoundMsg)
 }
-
-func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Warning(err.Error())
-	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
-}
