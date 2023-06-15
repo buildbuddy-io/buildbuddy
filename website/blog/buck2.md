@@ -13,6 +13,9 @@ tags: [buck2, engineering]
 
 # Buck2 unboxing
 
+**Edit** (2023-06-15): Bazel team did reach out to me with some corrections to how the benchmark
+was setup. Please find revised numbers at bottom of this blog.
+
 Recently Meta announced the release of Buck2, their official build tool that was rewritten in Rust.
 I got a chance to try it and integrate it with BuildBuddy's Remote Cache and Remote Build Execution offerings.
 
@@ -382,8 +385,8 @@ Let's use Bazel's latest release, 6.2.0, as our baseline and see how Buck2 compa
      Range (min … max):   102.111 s … 111.645 s    10 runs
    ```
 
-   17 seconds is amazing compared to the local execution time of 74 seconds.
-   It's 73% faster!
+   10 seconds is amazing compared to the local execution time of 65 seconds.
+   It's 84% faster with Remote Build Execution and Remote Cache!
 
    But what about Buck2?
    Well setting it up is as simple as copying the provided configurations in [Buck2's BuildBuddy Example](https://github.com/facebook/buck2/tree/main/examples/remote_execution/buildbuddy)
@@ -563,3 +566,116 @@ I hope the current excitement could grow a community and ecosystem around Buck2 
 
 In the meantime, I have created a repository to collect [all Buck2-related resources here](https://github.com/sluongng/awesome-buck2).
 If you are interested in Buck2, give it a look!
+
+## Update (2023-06-15)
+
+Shortly after this blog was released, [Tobias Werth](https://github.com/meisterT) from Bazel team pointed out to me
+that the Bazel setup was not the most optimized.
+
+In particular, instead of using the `tools` attribute in Bazel's `genrule`, I should have used `srcs` attribute instead.
+
+```diff
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -26,28 +26,28 @@ SLEEP_CMD = "sleep $$((RANDOM % 5));"
+ [
+     genrule(
+         name = "z_{}".format(n),
+-        outs = ["z_{}.txt".format(n)],
+-        cmd = SLEEP_CMD + "cat $(location :x_{n}) $(location :y_{n}) > $@".format(n = n),
+-        tools = [
++        srcs = [
+             ":x_{}".format(n),
+             ":y_{}".format(n),
+         ],
++        outs = ["z_{}.txt".format(n)],
++        cmd = SLEEP_CMD + "cat $(location :x_{n}) $(location :y_{n}) > $@".format(n = n),
+     )
+     for n in SIZE_RANGE
+ ]
+
+ genrule(
+     name = "xyz",
++    srcs = [
++        ":z_{}".format(n)
++        for n in SIZE_RANGE
++    ],
+     outs = ["xyz.txt"],
+     # cat $(location :z_0) $(location :z_1) ... $(location :z_999) > $@,
+     cmd = SLEEP_CMD + "cat " + " ".join([
+         "$(location :z_{})".format(n)
+         for n in SIZE_RANGE
+     ]) + " > $@",
+-    tools = [
+-        ":z_{}".format(n)
+-        for n in SIZE_RANGE
+-    ],
+ )
+```
+
+Using `tools` would trigger Bazel to configure twice the number of actions underneath due to Bazel's special treament for tool dependencies.
+
+And fewer actions means faster build.
+For example, here is the new benchmark when build and test everything with Bazel.
+
+```bash
+> hyperfine --prepare 'bazel clean' --warmup 1 'bazel test --config=local //...'
+Benchmark 1: bazel test --config=local //...
+  Time (mean ± σ):     42.580 s ±  1.881 s    [User: 0.039 s, System: 0.048 s]
+  Range (min … max):   38.127 s … 45.369 s    10 runs
+```
+
+So I reran the benchmark and here are the new timings.
+
+| Tools       |          Local Build | RBE (with Remote Cache) | RBE (without Remote Cache) |
+| :---------- | -------------------: | ----------------------: | -------------------------: |
+| buck2 (old) | `41.175 s ± 2.183 s` |    ` 7.937 s ± 0.487 s` |     `203.431 s ± 29.882 s` |
+| bazel (old) | `65.631 s ± 0.460 s` |    ` 9.798 s ± 0.515 s` |    `106.062 s ± ‎ 3.106 s` |
+| bazel (new) | `42.580 s ± 1.881 s` |    `10.047 s ± 0.517 s` |    ` 73.009 s ± ‎ 2.975 s` |
+
+This means that if setup correctly, Bazel performance is quite competitive with Buck2.
+Differences in a few seconds could be negligible for most use cases.
+
+Tobias also noted that my current Bazel configuration is uploading Build Events, which may incur additional network latency.
+This could be further be improved by moving the Build Event upload to a background task and defer build artifact downloads.
+
+Here is a quick comparision with RBE and Remote Cache on different modes:
+
+```bash
+> hyperfine --prepare 'bazel clean' \
+            --warmup 1 \
+            'bazel test --config=remote //...' \
+            'bazel test --config=remote //... --bes_upload_mode=fully_async' \
+            'bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_toplevel' \
+            'bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_minimal'
+
+Benchmark 1: bazel test --config=remote //...
+  Time (mean ± σ):      9.460 s ±  0.540 s    [User: 0.023 s, System: 0.031 s]
+  Range (min … max):    8.473 s … 10.107 s    10 runs
+
+Benchmark 2: bazel test --config=remote //... --bes_upload_mode=fully_async
+  Time (mean ± σ):      7.091 s ±  0.137 s    [User: 0.017 s, System: 0.035 s]
+  Range (min … max):    6.893 s …  7.314 s    10 runs
+
+Benchmark 3: bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_toplevel
+  Time (mean ± σ):      5.733 s ±  0.294 s    [User: 0.016 s, System: 0.038 s]
+  Range (min … max):    5.434 s …  6.261 s    10 runs
+
+Benchmark 4: bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_minimal
+  Time (mean ± σ):      5.659 s ±  0.189 s    [User: 0.016 s, System: 0.040 s]
+  Range (min … max):    5.477 s …  6.140 s    10 runs
+
+Summary
+  bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_minimal ran
+    1.01 ± 0.06 times faster than bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_toplevel
+    1.25 ± 0.05 times faster than bazel test --config=remote //... --bes_upload_mode=fully_async
+    1.67 ± 0.11 times faster than bazel test --config=remote //...
+```
+
+However, as noted in the blog post, Buck2 Event system is not yet compatible with systems outside of Meta.
+Buck2 does also come with "Deferred Materialization", the equivalent of Bazel's build-without-the-bytes.
+However because the files we are generating are relatively lightweighted,
+I decided to not use these levers as part of the Buck2 benchmark.
+
+Interested readers could find my benchmarking setup in Github repo [sluongng/buck2-rbe-bench](https://github.com/sluongng/buck2-rbe-bench)
+to experiment further.
