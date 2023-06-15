@@ -1,4 +1,4 @@
-package auth
+package oidc
 
 import (
 	"context"
@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -40,7 +39,6 @@ import (
 )
 
 var (
-	adminGroupID         = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
 	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
 	oauthProviders       = flagutil.New("auth.oauth_providers", []OauthProvider{}, "The list of oauth providers to use to authenticate.")
 	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
@@ -60,12 +58,6 @@ const (
 	// The key that the user object is stored under in the
 	// context.
 	contextUserKey = "auth.user"
-
-	// The key the JWT token string is stored under.
-	// NB: This value must match the value in
-	// bb/server/rpc/interceptors/interceptors.go which copies/reads this value
-	// to/from the outgoing/incoming request contexts.
-	contextTokenStringKey = "x-buildbuddy-jwt"
 
 	// The key the Claims are stored under in the context.
 	// If unset, the JWT can be used to reconstitute the claims.
@@ -90,7 +82,6 @@ const (
 	contextTokenExpiryKey = "auth.tokenExpiry"
 
 	contextAPIKeyKey = "api.key"
-	APIKeyHeader     = "x-buildbuddy-api-key"
 	SSLCertHeader    = "x-ssl-cert"
 
 	// The name of params read on /login to understand which
@@ -118,14 +109,10 @@ const (
 
 	// Maximum number of entries in API Key -> Group cache.
 	apiKeyGroupCacheSize = 10_000
-
-	// WARNING: app/auth/auth_service.ts depends on these messages matching.
-	userNotFoundMsg = "User not found"
-	loggedOutMsg    = "User logged out"
 )
 
 var (
-	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
+	apiKeyRegex = regexp.MustCompile(authutil.APIKeyHeader + "=([a-zA-Z0-9]*)")
 )
 
 func assembleJWT(ctx context.Context, c *claims.Claims) (string, error) {
@@ -407,7 +394,7 @@ func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, au
 	return authenticators, nil
 }
 
-func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []OauthProvider) (*OpenIDAuthenticator, error) {
+func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []OauthProvider, adminGroupID string) (*OpenIDAuthenticator, error) {
 	authenticators, err := createAuthenticatorsFromConfig(
 		ctx,
 		env,
@@ -436,21 +423,23 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		claimsFunc = claimsCache.Get
 	}
 
-	anonymousUsageEnabled := *enableAnonymousUsage || (len(oauthProviders) == 0 && !selfauth.Enabled())
-
 	return &OpenIDAuthenticator{
 		env:                  env,
 		myURL:                build_buddy_url.WithPath(""),
 		authenticators:       authenticators,
 		apiKeyGroupCache:     akgCache,
 		parseClaims:          claimsFunc,
-		enableAnonymousUsage: anonymousUsageEnabled,
-		adminGroupID:         *adminGroupID,
+		enableAnonymousUsage: AnonymousUsageEnabled(),
+		adminGroupID:         adminGroupID,
 	}, nil
 }
 
+func AnonymousUsageEnabled() bool {
+	return *enableAnonymousUsage || (len(*oauthProviders) == 0 && !selfauth.Enabled())
+}
+
 func newForTesting(ctx context.Context, env environment.Env, testAuthenticator authenticator) (*OpenIDAuthenticator, error) {
-	oia, err := newOpenIDAuthenticator(ctx, env, nil /*oauthProviders=*/)
+	oia, err := newOpenIDAuthenticator(ctx, env, nil /*oauthProviders=*/, "")
 	if err != nil {
 		return nil, err
 	}
@@ -458,17 +447,7 @@ func newForTesting(ctx context.Context, env environment.Env, testAuthenticator a
 	return oia, nil
 }
 
-func RegisterNullAuth(env environment.Env) error {
-	env.SetAuthenticator(
-		nullauth.NewNullAuthenticator(
-			*enableAnonymousUsage || (len(*oauthProviders) == 0 && !selfauth.Enabled()),
-			*adminGroupID,
-		),
-	)
-	return nil
-}
-
-func Register(ctx context.Context, env environment.Env) error {
+func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, adminGroupID string) (*OpenIDAuthenticator, error) {
 	authConfigs := make([]OauthProvider, len(*oauthProviders))
 	copy(authConfigs, *oauthProviders)
 	if selfauth.Enabled() {
@@ -481,20 +460,12 @@ func Register(ctx context.Context, env environment.Env) error {
 			},
 		)
 	}
-	authenticator, err := NewOpenIDAuthenticator(ctx, env, authConfigs)
-	if err != nil {
-		return status.InternalErrorf("Authenticator failed to configure: %v", err)
-	}
-	env.SetAuthenticator(authenticator)
-	return nil
-}
 
-func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, authConfigs []OauthProvider) (*OpenIDAuthenticator, error) {
 	if len(authConfigs) == 0 {
 		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
 	}
 
-	a, err := newOpenIDAuthenticator(ctx, env, authConfigs)
+	a, err := newOpenIDAuthenticator(ctx, env, authConfigs, adminGroupID)
 	if err != nil {
 		alert.UnexpectedEvent("authentication_configuration_failed", "Failed to configure authentication: %s", err)
 	}
@@ -630,7 +601,7 @@ func authContextFromClaims(ctx context.Context, claims *claims.Claims, err error
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	ctx = context.WithValue(ctx, contextTokenStringKey, tokenString)
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
 	ctx = context.WithValue(ctx, contextClaimsKey, claims)
 	// Note: we clear the error here in case it was set initially by the
 	// authentication handler, but then we want to re-authenticate later on in the
@@ -657,16 +628,16 @@ func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	if _, ok := ctx.Value(APIKeyHeader).(string); ok {
-		alert.UnexpectedEvent("overwrite_api_key", "Overwriting existing value of %q in context.", APIKeyHeader)
+	if _, ok := ctx.Value(authutil.APIKeyHeader).(string); ok {
+		alert.UnexpectedEvent("overwrite_api_key", "Overwriting existing value of %q in context.", authutil.APIKeyHeader)
 	}
-	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
+	ctx = context.WithValue(ctx, authutil.APIKeyHeader, apiKey)
 	claims, err := a.claimsFromAPIKey(ctx, apiKey)
 	return authContextFromClaims(ctx, claims, err)
 }
 
 func (a *OpenIDAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
-	jwt, ok := ctx.Value(contextTokenStringKey).(string)
+	jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string)
 	if !ok {
 		return ""
 	}
@@ -674,7 +645,7 @@ func (a *OpenIDAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) str
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
-	return context.WithValue(ctx, contextTokenStringKey, jwt)
+	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 }
 
 func (a *OpenIDAuthenticator) claimsFromAPIKey(ctx context.Context, apiKey string) (*claims.Claims, error) {
@@ -744,7 +715,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 			}
 		}
 
-		keys := md.Get(APIKeyHeader)
+		keys := md.Get(authutil.APIKeyHeader)
 		if l := len(keys); l > 0 {
 			// get the last key
 			return a.claimsFromAPIKey(ctx, keys[l-1])
@@ -797,7 +768,7 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 
 func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*claims.Claims, *userToken, error) {
 	ctx := r.Context()
-	if apiKey := r.Header.Get(APIKeyHeader); apiKey != "" {
+	if apiKey := r.Header.Get(authutil.APIKeyHeader); apiKey != "" {
 		claims, err := a.claimsFromAPIKey(ctx, apiKey)
 		return claims, nil, err
 	}
@@ -810,7 +781,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 
 	jwt := cookie.GetCookie(r, jwtCookie)
 	if jwt == "" {
-		return nil, nil, status.PermissionDeniedErrorf("%s: no jwt set", loggedOutMsg)
+		return nil, nil, status.PermissionDeniedErrorf("%s: no jwt set", authutil.LoggedOutMsg)
 	}
 	issuer := cookie.GetCookie(r, authIssuerCookie)
 	sessionID := cookie.GetCookie(r, sessionIDCookie)
@@ -840,12 +811,12 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		// flow to request a refresh token, since otherwise the login flow will
 		// assume (based on the existence of this cookie) that a valid session exists with a refresh token already set.
 		clearLoginCookie(w)
-		return nil, ut, status.PermissionDeniedErrorf("%s: session not found", loggedOutMsg)
+		return nil, ut, status.PermissionDeniedErrorf("%s: session not found", authutil.LoggedOutMsg)
 	}
 
 	if err := auth.checkAccessToken(ctx, jwt, sesh.AccessToken); err != nil {
 		log.Debugf("Invalid token: %s", err)
-		return nil, ut, status.PermissionDeniedErrorf("%s: invalid token", loggedOutMsg)
+		return nil, ut, status.PermissionDeniedErrorf("%s: invalid token", authutil.LoggedOutMsg)
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
@@ -875,7 +846,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		if err := authDB.ClearSession(ctx, sessionID); err != nil {
 			log.Errorf("Failed to clear session %+v: %s", sesh, err)
 		}
-		return nil, nil, status.PermissionDeniedErrorf("%s: failed to renew session", loggedOutMsg)
+		return nil, nil, status.PermissionDeniedErrorf("%s: failed to renew session", authutil.LoggedOutMsg)
 	}
 
 	sesh.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
@@ -907,7 +878,7 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*claims.Cl
 	}
 
 	// If context already contains a JWT, just verify it and return the claims.
-	if tokenString, ok := ctx.Value(contextTokenStringKey).(string); ok && tokenString != "" {
+	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
 		claims, err := claims.ParseClaims(tokenString)
 		if err != nil {
 			return nil, err
@@ -919,7 +890,7 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*claims.Cl
 	// user not found error.
 	err, ok := authutil.AuthErrorFromContext(ctx)
 	if !ok || err == nil {
-		return nil, authutil.AnonymousUserError(userNotFoundMsg)
+		return nil, authutil.AnonymousUserError(authutil.UserNotFoundMsg)
 	}
 
 	// if there was an error set on the context, and it was an
@@ -932,7 +903,7 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*claims.Cl
 	// All other types of errors will be converted into Unauthenticated
 	// errors.
 	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, status.UnauthenticatedErrorf("%s: %s", userNotFoundMsg, err.Error())
+	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
@@ -1116,21 +1087,4 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 	}
 	http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
 	return nil
-}
-
-// Parses the JWT's UserInfo from the context without verifying the JWT.
-// Only use this if you know what you're doing and the JWT is coming from a trusted source
-// that has already verified its authenticity.
-func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
-	if tokenString, ok := ctx.Value(contextTokenStringKey).(string); ok && tokenString != "" {
-		claims := &claims.Claims{}
-		parser := jwt.Parser{}
-		_, _, err := parser.ParseUnverified(tokenString, claims)
-		if err != nil {
-			return nil, err
-		}
-		return claims, nil
-	}
-	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, authutil.AnonymousUserError(userNotFoundMsg)
 }

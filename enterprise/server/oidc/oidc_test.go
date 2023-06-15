@@ -1,4 +1,4 @@
-package auth
+package oidc
 
 import (
 	"context"
@@ -210,11 +210,11 @@ func getResponseCookie(response *http.Response, name string) *http.Cookie {
 func requireAuthenticationError(t *testing.T, ctx context.Context) {
 	err, _ := authutil.AuthErrorFromContext(ctx)
 	require.NotNil(t, err, "context auth error key should be set")
-	require.Nil(t, ctx.Value(contextTokenStringKey), "context auth jwt token should not be set")
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey), "context auth jwt token should not be set")
 }
 
 func requireAuthenticated(t *testing.T, ctx context.Context) {
 	err, _ := authutil.AuthErrorFromContext(ctx)
 	require.Nil(t, err, err)
-	require.NotNil(t, ctx.Value(contextTokenStringKey), "context auth jwt token should be set")
+	require.NotNil(t, ctx.Value(authutil.ContextTokenStringKey), "context auth jwt token should be set")
 }

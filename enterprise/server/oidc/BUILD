@@ -3,16 +3,15 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
-    name = "auth",
-    srcs = ["auth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth",
+    name = "oidc",
+    srcs = ["oidc.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oidc",
     deps = [
         "//enterprise/server/selfauth",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
-        "//server/nullauth",
         "//server/tables",
         "//server/util/alert",
         "//server/util/authutil",
@@ -36,10 +35,10 @@ go_library(
 )
 
 go_test(
-    name = "auth_test",
+    name = "oidc_test",
     size = "small",
-    srcs = ["auth_test.go"],
-    embed = [":auth"],
+    srcs = ["oidc_test.go"],
+    embed = [":oidc"],
     deps = [
         "//enterprise/server/testutil/enterprise_testenv",
         "//server/tables",
