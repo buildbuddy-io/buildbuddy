@@ -16,10 +16,8 @@ export default class ExecutorCardComponent extends React.Component<Props> {
         <div className="content">
           <div className="details">
             <div className="executor-section">
-              <div className="executor-section-title">Address:</div>
-              <div>
-                {this.props.node.host}:{this.props.node.port}
-              </div>
+              <div className="executor-section-title">Hostname:</div>
+              <div>{this.props.node.host}</div>
             </div>
             <div className="executor-section">
               <div className="executor-section-title">Executor Host ID:</div>
