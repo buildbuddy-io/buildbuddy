@@ -2,13 +2,14 @@ package authdb_test
 
 import (
 	"context"
-	crand "crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"math/rand"
 	"strconv"
 	"testing"
 	"time"
+
+	crand "crypto/rand"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"

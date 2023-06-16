@@ -31,6 +31,7 @@ const (
 	apiKeyLength = 20
 
 	// For encrypted keys, the first N characters serve as the nonce.
+	// This cannot be changed without a migration.
 	apiKeyNonceLength = 6
 
 	// Encrypted API keys have this prefix in the database.
@@ -41,7 +42,7 @@ const (
 
 var (
 	userOwnedKeysEnabled = flag.Bool("app.user_owned_keys_enabled", false, "If true, enable user-owned API keys.")
-	apiKeyEncryptionKey  = flag.String("auth.api_key_encryption.key", "", "Base64-encoded encryption key for API keys.")
+	apiKeyEncryptionKey  = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.")
 	encryptNewKeys       = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup.")
 )
@@ -192,6 +193,18 @@ func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 	return err
 }
 
+// encryptAPIkey encrypts apiKey using chacha20 using the following process:
+//
+// We take the first apiKeyNonceLength bytes of the key, pad it with zeroes to
+// chacha20 nonce size and use it as the nonce input. This part of the key
+// remains non-secret inside the database.
+//
+// The remainder of the key is encrypted and kept secret.
+//
+// The final result includes both the nonce and the encrypted portion of the
+// key, encoded into a hex string. The result is prefixed with
+// apiKeyEncryptedValuePrefix to make it possible to differentiate encrypted
+// and non-encrypted values in the database.
 func (d *AuthDB) encryptAPIKey(apiKey string) (string, string, error) {
 	if len(apiKey) != apiKeyLength {
 		return "", "", status.FailedPreconditionErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
@@ -214,6 +227,14 @@ func (d *AuthDB) encryptAPIKey(apiKey string) (string, string, error) {
 	return apiKeyEncryptedValuePrefix + hex.EncodeToString(data), nonce, nil
 }
 
+// decryptAPIKey retrieves the plaintext representation of the API key. It is
+// intended to be used when it is necessary to display the API key to the user,
+// but not in the authentication process.
+//
+// After hex-decoding the key, we take the first apiKeyNonceLength bytes to be
+// used as the nonce into the decryption function. The rest of key is fed into
+// the cipher to retrieve the plaintext. The nonce and the decrypted value are
+// combined to form the decrypted API key.
 func (d *AuthDB) decryptAPIKey(encryptedAPIKey string) (string, error) {
 	if !strings.HasPrefix(encryptedAPIKey, apiKeyEncryptedValuePrefix) {
 		return "", status.FailedPreconditionErrorf("Encrypted API key has invalid prefix")
