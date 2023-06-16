@@ -88,15 +88,8 @@ type uffdMsg struct {
 	}
 }
 
-type uffdioCopy struct {
-	Dst  uint64 // Source of copy
-	Src  uint64 // Destination of copy
-	Len  uint64 // Number of bytes to copy
-	Mode uint64 // Flags controlling behavior of copy
-	Copy int64  // Number of bytes copied, or negated error
-}
-
-type guestRegionUffdMapping struct {
+// Corresponds to firecracker GuestRegionUffdMapping
+type snapshottedMemoryMapping struct {
 	BaseHostVirtAddr uint64  `json:"base_host_virt_addr"`
 	Size             uintptr `json:"size"`
 	Offset           uint64  `json:"offset"`
@@ -162,7 +155,7 @@ func main() {
 
 	// Parse memory mappings
 	bufMemoryMappings = bufMemoryMappings[:numBytesMappings]
-	var mappings []guestRegionUffdMapping
+	var mappings []snapshottedMemoryMapping
 	err = json.Unmarshal(bufMemoryMappings, &mappings)
 	if err != nil {
 		fmt.Printf("Could not parse memory mapping data: %s", err)
@@ -187,60 +180,58 @@ func main() {
 	}
 	uffd := uintptr(fds[0])
 
-	// Background thread to handle page faults
-	go func() {
-		// Create a page that will be copied into the faulting region
-		pageSize := os.Getpagesize()
-		pageToCopy, mmapErr := syscall.Mmap(-1, 0, pageSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
-		if mmapErr != nil {
-			fmt.Printf("Failed to create virtual memory: %v\n", err)
-			os.Exit(1)
-		}
-		defer syscall.Munmap(pageToCopy)
+	pollFDs := []unix.PollFd{{
+		Fd:     int32(uffd),
+		Events: C.POLLIN,
+	}}
 
-		for i := range pageToCopy {
-			pageToCopy[i] = 'M'
-		}
+	// Map backing file to memory (so you can access contents of the file as if they were RAM)
+	backingMemorySnapshotFile := "/home/maggie/mem_file"
+	file, err := os.OpenFile(backingMemorySnapshotFile, os.O_RDWR, 0)
+	if err != nil {
+		fmt.Println("Failed to open file:", err)
+		return
+	}
+	defer file.Close()
 
-		pollFDs := []unix.PollFd{{
-			Fd:     int32(uffd),
-			Events: C.POLLIN,
-		}}
-
-		for {
-			nready, pollErr := unix.Poll(pollFDs, -1)
-			if pollErr != nil {
-				fmt.Printf("Failed to poll UFFD: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Num ready is %d", nready)
-
-			var event uffdMsg
-			_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
-			if err != 0 {
-				fmt.Printf("Failed to read event: %v\n", err)
-				os.Exit(1)
-			}
-
-			fmt.Printf("Address is %v", event.Event)
-
-			copyData := uffdioCopy{
-				Dst:  event.PageFault.Address,
-				Src:  uint64(uintptr(unsafe.Pointer(&pageToCopy[0]))),
-				Len:  uint64(pageSize),
-				Mode: 0,
-				Copy: 0,
-			}
-
-			_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
-			if err != 0 {
-				fmt.Printf("Failed to call UFFDIO_COPY: %v\n", err)
-				os.Exit(1)
-			}
-		}
-	}()
+	fileInfo, err := file.Stat()
+	backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, fileInfo.Size(), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
+	if mmapErr != nil {
+		fmt.Printf("Failed to mmap backing memory file: %v\n", err)
+		os.Exit(1)
+	}
 
 	for {
+		// Poll UFFD for messages
+		_, pollErr := unix.Poll(pollFDs, -1)
+		if pollErr != nil {
+			fmt.Printf("Failed to poll UFFD: %v\n", err)
+			os.Exit(1)
+		}
 
+		var event uffdMsg
+		_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
+		if err != 0 {
+			fmt.Printf("Failed to read event: %v\n", err)
+			os.Exit(1)
+		}
+
+		if event.Event != C.UFFD_EVENT_PAGEFAULT {
+			fmt.Printf("Unsupported UFFD event type %v", event.Event)
+			continue
+		}
+
+		// Handle page fault by using a memory snapshot file created by snapshotting a different VM
+
+		// Map requested address from page fault -> page of backing memory file
+		// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
+		// From https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#LL134C8-L134C84
+		pageSize := os.Getpagesize()
+		memoryPage := event.PageFault.Address & ^(uint64(pageSize - 1))
+
+		// Copy memory from backing snapshot file
+
+		// TODO: Add offset + backingMemoryAddr to get address we should read into backing memory file
+		// See https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#L98
 	}
 }
