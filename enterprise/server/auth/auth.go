@@ -152,7 +152,10 @@ func (a *authenticator) FillUser(ctx context.Context, user *tables.User) error {
 			return nil
 		}
 	}
-	return status.UnauthenticatedErrorf("No user found in any authenticator: (%v)", errors)
+	if len(errors) > 0 {
+		return errors[0]
+	}
+	return status.UnauthenticatedErrorf("No user authenticators configured")
 }
 
 func (a *authenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
@@ -164,7 +167,10 @@ func (a *authenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserI
 			return user, err
 		}
 	}
-	return nil, status.UnauthenticatedErrorf("No user found in any authenticator: (%v)", errors)
+	if len(errors) > 0 {
+		return nil, errors[0]
+	}
+	return nil, status.UnauthenticatedErrorf("No user authenticators configured")
 }
 
 func (a *authenticator) ParseAPIKeyFromString(s string) (string, error) {
