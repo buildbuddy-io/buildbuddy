@@ -34,9 +34,6 @@ const (
 	// This cannot be changed without a migration.
 	apiKeyNonceLength = 6
 
-	// Encrypted API keys have this prefix in the database.
-	apiKeyEncryptedValuePrefix = "en$"
-
 	apiKeyEncryptionBackfillBatchSize = 100
 )
 
@@ -85,7 +82,7 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 	dbh := d.env.GetDBHandle().DB(ctx)
 
 	for {
-		query := fmt.Sprintf(`SELECT * FROM "APIKeys" WHERE value NOT LIKE '%s%%' LIMIT %d`, apiKeyEncryptedValuePrefix, apiKeyEncryptionBackfillBatchSize)
+		query := fmt.Sprintf(`SELECT * FROM "APIKeys" WHERE encrypted_value = '' LIMIT %d`, apiKeyEncryptionBackfillBatchSize)
 		rows, err := dbh.Raw(query).Rows()
 		if err != nil {
 			return err
@@ -110,9 +107,9 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 				return err
 			}
 			if err := dbh.Exec(`
-			UPDATE "APIKeys"
-			SET value = ?, nonce = ?
-			WHERE api_key_id = ?`,
+				UPDATE "APIKeys"
+				SET encrypted_value = ?, nonce = ?
+				WHERE api_key_id = ?`,
 				encrypted, nonce, apk.APIKeyID,
 			).Error; err != nil {
 				return err
@@ -224,7 +221,7 @@ func (d *AuthDB) encryptAPIKey(apiKey string) (string, string, error) {
 	data := []byte(apiKey[apiKeyNonceLength:])
 	ciph.XORKeyStream(data, data)
 	data = append([]byte(apiKey[:apiKeyNonceLength]), data...)
-	return apiKeyEncryptedValuePrefix + hex.EncodeToString(data), nonce, nil
+	return hex.EncodeToString(data), nonce, nil
 }
 
 // decryptAPIKey retrieves the plaintext representation of the API key. It is
@@ -236,10 +233,6 @@ func (d *AuthDB) encryptAPIKey(apiKey string) (string, string, error) {
 // the cipher to retrieve the plaintext. The nonce and the decrypted value are
 // combined to form the decrypted API key.
 func (d *AuthDB) decryptAPIKey(encryptedAPIKey string) (string, error) {
-	if !strings.HasPrefix(encryptedAPIKey, apiKeyEncryptedValuePrefix) {
-		return "", status.FailedPreconditionErrorf("Encrypted API key has invalid prefix")
-	}
-	encryptedAPIKey = strings.TrimPrefix(encryptedAPIKey, apiKeyEncryptedValuePrefix)
 	if d.apiKeyEncryptionKey == nil {
 		return "", status.FailedPreconditionError("API key encryption is not enabled")
 	}
@@ -262,10 +255,10 @@ func (d *AuthDB) decryptAPIKey(encryptedAPIKey string) (string, error) {
 }
 
 func (d *AuthDB) fillDecryptedAPIKey(ak *tables.APIKey) error {
-	if d.apiKeyEncryptionKey == nil || !strings.HasPrefix(ak.Value, apiKeyEncryptedValuePrefix) {
+	if d.apiKeyEncryptionKey == nil || ak.EncryptedValue == "" {
 		return nil
 	}
-	key, err := d.decryptAPIKey(ak.Value)
+	key, err := d.decryptAPIKey(ak.EncryptedValue)
 	if err != nil {
 		return err
 	}
@@ -283,13 +276,15 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
 		keyClauses := query_builder.OrClauses{}
-		keyClauses.AddOr("ak.value = ?", apiKey)
+		if !*encryptOldKeys {
+			keyClauses.AddOr("ak.value = ?", apiKey)
+		}
 		if d.apiKeyEncryptionKey != nil {
 			encryptedAPIKey, _, err := d.encryptAPIKey(apiKey)
 			if err != nil {
 				return err
 			}
-			keyClauses.AddOr("ak.value = ?", encryptedAPIKey)
+			keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
 		}
 		keyQuery, keyArgs := keyClauses.Build()
 		qb.AddWhereClause(keyQuery, keyArgs...)
@@ -461,14 +456,16 @@ func (d *AuthDB) createAPIKey(db *db.DB, userID, groupID, label string, caps []a
 		keyPerms = perms.OWNER_READ | perms.OWNER_WRITE
 	}
 
-	nonce := ""
+	value := key
+	var nonce, encryptedValue string
 	if d.apiKeyEncryptionKey != nil && *encryptNewKeys {
 		ek, n, err := d.encryptAPIKey(key)
 		if err != nil {
 			return nil, err
 		}
 		nonce = n
-		key = ek
+		encryptedValue = ek
+		value = ""
 	}
 	err = db.Exec(`
 		INSERT INTO "APIKeys" (
@@ -478,16 +475,18 @@ func (d *AuthDB) createAPIKey(db *db.DB, userID, groupID, label string, caps []a
 			perms,
 			capabilities,
 			value,
+			encrypted_value,
 			nonce,
 			label,
 			visible_to_developers
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pk,
 		userID,
 		groupID,
 		keyPerms,
 		capabilities.ToInt(caps),
-		key,
+		value,
+		encryptedValue,
 		nonce,
 		label,
 		visibleToDevelopers,
