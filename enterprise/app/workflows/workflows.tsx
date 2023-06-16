@@ -141,10 +141,6 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       .finally(() => this.setState({ workflowHistoryLoading: false }));
   }
 
-  private extractWorkflowUrls(response: workflow.GetWorkflowsResponse): string[] {
-    return response.workflow.map((w) => w.repoUrl);
-  }
-
   private fetchWorkflows() {
     this.fetchWorkflowsRPC?.cancel();
     if (!this.props.user) return;
@@ -154,8 +150,6 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       .getWorkflows(new workflow.GetWorkflowsRequest())
       .then((response) => {
         this.setState({ workflowsResponse: response });
-        // XXX: Do we want to support this or should we just make it a carrot to move over?
-        this.fetchWorkflowHistory(this.extractWorkflowUrls(response));
       })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ workflowsLoading: false }));
