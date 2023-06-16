@@ -148,9 +148,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     this.setState({ workflowsLoading: true });
     this.fetchWorkflowsRPC = rpcService.service
       .getWorkflows(new workflow.GetWorkflowsRequest())
-      .then((response) => {
-        this.setState({ workflowsResponse: response });
-      })
+      .then((response) => this.setState({ workflowsResponse: response }))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ workflowsLoading: false }));
   }
@@ -204,7 +202,6 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   }
 
   renderActionList(repoUrl: string): JSX.Element | null {
-    console.log(this.state.workflowHistoryResponse);
     const history = this.state.workflowHistoryResponse?.workflowHistory.find(
       (h: workflow.GetWorkflowHistoryResponse.WorkflowHistory) => h.repoUrl === repoUrl
     );
@@ -276,14 +273,11 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
               ))}
               {/* Render legacy workflows */}
               {this.state.workflowsResponse?.workflow.map((workflow) => (
-                <>
-                  <RepoItem
-                    repoUrl={workflow.repoUrl}
-                    webhookUrl={workflow.webhookUrl}
-                    onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
-                  />
-                  {this.renderActionList(workflow.repoUrl)}
-                </>
+                <RepoItem
+                  repoUrl={workflow.repoUrl}
+                  webhookUrl={workflow.webhookUrl}
+                  onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
+                />
               ))}
             </div>
           )}

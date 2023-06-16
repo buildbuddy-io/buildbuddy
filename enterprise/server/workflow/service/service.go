@@ -825,8 +825,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 	if err != nil {
 		return nil, err
 	}
-	log.Warning("aaa")
-	if ws.env.GetDBHandle() == nil {
+	if ws.env.GetDBHandle() == nil || ws.env.GetOLAPDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
 	timeLimitMicros := time.Now().Add(-time.Duration(7*24) * time.Hour).UnixMicro()
@@ -834,20 +833,14 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 	// Find the names of all of the actions for each repo.
 	q := query_builder.NewQuery(`SELECT repo_url,pattern,count(1) AS total_runs, countIf(success) AS successful_runs, toInt64(avg(duration_usec)) AS average_duration FROM Invocations`)
 	q.AddWhereClause("repo_url IN ?", repos)
-	// XXX
-	// q.AddWhereClause("branch_name IN ?", []string{"master", "main"})
 	q.AddWhereClause("role = ?", "CI_RUNNER")
 	q.AddWhereClause("group_id = ?", authenticatedUser.GetGroupID())
 	q.AddWhereClause("invocation_status = ?", int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS))
 	q.AddWhereClause("updated_at_usec > ?", timeLimitMicros)
 	q.SetGroupBy("repo_url,pattern")
-	// XXX: Is group_id check above enough for this? probably..
-	// if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
-	// 	return nil, err
-	// }
-	log.Warning("bbb")
+	// XXX: No permissions check here; is this ok?
 
-	type queryOut struct {
+	type actionQueryOut struct {
 		RepoUrl         string
 		Pattern         string
 		TotalRuns       int64
@@ -856,24 +849,20 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 	}
 
 	qStr, qArgs := q.Build()
-	rows, err := ws.env.GetOLAPDBHandle().RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_find_wf_actions"), qStr, qArgs...).Rows()
-	log.Warning("ccc")
+	rows, err := ws.env.GetOLAPDBHandle().RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_find_workflow_actions"), qStr, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
-	log.Warning("ddd")
 	defer rows.Close()
 
 	actionHistoryQArgs := make([]interface{}, 0)
 	actionHistoryQStrs := make([]string, 0)
 	workflows := make(map[string]map[string]*wfpb.ActionHistory)
 	for rows.Next() {
-		row := &queryOut{}
+		row := &actionQueryOut{}
 		if err := ws.env.GetOLAPDBHandle().DB(ctx).ScanRows(rows, &row); err != nil {
 			return nil, err
 		}
-		// Do stuff...
-		log.Warningf("Row: %+v", row)
 		q, err := ws.buildActionHistoryQuery(ctx, row.RepoUrl, row.Pattern, timeLimitMicros)
 		if err != nil {
 			return nil, err
@@ -892,10 +881,8 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		workflows[row.RepoUrl][row.Pattern] = &wfpb.ActionHistory{ActionName: row.Pattern, Summary: summary}
 	}
 	finalActionHistoryQStr := strings.Join(actionHistoryQStrs, " UNION ALL ")
-	log.Warning("eee")
 
-	historyRows, err := ws.env.GetDBHandle().RawWithOptions(ctx, db.Opts().WithQueryName("query_find_wf_actions"), finalActionHistoryQStr, actionHistoryQArgs...).Rows()
-	log.Warning("ccc")
+	historyRows, err := ws.env.GetDBHandle().RawWithOptions(ctx, db.Opts().WithQueryName("query_workflow_action_history"), finalActionHistoryQStr, actionHistoryQArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -919,8 +906,6 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		if err := ws.env.GetDBHandle().DB(ctx).ScanRows(historyRows, &row); err != nil {
 			return nil, err
 		}
-		// Do stuff...
-		log.Warningf("Row: %+v", row)
 		entry := &wfpb.ActionHistory_ActionHistoryEntry{
 			Status:        inspb.InvocationStatus(row.InvocationStatus),
 			Success:       row.Success,
@@ -935,8 +920,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		workflows[row.RepoUrl][row.Pattern].Entries = append(workflows[row.RepoUrl][row.Pattern].Entries, entry)
 	}
 
-	// OKAY! We have everything now.
-
+	// OKAY! We have everything, now we'll just sort and build the response.
 	res := &wfpb.GetWorkflowHistoryResponse{}
 
 	for repoUrl := range workflows {
@@ -953,7 +937,6 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		for _, action := range actions {
 			wfHistory.ActionHistory = append(wfHistory.ActionHistory, workflows[repoUrl][action])
 		}
-
 		res.WorkflowHistory = append(res.WorkflowHistory, wfHistory)
 	}
 
