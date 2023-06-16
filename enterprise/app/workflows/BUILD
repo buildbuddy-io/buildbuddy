@@ -47,6 +47,7 @@ ts_library(
     deps = [
         "//app/components/link",
         "//app/components/tooltip",
+        "//app/format",
         "//app/router",
         "//app/util:proto",
         "//proto:invocation_status_ts_proto",
