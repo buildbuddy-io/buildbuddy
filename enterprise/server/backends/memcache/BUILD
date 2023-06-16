@@ -13,7 +13,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/prefix",

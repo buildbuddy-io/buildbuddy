@@ -3,7 +3,6 @@ package webhooks
 import (
 	"compress/gzip"
 	"context"
-	"flag"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,7 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
@@ -24,7 +23,7 @@ import (
 
 var (
 	enabled            = flag.Bool("integrations.invocation_upload.enabled", false, "Whether to upload webhook data to the webhook URL configured per-Group. ** Enterprise only **")
-	gcsCredentialsJSON = flagutil.New("integrations.invocation_upload.gcs_credentials", "", "Credentials JSON for the Google service account used to authenticate when GCS is used as the invocation upload target. ** Enterprise only **", flagutil.SecretTag)
+	gcsCredentialsJSON = flag.String("integrations.invocation_upload.gcs_credentials", "", "Credentials JSON for the Google service account used to authenticate when GCS is used as the invocation upload target. ** Enterprise only **", flag.Secret)
 )
 
 const (

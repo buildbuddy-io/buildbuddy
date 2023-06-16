@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_genproto//googleapis/longrunning",

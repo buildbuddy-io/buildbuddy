@@ -2,11 +2,10 @@ package subdomain
 
 import (
 	"context"
-	"flag"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 )
 
@@ -14,7 +13,7 @@ const subdomainKey = "subdomain"
 
 var (
 	enableSubdomainMatching = flag.Bool("app.enable_subdomain_matching", false, "If true, request subdomain will be taken into account when determining what request restrictions should be applied.")
-	defaultSubdomains       = flagutil.New("app.default_subdomains", []string{}, "List of subdomains that should not be handled as user-owned subdomains.")
+	defaultSubdomains       = flag.Slice("app.default_subdomains", []string{}, "List of subdomains that should not be handled as user-owned subdomains.")
 )
 
 // SetHost configures the subdomain in the context based on the specified

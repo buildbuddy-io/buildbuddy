@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"math"
 	"net/http"
@@ -15,7 +14,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/api"
@@ -34,7 +33,7 @@ const (
 )
 
 var (
-	spec       = flagutil.New("spec", Config{}, "Config to specify which metrics should be monitored by this script.")
+	spec       = flag.Struct("spec", Config{}, "Config to specify which metrics should be monitored by this script.")
 	configPath = flag.String("config_path", "config.yaml", "Path to config file.")
 )
 

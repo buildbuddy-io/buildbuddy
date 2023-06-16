@@ -37,6 +37,7 @@ go_library(
         "//server/real_environment",
         "//server/resources",
         "//server/ssl",
+        "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",

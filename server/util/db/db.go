@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/aws_rds_certs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
@@ -41,7 +41,6 @@ import (
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/mysql"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -70,10 +69,10 @@ const (
 )
 
 var (
-	dataSource             = flagutil.New("database.data_source", "sqlite3:///tmp/buildbuddy.db", "The SQL database to connect to, specified as a connection string.", flagutil.SecretTag)
-	advDataSource          = flagutil.New("database.advanced_data_source", AdvancedConfig{}, "Alternative to the database.data_source flag that allows finer control over database settings as well as allowing use of AWS IAM credentials. For most users, database.data_source is a simpler configuration method.")
+	dataSource             = flag.String("database.data_source", "sqlite3:///tmp/buildbuddy.db", "The SQL database to connect to, specified as a connection string.", flag.Secret)
+	advDataSource          = flag.Struct("database.advanced_data_source", AdvancedConfig{}, "Alternative to the database.data_source flag that allows finer control over database settings as well as allowing use of AWS IAM credentials. For most users, database.data_source is a simpler configuration method.")
 	readReplica            = flag.String("database.read_replica", "", "A secondary, read-only SQL database to connect to, specified as a connection string.")
-	advReadReplica         = flagutil.New("database.advanced_read_replica", AdvancedConfig{}, "Advanced alternative to database.read_replica. Refer to database.advanced for more information.")
+	advReadReplica         = flag.Struct("database.advanced_read_replica", AdvancedConfig{}, "Advanced alternative to database.read_replica. Refer to database.advanced for more information.")
 	statsPollInterval      = flag.Duration("database.stats_poll_interval", 5*time.Second, "How often to poll the DB client for connection stats (default: '5s').")
 	maxOpenConns           = flag.Int("database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
 	maxIdleConns           = flag.Int("database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")

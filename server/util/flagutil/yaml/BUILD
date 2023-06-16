@@ -20,6 +20,7 @@ go_test(
     srcs = ["yaml_test.go"],
     deps = [
         ":yaml",
+        "//server/util/flag",
         "//server/util/flagutil/common",
         "//server/util/flagutil/types",
         "@com_github_google_go_cmp//cmp",

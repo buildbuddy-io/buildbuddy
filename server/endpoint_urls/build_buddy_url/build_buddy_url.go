@@ -4,12 +4,12 @@ import (
 	"net/url"
 	"strings"
 
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 )
 
-var buildBuddyURL = flagtypes.URLFromString("app.build_buddy_url", "http://localhost:8080", "The external URL where your BuildBuddy instance can be found.")
+var buildBuddyURL = flag.URL("app.build_buddy_url", "http://localhost:8080", "The external URL where your BuildBuddy instance can be found.")
 
 func WithPath(path string) *url.URL {
 	return buildBuddyURL.ResolveReference(&url.URL{Path: path})

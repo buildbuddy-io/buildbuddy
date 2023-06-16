@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/interfaces",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "@com_github_aws_aws_sdk_go//aws",

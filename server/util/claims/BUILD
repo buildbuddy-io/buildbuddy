@@ -12,7 +12,7 @@ go_library(
         "//server/tables",
         "//server/util/authutil",
         "//server/util/capabilities",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/lru",
         "//server/util/request_context",
         "//server/util/role",

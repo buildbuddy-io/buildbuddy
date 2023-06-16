@@ -17,7 +17,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/db",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/lru",
         "//server/util/perms",
         "//server/util/query_builder",

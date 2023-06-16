@@ -13,7 +13,7 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/cache_metrics",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",

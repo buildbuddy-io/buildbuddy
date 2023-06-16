@@ -10,7 +10,7 @@ go_library(
         "//enterprise/server/remote_execution/config",
         "//enterprise/server/util/redisutil",
         "//server/environment",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/status",
     ],
 )

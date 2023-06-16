@@ -2,11 +2,10 @@ package build_event_proxy
 
 import (
 	"context"
-	"flag"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sync/errgroup"
@@ -17,7 +16,7 @@ import (
 )
 
 var (
-	hosts      = flagutil.New("build_event_proxy.hosts", []string{}, "The list of hosts to pass build events onto.")
+	hosts      = flag.Slice("build_event_proxy.hosts", []string{}, "The list of hosts to pass build events onto.")
 	bufferSize = flag.Int("build_event_proxy.buffer_size", 100, "The number of build events to buffer locally when proxying build events.")
 )
 

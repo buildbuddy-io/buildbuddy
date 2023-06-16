@@ -23,6 +23,7 @@ go_library(
         "//server/util/alert",
         "//server/util/background",
         "//server/util/disk",
+        "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/healthcheck",

@@ -2,7 +2,6 @@ package azure
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"net/url"
@@ -11,7 +10,7 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -21,7 +20,7 @@ import (
 var (
 	// Azure flags
 	azureAccountName   = flag.String("storage.azure.account_name", "", "The name of the Azure storage account")
-	azureAccountKey    = flagutil.New("storage.azure.account_key", "", "The key for the Azure storage account", flagutil.SecretTag)
+	azureAccountKey    = flag.String("storage.azure.account_key", "", "The key for the Azure storage account", flag.Secret)
 	azureContainerName = flag.String("storage.azure.container_name", "", "The name of the Azure storage container")
 )
 

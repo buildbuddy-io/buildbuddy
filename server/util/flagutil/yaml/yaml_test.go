@@ -1,11 +1,11 @@
 package yaml_test
 
 import (
-	"flag"
 	"net/url"
 	"reflect"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"

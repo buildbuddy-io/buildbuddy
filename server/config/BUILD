@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",
+        "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/flagutil/common",
         "//server/util/flagutil/types",
@@ -21,7 +22,7 @@ go_test(
     srcs = ["config_test.go"],
     deps = [
         ":config",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/flagutil/common",
         "//server/util/status",
         "@com_github_stretchr_testify//require",

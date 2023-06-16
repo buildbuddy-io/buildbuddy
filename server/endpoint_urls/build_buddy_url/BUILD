@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/util/flagutil/types",
+        "//server/util/flag",
         "//server/util/status",
         "//server/util/urlutil",
     ],

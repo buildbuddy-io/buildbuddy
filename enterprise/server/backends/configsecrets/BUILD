@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//server/config",
         "//server/interfaces",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/status",
         "@com_google_cloud_go_secretmanager//apiv1",
         "@com_google_cloud_go_secretmanager//apiv1/secretmanagerpb",

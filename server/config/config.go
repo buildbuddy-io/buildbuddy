@@ -2,7 +2,6 @@ package config
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
@@ -29,7 +29,7 @@ const (
 // As this flag determines the YAML file we read the config from, it can't
 // meaningfully be specified in the YAML config file.
 var (
-	configPath = flagutil.New("config_file", "/config.yaml", "The path to a buildbuddy config file", flagutil.YAMLIgnoreTag)
+	configPath = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file", flag.YAMLIgnore)
 
 	// This may be optionally set by a configured provider.
 	SecretProvider interfaces.ConfigSecretProvider

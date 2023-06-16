@@ -2,13 +2,12 @@ package config_test
 
 import (
 	"context"
-	"flag"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
@@ -116,7 +115,7 @@ func TestExpansion(t *testing.T) {
 	// Basic secret expansion.
 	{
 		replaceFlagsForTesting(t)
-		secretFlag := flagutil.New("secret_flag", "", "", flagutil.SecretTag)
+		secretFlag := flag.String("secret_flag", "", "", flag.Secret)
 		config.SecretProvider = &fakeSecretProvider{
 			secrets: map[string]string{"FOO": "BAR"},
 		}
@@ -173,7 +172,7 @@ func TestExpansion(t *testing.T) {
 		config.SecretProvider = &fakeSecretProvider{
 			secrets: map[string]string{"FOO1": "FIRST\nSECRET", "FOO2": "SECOND\nSECRET"},
 		}
-		secretSliceFlag := flagutil.New("secret_slice_flag", []string{}, "")
+		secretSliceFlag := flag.Slice("secret_slice_flag", []string{}, "")
 		err := config.LoadFromData(strings.TrimSpace(`
 secret_slice_flag: 
   - ${SECRET:FOO1}
@@ -189,7 +188,7 @@ secret_slice_flag:
 		config.SecretProvider = &fakeSecretProvider{
 			secrets: map[string]string{"FOO1": "FIRST\nSECRET", "FOO2": "SECOND\nSECRET"},
 		}
-		secretSliceFlag := flagutil.New("secret_slice_flag", []string{}, "")
+		secretSliceFlag := flag.Slice("secret_slice_flag", []string{}, "")
 		flags.Set("secret_slice_flag", "${SECRET:FOO1},${SECRET:FOO2}")
 		err := config.LoadFromData("")
 		require.NoError(t, err)
@@ -202,7 +201,7 @@ secret_slice_flag:
 		config.SecretProvider = &fakeSecretProvider{
 			secrets: map[string]string{"FOO1": "FIRST\nSECRET", "FOO2": "SECOND\nSECRET"},
 		}
-		secretStructSliceFlag := flagutil.New("secret_struct_slice_flag", []secretHolder{}, "")
+		secretStructSliceFlag := flag.Slice("secret_struct_slice_flag", []secretHolder{}, "")
 		err := config.LoadFromData(strings.TrimSpace(`
 secret_struct_slice_flag: 
   - secret: ${SECRET:FOO1}
@@ -218,7 +217,7 @@ secret_struct_slice_flag:
 		config.SecretProvider = &fakeSecretProvider{
 			secrets: map[string]string{"FOO1": "FIRST\nSECRET", "FOO2": "SECOND\nSECRET"},
 		}
-		secretStructSliceFlag := flagutil.New("secret_struct_slice_flag", []secretHolder{}, "")
+		secretStructSliceFlag := flag.Slice("secret_struct_slice_flag", []secretHolder{}, "")
 		err := flags.Set("secret_struct_slice_flag", `[{"Secret":"${SECRET:FOO1}"},{"Secret":"${SECRET:FOO2}"}]`)
 		require.NoError(t, err)
 		err = config.LoadFromData("")

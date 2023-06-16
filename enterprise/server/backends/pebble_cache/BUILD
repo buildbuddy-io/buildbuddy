@@ -24,7 +24,7 @@ go_library(
         "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/disk",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/lockmap",
         "//server/util/log",

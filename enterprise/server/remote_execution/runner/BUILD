@@ -35,6 +35,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/background",
         "//server/util/disk",
+        "//server/util/flag",
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/random",

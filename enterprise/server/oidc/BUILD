@@ -17,7 +17,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/cookie",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",

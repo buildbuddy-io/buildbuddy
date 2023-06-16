@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common",
     visibility = [
         "//server/config:__subpackages__",
+        "//server/util/flag:__subpackages__",
         "//server/util/flagutil:__subpackages__",
     ],
     deps = [

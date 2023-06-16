@@ -4,19 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	googleoauth "golang.org/x/oauth2/google"
 )
 
-var credentials = flagutil.New("vertexai.credentials", "", "The GCP credentials to use", flagutil.SecretTag)
+var credentials = flag.String("vertexai.credentials", "", "The GCP credentials to use", flag.Secret)
 var projectID = flag.String("vertexai.project", "flame-build", "The GCP project ID to use")
 var region = flag.String("vertexai.region", "us-central1", "The GCP region to use")
 var modelID = flag.String("vertexai.model", "chat-bison@001", "The model ID to use")

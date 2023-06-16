@@ -11,7 +11,7 @@ import (
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -24,11 +24,11 @@ var (
 	// a config file since config file parsing depends on secret integration
 	// being already configured.
 
-	configSecretProvider = flagutil.New("config_secrets.provider", "", "Secrets provider to use for config variable substitution. Currently only 'gcp' is supported.", flagutil.YAMLIgnoreTag)
+	configSecretProvider = flag.String("config_secrets.provider", "", "Secrets provider to use for config variable substitution. Currently only 'gcp' is supported.", flag.YAMLIgnore)
 
 	// GCP flags.
-	configSecretsGCPProject         = flagutil.New("config_secrets.gcp.project_id", "", "GCP project from which secrets will be loaded.", flagutil.YAMLIgnoreTag)
-	configSecretsGCPCredentialsFile = flagutil.New("config_secrets.gcp.credentials_file", "", "Credentials to use when communicating with the secrets store. If not specified, Application Default Credentials are used.", flagutil.YAMLIgnoreTag)
+	configSecretsGCPProject         = flag.String("config_secrets.gcp.project_id", "", "GCP project from which secrets will be loaded.", flag.YAMLIgnore)
+	configSecretsGCPCredentialsFile = flag.String("config_secrets.gcp.credentials_file", "", "Credentials to use when communicating with the secrets store. If not specified, Application Default Credentials are used.", flag.YAMLIgnore)
 )
 
 type gcpProvider struct {
