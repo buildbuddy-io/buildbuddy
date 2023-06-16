@@ -969,7 +969,7 @@ func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle *e
 		log.CtxWarningf(ctx, "Scheduler: could not unregister node %q: %s", node.GetExecutorId(), err)
 		return
 	}
-	log.CtxInfof(ctx, "Scheduler: unregistered node %q", node.GetExecutorId())
+	log.CtxInfof(ctx, "Scheduler: unregistered node %q (executor ID %q)", node.GetHost(), node.GetExecutorId())
 }
 
 func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
