@@ -176,6 +176,30 @@ message ExecuteWorkflowRequest {
 
   // If true, start the workflow but do not wait for the status to be returned.
   bool async = 14;
+
+  // Optional: Custom actions to execute. Correspond to actions in
+  // buildbuddy.yaml. If this is set, action_names will be ignored.
+  repeated CustomAction custom_action = 15;
+}
+
+message CustomAction {
+  string name = 1;
+  string os = 2;
+  string arch = 3;
+  string self_hosted = 4;
+  string container_image = 5;
+  ResourceRequests resource_requests = 6;
+  string user = 7;
+  repeated string git_clean_exclude = 8;
+  string bazel_workspace_dir = 9;
+  map<string, string> env = 10;
+  repeated string bazel_commands = 11;
+}
+
+message ResourceRequests {
+  string cpu = 1;
+  string memory = 2;
+  string disk = 3;
 }
 
 message ExecuteWorkflowResponse {
