@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/crewjam/saml/samlsp"
 )
@@ -55,56 +54,37 @@ var (
 type SAMLAuthenticator struct {
 	env           environment.Env
 	samlProviders map[string]*samlsp.Middleware
-	fallback      interfaces.Authenticator
 }
 
-func Register(env environment.Env) error {
-	if *certFile == "" || env.GetAuthenticator() == nil {
-		return nil
+func SamlEnabled(env environment.Env) bool {
+	if (*certFile == "" && *cert == "") || env.GetAuthenticator() == nil {
+		return false
 	}
 	if _, ok := env.GetAuthenticator().(*nullauth.NullAuthenticator); ok {
-		return nil
+		return false
 	}
-	log.Info("SAML auth configured.")
-	env.SetAuthenticator(NewSAMLAuthenticator(env, env.GetAuthenticator()))
-	return nil
+	return true
 }
 
-func NewSAMLAuthenticator(env environment.Env, fallback interfaces.Authenticator) *SAMLAuthenticator {
+func NewSAMLAuthenticator(env environment.Env) *SAMLAuthenticator {
 	return &SAMLAuthenticator{
 		env:           env,
 		samlProviders: make(map[string]*samlsp.Middleware),
-		fallback:      fallback,
 	}
-}
-
-func (a *SAMLAuthenticator) AdminGroupID() string {
-	return a.fallback.AdminGroupID()
-}
-
-func (a *SAMLAuthenticator) AnonymousUsageEnabled() bool {
-	return a.fallback.AnonymousUsageEnabled()
-}
-
-func (a *SAMLAuthenticator) PublicIssuers() []string {
-	return a.fallback.PublicIssuers()
 }
 
 func (a *SAMLAuthenticator) SSOEnabled() bool {
-	if *certFile != "" {
-		return true
-	}
-	return a.fallback.SSOEnabled()
+	return (*certFile == "" && *cert == "")
 }
 
 func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
 	slug := a.getSlugFromRequest(r)
 	if slug == "" {
-		return a.fallback.Login(w, r)
+		return status.FailedPreconditionError("SAML Login attempted without a slug")
 	}
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
-		return a.fallback.Login(w, r)
+		return err
 	}
 	cookie.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
 	session, err := sp.Session.GetSession(r)
@@ -137,7 +117,7 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 	} else if slug := cookie.GetCookie(r, slugCookie); slug != "" {
 		return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("Error getting service provider for slug %s: %s", slug, err.Error()))
 	}
-	return a.fallback.AuthenticatedHTTPContext(w, r)
+	return ctx
 }
 
 func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
@@ -159,7 +139,7 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 		}
 		return nil
 	}
-	return a.fallback.FillUser(ctx, user)
+	return status.UnauthenticatedError("No SAML User found")
 }
 
 func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
@@ -167,7 +147,6 @@ func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		sp.Session.DeleteSession(w, r)
 	}
-	a.fallback.Logout(w, r)
 	return status.UnauthenticatedError("Logged out!")
 }
 
@@ -176,16 +155,15 @@ func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 		claims, err := claims.ClaimsFromSubID(ctx, a.env, s)
 		return claims, err
 	}
-	return a.fallback.AuthenticatedUser(ctx)
+	return nil, status.UnauthenticatedError("No SAML User found")
 }
 
 func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	if !strings.HasPrefix(r.URL.Path, "/auth/saml/") {
-		return a.fallback.Auth(w, r)
+		return status.NotFoundErrorf("Auth path does not have SAML prefix %s:", r.URL.Path)
 	}
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
-		log.Warningf("SAML Auth Failed: %s", err)
 		cookie.ClearCookie(w, slugCookie)
 		return status.NotFoundErrorf("SAML Auth Failed: %s", err)
 	}
@@ -195,30 +173,6 @@ func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 
 	sp.ServeHTTP(w, r)
 	return nil
-}
-
-func (a *SAMLAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	return a.fallback.AuthenticatedGRPCContext(ctx)
-}
-
-func (a *SAMLAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
-	return a.fallback.AuthenticateGRPCRequest(ctx)
-}
-
-func (a *SAMLAuthenticator) ParseAPIKeyFromString(s string) (string, error) {
-	return a.fallback.ParseAPIKeyFromString(s)
-}
-
-func (a *SAMLAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	return a.fallback.AuthContextFromAPIKey(ctx, apiKey)
-}
-
-func (a *SAMLAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
-	return a.fallback.AuthContextFromTrustedJWT(ctx, jwt)
-}
-
-func (a *SAMLAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
-	return a.fallback.TrustedJWTFromAuthContext(ctx)
 }
 
 func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp.Middleware, error) {
@@ -231,7 +185,7 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 		return provider, nil
 	}
 	if (*certFile == "" && *cert == "") || (*keyFile == "" && *key == "") {
-		return nil, status.NotFoundError("No SAML Configured")
+		return nil, status.UnauthenticatedError("No SAML Configured")
 	}
 	if *certFile != "" && *cert != "" {
 		return nil, status.FailedPreconditionError("SAML cert should be specified as a file or directly, but not both")
@@ -316,7 +270,7 @@ func (a *SAMLAuthenticator) getSAMLMetadataUrlForSlug(ctx context.Context, slug 
 		return nil, err
 	}
 	if group.SamlIdpMetadataUrl == nil || *group.SamlIdpMetadataUrl == "" {
-		return nil, status.NotFoundErrorf("Group %s does not have SAML configured", slug)
+		return nil, status.UnauthenticatedErrorf("Group %s does not have SAML configured", slug)
 	}
 	metadataUrl, err := url.Parse(*group.SamlIdpMetadataUrl)
 	if err != nil {
@@ -328,10 +282,10 @@ func (a *SAMLAuthenticator) getSAMLMetadataUrlForSlug(ctx context.Context, slug 
 func (a *SAMLAuthenticator) groupForSlug(ctx context.Context, slug string) (*tables.Group, error) {
 	userDB := a.env.GetUserDB()
 	if userDB == nil {
-		return nil, status.UnimplementedError("Not Implemented")
+		return nil, status.UnauthenticatedErrorf("Not Implemented")
 	}
 	if slug == "" {
-		return nil, status.InvalidArgumentError("Slug is required.")
+		return nil, status.UnauthenticatedErrorf("Slug is required.")
 	}
 	return userDB.GetGroupByURLIdentifier(ctx, slug)
 }
