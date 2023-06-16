@@ -7,9 +7,9 @@ go_library(
     srcs = ["task_leaser.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser",
     deps = [
-        "//enterprise/server/auth",
         "//proto:scheduler_go_proto",
         "//server/environment",
+        "//server/util/authutil",
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
