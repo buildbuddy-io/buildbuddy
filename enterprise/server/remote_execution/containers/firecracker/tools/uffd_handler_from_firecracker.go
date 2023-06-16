@@ -1,5 +1,61 @@
 package main
 
+/*
+This example resolves page faults for a firecracker VM when it is loading a snapshot
+
+In the LoadSnapshot call, Firecracker creates a UFFD object and sends it via a socket, with additional data about the VM's memory mappings
+This handler then uses a memory snapshot file to serve the underlying memory
+
+Instructions to create a memory snapshot file to serve as the underlying memory for UFFD testing:
+
+1. Follow the instructions here to start a firecracker VM: https://github.com/firecracker-microvm/firecracker/blob/main/docs/getting-started.md#running-firecracker
+	- By the end, you should be able to SSH into the VM with `sudo ssh -i ./ubuntu-18.04.id_rsa 172.16.0.2`
+2. Pause the VM to prepare for taking a snapshot
+
+curl --unix-socket ~/firecracker.socket -i \
+    -X PATCH 'http://localhost/vm' \
+    -H 'Accept: application/json' \
+    -H 'Content-Type: application/json' \
+    -d '{
+            "state": "Paused"
+    }'
+
+3. Take a snapshot
+
+curl --unix-socket ~/firecracker.socket -i \
+    -X PUT 'http://localhost/snapshot/create' \
+    -H  'Accept: application/json' \
+    -H  'Content-Type: application/json' \
+    -d '{
+            "snapshot_type": "Full",
+            "snapshot_path": "./snapshot_file",
+            "mem_file_path": "./mem_file",
+            "version": "1.0.0"
+    }'
+
+** This handler assumes mem_file lives in root, and uses it as the backing memory file
+
+Instructions to test:
+1. Run the uffd handler: sudo go run enterprise/server/remote_execution/containers/firecracker/tools/uffd_handler_from_firecracker.go
+	- The socket path is hard coded to /home/maggie/sock/uffd_socket.sock
+2. Run firecracker from root: ./run_firecracker.sh
+	- You must download the firecracker repo: git clone https://github.com/firecracker-microvm/firecracker
+	- The socket path is hardcoded to ~/firecracker.socket
+3. Configure networking for a firecracker VM: ./prep_vm.sh
+4. Try to start a VM by loading a snapshot with UFFD configured as the backend
+
+curl --unix-socket ~/firecracker.socket -i     -X PUT 'http://localhost/snapshot/load'     -H  'Accept: application/json'     -H  'Content-Type: application/json'     -d '{
+            "snapshot_path": "./snapshot_file",
+            "mem_backend": {
+                "backend_path": "/home/maggie/sock/uffd_socket.sock",
+                "backend_type": "Uffd"
+            },
+            "enable_diff_snapshots": true,
+            "resume_vm": true
+    }'
+
+*/
+
 import (
 	"encoding/json"
 	"fmt"
@@ -48,7 +104,7 @@ type guestRegionUffdMapping struct {
 
 func main() {
 	// Remove any existing socket file
-	socketPath := "/tmp/uffd_socket.sock"
+	socketPath := "/home/maggie/sock/uffd.sock"
 	os.RemoveAll(socketPath)
 
 	// Create a Unix domain socket listener

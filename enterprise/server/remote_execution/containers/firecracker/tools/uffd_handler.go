@@ -1,5 +1,7 @@
 package main
 
+// This basic example creates a UFFD object and registers it to a specific memory range, then handles page faults on that range
+
 import (
 	"fmt"
 	"os"
