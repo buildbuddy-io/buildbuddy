@@ -33,7 +33,7 @@ func Register(ctx context.Context, env environment.Env) error {
 	httpAuthenticators = append(httpAuthenticators, oidc)
 	userAuthenticators = append(userAuthenticators, oidc)
 
-	if saml.SamlEnabled(env) {
+	if saml.IsEnabled(env) {
 		samlAuthenticator := saml.NewSAMLAuthenticator(env)
 		httpAuthenticators = append(httpAuthenticators, samlAuthenticator)
 		userAuthenticators = append(userAuthenticators, samlAuthenticator)
@@ -47,9 +47,9 @@ func Register(ctx context.Context, env environment.Env) error {
 		// - Pull the implementation into the authenticator in this file
 		// - Delete them altogether
 		// - Some combination of the above (likely delete installation and break out or pull in the other two)
-		grpc:         oidc,
-		apiKey:       oidc,
-		installation: oidc,
+		GRPCAuthenticator:         oidc,
+		APIKeyAuthenticator:       oidc,
+		InstallationAuthenticator: oidc,
 	}
 
 	env.SetAuthenticator(authenticator)
@@ -67,23 +67,12 @@ func RegisterNullAuth(env environment.Env) error {
 }
 
 type authenticator struct {
-	http         []interfaces.HTTPAuthenticator
-	user         []interfaces.UserAuthenticator
-	grpc         interfaces.GRPCAuthenticator
-	apiKey       interfaces.APIKeyAuthenticator
-	installation interfaces.InstallationAuthenticator
-}
+	interfaces.GRPCAuthenticator
+	interfaces.APIKeyAuthenticator
+	interfaces.InstallationAuthenticator
 
-func (a *authenticator) AdminGroupID() string {
-	return a.installation.AdminGroupID()
-}
-
-func (a *authenticator) AnonymousUsageEnabled() bool {
-	return a.installation.AnonymousUsageEnabled()
-}
-
-func (a *authenticator) PublicIssuers() []string {
-	return a.installation.PublicIssuers()
+	http []interfaces.HTTPAuthenticator
+	user []interfaces.UserAuthenticator
 }
 
 func (a *authenticator) Login(w http.ResponseWriter, r *http.Request) error {
@@ -135,14 +124,6 @@ func (a *authenticator) SSOEnabled() bool {
 	return false
 }
 
-func (a *authenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	return a.grpc.AuthenticatedGRPCContext(ctx)
-}
-
-func (a *authenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
-	return a.grpc.AuthenticateGRPCRequest(ctx)
-}
-
 func (a *authenticator) FillUser(ctx context.Context, user *tables.User) error {
 	errors := make([]error, 0)
 	for _, auth := range a.user {
@@ -171,22 +152,6 @@ func (a *authenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserI
 		return nil, errors[0]
 	}
 	return nil, status.UnauthenticatedErrorf("No user authenticators configured")
-}
-
-func (a *authenticator) ParseAPIKeyFromString(s string) (string, error) {
-	return a.apiKey.ParseAPIKeyFromString(s)
-}
-
-func (a *authenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	return a.apiKey.AuthContextFromAPIKey(ctx, apiKey)
-}
-
-func (a *authenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
-	return a.apiKey.TrustedJWTFromAuthContext(ctx)
-}
-
-func (a *authenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
-	return a.apiKey.AuthContextFromTrustedJWT(ctx, jwt)
 }
 
 // Parses the JWT's UserInfo from the context without verifying the JWT.

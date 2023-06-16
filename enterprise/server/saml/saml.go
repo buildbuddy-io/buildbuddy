@@ -56,7 +56,7 @@ type SAMLAuthenticator struct {
 	samlProviders map[string]*samlsp.Middleware
 }
 
-func SamlEnabled(env environment.Env) bool {
+func IsEnabled(env environment.Env) bool {
 	if (*certFile == "" && *cert == "") || env.GetAuthenticator() == nil {
 		return false
 	}
@@ -74,7 +74,7 @@ func NewSAMLAuthenticator(env environment.Env) *SAMLAuthenticator {
 }
 
 func (a *SAMLAuthenticator) SSOEnabled() bool {
-	return (*certFile == "" && *cert == "")
+	return true
 }
 
 func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
