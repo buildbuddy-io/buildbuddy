@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"golang.org/x/sys/unix"
 	"net"
@@ -37,6 +38,12 @@ type uffdioCopy struct {
 	Len  uint64 // Number of bytes to copy
 	Mode uint64 // Flags controlling behavior of copy
 	Copy int64  // Number of bytes copied, or negated error
+}
+
+type guestRegionUffdMapping struct {
+	BaseHostVirtAddr uint64  `json:"base_host_virt_addr"`
+	Size             uintptr `json:"size"`
+	Offset           uint64  `json:"offset"`
 }
 
 func main() {
@@ -76,7 +83,6 @@ func main() {
 		fmt.Println("Error getting FD for socket:", err)
 		return
 	}
-	socket := int(socketFile.Fd())
 	defer socketFile.Close()
 
 	// Read data sent from firecracker
@@ -100,7 +106,13 @@ func main() {
 
 	// Parse memory mappings
 	bufMemoryMappings = bufMemoryMappings[:numBytesMappings]
-	fmt.Printf("Received data: %s\n", string(bufMemoryMappings))
+	var mappings []guestRegionUffdMapping
+	err = json.Unmarshal(bufMemoryMappings, &mappings)
+	if err != nil {
+		fmt.Printf("Could not parse memory mapping data: %s", err)
+		return
+	}
+	fmt.Printf("Received data: %v\n", mappings)
 
 	// Parse UFFD object
 	controlMsgs, err := syscall.ParseSocketControlMessage(bufUFFD[:numBytesFD])
@@ -109,12 +121,12 @@ func main() {
 		return
 	}
 	if len(controlMsgs) != 1 {
-		fmt.Println("Expected 1 control message containing UFFD, found %d", len(controlMsgs))
+		fmt.Printf("Expected 1 control message containing UFFD, found %d", len(controlMsgs))
 		return
 	}
 	fds, err := syscall.ParseUnixRights(&controlMsgs[0])
 	if len(fds) != 1 {
-		fmt.Println("Expected 1 FD containing UFFD, found %d", len(fds))
+		fmt.Printf("Expected 1 FD containing UFFD, found %d", len(fds))
 		return
 	}
 	uffd := uintptr(fds[0])
