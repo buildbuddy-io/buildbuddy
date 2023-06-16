@@ -88,27 +88,36 @@ func main() {
 	//		- Ex. -VM A creates a memory snapshot mem.snap. Its virtual memory address 0x100 gets saved to page 3 in mem.snapshot
 	//			  - GuestRegionUffdMapping would contain { base_address: 0x100, offset: 3 }
 	//			  - Tells UFFD to return page 3 of mem.snapshot when we get a memory fault for address 0x100
-	buf := make([]byte, syscall.CmsgSpace(4))
-	_, _, _, _, err = syscall.Recvmsg(socket, nil, buf, 0)
+	bufMemoryMappings := make([]byte, 1024)
+	// Each FD is 4B - only 1 should be sent (the UFFD object)
+	bufUFFD := make([]byte, syscall.CmsgSpace(4))
+
+	numBytesMappings, numBytesFD, _, _, err := unixConn.ReadMsgUnix(bufMemoryMappings, bufUFFD)
 	if err != nil {
-		fmt.Println("Error accepting data over the socket:", err)
+		fmt.Println("Error receiving data:", err)
 		return
 	}
 
-	// Parse control msgs
-	var msgs []syscall.SocketControlMessage
-	msgs, err = syscall.ParseSocketControlMessage(buf)
+	// Parse memory mappings
+	bufMemoryMappings = bufMemoryMappings[:numBytesMappings]
+	fmt.Printf("Received data: %s\n", string(bufMemoryMappings))
 
-	var uffd uintptr
-	for i := 0; i < len(msgs) && err == nil; i++ {
-		var fds []int
-		fds, err = syscall.ParseUnixRights(&msgs[i])
-
-		for _, fd := range fds {
-			fmt.Printf("Fd %v", fd)
-			uffd = uintptr(fd)
-		}
+	// Parse UFFD object
+	controlMsgs, err := syscall.ParseSocketControlMessage(bufUFFD[:numBytesFD])
+	if err != nil {
+		fmt.Println("Error parsing control messages:", err)
+		return
 	}
+	if len(controlMsgs) != 1 {
+		fmt.Println("Expected 1 control message containing UFFD, found %d", len(controlMsgs))
+		return
+	}
+	fds, err := syscall.ParseUnixRights(&controlMsgs[0])
+	if len(fds) != 1 {
+		fmt.Println("Expected 1 FD containing UFFD, found %d", len(fds))
+		return
+	}
+	uffd := uintptr(fds[0])
 
 	// Background thread to handle page faults
 	go func() {
