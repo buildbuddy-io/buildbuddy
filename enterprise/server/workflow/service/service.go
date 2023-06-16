@@ -820,14 +820,16 @@ func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl 
 }
 
 func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.GetWorkflowHistoryRequest) (*wfpb.GetWorkflowHistoryResponse, error) {
+	if ws.env.GetDBHandle() == nil || ws.env.GetOLAPDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+
 	repos := req.GetRepoUrls()
 	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if ws.env.GetDBHandle() == nil || ws.env.GetOLAPDBHandle() == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
+	// Only fetch workflow data for stuff that has run in the last 7 days.
 	timeLimitMicros := time.Now().Add(-time.Duration(7*24) * time.Hour).UnixMicro()
 
 	// Find the names of all of the actions for each repo.
