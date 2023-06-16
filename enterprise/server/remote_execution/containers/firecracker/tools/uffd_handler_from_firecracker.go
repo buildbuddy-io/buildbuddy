@@ -59,6 +59,8 @@ func main() {
 	}
 
 	// Wait for firecracker to connect to the socket
+	// When you try to load a firecracker snapshot with UFFD backend, it will connect to this socket and send some data over it
+	// (See below for more info)
 	fmt.Println("Listening for connection")
 	conn, err := listener.Accept()
 	if err != nil {
@@ -78,6 +80,14 @@ func main() {
 	defer socketFile.Close()
 
 	// Read data sent from firecracker
+	// Firecracker sends the following over the socket (https://github.com/firecracker-microvm/firecracker/blob/main/src/vmm/src/persist.rs#L672)
+	// - UFFD object it created
+	//		- an open FD is a special type of data, considered a "control message" or "ancillary data", which is why we must process the two types of data sent separately
+	// - mappings of VM virtual memory to backend memory file offsets
+	//		- GuestRegionUffdMapping struct - https://github.com/firecracker-microvm/firecracker/blob/main/src/vmm/src/persist.rs#LL144C12-L144C34
+	//		- Ex. -VM A creates a memory snapshot mem.snap. Its virtual memory address 0x100 gets saved to page 3 in mem.snapshot
+	//			  - GuestRegionUffdMapping would contain { base_address: 0x100, offset: 3 }
+	//			  - Tells UFFD to return page 3 of mem.snapshot when we get a memory fault for address 0x100
 	buf := make([]byte, syscall.CmsgSpace(4))
 	_, _, _, _, err = syscall.Recvmsg(socket, nil, buf, 0)
 	if err != nil {
