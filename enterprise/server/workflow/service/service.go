@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -798,7 +799,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 }
 
 func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl string, pattern string, timeLimitMicros int64) (*query_builder.Query, error) {
-	q := query_builder.NewQuery(`SELECT repo_url, pattern, invocation_id, commit_sha, created_at_usec, updated_at_usec, duration_usec, invocation_status, success FROM Invocations`)
+	q := query_builder.NewQuery(`SELECT repo_url, pattern, invocation_id, commit_sha, branch_name, created_at_usec, updated_at_usec, duration_usec, invocation_status, success FROM Invocations`)
 	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
 		return nil, err
 	}
@@ -905,6 +906,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		Pattern          string
 		InvocationId     string
 		CommitSha        string
+		BranchName       string
 		CreatedAtUsec    int64
 		UpdatedAtUsec    int64
 		DurationUsec     int64
@@ -923,6 +925,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 			Status:        inspb.InvocationStatus(row.InvocationStatus),
 			Success:       row.Success,
 			CommitSha:     row.CommitSha,
+			BranchName:    row.BranchName,
 			InvocationId:  row.InvocationId,
 			Duration:      durationpb.New(time.Duration(row.DurationUsec) * time.Microsecond),
 			CreatedAtUsec: row.CreatedAtUsec,
@@ -940,9 +943,17 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		wfHistory := &wfpb.GetWorkflowHistoryResponse_WorkflowHistory{
 			RepoUrl: repoUrl,
 		}
+
+		// Sort actions by name.
+		actions := make([]string, 0, len(workflows[repoUrl]))
 		for action := range workflows[repoUrl] {
+			actions = append(actions, action)
+		}
+		sort.Strings(actions)
+		for _, action := range actions {
 			wfHistory.ActionHistory = append(wfHistory.ActionHistory, workflows[repoUrl][action])
 		}
+
 		res.WorkflowHistory = append(res.WorkflowHistory, wfHistory)
 	}
 

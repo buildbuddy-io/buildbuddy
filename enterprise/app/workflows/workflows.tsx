@@ -130,7 +130,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   }
 
   private fetchWorkflowHistory(repoUrls: string[]) {
-    if (repoUrls.length === 0) {
+    if (!capabilities.config.workflowHistoryEnabled || repoUrls.length === 0) {
       return;
     }
     this.setState({ workflowHistoryLoading: true });
@@ -139,6 +139,10 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       .then((response) => this.setState({ workflowHistoryResponse: response }))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ workflowHistoryLoading: false }));
+  }
+
+  private extractWorkflowUrls(response: workflow.GetWorkflowsResponse): string[] {
+    return response.workflow.map((w) => w.repoUrl);
   }
 
   private fetchWorkflows() {
@@ -150,7 +154,8 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       .getWorkflows(new workflow.GetWorkflowsRequest())
       .then((response) => {
         this.setState({ workflowsResponse: response });
-        // XXX: this.fetchWorkflowHistory(response...)
+        // XXX: Do we want to support this or should we just make it a carrot to move over?
+        this.fetchWorkflowHistory(this.extractWorkflowUrls(response));
       })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ workflowsLoading: false }));
@@ -207,18 +212,18 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   renderActionList(repoUrl: string): JSX.Element | null {
     console.log(this.state.workflowHistoryResponse);
     const history = this.state.workflowHistoryResponse?.workflowHistory.find(
-      (h: workflow.WorkflowHistory) => h.repoUrl === repoUrl
+      (h: workflow.GetWorkflowHistoryResponse.WorkflowHistory) => h.repoUrl === repoUrl
     );
 
     if (history && history.actionHistory.length > 0) {
-      return <ActionListComponent history={history.actionHistory}></ActionListComponent>;
+      return <ActionListComponent repoUrl={history.repoUrl} history={history.actionHistory}></ActionListComponent>;
     } else {
       return null;
     }
   }
 
   render() {
-    if (this.state.workflowsLoading || this.state.reposLoading) {
+    if (this.state.workflowsLoading || this.state.reposLoading || this.state.workflowHistoryLoading) {
       return <div className="loading" />;
     }
     return (

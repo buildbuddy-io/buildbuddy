@@ -103,15 +103,17 @@ message ActionHistory {
 
     string invocation_id = 2;
 
-    invocation_status.InvocationStatus status = 3;
+    string branch_name = 3;
 
-    bool success = 4;
+    invocation_status.InvocationStatus status = 4;
 
-    int64 created_at_usec = 5;
+    bool success = 5;
 
-    int64 updated_at_usec = 6;
+    int64 created_at_usec = 6;
 
-    google.protobuf.Duration duration = 7;
+    int64 updated_at_usec = 7;
+
+    google.protobuf.Duration duration = 8;
   }
   repeated ActionHistoryEntry entries = 2;
 
