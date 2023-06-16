@@ -885,6 +885,12 @@ func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
+func (s *BuildBuddyServer) GetWorkflowHistory(ctx context.Context, req *wfpb.GetWorkflowHistoryRequest) (*wfpb.GetWorkflowHistoryResponse, error) {
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		return wfs.GetWorkflowHistory(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
 func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		// Set the workflow ID if it's not on the request

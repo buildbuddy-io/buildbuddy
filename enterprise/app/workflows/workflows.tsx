@@ -26,6 +26,7 @@ import alert_service from "../../../app/alert/alert_service";
 import errorService from "../../../app/errors/error_service";
 import Spinner from "../../../app/components/spinner/spinner";
 import Checkbox from "../../../app/components/checkbox/checkbox";
+import ActionListComponent from "./action_list";
 
 type Workflow = workflow.GetWorkflowsResponse.Workflow;
 
@@ -67,6 +68,9 @@ type State = {
   reposLoading: boolean;
   reposResponse: github.GetLinkedReposResponse | null;
 
+  workflowHistoryLoading: boolean;
+  workflowHistoryResponse: workflow.GetWorkflowHistoryResponse | null;
+
   repoToDelete: string | null;
 
   workflowToDelete: Workflow | null;
@@ -89,6 +93,9 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
 
     reposLoading: false,
     reposResponse: null,
+
+    workflowHistoryLoading: false,
+    workflowHistoryResponse: null,
 
     repoToDelete: null,
 
@@ -122,6 +129,18 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     }
   }
 
+  private fetchWorkflowHistory(repoUrls: string[]) {
+    if (repoUrls.length === 0) {
+      return;
+    }
+    this.setState({ workflowHistoryLoading: true });
+    rpcService.service
+      .getWorkflowHistory(new workflow.GetWorkflowHistoryRequest({ repoUrls }))
+      .then((response) => this.setState({ workflowHistoryResponse: response }))
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ workflowHistoryLoading: false }));
+  }
+
   private fetchWorkflows() {
     this.fetchWorkflowsRPC?.cancel();
     if (!this.props.user) return;
@@ -129,7 +148,10 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     this.setState({ workflowsLoading: true });
     this.fetchWorkflowsRPC = rpcService.service
       .getWorkflows(new workflow.GetWorkflowsRequest())
-      .then((response) => this.setState({ workflowsResponse: response }))
+      .then((response) => {
+        this.setState({ workflowsResponse: response });
+        // XXX: this.fetchWorkflowHistory(response...)
+      })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ workflowsLoading: false }));
   }
@@ -141,7 +163,10 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     this.setState({ reposLoading: true });
     this.fetchReposRPC = rpcService.service
       .getLinkedGitHubRepos(new github.GetLinkedReposRequest())
-      .then((response) => this.setState({ reposResponse: response }))
+      .then((response) => {
+        this.setState({ reposResponse: response });
+        this.fetchWorkflowHistory(response.repoUrls);
+      })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ reposLoading: false }));
   }
@@ -177,6 +202,19 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ isUnlinkingRepo: false }));
+  }
+
+  renderActionList(repoUrl: string): JSX.Element | null {
+    console.log(this.state.workflowHistoryResponse);
+    const history = this.state.workflowHistoryResponse?.workflowHistory.find(
+      (h: workflow.WorkflowHistory) => h.repoUrl === repoUrl
+    );
+
+    if (history && history.actionHistory.length > 0) {
+      return <ActionListComponent history={history.actionHistory}></ActionListComponent>;
+    } else {
+      return null;
+    }
   }
 
   render() {
@@ -228,19 +266,25 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
             <div className="workflows-list">
               {/* Render linked repositories */}
               {this.state.reposResponse?.repoUrls.map((repoUrl) => (
-                <RepoItem
-                  repoUrl={repoUrl}
-                  onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })}
-                  showCleanWorkflowWarning={() => this.setState({ showCleanWorkflowWarning: true })}
-                />
+                <>
+                  <RepoItem
+                    repoUrl={repoUrl}
+                    onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })}
+                    showCleanWorkflowWarning={() => this.setState({ showCleanWorkflowWarning: true })}
+                  />
+                  {this.renderActionList(repoUrl)}
+                </>
               ))}
               {/* Render legacy workflows */}
               {this.state.workflowsResponse?.workflow.map((workflow) => (
-                <RepoItem
-                  repoUrl={workflow.repoUrl}
-                  webhookUrl={workflow.webhookUrl}
-                  onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
-                />
+                <>
+                  <RepoItem
+                    repoUrl={workflow.repoUrl}
+                    webhookUrl={workflow.webhookUrl}
+                    onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
+                  />
+                  {this.renderActionList(workflow.repoUrl)}
+                </>
               ))}
             </div>
           )}

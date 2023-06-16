@@ -425,3 +425,76 @@
     opacity: 1;
   }
 }
+
+.workflow-history {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.inline-icon {
+  position: relative;
+  vertical-align: top;
+  top: -2px;
+}
+
+.card.action-history-card {
+  padding: 24px 32px;
+  justify-content: space-between;
+}
+
+.action-stat {
+  display: inline-block;
+}
+
+.action-stat:not(:last-child) {
+  margin-right: 24px;
+}
+
+.action-history-stats,
+.action-history-chart {
+  position: relative;
+}
+
+.action-history-chart {
+  margin: 2px 8px 0;
+}
+
+.action-history-chart-axis {
+  margin-left: 2px;
+  height: 0.5px;
+  background-color: #aaa;
+}
+
+.action-history-chart .action-history-explainer-text {
+  margin-left: 8px;
+  top: -20px;
+}
+
+.action-history-explainer-text {
+  position: absolute;
+  top: -18px;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.action-history-bar {
+  display: inline-block;
+  width: 8px;
+  margin: 0 0 0 2px;
+}
+
+.action-history-bar.success {
+  background-color: #8bc34a;
+}
+
+.action-history-bar.failure {
+  background-color: #f44336;
+}
+
+.action-history-bar.in-progress {
+  background-color: #03a9f4;
+}
+
+.action-history-bar.neutral {
+  background-color: #aaa;
+}

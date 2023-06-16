@@ -27,6 +27,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:clipboard",
         "//app/util:git",
+        "//enterprise/app/workflows:action_list",
         "//enterprise/app/workflows:create_workflow",
         "//enterprise/app/workflows:github_app_import",
         "//enterprise/app/workflows:github_import",
@@ -35,6 +36,19 @@ ts_library(
         "//proto:workflow_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "action_list",
+    srcs = ["action_list.tsx"],
+    deps = [
+        "//app/router",
+        "//proto:invocation_status_ts_proto",
+        "//proto:workflow_ts_proto",
+        "@npm//@types/react",
         "@npm//react",
         "@npm//tslib",
     ],

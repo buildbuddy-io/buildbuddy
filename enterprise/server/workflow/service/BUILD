@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/webhooks/webhook_data",
         "//enterprise/server/workflow/config",
         "//proto:context_go_proto",
+        "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
@@ -30,6 +31,7 @@ go_library(
         "//server/util/alert",
         "//server/util/background",
         "//server/util/bazel_request",
+        "//server/util/clickhouse",
         "//server/util/db",
         "//server/util/git",
         "//server/util/log",
@@ -45,6 +47,7 @@ go_library(
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )
