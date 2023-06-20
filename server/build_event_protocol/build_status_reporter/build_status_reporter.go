@@ -19,20 +19,15 @@ import (
 )
 
 var (
-	statusNameSuffix    = flag.String("github.status_name_suffix", "", "Suffix to be appended to all reported GitHub status names. Useful for differentiating BuildBuddy deployments. For example: '(dev)' ** Enterprise only **")
 	statusPerTestTarget = flag.Bool("github.status_per_test_target", false, "If true, report status per test target. ** Enterprise only **")
 )
 
 type BuildStatusReporter struct {
-	env                   environment.Env
-	githubClient          *github.GithubClient
-	buildEventAccumulator *accumulator.BEValues
-	groups                map[string]*GroupStatus
-	inFlight              map[string]bool
-	// Suffix that gets appended to all reported status names. Useful for
-	// differentiating statuses reported by BuildBuddy deployment environments.
-	// Example: "(dev)"
-	statusNameSuffix          string
+	env                       environment.Env
+	githubClient              *github.GithubClient
+	buildEventAccumulator     *accumulator.BEValues
+	groups                    map[string]*GroupStatus
+	inFlight                  map[string]bool
 	payloads                  []*github.GithubStatusPayload
 	shouldReportStatusPerTest bool
 }
@@ -49,7 +44,6 @@ func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumula
 	return &BuildStatusReporter{
 		env:                       env,
 		shouldReportStatusPerTest: *statusPerTestTarget,
-		statusNameSuffix:          *statusNameSuffix,
 		buildEventAccumulator:     buildEventAccumulator,
 		payloads:                  make([]*github.GithubStatusPayload, 0),
 		inFlight:                  make(map[string]bool),
@@ -137,7 +131,7 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		}
 		commitSHA := r.buildEventAccumulator.Invocation().GetCommitSha()
 		if ownerRepo != "" && commitSHA != "" {
-			err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
+			err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, payload)
 			if err != nil {
 				// Note: using info-level log since this is often due to client
 				// misconfiguration (e.g. user doesn't have BB GitHub app
@@ -152,14 +146,6 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)
-}
-
-func (r *BuildStatusReporter) appendStatusNameSuffix(p *github.GithubStatusPayload) *github.GithubStatusPayload {
-	if r.statusNameSuffix == "" {
-		return p
-	}
-	name := fmt.Sprintf("%s %s", p.Context, r.statusNameSuffix)
-	return github.NewGithubStatusPayload(name, p.TargetURL, p.Description, p.State)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {

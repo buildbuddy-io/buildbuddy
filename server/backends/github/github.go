@@ -31,6 +31,8 @@ import (
 )
 
 var (
+	statusNameSuffix = flag.String("github.status_name_suffix", "", "Suffix to be appended to all reported GitHub status names. Useful for differentiating BuildBuddy deployments. For example: '(dev)' ** Enterprise only **")
+
 	// TODO: Mark these deprecated once the new GitHub app is implemented.
 
 	clientID     = flag.String("github.client_id", "", "The client ID of your GitHub Oauth App. ** Enterprise only **")
@@ -419,7 +421,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/statuses/%s", ownerRepo, commitSHA)
 	body := new(bytes.Buffer)
-	if err := json.NewEncoder(body).Encode(payload); err != nil {
+	if err := json.NewEncoder(body).Encode(appendStatusNameSuffix(payload)); err != nil {
 		return status.UnknownErrorf("failed to encode payload: %s", err)
 	}
 
@@ -501,6 +503,14 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context, ownerRepo s
 		c.githubToken = *group.GithubToken
 	}
 	return nil
+}
+
+func appendStatusNameSuffix(p *GithubStatusPayload) *GithubStatusPayload {
+	if *statusNameSuffix == "" {
+		return p
+	}
+	name := fmt.Sprintf("%s %s", p.Context, *statusNameSuffix)
+	return NewGithubStatusPayload(name, p.TargetURL, p.Description, p.State)
 }
 
 func setCookie(w http.ResponseWriter, name, value string) {
