@@ -286,15 +286,13 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 func (c *DiskCache) startRefreshMetrics(rootDirectory string) {
 	go func() {
 		for {
-			select {
-			case <-time.After(refreshMetricsPeriod):
-				fsu := gosigar.FileSystemUsage{}
-				if err := fsu.Get(rootDirectory); err != nil {
-					log.Warningf("could not retrieve filesystem stats: %s", err)
-				} else {
-					metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Total))
-					metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Avail))
-				}
+			<-time.After(refreshMetricsPeriod)
+			fsu := gosigar.FileSystemUsage{}
+			if err := fsu.Get(rootDirectory); err != nil {
+				log.Warningf("could not retrieve filesystem stats: %s", err)
+			} else {
+				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Total))
+				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Avail))
 			}
 		}
 	}()
@@ -700,12 +698,10 @@ func (p *partition) reduceCacheSize() bool {
 func (p *partition) startJanitor() {
 	go func() {
 		for {
-			select {
-			case <-time.After(janitorCheckPeriod):
-				for {
-					if !p.reduceCacheSize() {
-						break
-					}
+			<-time.After(janitorCheckPeriod)
+			for {
+				if !p.reduceCacheSize() {
+					break
 				}
 			}
 		}
@@ -715,10 +711,8 @@ func (p *partition) startJanitor() {
 func (p *partition) startRefreshMetrics() {
 	go func() {
 		for {
-			select {
-			case <-time.After(refreshMetricsPeriod):
-				p.refreshMetrics()
-			}
+			<-time.After(refreshMetricsPeriod)
+			p.refreshMetrics()
 		}
 	}()
 }
