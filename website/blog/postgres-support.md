@@ -4,7 +4,7 @@ title: PostgreSQL Support for BuildBuddy
 description: We're happy to announce PostgreSQL support for BuildBuddy.
 author: Zoey Greer
 author_title: Engineer @ BuildBuddy
-date: 2023-06-15:12:00:00
+date: 2023-06-21:12:00:00
 author_url: https://www.github.com/tempoz
 author_image_url: https://avatars.githubusercontent.com/u/735684?v=4
 image: /img/blog/postgres-support.png
