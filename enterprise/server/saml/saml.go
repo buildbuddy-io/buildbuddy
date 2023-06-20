@@ -59,7 +59,7 @@ type SAMLAuthenticator struct {
 }
 
 func Register(env environment.Env) error {
-	if *certFile == "" || env.GetAuthenticator() == nil {
+	if (*certFile == "" && *cert == "") || env.GetAuthenticator() == nil {
 		return nil
 	}
 	if _, ok := env.GetAuthenticator().(*nullauth.NullAuthenticator); ok {
@@ -91,7 +91,7 @@ func (a *SAMLAuthenticator) PublicIssuers() []string {
 }
 
 func (a *SAMLAuthenticator) SSOEnabled() bool {
-	if *certFile != "" {
+	if *certFile != "" || *cert != "" {
 		return true
 	}
 	return a.fallback.SSOEnabled()
