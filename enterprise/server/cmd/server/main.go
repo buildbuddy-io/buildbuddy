@@ -32,7 +32,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
@@ -120,9 +119,6 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 			log.Fatalf("%v", err)
 		}
 		log.Warningf("No authentication will be configured: %s", err)
-	}
-	if err := saml.Register(env); err != nil {
-		log.Fatalf("%v", err)
 	}
 
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())

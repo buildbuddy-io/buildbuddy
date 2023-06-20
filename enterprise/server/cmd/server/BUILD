@@ -43,7 +43,6 @@ go_library(
         "//enterprise/server/raft/cache",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/redis_client",
-        "//enterprise/server/saml",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/secrets",

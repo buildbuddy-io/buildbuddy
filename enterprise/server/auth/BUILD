@@ -7,9 +7,11 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/oidc",
+        "//enterprise/server/saml",
         "//server/environment",
         "//server/interfaces",
         "//server/nullauth",
+        "//server/tables",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/status",
