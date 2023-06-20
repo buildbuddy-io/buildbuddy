@@ -4,10 +4,18 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Mon, 05 Jun 2023 11:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 21 Jun 2023 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[PostgreSQL Support for BuildBuddy]]></title>
+            <link>https://www.buildbuddy.io/blog/postgres-support</link>
+            <guid>https://www.buildbuddy.io/blog/postgres-support</guid>
+            <pubDate>Wed, 21 Jun 2023 12:00:00 GMT</pubDate>
+            <description><![CDATA[We're happy to announce PostgreSQL support for BuildBuddy.]]></description>
+            <category>product</category>
+        </item>
         <item>
             <title><![CDATA[Providing Control Over Cache Encryption]]></title>
             <link>https://www.buildbuddy.io/blog/customer-managed-encryption-keys</link>
