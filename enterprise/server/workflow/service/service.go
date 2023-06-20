@@ -809,6 +809,8 @@ func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl 
 	}
 	q.AddWhereClause("repo_url = ?", repoUrl)
 	q.AddWhereClause("pattern = ?", pattern)
+	// TODO(jdhollen): Efficiently fetch the default branch name for the
+	// repo instead of guessing.
 	q.AddWhereClause("branch_name IN ?", []string{"master", "main"})
 	q.AddWhereClause("role = ?", "CI_RUNNER")
 	q.AddWhereClause("group_id = ?", authenticatedUser.GetGroupID())
@@ -830,17 +832,20 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		return nil, err
 	}
 	// Only fetch workflow data for stuff that has run in the last 7 days.
-	timeLimitMicros := time.Now().Add(-time.Duration(7*24) * time.Hour).UnixMicro()
+	timeLimitMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 
 	// Find the names of all of the actions for each repo.
 	q := query_builder.NewQuery(`SELECT repo_url,pattern,count(1) AS total_runs, countIf(success) AS successful_runs, toInt64(avg(duration_usec)) AS average_duration FROM Invocations`)
 	q.AddWhereClause("repo_url IN ?", repos)
 	q.AddWhereClause("role = ?", "CI_RUNNER")
+	// Clickhouse doesn't have an explicit perms column, so we only do auth
+	// on group ID on this query path.  We don't really have a single-user
+	// use case for workflows and we don't have anonymous access to the
+	// workflow status page, so this should be fine.
 	q.AddWhereClause("group_id = ?", authenticatedUser.GetGroupID())
 	q.AddWhereClause("invocation_status = ?", int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS))
 	q.AddWhereClause("updated_at_usec > ?", timeLimitMicros)
 	q.SetGroupBy("repo_url,pattern")
-	// XXX: No permissions check here; is this ok?
 
 	type actionQueryOut struct {
 		RepoUrl         string
@@ -882,6 +887,9 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		}
 		workflows[row.RepoUrl][row.Pattern] = &wfpb.ActionHistory{ActionName: row.Pattern, Summary: summary}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	finalActionHistoryQStr := strings.Join(actionHistoryQStrs, " UNION ALL ")
 
 	historyRows, err := ws.env.GetDBHandle().RawWithOptions(ctx, db.Opts().WithQueryName("query_workflow_action_history"), finalActionHistoryQStr, actionHistoryQArgs...).Rows()
@@ -920,6 +928,9 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		}
 
 		workflows[row.RepoUrl][row.Pattern].Entries = append(workflows[row.RepoUrl][row.Pattern].Entries, entry)
+	}
+	if err := historyRows.Err(); err != nil {
+		return nil, err
 	}
 
 	// OKAY! We have everything, now we'll just sort and build the response.

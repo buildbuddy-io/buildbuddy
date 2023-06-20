@@ -110,6 +110,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
 
   private fetchWorkflowsRPC?: CancelablePromise;
   private fetchReposRPC?: CancelablePromise;
+  private fetchWorkflowHistoryRPC?: CancelablePromise;
 
   componentDidMount() {
     document.title = "Workflows | BuildBuddy";
@@ -130,11 +131,15 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   }
 
   private fetchWorkflowHistory(repoUrls: string[]) {
+    this.fetchWorkflowHistoryRPC?.cancel();
+    this.fetchWorkflowHistoryRPC = undefined;
+    this.setState({ workflowHistoryLoading: false, workflowHistoryResponse: null });
+
     if (!capabilities.config.workflowHistoryEnabled || repoUrls.length === 0) {
       return;
     }
     this.setState({ workflowHistoryLoading: true });
-    rpcService.service
+    this.fetchWorkflowHistoryRPC = rpcService.service
       .getWorkflowHistory(new workflow.GetWorkflowHistoryRequest({ repoUrls }))
       .then((response) => this.setState({ workflowHistoryResponse: response }))
       .catch((e) => error_service.handleError(e))
