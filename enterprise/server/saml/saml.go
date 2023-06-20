@@ -91,7 +91,7 @@ func (a *SAMLAuthenticator) PublicIssuers() []string {
 }
 
 func (a *SAMLAuthenticator) SSOEnabled() bool {
-	if *certFile == "" && *cert == "" {
+	if *certFile != "" || *cert != "" {
 		return true
 	}
 	return a.fallback.SSOEnabled()
