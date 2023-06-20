@@ -2432,6 +2432,9 @@ func (e *partitionEvictor) randomGroupForEvictionSampling() (string, error) {
 	if len(e.groupIDApproxCounts) == 0 {
 		return "", status.NotFoundErrorf("no groups available")
 	}
+	if e.groupIDApproxTotalCount == 0 {
+		return "", status.NotFoundErrorf("no groups available (approx count is zero)")
+	}
 
 	n := rand.Int63n(e.groupIDApproxTotalCount)
 	pos, _ := slices.BinarySearchFunc(e.groupIDApproxCounts, groupIDApproxCount{cumulativeCount: n}, func(a, b groupIDApproxCount) int {
@@ -2491,7 +2494,7 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 				cacheType = rspb.CacheType_AC
 				groupID = gid
 			} else {
-				log.Warningf("no groups to sample for %q", e.part.ID)
+				log.Warningf("no groups to sample for %q: %s", e.part.ID, err)
 			}
 		}
 
