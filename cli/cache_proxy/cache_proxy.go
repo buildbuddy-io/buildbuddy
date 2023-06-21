@@ -251,10 +251,15 @@ func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 		if wreq == nil {
 			wreq = rsp
 		}
+		writeDone := rsp.GetFinishWrite()
 		if err := clientStream.Send(rsp); err != nil {
-			return err
+			if err == io.EOF {
+				writeDone = true
+			} else {
+				return err
+			}
 		}
-		if rsp.GetFinishWrite() {
+		if writeDone {
 			lastRsp, err := clientStream.CloseAndRecv()
 			if err != nil {
 				return err
