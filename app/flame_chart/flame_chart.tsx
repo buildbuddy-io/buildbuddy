@@ -17,7 +17,6 @@ import {
   VERTICAL_SCROLLBAR_WIDTH,
   HORIZONTAL_SCROLLBAR_HEIGHT,
   LINE_CHART_BORDER_TOP,
-  TIME_SERIES_HEIGHT,
 } from "./style_constants";
 import capabilities from "../capabilities/capabilities";
 
@@ -435,6 +434,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                 borderBottom: `${LINE_CHART_BORDER_TOP}px solid #9E9E9E`,
                 height: "60%",
                 overflowX: "initial",
+                boxSizing: "border-box",
               }}>
               <div
                 style={{
