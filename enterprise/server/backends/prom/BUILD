@@ -8,7 +8,6 @@ go_library(
         "//proto:metrics_go_proto",
         "//server/environment",
         "//server/metrics",
-        "//server/util/alert",
         "//server/util/log",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
