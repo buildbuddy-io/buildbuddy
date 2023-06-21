@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -58,9 +57,6 @@ type SAMLAuthenticator struct {
 
 func IsEnabled(env environment.Env) bool {
 	if (*certFile == "" && *cert == "") || env.GetAuthenticator() == nil {
-		return false
-	}
-	if _, ok := env.GetAuthenticator().(*nullauth.NullAuthenticator); ok {
 		return false
 	}
 	return true
