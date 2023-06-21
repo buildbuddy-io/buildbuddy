@@ -547,7 +547,7 @@
   box-sizing: border-box;
 }
 
-.workflows-page .action-history-tooltip {
+.workflows-page-action-history-tooltip {
   background-color: rgba(255, 255, 255, 0.95);
   border-radius: 8px;
   padding: 16px;

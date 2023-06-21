@@ -85,13 +85,13 @@ function renderTooltipContent(
     return null;
   }
   if (invocationId === "no-data") {
-    return <div className="action-history-tooltip">No more runs in the last 7 days.</div>;
+    return <div className="workflows-page-action-history-tooltip">No more runs in the last 7 days.</div>;
   }
   const entry = lookup.get(invocationId);
 
   if (entry) {
     return (
-      <div className="action-history-tooltip">
+      <div className="workflows-page-action-history-tooltip">
         <div>
           <strong>Invocation ID: </strong>
           {entry.invocationId}
@@ -115,7 +115,7 @@ function renderTooltipContent(
       </div>
     );
   } else {
-    return <div className="action-history-tooltip">Failed to load run data.</div>;
+    return <div className="workflows-page-action-history-tooltip">Failed to load run data.</div>;
   }
 }
 
