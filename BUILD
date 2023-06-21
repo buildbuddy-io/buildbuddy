@@ -41,7 +41,6 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/unusedresult:go_default_library",
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
-        "-S1000",
         "-S1002",
         "-S1004",
         "-S1005",

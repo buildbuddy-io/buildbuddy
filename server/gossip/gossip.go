@@ -41,15 +41,13 @@ type GossipManager struct {
 
 func (gm *GossipManager) processEvents() {
 	for {
-		select {
-		case event := <-gm.serfEventChan:
-			gm.mu.Lock()
-			listeners := gm.listeners
-			gm.mu.Unlock()
+		event := <-gm.serfEventChan
+		gm.mu.Lock()
+		listeners := gm.listeners
+		gm.mu.Unlock()
 
-			for _, listener := range listeners {
-				listener.OnEvent(event.EventType(), event)
-			}
+		for _, listener := range listeners {
+			listener.OnEvent(event.EventType(), event)
 		}
 	}
 }
