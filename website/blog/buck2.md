@@ -24,7 +24,7 @@ Here are the initial impressions I have after a week of using Buck2.
 
 ## Overview
 
-**Edit** (2023-06-15): Bazel team did reach out to me with some corrections to how the benchmark
+**Edit** (2023-06-15): The Bazel team did reach out to me with some corrections to how the benchmark
 was setup. Please find revised numbers at bottom of this blog.
 
 Similar to Buck(1) and Bazel, Buck2 is an [artifact-based](https://bazel.build/basics/artifact-based-builds) build tool that operates on a large graph of dependencies.
@@ -569,10 +569,10 @@ If you are interested in Buck2, give it a look!
 
 ## Update (2023-06-15)
 
-Shortly after this blog was released, [Tobias Werth](https://github.com/meisterT) from Bazel team pointed out to me
+Shortly after this blog post was released, [Tobias Werth](https://github.com/meisterT) from the Bazel team pointed out to me
 that the Bazel setup was not the most optimized.
 
-In particular, instead of using the `tools` attribute in Bazel's `genrule`, I should have used `srcs` attribute instead.
+In particular, instead of using the `tools` attribute in Bazel's `genrule`, I should have used `srcs` instead.
 
 ```diff
 --- a/BUILD.bazel
@@ -613,9 +613,9 @@ In particular, instead of using the `tools` attribute in Bazel's `genrule`, I sh
  )
 ```
 
-Using `tools` would trigger Bazel to configure twice the number of actions underneath due to Bazel's special treament for tool dependencies.
+Using `tools` would cause Bazel to configure twice the number of actions underneath due to Bazel's special treatment of tool dependencies.
 
-And fewer actions means faster build.
+And fewer actions means a faster build.
 For example, here is the new benchmark when build and test everything with Bazel.
 
 ```bash
@@ -625,7 +625,7 @@ Benchmark 1: bazel test --config=local //...
   Range (min … max):   38.127 s … 45.369 s    10 runs
 ```
 
-So I reran the benchmark and here are the new timings.
+So I reran the benchmark and here are the new results:
 
 | Tools            |          Local Build | RBE (with Remote Cache) | RBE (without Remote Cache) |
 | :--------------- | -------------------: | ----------------------: | -------------------------: |
@@ -634,7 +634,7 @@ So I reran the benchmark and here are the new timings.
 | bazel w. `srcs`  | `42.580 s ± 1.881 s` |    `10.047 s ± 0.517 s` |    ` 73.009 s ± ‎ 2.975 s` |
 
 This means that if setup correctly, Bazel performance is quite competitive with Buck2.
-Differences in a few seconds could be negligible for most use cases.
+Differences of a few seconds could be negligible for most use cases.
 
 Tobias also noted that my current Bazel configuration is uploading Build Events, which may incur additional network latency.
 This could be further be improved by moving the Build Event upload to a background task and defer build artifact downloads.
