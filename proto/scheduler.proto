@@ -196,11 +196,6 @@ service Scheduler {
       returns (EnqueueTaskReservationResponse) {}
 }
 
-service QueueExecutor {
-  rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
-      returns (EnqueueTaskReservationResponse) {}
-}
-
 message ExecutionNode {
   // Remote execution node host.
   // Ex. "10.52.6.5"
@@ -208,7 +203,7 @@ message ExecutionNode {
 
   // Remote execution node port.
   // Ex. 1987
-  int32 port = 2;
+  int32 port = 2 [deprecated = true];
 
   // Assignable memory bytes in remote execution node.
   // Ex. 26843545600

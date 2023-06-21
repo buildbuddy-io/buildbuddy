@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,14 +28,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
@@ -46,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/test/bufconn"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
@@ -68,37 +63,24 @@ var (
 	monitoringPort    = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 	monitoringSSLPort = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
+
+	// Define a grpc_port flag to avoid breaking old executor configs.
+	_ = flagutil.New("grpc_port", 0, "gRPC server port.", flagutil.DeprecatedTag("This flag no longer has any effect and will be removed in a future executor version."))
 )
 
-var localListener *bufconn.Listener
-
-func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.RealEnv, useLocal bool) {
+func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.RealEnv) {
 	var conn *grpc.ClientConn
 	var err error
-	if useLocal {
-		log.Infof("Using local cache!")
-		log.Warningf("Using an executor with a local cache is DEPRECATED! Please set executor.app_target instead.")
-		dialOptions := grpc_client.CommonGRPCClientOptions()
-		dialOptions = append(dialOptions, grpc.WithContextDialer(bufDialer))
-		dialOptions = append(dialOptions, grpc.WithInsecure())
-
-		conn, err = grpc.DialContext(context.Background(), "bufnet", dialOptions...)
-		if err != nil {
-			log.Fatalf("Failed to dial bufnet: %v", err)
-		}
-		log.Debugf("Connecting to local cache over bufnet")
-	} else {
-		if cacheTarget == "" {
-			log.Fatalf("No cache target was set. Run a local cache or specify one in the config")
-		} else if u, err := url.Parse(cacheTarget); err == nil && u.Hostname() == "cloud.buildbuddy.io" {
-			log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` to remote.buildbuddy.io for improved performance.")
-		}
-		conn, err = grpc_client.DialTarget(cacheTarget)
-		if err != nil {
-			log.Fatalf("Unable to connect to cache '%s': %s", cacheTarget, err)
-		}
-		log.Infof("Connecting to cache target: %s", cacheTarget)
+	if cacheTarget == "" {
+		log.Fatalf("No cache target was set. Run a local cache or specify one in the config")
+	} else if u, err := url.Parse(cacheTarget); err == nil && u.Hostname() == "cloud.buildbuddy.io" {
+		log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` to remote.buildbuddy.io for improved performance.")
 	}
+	conn, err = grpc_client.DialTarget(cacheTarget)
+	if err != nil {
+		log.Fatalf("Unable to connect to cache '%s': %s", cacheTarget, err)
+	}
+	log.Infof("Connecting to cache target: %s", cacheTarget)
 
 	realEnv.GetHealthChecker().AddHealthCheck(
 		"grpc_cache_connection", healthcheck.NewGRPCHealthCheck(conn))
@@ -150,8 +132,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 		log.Fatal(err.Error())
 	}
 
-	useLocalCache := realEnv.GetCache() != nil
-	InitializeCacheClientsOrDie(*appTarget, realEnv, useLocalCache)
+	InitializeCacheClientsOrDie(*appTarget, realEnv)
 
 	if !*disableLocalCache {
 		log.Infof("Enabling filecache in %q (size %d bytes)", *localCacheDirectory, *localCacheSizeBytes)
@@ -172,10 +153,6 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 
 	return realEnv
-}
-
-func bufDialer(context.Context, string) (net.Conn, error) {
-	return localListener.Dial()
 }
 
 func main() {
@@ -226,18 +203,12 @@ func main() {
 	}
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	localListener = bufconn.Listen(1024 * 1024 * 10 /* 10MB buffer? Seems ok. */)
-
 	env := GetConfiguredEnvironmentOrDie(healthChecker)
 
 	if err := tracing.Configure(env); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
-	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
-	localServer := grpc.NewServer(grpcOptions...)
-
-	// Start Build-Event-Protocol and Remote-Cache services.
 	executorUUID, err := uuid.NewRandom()
 	if err != nil {
 		log.Fatalf("Failed to generate executor instance ID: %s", err)
@@ -257,32 +228,6 @@ func main() {
 	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, &priority_task_scheduler.Options{})
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
-	}
-
-	// OPTIONAL CACHE API -- only enable if configured.
-	// Install any prod-specific backends here.
-	enableCache := env.GetCache() != nil
-	if enableCache {
-		// Register to handle content addressable storage (CAS) messages.
-		casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
-		if err != nil {
-			log.Fatalf("Error initializing ContentAddressableStorageServer: %s", err)
-		}
-		repb.RegisterContentAddressableStorageServer(localServer, casServer)
-
-		// Register to handle bytestream (upload and download) messages.
-		byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-		if err != nil {
-			log.Fatalf("Error initializing ByteStreamServer: %s", err)
-		}
-		bspb.RegisterByteStreamServer(localServer, byteStreamServer)
-
-		// Register to handle action cache (upload and download) messages.
-		actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
-		if err != nil {
-			log.Fatalf("Error initializing ActionCacheServer: %s", err)
-		}
-		repb.RegisterActionCacheServer(localServer, actionCacheServer)
 	}
 
 	container.Metrics.Start(rootContext)
@@ -322,10 +267,6 @@ func main() {
 		}
 		log.Infof("Registering executor with server.")
 		reg.Start(rootContext)
-	}()
-
-	go func() {
-		localServer.Serve(localListener)
 	}()
 
 	go func() {

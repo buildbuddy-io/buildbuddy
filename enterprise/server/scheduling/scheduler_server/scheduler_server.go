@@ -941,8 +941,8 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 }
 
 func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
-	if node.GetHost() == "" || node.GetPort() == 0 {
-		return status.FailedPreconditionErrorf("Cannot register node with empty host/port: %s:%d", node.GetHost(), node.GetPort())
+	if node.GetHost() == "" {
+		return status.FailedPreconditionError("executor node registration is missing 'host' field")
 	}
 
 	return nil
@@ -965,12 +965,11 @@ func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle *e
 	// Don't use the stream context since we want to do cleanup when stream context is cancelled.
 	ctx, cancel := context.WithTimeout(context.Background(), removeExecutorCleanupTimeout)
 	defer cancel()
-	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
 	if err := s.deleteNode(ctx, node, nodePoolKey); err != nil {
-		log.CtxWarningf(ctx, "Scheduler: could not unregister node %q: %s", addr, err)
+		log.CtxWarningf(ctx, "Scheduler: could not unregister node %q: %s", node.GetExecutorId(), err)
 		return
 	}
-	log.CtxInfof(ctx, "Scheduler: unregistered worker node: %q", addr)
+	log.CtxInfof(ctx, "Scheduler: unregistered node %q (executor ID %q)", node.GetHost(), node.GetExecutorId())
 }
 
 func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
@@ -996,8 +995,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	if !newExecutor {
 		return nil
 	}
-	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
-	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, addr %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, node.GetVersion(), poolKey)
+	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, host %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), node.GetHost(), node.GetVersion(), poolKey)
 	metrics.RemoteExecutionExecutorRegistrationCount.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
 	go func() {

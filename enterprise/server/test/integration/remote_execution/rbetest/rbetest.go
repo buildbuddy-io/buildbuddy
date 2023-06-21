@@ -56,7 +56,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -650,8 +649,7 @@ type ExecutorOptions struct {
 // Executor is a handle for a running executor instance.
 type Executor struct {
 	env                *testenv.TestEnv
-	hostPort           string
-	grpcServer         *grpc.Server
+	id                 string
 	cancelRegistration context.CancelFunc
 	taskScheduler      *priority_task_scheduler.PriorityTaskScheduler
 }
@@ -761,20 +759,24 @@ func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
 }
 
 func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
+	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
+
+	// Set up app gRPC clients
 	buildBuddyServer := options.Server
 	if buildBuddyServer == nil {
 		buildBuddyServer = r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))]
 	}
-
 	clientConn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", buildBuddyServer.port))
 	if err != nil {
 		assert.FailNowf(r.t, "could not create client to BuildBuddy server", err.Error())
 	}
-
-	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
-
-	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
+	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
+	env.SetActionCacheClient(repb.NewActionCacheClient(clientConn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
+	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
+	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
+
 	env.SetAuthenticator(r.testEnv.GetAuthenticator())
 	xl := xcode.NewXcodeLocator()
 	env.SetXcodeLocator(xl)
@@ -797,36 +799,6 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	}
 	env.SetFileCache(fc)
 
-	localServer, startLocalServer := env.LocalGRPCServer()
-	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
-	if err != nil {
-		assert.FailNowf(r.t, "could not create CAS server", err.Error())
-	}
-	repb.RegisterContentAddressableStorageServer(localServer, casServer)
-
-	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-	if err != nil {
-		assert.FailNowf(r.t, "could not create ByteStream server", err.Error())
-	}
-	bspb.RegisterByteStreamServer(localServer, byteStreamServer)
-
-	actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
-	if err != nil {
-		assert.FailNowf(r.t, "could not create ActionCache server", err.Error())
-	}
-	repb.RegisterActionCacheServer(localServer, actionCacheServer)
-	go startLocalServer()
-
-	localConn, err := env.LocalGRPCConn(context.Background())
-	if err != nil {
-		assert.FailNowf(r.t, "could not connect to executor GRPC server", err.Error())
-	}
-
-	env.SetActionCacheClient(repb.NewActionCacheClient(localConn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(localConn))
-	env.SetByteStreamClient(bspb.NewByteStreamClient(localConn))
-	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
-
 	executorUUID, err := guuid.NewRandom()
 	require.NoError(r.t, err)
 	executorID := executorUUID.String()
@@ -843,22 +815,9 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, &options.priorityTaskSchedulerOptions)
 	taskScheduler.Start()
 
-	executorPort := testport.FindFree(r.t)
-	execLis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", executorPort))
-	if err != nil {
-		assert.FailNowf(r.t, fmt.Sprintf("could not listen on port %d", executorPort), err.Error())
-	}
-	executorGRPCServer, execRunFunc := env.GRPCServer(execLis)
-	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(executorGRPCServer))
-
-	scpb.RegisterQueueExecutorServer(executorGRPCServer, taskScheduler)
-
-	go execRunFunc()
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	opts := &scheduler_client.Options{
-		PortOverride:     int32(executorPort),
 		HostnameOverride: "localhost",
 		APIKeyOverride:   options.APIKey,
 	}
@@ -870,32 +829,31 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 
 	executor := &Executor{
 		env:                env,
-		hostPort:           fmt.Sprintf("localhost:%d", executorPort),
-		grpcServer:         executorGRPCServer,
+		id:                 executorID,
 		cancelRegistration: cancel,
 		taskScheduler:      taskScheduler,
 	}
-	r.executors[executor.hostPort] = executor
+	r.executors[executor.id] = executor
 	return executor
 }
 
 func (r *Env) RemoveExecutor(executor *Executor) {
-	if _, ok := r.executors[executor.hostPort]; !ok {
-		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.hostPort))
+	if _, ok := r.executors[executor.id]; !ok {
+		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.id))
 	}
 	executor.stop()
-	delete(r.executors, executor.hostPort)
+	delete(r.executors, executor.id)
 	r.waitForExecutorRegistration()
 }
 
 // waitForExecutorRegistration waits until the set of all registered executors matches expected internal set.
 func (r *Env) waitForExecutorRegistration() {
-	expectedNodesByHostIp := make(map[string]bool)
+	expectedNodesByID := make(map[string]bool)
 	for _, e := range r.executors {
-		expectedNodesByHostIp[e.hostPort] = true
+		expectedNodesByID[e.id] = true
 	}
 
-	nodesByHostIp := make(map[string]bool)
+	nodesByID := make(map[string]bool)
 	deadline := time.Now().Add(defaultWaitTimeout)
 
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
@@ -903,7 +861,7 @@ func (r *Env) waitForExecutorRegistration() {
 	ctx = r.WithUserID(ctx, r.UserID1)
 
 	for time.Now().Before(deadline) {
-		nodesByHostIp = make(map[string]bool)
+		nodesByID = make(map[string]bool)
 
 		client := r.GetBuildBuddyServiceClient()
 		req := &scpb.GetExecutionNodesRequest{
@@ -914,15 +872,15 @@ func (r *Env) waitForExecutorRegistration() {
 		rsp, err := client.GetExecutionNodes(ctx, req)
 		require.NoError(r.t, err)
 		for _, e := range rsp.GetExecutor() {
-			nodesByHostIp[fmt.Sprintf("%s:%d", e.Node.Host, e.Node.Port)] = true
+			nodesByID[e.GetNode().GetExecutorId()] = true
 		}
-		if reflect.DeepEqual(expectedNodesByHostIp, nodesByHostIp) {
+		if reflect.DeepEqual(expectedNodesByID, nodesByID) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	require.Equal(r.t, expectedNodesByHostIp, nodesByHostIp, "set of registered executors should converge")
+	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
 }
 
 func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {

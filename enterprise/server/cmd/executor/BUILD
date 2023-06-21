@@ -31,14 +31,11 @@ go_library(
         "//server/environment",
         "//server/metrics",
         "//server/real_environment",
-        "//server/remote_cache/action_cache_server",
-        "//server/remote_cache/byte_stream_server",
-        "//server/remote_cache/content_addressable_storage_server",
         "//server/resources",
         "//server/ssl",
         "//server/util/fileresolver",
+        "//server/util/flagutil",
         "//server/util/grpc_client",
-        "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/monitoring",
@@ -50,7 +47,6 @@ go_library(
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//encoding/gzip",
-        "@org_golang_google_grpc//test/bufconn",
     ],
 )
 
