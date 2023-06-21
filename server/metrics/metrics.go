@@ -209,7 +209,6 @@ var (
 		InvocationStatusLabel,
 		BazelExitCode,
 		BazelCommand,
-		GroupID,
 	})
 
 	/// #### Examples
@@ -233,6 +232,19 @@ var (
 	}, []string{
 		InvocationStatusLabel,
 		BazelCommand,
+	})
+
+	// InvocationDurationUsExported is a simplified version of
+	// InvocationDurationUs which is exported to customers.
+	InvocationDurationUsExported = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "duration_usec_exported",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*day, 10),
+		Help:      "The total duration of each invocation, in **microseconds**.",
+	}, []string{
+		InvocationStatusLabel,
+		GroupID,
 	})
 
 	/// #### Examples
@@ -711,6 +723,7 @@ var (
 	/// sum(rate(buildbuddy_remote_execution_merged_actions[1m])) by (group_id)
 	/// ```
 
+	// Note: RemoteExecutionQueueLength is exported to customers.
 	RemoteExecutionQueueLength = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

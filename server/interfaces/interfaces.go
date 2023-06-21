@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
-	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -26,6 +25,7 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	mpb "github.com/buildbuddy-io/buildbuddy/proto/metrics"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1152,7 +1152,7 @@ type SingleFlightDeduper interface {
 }
 
 type PromQuerier interface {
-	FetchMetrics(ctx context.Context, groupID string) (model.Vector, error)
+	FetchMetrics(ctx context.Context, groupID string) (*mpb.Metrics, error)
 }
 
 // ConfigSecretProvider provides secrets interpolation into configs.

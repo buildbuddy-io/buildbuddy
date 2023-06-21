@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package metrics;
+
+enum GaugeType {
+	UNKNOWN_GAUGE_TYPE = 0;
+	REMOTE_EXECUTION_QUEUE_LENGTH = 1;
+}
+
+enum HistogramType {
+	UNKNOWN_HISTOGRAM_TYPE = 0;
+	INVOCATION_DURATION = 1;
+}
+
+message Gauge {
+	GaugeType type = 1;
+	map<string, string> label_set = 2;
+	double value = 3;
+}
+
+message Histogram {
+	HistogramType type = 1;
+	map<string, string> label_set = 2;
+	uint64 count = 3;
+	double sum = 4;
+
+	message Bucket {
+		double le = 1;
+		uint64 value = 2;
+	}
+	repeated Bucket buckets = 5;
+}
+
+// Metrics fetched from Prometheus.
+message Metrics {
+	repeated Gauge gauges = 1;
+	repeated Histogram histograms = 2;
+}
+

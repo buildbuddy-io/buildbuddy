@@ -5,8 +5,10 @@ go_library(
     srcs = ["prom.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom",
     deps = [
+        "//proto:metrics_go_proto",
         "//server/environment",
         "//server/metrics",
+        "//server/util/alert",
         "//server/util/log",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
@@ -14,6 +16,8 @@ go_library(
         "@com_github_prometheus_client_golang//api/prometheus/v1:prometheus",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_common//model",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

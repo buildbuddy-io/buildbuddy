@@ -557,6 +557,11 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "metrics_proto",
+    srcs = ["metrics.proto"],
+)
+
 # Go proto rules below here
 
 go_proto_library(
@@ -1125,6 +1130,12 @@ go_proto_library(
     deps = [
         ":context_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "metrics_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/metrics",
+    proto = ":metrics_proto",
 )
 
 # TypeScript proto rules below here
