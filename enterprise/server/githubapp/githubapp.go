@@ -157,6 +157,8 @@ func (a *GitHubApp) handleWebhookEvent(ctx context.Context, eventType string, ev
 }
 
 func (a *GitHubApp) handleInstallationEvent(ctx context.Context, eventType string, event *github.InstallationEvent) error {
+	log.CtxInfof(ctx, "Handling installation event type=%q, owner=%q, id=%d", eventType, event.GetInstallation().GetAccount().GetLogin(), event.GetInstallation().GetID())
+
 	// Only handling uninstall events for now. We proactively handle this event
 	// by removing references to the installation ID in the DB. Note, however,
 	// that we still need to gracefully handle the case where the installation
