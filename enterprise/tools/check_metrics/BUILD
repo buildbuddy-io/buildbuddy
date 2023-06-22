@@ -9,8 +9,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/check_metrics",
     visibility = ["//visibility:private"],
     deps = [
+        "//server/config",
         "//server/util/flagutil",
-        "//server/util/flagutil/yaml",
         "//server/util/log",
         "//server/util/status",
         "@com_github_prometheus_client_golang//api",

@@ -57,6 +57,12 @@ type Appendable interface {
 	AppendSlice(any) error
 }
 
+// Expandable may be implemented by custom flag types to indicate that they
+// wish to handle placeholder expansion on their contents themselves.
+type Expandable interface {
+	Expand(mapping func(string) (string, error)) error
+}
+
 type Secretable interface {
 	IsSecret() bool
 }

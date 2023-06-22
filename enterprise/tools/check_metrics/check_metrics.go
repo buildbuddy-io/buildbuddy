@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/api"
@@ -34,7 +34,7 @@ const (
 )
 
 var (
-	config     = flagutil.New("spec", Config{}, "Config to specify which metrics should be monitored by this script.")
+	spec       = flagutil.New("spec", Config{}, "Config to specify which metrics should be monitored by this script.")
 	configPath = flag.String("config_path", "config.yaml", "Path to config file.")
 )
 
@@ -54,7 +54,7 @@ type metricStatus struct {
 //     `kubectl --context="" --namespace=<NAMESPACE> port-forward "<POD_NAME>" --address 0.0.0.0 <FROM_PORT>:<TO_PORT>`
 func main() {
 	flag.Parse()
-	err := yaml.PopulateFlagsFromFile(*configPath)
+	err := config.LoadFromFile(*configPath)
 	if err != nil {
 		log.Fatalf("Could not read metrics config from %s: %s", *configPath, err)
 	}
@@ -63,7 +63,7 @@ func main() {
 		log.Fatalf("Could not configure logger: %s", err)
 	}
 	prometheusClient, err := api.NewClient(api.Config{
-		Address: config.PrometheusAddress,
+		Address: spec.PrometheusAddress,
 	})
 	if err != nil {
 		log.Fatalf("Error creating prometheus client: %s\nDid you run the prometheus port-forward command?", err)
@@ -72,10 +72,10 @@ func main() {
 
 	mu := &sync.Mutex{}
 	failedMetrics := make([]string, 0)
-	metricStatuses := make([]*metricStatus, 0, len(config.PrometheusMetrics))
+	metricStatuses := make([]*metricStatus, 0, len(spec.PrometheusMetrics))
 
 	eg, gctx := errgroup.WithContext(context.Background())
-	for _, metric := range config.PrometheusMetrics {
+	for _, metric := range spec.PrometheusMetrics {
 		status := &metricStatus{
 			name:      metric.Name,
 			secondary: metric.Secondary,
@@ -84,17 +84,17 @@ func main() {
 
 		metric := metric
 		eg.Go(func() error {
-			pollingIntervalSec := config.PollingIntervalSeconds
+			pollingIntervalSec := spec.PollingIntervalSeconds
 			if metric.PollingIntervalSeconds != 0 {
 				pollingIntervalSec = metric.PollingIntervalSeconds
 			}
 
-			maxUnhealthyCount := config.MaxMetricPollUnhealthyCount
+			maxUnhealthyCount := spec.MaxMetricPollUnhealthyCount
 			if metric.MaxMetricPollUnhealthyCount != 0 {
 				maxUnhealthyCount = metric.MaxMetricPollUnhealthyCount
 			}
 
-			monitoringTimer := time.After(time.Duration(config.MonitoringTimeframeSeconds) * time.Second)
+			monitoringTimer := time.After(time.Duration(spec.MonitoringTimeframeSeconds) * time.Second)
 			monitoringTicker := time.NewTicker(time.Duration(pollingIntervalSec) * time.Second)
 			defer monitoringTicker.Stop()
 
@@ -124,7 +124,7 @@ func main() {
 						failedMetrics = append(failedMetrics, metric.Name)
 						mu.Unlock()
 
-						if !metric.Secondary || len(failedMetrics) >= config.MaxSecondaryMetricFailureCount {
+						if !metric.Secondary || len(failedMetrics) >= spec.MaxSecondaryMetricFailureCount {
 							failedMetricsStr := strings.Join(failedMetrics, ", ")
 							return errors.New(fmt.Sprintf("Metrics unhealthy: %s", failedMetricsStr))
 						}
@@ -138,7 +138,7 @@ func main() {
 	err = eg.Wait()
 
 	triggeredRollback := err != nil
-	sendMetricOverview(metricStatuses, triggeredRollback, config.MaxMetricPollUnhealthyCount, config.MaxSecondaryMetricFailureCount)
+	sendMetricOverview(metricStatuses, triggeredRollback, spec.MaxMetricPollUnhealthyCount, spec.MaxSecondaryMetricFailureCount)
 
 	if triggeredRollback {
 		log.Fatalf("Exiting metrics script: %s", err)

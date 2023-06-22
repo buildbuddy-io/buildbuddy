@@ -122,6 +122,69 @@ func (f *JSONSliceFlag[T]) Set(values string) error {
 	return fmt.Errorf("Default Set for SliceFlag can only accept JSON objects or arrays, but type was %T", a)
 }
 
+func expandValue(value any, mapping func(string) (string, error)) (any, error) {
+	switch cv := value.(type) {
+	case map[string]any:
+		if err := expandMapValues(cv, mapping); err != nil {
+			return nil, err
+		}
+		return value, nil
+	case []any:
+		if err := expandSliceValues(cv, mapping); err != nil {
+			return nil, err
+		}
+		return value, nil
+	case string:
+		ev, err := mapping(cv)
+		if err != nil {
+			return nil, err
+		}
+		return ev, nil
+	default:
+		return value, nil
+	}
+}
+
+func expandSliceValues(slice []any, mapping func(string) (string, error)) error {
+	for i, v := range slice {
+		ev, err := expandValue(v, mapping)
+		if err != nil {
+			return err
+		}
+		slice[i] = ev
+	}
+	return nil
+}
+
+func expandMapValues(yamlMap map[string]any, mapping func(string) (string, error)) error {
+	for k, v := range yamlMap {
+		ev, err := expandValue(v, mapping)
+		if err != nil {
+			return err
+		}
+		yamlMap[k] = ev
+	}
+	return nil
+}
+
+func (f *JSONSliceFlag[T]) Expand(mapping func(string) (string, error)) error {
+	var dst []any
+	if err := json.Unmarshal([]byte(f.String()), &dst); err != nil {
+		return err
+	}
+	if err := expandSliceValues(dst, mapping); err != nil {
+		return err
+	}
+	exp, err := json.Marshal(dst)
+	if err != nil {
+		return err
+	}
+	sl := reflect.MakeSlice(reflect.TypeOf((*T)(nil)).Elem(), 0, 0)
+	v := (reflect.Value)(*f)
+	v.Elem().Set(sl)
+	return f.Set(string(exp))
+}
+
 func (f *JSONSliceFlag[T]) AppendSlice(slice any) error {
 	v := (reflect.Value)(*f)
 	if _, ok := slice.(T); !ok {
@@ -224,6 +287,17 @@ func (f *StringSliceFlag) Set(values string) error {
 	}
 	for _, val := range strings.Split(values, ",") {
 		*f = append(*f, val)
+	}
+	return nil
+}
+
+func (f *StringSliceFlag) Expand(mapping func(string) (string, error)) error {
+	for i, v := range *f {
+		val, err := mapping(v)
+		if err != nil {
+			return err
+		}
+		(*f)[i] = val
 	}
 	return nil
 }
@@ -433,6 +507,10 @@ func (d *DeprecatedFlag[T]) String() string {
 	return d.Value.String()
 }
 
+func (d *DeprecatedFlag[T]) Expand(mapping func(string) (string, error)) error {
+	return Expand(d.Value, mapping)
+}
+
 type SecretFlag[T any] struct {
 	flag.Value
 }
@@ -461,4 +539,26 @@ func (s *SecretFlag[T]) String() string {
 		return fmt.Sprint(common.Zero[T]())
 	}
 	return s.Value.String()
+}
+
+func (s *SecretFlag[T]) Expand(mapping func(string) (string, error)) error {
+	return Expand(s.Value, mapping)
+}
+
+// Expand updates the flag value to replace any placeholders in format ${FOO}
+// with the content of calling the mapper function with the placeholder name.
+func Expand(v flag.Value, mapper func(string) (string, error)) error {
+	// If the flag type wants to handle expansion, let it.
+	if r, ok := v.(common.Expandable); ok {
+		if err := r.Expand(mapper); err != nil {
+			return err
+		}
+		return nil
+	}
+	// Otherwise, expand directly using String/Set.
+	exp, err := mapper(v.String())
+	if err != nil {
+		return err
+	}
+	return v.Set(exp)
 }

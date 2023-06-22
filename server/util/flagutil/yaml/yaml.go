@@ -2,16 +2,13 @@ package yaml
 
 import (
 	"bytes"
-	"context"
 	"flag"
 	"fmt"
-	"os"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -21,11 +18,6 @@ import (
 
 const (
 	spacesPerYAMLIndentLevel = 4
-
-	// The placeholder prefix we look for to identify external secret references
-	// when parsing config file. Any placeholders in format ${SECRET:foo} will
-	// be replaced with the resolved content from the external secret store.
-	externalSecretPrefix = "SECRET:"
 )
 
 var (
@@ -48,9 +40,6 @@ var (
 	WordWrapForIndentationLevel = generateWordWrapRegexByIndentationLevel(76, 3)
 
 	StartOfLine = regexp.MustCompile("(?m)^")
-
-	// This may be optionally set by a configured provider.
-	SecretProvider interfaces.ConfigSecretProvider
 )
 
 func generateWordWrapRegexByIndentationLevel(targetLineLength, minWrapLength int) []*regexp.Regexp {
@@ -611,75 +600,6 @@ func RemoveEmptyMapsFromYAMLMap(m map[string]any) map[string]any {
 	return m
 }
 
-func expandStringValue(value string) (string, error) {
-	ctx := context.Background()
-	var expandErr error
-	expandedValue := os.Expand(value, func(s string) string {
-		if strings.HasPrefix(s, externalSecretPrefix) {
-			if SecretProvider == nil {
-				expandErr = status.UnavailableError("config references an external secret but no secret provider is available")
-			} else {
-				name := strings.TrimPrefix(s, externalSecretPrefix)
-				secret, err := SecretProvider.GetSecret(ctx, name)
-				if err != nil {
-					expandErr = status.UnavailableErrorf("could not retrieve config secret %q: %s", name, err)
-				}
-				return string(secret)
-			}
-		}
-		return os.Getenv(s)
-	})
-	if expandErr != nil {
-		return "", expandErr
-	}
-	return expandedValue, nil
-}
-
-func expandValue(value any) (any, error) {
-	switch cv := value.(type) {
-	case map[string]any:
-		if err := expandMapValues(cv); err != nil {
-			return nil, err
-		}
-		return value, nil
-	case []any:
-		if err := expandSliceValues(cv); err != nil {
-			return nil, err
-		}
-		return value, nil
-	case string:
-		ev, err := expandStringValue(cv)
-		if err != nil {
-			return nil, err
-		}
-		return ev, nil
-	default:
-		return value, nil
-	}
-}
-
-func expandSliceValues(yamlSlice []any) error {
-	for i, v := range yamlSlice {
-		ev, err := expandValue(v)
-		if err != nil {
-			return err
-		}
-		yamlSlice[i] = ev
-	}
-	return nil
-}
-
-func expandMapValues(yamlMap map[string]any) error {
-	for k, v := range yamlMap {
-		ev, err := expandValue(v)
-		if err != nil {
-			return err
-		}
-		yamlMap[k] = ev
-	}
-	return nil
-}
-
 // RetypeAndFilterYAMLMap un-marshals yaml from the input yamlMap and then
 // re-marshals it into the types specified by the type map, replacing the
 // original value in the input map. Filters out any values not specified by the
@@ -769,40 +689,10 @@ func getYAMLMapAndNodeFromData(data string) (map[string]any, *yaml.Node, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	// Expand environment variables and secrets.
-	if err := expandMapValues(yamlMap); err != nil {
-		return nil, nil, err
-	}
 	if err := RetypeAndFilterYAMLMap(yamlMap, typeMap, []string{}); err != nil {
 		return nil, nil, status.InternalErrorf("Error encountered retyping YAML map: %s", err)
 	}
 	return yamlMap, node, nil
-}
-
-// PopulateFlagsFromFile takes the path to some YAML file, reads it, and
-// unmarshals it, then uses the unmarshaled data to populate the unset flags
-// with names corresponding to the keys.
-func PopulateFlagsFromFile(configFile string) error {
-	log.Infof("Reading buildbuddy config from '%s'", configFile)
-
-	_, err := os.Stat(configFile)
-
-	// If the file does not exist then skip it.
-	if os.IsNotExist(err) {
-		log.Warningf("No config file found at %s.", configFile)
-		return nil
-	}
-
-	fileBytes, err := os.ReadFile(configFile)
-	if err != nil {
-		return fmt.Errorf("Error reading config file: %s", err)
-	}
-
-	if err := PopulateFlagsFromData(string(fileBytes)); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // PopulateFlagsFromYAMLMap takes a map populated by YAML from some YAML input
