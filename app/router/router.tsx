@@ -167,6 +167,10 @@ class Router {
     this.navigateTo(Path.invocationPath + invocationId);
   }
 
+  getInvocationUrl(invocationId: string) {
+    return Path.invocationPath + invocationId;
+  }
+
   navigateToUserHistory(user: string) {
     this.navigateTo(Path.userHistoryPath + user);
   }
@@ -177,6 +181,10 @@ class Router {
 
   getWorkflowHistoryUrl(repo: string) {
     return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?role=CI_RUNNER`;
+  }
+
+  getWorkflowActionHistoryUrl(repo: string, actionName: string) {
+    return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?role=CI_RUNNER&pattern=${actionName}`;
   }
 
   navigateToWorkflowHistory(repo: string) {

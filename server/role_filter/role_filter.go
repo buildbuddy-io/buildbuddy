@@ -112,6 +112,7 @@ var (
 		"CreateWorkflow",
 		"DeleteWorkflow",
 		"GetWorkflows",
+		"GetWorkflowHistory",
 		"GetRepos",
 		// RBE deployment view
 		"GetExecutionNodes",

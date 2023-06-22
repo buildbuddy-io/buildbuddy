@@ -1,7 +1,9 @@
 syntax = "proto3";
 
+import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
 import "proto/context.proto";
+import "proto/invocation_status.proto";
 
 package workflow;
 
@@ -118,6 +120,71 @@ message GetWorkflowsResponse {
   }
 
   repeated Workflow workflow = 2;
+}
+
+message ActionHistory {
+  // The name of the action spawned by the workflow--this is stored in the
+  // 'pattern' field of the invocation.
+  string action_name = 1;
+
+  // Information about a single run of this action.
+  message Entry {
+    string commit_sha = 1;
+
+    string invocation_id = 2;
+
+    string branch_name = 3;
+
+    invocation_status.InvocationStatus status = 4;
+
+    bool success = 5;
+
+    int64 created_at_usec = 6;
+
+    int64 updated_at_usec = 7;
+
+    google.protobuf.Duration duration = 8;
+  }
+  // Recent runs of this branch on the main/master branch (or both, if they both
+  // have runs for some reason).  Entries will be sorted by created_at_usec
+  // because that should roughly match the order in which a commit was
+  // considered HEAD.  This isn't always right, but we make no attempt to match
+  // against the repo's "real" HEAD commit.
+  // In the future, we could try to fetch the revision history from git (or
+  // wherever) and filter / match this list to that.
+  repeated Entry entries = 2;
+
+  // Details about all runs of this action in the last 7 days (on all branches,
+  // not just the main one).
+  message Summary {
+    int64 total_runs = 1;
+
+    int64 successful_runs = 2;
+
+    google.protobuf.Duration average_duration = 3;
+  }
+  Summary summary = 3;
+}
+
+message GetWorkflowHistoryRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The repos where we expect to find workflow config--we will only check for
+  // config matching the logged-in user's currently selected organization.
+  repeated string repo_urls = 2;
+}
+
+message GetWorkflowHistoryResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  message WorkflowHistory {
+    string repo_url = 1;
+
+    repeated ActionHistory action_history = 2;
+  }
+  repeated WorkflowHistory workflow_history = 2;
 }
 
 message ExecuteWorkflowRequest {

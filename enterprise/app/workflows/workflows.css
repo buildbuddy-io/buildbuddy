@@ -425,3 +425,133 @@
     opacity: 1;
   }
 }
+
+.workflows-page .workflow-history {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.workflows-page .inline-icon {
+  position: relative;
+  vertical-align: top;
+  top: -2px;
+}
+
+.workflows-page .card.action-history-card {
+  padding: 24px 32px;
+  justify-content: space-between;
+}
+
+.workflows-page .action-stat {
+  display: inline-block;
+}
+
+.workflows-page .action-stat:not(:last-child) {
+  margin-right: 24px;
+}
+
+.workflows-page .action-history-section {
+  position: relative;
+  top: 6px;
+}
+
+.workflows-page .action-stats-section {
+  min-width: 300px;
+}
+
+.workflows-page .action-history-chart {
+  margin: 2px 8px 0;
+  min-width: 540px;
+}
+
+.workflows-page .action-history-explainer-text {
+  position: absolute;
+  top: -18px;
+  color: #aaa;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.workflows-page .action-history-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 16px;
+}
+
+.workflows-page .action-history-bar-wrapper {
+  display: inline-block;
+  position: relative;
+  height: 36px;
+  width: 20px;
+}
+
+@media screen and (max-width: 1560px) {
+  .workflows-page .action-history-bar {
+    width: 8px;
+  }
+
+  .workflows-page .action-history-bar-wrapper {
+    width: 10px;
+  }
+
+  .workflows-page .action-history-chart {
+    min-width: 300px;
+  }
+}
+
+@media screen and (max-width: 1220px) {
+  .workflows-page .action-history-bar {
+    width: 4px;
+  }
+
+  .workflows-page .action-history-bar-wrapper {
+    width: 6px;
+  }
+
+  .workflows-page .action-history-chart {
+    min-width: 180px;
+  }
+}
+
+@media screen and (max-width: 1090px) {
+  .workflows-page .action-history-chart {
+    display: none;
+  }
+
+  .workflows-page .action-stats-section {
+    min-width: auto;
+  }
+}
+
+.workflows-page .action-history-bar.success {
+  background-color: #8bc34a;
+}
+
+.workflows-page .action-history-bar.failure {
+  background-color: #f44336;
+}
+
+.workflows-page .action-history-bar.in-progress {
+  background-color: #03a9f4;
+}
+
+.workflows-page .action-history-bar.neutral {
+  background-color: #aaa;
+}
+
+.workflows-page .action-history-bar.no-data {
+  border-width: 0.25px;
+  border-color: #aaa;
+  border-style: dashed;
+  box-sizing: border-box;
+}
+
+.workflows-page-action-history-tooltip {
+  background-color: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+  pointer-events: none;
+  z-index: 1;
+}

@@ -46,6 +46,7 @@ var (
 	customerManagedEncryptionKeysEnabled   = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
 	tagsUIEnabled                          = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
 	timeseriesChartsInTimingProfileEnabled = flag.Bool("app.timeseries_charts_in_timing_profile_enabled", true, "If set, charts with sampled time series data (such as CPU and memory usage) will be shown")
+	workflowHistoryEnabled                 = flag.Bool("app.workflow_history_enabled", false, "If set, information about past action runs for workflows will be shown on the workflows page.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -170,6 +171,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		CustomerManagedEncryptionKeysEnabled:   *customerManagedEncryptionKeysEnabled,
 		TagsUiEnabled:                          *tagsUIEnabled,
 		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,
+		WorkflowHistoryEnabled:                 *workflowHistoryEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

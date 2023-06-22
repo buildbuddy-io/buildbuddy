@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -46,10 +48,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -792,6 +796,165 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 			return status.InternalErrorf("Failed to create workflow invocation (execution ID: %s)", executionID)
 		}
 	}
+}
+
+func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl string, pattern string, timeLimitMicros int64) (*query_builder.Query, error) {
+	q := query_builder.NewQuery(`SELECT repo_url, pattern, invocation_id, commit_sha, branch_name, created_at_usec, updated_at_usec, duration_usec, invocation_status, success FROM Invocations`)
+	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
+		return nil, err
+	}
+	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q.AddWhereClause("repo_url = ?", repoUrl)
+	q.AddWhereClause("pattern = ?", pattern)
+	// TODO(jdhollen): Efficiently fetch the default branch name for the
+	// repo instead of guessing.
+	q.AddWhereClause("branch_name IN ?", []string{"master", "main"})
+	q.AddWhereClause("role = ?", "CI_RUNNER")
+	q.AddWhereClause("group_id = ?", authenticatedUser.GetGroupID())
+	q.AddWhereClause("updated_at_usec > ?", timeLimitMicros)
+	q.SetOrderBy("created_at_usec", false)
+	q.SetLimit(30)
+
+	return q, nil
+}
+
+func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.GetWorkflowHistoryRequest) (*wfpb.GetWorkflowHistoryResponse, error) {
+	if ws.env.GetDBHandle() == nil || ws.env.GetOLAPDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+
+	repos := req.GetRepoUrls()
+	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Only fetch workflow data for stuff that has run in the last 7 days.
+	timeLimitMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
+
+	// Find the names of all of the actions for each repo.
+	q := query_builder.NewQuery(`SELECT repo_url,pattern,count(1) AS total_runs, countIf(success) AS successful_runs, toInt64(avg(duration_usec)) AS average_duration FROM Invocations`)
+	q.AddWhereClause("repo_url IN ?", repos)
+	q.AddWhereClause("role = ?", "CI_RUNNER")
+
+	// Clickhouse doesn't have an explicit perms column, so we only do auth
+	// on group ID on this query path.  We don't really have a single-user
+	// use case for workflows and we don't have anonymous access to the
+	// workflow status page, so this should be fine.
+	q.AddWhereClause("group_id = ?", authenticatedUser.GetGroupID())
+	q.AddWhereClause("invocation_status = ?", int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS))
+	q.AddWhereClause("updated_at_usec > ?", timeLimitMicros)
+	q.SetGroupBy("repo_url,pattern")
+
+	type actionQueryOut struct {
+		RepoUrl         string
+		Pattern         string
+		TotalRuns       int64
+		SuccessfulRuns  int64
+		AverageDuration int64
+	}
+
+	qStr, qArgs := q.Build()
+	rows, err := ws.env.GetOLAPDBHandle().RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_find_workflow_actions"), qStr, qArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	actionHistoryQArgs := make([]interface{}, 0)
+	actionHistoryQStrs := make([]string, 0)
+	workflows := make(map[string]map[string]*wfpb.ActionHistory)
+	for rows.Next() {
+		row := &actionQueryOut{}
+		if err := ws.env.GetOLAPDBHandle().DB(ctx).ScanRows(rows, &row); err != nil {
+			return nil, err
+		}
+		q, err := ws.buildActionHistoryQuery(ctx, row.RepoUrl, row.Pattern, timeLimitMicros)
+		if err != nil {
+			return nil, err
+		}
+		actionQStr, actionQArgs := q.Build()
+		actionHistoryQArgs = append(actionHistoryQArgs, actionQArgs...)
+		actionHistoryQStrs = append(actionHistoryQStrs, "("+actionQStr+")")
+		summary := &wfpb.ActionHistory_Summary{
+			TotalRuns:       row.TotalRuns,
+			SuccessfulRuns:  row.SuccessfulRuns,
+			AverageDuration: durationpb.New(time.Duration(row.AverageDuration) * time.Microsecond),
+		}
+		if _, ok := workflows[row.RepoUrl]; !ok {
+			workflows[row.RepoUrl] = make(map[string]*wfpb.ActionHistory)
+		}
+		workflows[row.RepoUrl][row.Pattern] = &wfpb.ActionHistory{ActionName: row.Pattern, Summary: summary}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	finalActionHistoryQStr := strings.Join(actionHistoryQStrs, " UNION ALL ")
+
+	historyRows, err := ws.env.GetDBHandle().RawWithOptions(ctx, db.Opts().WithQueryName("query_workflow_action_history"), finalActionHistoryQStr, actionHistoryQArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer historyRows.Close()
+
+	type historyQueryOut struct {
+		RepoUrl          string
+		Pattern          string
+		InvocationId     string
+		CommitSha        string
+		BranchName       string
+		CreatedAtUsec    int64
+		UpdatedAtUsec    int64
+		DurationUsec     int64
+		InvocationStatus int64
+		Success          bool
+	}
+
+	for historyRows.Next() {
+		row := &historyQueryOut{}
+		if err := ws.env.GetDBHandle().DB(ctx).ScanRows(historyRows, &row); err != nil {
+			return nil, err
+		}
+		entry := &wfpb.ActionHistory_Entry{
+			Status:        inspb.InvocationStatus(row.InvocationStatus),
+			Success:       row.Success,
+			CommitSha:     row.CommitSha,
+			BranchName:    row.BranchName,
+			InvocationId:  row.InvocationId,
+			Duration:      durationpb.New(time.Duration(row.DurationUsec) * time.Microsecond),
+			CreatedAtUsec: row.CreatedAtUsec,
+			UpdatedAtUsec: row.UpdatedAtUsec,
+		}
+
+		workflows[row.RepoUrl][row.Pattern].Entries = append(workflows[row.RepoUrl][row.Pattern].Entries, entry)
+	}
+	if err := historyRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// OKAY! We have everything, now we'll just sort and build the response.
+	res := &wfpb.GetWorkflowHistoryResponse{}
+
+	for repoUrl := range workflows {
+		wfHistory := &wfpb.GetWorkflowHistoryResponse_WorkflowHistory{
+			RepoUrl: repoUrl,
+		}
+
+		// Sort actions by name.
+		actions := make([]string, 0, len(workflows[repoUrl]))
+		for action := range workflows[repoUrl] {
+			actions = append(actions, action)
+		}
+		sort.Strings(actions)
+		for _, action := range actions {
+			wfHistory.ActionHistory = append(wfHistory.ActionHistory, workflows[repoUrl][action])
+		}
+		res.WorkflowHistory = append(res.WorkflowHistory, wfHistory)
+	}
+
+	return res, nil
 }
 
 func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
