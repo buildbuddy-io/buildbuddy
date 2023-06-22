@@ -844,7 +844,7 @@ func generateContainerName() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "buildbuddy_exec_" + suffix, nil
+	return "buildbuddy-exec-" + suffix, nil
 }
 
 func (c *podmanCommandContainer) killContainerIfRunning(ctx context.Context) error {

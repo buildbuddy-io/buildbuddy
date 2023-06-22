@@ -412,7 +412,7 @@ func generateContainerName() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "buildbuddy_exec_" + suffix, nil
+	return "buildbuddy-exec-" + suffix, nil
 }
 
 func (r *dockerCommandContainer) Create(ctx context.Context, workDir string) error {
