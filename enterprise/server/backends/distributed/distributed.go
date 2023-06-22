@@ -295,7 +295,7 @@ func (c *Cache) StartListening() {
 	c.shutdownMu.Lock()
 	defer c.shutdownMu.Unlock()
 
-	if c.finishedShutdown == false {
+	if !c.finishedShutdown {
 		return
 	}
 	c.shutDownChan = make(chan struct{}, 0)
