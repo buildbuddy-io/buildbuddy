@@ -211,7 +211,7 @@ func (l *Lease) renewLease() error {
 		return err
 	}
 
-	if bytes.Compare(newVal, expectedValue) == 0 {
+	if bytes.Equal(newVal, expectedValue) {
 		// For node-epoch based leases, forcing renewal is kind of non-
 		// sensical. Rather than prevent this at a higher level, we
 		// detect the case where we are trying to set the lease to the

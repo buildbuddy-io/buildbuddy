@@ -111,7 +111,7 @@ func (h *Liveness) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_Node
 }
 
 func (h *Liveness) BlockingValidateNodeLiveness(nl *rfpb.RangeLeaseRecord_NodeLiveness) error {
-	if bytes.Compare(nl.GetNodeId(), h.nodeID) != 0 {
+	if !bytes.Equal(nl.GetNodeId(), h.nodeID) {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: nodeID mismatch")
 	}
 	l, err := h.ensureValidLease(false /*=renew*/)

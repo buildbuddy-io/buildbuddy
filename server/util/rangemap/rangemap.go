@@ -82,7 +82,7 @@ func (rm *RangeMap) Add(left, right []byte, value interface{}) (*Range, error) {
 func (rm *RangeMap) Remove(left, right []byte) error {
 	deleteIndex := -1
 	for i, r := range rm.ranges {
-		if bytes.Compare(left, r.Left) == 0 && bytes.Compare(right, r.Right) == 0 {
+		if bytes.Equal(left, r.Left) && bytes.Equal(right, r.Right) {
 			deleteIndex = i
 			break
 		}
@@ -114,8 +114,8 @@ func (rm *RangeMap) Get(left, right []byte) *Range {
 	}
 
 	r := rm.ranges[i]
-	leftEq := bytes.Compare(r.Left, left) == 0
-	rightEq := bytes.Compare(r.Right, right) == 0
+	leftEq := bytes.Equal(r.Left, left)
+	rightEq := bytes.Equal(r.Right, right)
 	if leftEq && rightEq {
 		return r
 	}

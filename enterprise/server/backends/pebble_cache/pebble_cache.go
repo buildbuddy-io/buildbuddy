@@ -1306,7 +1306,7 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 		if err != nil {
 			return false, err
 		}
-		if iter.SeekGE(keyBytes) && bytes.Compare(iter.Key(), keyBytes) == 0 {
+		if iter.SeekGE(keyBytes) && bytes.Equal(iter.Key(), keyBytes) {
 			return true, nil
 		}
 	}
