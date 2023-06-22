@@ -597,7 +597,7 @@ func GetCopy(b Reader, key []byte) ([]byte, error) {
 }
 
 func LookupProto(iter Iterator, key []byte, pb proto.Message) error {
-	if !iter.SeekGE(key) || bytes.Compare(iter.Key(), key) != 0 {
+	if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
 		return status.NotFoundErrorf("key %q not found", key)
 	}
 	if err := proto.Unmarshal(iter.Value(), pb); err != nil {

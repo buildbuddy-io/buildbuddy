@@ -247,7 +247,7 @@ func rdString(rd *rfpb.RangeDescriptor) string {
 }
 
 func (sm *Replica) setRange(key, val []byte) error {
-	if bytes.Compare(key, constants.LocalRangeKey) != 0 {
+	if !bytes.Equal(key, constants.LocalRangeKey) {
 		return status.FailedPreconditionErrorf("setRange called with non-range key: %s", key)
 	}
 
@@ -295,7 +295,7 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	if err := wb.Set(key, val, nil /*ignored write options*/); err != nil {
 		return err
 	}
-	if bytes.Compare(key, constants.LocalRangeKey) == 0 {
+	if bytes.Equal(key, constants.LocalRangeKey) {
 		if err := sm.setRange(key, val); err != nil {
 			log.Errorf("Error setting range: %s", err)
 		}
@@ -521,7 +521,7 @@ func (sm *Replica) fileDelete(wb pebble.Batch, req *rfpb.FileDeleteRequest) (*rf
 	}
 
 	found := iter.SeekGE(fileMetadataKey)
-	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
+	if !found || !bytes.Equal(fileMetadataKey, iter.Key()) {
 		return nil, status.NotFoundErrorf("file data for %v was not found in replica", req.GetFileRecord())
 	}
 	fileMetadata := &rfpb.FileMetadata{}
@@ -657,7 +657,7 @@ func (sm *Replica) cas(wb pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse
 	}
 
 	// Match: set value and return new value + no error.
-	if bytes.Compare(buf, req.GetExpectedValue()) == 0 {
+	if bytes.Equal(buf, req.GetExpectedValue()) {
 		err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
 		if err == nil {
 			return &rfpb.CASResponse{Kv: kv}, nil
@@ -959,7 +959,7 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 		t = iter.SeekGE(req.GetLeft())
 		// If the iter's current key is *equal* to left, go to the next
 		// key greater than this one.
-		if t && bytes.Compare(iter.Key(), req.GetLeft()) == 0 {
+		if t && bytes.Equal(iter.Key(), req.GetLeft()) {
 			t = iter.Next()
 		}
 	default:
@@ -1319,7 +1319,7 @@ func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRec
 		if err != nil {
 			return nil, err
 		}
-		if !iter.SeekGE(fileMetadaKey) || bytes.Compare(iter.Key(), fileMetadaKey) != 0 {
+		if !iter.SeekGE(fileMetadaKey) || !bytes.Equal(iter.Key(), fileMetadaKey) {
 			missing = append(missing, fileRecord)
 		}
 	}
