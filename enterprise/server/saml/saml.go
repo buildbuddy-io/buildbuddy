@@ -149,7 +149,10 @@ func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error
 func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
 	if s, _ := a.subjectIDAndSessionFromContext(ctx); s != "" {
 		claims, err := claims.ClaimsFromSubID(ctx, a.env, s)
-		return claims, err
+		if err != nil {
+			return nil, status.UnauthenticatedErrorf(authutil.UserNotFoundMsg)
+		}
+		return claims, nil
 	}
 	return nil, status.UnauthenticatedError("No SAML User found")
 }

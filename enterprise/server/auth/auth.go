@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"net/http"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
@@ -143,6 +144,9 @@ func (a *authenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserI
 	errors := make([]error, 0)
 	for _, auth := range a.user {
 		if user, err := auth.AuthenticatedUser(ctx); err != nil {
+			if strings.Contains(err.Error(), authutil.UserNotFoundMsg) {
+				return nil, err
+			}
 			errors = append(errors, err)
 		} else {
 			return user, err
