@@ -2,7 +2,10 @@ package authdb
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"flag"
+	"fmt"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -17,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/crypto/chacha20"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -25,19 +29,106 @@ import (
 
 const (
 	apiKeyLength = 20
+
+	// For encrypted keys, the first N characters serve as the nonce.
+	// This cannot be changed without a migration.
+	apiKeyNonceLength = 6
+
+	apiKeyEncryptionBackfillBatchSize = 100
 )
 
 var (
 	userOwnedKeysEnabled = flag.Bool("app.user_owned_keys_enabled", false, "If true, enable user-owned API keys.")
+	apiKeyEncryptionKey  = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.")
+	encryptNewKeys       = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
+	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
 )
 
 type AuthDB struct {
 	env environment.Env
 	h   interfaces.DBHandle
+
+	// Nil if API key encryption is not enabled.
+	apiKeyEncryptionKey []byte
 }
 
-func NewAuthDB(env environment.Env, h interfaces.DBHandle) *AuthDB {
-	return &AuthDB{env: env, h: h}
+func NewAuthDB(env environment.Env, h interfaces.DBHandle) (*AuthDB, error) {
+	adb := &AuthDB{env: env, h: h}
+	if *apiKeyEncryptionKey != "" {
+		key, err := base64.StdEncoding.DecodeString(*apiKeyEncryptionKey)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("could not decode API Key encryption key: %s", err)
+		}
+		if len(key) != chacha20.KeySize {
+			return nil, status.InvalidArgumentError("API Key encryption key does not have expected length")
+		}
+		adb.apiKeyEncryptionKey = key
+		if err := adb.backfillUnencryptedKeys(); err != nil {
+			return nil, err
+		}
+	}
+	return adb, nil
+}
+
+func (d *AuthDB) backfillUnencryptedKeys() error {
+	if d.apiKeyEncryptionKey == nil {
+		return nil
+	}
+	if !*encryptOldKeys {
+		return nil
+	}
+
+	ctx := d.env.GetServerContext()
+	dbh := d.env.GetDBHandle().DB(ctx)
+
+	for {
+		query := fmt.Sprintf(`SELECT * FROM "APIKeys" WHERE encrypted_value = '' LIMIT %d`, apiKeyEncryptionBackfillBatchSize)
+		rows, err := dbh.Raw(query).Rows()
+		if err != nil {
+			return err
+		}
+		var keysToUpdate []*tables.APIKey
+		for rows.Next() {
+			var apk tables.APIKey
+			if err := dbh.ScanRows(rows, &apk); err != nil {
+				return err
+			}
+			keysToUpdate = append(keysToUpdate, &apk)
+		}
+
+		if len(keysToUpdate) == 0 {
+			break
+		}
+
+		rowsUpdated := 0
+		for _, apk := range keysToUpdate {
+			encrypted, nonce, err := d.encryptAPIKey(apk.Value)
+			if err != nil {
+				return err
+			}
+			if err := dbh.Exec(`
+				UPDATE "APIKeys"
+				SET encrypted_value = ?, nonce = ?
+				WHERE api_key_id = ?`,
+				encrypted, nonce, apk.APIKeyID,
+			).Error; err != nil {
+				return err
+			}
+			rowsUpdated++
+		}
+		if rowsUpdated == 0 {
+			break
+		}
+	}
+
+	idxName := "api_key_nonce_index"
+	if !dbh.Migrator().HasIndex("APIKeys", idxName) {
+		if err := dbh.Exec(fmt.Sprintf(`CREATE UNIQUE INDEX %s ON "APIKeys" (nonce)`, idxName)).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 type apiKeyGroup struct {
@@ -99,15 +190,104 @@ func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 	return err
 }
 
+// encryptAPIkey encrypts apiKey using chacha20 using the following process:
+//
+// We take the first apiKeyNonceLength bytes of the key, pad it with zeroes to
+// chacha20 nonce size and use it as the nonce input. This part of the key
+// remains non-secret inside the database.
+//
+// The remainder of the key is encrypted and kept secret.
+//
+// The final result includes both the nonce and the encrypted portion of the
+// key, encoded into a hex string. The result is prefixed with
+// apiKeyEncryptedValuePrefix to make it possible to differentiate encrypted
+// and non-encrypted values in the database.
+func (d *AuthDB) encryptAPIKey(apiKey string) (string, string, error) {
+	if len(apiKey) != apiKeyLength {
+		return "", "", status.FailedPreconditionErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
+	}
+	if d.apiKeyEncryptionKey == nil {
+		return "", "", status.FailedPreconditionError("API key encryption is not enabled")
+	}
+
+	nonce := apiKey[:apiKeyNonceLength]
+	paddedNonce := make([]byte, chacha20.NonceSize)
+	copy(paddedNonce, nonce)
+	ciph, err := chacha20.NewUnauthenticatedCipher(d.apiKeyEncryptionKey, paddedNonce)
+	if err != nil {
+		return "", "", status.InternalErrorf("could not create API key cipher: %s", err)
+	}
+
+	data := []byte(apiKey[apiKeyNonceLength:])
+	ciph.XORKeyStream(data, data)
+	data = append([]byte(apiKey[:apiKeyNonceLength]), data...)
+	return hex.EncodeToString(data), nonce, nil
+}
+
+// decryptAPIKey retrieves the plaintext representation of the API key. It is
+// intended to be used when it is necessary to display the API key to the user,
+// but not in the authentication process.
+//
+// After hex-decoding the key, we take the first apiKeyNonceLength bytes to be
+// used as the nonce into the decryption function. The rest of key is fed into
+// the cipher to retrieve the plaintext. The nonce and the decrypted value are
+// combined to form the decrypted API key.
+func (d *AuthDB) decryptAPIKey(encryptedAPIKey string) (string, error) {
+	if d.apiKeyEncryptionKey == nil {
+		return "", status.FailedPreconditionError("API key encryption is not enabled")
+	}
+	decoded, err := hex.DecodeString(encryptedAPIKey)
+	if err != nil {
+		return "", err
+	}
+	if len(decoded) < apiKeyNonceLength {
+		return "", status.FailedPreconditionError("Encrypted API key too short")
+	}
+	nonce := make([]byte, chacha20.NonceSize)
+	copy(nonce, decoded[:apiKeyNonceLength])
+	data := decoded[apiKeyNonceLength:]
+	ciph, err := chacha20.NewUnauthenticatedCipher(d.apiKeyEncryptionKey, nonce)
+	if err != nil {
+		return "", status.InternalErrorf("could not create API key cipher: %s", err)
+	}
+	ciph.XORKeyStream(data, data)
+	return string(decoded[:apiKeyNonceLength]) + string(data), nil
+}
+
+func (d *AuthDB) fillDecryptedAPIKey(ak *tables.APIKey) error {
+	if d.apiKeyEncryptionKey == nil || ak.EncryptedValue == "" {
+		return nil
+	}
+	key, err := d.decryptAPIKey(ak.EncryptedValue)
+	if err != nil {
+		return err
+	}
+	ak.Value = key
+	return nil
+}
+
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
-	if strings.Contains(strings.TrimSpace(apiKey), " ") || len(strings.TrimSpace(apiKey)) > apiKeyLength {
+	apiKey = strings.TrimSpace(apiKey)
+	if strings.Contains(apiKey, " ") || len(apiKey) != apiKeyLength {
 		return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 	}
 
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
-		qb.AddWhereClause(`ak.value = ?`, apiKey)
+		keyClauses := query_builder.OrClauses{}
+		if !*encryptOldKeys {
+			keyClauses.AddOr("ak.value = ?", apiKey)
+		}
+		if d.apiKeyEncryptionKey != nil {
+			encryptedAPIKey, _, err := d.encryptAPIKey(apiKey)
+			if err != nil {
+				return err
+			}
+			keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
+		}
+		keyQuery, keyArgs := keyClauses.Build()
+		qb.AddWhereClause(keyQuery, keyArgs...)
 		q, args := qb.Build()
 		existingRow := tx.Raw(q, args...)
 		return existingRow.Take(akg).Error
@@ -259,7 +439,12 @@ func redactInvalidAPIKey(key string) string {
 	return key[:1] + "***" + key[len(key)-1:]
 }
 
-func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) createAPIKey(db *db.DB, userID, groupID, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+	key, err := newAPIKeyToken()
+	if err != nil {
+		return nil, err
+	}
+
 	pk, err := tables.PrimaryKeyForTable("APIKeys")
 	if err != nil {
 		return nil, err
@@ -270,6 +455,18 @@ func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.A
 	} else {
 		keyPerms = perms.OWNER_READ | perms.OWNER_WRITE
 	}
+
+	value := key
+	var nonce, encryptedValue string
+	if d.apiKeyEncryptionKey != nil && *encryptNewKeys {
+		ek, n, err := d.encryptAPIKey(key)
+		if err != nil {
+			return nil, err
+		}
+		nonce = n
+		encryptedValue = ek
+		value = ""
+	}
 	err = db.Exec(`
 		INSERT INTO "APIKeys" (
 			api_key_id,
@@ -278,15 +475,19 @@ func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.A
 			perms,
 			capabilities,
 			value,
+			encrypted_value,
+			nonce,
 			label,
 			visible_to_developers
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pk,
 		userID,
 		groupID,
 		keyPerms,
 		capabilities.ToInt(caps),
 		value,
+		encryptedValue,
+		nonce,
 		label,
 		visibleToDevelopers,
 	).Error
@@ -297,7 +498,7 @@ func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.A
 		APIKeyID:            pk,
 		UserID:              userID,
 		GroupID:             groupID,
-		Value:               value,
+		Value:               key,
 		Label:               label,
 		Perms:               keyPerms,
 		Capabilities:        capabilities.ToInt(caps),
@@ -305,17 +506,8 @@ func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.A
 	}, nil
 }
 
-func randomToken(length int) string {
-	// NB: Keep in sync with BuildBuddyServer#redactAPIKeys, which relies on this exact impl.
-	token, err := random.RandomString(length)
-	if err != nil {
-		token = "bUiLdBuDdy"
-	}
-	return token
-}
-
-func newAPIKeyToken() string {
-	return randomToken(apiKeyLength)
+func newAPIKeyToken() (string, error) {
+	return random.RandomString(apiKeyLength)
 }
 
 func (d *AuthDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
@@ -337,14 +529,14 @@ func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 		return nil, err
 	}
 
-	return createAPIKey(d.h.DB(ctx), "" /*=userID*/, groupID, newAPIKeyToken(), label, caps, visibleToDevelopers)
+	return d.createAPIKey(d.h.DB(ctx), "" /*=userID*/, groupID, label, caps, visibleToDevelopers)
 }
 
 func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(tx *db.DB, groupID string, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
-	return createAPIKey(tx, "" /*=userID*/, groupID, newAPIKeyToken(), label, caps, visibleToDevelopers)
+	return d.createAPIKey(tx, "" /*=userID*/, groupID, label, caps, visibleToDevelopers)
 }
 
 // Returns whether the given capabilities list contains any capabilities that
@@ -408,7 +600,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 			return status.PermissionDeniedErrorf("group %q does not have user-owned keys enabled", groupID)
 		}
 
-		key, err := createAPIKey(tx, u.GetUserID(), groupID, newAPIKeyToken(), label, capabilities, false /*=visibleToDevelopers*/)
+		key, err := d.createAPIKey(tx, u.GetUserID(), groupID, label, capabilities, false /*=visibleToDevelopers*/)
 		if err != nil {
 			return err
 		}
@@ -462,6 +654,9 @@ func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 		}
 		return nil, err
 	}
+	if err := d.fillDecryptedAPIKey(key); err != nil {
+		return nil, err
+	}
 	return key, nil
 }
 
@@ -498,6 +693,9 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	for rows.Next() {
 		k := &tables.APIKey{}
 		if err := d.h.DB(ctx).ScanRows(rows, k); err != nil {
+			return nil, err
+		}
+		if err := d.fillDecryptedAPIKey(k); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -616,6 +814,9 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	for rows.Next() {
 		k := &tables.APIKey{}
 		if err := d.h.DB(ctx).ScanRows(rows, k); err != nil {
+			return nil, err
+		}
+		if err := d.fillDecryptedAPIKey(k); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)

@@ -22,6 +22,7 @@ go_library(
         "//server/util/random",
         "//server/util/role",
         "//server/util/status",
+        "@org_golang_x_crypto//chacha20",
     ],
 )
 
@@ -29,6 +30,7 @@ go_test(
     name = "authdb_test",
     srcs = ["authdb_test.go"],
     deps = [
+        ":authdb",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//server/environment",
@@ -57,6 +59,7 @@ go_test(
     },
     tags = ["docker"],
     deps = [
+        ":authdb",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//server/environment",
@@ -85,6 +88,7 @@ go_test(
     },
     tags = ["docker"],
     deps = [
+        ":authdb",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//server/environment",

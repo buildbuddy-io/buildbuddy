@@ -339,16 +339,19 @@ func (s *Session) TableName() string {
 }
 
 type APIKey struct {
+	Model
+
+	APIKeyID string `gorm:"primaryKey"`
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
-	Label    string
-	APIKeyID string `gorm:"primaryKey"`
-	UserID   string
-	GroupID  string `gorm:"index:api_key_group_id_index"`
+	Label   string
+	UserID  string
+	GroupID string `gorm:"index:api_key_group_id_index"`
 	// The API key token used for authentication.
-	Value string `gorm:"default:NULL;unique;uniqueIndex:api_key_value_index;"`
-	Model
-	Perms int32 `gorm:"default:NULL"`
+	Value          string `gorm:"default:NULL;uniqueIndex:api_key_value_composite_index;index:api_key_unencrypted_value_index;"`
+	EncryptedValue string `gorm:"default:'';uniqueIndex:api_key_value_composite_index;index:api_key_encrypted_value_index;"`
+	Nonce          string `gorm:"default:NULL;"`
+	Perms          int32  `gorm:"default:NULL"`
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
@@ -1042,6 +1045,11 @@ func PostAutoMigrate(db *gorm.DB) error {
 	dropIndexIfExists(m, "Executions", "execution_invocation_id")
 	dropIndexIfExists(m, "Targets", "target_target_id")
 	dropIndexIfExists(m, "Invocations", "invocations_test_grid_query_index")
+	// Drop the unique indexes on the value column. They were replaced by a
+	// combination of a composite unique index on (value, encrypted_value) and
+	// non-unique indexes each column.
+	dropIndexIfExists(m, "APIKeys", "value")
+	dropIndexIfExists(m, "APIKeys", "api_key_value_index")
 
 	type ColRef struct {
 		table  Table

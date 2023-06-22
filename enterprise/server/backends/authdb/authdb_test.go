@@ -2,11 +2,16 @@ package authdb_test
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"math/rand"
 	"strconv"
 	"testing"
 	"time"
 
+	crand "crypto/rand"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -80,33 +85,71 @@ func TestSessionInsertUpdateDeleteRead(t *testing.T) {
 }
 
 func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
+	for _, encrypt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("encrypt_%t", encrypt), func(t *testing.T) {
+			if encrypt {
+				key := make([]byte, 32)
+				crand.Read(key)
+				flags.Set(t, "auth.api_key_encryption.key", base64.StdEncoding.EncodeToString(key))
+				flags.Set(t, "auth.api_key_encryption.encrypt_new_keys", true)
+			}
+			ctx := context.Background()
+			env := setupEnv(t)
+			adb := env.GetAuthDB()
+
+			keys := createRandomAPIKeys(t, ctx, env)
+			randKey := keys[rand.Intn(len(keys))]
+
+			akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, randKey.Value)
+			require.NoError(t, err)
+
+			assert.Equal(t, "", akg.GetUserID())
+			assert.Equal(t, randKey.GroupID, akg.GetGroupID())
+			assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
+			assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+
+			// Using an invalid or empty value should produce an error
+			akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "")
+			require.Nil(t, akg)
+			require.Truef(
+				t, status.IsUnauthenticatedError(err),
+				"expected Unauthenticated error; got: %v", err)
+			akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "INVALID")
+			require.Nil(t, akg)
+			require.Truef(
+				t, status.IsUnauthenticatedError(err),
+				"expected Unauthenticated error; got: %v", err)
+		})
+	}
+}
+
+func TestBackfillUnencryptedKeys(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t)
 	adb := env.GetAuthDB()
 
 	keys := createRandomAPIKeys(t, ctx, env)
-	randKey := keys[rand.Intn(len(keys))]
 
-	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, randKey.Value)
+	// Create a new AuthDB instance with encryption backfill enabled. This
+	// should encrypt all the keys created above.
+	key := make([]byte, 32)
+	crand.Read(key)
+	flags.Set(t, "auth.api_key_encryption.key", base64.StdEncoding.EncodeToString(key))
+	flags.Set(t, "auth.api_key_encryption.encrypt_new_keys", true)
+	flags.Set(t, "auth.api_key_encryption.encrypt_old_keys", true)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
 	require.NoError(t, err)
 
-	assert.Equal(t, "", akg.GetUserID())
-	assert.Equal(t, randKey.GroupID, akg.GetGroupID())
-	assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
-	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+	// Verify that we can still find the keys after backfill.
+	for _, k := range keys {
+		akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+		require.NoError(t, err)
 
-	// Using an invalid or empty value should produce an error
-	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "")
-	require.Nil(t, akg)
-	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
-	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "INVALID")
-	require.Nil(t, akg)
-	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		assert.Equal(t, "", akg.GetUserID())
+		assert.Equal(t, k.GroupID, akg.GetGroupID())
+		assert.Equal(t, k.Capabilities, akg.GetCapabilities())
+		assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+	}
 }
 
 func TestGetAPIKeyGroupFromAPIKeyID(t *testing.T) {
@@ -189,6 +232,45 @@ func TestGetAPIKeyGroupFromBasicAuth(t *testing.T) {
 	require.Truef(
 		t, status.IsUnauthenticatedError(err),
 		"expected Unauthenticated error; got: %v", err)
+}
+
+func TestGetAPIKeys(t *testing.T) {
+	for _, encrypt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("encrypt_%t", encrypt), func(t *testing.T) {
+			if encrypt {
+				key := make([]byte, 32)
+				crand.Read(key)
+				flags.Set(t, "auth.api_key_encryption.key", base64.StdEncoding.EncodeToString(key))
+				flags.Set(t, "auth.api_key_encryption.encrypt_new_keys", true)
+			}
+			ctx := context.Background()
+			env := setupEnv(t)
+			adb := env.GetAuthDB()
+
+			users := enterprise_testauth.CreateRandomGroups(t, env)
+			// Get a random admin user.
+			var admin *tables.User
+			for _, u := range users {
+				if role.Role(u.Groups[0].Role) == role.Admin {
+					admin = u
+					break
+				}
+			}
+			require.NotNil(t, admin)
+			groupID := admin.Groups[0].Group.GroupID
+			auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+			require.NoError(t, err)
+			keys, err := adb.GetAPIKeys(adminCtx, groupID)
+			require.NoError(t, err)
+
+			// Verify that we can auth using all of the returned keys.
+			for _, k := range keys {
+				_, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {

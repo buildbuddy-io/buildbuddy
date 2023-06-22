@@ -111,7 +111,11 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 // source main() entry point and the enterprise main() entry point, both of
 // which import from libmain.go.
 func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
-	env.SetAuthDB(authdb.NewAuthDB(env, env.GetDBHandle()))
+	db, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	if err != nil {
+		log.Fatalf("Could not setup auth DB: %s", err)
+	}
+	env.SetAuthDB(db)
 	configureFilesystemsOrDie(env)
 
 	if err := auth.Register(ctx, env); err != nil {
