@@ -15,16 +15,14 @@ export type ActionListComponentProps = {
 
 type RunStatus = "success" | "failure" | "in-progress" | "disconnected" | "unknown";
 
-function findLatestCompletedRun(
-  actionHistory: workflow.ActionHistory
-): workflow.ActionHistory.ActionHistoryEntry | undefined {
+function findLatestCompletedRun(actionHistory: workflow.ActionHistory): workflow.ActionHistory.Entry | undefined {
   return (
     actionHistory.entries.find((v) => v.status === invocation_status.InvocationStatus.COMPLETE_INVOCATION_STATUS) ??
     undefined
   );
 }
 
-function entryToStatus(entry?: workflow.ActionHistory.ActionHistoryEntry): RunStatus {
+function entryToStatus(entry?: workflow.ActionHistory.Entry): RunStatus {
   if (!entry) {
     return "unknown";
   }
@@ -73,7 +71,7 @@ function durationToBarHeight(duration: number, maxDuration: number): string {
 
 function renderTooltipContent(
   actionHistory: workflow.ActionHistory,
-  lookup: Map<string, workflow.ActionHistory.ActionHistoryEntry>,
+  lookup: Map<string, workflow.ActionHistory.Entry>,
   c: MouseCoords
 ): JSX.Element | null {
   const elem = document.elementFromPoint(c.clientX, c.clientY);
@@ -124,7 +122,7 @@ function renderHistoryChart(actionHistory: workflow.ActionHistory): JSX.Element 
   const emptyEntries = Math.max(0, 30 - actionHistory.entries.length);
 
   let maxDuration = 0;
-  const invocationLookupMap = new Map<string, workflow.ActionHistory.ActionHistoryEntry>();
+  const invocationLookupMap = new Map<string, workflow.ActionHistory.Entry>();
   actionHistory.entries.forEach((entry) => {
     invocationLookupMap.set(entry.invocationId, entry);
     maxDuration = Math.max(maxDuration, durationToMillis(entry.duration ?? {}));

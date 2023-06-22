@@ -128,7 +128,7 @@ message ActionHistory {
   string action_name = 1;
 
   // Information about a single run of this action.
-  message ActionHistoryEntry {
+  message Entry {
     string commit_sha = 1;
 
     string invocation_id = 2;
@@ -152,18 +152,18 @@ message ActionHistory {
   // against the repo's "real" HEAD commit.
   // In the future, we could try to fetch the revision history from git (or
   // wherever) and filter / match this list to that.
-  repeated ActionHistoryEntry entries = 2;
+  repeated Entry entries = 2;
 
   // Details about all runs of this action in the last 7 days (on all branches,
   // not just the main one).
-  message ActionHistorySummary {
+  message Summary {
     int64 total_runs = 1;
 
     int64 successful_runs = 2;
 
     google.protobuf.Duration average_duration = 3;
   }
-  ActionHistorySummary summary = 3;
+  Summary summary = 3;
 }
 
 message GetWorkflowHistoryRequest {

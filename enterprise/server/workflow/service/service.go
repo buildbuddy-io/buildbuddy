@@ -838,6 +838,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 	q := query_builder.NewQuery(`SELECT repo_url,pattern,count(1) AS total_runs, countIf(success) AS successful_runs, toInt64(avg(duration_usec)) AS average_duration FROM Invocations`)
 	q.AddWhereClause("repo_url IN ?", repos)
 	q.AddWhereClause("role = ?", "CI_RUNNER")
+
 	// Clickhouse doesn't have an explicit perms column, so we only do auth
 	// on group ID on this query path.  We don't really have a single-user
 	// use case for workflows and we don't have anonymous access to the
@@ -877,7 +878,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		actionQStr, actionQArgs := q.Build()
 		actionHistoryQArgs = append(actionHistoryQArgs, actionQArgs...)
 		actionHistoryQStrs = append(actionHistoryQStrs, "("+actionQStr+")")
-		summary := &wfpb.ActionHistory_ActionHistorySummary{
+		summary := &wfpb.ActionHistory_Summary{
 			TotalRuns:       row.TotalRuns,
 			SuccessfulRuns:  row.SuccessfulRuns,
 			AverageDuration: durationpb.New(time.Duration(row.AverageDuration) * time.Microsecond),
@@ -916,7 +917,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 		if err := ws.env.GetDBHandle().DB(ctx).ScanRows(historyRows, &row); err != nil {
 			return nil, err
 		}
-		entry := &wfpb.ActionHistory_ActionHistoryEntry{
+		entry := &wfpb.ActionHistory_Entry{
 			Status:        inspb.InvocationStatus(row.InvocationStatus),
 			Success:       row.Success,
 			CommitSha:     row.CommitSha,
