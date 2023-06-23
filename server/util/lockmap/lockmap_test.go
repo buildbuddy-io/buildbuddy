@@ -41,7 +41,8 @@ func TestRLock(t *testing.T) {
 			})
 		} else {
 			eg.Go(func() error {
-				ul := l.Lock("TestRLock")
+				ul := l.RLock("TestRLock")
+				_ = m["samekey"]
 				ul()
 				return nil
 			})
