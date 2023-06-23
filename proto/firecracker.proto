@@ -51,4 +51,35 @@ message SnapshotManifest {
   // NOTE: currently, the digests of these files are not proper content digests,
   // and are just used as generic keys for the filecache.
   repeated build.bazel.remote.execution.v2.FileNode files = 2;
+
+  // Cached chunked files in the snapshot. These follow the same convention
+  // mentioned in `files`.
+  repeated ChunkedFile chunked_files = 3;
+}
+
+// Represents a chunked file for use with copy-on-write snapshotting.
+message ChunkedFile {
+  // Name of the file, which also identifies what it's for.
+  // Ex: "scratchfs.ext4"
+  string name = 1;
+
+  // Total length of the file in bytes.
+  int64 size = 2;
+
+  // Chunk size in bytes. Note that the last chunk is allowed to be smaller than
+  // this size.
+  int64 chunk_size = 3;
+
+  // The chunks in the file. If a particular chunk is missing at a given offset,
+  // it should be assumed that a hole is present at that offset (a chunk
+  // containing all zeroes).
+  repeated Chunk chunks = 4;
+}
+
+message Chunk {
+  // Byte offset of the chunk within the chunked file.
+  int64 offset = 1;
+
+  // Digest hash of the chunk.
+  string digest_hash = 2;
 }

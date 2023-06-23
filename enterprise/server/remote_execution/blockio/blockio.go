@@ -12,6 +12,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const (
+	// Suffix used for dirtied chunks.
+	dirtySuffix = ".dirty"
+)
+
 // Store models a block-level storage system, which is useful as a backend for a
 // Network Block Device (NBD) or userfaultfd(2).
 type Store interface {
@@ -44,7 +49,9 @@ func (f *File) SizeBytes() (int64, error) {
 
 // Mmap implements the Store interface using a memory-mapped file.
 type Mmap struct {
-	data []byte
+	data   []byte
+	mapped bool
+	path   string
 }
 
 // NewMmap returns an Mmap for an existing file.
@@ -61,15 +68,52 @@ func NewMmap(path string) (*Mmap, error) {
 	return NewMmapFd(int(f.Fd()), int(s.Size()))
 }
 
+// NewLazyMmap returns an mmap that is set up only when the file is read or
+// written to.
+func NewLazyMmap(path string) (*Mmap, error) {
+	return &Mmap{data: nil, mapped: false, path: path}, nil
+}
+
 func NewMmapFd(fd, size int) (*Mmap, error) {
 	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
-	return &Mmap{data: data}, nil
+	return &Mmap{data: data, mapped: true}, nil
+}
+
+func (m *Mmap) initMap() error {
+	if m.mapped {
+		return status.InternalError("already mapped")
+	}
+	if m.path == "" {
+		return status.InternalError("missing file path")
+	}
+	f, err := os.OpenFile(m.path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	s, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	data, err := syscall.Mmap(int(f.Fd()), 0, int(s.Size()), syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		return status.InternalErrorf("mmap: %s", err)
+	}
+	m.data = data
+	m.mapped = true
+	m.path = ""
+	return nil
 }
 
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
+	if !m.mapped {
+		if err := m.initMap(); err != nil {
+			return 0, err
+		}
+	}
 	if off < 0 || int(off)+len(p) > len(m.data) {
 		return 0, status.InvalidArgumentErrorf("invalid read at offset 0x%x length 0x%x", off, len(p))
 	}
@@ -78,6 +122,11 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
+	if !m.mapped {
+		if err := m.initMap(); err != nil {
+			return 0, err
+		}
+	}
 	if off < 0 || int(off)+len(p) > len(m.data) {
 		return 0, status.InvalidArgumentErrorf("invalid write at offset 0x%x length 0x%x", off, len(p))
 	}
@@ -86,15 +135,26 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) Sync() error {
+	if !m.mapped {
+		return nil
+	}
 	return unix.Msync(m.data, unix.MS_SYNC)
 }
 
 func (m *Mmap) Close() error {
-	// TODO: prevent double-unmap
+	if !m.mapped {
+		return nil
+	}
+	m.mapped = false
 	return syscall.Munmap(m.data)
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
+	if !m.mapped {
+		if err := m.initMap(); err != nil {
+			return 0, err
+		}
+	}
 	return int64(len(m.data)), nil
 }
 
@@ -133,6 +193,12 @@ func (e *Hole) Close() error {
 	return nil
 }
 
+// Chunk represents a section of a larger composite store at a given offset.
+type Chunk struct {
+	Offset int64
+	Store
+}
+
 // COW implements copy-on-write for a Store that has been split into chunks of
 // equal size. Just before a chunk is first written to, the chunk is first
 // copied, and the write is then applied to the copy.
@@ -163,13 +229,13 @@ type COW struct {
 
 // NewCOW creates a COW from the given chunks. The chunks should be open
 // initially, and will be closed when calling Close on the returned COW.
-func NewCOW(chunks []Store, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COW, error) {
+func NewCOW(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COW, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
 	}
 	return &COW{
-		Chunks:         chunks,
+		Chunks:         expandHoles(chunks, chunkSizeBytes, totalSizeBytes),
 		dirty:          make(map[int]bool, 0),
 		dataDir:        dataDir,
 		copyBuf:        make([]byte, chunkSizeBytes),
@@ -261,10 +327,35 @@ func (s *COW) SizeBytes() (int64, error) {
 	return s.totalSizeBytes, nil
 }
 
-// Dirty returns the chunk indexes of chunks that have been written to (and
-// therefore copied).
-func (s *COW) Dirty() map[int]bool {
-	return s.dirty
+// Dirty returns whether the chunk at the given index is dirty.
+func (s *COW) Dirty(i int) bool {
+	return s.dirty[i]
+}
+
+// ChunkName returns the data file name for the given chunk index.
+func (s *COW) ChunkName(i int) string {
+	suffix := ""
+	if s.Dirty(i) {
+		suffix = dirtySuffix
+	}
+	return fmt.Sprintf("%d%s", int64(i)*s.chunkSizeBytes, suffix)
+}
+
+func (s *COW) DataDir() string {
+	return s.dataDir
+}
+
+func (s *COW) ChunkSizeBytes() int64 {
+	return s.chunkSizeBytes
+}
+
+func (s *COW) calculateChunkSize(index int) int64 {
+	size := s.chunkSizeBytes
+	off := int64(index) * size
+	if remainder := s.totalSizeBytes - off; size > remainder {
+		return remainder
+	}
+	return size
 }
 
 func (s *COW) copyChunk(index int) (err error) {
@@ -272,10 +363,7 @@ func (s *COW) copyChunk(index int) (err error) {
 	// Once we've created a copy, we no longer need the source chunk.
 	defer src.Close()
 
-	size, err := src.SizeBytes()
-	if err != nil {
-		return err
-	}
+	size := s.calculateChunkSize(index)
 	dst, err := s.initDirtyChunk(index, size)
 	if err != nil {
 		return status.WrapError(err, "initialize dirty chunk")
@@ -314,7 +402,7 @@ func (s *COW) copyChunk(index int) (err error) {
 
 // Writes a new dirty chunk containing all 0s for the given chunk index.
 func (s *COW) initDirtyChunk(index int, size int64) (Store, error) {
-	path := filepath.Join(s.dataDir, fmt.Sprintf("%d.dirty", index*int(s.chunkSizeBytes)))
+	path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", index*int(s.chunkSizeBytes), dirtySuffix))
 	fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, err
@@ -353,7 +441,7 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 	}
 	totalSizeBytes := stat.Size()
 	fd := int(f.Fd())
-	chunks := make([]Store, 0, blockCount(totalSizeBytes, chunkSizeBytes))
+	var chunks []*Chunk
 	defer func() {
 		// If there's an error, clean up any Store instances we created.
 		if err == nil {
@@ -378,14 +466,14 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 		return nil, status.InternalErrorf("initial data seek failed: %s", err)
 	}
 
-	createChunkFile := func(chunkStartOffset int64) (store Store, err error) {
+	createStoreForChunk := func(chunkStartOffset int64) (Store, error) {
 		chunkFileSize := chunkSizeBytes
 		if remainder := totalSizeBytes - chunkStartOffset; chunkFileSize > remainder {
 			chunkFileSize = remainder
 		}
 		if dataOffset >= chunkStartOffset+chunkFileSize {
 			// Chunk contains no data; avoid writing a file.
-			return &Hole{Size: chunkFileSize}, nil
+			return nil, nil
 		}
 		chunkFile, err := os.Create(filepath.Join(dataDir, fmt.Sprint(chunkStartOffset)))
 		if err != nil {
@@ -430,11 +518,14 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 
 	// TODO: iterate through the file with multiple goroutines
 	for chunkStartOffset := int64(0); chunkStartOffset < totalSizeBytes; chunkStartOffset += chunkSizeBytes {
-		chunk, err := createChunkFile(chunkStartOffset)
+		store, err := createStoreForChunk(chunkStartOffset)
 		if err != nil {
-			return nil, status.WrapError(err, "failed to create block file")
+			return nil, status.WrapError(err, "failed to create chunk")
 		}
-		chunks = append(chunks, chunk)
+		if store != nil {
+			chunk := &Chunk{Offset: chunkStartOffset, Store: store}
+			chunks = append(chunks, chunk)
+		}
 	}
 
 	return NewCOW(chunks, chunkSizeBytes, totalSizeBytes, dataDir)
@@ -458,6 +549,31 @@ func IsEmptyOrAllZero(data []byte) bool {
 	return true
 }
 
+// expandHoles inserts explicit holes for any chunk start offsets not explicitly
+// represented in the given list. The input chunks are expected to be sorted in
+// increasing order of offset.
+func expandHoles(chunks []*Chunk, chunkSize, totalSize int64) []Store {
+	out := make([]Store, 0, blockCount(totalSize, chunkSize))
+	var off int64
+	for _, c := range chunks {
+		for off < c.Offset {
+			out = append(out, &Hole{Size: chunkSize})
+			off += chunkSize
+		}
+		out = append(out, c)
+		off += chunkSize
+	}
+	for off < totalSize {
+		size := chunkSize
+		if remainder := totalSize - off; size > remainder {
+			size = remainder
+		}
+		out = append(out, &Hole{Size: size})
+		off += size
+	}
+	return out
+}
+
 func blockCount(totalSizeBytes, blockSizeBytes int64) int64 {
 	b := totalSizeBytes / blockSizeBytes
 	if totalSizeBytes%blockSizeBytes > 0 {
@@ -468,4 +584,27 @@ func blockCount(totalSizeBytes, blockSizeBytes int64) int64 {
 
 func readFullAt(r io.ReaderAt, p []byte, off int64) (n int, err error) {
 	return io.ReadFull(io.NewSectionReader(r, off, int64(len(p))), p)
+}
+
+type storeReader struct {
+	store Store
+	sr    *io.SectionReader
+}
+
+// Reader returns an io.Reader that reads all bytes from the given store,
+// starting at offset 0 and ending at SizeBytes.
+func Reader(store Store) io.Reader {
+	return &storeReader{store: store}
+}
+
+func (r *storeReader) Read(p []byte) (n int, err error) {
+	if r.sr == nil {
+		size, err := r.store.SizeBytes()
+		if err != nil {
+			return 0, err
+		}
+		r.sr = io.NewSectionReader(r.store, 0, size)
+		r.store = nil
+	}
+	return r.sr.Read(p)
 }
