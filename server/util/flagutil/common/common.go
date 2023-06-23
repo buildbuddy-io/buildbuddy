@@ -3,7 +3,6 @@ package common
 import (
 	"flag"
 	"reflect"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v3"
@@ -11,30 +10,32 @@ import (
 
 var (
 	// Used for type conversions between flags and normal go types
-	flagTypeMap = map[reflect.Type]reflect.Type{
-		flagTypeFromFlagFuncName("Bool"):     reflect.TypeOf((*bool)(nil)),
-		flagTypeFromFlagFuncName("Duration"): reflect.TypeOf((*time.Duration)(nil)),
-		flagTypeFromFlagFuncName("Float64"):  reflect.TypeOf((*float64)(nil)),
-		flagTypeFromFlagFuncName("Int"):      reflect.TypeOf((*int)(nil)),
-		flagTypeFromFlagFuncName("Int64"):    reflect.TypeOf((*int64)(nil)),
-		flagTypeFromFlagFuncName("Uint"):     reflect.TypeOf((*uint)(nil)),
-		flagTypeFromFlagFuncName("Uint64"):   reflect.TypeOf((*uint64)(nil)),
-		flagTypeFromFlagFuncName("String"):   reflect.TypeOf((*string)(nil)),
-	}
+	flagTypeMap = getFlagTypeMap()
 
 	// Change only for testing purposes
 	DefaultFlagSet = flag.CommandLine
 )
 
-func flagTypeFromFlagFuncName(name string) reflect.Type {
-	fs := flag.NewFlagSet("", flag.ContinueOnError)
-	ff := reflect.ValueOf(fs).MethodByName(name)
-	in := make([]reflect.Value, ff.Type().NumIn())
-	for i := range in {
-		in[i] = reflect.New(ff.Type().In(i)).Elem()
-	}
-	ff.Call(in)
-	return reflect.TypeOf(fs.Lookup("").Value)
+func getFlagTypeMap() map[reflect.Type]reflect.Type {
+	m := map[reflect.Type]reflect.Type{}
+
+	fs := &flag.FlagSet{}
+	addFlagTypesFromFuncToMap(m, fs, fs.Bool)
+	addFlagTypesFromFuncToMap(m, fs, fs.Duration)
+	addFlagTypesFromFuncToMap(m, fs, fs.Float64)
+	addFlagTypesFromFuncToMap(m, fs, fs.Int)
+	addFlagTypesFromFuncToMap(m, fs, fs.Int64)
+	addFlagTypesFromFuncToMap(m, fs, fs.Uint)
+	addFlagTypesFromFuncToMap(m, fs, fs.Uint64)
+	addFlagTypesFromFuncToMap(m, fs, fs.String)
+
+	return m
+}
+
+func addFlagTypesFromFuncToMap[T any](m map[reflect.Type]reflect.Type, fs *flag.FlagSet, create func(string, T, string) *T) {
+	*fs = flag.FlagSet{}
+	create("", Zero[T](), "")
+	m[reflect.TypeOf(fs.Lookup("").Value)] = reflect.TypeOf((*T)(nil))
 }
 
 type TypeAliased interface {
@@ -118,6 +119,8 @@ func ConvertFlagValue(value flag.Value) (any, error) {
 		if !addr.CanConvert(t) {
 			return nil, status.InternalErrorf("Flag of type %T with concrete type *reflect.Value wrapping type %T could not be converted to %s.", value, addr.Interface(), t)
 		}
+	} else if arrayWrap := reflect.PointerTo(reflect.ArrayOf(1, t)); addr.CanConvert(arrayWrap) {
+		return addr.Convert(arrayWrap).Elem().Index(0).Interface(), nil
 	} else if !addr.CanConvert(t) {
 		return nil, status.InternalErrorf("Flag of type %T with value %v could not be converted to %s.", value, value, t)
 	}

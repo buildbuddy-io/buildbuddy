@@ -423,7 +423,7 @@ string_alias: "meow"
 
 func TestDeprecatedVar(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
-	flagInt := DeprecatedVar[int](NewPrimitiveFlag(5), "deprecated_int", "", "migration plan")
+	flagInt := DeprecatedVar[int](NewPrimitiveFlag(func(i int) *int { return &i }(5)), "deprecated_int", "", "migration plan")
 	flagStringSlice := DeprecatedVar[[]string](NewStringSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "", "migration plan")
 	assert.Equal(t, *flagInt, 5)
 	assert.Equal(t, *flagStringSlice, []string{"hi"})
@@ -440,8 +440,8 @@ func TestDeprecatedVar(t *testing.T) {
 
 	flags = replaceFlagsForTesting(t)
 
-	flagInt = DeprecatedVar[int](NewPrimitiveFlag(5), "deprecated_int", "", "migration plan")
-	flagString := DeprecatedVar[string](NewPrimitiveFlag(""), "deprecated_string", "", "migration plan")
+	flagInt = DeprecatedVar[int](NewPrimitiveFlag(func(i int) *int { return &i }(5)), "deprecated_int", "", "migration plan")
+	flagString := DeprecatedVar[string](NewPrimitiveFlag(func(s string) *string { return &s }("")), "deprecated_string", "", "migration plan")
 	flagStringSlice = DeprecatedVar[[]string](NewStringSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "", "migration plan")
 	flags.Set("deprecated_int", "7")
 	flags.Set("deprecated_string_slice", "hello")
@@ -537,6 +537,207 @@ deprecated_string_slice:
 	assert.True(t, ok)
 	_, ok = d.(flagyaml.YAMLSetValueHooked)
 	assert.True(t, ok)
+}
+
+func TestNumericFlags(t *testing.T) {
+	var err error
+
+	flags := replaceFlagsForTesting(t)
+
+	testInt8 := Numeric("foo", int8(7), "A foo")
+	assert.Equal(t, int8(7), *testInt8)
+	assert.Equal(t, int8(7), *(*int8)((*flags.Lookup("foo").Value.(*NumericValue[int8]))[0]))
+	err = flags.Set("foo", "-2")
+	assert.NoError(t, err)
+	assert.Equal(t, int8(-2), *testInt8)
+	assert.Equal(t, int8(-2), *(*int8)((*flags.Lookup("foo").Value.(*NumericValue[int8]))[0]))
+
+	fv, err := ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testInt8, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testInt16 := Numeric("foo", int16(7000), "A foo")
+	assert.Equal(t, int16(7000), *testInt16)
+	assert.Equal(t, int16(7000), *(*int16)((*flags.Lookup("foo").Value.(*NumericValue[int16]))[0]))
+	err = flags.Set("foo", "-2000")
+	assert.NoError(t, err)
+	assert.Equal(t, int16(-2000), *testInt16)
+	assert.Equal(t, int16(-2000), *(*int16)((*flags.Lookup("foo").Value.(*NumericValue[int16]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testInt16, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testInt32 := Numeric("foo", int32(70000), "A foo")
+	assert.Equal(t, int32(70000), *testInt32)
+	assert.Equal(t, int32(70000), *(*int32)((*flags.Lookup("foo").Value.(*NumericValue[int32]))[0]))
+	err = flags.Set("foo", "-200000")
+	assert.NoError(t, err)
+	assert.Equal(t, int32(-200000), *testInt32)
+	assert.Equal(t, int32(-200000), *(*int32)((*flags.Lookup("foo").Value.(*NumericValue[int32]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testInt32, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testInt64 := Numeric("foo", int64(7000000000000), "A foo")
+	assert.Equal(t, int64(7000000000000), *testInt64)
+	assert.Equal(t, int64(7000000000000), *(*int64)((*flags.Lookup("foo").Value.(*NumericValue[int64]))[0]))
+	err = flags.Set("foo", "-2000000000000")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(-2000000000000), *testInt64)
+	assert.Equal(t, int64(-2000000000000), *(*int64)((*flags.Lookup("foo").Value.(*NumericValue[int64]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testInt64, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testInt := Numeric("foo", int(70000), "A foo")
+	assert.Equal(t, int(70000), *testInt)
+	assert.Equal(t, int(70000), *(*int)((*flags.Lookup("foo").Value.(*NumericValue[int]))[0]))
+	err = flags.Set("foo", "-200000")
+	assert.NoError(t, err)
+	assert.Equal(t, int(-200000), *testInt)
+	assert.Equal(t, int(-200000), *(*int)((*flags.Lookup("foo").Value.(*NumericValue[int]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testInt, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testUint8 := Numeric("foo", uint8(200), "A foo")
+	assert.Equal(t, uint8(200), *testUint8)
+	assert.Equal(t, uint8(200), *(*uint8)((*flags.Lookup("foo").Value.(*NumericValue[uint8]))[0]))
+	err = flags.Set("foo", "201")
+	assert.NoError(t, err)
+	assert.Equal(t, uint8(201), *testUint8)
+	assert.Equal(t, uint8(201), *(*uint8)((*flags.Lookup("foo").Value.(*NumericValue[uint8]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testUint8, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testUint16 := Numeric("foo", uint16(60000), "A foo")
+	assert.Equal(t, uint16(60000), *testUint16)
+	assert.Equal(t, uint16(60000), *(*uint16)((*flags.Lookup("foo").Value.(*NumericValue[uint16]))[0]))
+	err = flags.Set("foo", "60001")
+	assert.NoError(t, err)
+	assert.Equal(t, uint16(60001), *testUint16)
+	assert.Equal(t, uint16(60001), *(*uint16)((*flags.Lookup("foo").Value.(*NumericValue[uint16]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testUint16, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testUint32 := Numeric("foo", uint32(0xfffffff0), "A foo")
+	assert.Equal(t, uint32(0xfffffff0), *testUint32)
+	assert.Equal(t, uint32(0xfffffff0), *(*uint32)((*flags.Lookup("foo").Value.(*NumericValue[uint32]))[0]))
+	err = flags.Set("foo", "0xfffffff1")
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(0xfffffff1), *testUint32)
+	assert.Equal(t, uint32(0xfffffff1), *(*uint32)((*flags.Lookup("foo").Value.(*NumericValue[uint32]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testUint32, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testUint64 := Numeric("foo", uint64(7000000000000), "A foo")
+	assert.Equal(t, uint64(7000000000000), *testUint64)
+	assert.Equal(t, uint64(7000000000000), *(*uint64)((*flags.Lookup("foo").Value.(*NumericValue[uint64]))[0]))
+	err = flags.Set("foo", "2000000000000")
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(2000000000000), *testUint64)
+	assert.Equal(t, uint64(2000000000000), *(*uint64)((*flags.Lookup("foo").Value.(*NumericValue[uint64]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testUint64, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testUint := Numeric("foo", uint(70000), "A foo")
+	assert.Equal(t, uint(70000), *testUint)
+	assert.Equal(t, uint(70000), *(*uint)((*flags.Lookup("foo").Value.(*NumericValue[uint]))[0]))
+	err = flags.Set("foo", "200000")
+	assert.NoError(t, err)
+	assert.Equal(t, uint(200000), *testUint)
+	assert.Equal(t, uint(200000), *(*uint)((*flags.Lookup("foo").Value.(*NumericValue[uint]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testUint, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testFloat32 := Numeric("foo", float32(2.5), "A foo")
+	assert.Equal(t, float32(2.5), *testFloat32)
+	assert.Equal(t, float32(2.5), *(*float32)((*flags.Lookup("foo").Value.(*NumericValue[float32]))[0]))
+	err = flags.Set("foo", "-0.5")
+	assert.NoError(t, err)
+	assert.Equal(t, float32(-0.5), *testFloat32)
+	assert.Equal(t, float32(-0.5), *(*float32)((*flags.Lookup("foo").Value.(*NumericValue[float32]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testFloat32, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testFloat64 := Numeric("foo", float64(2.5), "A foo")
+	assert.Equal(t, float64(2.5), *testFloat64)
+	assert.Equal(t, float64(2.5), *(*float64)((*flags.Lookup("foo").Value.(*NumericValue[float64]))[0]))
+	err = flags.Set("foo", "-0.5")
+	assert.NoError(t, err)
+	assert.Equal(t, float64(-0.5), *testFloat64)
+	assert.Equal(t, float64(-0.5), *(*float64)((*flags.Lookup("foo").Value.(*NumericValue[float64]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testFloat64, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testComplex64 := Numeric("foo", complex64(2.5), "A foo")
+	assert.Equal(t, complex64(2.5), *testComplex64)
+	assert.Equal(t, complex64(2.5), *(*complex64)((*flags.Lookup("foo").Value.(*NumericValue[complex64]))[0]))
+	err = flags.Set("foo", "-0.5+3i")
+	assert.NoError(t, err)
+	assert.Equal(t, complex64(-0.5+3i), *testComplex64)
+	assert.Equal(t, complex64(-0.5+3i), *(*complex64)((*flags.Lookup("foo").Value.(*NumericValue[complex64]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testComplex64, fv)
+
+	flags = replaceFlagsForTesting(t)
+
+	testComplex128 := Numeric("foo", complex128(2.5), "A foo")
+	assert.Equal(t, complex128(2.5), *testComplex128)
+	assert.Equal(t, complex128(2.5), *(*complex128)((*flags.Lookup("foo").Value.(*NumericValue[complex128]))[0]))
+	err = flags.Set("foo", "-0.5+3i")
+	assert.NoError(t, err)
+	assert.Equal(t, complex128(-0.5+3i), *testComplex128)
+	assert.Equal(t, complex128(-0.5+3i), *(*complex128)((*flags.Lookup("foo").Value.(*NumericValue[complex128]))[0]))
+
+	fv, err = ConvertFlagValue(flags.Lookup("foo").Value)
+	require.NoError(t, err)
+	assert.Equal(t, testComplex128, fv)
+
 }
 
 func TestURLFlag(t *testing.T) {

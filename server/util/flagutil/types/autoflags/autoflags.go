@@ -94,6 +94,24 @@ func Var[T any](value *T, name string, defaultValue T, usage string, tags ...Tag
 		flagtypes.StringSliceVar(v, name, any(defaultValue).([]string), usage)
 	case *url.URL:
 		flagtypes.URLVar(v, name, any(defaultValue).(url.URL), usage)
+	case *int8:
+		flagtypes.NumericVar(v, name, any(defaultValue).(int8), usage)
+	case *int16:
+		flagtypes.NumericVar(v, name, any(defaultValue).(int16), usage)
+	case *int32:
+		flagtypes.NumericVar(v, name, any(defaultValue).(int32), usage)
+	case *uint8:
+		flagtypes.NumericVar(v, name, any(defaultValue).(uint8), usage)
+	case *uint16:
+		flagtypes.NumericVar(v, name, any(defaultValue).(uint16), usage)
+	case *uint32:
+		flagtypes.NumericVar(v, name, any(defaultValue).(uint32), usage)
+	case *float32:
+		flagtypes.NumericVar(v, name, any(defaultValue).(float32), usage)
+	case *complex64:
+		flagtypes.NumericVar(v, name, any(defaultValue).(complex64), usage)
+	case *complex128:
+		flagtypes.NumericVar(v, name, any(defaultValue).(complex128), usage)
 	default:
 		if reflect.TypeOf(value).Elem().Kind() == reflect.Slice {
 			flagtypes.JSONSliceVar(value, name, defaultValue, usage)

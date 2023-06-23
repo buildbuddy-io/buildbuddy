@@ -2,19 +2,22 @@ package types
 
 // For user-defined flag value types. New flag value types should be declared
 // either as a type definition of the type they contain (see `StringSliceFlag`
-// for an example) or a type definition of a `reflect.Value` which will itself
-// wrap the desired value (see `JSONSliceFlag` for an example). Any new type
-// should also be added to the `Var` function in the `autoflags` subpackage of
-// this package.
+// for an example), a type definition of a `reflect.Value` which will itself
+// wrap the desired value (see `JSONSliceFlag` for an example), or as a type
+// definition of a single-length array of pointers to the desired type (see
+// `NumericValue[T]` for an example). Any new type should also be added to the
+// `Var` function in the `autoflags` subpackage of this package.
 //
 // New flag value types should implement `common.TypeAliased` and `flag.Value`.
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,8 +31,8 @@ import (
 var UnwrapFlagValue = common.UnwrapFlagValue
 var ConvertFlagValue = common.ConvertFlagValue
 
-// NewPrimitiveFlagVar returns a flag.Value derived from the given primitive pointer.
-func NewPrimitiveFlagVar[T bool | time.Duration | float64 | int | int64 | uint | uint64 | string](value *T) flag.Value {
+// NewPrimitiveFlag returns a flag.Value derived from the given primitive pointer.
+func NewPrimitiveFlag[T time.Duration | primitiveConstraint](value *T) flag.Value {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	switch v := any(value).(type) {
 	case *bool:
@@ -48,13 +51,27 @@ func NewPrimitiveFlagVar[T bool | time.Duration | float64 | int | int64 | uint |
 		fs.Uint64Var(v, "", *v, "")
 	case *string:
 		fs.StringVar(v, "", *v, "")
+	// non-standard go flag value types for primitives start here
+	case *int8:
+		NewNumericValue(v)
+	case *int16:
+		NewNumericValue(v)
+	case *int32:
+		NewNumericValue(v)
+	case *uint8:
+		NewNumericValue(v)
+	case *uint16:
+		NewNumericValue(v)
+	case *uint32:
+		NewNumericValue(v)
+	case *float32:
+		NewNumericValue(v)
+	case *complex64:
+		NewNumericValue(v)
+	case *complex128:
+		NewNumericValue(v)
 	}
 	return fs.Lookup("").Value
-}
-
-// NewPrimitiveFlagVar returns a flag.Value derived from the given primitive.
-func NewPrimitiveFlag[T bool | time.Duration | float64 | int | int64 | uint | uint64 | string](value T) flag.Value {
-	return NewPrimitiveFlagVar(&value)
 }
 
 type JSONSliceFlag[T any] reflect.Value
@@ -221,7 +238,7 @@ func JSONStructVar[T any](value *T, name string, defaultValue T, usage string) {
 		log.Fatalf("JSONStructVar called for flag %s with non-struct value %v of type %T.", name, defaultValue, defaultValue)
 	}
 	v := reflect.ValueOf(value)
-	v.Elem().Set(reflect.ValueOf(defaultValue))
+	v.Elem().Set(src)
 	common.DefaultFlagSet.Var((*JSONStructFlag[T])(&v), name, usage)
 }
 
@@ -562,3 +579,178 @@ func Expand(v flag.Value, mapper func(string) (string, error)) error {
 	}
 	return v.Set(exp)
 }
+
+type intConstraint interface {
+	int8 | int16 | int32 | int64 | int
+}
+
+type uintConstraint interface {
+	uint8 | uint16 | uint32 | uint64 | uint
+}
+
+type floatConstraint interface {
+	float32 | float64
+}
+
+type complexConstraint interface {
+	complex64 | complex128
+}
+
+type numericConstraint interface {
+	intConstraint | uintConstraint | floatConstraint | complexConstraint
+}
+
+type primitiveConstraint interface {
+	numericConstraint | bool | string
+}
+
+// Go does not natively support flags for all of its primitive numeric types, so
+// here we implement a parameterized convenience flag type for all numeric
+// primitives.
+
+// Alias single-length array to sidestep go's weird requirement disallowing
+// parameterized types to type alias a type specified by a type parameter.
+type NumericValue[T numericConstraint] [1]*T
+
+func NewNumericValue[T numericConstraint](n *T) *NumericValue[T] {
+	fv := new(NumericValue[T])
+	(*fv)[0] = n
+	return fv
+}
+
+func Numeric[T numericConstraint](name string, defaultValue T, usage string) *T {
+	value := &defaultValue
+	common.DefaultFlagSet.Var(NewNumericValue(value), name, usage)
+	return value
+}
+
+func NumericVar[T numericConstraint](value *T, name string, defaultValue T, usage string) {
+	*value = defaultValue
+	common.DefaultFlagSet.Var(NewNumericValue(value), name, usage)
+}
+
+func (n *NumericValue[T]) Set(s string) error {
+	var err error
+	switch v := any((*n)[0]).(type) {
+	case *int8:
+		*v, err = parseInt[int8](s, v)
+	case *int16:
+		*v, err = parseInt[int16](s, v)
+	case *int32:
+		*v, err = parseInt[int32](s, v)
+	case *int64:
+		*v, err = parseInt[int64](s, v)
+	case *int:
+		*v, err = parseInt[int](s, v)
+	case *uint8:
+		*v, err = parseUint[uint8](s, v)
+	case *uint16:
+		*v, err = parseUint[uint16](s, v)
+	case *uint32:
+		*v, err = parseUint[uint32](s, v)
+	case *uint64:
+		*v, err = parseUint[uint64](s, v)
+	case *uint:
+		*v, err = parseUint[uint](s, v)
+	case *float32:
+		*v, err = parseFloat[float32](s, v)
+	case *float64:
+		*v, err = parseFloat[float64](s, v)
+	case *complex64:
+		*v, err = parseComplex[complex64](s, v)
+	case *complex128:
+		*v, err = parseComplex[complex128](s, v)
+	default:
+		err = status.FailedPreconditionErrorf("setNumeric called with non-numeric pointer type: %T", v)
+	}
+	return err
+}
+
+func parseInt[T intConstraint](s string, n *T) (T, error) {
+	i, err := strconv.ParseInt(s, 0, reflect.TypeOf(*n).Bits())
+	return T(i), numError(err)
+}
+
+func parseUint[T uintConstraint](s string, n *T) (T, error) {
+	i, err := strconv.ParseUint(s, 0, reflect.TypeOf(*n).Bits())
+	return T(i), numError(err)
+}
+
+func parseFloat[T floatConstraint](s string, n *T) (T, error) {
+	i, err := strconv.ParseFloat(s, reflect.TypeOf(*n).Bits())
+	return T(i), numError(err)
+}
+
+func parseComplex[T complexConstraint](s string, n *T) (T, error) {
+	i, err := strconv.ParseComplex(s, reflect.TypeOf(*n).Bits())
+	return T(i), numError(err)
+}
+
+func numError(err error) error {
+	// This mirrors the behavior seen in the standard go flag library.
+	if ne, ok := err.(*strconv.NumError); ok {
+		if ne.Err == strconv.ErrSyntax {
+			return errors.New("parse error")
+		}
+		if ne.Err == strconv.ErrRange {
+			return errors.New("value out of range")
+		}
+	}
+	return err
+}
+
+func (n *NumericValue[T]) String() string {
+	value := (*n)[0]
+	if value == nil {
+		value = new(T)
+	}
+	switch v := any(*n).(type) {
+	case int8:
+		return formatInt(v)
+	case int16:
+		return formatInt(v)
+	case int32:
+		return formatInt(v)
+	case int64:
+		return formatInt(v)
+	case int:
+		return formatInt(v)
+	case uint8:
+		return formatUint(v)
+	case uint16:
+		return formatUint(v)
+	case uint32:
+		return formatUint(v)
+	case uint64:
+		return formatUint(v)
+	case uint:
+		return formatUint(v)
+	case float32:
+		return formatFloat(v)
+	case float64:
+		return formatFloat(v)
+	case complex64:
+		return formatComplex(v)
+	case complex128:
+		return formatComplex(v)
+	}
+	return "0"
+}
+
+func formatInt[T intConstraint](n T) string {
+	return strconv.FormatInt(int64(n), 10)
+}
+
+func formatUint[T uintConstraint](n T) string {
+	return strconv.FormatUint(uint64(n), 10)
+}
+
+func formatFloat[T floatConstraint](n T) string {
+	return strconv.FormatFloat(float64(n), 'g', -1, reflect.TypeOf(n).Bits())
+}
+
+func formatComplex[T complexConstraint](n T) string {
+	return strconv.FormatComplex(complex128(n), 'g', -1, reflect.TypeOf(n).Bits())
+}
+
+func (n *NumericValue[T]) AliasedType() reflect.Type { return reflect.TypeOf((*T)(nil)) }
