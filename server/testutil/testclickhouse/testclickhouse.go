@@ -45,7 +45,7 @@ func Start(t testing.TB, reuseServer bool) string {
 	var port int
 	var containerName string
 	if reuseServer {
-		port, containerName = dockerutil.FindPortByContainerNamePrefix(t, containerNamePrefix)
+		port, containerName = dockerutil.FindServerContainer(t, containerNamePrefix)
 		if containerName != "" {
 			log.Debugf("Reusing existing clickhouse DB container %s", containerName)
 		}
@@ -88,14 +88,13 @@ func Start(t testing.TB, reuseServer bool) string {
 	for {
 		ctx := context.Background()
 		if err := conn.Ping(ctx); err != nil {
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		// Drop the DB from the old test and let it be re-created via GORM
 		// auto-migration.
 		if reuseServer {
 			require.NoError(t, err)
-			defer conn.Close()
 			err = conn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", dbName))
 			require.NoError(t, err)
 			err = conn.Exec(ctx, fmt.Sprintf("CREATE DATABASE `%s`", dbName))

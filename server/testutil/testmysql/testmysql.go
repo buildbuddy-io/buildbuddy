@@ -48,7 +48,7 @@ func Start(t testing.TB, reuseServer bool) string {
 	var port int
 	var containerName string
 	if reuseServer {
-		port, containerName = dockerutil.FindPortByContainerNamePrefix(t, containerNamePrefix)
+		port, containerName = dockerutil.FindServerContainer(t, containerNamePrefix)
 		if containerName != "" {
 			log.Debugf("Reusing existing mysql DB container %s", containerName)
 		}
