@@ -40,7 +40,7 @@ func NewRaftListener() *RaftListener {
 func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	for cbp, _ := range rl.leaderUpdatedCallbacks {
+	for cbp := range rl.leaderUpdatedCallbacks {
 		cb := *cbp
 		cb(info)
 	}
@@ -49,7 +49,7 @@ func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	for cbp, _ := range rl.nodeReadyCallbacks {
+	for cbp := range rl.nodeReadyCallbacks {
 		cb := *cbp
 		cb(info)
 	}

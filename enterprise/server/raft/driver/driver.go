@@ -672,13 +672,13 @@ func (d *Driver) Statusz(ctx context.Context) string {
 
 	if len(changes.deadReplicas) > 0 {
 		buf += "Dead Replicas:\n"
-		for rep, _ := range changes.deadReplicas {
+		for rep := range changes.deadReplicas {
 			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
 		}
 	}
 	if len(changes.moveableReplicas) > 0 {
 		buf += "Moveable Replicas:\n"
-		for rep, _ := range changes.moveableReplicas {
+		for rep := range changes.moveableReplicas {
 			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
 		}
 	}

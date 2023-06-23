@@ -572,7 +572,7 @@ func ScoreCard(ctx context.Context, env environment.Env, iid string) *capb.Score
 		misses = make(map[string]int64)
 	}
 	sortedKeys := make([]string, 0, len(misses))
-	for targetField, _ := range misses {
+	for targetField := range misses {
 		sortedKeys = append(sortedKeys, targetField)
 	}
 	// TODO(tylerw): figure out pagination or something? For now, truncate

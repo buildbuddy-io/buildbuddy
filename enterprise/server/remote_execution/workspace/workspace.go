@@ -216,11 +216,11 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 			inputFilesToCleanUp[path] = node
 		}
 	}
-	for path, _ := range keep {
+	for path := range keep {
 		delete(inputFilesToCleanUp, path)
 	}
 	if len(inputFilesToCleanUp) > 0 {
-		for path, _ := range inputFilesToCleanUp {
+		for path := range inputFilesToCleanUp {
 			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean inputs: %s", err)
 			}
@@ -346,7 +346,7 @@ func (ws *Workspace) Clean() error {
 			// TODO: This nested loop impl may slow down the action if there are a lot
 			// of output directories. If this turns out to be an issue, might need to
 			// optimize this further.
-			for inputPath, _ := range ws.Inputs {
+			for inputPath := range ws.Inputs {
 				if isParent(outputDirPath, inputPath) {
 					delete(ws.Inputs, inputPath)
 				}

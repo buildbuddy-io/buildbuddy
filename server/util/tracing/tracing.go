@@ -273,7 +273,7 @@ func copyHeader(m metadata.MD, h http.Header, k string) {
 
 func headersToContext(h http.Header) metadata.MD {
 	m := make(metadata.MD, 0)
-	for key, _ := range h {
+	for key := range h {
 		switch strings.ToLower(key) {
 		case "x-buildbuddy-trace":
 			copyHeader(m, h, key)

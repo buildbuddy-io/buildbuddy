@@ -1190,7 +1190,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 
 	// If we are the last member in the cluster, we'll do the syncPropose.
 	nodeIDs := make([]uint64, 0, len(req.GetInitialMember()))
-	for nodeID, _ := range req.GetInitialMember() {
+	for nodeID := range req.GetInitialMember() {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
@@ -1543,7 +1543,7 @@ func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*
 	}
 
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
-	for nodeID, _ := range membership.Nodes {
+	for nodeID := range membership.Nodes {
 		replicas = append(replicas, &rfpb.ReplicaDescriptor{
 			ClusterId: clusterID,
 			NodeId:    nodeID,
