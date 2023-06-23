@@ -133,7 +133,7 @@ const (
 )
 
 var (
-	podIDFromCpusetRegexp = regexp.MustCompile("/kubepods(/.*?)?/pod([a-z0-9\\-]{36})/")
+	podIDFromCpusetRegexp = regexp.MustCompile(`/kubepods(/.*?)?/pod([a-z0-9\\-]{36})/`)
 
 	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
 	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
