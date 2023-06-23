@@ -47,7 +47,6 @@ go_test(
 
 go_test(
     name = "target_tracker_test_clickhouse",
-    size = "small",
     srcs = ["target_tracker_test.go"],
     args = [
         "--testenv.use_clickhouse",
