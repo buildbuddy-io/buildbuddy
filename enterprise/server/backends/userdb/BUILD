@@ -62,7 +62,6 @@ go_test(
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
     },
-    shard_count = 5,
     tags = ["docker"],
     deps = [
         ":userdb",
@@ -97,7 +96,6 @@ go_test(
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
     },
-    shard_count = 5,
     tags = ["docker"],
     deps = [
         ":userdb",
