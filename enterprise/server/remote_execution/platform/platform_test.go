@@ -472,13 +472,13 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 	var sdkPath string
 	if strings.HasPrefix(xcodeVersion, "12.2") {
 		developerDir = "/Applications/Xcode_12.2.app/Contents/Developer"
-		sdkPath, _ = x.sdks12_2[sdk]
+		sdkPath = x.sdks12_2[sdk]
 	} else if strings.HasPrefix(xcodeVersion, "12.4") {
 		developerDir = "/Applications/Xcode_12.4.app/Contents/Developer"
-		sdkPath, _ = x.sdks12_4[sdk]
+		sdkPath = x.sdks12_4[sdk]
 	} else {
 		developerDir = "/Applications/Xcode.app/Contents/Developer"
-		sdkPath, _ = x.sdksDefault[sdk]
+		sdkPath = x.sdksDefault[sdk]
 	}
 	if sdkPath == "" {
 		return "", "", fmt.Errorf("Invalid SDK '%s' for Xcode '%s'", sdk, xcodeVersion)

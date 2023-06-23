@@ -395,7 +395,7 @@ func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceNa
 
 func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) {
 	eg, gctx := errgroup.WithContext(ctx)
-	for r, _ := range kvs {
+	for r := range kvs {
 		r := r
 		eg.Go(func() error {
 			deleteErr := mc.dest.Delete(gctx, r)
