@@ -252,7 +252,7 @@ func stringFromCFString(cfStr C.CFStringRef) string {
 
 func sdksString(sdks map[string]string) string {
 	availableSDKs := make([]string, 0, len(sdks))
-	for sdk, _ := range sdks {
+	for sdk := range sdks {
 		availableSDKs = append(availableSDKs, sdk)
 	}
 	sort.Strings(availableSDKs)
@@ -261,7 +261,7 @@ func sdksString(sdks map[string]string) string {
 
 func versionsString(versions map[string]*xcodeVersion) string {
 	availableVersions := make([]string, 0, len(versions))
-	for version, _ := range versions {
+	for version := range versions {
 		if version == defaultXcodeVersion {
 			continue
 		}
