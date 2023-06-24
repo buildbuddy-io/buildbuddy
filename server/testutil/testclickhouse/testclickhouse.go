@@ -1,33 +1,27 @@
-package testpostgres
+package testclickhouse
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
-	"net"
-	"net/url"
-
 	"os/exec"
-	"strconv"
 	"strings"
 	"testing"
-
 	"time"
 
-	// "github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/dockerutil"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/require"
+)
 
-	_ "github.com/jackc/pgx/v5"
+const (
+	clickhouseVersion   = "22.3.18"
+	containerNamePrefix = "buildbuddy-test-clickhouse-"
 )
 
 var (
 	targets = map[testing.TB]string{}
-)
-
-const (
-	containerNamePrefix = "buildbuddy-test-postgres-"
 )
 
 // GetOrStart starts a new instance for the given test if one is not already
@@ -45,39 +39,34 @@ func GetOrStart(t testing.TB, reuseServer bool) string {
 	return target
 }
 
-// Start starts a test-scoped Postgres DB and returns the DB target.
-//
-// Currently requires Docker to be available in the test execution environment.
 func Start(t testing.TB, reuseServer bool) string {
-	const dbName = "buildbuddy-test"
+	const dbName = "buildbuddy_test"
 
 	var port int
 	var containerName string
 	if reuseServer {
 		port, containerName = dockerutil.FindServerContainer(t, containerNamePrefix)
 		if containerName != "" {
-			log.Debugf("Reusing existing postgres DB container %s", containerName)
+			log.Debugf("Reusing existing clickhouse DB container %s", containerName)
 		}
 	}
 
 	if port == 0 {
 		port = testport.FindFree(t)
 		containerName = fmt.Sprintf("%s%d", containerNamePrefix, port)
+		log.Debug("Starting ClickHouse DB...")
 
-		log.Debug("Starting postgres DB...")
 		cmd := exec.Command(
-			"docker", "run", "--detach",
-			"--env", "POSTGRES_USER=postgres",
-			"--env", "POSTGRES_PASSWORD=postgres",
-			"--env", "POSTGRES_DB="+dbName,
-			"--env", "POSTGRES_HOST_AUTH_METHOD=password",
-			"--publish", fmt.Sprintf("%d:5432", port),
+			"docker", "run", "--rm", "--detach",
+			"--env", "CLICKHOUSE_DB="+dbName,
+			"--publish", fmt.Sprintf("%d:9000", port),
 			"--name", containerName,
-			"postgres:15.3",
-		)
-		cmd.Stderr = &logWriter{"docker run postgres"}
+			fmt.Sprintf("clickhouse/clickhouse-server:%s", clickhouseVersion))
+
+		cmd.Stderr = &logWriter{"docker run clickhouse"}
 		err := cmd.Run()
 		require.NoError(t, err)
+
 	}
 
 	if !reuseServer {
@@ -88,52 +77,31 @@ func Start(t testing.TB, reuseServer bool) string {
 			require.NoError(t, err)
 		})
 	}
-
-	// Wait for the DB to start up.
-	dsn := &url.URL{
-		Scheme:   "postgres",
-		User:     url.UserPassword("postgres", "postgres"),
-		Host:     net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
-		Path:     dbName,
-		RawQuery: url.Values(map[string][]string{"sslmode": {"disable"}}).Encode(),
-	}
-	db, err := sql.Open("pgx", dsn.String())
+	dsn := fmt.Sprintf("clickhouse://default:@127.0.0.1:%d/%s", port, dbName)
+	options, err := clickhouse.ParseDSN(dsn)
+	options.Debug = true
 	require.NoError(t, err)
-	defer db.Close()
+	conn, err := clickhouse.Open(options)
+	require.NoError(t, err)
+
+	defer conn.Close()
 	for {
-		if err := db.Ping(); err != nil {
+		ctx := context.Background()
+		if err := conn.Ping(ctx); err != nil {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		// Drop the DB from the old test and let it be re-created via GORM
 		// auto-migration.
 		if reuseServer {
-			log.Debug("Attempting to reset database.")
-
-			cmd := exec.Command(
-				"docker", "exec",
-				"-u", "postgres",
-				containerName,
-				"dropdb", "-f", dbName,
-			)
-			cmd.Stderr = &logWriter{"docker exec dropdb"}
-			err := cmd.Run()
 			require.NoError(t, err)
-
-			cmd = exec.Command(
-				"docker", "exec",
-				"-u", "postgres",
-				containerName,
-				"createdb", dbName,
-			)
-			cmd.Stderr = &logWriter{"docker exec createdb"}
-			err = cmd.Run()
+			err = conn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", dbName))
 			require.NoError(t, err)
-
-			log.Debug("Reset database.")
+			err = conn.Exec(ctx, fmt.Sprintf("CREATE DATABASE `%s`", dbName))
+			require.NoError(t, err)
 		}
 
-		return dsn.String()
+		return dsn
 	}
 }
 

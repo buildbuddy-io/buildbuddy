@@ -34,6 +34,42 @@ go_test(
         "//proto:build_event_stream_go_proto",
         "//proto:invocation_go_proto",
         "//proto/api/v1:common_go_proto",
+        "//server/interfaces",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/testing/flags",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "target_tracker_test_clickhouse",
+    srcs = ["target_tracker_test.go"],
+    args = [
+        "--testenv.use_clickhouse",
+        "--testenv.reuse_server",
+        "--app.enable_write_test_target_statuses_to_olap_db",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        # We don't want different different db tests to be assigned to the samed
+        # recycled runner, because we can't fit all db docker images with the
+        # default disk limit.
+        "test.runner-recycling-key": "clickhouse",
+    },
+    tags = ["docker"],
+    deps = [
+        ":target_tracker",
+        "//proto:build_event_stream_go_proto",
+        "//proto:invocation_go_proto",
+        "//proto/api/v1:common_go_proto",
+        "//server/interfaces",
+        "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/testing/flags",

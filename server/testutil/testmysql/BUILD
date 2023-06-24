@@ -7,6 +7,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/testutil/dockerutil",
         "//server/testutil/testport",
         "//server/util/log",
         "@com_github_go_sql_driver_mysql//:mysql",

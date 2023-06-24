@@ -57,6 +57,10 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
+        # We don't want different different db tests to be assigned to the samed
+        # recycled runner, because we can't fit all db docker images with the
+        # default disk limit.
+        "test.runner-recycling-key": "mysql",
     },
     shard_count = 7,
     tags = ["docker"],
@@ -91,6 +95,10 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
+        # We don't want different different db tests to be assigned to the samed
+        # recycled runner, because we can't fit all db docker images with the
+        # default disk limit.
+        "test.runner-recycling-key": "postgres",
     },
     shard_count = 7,
     tags = ["docker"],

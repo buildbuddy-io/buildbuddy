@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"os/exec"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/dockerutil"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/go-sql-driver/mysql"
@@ -18,6 +18,10 @@ import (
 
 var (
 	targets = map[testing.TB]string{}
+)
+
+const (
+	containerNamePrefix = "buildbuddy-test-mysql-"
 )
 
 // GetOrStart starts a new instance for the given test if one is not already
@@ -42,29 +46,17 @@ func Start(t testing.TB, reuseServer bool) string {
 	const dbName = "buildbuddy-test"
 
 	var port int
+	var containerName string
 	if reuseServer {
-		// List running server processes by name, and if we find one that looks
-		// like `buildbuddy-test-mysql-$PORT`, then return a connection directly
-		// to that port
-		cmd := exec.Command("docker", "ps", "--filter=name=buildbuddy-test-mysql-", "--format={{.Names}}")
-		b, err := cmd.CombinedOutput()
-		require.NoError(t, err)
-		lines := strings.Split(string(b), "\n")
-		for _, containerName := range lines {
-			if containerName == "" {
-				continue
-			}
-			var err error
-			port, err = strconv.Atoi(strings.TrimPrefix(containerName, "buildbuddy-test-mysql-"))
-			require.NoError(t, err, "failed to parse container port from %q", containerName)
+		port, containerName = dockerutil.FindServerContainer(t, containerNamePrefix)
+		if containerName != "" {
 			log.Debugf("Reusing existing mysql DB container %s", containerName)
-			break
 		}
 	}
 
 	if port == 0 {
 		port = testport.FindFree(t)
-		containerName := fmt.Sprintf("buildbuddy-test-mysql-%d", port)
+		containerName = fmt.Sprintf("%s%d", containerNamePrefix, port)
 
 		log.Debug("Starting mysql DB...")
 
@@ -83,7 +75,6 @@ func Start(t testing.TB, reuseServer bool) string {
 
 	if !reuseServer {
 		t.Cleanup(func() {
-			containerName := fmt.Sprintf("buildbuddy-test-mysql-%d", port)
 			cmd := exec.Command("docker", "kill", containerName)
 			cmd.Stderr = &logWriter{"docker kill " + containerName}
 			err := cmd.Run()
