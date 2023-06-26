@@ -364,6 +364,30 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 	require.Equal(t, expectedCanonicalArgs, canonicalArgs)
 }
 
+func TestCanonicalizeArgs_Passthrough(t *testing.T) {
+	args := []string{
+		"--output_base", "build",
+		"test",
+		"//:some_target",
+		"--",
+		"cmd",
+		"-foo=bar",
+	}
+
+	canonicalArgs, err := canonicalizeArgs(args, staticHelpFromTestData, true)
+
+	require.NoError(t, err)
+	expectedCanonicalArgs := []string{
+		"--output_base=build",
+		"test",
+		"//:some_target",
+		"--",
+		"cmd",
+		"-foo=bar",
+	}
+	require.Equal(t, expectedCanonicalArgs, canonicalArgs)
+}
+
 func staticHelpFromTestData(topic string) (string, error) {
 	if topic == "startup_options" {
 		return test_data.BazelHelpStartupOptionsOutput, nil

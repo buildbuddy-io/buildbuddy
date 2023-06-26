@@ -365,6 +365,7 @@ func CanonicalizeArgs(args []string) ([]string, error) {
 }
 
 func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool) ([]string, error) {
+	args, execArgs := arg.SplitExecutableArgs(args)
 	schema, err := getCommandLineSchema(args, help, onlyStartupOptions)
 	if err != nil {
 		return nil, err
@@ -410,7 +411,7 @@ func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool
 		}
 		canonical = append(canonical, out[i])
 	}
-	return canonical, nil
+	return arg.JoinExecutableArgs(canonical, execArgs), nil
 }
 
 // runBazelHelpWithCache returns the `bazel help <topic>` output for the version
