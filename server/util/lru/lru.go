@@ -219,10 +219,7 @@ func (c *LRU) Contains(key interface{}) bool {
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
 		c.evictList.MoveToFront(ent)
-		if ent.Value.(*Entry) == nil {
-			return false
-		}
-		return true
+		return ent.Value.(*Entry) != nil
 	}
 	return false
 }
