@@ -19,6 +19,7 @@ go_test(
     deps = [
         ":blockio",
         "//server/testutil/testfs",
+        "//server/util/disk",
         "@com_github_stretchr_testify//require",
     ],
 )
