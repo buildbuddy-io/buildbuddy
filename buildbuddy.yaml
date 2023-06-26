@@ -7,7 +7,7 @@ actions:
           - "master"
       pull_request:
         branches:
-          - "master"
+          - "*"
     bazel_commands:
       - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare --build_metadata=TAGS=linux-workflow
   - name: Test (darwin_amd64)
@@ -18,7 +18,7 @@ actions:
           - "master"
       pull_request:
         branches:
-          - "master"
+          - "*"
     # TODO: Fix the tests below on Mac, and re-enable.
     bazel_commands:
       - >-
@@ -49,7 +49,7 @@ actions:
           - "master"
       pull_request:
         branches:
-          - "master"
+          - "*"
     bazel_commands:
       # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
       # TODO(http://go/b/1575): De-flake, and remove --flaky_test_attempts
@@ -63,7 +63,7 @@ actions:
           - "master"
       pull_request:
         branches:
-          - "master"
+          - "*"
     bazel_commands:
       # TODO(http://go/b/1249): Increase reliability of runner recycling when
       # executing with high concurrency, and remove `--jobs=3`
@@ -75,7 +75,7 @@ actions:
           - "master"
       pull_request:
         branches:
-          - "master"
+          - "*"
     bazel_commands:
       - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare
 
