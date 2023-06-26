@@ -14,7 +14,11 @@ export class User {
   constructor(init: Partial<User>) {
     this.displayUser = init.displayUser!;
     this.groups = init.groups!;
-    this.selectedGroup = init.selectedGroup!;
+    // Note: we use an empty group object here to indicate "no selected group"
+    // for convenience, so that selectedGroup is not null. This should not cause
+    // issues in practice since the router will redirect to the "create org"
+    // page on initial page load if the user is not a part of any groups.
+    this.selectedGroup = init.selectedGroup ?? new grp.Group();
     this.allowedRpcs = init.allowedRpcs!;
     this.githubToken = init.githubToken!;
     this.isImpersonating = init.isImpersonating!;
