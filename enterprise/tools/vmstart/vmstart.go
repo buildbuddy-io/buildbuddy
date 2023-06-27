@@ -97,7 +97,8 @@ func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 func main() {
 	flag.Parse()
 
-	flagutil.SetValueForFlagName("executor.firecracker_debug_mode", true, nil, false)
+	flagutil.SetValueForFlagName("executor.firecracker_debug_stream_vm_logs", true, nil, false)
+	flagutil.SetValueForFlagName("executor.firecracker_debug_terminal", true, nil, false)
 
 	rand.Seed(time.Now().Unix())
 

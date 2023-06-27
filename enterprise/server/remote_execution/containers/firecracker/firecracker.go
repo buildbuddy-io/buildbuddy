@@ -48,6 +48,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -62,7 +63,8 @@ import (
 
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
 var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
-var firecrackerDebugMode = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
+var debugStreamVMLogs = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
+var debugTerminal = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
 var enableNBD = flag.Bool("executor.firecracker_enable_nbd", false, "Enables network block devices for firecracker VMs.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 
@@ -261,10 +263,10 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 	return casPath, nil
 }
 
-func getLogrusLogger(debugMode bool) *logrus.Entry {
+func getLogrusLogger() *logrus.Entry {
 	logrusLogger := logrus.New()
 	logrusLogger.SetLevel(logrus.ErrorLevel)
-	if debugMode {
+	if *debugStreamVMLogs {
 		logrusLogger.SetLevel(logrus.TraceLevel)
 	}
 	return logrus.NewEntry(logrusLogger)
@@ -396,6 +398,9 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	}
 
 	if opts.SavedState == nil {
+		c.vmConfig = proto.Clone(c.vmConfig).(*fcpb.VMConfiguration)
+		c.vmConfig.DebugMode = *debugTerminal
+
 		if err := c.newID(ctx); err != nil {
 			return nil, err
 		}
@@ -684,7 +689,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	var stdout io.Writer = c.vmLog
 	var stderr io.Writer = c.vmLog
-	if c.vmConfig.DebugMode {
+	if *debugStreamVMLogs {
 		stdout = io.MultiWriter(stdout, os.Stdout)
 		stderr = io.MultiWriter(stderr, os.Stderr)
 	}
@@ -734,7 +739,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	vmCtx, cancel := context.WithCancel(context.Background())
 	c.cancelVmCtx = cancel
 	machineOpts := []fcclient.Opt{
-		fcclient.WithLogger(getLogrusLogger(c.vmConfig.DebugMode)),
+		fcclient.WithLogger(getLogrusLogger()),
 		fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName),
 	}
 	log.CtxDebugf(ctx, "fullMemSnapshotName: %s, vmStateSnapshotName %s", fullMemSnapshotName, vmStateSnapshotName)
@@ -1431,7 +1436,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	c.cancelVmCtx = cancel
 
 	machineOpts := []fcclient.Opt{
-		fcclient.WithLogger(getLogrusLogger(c.vmConfig.DebugMode)),
+		fcclient.WithLogger(getLogrusLogger()),
 	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
