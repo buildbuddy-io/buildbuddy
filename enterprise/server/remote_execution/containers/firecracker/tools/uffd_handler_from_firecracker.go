@@ -206,7 +206,7 @@ func main() {
 	defer file.Close()
 
 	fileInfo, err := file.Stat()
-	backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, int(fileInfo.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
+	backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, int(fileInfo.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE)
 	if mmapErr != nil {
 		fmt.Printf("Failed to mmap backing memory file: %v\n", err)
 		os.Exit(1)
@@ -253,8 +253,5 @@ func main() {
 			fmt.Printf("Failed to call UFFDIO_COPY: %v\n", err)
 			os.Exit(1)
 		}
-
-		// TODO: Add offset + backingMemoryAddr to get address we should read into backing memory file
-		// See https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#L98
 	}
 }
