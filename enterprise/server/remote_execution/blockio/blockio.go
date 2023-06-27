@@ -53,6 +53,7 @@ func (f *File) SizeBytes() (int64, error) {
 type Mmap struct {
 	data   []byte
 	mapped bool
+	closed bool
 	path   string
 }
 
@@ -73,6 +74,9 @@ func NewMmap(path string) (*Mmap, error) {
 // NewLazyMmap returns an mmap that is set up only when the file is read or
 // written to.
 func NewLazyMmap(path string) (*Mmap, error) {
+	if path == "" {
+		return nil, status.FailedPreconditionError("missing path")
+	}
 	return &Mmap{data: nil, mapped: false, path: path}, nil
 }
 
@@ -85,6 +89,9 @@ func NewMmapFd(fd, size int) (*Mmap, error) {
 }
 
 func (m *Mmap) initMap() error {
+	if m.closed {
+		return status.InternalError("store is closed")
+	}
 	if m.mapped {
 		return status.InternalError("already mapped")
 	}
@@ -144,6 +151,7 @@ func (m *Mmap) Sync() error {
 }
 
 func (m *Mmap) Close() error {
+	m.closed = true
 	if !m.mapped {
 		return nil
 	}
@@ -350,6 +358,30 @@ func (s *COWStore) DataDir() string {
 
 func (s *COWStore) ChunkSizeBytes() int64 {
 	return s.chunkSizeBytes
+}
+
+// WriteFile creates a new file at the given path and writes all contents to the
+// file.
+func (s *COWStore) WriteFile(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0755)
+	if err != nil {
+		return status.WrapError(err, "create")
+	}
+	if err := f.Truncate(s.totalSizeBytes); err != nil {
+		return status.WrapError(err, "truncate")
+	}
+	for off, c := range s.chunks {
+		size := s.calculateChunkSize(off)
+		b := s.copyBuf[:size]
+		// TODO: skip sparse regions in the chunk?
+		if _, err := readFullAt(c, b, 0); err != nil {
+			return status.WrapError(err, "read chunk")
+		}
+		if _, err := f.WriteAt(b, off); err != nil {
+			return status.WrapError(err, "write chunk")
+		}
+	}
+	return nil
 }
 
 func (s *COWStore) calculateChunkSize(startOffset int64) int64 {

@@ -30,6 +30,7 @@ go_library(
             "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/blockio",
             "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/remote_execution/container",
             "//enterprise/server/remote_execution/nbd/nbdserver",
@@ -86,6 +87,7 @@ go_test(
         "//enterprise:bundle",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/runner",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/util/ext4",
@@ -135,6 +137,7 @@ go_test(
         "//enterprise:bundle",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/runner",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/util/ext4",
