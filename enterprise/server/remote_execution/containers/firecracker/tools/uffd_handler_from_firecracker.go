@@ -88,6 +88,14 @@ type uffdMsg struct {
 	}
 }
 
+type uffdioCopy struct {
+	Dst  uint64 // Source of copy
+	Src  uint64 // Destination of copy
+	Len  uint64 // Number of bytes to copy
+	Mode uint64 // Flags controlling behavior of copy
+	Copy int64  // Number of bytes copied, or negated error
+}
+
 // Corresponds to firecracker GuestRegionUffdMapping
 type snapshottedMemoryMapping struct {
 	BaseHostVirtAddr uint64  `json:"base_host_virt_addr"`
@@ -163,6 +171,9 @@ func main() {
 	}
 	fmt.Printf("Received data: %v\n", mappings)
 
+	vmStartMemory := mappings[0].BaseHostVirtAddr
+	vmMemorySize := mappings[0].Size
+
 	// Parse UFFD object
 	controlMsgs, err := syscall.ParseSocketControlMessage(bufUFFD[:numBytesFD])
 	if err != nil {
@@ -195,7 +206,7 @@ func main() {
 	defer file.Close()
 
 	fileInfo, err := file.Stat()
-	backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, fileInfo.Size(), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
+	backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, int(fileInfo.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
 	if mmapErr != nil {
 		fmt.Printf("Failed to mmap backing memory file: %v\n", err)
 		os.Exit(1)
@@ -226,10 +237,22 @@ func main() {
 		// Map requested address from page fault -> page of backing memory file
 		// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
 		// From https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#LL134C8-L134C84
-		pageSize := os.Getpagesize()
-		memoryPage := event.PageFault.Address & ^(uint64(pageSize - 1))
+		//pageSize := os.Getpagesize()
+		//memoryPage := event.PageFault.Address & ^(uint64(pageSize - 1))
 
 		// Copy memory from backing snapshot file
+		copyData := uffdioCopy{
+			Dst:  vmStartMemory,
+			Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
+			Len:  uint64(vmMemorySize),
+			Mode: 0,
+			Copy: 0,
+		}
+		_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+		if err != 0 {
+			fmt.Printf("Failed to call UFFDIO_COPY: %v\n", err)
+			os.Exit(1)
+		}
 
 		// TODO: Add offset + backingMemoryAddr to get address we should read into backing memory file
 		// See https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#L98
