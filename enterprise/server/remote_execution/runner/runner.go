@@ -75,7 +75,7 @@ var (
 	dockerDevices           = flagutil.New("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
 	dockerVolumes           = flagutil.New("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
 	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
-	podmanRuntime           = flag.String("podman_runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
+	podmanRuntime           = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
 	warmupWorkflowImages    = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
 	maxRunnerCount          = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
@@ -133,7 +133,7 @@ const (
 )
 
 var (
-	podIDFromCpusetRegexp = regexp.MustCompile("/kubepods(/.*?)?/pod([a-z0-9\\-]{36})/")
+	podIDFromCpusetRegexp = regexp.MustCompile(`/kubepods(/.*?)?/pod([a-z0-9\-]{36})/`)
 
 	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
 	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
