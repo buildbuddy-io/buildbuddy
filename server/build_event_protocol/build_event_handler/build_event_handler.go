@@ -88,9 +88,10 @@ const (
 )
 
 var (
-	chunkFileSizeBytes     = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
-	enableChunkedEventLogs = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
-	writeToOLAPDBEnabled   = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
+	chunkFileSizeBytes      = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	enableChunkedEventLogs  = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not diaplay properly.")
+	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
 
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
@@ -834,12 +835,13 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
-	persist := &PersistArtifacts{
-		URIs:              make([]*url.URL, 0),
-		TestActionOutputs: e.beValues.HasBytestreamTestActionOutputs(),
-	}
-	if e.beValues.BytestreamProfileURI() != nil {
-		persist.URIs = append(persist.URIs, e.beValues.BytestreamProfileURI())
+	persist := &PersistArtifacts{}
+	if !*disablePersistArtifacts {
+		persist.URIs = make([]*url.URL, 0)
+		if e.beValues.BytestreamProfileURI() != nil {
+			persist.URIs = append(persist.URIs, e.beValues.BytestreamProfileURI())
+		}
+		persist.TestActionOutputs = e.beValues.HasBytestreamTestActionOutputs()
 	}
 
 	e.statsRecorder.Enqueue(
