@@ -43,7 +43,6 @@ nogo(
     ] + staticcheck_analyzers(ANALYZERS + [
         "-S1007",
         "-S1008",
-        "-S1009",
         "-S1011",
         "-S1012",
         "-S1017",
