@@ -147,7 +147,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	default:
 		t.Fatalf("Unsupported db type: %s", *databaseType)
 	}
-	dbHandle, err := db.GetConfiguredDatabase(te)
+	dbHandle, err := db.GetConfiguredDatabase(context.Background(), te)
 	if err != nil {
 		t.Fatal(err)
 	}

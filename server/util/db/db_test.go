@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"context"
 	"io/fs"
 	"testing"
 
@@ -10,21 +11,22 @@ import (
 
 func TestParseDataSource(t *testing.T) {
 	var fileResolver fs.FS
+	ctx := context.Background()
 
-	_, err := db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{})
+	_, err := db.ParseDatasource(ctx, fileResolver, "", &db.AdvancedConfig{})
 	require.ErrorContains(t, err, "no database configured")
 
-	_, err = db.ParseDatasource(fileResolver, "foo", &db.AdvancedConfig{})
+	_, err = db.ParseDatasource(ctx, fileResolver, "foo", &db.AdvancedConfig{})
 	require.ErrorContains(t, err, "malformed")
 
-	ds, err := db.ParseDatasource(fileResolver, "foo://bar/baz?abc=xyz", &db.AdvancedConfig{})
+	ds, err := db.ParseDatasource(ctx, fileResolver, "foo://bar/baz?abc=xyz", &db.AdvancedConfig{})
 	require.NoError(t, err)
 	require.Equal(t, "foo", ds.DriverName())
 	dsn, err := ds.DSN()
 	require.NoError(t, err)
 	require.Equal(t, "bar/baz?abc=xyz", dsn)
 
-	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(ctx, fileResolver, "", &db.AdvancedConfig{
 		Driver:   "sqlite3",
 		Endpoint: "/tmp/mydb",
 	})
@@ -34,7 +36,7 @@ func TestParseDataSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/mydb", dsn)
 
-	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(ctx, fileResolver, "", &db.AdvancedConfig{
 		Driver:   "sqlite3",
 		Endpoint: "/tmp/mydb",
 		Params:   "foo=bar",
@@ -45,7 +47,7 @@ func TestParseDataSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/mydb?foo=bar", dsn)
 
-	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(ctx, fileResolver, "", &db.AdvancedConfig{
 		Driver:   "mysql",
 		Endpoint: "host:port",
 		Username: "user",
@@ -58,7 +60,7 @@ func TestParseDataSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "user:pass@tcp(host:port)/db?sql_mode=ANSI_QUOTES", dsn)
 
-	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(ctx, fileResolver, "", &db.AdvancedConfig{
 		Driver:   "mysql",
 		Endpoint: "host:port",
 		Username: "user",
@@ -72,7 +74,7 @@ func TestParseDataSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "user:pass@tcp(host:port)/db?foo=bar&sql_mode=ANSI_QUOTES", dsn)
 
-	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(ctx, fileResolver, "", &db.AdvancedConfig{
 		Driver:   "postgresql",
 		Endpoint: "host:9097",
 		Username: "user",
@@ -85,7 +87,7 @@ func TestParseDataSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "postgres://user:pass@host:9097/db", dsn)
 
-	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(ctx, fileResolver, "", &db.AdvancedConfig{
 		Driver:   "postgresql",
 		Endpoint: "host:9097",
 		Username: "user",

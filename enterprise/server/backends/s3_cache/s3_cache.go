@@ -11,14 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -30,6 +29,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sync/errgroup"
 
+	s3manager "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -39,7 +41,7 @@ var (
 	bucket                   = flag.String("cache.s3.bucket", "", "The AWS S3 bucket to store files in.")
 	pathPrefix               = flag.String("cache.s3.path_prefix", "", "Prefix inside the AWS S3 bucket to store files")
 	credentialsProfile       = flag.String("cache.s3.credentials_profile", "", "A custom credentials profile to use.")
-	ttlDays                  = flag.Int64("cache.s3.ttl_days", 0, "The period after which cache files should be TTLd. Disabled if 0.")
+	ttlDays                  = flag.Int("cache.s3.ttl_days", 0, "The period after which cache files should be TTLd. Disabled if 0.")
 	webIdentityTokenFilePath = flag.String("cache.s3.web_identity_token_file", "", "The file path to the web identity token file.")
 	roleARN                  = flag.String("cache.s3.role_arn", "", "The role ARN to use for web identity auth.")
 	roleSessionName          = flag.String("cache.s3.role_session_name", "", "The role session name to use for web identity auth.")
@@ -47,7 +49,7 @@ var (
 	staticCredentialsID      = flag.String("cache.s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
 	staticCredentialsSecret  = flagutil.New("cache.s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.", flagutil.SecretTag)
 	staticCredentialsToken   = flag.String("cache.s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
-	disableSSL               = flag.Bool("cache.s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.")
+	disableSSL               = flagutil.New("cache.s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.", flagutil.DeprecatedTag("Specify a non-HTTPS endpoint instead."))
 	forcePathStyle           = flag.Bool("cache.s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
 )
 
@@ -61,12 +63,12 @@ var (
 
 // AWS stuff
 type S3Cache struct {
-	s3         *s3.S3
+	client     *s3.Client
 	bucket     *string
 	pathPrefix string
 	downloader *s3manager.Downloader
 	uploader   *s3manager.Uploader
-	ttlInDays  int64
+	ttlInDays  int32
 }
 
 func Register(env environment.Env) error {
@@ -87,43 +89,59 @@ func Register(env environment.Env) error {
 func NewS3Cache() (*S3Cache, error) {
 	ctx := context.Background()
 
-	config := &aws.Config{
-		Region: aws.String(*region),
+	configOptions := []func(*config.LoadOptions) error{
+		config.WithRegion(*region),
 	}
 	// See https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials
 	if *credentialsProfile != "" {
-		config.Credentials = credentials.NewSharedCredentials("", *credentialsProfile)
+		configOptions = append(configOptions, config.WithSharedConfigProfile(*credentialsProfile))
 	}
 	if *staticCredentialsID != "" && *staticCredentialsSecret != "" {
-		config.Credentials = credentials.NewStaticCredentials(*staticCredentialsID, *staticCredentialsSecret, *staticCredentialsToken)
+		configOptions = append(configOptions, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(*staticCredentialsID, *staticCredentialsSecret, *staticCredentialsToken),
+		))
 	}
 	if *endpoint != "" {
-		config.Endpoint = aws.String(*endpoint)
+		configOptions = append(configOptions, config.WithEndpointResolverWithOptions(
+			aws.EndpointResolverWithOptionsFunc(
+				func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+					return aws.Endpoint{
+						URL:               *endpoint,
+						SigningRegion:     *region,
+						HostnameImmutable: true,
+					}, nil
+				},
+			),
+		))
 	}
-	if *disableSSL {
-		config.DisableSSL = aws.Bool(*disableSSL)
-	}
-	if *forcePathStyle {
-		config.S3ForcePathStyle = aws.Bool(*forcePathStyle)
-	}
-	sess, err := session.NewSession(config)
+	cfg, err := config.LoadDefaultConfig(ctx, configOptions...)
 	if err != nil {
 		return nil, err
 	}
 
 	if *webIdentityTokenFilePath != "" {
-		config.Credentials = credentials.NewCredentials(stscreds.NewWebIdentityRoleProvider(sts.New(sess), *roleARN, *roleSessionName, *webIdentityTokenFilePath))
+		cfg.Credentials = stscreds.NewWebIdentityRoleProvider(
+			sts.NewFromConfig(cfg),
+			*roleARN,
+			stscreds.IdentityTokenFile(*webIdentityTokenFilePath),
+			func(o *stscreds.WebIdentityRoleOptions) {
+				o.RoleSessionName = *roleSessionName
+			},
+		)
 	}
 
 	// Create S3 service client
-	svc := s3.New(sess)
+	client := s3.NewFromConfig(
+		cfg,
+		func(o *s3.Options) { o.UsePathStyle = *forcePathStyle },
+	)
 	s3c := &S3Cache{
-		s3:         svc,
-		bucket:     aws.String(*bucket),
+		client:     client,
+		bucket:     bucket,
 		pathPrefix: *pathPrefix,
-		downloader: s3manager.NewDownloader(sess),
-		uploader:   s3manager.NewUploader(sess),
-		ttlInDays:  *ttlDays,
+		downloader: s3manager.NewDownloader(client),
+		uploader:   s3manager.NewUploader(client),
+		ttlInDays:  int32(*ttlDays),
 	}
 
 	// S3 access points can't modify or delete buckets
@@ -136,7 +154,7 @@ func NewS3Cache() (*S3Cache, error) {
 			return nil, err
 		}
 		if *ttlDays > 0 {
-			if err := s3c.setBucketTTL(ctx, *bucket, *ttlDays); err != nil {
+			if err := s3c.setBucketTTL(ctx, *bucket, int32(*ttlDays)); err != nil {
 				log.Printf("Error setting bucket TTL: %s", err)
 			}
 		}
@@ -147,11 +165,11 @@ func NewS3Cache() (*S3Cache, error) {
 func (s3c *S3Cache) bucketExists(ctx context.Context, bucketName string) (bool, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	if _, err := s3c.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)}); err != nil {
-		aerr := err.(awserr.Error)
+	if _, err := s3c.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucketName}); err != nil {
+		aerr, ok := err.(smithy.APIError)
 		// AWS returns codes as strings
 		// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
-		if aerr.Code() != "NotFound" {
+		if !ok || aerr.ErrorCode() != "NotFound" {
 			return false, err
 		}
 		return false, nil
@@ -167,58 +185,56 @@ func (s3c *S3Cache) createBucketIfNotExists(ctx context.Context, bucketName stri
 		log.Printf("Creating storage bucket: %s", bucketName)
 		ctx, spn := tracing.StartSpan(ctx)
 		defer spn.End()
-		if _, err := s3c.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
+		if _, err := s3c.client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &bucketName}); err != nil {
 			return err
 		}
 		ctx, cancel := context.WithTimeout(ctx, bucketWaitTimeout)
 		defer cancel()
-		return s3c.s3.WaitUntilBucketExistsWithContext(ctx, &s3.HeadBucketInput{
-			Bucket: aws.String(bucketName),
-		})
+		return s3.NewBucketExistsWaiter(s3c.client).Wait(ctx, &s3.HeadBucketInput{Bucket: &bucketName}, bucketWaitTimeout)
 	}
 	return nil
 }
 
-func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDays int64) error {
+func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDays int32) error {
 	traceCtx, spn := tracing.StartSpan(ctx)
 	spn.SetName("GetBucketLifecycleConfigurationWithContext for S3Cache SetBucketTTL")
-	attrs, err := s3c.s3.GetBucketLifecycleConfigurationWithContext(traceCtx, &s3.GetBucketLifecycleConfigurationInput{
-		Bucket: aws.String(bucketName),
+	attrs, err := s3c.client.GetBucketLifecycleConfiguration(traceCtx, &s3.GetBucketLifecycleConfigurationInput{
+		Bucket: &bucketName,
 	})
 	spn.End()
 	if err != nil {
-		awsErr, ok := err.(awserr.Error)
-		if ok && awsErr.Code() != "NoSuchLifecycleConfiguration" {
+		awsErr, ok := err.(smithy.APIError)
+		if ok && awsErr.ErrorCode() != "NoSuchLifecycleConfiguration" {
 			return err
 		}
 	}
 	for _, rule := range attrs.Rules {
-		if rule == nil || rule.Expiration == nil {
+		if rule.Expiration == nil {
 			break
 		}
 
-		if rule.Status == nil || *(rule.Status) != "Enabled" {
+		if rule.Status != s3types.ExpirationStatusEnabled {
 			break
 		}
 
-		if rule.Expiration.Days != nil && *(rule.Expiration.Days) == ageInDays {
+		if rule.Expiration.Days == ageInDays {
 			return nil
 		}
 	}
 	traceCtx, spn = tracing.StartSpan(ctx)
 	spn.SetName("PutBucketLifecycleConfigurationWithContext for S3Cache SetBucketTTL")
 	defer spn.End()
-	_, err = s3c.s3.PutBucketLifecycleConfigurationWithContext(traceCtx, &s3.PutBucketLifecycleConfigurationInput{
-		Bucket: aws.String(bucketName),
-		LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
-			Rules: []*s3.LifecycleRule{
+	_, err = s3c.client.PutBucketLifecycleConfiguration(traceCtx, &s3.PutBucketLifecycleConfigurationInput{
+		Bucket: &bucketName,
+		LifecycleConfiguration: &s3types.BucketLifecycleConfiguration{
+			Rules: []s3types.LifecycleRule{
 				{
-					Expiration: &s3.LifecycleExpiration{
-						Days: aws.Int64(ageInDays),
+					Expiration: &s3types.LifecycleExpiration{
+						Days: ageInDays,
 					},
-					Status: aws.String("Enabled"),
-					Filter: &s3.LifecycleRuleFilter{
-						Prefix: aws.String(""),
+					Status: s3types.ExpirationStatusEnabled,
+					Filter: &s3types.LifecycleRuleFilterMemberPrefix{
+						Value: "",
 					},
 				},
 			},
@@ -243,11 +259,11 @@ func (s3c *S3Cache) key(ctx context.Context, r *rspb.ResourceName) (string, erro
 }
 
 func isNotFoundErr(err error) bool {
-	awsErr, ok := err.(awserr.Error)
+	awsErr, ok := err.(smithy.APIError)
 	if !ok {
 		return false
 	}
-	switch awsErr.Code() {
+	switch awsErr.ErrorCode() {
 	case "NotFound", "NoSuchKey":
 		return true
 	default:
@@ -267,11 +283,11 @@ func (s3c *S3Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, erro
 }
 
 func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte, error) {
-	buff := &aws.WriteAtBuffer{}
+	buff := &s3manager.WriteAtBuffer{}
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err := s3c.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
+	_, err := s3c.downloader.Download(ctx, buff, &s3.GetObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(key),
+		Key:    &key,
 	})
 	spn.End()
 	if isNotFoundErr(err) {
@@ -313,14 +329,14 @@ func (s3c *S3Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) 
 	if err != nil {
 		return err
 	}
-	uploadParams := &s3manager.UploadInput{
+	uploadParams := &s3.PutObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(k),
+		Key:    &k,
 		Body:   bytes.NewReader(data),
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err = s3c.uploader.UploadWithContext(ctx, uploadParams)
+	_, err = s3c.uploader.Upload(ctx, uploadParams)
 	spn.End()
 	timer.ObserveSet(len(data), err)
 	return err
@@ -360,33 +376,38 @@ func (s3c *S3Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 func (s3c *S3Cache) delete(ctx context.Context, key string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(key),
+		Key:    &key,
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	if _, err := s3c.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
+	if _, err := s3c.client.DeleteObject(ctx, deleteParams); err != nil {
 		return err
 	}
 
-	return s3c.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
-		Bucket: s3c.bucket,
-		Key:    aws.String(key),
-	})
+	return s3.NewObjectNotExistsWaiter(s3c.client).Wait(
+		ctx,
+		&s3.HeadObjectInput{
+			Bucket: s3c.bucket,
+			Key:    &key,
+		},
+		bucketWaitTimeout,
+	)
 }
 
 func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) bool {
-	if s3c.ttlInDays == 0 || int64(time.Since(t).Hours()) < 24*s3c.ttlInDays/2 {
+	if s3c.ttlInDays == 0 || int32(time.Since(t).Hours()) < 24*s3c.ttlInDays/2 {
 		return true
 	}
+	src := fmt.Sprintf("%s/%s", *s3c.bucket, key)
 	input := &s3.CopyObjectInput{
-		CopySource:        aws.String(fmt.Sprintf("%s/%s", *s3c.bucket, key)),
+		CopySource:        &src,
 		Bucket:            s3c.bucket,
-		Key:               aws.String(key),
-		MetadataDirective: aws.String(s3.MetadataDirectiveReplace),
+		Key:               &key,
+		MetadataDirective: s3types.MetadataDirectiveReplace,
 	}
 	_, spn := tracing.StartSpan(ctx)
-	_, err := s3c.s3.CopyObject(input)
+	_, err := s3c.client.CopyObject(ctx, input)
 	spn.End()
 	if isNotFoundErr(err) {
 		return false
@@ -434,11 +455,11 @@ func (s3c *S3Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interf
 	// TODO - Add digest size support for AC
 	digestSizeBytes := int64(-1)
 	if r.GetCacheType() == rspb.CacheType_CAS {
-		digestSizeBytes = *metadata.ContentLength
+		digestSizeBytes = metadata.ContentLength
 	}
 
 	return &interfaces.CacheMetadata{
-		StoredSizeBytes:    *metadata.ContentLength,
+		StoredSizeBytes:    metadata.ContentLength,
 		DigestSizeBytes:    digestSizeBytes,
 		LastModifyTimeUsec: metadata.LastModified.UnixMicro(),
 	}, nil
@@ -451,12 +472,12 @@ func (s3c *S3Cache) metadata(ctx context.Context, r *rspb.ResourceName) (*s3.Hea
 	}
 	params := &s3.HeadObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(key),
+		Key:    &key,
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	head, err := s3c.s3.HeadObjectWithContext(ctx, params)
+	head, err := s3c.client.HeadObject(ctx, params)
 	if err != nil {
 		if isNotFoundErr(err) {
 			return nil, nil
@@ -507,16 +528,16 @@ func (s3c *S3Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompress
 	// track it as part of the read
 
 	// This range follows the format specified here: https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
-	readRange := aws.String(fmt.Sprintf("bytes=%d-", uncompressedOffset))
+	readRange := fmt.Sprintf("bytes=%d-", uncompressedOffset)
 	if limit != 0 {
 		// range bounds are inclusive
-		readRange = aws.String(fmt.Sprintf("bytes=%d-%d", uncompressedOffset, uncompressedOffset+limit-1))
+		readRange = fmt.Sprintf("bytes=%d-%d", uncompressedOffset, uncompressedOffset+limit-1)
 	}
 
-	result, err := s3c.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{
+	result, err := s3c.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(k),
-		Range:  readRange,
+		Key:    &k,
+		Range:  &readRange,
 	})
 	spn.End()
 	if isNotFoundErr(err) {
@@ -563,9 +584,9 @@ func (s3c *S3Cache) Writer(ctx context.Context, rn *rspb.ResourceName) (interfac
 	}
 	// TODO(tempoz): r is only closed in case of error
 	r, w := io.Pipe()
-	uploadParams := &s3manager.UploadInput{
+	uploadParams := &s3.PutObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(k),
+		Key:    &k,
 		Body:   r,
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
@@ -579,7 +600,7 @@ func (s3c *S3Cache) Writer(ctx context.Context, rn *rspb.ResourceName) (interfac
 		size:          rn.GetDigest().GetSizeBytes(),
 	}
 	go func() {
-		if _, err = s3c.uploader.UploadWithContext(ctx, uploadParams); err != nil {
+		if _, err = s3c.uploader.Upload(ctx, uploadParams); err != nil {
 			r.CloseWithError(err)
 		}
 		close(closer.finishedWrite)
