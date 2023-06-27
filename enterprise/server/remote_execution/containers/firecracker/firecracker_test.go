@@ -668,7 +668,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	require.NoError(t, res.Error)
 	require.Empty(t, string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
-	require.Regexp(t, regexp.MustCompile("uid=[0-9]+\\(nobody\\) gid=[0-9]+\\(nobody\\)"), string(res.Stdout))
+	require.Regexp(t, regexp.MustCompile(`uid=[0-9]+\(nobody\) gid=[0-9]+\(nobody\)`), string(res.Stdout))
 }
 
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
