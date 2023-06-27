@@ -366,7 +366,7 @@ type ANSICursorBufferWriter struct {
 }
 
 func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
-	if p == nil || len(p) == 0 {
+	if len(p) == 0 {
 		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 	}
 
