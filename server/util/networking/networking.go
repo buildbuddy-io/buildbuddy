@@ -608,10 +608,7 @@ func AddRouteIfNotPresent(ctx context.Context, routeArgs []string) error {
 }
 
 func IsSecondaryNetworkEnabled() bool {
-	if *routePrefix == "default" {
-		return false
-	}
-	return true
+	return *routePrefix != "default"
 }
 
 func PreserveExistingNetNamespaces() bool {

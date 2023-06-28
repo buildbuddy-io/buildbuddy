@@ -38,11 +38,11 @@ grant this AWS account access to the supplied key.
   through the system. If there are active builds during this window, they may experience "not found" errors while the
   change propagates.
 
-- Artifacts written prior to enabling this feature will not be retroactively encrypted using the new key, but will  
+- Artifacts written prior to enabling this feature will not be retroactively encrypted using the new key, but will
   become effectively inaccessible and will be evicted from the cache as part of the regular cache lifecycle.
 
 - The key used for encryption and decryption may be cached in memory by the BuildBuddy infrastructure for up to 10
-- minutes for performance reasons.
+  minutes for performance reasons.
 
 - The customer-managed key may be rotated. During rotation, the old key material must remain accessible for at least 24
   hours.
