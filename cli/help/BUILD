@@ -9,6 +9,7 @@ go_library(
         "//cli/bazelisk",
         "//cli/parser",
         "//cli/version",
+        "//server/util/lockingbuffer",
     ],
 )
 
