@@ -37,8 +37,8 @@ func HandleHelp(args []string) (exitCode int, err error) {
 		return showHelp("", getHelpModifiers(args))
 	}
 	if cmd == "help" {
-		bazelCommand, _ := parser.GetBazelCommandAndIndex(args[idx+1:])
-		return showHelp(bazelCommand, getHelpModifiers(args))
+		helpTopic := arg.GetCommand(args[idx+1:])
+		return showHelp(helpTopic, getHelpModifiers(args))
 	}
 	if arg.ContainsExact(args, "-h") || arg.ContainsExact(args, "--help") {
 		bazelCommand, _ := parser.GetBazelCommandAndIndex(args)

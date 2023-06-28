@@ -37,6 +37,20 @@ func TestBazelVersion(t *testing.T) {
 	require.NotContains(t, output, log.WarningPrefix)
 }
 
+func TestBazelHelp(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	cmd := testcli.Command(t, ws, "help", "completion")
+
+	// Note: this test makes sure that the help output appears in stdout (not
+	// stderr), so that tools can do things like `eval $(bb help completion)`
+	// the same way they can with vanilla bazel.
+	b, err := testcli.Output(cmd)
+	output := string(b)
+	require.NoError(t, err, "output: %s", string(b))
+
+	require.Contains(t, output, `BAZEL_STARTUP_OPTIONS="`)
+}
+
 func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
