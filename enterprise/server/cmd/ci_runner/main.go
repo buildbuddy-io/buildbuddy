@@ -1345,7 +1345,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 	if err := ws.sync(ctx); err != nil {
 		return err
 	}
-	ws.log.Write([]byte(fmt.Sprintf("Setup completed in %s\n", time.Now().Sub(ws.startTime))))
+	ws.log.Write([]byte(fmt.Sprintf("Setup completed in %s\n", time.Since(ws.startTime))))
 	return nil
 }
 

@@ -254,7 +254,7 @@ type opTracker struct {
 }
 
 func (ot *opTracker) Done() {
-	ot.hist.Observe(float64(time.Now().Sub(ot.start).Microseconds()))
+	ot.hist.Observe(float64(time.Since(ot.start).Microseconds()))
 }
 
 func (om *opMetrics) Track() opTracker {

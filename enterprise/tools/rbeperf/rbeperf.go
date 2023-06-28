@@ -358,7 +358,7 @@ func (g *runner) prepareCommands(ctx context.Context) ([]*rbeclient.Command, err
 		}
 	}
 
-	log.Infof("Finished preparing %d commands in %s.", g.workload.numCommands, time.Now().Sub(startTime))
+	log.Infof("Finished preparing %d commands in %s.", g.workload.numCommands, time.Since(startTime))
 	return cmds, nil
 }
 

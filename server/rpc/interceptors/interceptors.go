@@ -205,7 +205,7 @@ func logRequestUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		start := time.Now()
 		r, err := handler(ctx, req)
-		bblog.LogGRPCRequest(ctx, info.FullMethod, time.Now().Sub(start), err)
+		bblog.LogGRPCRequest(ctx, info.FullMethod, time.Since(start), err)
 		return r, err
 	}
 }
@@ -215,7 +215,7 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		start := time.Now()
 		err := handler(srv, stream)
-		bblog.LogGRPCRequest(stream.Context(), info.FullMethod, time.Now().Sub(start), err)
+		bblog.LogGRPCRequest(stream.Context(), info.FullMethod, time.Since(start), err)
 		return err
 	}
 }
