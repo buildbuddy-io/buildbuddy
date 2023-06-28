@@ -225,6 +225,11 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, cacheAuth *I
 	if *debugUseLocalImagesOnly {
 		return nil
 	}
+	if env.GetAuthenticator() == nil {
+		// If we don't have an authenticator available, fall back to
+		// authenticating the creds with the image registry on every request.
+		return ctr.PullImage(ctx, creds)
+	}
 	isCached, err := ctr.IsImageCached(ctx)
 	if err != nil {
 		return err
