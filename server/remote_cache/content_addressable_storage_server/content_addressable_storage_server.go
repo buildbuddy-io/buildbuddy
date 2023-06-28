@@ -103,9 +103,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range missing {
-		rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, d)
-	}
+	rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, missing...)
 	return rsp, nil
 }
 

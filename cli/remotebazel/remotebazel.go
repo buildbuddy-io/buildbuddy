@@ -390,9 +390,7 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 		if !ok {
 			return nil, fmt.Errorf("could not find file set with ID %q while fetching outputs", fsID)
 		}
-		for _, f := range fs {
-			outputs = append(outputs, f)
-		}
+		outputs = append(outputs, fs...)
 	}
 
 	return outputs, nil
@@ -527,9 +525,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		Arch:               reqArch,
 	}
 
-	for _, patch := range repoConfig.Patches {
-		req.GetRepoState().Patch = append(req.GetRepoState().Patch, patch)
-	}
+	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
 	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
