@@ -903,11 +903,14 @@ func (e *EventChannel) recordInvocationMetrics(ti *tables.Invocation) {
 		metrics.InvocationStatusLabel: statusLabel,
 		metrics.BazelExitCode:         ti.BazelExitCode,
 		metrics.BazelCommand:          ti.Command,
-		metrics.GroupID:               e.getGroupIDForMetrics(),
 	}).Inc()
 	metrics.InvocationDurationUs.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
 		metrics.BazelCommand:          ti.Command,
+	}).Observe(float64(ti.DurationUsec))
+	metrics.InvocationDurationUsExported.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+		metrics.GroupID:               e.getGroupIDForMetrics(),
 	}).Observe(float64(ti.DurationUsec))
 }
 

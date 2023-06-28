@@ -34,7 +34,7 @@ go_library(
         "//server/util/clickhouse/schema",
         "//server/util/role",
         "@com_github_golang_jwt_jwt//:jwt",
-        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_client_model//go",
         "@io_gorm_gorm//:gorm",
         "@org_golang_google_grpc//credentials",
     ],
