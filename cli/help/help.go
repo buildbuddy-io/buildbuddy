@@ -1,7 +1,6 @@
 package help
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 )
 
 const (
@@ -37,8 +37,8 @@ func HandleHelp(args []string) (exitCode int, err error) {
 		return showHelp("", getHelpModifiers(args))
 	}
 	if cmd == "help" {
-		bazelCommand, _ := parser.GetBazelCommandAndIndex(args[idx+1:])
-		return showHelp(bazelCommand, getHelpModifiers(args))
+		helpTopic := arg.GetCommand(args[idx+1:])
+		return showHelp(helpTopic, getHelpModifiers(args))
 	}
 	if arg.ContainsExact(args, "-h") || arg.ContainsExact(args, "--help") {
 		bazelCommand, _ := parser.GetBazelCommandAndIndex(args)
@@ -58,7 +58,7 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 		bazelArgs = append(bazelArgs, subcommand)
 	}
 	bazelArgs = append(bazelArgs, modifiers...)
-	buf := bytes.NewBuffer(nil)
+	buf := lockingbuffer.New()
 	exitCode, err = bazelisk.Run(bazelArgs, &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
 	if err != nil {
 		io.Copy(os.Stdout, buf)

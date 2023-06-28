@@ -50,3 +50,9 @@ func (lb *LockingBuffer) ReadAll() ([]byte, error) {
 	lb.buffer.Reset()
 	return b, err
 }
+
+func (lb *LockingBuffer) String() string {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+	return lb.buffer.String()
+}
