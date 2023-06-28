@@ -1434,10 +1434,11 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		found, err := p.iterHasKey(iter, key)
-		if !found || err != nil {
+		fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+		if err != nil {
 			missing = append(missing, r.GetDigest())
 		}
+		p.sendAtimeUpdate(key, fileMetadata)
 		unlockFn()
 	}
 	return missing, nil
@@ -2930,7 +2931,6 @@ func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.
 		}
 		return nil, err
 	}
-	p.sendAtimeUpdate(key, fileMetadata)
 
 	if !rawStorage {
 		if shouldDecrypt {
