@@ -832,6 +832,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 			log.Warningf("Failed to close workspace nbd: %s", err)
 		}
 		c.workspaceDevice = wd
+		c.nbdServer.SetDevice(wd.Metadata.GetName(), wd)
 	} else {
 		chrootRelativeImagePath := filepath.Base(c.workspaceFSPath())
 		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
