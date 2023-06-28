@@ -96,11 +96,7 @@ func (m *bbMetric) Desc() *prometheus.Desc {
 }
 
 func (m *bbMetric) Write(out *dto.Metric) error {
-	out.Label = m.metric.Label
-	out.Histogram = m.metric.Histogram
-	out.Gauge = m.metric.Gauge
-	out.Counter = m.metric.Counter
-	out.Untyped = m.metric.Untyped
+	proto.Merge(out, m.metric)
 	return nil
 }
 
