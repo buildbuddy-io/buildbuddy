@@ -267,7 +267,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		c := &blockio.Chunk{Offset: chunk.GetOffset(), Store: mm}
 		chunks = append(chunks, c)
 	}
-	return blockio.NewCOW(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
+	return blockio.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
 }
 
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blockio.COW) (*fcpb.ChunkedFile, error) {

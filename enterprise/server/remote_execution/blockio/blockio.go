@@ -227,9 +227,9 @@ type COW struct {
 	copyBuf []byte
 }
 
-// NewCOW creates a COW from the given chunks. The chunks should be open
+// NewCOWStore creates a COW from the given chunks. The chunks should be open
 // initially, and will be closed when calling Close on the returned COW.
-func NewCOW(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COW, error) {
+func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COW, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
