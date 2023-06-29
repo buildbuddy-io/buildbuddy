@@ -763,7 +763,7 @@ func (c *schedulerClientCache) startExpirer() {
 		for {
 			c.mu.Lock()
 			for addr, client := range c.clients {
-				if time.Now().Sub(client.lastAccess) > unusedSchedulerClientExpiration {
+				if time.Since(client.lastAccess) > unusedSchedulerClientExpiration {
 					if client.rpcConn != nil {
 						_ = client.rpcConn.Close()
 					}
@@ -1501,7 +1501,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	var successfulReservations []string
 	defer func() {
 		log.CtxInfof(ctx, "Enqueue task reservations for task %q took %s. Reservations: [%s]",
-			enqueueRequest.GetTaskId(), time.Now().Sub(startTime), strings.Join(successfulReservations, ", "))
+			enqueueRequest.GetTaskId(), time.Since(startTime), strings.Join(successfulReservations, ", "))
 	}()
 
 	cmd, remoteInstanceName, err := extractRoutingProps(serializedTask)
@@ -1595,7 +1595,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				continue
 			}
 		}
-		successfulReservations = append(successfulReservations, fmt.Sprintf("%s [%s]", node.String(), time.Now().Sub(enqueueStart).String()))
+		successfulReservations = append(successfulReservations, fmt.Sprintf("%s [%s]", node.String(), time.Since(enqueueStart).String()))
 		probesSent++
 	}
 	return nil

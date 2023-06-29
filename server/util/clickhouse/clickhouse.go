@@ -225,7 +225,7 @@ func recordMetricsAfterFn(db *gorm.DB) {
 	// v will be nil if our key is not in the map so we can ignore the presence indicator.
 	v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
 	if opStartTime, ok := v.(time.Time); ok {
-		metrics.ClickhouseQueryDurationUsec.With(labels).Observe(float64(time.Now().Sub(opStartTime).Microseconds()))
+		metrics.ClickhouseQueryDurationUsec.With(labels).Observe(float64(time.Since(opStartTime).Microseconds()))
 	}
 	// Ignore "record not found" errors as they don't generally indicate a
 	// problem with the server.
