@@ -58,6 +58,10 @@ func New(ctx context.Context, env environment.Env, devices ...*Device) (*Server,
 	}, nil
 }
 
+func (s *Server) SetDevice(name string, device *Device) {
+	s.devices[name] = device
+}
+
 // Start starts the device server.
 // lis will be closed when calling Stop().
 func (s *Server) Start(lis net.Listener) error {
