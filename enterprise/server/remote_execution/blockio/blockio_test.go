@@ -334,7 +334,7 @@ func ioBlockSize(t testing.TB, path string) int64 {
 	st := &syscall.Stat_t{}
 	err := syscall.Stat(path, st)
 	require.NoError(t, err)
-	return st.Blksize
+	return int64(st.Blksize)
 }
 
 func concatBytes(chunks ...[]byte) []byte {

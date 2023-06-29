@@ -104,7 +104,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	keyA, err := snaploader.NewKey(taskA, "config-hash-a", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA)
-	optsA.ChunkedFiles = map[string]*blockio.COW{"scratchfs": cowA}
+	optsA.ChunkedFiles = map[string]*blockio.COWStore{"scratchfs": cowA}
 	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
 	require.NoError(t, err)
 	// Note: we'd normally close cowA here, but we keep it open so that

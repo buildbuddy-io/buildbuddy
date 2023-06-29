@@ -92,13 +92,13 @@ type CacheSnapshotOptions struct {
 	// stored with it or it may have one attached at runtime.
 	WorkspaceFSPath string
 
-	// Labeled map of chunked artifacts backed by blockio.COW storage.
-	ChunkedFiles map[string]*blockio.COW
+	// Labeled map of chunked artifacts backed by blockio.COWStore storage.
+	ChunkedFiles map[string]*blockio.COWStore
 }
 
 type UnpackedSnapshot struct {
 	// ChunkedFiles holds any chunked files that were part of the snapshot.
-	ChunkedFiles map[string]*blockio.COW
+	ChunkedFiles map[string]*blockio.COWStore
 }
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
@@ -175,7 +175,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 		}
 	}
 
-	unpacked := &UnpackedSnapshot{ChunkedFiles: map[string]*blockio.COW{}}
+	unpacked := &UnpackedSnapshot{ChunkedFiles: map[string]*blockio.COWStore{}}
 	// Construct COWs from chunks.
 	for _, cf := range snapshot.manifest.ChunkedFiles {
 		cow, err := l.unpackCOW(ctx, cf, outputDirectory)
@@ -234,7 +234,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	return &Snapshot{key: key, manifest: manifest}, nil
 }
 
-func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cow *blockio.COW, err error) {
+func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cow *blockio.COWStore, err error) {
 	dataDir := filepath.Join(outputDirectory, file.GetName())
 	if err := os.Mkdir(dataDir, 0755); err != nil {
 		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
@@ -270,7 +270,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 	return blockio.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
 }
 
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blockio.COW) (*fcpb.ChunkedFile, error) {
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blockio.COWStore) (*fcpb.ChunkedFile, error) {
 	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err
