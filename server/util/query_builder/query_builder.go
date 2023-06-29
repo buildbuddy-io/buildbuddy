@@ -69,7 +69,7 @@ func NewQuery(baseQuery string) *Query {
 func (q *Query) AddWhereClause(clause string, args ...interface{}) *Query {
 	clause = pad(clause)
 	q.whereClauses = append(q.whereClauses, clause)
-	q.arguments = append(q.arguments, args)
+	q.arguments = append(q.arguments, args...)
 	return q
 }
 
