@@ -79,7 +79,7 @@ func (q *Query) AddWhereInClause(variable string, subQuery *Query) *Query {
 	subQueryStr, args := subQuery.Build()
 	clause := variable + " IN (" + subQueryStr + ") "
 	q.whereClauses = append(q.whereClauses, clause)
-	q.arguments = append(q.arguments, args)
+	q.arguments = append(q.arguments, args...)
 	return q
 }
 
