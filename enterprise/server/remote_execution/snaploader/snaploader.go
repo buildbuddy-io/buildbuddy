@@ -280,11 +280,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blocki
 		Size:      size,
 		ChunkSize: cow.ChunkSizeBytes(),
 	}
-	for i, c := range cow.Chunks {
-		if _, ok := c.(*blockio.Hole); ok {
-			continue
-		}
-		if cow.Dirty(i) {
+	for _, c := range cow.Chunks() {
+		if cow.Dirty(c.Offset) {
 			// Sync dirty chunks to make sure the underlying file is up to date
 			// before we add it to cache.
 			if err := c.Sync(); err != nil {
@@ -304,13 +301,13 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blocki
 			return nil, err
 		}
 		node := &repb.FileNode{Digest: d}
-		path := filepath.Join(cow.DataDir(), cow.ChunkName(i))
+		path := filepath.Join(cow.DataDir(), cow.ChunkName(c.Offset))
 		// TODO: if the file is already cached, then instead of adding the file,
 		// just record a file access (to avoid the syscall overhead of
 		// unlink/relink).
 		l.env.GetFileCache().AddFile(node, path)
 		cf.Chunks = append(cf.Chunks, &fcpb.Chunk{
-			Offset:     int64(i) * cf.ChunkSize,
+			Offset:     c.Offset,
 			DigestHash: d.GetHash(),
 		})
 	}

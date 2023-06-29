@@ -109,7 +109,7 @@ func TestCOW_SparseData(t *testing.T) {
 	n, err = c.WriteAt([]byte{1}, 0)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
-	err = c.Chunks[0].Sync()
+	err = c.Chunks()[0].Sync()
 	require.NoError(t, err)
 
 	// Make sure we wrote a dirty chunk with the expected contents, and only a
