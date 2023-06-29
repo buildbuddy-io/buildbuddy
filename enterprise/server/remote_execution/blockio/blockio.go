@@ -174,13 +174,13 @@ type Chunk struct {
 	Offset int64
 }
 
-// COW implements copy-on-write for a Store that has been split into chunks of
-// equal size. Just before a chunk is first written to, the chunk is first
+// COWStore implements copy-on-write for a Store that has been split into chunks
+// of equal size. Just before a chunk is first written to, the chunk is first
 // copied, and the write is then applied to the copy.
 //
-// A COW can be created either by splitting a file into chunks, or loading
-// chunks from a directory containing artifacts exported by a COW instance.
-type COW struct {
+// A COWStore can be created either by splitting a file into chunks, or loading
+// chunks from a directory containing artifacts exported by a COWStore instance.
+type COWStore struct {
 	// Chunks is a mapping of chunk offset to Store implementation.
 	chunks map[int64]*Chunk
 	// Indexes of chunks which have been copied from the original chunks due to
@@ -203,9 +203,10 @@ type COW struct {
 	copyBuf []byte
 }
 
-// NewCOWStore creates a COW from the given chunks. The chunks should be open
-// initially, and will be closed when calling Close on the returned COW.
-func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COW, error) {
+// NewCOWStore creates a COWStore from the given chunks. The chunks should be
+// open initially, and will be closed when calling Close on the returned
+// COWStore.
+func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -214,7 +215,7 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
 	}
-	return &COW{
+	return &COWStore{
 		chunks:         chunkMap,
 		dirty:          make(map[int64]bool, 0),
 		dataDir:        dataDir,
@@ -226,7 +227,7 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 }
 
 // Chunks returns all chunks sorted by offset.
-func (c *COW) Chunks() []*Chunk {
+func (c *COWStore) Chunks() []*Chunk {
 	chunks := maps.Values(c.chunks)
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].Offset < chunks[j].Offset
@@ -236,11 +237,11 @@ func (c *COW) Chunks() []*Chunk {
 
 // chunkStartOffset returns the chunk start offset for an offset within the
 // store.
-func (c *COW) chunkStartOffset(off int64) int64 {
+func (c *COWStore) chunkStartOffset(off int64) int64 {
 	return (off / c.chunkSizeBytes) * c.chunkSizeBytes
 }
 
-func (c *COW) ReadAt(p []byte, off int64) (int, error) {
+func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
 	for len(p) > 0 {
@@ -268,7 +269,7 @@ func (c *COW) ReadAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
-func (c *COW) WriteAt(p []byte, off int64) (int, error) {
+func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
 	for len(p) > 0 {
@@ -300,7 +301,7 @@ func (c *COW) WriteAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
-func (c *COW) Sync() error {
+func (c *COWStore) Sync() error {
 	var lastErr error
 	// TODO: maybe parallelize
 	for offset, chunk := range c.chunks {
@@ -314,7 +315,7 @@ func (c *COW) Sync() error {
 	return lastErr
 }
 
-func (s *COW) Close() error {
+func (s *COWStore) Close() error {
 	var lastErr error
 	// TODO: maybe parallelize
 	for _, c := range s.chunks {
@@ -325,17 +326,17 @@ func (s *COW) Close() error {
 	return lastErr
 }
 
-func (s *COW) SizeBytes() (int64, error) {
+func (s *COWStore) SizeBytes() (int64, error) {
 	return s.totalSizeBytes, nil
 }
 
 // Dirty returns whether the chunk at the given offset is dirty.
-func (s *COW) Dirty(chunkOffset int64) bool {
+func (s *COWStore) Dirty(chunkOffset int64) bool {
 	return s.dirty[chunkOffset]
 }
 
 // ChunkName returns the data file name for the given chunk offset.
-func (s *COW) ChunkName(chunkOffset int64) string {
+func (s *COWStore) ChunkName(chunkOffset int64) string {
 	suffix := ""
 	if s.Dirty(chunkOffset) {
 		suffix = dirtySuffix
@@ -343,15 +344,15 @@ func (s *COW) ChunkName(chunkOffset int64) string {
 	return fmt.Sprintf("%d%s", chunkOffset, suffix)
 }
 
-func (s *COW) DataDir() string {
+func (s *COWStore) DataDir() string {
 	return s.dataDir
 }
 
-func (s *COW) ChunkSizeBytes() int64 {
+func (s *COWStore) ChunkSizeBytes() int64 {
 	return s.chunkSizeBytes
 }
 
-func (s *COW) calculateChunkSize(startOffset int64) int64 {
+func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 	size := s.chunkSizeBytes
 	if remainder := s.totalSizeBytes - startOffset; size > remainder {
 		return remainder
@@ -359,7 +360,7 @@ func (s *COW) calculateChunkSize(startOffset int64) int64 {
 	return size
 }
 
-func (s *COW) copyChunk(chunkStartOffset int64) (err error) {
+func (s *COWStore) copyChunk(chunkStartOffset int64) (err error) {
 	src := s.chunks[chunkStartOffset]
 	// Once we've created a copy, we no longer need the source chunk.
 	defer func() {
@@ -405,7 +406,7 @@ func (s *COW) copyChunk(chunkStartOffset int64) (err error) {
 }
 
 // Writes a new dirty chunk containing all 0s for the given chunk index.
-func (s *COW) initDirtyChunk(offset int64, size int64) (*Chunk, error) {
+func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Chunk, error) {
 	path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", offset, dirtySuffix))
 	fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
@@ -440,7 +441,7 @@ func (s *COW) initDirtyChunk(offset int64, size int64) (*Chunk, error) {
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (store *COW, err error) {
+func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (store *COWStore, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
