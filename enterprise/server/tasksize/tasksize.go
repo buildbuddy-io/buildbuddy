@@ -67,7 +67,7 @@ const (
 	MaxEstimatedFreeDisk = int64(100 * 1e9) // 100GB
 
 	// The fraction of an executor's allocatable resources to make available for task sizing.
-	MaxResourceCapacityRatio = 0.8
+	MaxResourceCapacityRatio = 1
 
 	// The expiration for task usage measurements stored in Redis.
 	sizeMeasurementExpiration = 5 * 24 * time.Hour
