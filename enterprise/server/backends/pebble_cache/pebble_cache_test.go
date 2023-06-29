@@ -1380,7 +1380,7 @@ func testLRU(t *testing.T, testACEviction bool) {
 		log.Printf("Using data from 0:%d", quartile*i)
 		for j := 0; j < quartile*i; j++ {
 			r := resourceKeys[j]
-			_, err = pc.Get(ctx, r)
+			_, err = pc.FindMissing(ctx, []*rspb.ResourceName{r})
 			require.NoError(t, err)
 		}
 	}
