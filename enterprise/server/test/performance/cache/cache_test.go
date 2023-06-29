@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -33,7 +34,7 @@ var (
 )
 
 func init() {
-	*log.LogLevel = "warn"
+	*log.LogLevel = "error"
 	*log.IncludeShortFileName = true
 	log.Configure()
 }
@@ -94,8 +95,7 @@ func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
 	return dc
 }
 
-func getDistributedDiskCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
-	dc := getDiskCache(t, te)
+func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) interfaces.Cache {
 	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	conf := distributed.CacheConfig{
 		ListenAddr:         listenAddr,
@@ -104,12 +104,28 @@ func getDistributedDiskCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache
 		Nodes:              []string{listenAddr},
 		DisableLocalLookup: true,
 	}
-	c, err := distributed.NewDistributedCache(te, dc, conf, te.GetHealthChecker())
+	dc, err := distributed.NewDistributedCache(te, c, conf, te.GetHealthChecker())
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.StartListening()
-	return c
+	dc.StartListening()
+	return dc
+}
+
+func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
+	testRootDir := testfs.MakeTempDir(t)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory: testRootDir,
+		MaxSizeBytes:  maxSizeBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	t.Cleanup(func() {
+		pc.Stop()
+	})
+	return pc
 }
 
 func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
@@ -189,12 +205,18 @@ type namedCache struct {
 }
 
 func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
-	dc := getDistributedDiskCache(b, te)
+	dc := getDiskCache(b, te)
+	ddc := getDistributedCache(b, te, dc)
+	pc := getPebbleCache(b, te)
+	dpc := getDistributedCache(b, te, pc)
+
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
 		{getMemoryCache(b), "Memory"},
 		{getDiskCache(b, te), "Disk"},
-		{dc, "DDisk"},
+		{ddc, "DDisk"},
+		{getPebbleCache(b, te), "Pebble"},
+		{dpc, "DPebble"},
 	}
 	return caches
 }
