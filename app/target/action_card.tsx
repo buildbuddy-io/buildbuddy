@@ -170,6 +170,19 @@ export default class ActionCardComponent extends React.Component<Props, State> {
           </div>
         )}
 
+        {(action?.failureDetail?.message?.length ?? 0) > 0 && (
+          <div className={`card ${this.props.dark ? "dark" : "light-terminal"}`}>
+            <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+            <div className="content">
+              <TerminalComponent
+                title={<div className="title">Failure Message</div>}
+                value={action?.failureDetail?.message}
+                lightTheme={!this.props.dark}
+              />
+            </div>
+          </div>
+        )}
+
         <div className={`card ${action?.success ? "card-success" : "card-failure"}`}>
           <PlayCircle className="icon" />
           <div className="content">
@@ -177,13 +190,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
             <div className="test-subtitle">
               {action?.type} command exited with code {action?.exitCode}
             </div>
-            {(action?.failureDetail?.message?.length ?? 0) > 0 && (
-              <TerminalComponent
-                title={<div className="title">Failure Message</div>}
-                value={action?.failureDetail?.message}
-                lightTheme={!this.props.dark}
-              />
-            )}
             <div>
               {action?.commandLine.map((commandLineArg) => (
                 <div className="command-line-arg">{commandLineArg}</div>
