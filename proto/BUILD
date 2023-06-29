@@ -559,6 +559,14 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "metrics_proto",
+    srcs = ["metrics.proto"],
+    deps = [
+        "@com_github_prometheus_client_model//io/prometheus/client:io_prometheus_client_proto",
+    ],
+)
+
 # Go proto rules below here
 
 go_proto_library(
@@ -1127,6 +1135,15 @@ go_proto_library(
     proto = ":encryption_proto",
     deps = [
         ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "metrics_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/metrics",
+    proto = ":metrics_proto",
+    deps = [
+        "@com_github_prometheus_client_model//go",
     ],
 )
 

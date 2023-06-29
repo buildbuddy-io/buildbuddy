@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
-	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -40,6 +39,7 @@ import (
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // An interface representing a mux for handling/serving http requests.
@@ -1153,7 +1153,7 @@ type SingleFlightDeduper interface {
 }
 
 type PromQuerier interface {
-	FetchMetrics(ctx context.Context, groupID string) (model.Vector, error)
+	FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error)
 }
 
 // ConfigSecretProvider provides secrets interpolation into configs.

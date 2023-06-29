@@ -2,10 +2,12 @@ package prom
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -16,17 +18,55 @@ import (
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 
+	mpb "github.com/buildbuddy-io/buildbuddy/proto/metrics"
 	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var (
 	address = flag.String("prometheus.address", "", "the address of the promethus HTTP API")
+
+	// metricConfigs define a list of metrics we will fetch from prometheus and
+	// export to customers.
+	metricConfigs = []*metricConfig{
+		{
+			sourceMetricName: "buildbuddy_remote_exectuion_queue_length",
+			labelNames:       []string{},
+			exportedFamily: &dto.MetricFamily{
+				Name: proto.String("exported_builbduddy_remote_execution_queue_length"),
+				Help: proto.String("Number of actions currently waiting in the executor queue."),
+				Type: dto.MetricType_GAUGE.Enum(),
+			},
+		},
+		{
+			sourceMetricName: "buildbuddy_invocation_duration_usec_exported",
+			labelNames:       []string{metrics.InvocationStatusLabel},
+			exportedFamily: &dto.MetricFamily{
+				Name: proto.String("exported_buildbuddy_invocation_duration_usec"),
+				Help: proto.String("The total duration of each invocation, in **microseconds**."),
+				Type: dto.MetricType_HISTOGRAM.Enum(),
+			},
+		},
+	}
 )
 
 const (
 	redisMetricsKeyPrefix = "exportedMetrics"
-	metricsExpiration     = 10*time.Second - 50*time.Millisecond
+	// The version in redis cache, as part of the redis key.
+	version = "v1"
+	// The time for the metrics to expire in redis.
+	metricsExpiration = 30*time.Second - 50*time.Millisecond
+
+	// The label name that indicates the upper bound of a bucket in a histogram
+	leLabel = "le"
+
+	// A prometheus histogram generates three metrics: sum, count, and bucket.
+	sumSuffix    = "_sum"
+	countSuffix  = "_count"
+	bucketSuffix = "_bucket"
 )
 
 type promQuerier struct {
@@ -34,10 +74,40 @@ type promQuerier struct {
 	rdb redis.UniversalClient
 }
 
+type metricConfig struct {
+	sourceMetricName string
+	labelNames       []string
+	exportedFamily   *dto.MetricFamily
+}
+
+// bbMetric implements prometheus.Metric Interface.
+type bbMetric struct {
+	family *dto.MetricFamily
+	metric *dto.Metric
+}
+
+func (m *bbMetric) Desc() *prometheus.Desc {
+	labelNames := make([]string, 0, len(m.metric.GetLabel()))
+
+	for _, label := range m.metric.Label {
+		labelNames = append(labelNames, *label.Name)
+	}
+	return prometheus.NewDesc(m.family.GetName(), m.family.GetHelp(), labelNames, nil)
+}
+
+func (m *bbMetric) Write(out *dto.Metric) error {
+	proto.Merge(out, m.metric)
+	return nil
+}
+
 type bbMetricsCollector struct {
-	env             environment.Env
-	groupID         string
-	InvocationCount *prometheus.Desc
+	env     environment.Env
+	groupID string
+}
+
+type promQueryParams struct {
+	metricName  string
+	sumByFields []string
 }
 
 func Register(env environment.Env) error {
@@ -72,22 +142,15 @@ func newCollector(env environment.Env, groupID string) *bbMetricsCollector {
 	return &bbMetricsCollector{
 		env:     env,
 		groupID: groupID,
-		InvocationCount: prometheus.NewDesc(
-			"exported_builbuddy_invocation_count",
-			"The total number of invocations whose logs were uploaded to buildbuddy.",
-			[]string{
-				metrics.InvocationStatusLabel,
-				metrics.BazelExitCode,
-				metrics.BazelCommand,
-			},
-			nil,
-		),
 	}
 }
 
 // Describe implements the prometheus.Collector interface
 func (c *bbMetricsCollector) Describe(out chan<- *prometheus.Desc) {
-	out <- c.InvocationCount
+	for _, c := range metricConfigs {
+		f := c.exportedFamily
+		out <- prometheus.NewDesc(f.GetName(), f.GetHelp(), c.labelNames, nil)
+	}
 }
 
 // Collect implements the prometheus.Collector interface
@@ -97,33 +160,105 @@ func (c *bbMetricsCollector) Collect(out chan<- prometheus.Metric) {
 		log.Error("prom querier not set up")
 		return
 	}
-	metricsVec, err := promQuerier.FetchMetrics(c.env.GetServerContext(), c.groupID)
+
+	metricFamilies, err := promQuerier.FetchMetrics(c.env.GetServerContext(), c.groupID)
 	if err != nil {
-		log.Errorf("error fetch metrics: %v", err)
+		log.Warningf("error fetch metrics: %v", err)
 		return
 	}
-	for _, sample := range metricsVec {
-		out <- prometheus.MustNewConstMetric(
-			c.InvocationCount,
-			prometheus.GaugeValue,
-			float64(sample.Value),
-			string(sample.Metric[metrics.InvocationStatusLabel]),
-			string(sample.Metric[metrics.BazelExitCode]),
-			string(sample.Metric[metrics.BazelCommand]))
+
+	for _, family := range metricFamilies {
+		for _, metric := range family.Metric {
+			out <- &bbMetric{family: family, metric: metric}
+		}
 	}
 }
 
-func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) (model.Vector, error) {
-	resultVector, err := q.getCachedMetrics(ctx, groupID)
+func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error) {
+	cachedMetrics, err := q.getCachedMetrics(ctx, groupID)
 	if err != nil {
 		log.Warningf("failed to get cached metrics: %s", err)
 		// Failed to get metrics from Redis. Let's try query prometheus.
 	}
-	if resultVector != nil {
-		return resultVector, nil
+	if cachedMetrics != nil {
+		return cachedMetrics.GetMetricFamilies(), nil
 	}
-	query := fmt.Sprintf("sum by (bazel_command, bazel_exit_code, invocation_status)( buildbuddy_invocation_count{group_id='%s'})", groupID)
-	result, _, err := q.api.Query(ctx, query, time.Now())
+
+	vectorMap, err := q.fetchMetrics(ctx, groupID)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to fetch metrics from prometheus: %s", err)
+	}
+	metricFamilies, err := queryResultsToMetrics(vectorMap)
+
+	err = q.setMetrics(ctx, groupID, metricFamilies)
+	if err != nil {
+		log.Warningf("failed to set metrics to redis: %s", err)
+	}
+	return metricFamilies.GetMetricFamilies(), nil
+}
+
+func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[string]model.Vector, error) {
+	now := time.Now()
+	res := make(map[string]model.Vector)
+	mu := &sync.Mutex{}
+
+	queryParams := make([]*promQueryParams, 0, 3*len(metricConfigs))
+	for _, config := range metricConfigs {
+		switch config.exportedFamily.GetType() {
+		case dto.MetricType_GAUGE:
+			queryParams = append(queryParams, &promQueryParams{
+				metricName: config.sourceMetricName, sumByFields: config.labelNames,
+			})
+		case dto.MetricType_HISTOGRAM:
+			queryParams = append(queryParams,
+				&promQueryParams{
+					metricName:  config.sourceMetricName + countSuffix,
+					sumByFields: config.labelNames,
+				},
+				&promQueryParams{
+					metricName:  config.sourceMetricName + sumSuffix,
+					sumByFields: config.labelNames,
+				},
+				&promQueryParams{
+					metricName:  config.sourceMetricName + bucketSuffix,
+					sumByFields: append(config.labelNames, leLabel),
+				},
+			)
+		default:
+			return nil, status.InvalidArgumentErrorf("unsupported type :%s", config.exportedFamily.GetType())
+		}
+	}
+
+	eg, egCtx := errgroup.WithContext(ctx)
+
+	for _, p := range queryParams {
+		p := p
+		eg.Go(func() error {
+			vec, err := q.query(egCtx, p.metricName, p.sumByFields, groupID, now)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+
+			res[p.metricName] = vec
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (q *promQuerier) query(ctx context.Context, metricName string, sumByFields []string, groupID string, now time.Time) (model.Vector, error) {
+	query := ""
+	if len(sumByFields) > 0 {
+		query = fmt.Sprintf("sum by (%s)(%s{group_id='%s'})", strings.Join(sumByFields, ","), metricName, groupID)
+	} else {
+		query = fmt.Sprintf("sum(%s{group_id='%s'})", metricName, groupID)
+	}
+	result, _, err := q.api.Query(ctx, query, now)
 	if err != nil {
 		return nil, err
 	}
@@ -131,45 +266,177 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) (model.V
 	if !ok {
 		return nil, status.InternalErrorf("failed to query Prometheus: unexpected type %T", result)
 	}
-	err = q.setMetrics(ctx, groupID, resultVector)
-	if err != nil {
-		log.Warningf("failed to set metrics to redis: %s", err)
-	}
 	return resultVector, nil
 }
 
-func getExportedMetricsKey(groupID string) string {
-	return strings.Join([]string{redisMetricsKeyPrefix, groupID}, "/")
+func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error) {
+	m := make(map[string]*dto.MetricFamily)
+
+	for _, config := range metricConfigs {
+		family, ok := m[config.exportedFamily.GetName()]
+		if !ok {
+			family = proto.Clone(config.exportedFamily).(*dto.MetricFamily)
+		}
+
+		if config.exportedFamily.GetType() == dto.MetricType_GAUGE {
+			vector, ok := vectors[config.sourceMetricName]
+			if !ok {
+				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
+			}
+			metric, err := gaugeVecToMetrics(vector, config.labelNames)
+			if err != nil {
+				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
+			}
+			family.Metric = append(family.GetMetric(), metric...)
+		} else if config.exportedFamily.GetType() == dto.MetricType_HISTOGRAM {
+			sumVector, sumExists := vectors[config.sourceMetricName+sumSuffix]
+			countVector, countExists := vectors[config.sourceMetricName+countSuffix]
+			bucketVector, bucketExists := vectors[config.sourceMetricName+bucketSuffix]
+			if !countExists || !sumExists || !bucketExists {
+				return nil, status.InternalErrorf("missing metric %q for histogram", config.sourceMetricName)
+			}
+			metric, err := histogramVecToMetrics(countVector, sumVector, bucketVector, config.labelNames)
+			if err != nil {
+				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
+			}
+			family.Metric = append(family.GetMetric(), metric...)
+		}
+
+		m[config.exportedFamily.GetName()] = family
+	}
+
+	res := &mpb.Metrics{}
+	for _, mf := range m {
+		res.MetricFamilies = append(res.GetMetricFamilies(), mf)
+	}
+	return res, nil
 }
 
-func (q *promQuerier) setMetrics(ctx context.Context, groupID string, vec model.Vector) error {
+func makeLabelPairs(labelNames []string, sample *model.Sample) ([]*dto.LabelPair, error) {
+	labelPairs := make([]*dto.LabelPair, 0, len(labelNames))
+	for _, ln := range labelNames {
+		lv, ok := sample.Metric[model.LabelName(ln)]
+		if !ok {
+			return nil, status.InternalErrorf("miss label name %q", ln)
+		}
+		labelPairs = append(labelPairs, &dto.LabelPair{
+			Name:  proto.String(ln),
+			Value: proto.String(string(lv)),
+		})
+	}
+	return labelPairs, nil
+}
+
+func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric, error) {
+	res := make([]*dto.Metric, 0, len(vector))
+	for _, promSample := range vector {
+		labelPairs, err := makeLabelPairs(labelNames, promSample)
+		if err != nil {
+			return nil, err
+		}
+		sample := &dto.Metric{
+			Label: labelPairs,
+			Gauge: &dto.Gauge{
+				Value: proto.Float64(float64(promSample.Value)),
+			},
+		}
+		res = append(res, sample)
+	}
+	return res, nil
+}
+
+func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames []string) ([]*dto.Metric, error) {
+	sumByFingerprint := make(map[model.Fingerprint]float64)
+	for _, sample := range sumVec {
+		footprint := sample.Metric.Fingerprint()
+		sumByFingerprint[footprint] = float64(sample.Value)
+	}
+
+	bucketsByFingerprint := make(map[model.Fingerprint][]*dto.Bucket)
+	for _, sample := range bucketVec {
+		leValue, ok := sample.Metric[leLabel]
+		if !ok {
+			return nil, status.InternalErrorf("miss 'le' value for bucket vector, label set: %s", sample.Metric)
+		}
+		upperBound, err := strconv.ParseFloat(string(leValue), 64)
+		if err != nil {
+			return nil, status.InternalErrorf("failed to parse %q to float64", leValue)
+		}
+		bucket := &dto.Bucket{
+			UpperBound:      proto.Float64(upperBound),
+			CumulativeCount: proto.Uint64(uint64(sample.Value)),
+		}
+
+		// remove leLabel
+		delete(model.LabelSet(sample.Metric), model.LabelName(leLabel))
+		fingerprint := sample.Metric.Fingerprint()
+		bucketsByFingerprint[fingerprint] = append(bucketsByFingerprint[fingerprint], bucket)
+	}
+
+	res := make([]*dto.Metric, 0, len(countVec))
+
+	for _, sample := range countVec {
+		fingerprint := sample.Metric.Fingerprint()
+		sum, ok := sumByFingerprint[fingerprint]
+		if !ok {
+			return nil, status.InternalErrorf("miss sum value for metric, label set %s", sample.Metric)
+		}
+		labelPairs, err := makeLabelPairs(labelNames, sample)
+		if err != nil {
+			return nil, err
+		}
+		buckets, ok := bucketsByFingerprint[fingerprint]
+		sort.Slice(buckets, func(i, j int) bool {
+			return buckets[i].GetUpperBound() < buckets[j].GetUpperBound()
+		})
+		if !ok {
+			return nil, status.InternalErrorf("miss bucket value for metric, label set %s", sample.Metric)
+		}
+
+		res = append(res, &dto.Metric{
+			Label: labelPairs,
+			Histogram: &dto.Histogram{
+				SampleCount: proto.Uint64(uint64(sample.Value)),
+				SampleSum:   proto.Float64(sum),
+				Bucket:      buckets,
+			},
+		})
+	}
+	return res, nil
+}
+
+func getExportedMetricsKey(groupID string) string {
+	return strings.Join([]string{redisMetricsKeyPrefix, version, groupID}, "/")
+}
+
+func (q *promQuerier) setMetrics(ctx context.Context, groupID string, metricFamilies *mpb.Metrics) error {
 	if q.rdb == nil {
 		return nil
 	}
 	key := getExportedMetricsKey(groupID)
-	b, err := json.Marshal(vec)
+	b, err := proto.Marshal(metricFamilies)
 	if err != nil {
 		return status.InternalErrorf("failed to marshal json: %s", err)
 	}
 	return q.rdb.Set(ctx, key, string(b), metricsExpiration).Err()
 
 }
-func (q *promQuerier) getCachedMetrics(ctx context.Context, groupID string) (model.Vector, error) {
+func (q *promQuerier) getCachedMetrics(ctx context.Context, groupID string) (*mpb.Metrics, error) {
 	if q.rdb == nil {
 		return nil, nil
 	}
 	key := getExportedMetricsKey(groupID)
-	serializedVector, err := q.rdb.Get(ctx, key).Result()
+	blob, err := q.rdb.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return nil, nil
 		}
 		return nil, err
 	}
-	var vec model.Vector
-	err = json.Unmarshal([]byte(serializedVector), &vec)
+	res := &mpb.Metrics{}
+	err = proto.Unmarshal([]byte(blob), res)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to unmarshal json: %s", err)
 	}
-	return vec, nil
+	return res, nil
 }

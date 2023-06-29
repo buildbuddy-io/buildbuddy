@@ -104,12 +104,13 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   render() {
     const title = <div className="title">Error Log</div>;
+    const action = this.props.action?.buildEvent?.action;
     return (
       <div className="target-action-card">
-        {this.props.action?.buildEvent?.action?.stderr?.uri && (
+        {action?.stderr?.uri && (
           <div
             className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${
-              this.props.action.buildEvent.action.success ? "card-success" : "card-failure"
+              action?.success ? "card-success" : "card-failure"
             }`}>
             <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
@@ -139,7 +140,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
           </div>
         )}
 
-        {this.props.action?.buildEvent?.action?.stdout?.uri && (
+        {action?.stdout?.uri && (
           <div className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")}`}>
             <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
@@ -169,16 +170,28 @@ export default class ActionCardComponent extends React.Component<Props, State> {
           </div>
         )}
 
-        <div className={`card ${this.props.action.buildEvent?.action?.success ? "card-success" : "card-failure"}`}>
+        {(action?.failureDetail?.message?.length ?? 0) > 0 && (
+          <div className={`card ${this.props.dark ? "dark" : "light-terminal"}`}>
+            <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+            <div className="content">
+              <TerminalComponent
+                title={<div className="title">Failure Message</div>}
+                value={action?.failureDetail?.message}
+                lightTheme={!this.props.dark}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className={`card ${action?.success ? "card-success" : "card-failure"}`}>
           <PlayCircle className="icon" />
           <div className="content">
-            <div className="title">{this.props.action?.buildEvent?.action?.label}</div>
+            <div className="title">{action?.label}</div>
             <div className="test-subtitle">
-              {this.props.action?.buildEvent?.action?.type} command exited with code{" "}
-              {this.props.action?.buildEvent?.action?.exitCode}
+              {action?.type} command exited with code {action?.exitCode}
             </div>
             <div>
-              {this.props.action?.buildEvent?.action?.commandLine.map((commandLineArg) => (
+              {action?.commandLine.map((commandLineArg) => (
                 <div className="command-line-arg">{commandLineArg}</div>
               ))}
             </div>

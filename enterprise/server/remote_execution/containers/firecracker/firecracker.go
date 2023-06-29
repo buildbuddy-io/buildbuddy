@@ -687,13 +687,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		netNS = networking.NetNamespacePath(c.id)
 	}
 
-	var stdout io.Writer = c.vmLog
-	var stderr io.Writer = c.vmLog
-	if *debugStreamVMLogs {
-		stdout = io.MultiWriter(stdout, os.Stdout)
-		stderr = io.MultiWriter(stderr, os.Stderr)
-	}
-
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
 		return err
@@ -715,8 +708,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
 			ExecFile:       firecrackerBinPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
-			Stdout:         stdout,
-			Stderr:         stderr,
+			Stdout:         c.vmLogWriter(),
+			Stderr:         c.vmLogWriter(),
 			CgroupVersion:  cgroupVersion,
 		},
 		Snapshot: fcclient.SnapshotConfig{
@@ -839,6 +832,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 			log.Warningf("Failed to close workspace nbd: %s", err)
 		}
 		c.workspaceDevice = wd
+		c.nbdServer.SetDevice(wd.Metadata.GetName(), wd)
 	} else {
 		chrootRelativeImagePath := filepath.Base(c.workspaceFSPath())
 		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
@@ -912,24 +906,15 @@ func (c *FirecrackerContainer) getChroot() string {
 func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
 	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux=1 tsc=reliable ipv6.disable=1"
 	var netNS string
-	var stdout io.Writer = c.vmLog
-	var stderr io.Writer = c.vmLog
 
 	if c.vmConfig.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs
 		netNS = networking.NetNamespacePath(c.id)
 	}
 
-	// End the kernel args, before passing some more args to init.
-	if !c.vmConfig.DebugMode {
-		bootArgs += " quiet"
-	}
-
 	// Pass some flags to the init script.
 	if c.vmConfig.DebugMode {
 		bootArgs = "-debug_mode " + bootArgs
-		stdout = io.MultiWriter(stdout, os.Stdout)
-		stderr = io.MultiWriter(stderr, os.Stderr)
 	}
 	if c.vmConfig.EnableNetworking {
 		bootArgs = "-set_default_route " + bootArgs
@@ -975,8 +960,8 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
 			ExecFile:       firecrackerBinPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
-			Stdout:         stdout,
-			Stderr:         stderr,
+			Stdout:         c.vmLogWriter(),
+			Stderr:         c.vmLogWriter(),
 			CgroupVersion:  cgroupVersion,
 		},
 		MachineCfg: fcmodels.MachineConfiguration{
@@ -1013,14 +998,19 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			},
 		}
 	}
-	cfg.JailerCfg.Stdout = c.vmLog
-	cfg.JailerCfg.Stderr = c.vmLog
-	if c.vmConfig.DebugMode {
-		cfg.JailerCfg.Stdout = io.MultiWriter(cfg.JailerCfg.Stdout, os.Stdout)
-		cfg.JailerCfg.Stderr = io.MultiWriter(cfg.JailerCfg.Stderr, os.Stderr)
+	cfg.JailerCfg.Stdout = c.vmLogWriter()
+	cfg.JailerCfg.Stderr = c.vmLogWriter()
+	if *debugTerminal {
 		cfg.JailerCfg.Stdin = os.Stdin
 	}
 	return cfg, nil
+}
+
+func (c *FirecrackerContainer) vmLogWriter() io.Writer {
+	if *debugStreamVMLogs || *debugTerminal {
+		return io.MultiWriter(c.vmLog, os.Stderr)
+	}
+	return c.vmLog
 }
 
 func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string) error {

@@ -2458,7 +2458,8 @@ func (e *partitionEvictor) sampleGroup() {
 
 	groupID, err := e.randomGroupForEvictionSampling()
 	if err != nil {
-		log.Warningf("could not sample group: %s", err)
+		log.Warningf("could not sample group in partition %q: %s", e.part.ID, err)
+		return
 	}
 	metrics.PebbleCacheGroupIDSampleCount.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 }
