@@ -115,7 +115,7 @@ type snapshottedMemoryMapping struct {
 
 func main() {
 	// Remove any existing socket file
-	socketPath := "/home/maggie/sock/uffd.sock"
+	socketPath := "/home/maggielou/uffd.sock"
 	os.RemoveAll(socketPath)
 
 	// Create a Unix domain socket listener
@@ -207,7 +207,7 @@ func main() {
 	}}
 
 	// Map backing file to memory (so you can access contents of the file as if they were RAM)
-	backingMemorySnapshotFile := "/home/maggie/mem_file"
+	backingMemorySnapshotFile := "/home/maggielou/mem_file"
 	file, err := os.OpenFile(backingMemorySnapshotFile, os.O_RDWR, 0)
 	if err != nil {
 		fmt.Println("Failed to open file:", err)
@@ -225,8 +225,8 @@ func main() {
 	// Write-protect memory
 	writeProtectData := uffdioWriteProtect{
 		Range: uffdioRange{
-			Start: uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
-			Len:   uint64(fileInfo.Size()),
+			Start: vmStartMemory,
+			Len:   uint64(vmMemorySize),
 		},
 		Mode: C.UFFDIO_WRITEPROTECT_MODE_WP,
 	}
@@ -256,7 +256,7 @@ func main() {
 			continue
 		}
 
-		if event.PageFault.Flags & C.UFFD_PAGEFAULT_FLAG_WP {
+		if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
 			fmt.Printf("Captured a write!")
 			continue
 		}
