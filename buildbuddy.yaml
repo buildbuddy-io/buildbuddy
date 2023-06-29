@@ -10,4 +10,4 @@ actions:
     bazel_commands:
       - run :memtest
     resource_requests:
-      memory: 4Gi
+      memory: 10Gi
