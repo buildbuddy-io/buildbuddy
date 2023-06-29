@@ -139,7 +139,6 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 				log.CtxInfof(ctx, "Failed to report GitHub status for %q @ %q: %s", ownerRepo, commitSHA, err)
 				continue
 			}
-			log.CtxInfof(ctx, "Reported GitHub status %q for %q @ %q", payload.State, ownerRepo, commitSHA)
 		} else {
 			log.CtxDebugf(ctx, "Not reporting GitHub status (missing REPO_URL or COMMIT_SHA metadata)")
 		}

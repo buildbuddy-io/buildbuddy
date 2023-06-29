@@ -443,6 +443,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 		}
 		return status.UnknownErrorf("HTTP %s: %q", res.Status, string(b))
 	}
+	log.CtxInfof(ctx, "Successfully posted GitHub status for %q @ commit %q: %q (%s): %q", ownerRepo, commitSHA, payload.Context, payload.State, payload.Description)
 	return nil
 }
 
