@@ -68,7 +68,8 @@ export class AuthService {
     console.info(`Refreshing access token every ${refreshFrequencySeconds} seconds.`);
     setInterval(() => {
       if (this.user) this.refreshToken();
-    }, refreshFrequencySeconds * 1000);
+      // Calling setInterval with a number larger than a 32 bit int causes refresh spamming
+    }, Math.min(refreshFrequencySeconds * 1000, 86400000)); // One day in ms
   }
 
   refreshToken() {
