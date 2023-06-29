@@ -288,14 +288,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blocki
 				return nil, status.WrapError(err, "sync dirty chunk")
 			}
 		}
-		// TODO: It's too expensive to compute sha256 digests here for every
-		// chunk. Try out the following improvements:
-		//
-		// - Cache the computed digest as part of the chunk (and invalidate
-		//   the cached value on write)
-		// - Upgrade to go 1.21 to get sha256 perf improvements
-		// - Try blake3 instead of sha256
-		// - Parallelize this loop
 		d, err := digest.Compute(blockio.Reader(c), repb.DigestFunction_SHA256)
 		if err != nil {
 			return nil, err
