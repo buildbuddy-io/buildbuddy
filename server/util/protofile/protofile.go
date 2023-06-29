@@ -112,7 +112,7 @@ func (w *BufferedProtoWriter) Flush(ctx context.Context) error {
 }
 
 func (w *BufferedProtoWriter) TimeSinceLastWrite() time.Duration {
-	return time.Now().Sub(w.lastWriteTime)
+	return time.Since(w.lastWriteTime)
 }
 
 func (w *BufferedProtoWriter) WriteProtoToStream(ctx context.Context, msg proto.Message) error {

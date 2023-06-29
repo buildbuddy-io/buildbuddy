@@ -611,7 +611,7 @@ func (p *partition) evictFn(value interface{}, reason lru.EvictionReason) {
 		i, err := os.Stat(v.FullPath())
 		if err == nil {
 			lastUse := time.Unix(0, getLastUseNanos(i))
-			age := time.Now().Sub(lastUse)
+			age := time.Since(lastUse)
 			// Only update metrics if the value was evicted because of capacity
 			// constraints (and not because of a manual deletion).
 			if reason == lru.SizeEviction {
