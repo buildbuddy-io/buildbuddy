@@ -42,7 +42,6 @@ nogo(
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
         "-S1012",
-        "-S1017",
         "-S1019",
         "-S1023",
         "-S1025",

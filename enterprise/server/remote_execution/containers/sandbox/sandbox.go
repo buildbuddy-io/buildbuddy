@@ -167,9 +167,7 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 	dirs = append(dirs, filepath.Join(homeDir, "Library/Developer"))
 
 	for _, path := range dirs {
-		if strings.HasSuffix(path, "/") {
-			path = path[:len(path)-1]
-		}
+		path = strings.TrimSuffix(path, "/")
 		// If the path exists...
 		if fileInfo, err := os.Lstat(path); err == nil {
 			absPath, err := resolveSymlink(path, fileInfo)
