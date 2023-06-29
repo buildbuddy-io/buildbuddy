@@ -631,7 +631,7 @@ Another point of improvement is using the default BuildBuddy setting, we are upl
 With Buck2, there is an equivalent Buck2 Event system.
 However, as noted in the blog post, Buck2 Event system is not yet compatible with systems outside of Meta so it's not possible to test with it just yet.
 
-So to achieve a more accurate test result, we could move Bazel's Build Event upload to a separate config as follow.
+So to achieve a more accurate test result, we could move Bazel's Build Event upload to a separate config as follows:
 
 ```diff
 --- a/.bazelrc
@@ -674,7 +674,7 @@ Summary
 
 #### Putting all new improvements together
 
-Here is the new benchmark results
+Here are the new benchmark results:
 
 | Tools                         |          Local Build | RBE (with Remote Cache) | RBE (without Remote Cache) |
 | :---------------------------- | -------------------: | ----------------------: | -------------------------: |
@@ -683,8 +683,8 @@ Here is the new benchmark results
 | bazel w. `srcs`               | `42.580 s ± 1.881 s` |    `10.047 s ± 0.517 s` |    ` 73.009 s ± ‎ 2.975 s` |
 | bazel<br/>w. `srcs`, no `BES` | `40.455 s ± 2.275 s` |    ` 6.208 s ± 0.444 s` |    ` 70.788 s ± ‎ 4.408 s` |
 
-This shows that when configured correctly, Bazel performance is very competitive comparing to Buck2.
-And that Buck2 still has some rooms for growth in areas such as Remote Build Execution.
+This shows that when configured correctly, Bazel's performance is very competitive with Buck2's,
+and that Buck2 still has some room for growth in areas such as Remote Build Execution.
 
 Interested readers could find my benchmarking setup in Github repo [sluongng/buck2-rbe-bench](https://github.com/sluongng/buck2-rbe-bench)
 to experiment further.
