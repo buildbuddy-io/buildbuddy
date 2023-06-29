@@ -29,8 +29,7 @@ curl --unix-socket ~/firecracker.socket -i \
     -d '{
             "snapshot_type": "Full",
             "snapshot_path": "./snapshot_file",
-            "mem_file_path": "./mem_file",
-            "version": "1.0.0"
+            "mem_file_path": "./mem_file"
     }'
 
 ** This handler assumes mem_file lives in root, and uses it as the backing memory file
@@ -47,7 +46,7 @@ Instructions to test:
 curl --unix-socket ~/firecracker.socket -i     -X PUT 'http://localhost/snapshot/load'     -H  'Accept: application/json'     -H  'Content-Type: application/json'     -d '{
             "snapshot_path": "./snapshot_file",
             "mem_backend": {
-                "backend_path": "/home/maggie/sock/uffd_socket.sock",
+                "backend_path": "/home/maggie/sock/uffd.sock",
                 "backend_type": "Uffd"
             },
             "enable_diff_snapshots": true,
@@ -73,6 +72,7 @@ import (
 import "C"
 
 const UFFDIO_COPY = 0xc028aa03
+const UFFDIO_WRITEPROTECT = 0xc018aa06
 
 type uffdMsg struct {
 	Event uint8
@@ -94,6 +94,16 @@ type uffdioCopy struct {
 	Len  uint64 // Number of bytes to copy
 	Mode uint64 // Flags controlling behavior of copy
 	Copy int64  // Number of bytes copied, or negated error
+}
+
+type uffdioRange struct {
+	Start uint64
+	Len   uint64
+}
+
+type uffdioWriteProtect struct {
+	Range uffdioRange
+	Mode  uint64
 }
 
 // Corresponds to firecracker GuestRegionUffdMapping
@@ -212,6 +222,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Write-protect memory
+	writeProtectData := uffdioWriteProtect{
+		Range: uffdioRange{
+			Start: uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
+			Len:   uint64(fileInfo.Size()),
+		},
+		Mode: C.UFFDIO_WRITEPROTECT_MODE_WP,
+	}
+	_, _, errNo := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_WRITEPROTECT, uintptr(unsafe.Pointer(&writeProtectData)))
+	if errNo != 0 {
+		fmt.Printf("Failed to call UFFDIO_WRITEPROTECT: %v\n", err)
+		os.Exit(1)
+	}
+
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -229,6 +253,11 @@ func main() {
 
 		if event.Event != C.UFFD_EVENT_PAGEFAULT {
 			fmt.Printf("Unsupported UFFD event type %v", event.Event)
+			continue
+		}
+
+		if event.PageFault.Flags & C.UFFD_PAGEFAULT_FLAG_WP {
+			fmt.Printf("Captured a write!")
 			continue
 		}
 
