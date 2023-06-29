@@ -125,7 +125,8 @@ func runProbe() error {
 
 	args := []string{"//" + *proberName + ":all"}
 	if *bazelArgs != "" {
-		args = append(args, strings.Split(*bazelArgs, " ")...)
+		extraArgs := strings.Split(*bazelArgs, " ")
+		args = append(args, extraArgs...)
 	}
 	res := bazel.Invoke(context.Background(), *bazelBinary, workspaceDir, "build", args...)
 	if res.Error != nil {
