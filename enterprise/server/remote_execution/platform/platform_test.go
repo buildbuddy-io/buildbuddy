@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"flag"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,8 +15,9 @@ import (
 )
 
 var (
-	bare   = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{BareContainerType}}
-	docker = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{DockerContainerType}}
+	bare                 = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{BareContainerType}}
+	docker               = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{DockerContainerType}}
+	podmanAndFirecracker = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{PodmanContainerType, FirecrackerContainerType}}
 )
 
 func TestParse_ContainerImage_Success(t *testing.T) {
@@ -459,6 +461,41 @@ func TestEnvAndArgOverrides(t *testing.T) {
 	commandText, err := prototext.Marshal(command)
 	require.NoError(t, err)
 	require.Equal(t, expectedCmdText, commandText)
+}
+
+func TestForceNetworkIsolationType(t *testing.T) {
+	for _, testCase := range []struct {
+		dockerNetworkValue         string
+		workloadIsolationType      string
+		forcedNetworkIsolationType string
+		expectedIsolationType      string
+	}{
+		// No override set -- behavior unchanged.
+		{"", "podman", "", "podman"},
+		{"host", "podman", "", "podman"},
+		{"none", "podman", "", "podman"},
+
+		// Override set: everything except "none" should
+		// trigger an override.
+		{"", "podman", "firecracker", "firecracker"},
+		{"host", "podman", "firecracker", "firecracker"},
+		{"none", "podman", "firecracker", "podman"},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "container-image", Value: "docker://alpine"},
+			{Name: "dockerNetwork", Value: testCase.dockerNetworkValue},
+			{Name: "workload-isolation-type", Value: testCase.workloadIsolationType},
+		}}
+
+		flag.Set("executor.forced_network_isolation_type", testCase.forcedNetworkIsolationType)
+
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		env := testenv.GetTestEnv(t)
+		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
+		err := ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
+		assert.NoError(t, err)
+		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
+	}
 }
 
 type xcodeLocator struct {

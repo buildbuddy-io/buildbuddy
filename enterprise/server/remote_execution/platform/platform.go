@@ -19,16 +19,17 @@ import (
 )
 
 var (
-	dockerSocket         = flag.String("executor.docker_socket", "", "If set, run execution commands in docker using the provided socket.")
-	defaultXcodeVersion  = flag.String("executor.default_xcode_version", "", "Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used.")
-	defaultIsolationType = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, firecracker, podman, or barerunner")
-	enableBareRunner     = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
-	enablePodman         = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
-	enableSandbox        = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
-	enableFirecracker    = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
-	defaultImage         = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
-	enableVFS            = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
-	extraEnvVars         = flagutil.New("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions. i.e. MY_ENV_VAR=foo")
+	dockerSocket               = flag.String("executor.docker_socket", "", "If set, run execution commands in docker using the provided socket.")
+	defaultXcodeVersion        = flag.String("executor.default_xcode_version", "", "Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used.")
+	defaultIsolationType       = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, firecracker, podman, or barerunner")
+	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
+	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
+	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
+	enableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
+	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
+	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
+	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
+	extraEnvVars               = flagutil.New("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions. i.e. MY_ENV_VAR=foo")
 )
 
 const (
@@ -350,6 +351,12 @@ func contains(haystack []ContainerType, needle ContainerType) bool {
 func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, platformProps *Properties, command *repb.Command) error {
 	if len(executorProps.SupportedIsolationTypes) == 0 {
 		return status.FailedPreconditionError("No workload isolation types configured.")
+	}
+
+	// If forcedNetworkIsolationType is set, force isolation (usually to
+	// firecracker) for this command.
+	if *forcedNetworkIsolationType != "" && platformProps.DockerNetwork != "none" {
+		platformProps.WorkloadIsolationType = *forcedNetworkIsolationType
 	}
 
 	if platformProps.WorkloadIsolationType == "" {
