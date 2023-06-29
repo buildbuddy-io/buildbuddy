@@ -170,8 +170,8 @@ func fileSizeBytes(f *os.File) (int64, error) {
 
 // Chunk represents a section of a larger composite store at a given offset.
 type Chunk struct {
-	Offset int64
 	Store
+	Offset int64
 }
 
 // COW implements copy-on-write for a Store that has been split into chunks of
