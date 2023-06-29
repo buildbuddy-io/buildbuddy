@@ -24,3 +24,22 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+go_test(
+    name = "blockio_benchmark_test",
+    srcs = ["blockio_test.go"],
+    args = [
+        "-test.skip=^Test",
+        "-test.bench=.",
+        # Each benchmark iteration is relatively expensive due to setup IO
+        # costs, so run a fixed number instead of using time-based estimation.
+        "-test.benchtime=16x",
+    ],
+    tags = ["performance"],
+    deps = [
+        ":blockio",
+        "//server/testutil/testfs",
+        "//server/util/disk",
+        "@com_github_stretchr_testify//require",
+    ],
+)
