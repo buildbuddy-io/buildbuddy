@@ -69,9 +69,7 @@ func NewQuery(baseQuery string) *Query {
 func (q *Query) AddWhereClause(clause string, args ...interface{}) *Query {
 	clause = pad(clause)
 	q.whereClauses = append(q.whereClauses, clause)
-	for _, arg := range args {
-		q.arguments = append(q.arguments, arg)
-	}
+	q.arguments = append(q.arguments, args...)
 	return q
 }
 
@@ -81,9 +79,7 @@ func (q *Query) AddWhereInClause(variable string, subQuery *Query) *Query {
 	subQueryStr, args := subQuery.Build()
 	clause := variable + " IN (" + subQueryStr + ") "
 	q.whereClauses = append(q.whereClauses, clause)
-	for _, arg := range args {
-		q.arguments = append(q.arguments, arg)
-	}
+	q.arguments = append(q.arguments, args...)
 	return q
 }
 

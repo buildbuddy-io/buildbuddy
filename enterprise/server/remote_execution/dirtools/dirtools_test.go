@@ -462,9 +462,7 @@ func TestUploadTree(t *testing.T) {
 			}
 
 			var outputPaths []string
-			for _, path := range tc.directoryPaths {
-				outputPaths = append(outputPaths, path)
-			}
+			outputPaths = append(outputPaths, tc.directoryPaths...)
 			for path := range tc.fileContents {
 				outputPaths = append(outputPaths, path)
 			}

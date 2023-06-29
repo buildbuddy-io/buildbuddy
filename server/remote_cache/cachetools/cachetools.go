@@ -700,9 +700,7 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 				return nil, err
 			}
 			nextPageToken = rsp.GetNextPageToken()
-			for _, child := range rsp.GetDirectories() {
-				dirs = append(dirs, child)
-			}
+			dirs = append(dirs, rsp.GetDirectories()...)
 		}
 		if nextPageToken == "" {
 			break
