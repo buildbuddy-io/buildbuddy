@@ -614,16 +614,7 @@ In particular, instead of using the `tools` attribute in Bazel's `genrule`, I sh
 ```
 
 Using `tools` would cause Bazel to configure twice the number of actions underneath due to Bazel's special treatment of tool dependencies.
-
 And fewer actions means a faster build.
-For example, here is the new benchmark when build and test everything with Bazel.
-
-```bash
-> hyperfine --prepare 'bazel clean' --warmup 1 'bazel test --config=local //...'
-Benchmark 1: bazel test --config=local //...
-  Time (mean ± σ):     42.580 s ±  1.881 s    [User: 0.039 s, System: 0.048 s]
-  Range (min … max):   38.127 s … 45.369 s    10 runs
-```
 
 So I reran the benchmark and here are the new results:
 
@@ -636,50 +627,9 @@ So I reran the benchmark and here are the new results:
 This means that if setup correctly, Bazel performance is quite competitive with Buck2.
 Differences of a few seconds could be negligible for most use cases.
 
-Tobias also noted that my current Bazel configuration is uploading Build Events, which may incur additional network latency.
-This could be further be improved by moving the Build Event upload to a background task and defer build artifact downloads.
-
-Here is a quick comparision with RBE and Remote Cache on different modes:
-
-```bash
-> hyperfine --prepare 'bazel clean' \
-            --warmup 1 \
-            'bazel test --config=remote //...' \
-            'bazel test --config=remote //... --bes_upload_mode=fully_async' \
-            'bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_toplevel' \
-            'bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_minimal'
-
-Benchmark 1: bazel test --config=remote //...
-  Time (mean ± σ):      9.460 s ±  0.540 s    [User: 0.023 s, System: 0.031 s]
-  Range (min … max):    8.473 s … 10.107 s    10 runs
-
-Benchmark 2: bazel test --config=remote //... --bes_upload_mode=fully_async
-  Time (mean ± σ):      7.091 s ±  0.137 s    [User: 0.017 s, System: 0.035 s]
-  Range (min … max):    6.893 s …  7.314 s    10 runs
-
-Benchmark 3: bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_toplevel
-  Time (mean ± σ):      5.733 s ±  0.294 s    [User: 0.016 s, System: 0.038 s]
-  Range (min … max):    5.434 s …  6.261 s    10 runs
-
-Benchmark 4: bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_minimal
-  Time (mean ± σ):      5.659 s ±  0.189 s    [User: 0.016 s, System: 0.040 s]
-  Range (min … max):    5.477 s …  6.140 s    10 runs
-
-Summary
-  bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_minimal ran
-    1.01 ± 0.06 times faster than bazel test --config=remote //... --bes_upload_mode=fully_async --remote_download_toplevel
-    1.25 ± 0.05 times faster than bazel test --config=remote //... --bes_upload_mode=fully_async
-    1.67 ± 0.11 times faster than bazel test --config=remote //...
-```
-
-Buck2 does also come with "Deferred Materialization", the equivalent of Bazel's build-without-the-bytes.
-However because the files we are generating are relatively lightweighted,
-I decided to not use these levers as part of the Buck2 benchmark.
-
 Another point of improvement is using the default BuildBuddy setting, we are uploading Bazel's Build Events to BuildBuddy on each build.
-With Buck2, there is an equivalent Buck Event system.
-However, as noted in the blog post, Buck2 Event system is not yet compatible with systems outside of Meta
-so it's not possible to test with it just yet.
+With Buck2, there is an equivalent Buck2 Event system.
+However, as noted in the blog post, Buck2 Event system is not yet compatible with systems outside of Meta so it's not possible to test with it just yet.
 
 So to achieve a more accurate test result, we could move Bazel's Build Event upload to a separate config as follow.
 
@@ -729,7 +679,7 @@ Here is the new benchmark results
 | Tools                         |          Local Build | RBE (with Remote Cache) | RBE (without Remote Cache) |
 | :---------------------------- | -------------------: | ----------------------: | -------------------------: |
 | buck2                         | `41.175 s ± 2.183 s` |    ` 7.937 s ± 0.487 s` |     `203.431 s ± 29.882 s` |
-| bazel w. `tools`              | `65.631 s ± 0.460 s` |    ` 9.798 s ± 0.515 s` |    `106.062 s ± ‎ 3.106 s` |
+| bazel w. `tools` (old)        | `65.631 s ± 0.460 s` |    ` 9.798 s ± 0.515 s` |    `106.062 s ± ‎ 3.106 s` |
 | bazel w. `srcs`               | `42.580 s ± 1.881 s` |    `10.047 s ± 0.517 s` |    ` 73.009 s ± ‎ 2.975 s` |
 | bazel<br/>w. `srcs`, no `BES` | `40.455 s ± 2.275 s` |    ` 6.208 s ± 0.444 s` |    ` 70.788 s ± ‎ 4.408 s` |
 
