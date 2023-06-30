@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -92,9 +93,9 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 
 	sessionID := "e34ff952-6ef0-4a35-ae3d-fe6166fe277e"
 	// Valid JWT cookie, but user does not exist.
-	request.AddCookie(&http.Cookie{Name: jwtCookie, Value: validJWT})
-	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
-	request.AddCookie(&http.Cookie{Name: sessionIDCookie, Value: sessionID})
+	request.AddCookie(&http.Cookie{Name: cookie.JWTCookie, Value: validJWT})
+	request.AddCookie(&http.Cookie{Name: cookie.AuthIssuerCookie, Value: testIssuer})
+	request.AddCookie(&http.Cookie{Name: cookie.SessionIDCookie, Value: sessionID})
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
 
@@ -124,9 +125,9 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	// DB doesn't have a refresh token so authentication should fail.
 	request, err = http.NewRequest(http.MethodGet, "/", strings.NewReader(""))
 	require.NoErrorf(t, err, "could not create HTTP request")
-	request.AddCookie(&http.Cookie{Name: jwtCookie, Value: expiredJWT})
-	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
-	request.AddCookie(&http.Cookie{Name: sessionIDCookie, Value: sessionID})
+	request.AddCookie(&http.Cookie{Name: cookie.JWTCookie, Value: expiredJWT})
+	request.AddCookie(&http.Cookie{Name: cookie.AuthIssuerCookie, Value: testIssuer})
+	request.AddCookie(&http.Cookie{Name: cookie.SessionIDCookie, Value: sessionID})
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
 
@@ -137,7 +138,7 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	response = httptest.NewRecorder()
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticated(t, authCtx)
-	newJwtCookie := getResponseCookie(response.Result(), jwtCookie)
+	newJwtCookie := getResponseCookie(response.Result(), cookie.JWTCookie)
 	require.NotNil(t, newJwtCookie, "JWT cookie should be updated")
 	require.Equal(t, refreshedJWT, newJwtCookie.Value, "JWT cookie should be updated")
 	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
