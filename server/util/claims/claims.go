@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -22,10 +23,17 @@ import (
 const (
 	// Maximum number of entries in JWT -> Claims cache.
 	claimsCacheSize = 10_00
+
+	// BuildBuddy JWT duration maximum.
+	defaultBuildBuddyJWTDuration = 6 * time.Hour
+
+	// The key the Claims are stored under in the context.
+	// If unset, the JWT can be used to reconstitute the claims.
+	contextClaimsKey = "auth.claims"
 )
 
 var (
-	JwtKey = flagutil.New("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flagutil.SecretTag)
+	jwtKey = flagutil.New("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flagutil.SecretTag)
 )
 
 type Claims struct {
@@ -175,6 +183,71 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 	}
 }
 
+func assembleJWT(ctx context.Context, c *Claims) (string, error) {
+	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
+	expiresAt := expirationTime.Unix()
+	// Round expiration times down to the nearest minute to improve stability
+	// of JWTs for caching purposes.
+	expiresAt -= (expiresAt % 60)
+	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	tokenString, err := token.SignedString([]byte(*jwtKey))
+	return tokenString, err
+}
+
+func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Context {
+	if err != nil {
+		return authutil.AuthContextWithError(ctx, err)
+	}
+	tokenString, err := assembleJWT(ctx, c)
+	if err != nil {
+		return authutil.AuthContextWithError(ctx, err)
+	}
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
+	ctx = context.WithValue(ctx, contextClaimsKey, c)
+	// Note: we clear the error here in case it was set initially by the
+	// authentication handler, but then we want to re-authenticate later on in the
+	// request lifecycle, and authentication is successful.
+	// Specifically, we do this when we see the API key in the "BuildStarted" event.
+	return authutil.AuthContextWithError(ctx, nil)
+}
+
+func ClaimsFromContext(ctx context.Context) (*Claims, error) {
+	// If the context already contains trusted Claims, return them directly
+	// instead of re-parsing the JWT (which is expensive).
+	if claims, ok := ctx.Value(contextClaimsKey).(*Claims); ok && claims != nil {
+		return claims, nil
+	}
+
+	// If context already contains a JWT, just verify it and return the claims.
+	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
+		claims, err := ParseClaims(tokenString)
+		if err != nil {
+			return nil, err
+		}
+		return claims, nil
+	}
+
+	// If there's no error or we have an assertion failure; just return a
+	// user not found error.
+	err, ok := authutil.AuthErrorFromContext(ctx)
+	if !ok || err == nil {
+		return nil, authutil.AnonymousUserError(authutil.UserNotFoundMsg)
+	}
+
+	// if there was an error set on the context, and it was an
+	// Unauthenticated or PermissionDeniedError, then the FE can handle it,
+	// so pass it through. This includes anonymous user errors.
+	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
+		return nil, err
+	}
+
+	// All other types of errors will be converted into Unauthenticated
+	// errors.
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
+	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
+}
+
 // ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
 // and verified JWT claims.
 //
@@ -224,5 +297,5 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 }
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
-	return []byte(*JwtKey), nil
+	return []byte(*jwtKey), nil
 }

@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
@@ -59,10 +58,6 @@ const (
 	// context.
 	contextUserKey = "auth.user"
 
-	// The key the Claims are stored under in the context.
-	// If unset, the JWT can be used to reconstitute the claims.
-	contextClaimsKey = "auth.claims"
-
 	// The key that the basicAuth object is stored under in the
 	// context.
 	contextBasicAuthKey = "basicauth.user"
@@ -91,21 +86,9 @@ const (
 	authIssuerParam   = "issuer_url"
 	slugParam         = "slug"
 
-	// The name of the auth cookies used to authenticate the
-	// client.
-	jwtCookie             = "Authorization"
-	sessionIDCookie       = "Session-ID"
-	sessionDurationCookie = "Session-Duration-Seconds"
-	authIssuerCookie      = "Authorization-Issuer"
-	stateCookie           = "State-Token"
-	redirCookie           = "Redirect-Url"
+	stateCookie = "State-Token"
 
-	// How long certain cookies last
-	tempCookieDuration  = 24 * time.Hour
-	loginCookieDuration = 365 * 24 * time.Hour
-
-	// BuildBuddy JWT duration maximum.
-	defaultBuildBuddyJWTDuration = 6 * time.Hour
+	tempCookieDuration = 24 * time.Hour
 
 	// Maximum number of entries in API Key -> Group cache.
 	apiKeyGroupCacheSize = 10_000
@@ -114,33 +97,6 @@ const (
 var (
 	apiKeyRegex = regexp.MustCompile(authutil.APIKeyHeader + "=([a-zA-Z0-9]*)")
 )
-
-func assembleJWT(ctx context.Context, c *claims.Claims) (string, error) {
-	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
-	expiresAt := expirationTime.Unix()
-	// Round expiration times down to the nearest minute to improve stability
-	// of JWTs for caching purposes.
-	expiresAt -= (expiresAt % 60)
-	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	tokenString, err := token.SignedString([]byte(*claims.JwtKey))
-	return tokenString, err
-}
-
-func setLoginCookie(w http.ResponseWriter, jwt, issuer, sessionID string, sessionExpireTime int64) {
-	expiry := time.Now().Add(loginCookieDuration)
-	cookie.SetCookie(w, jwtCookie, jwt, expiry, true /* httpOnly= */)
-	cookie.SetCookie(w, authIssuerCookie, issuer, expiry, true /* httpOnly= */)
-	cookie.SetCookie(w, sessionIDCookie, sessionID, expiry, true /* httpOnly= */)
-	// Don't make the session duration cookie httpOnly so the front end knows how frequently it needs to refresh tokens.
-	cookie.SetCookie(w, sessionDurationCookie, fmt.Sprintf("%d", sessionExpireTime-time.Now().Unix()), expiry, false /* httpOnly= */)
-}
-
-func clearLoginCookie(w http.ResponseWriter) {
-	cookie.ClearCookie(w, jwtCookie)
-	cookie.ClearCookie(w, authIssuerCookie)
-	cookie.ClearCookie(w, sessionIDCookie)
-}
 
 type userToken struct {
 	Email      string `json:"email"`
@@ -539,7 +495,7 @@ func (a *OpenIDAuthenticator) getAuthCodeOptions(r *http.Request) []oauth2.AuthC
 	if !*disableRefreshToken {
 		options = append(options, oauth2.AccessTypeOffline)
 	}
-	sessionID := cookie.GetCookie(r, sessionIDCookie)
+	sessionID := cookie.GetCookie(r, cookie.SessionIDCookie)
 	// If a session doesn't already exist, force a consent screen (so the user can select between multiple accounts) if enabled.
 	if sessionID == "" && *forceApproval {
 		options = append(options, oauth2.ApprovalForce)
@@ -593,23 +549,6 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKeyID(ctx context.Context,
 	return apkg, err
 }
 
-func authContextFromClaims(ctx context.Context, claims *claims.Claims, err error) context.Context {
-	if err != nil {
-		return authutil.AuthContextWithError(ctx, err)
-	}
-	tokenString, err := assembleJWT(ctx, claims)
-	if err != nil {
-		return authutil.AuthContextWithError(ctx, err)
-	}
-	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
-	ctx = context.WithValue(ctx, contextClaimsKey, claims)
-	// Note: we clear the error here in case it was set initially by the
-	// authentication handler, but then we want to re-authenticate later on in the
-	// request lifecycle, and authentication is successful.
-	// Specifically, we do this when we see the API key in the "BuildStarted" event.
-	return authutil.AuthContextWithError(ctx, nil)
-}
-
 func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
 	matches := apiKeyRegex.FindAllStringSubmatch(input, -1)
 	l := len(matches)
@@ -632,8 +571,8 @@ func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey 
 		alert.UnexpectedEvent("overwrite_api_key", "Overwriting existing value of %q in context.", authutil.APIKeyHeader)
 	}
 	ctx = context.WithValue(ctx, authutil.APIKeyHeader, apiKey)
-	claims, err := a.claimsFromAPIKey(ctx, apiKey)
-	return authContextFromClaims(ctx, claims, err)
+	c, err := a.claimsFromAPIKey(ctx, apiKey)
+	return claims.AuthContextFromClaims(ctx, c, err)
 }
 
 func (a *OpenIDAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
@@ -736,7 +675,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 
 	if acceptJWT {
 		// Check if we're already authenticated from incoming headers.
-		return a.authenticatedUser(ctx)
+		return claims.ClaimsFromContext(ctx)
 	}
 
 	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")
@@ -748,12 +687,12 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 // If none of the above information is provided, UnauthenticatedError is returned via the
 // `contextUserErrorKey` context value.
 func (a *OpenIDAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	claims, err := a.authenticateGRPCRequest(ctx, true /* acceptJWT= */)
-	return authContextFromClaims(ctx, claims, err)
+	c, err := a.authenticateGRPCRequest(ctx, true /* acceptJWT= */)
+	return claims.AuthContextFromClaims(ctx, c, err)
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
-	claims, userToken, err := a.authenticateUser(w, r)
+	c, userToken, err := a.authenticateUser(w, r)
 	ctx := r.Context()
 	if userToken != nil {
 		// Store the user information in the context even if authentication fails.
@@ -763,7 +702,7 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	return authContextFromClaims(ctx, claims, err)
+	return claims.AuthContextFromClaims(ctx, c, err)
 }
 
 func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*claims.Claims, *userToken, error) {
@@ -779,12 +718,12 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		return claims, nil, err
 	}
 
-	jwt := cookie.GetCookie(r, jwtCookie)
+	jwt := cookie.GetCookie(r, cookie.JWTCookie)
 	if jwt == "" {
 		return nil, nil, status.PermissionDeniedErrorf("%s: no jwt set", authutil.LoggedOutMsg)
 	}
-	issuer := cookie.GetCookie(r, authIssuerCookie)
-	sessionID := cookie.GetCookie(r, sessionIDCookie)
+	issuer := cookie.GetCookie(r, cookie.AuthIssuerCookie)
+	sessionID := cookie.GetCookie(r, cookie.SessionIDCookie)
 
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
@@ -810,7 +749,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		// Clear auth cookies if the session is not found. This allows the login
 		// flow to request a refresh token, since otherwise the login flow will
 		// assume (based on the existence of this cookie) that a valid session exists with a refresh token already set.
-		clearLoginCookie(w)
+		cookie.ClearLoginCookie(w)
 		return nil, ut, status.PermissionDeniedErrorf("%s: session not found", authutil.LoggedOutMsg)
 	}
 
@@ -842,7 +781,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		// refresh token from the oauth provider. (Without going through the
 		// consent screen, we only get an access token, not a refresh token).
 		log.Warningf("Failed to renew token for session %+v: %s", sesh, err)
-		clearLoginCookie(w)
+		cookie.ClearLoginCookie(w)
 		if err := authDB.ClearSession(ctx, sessionID); err != nil {
 			log.Errorf("Failed to clear session %+v: %s", sesh, err)
 		}
@@ -865,52 +804,16 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		jwt = newJWT
 	}
 
-	setLoginCookie(w, jwt, issuer, sessionID, newToken.Expiry.Unix())
+	cookie.SetLoginCookie(w, jwt, issuer, sessionID, newToken.Expiry.Unix())
 	claims, err := claims.ClaimsFromSubID(ctx, a.env, ut.GetSubID())
 	return claims, ut, err
-}
-
-func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*claims.Claims, error) {
-	// If the context already contains trusted Claims, return them directly
-	// instead of re-parsing the JWT (which is expensive).
-	if claims, ok := ctx.Value(contextClaimsKey).(*claims.Claims); ok && claims != nil {
-		return claims, nil
-	}
-
-	// If context already contains a JWT, just verify it and return the claims.
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := claims.ParseClaims(tokenString)
-		if err != nil {
-			return nil, err
-		}
-		return claims, nil
-	}
-
-	// If there's no error or we have an assertion failure; just return a
-	// user not found error.
-	err, ok := authutil.AuthErrorFromContext(ctx)
-	if !ok || err == nil {
-		return nil, authutil.AnonymousUserError(authutil.UserNotFoundMsg)
-	}
-
-	// if there was an error set on the context, and it was an
-	// Unauthenticated or PermissionDeniedError, then the FE can handle it,
-	// so pass it through. This includes anonymous user errors.
-	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
-		return nil, err
-	}
-
-	// All other types of errors will be converted into Unauthenticated
-	// errors.
-	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
 	// We don't return directly so that we can return a nil-interface instead of an interface holding a nil *Claims.
 	// Callers should be checking err before before accessing the user, but in case they don't this will prevent a nil
 	// dereference.
-	claims, err := a.authenticatedUser(ctx)
+	claims, err := claims.ClaimsFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -943,7 +846,7 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 }
 
 func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
-	issuer := cookie.GetCookie(r, authIssuerCookie)
+	issuer := cookie.GetCookie(r, cookie.AuthIssuerCookie)
 	if issuerParam := r.URL.Query().Get(authIssuerParam); issuerParam != "" {
 		issuer = issuerParam
 	}
@@ -983,26 +886,26 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) erro
 
 	// Set the redirection URL in a cookie so we can use it after validating
 	// the user in our /auth callback.
-	cookie.SetCookie(w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
+	cookie.SetCookie(w, cookie.RedirCookie, redirectURL, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
 
 	// Set the issuer cookie so we remember which issuer to use when exchanging
 	// a token later in our /auth callback.
-	cookie.SetCookie(w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
+	cookie.SetCookie(w, cookie.AuthIssuerCookie, issuer, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
 
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 	return nil
 }
 
 func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
-	clearLoginCookie(w)
+	cookie.ClearLoginCookie(w)
 
 	// Attempt to mark the user as logged out in the database by clearing
 	// their access token.
-	jwt := cookie.GetCookie(r, jwtCookie)
+	jwt := cookie.GetCookie(r, cookie.JWTCookie)
 	if jwt == "" {
 		return status.UnauthenticatedError("Logged out!")
 	}
-	sessionID := cookie.GetCookie(r, sessionIDCookie)
+	sessionID := cookie.GetCookie(r, cookie.SessionIDCookie)
 	if sessionID == "" {
 		return status.UnauthenticatedError("Logged out!")
 	}
@@ -1034,7 +937,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 	}
 
 	// Lookup issuer from the cookie we set in /login.
-	issuer := cookie.GetCookie(r, authIssuerCookie)
+	issuer := cookie.GetCookie(r, cookie.AuthIssuerCookie)
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
 		return status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
@@ -1065,7 +968,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 
 	// OK, the token is valid so we will: store the token in our DB for
 	// later & set the login cookie so we know this user is logged in.
-	setLoginCookie(w, jwt, issuer, sessionID, oauth2Token.Expiry.Unix())
+	cookie.SetLoginCookie(w, jwt, issuer, sessionID, oauth2Token.Expiry.Unix())
 
 	expireTime := time.Unix(0, oauth2Token.Expiry.UnixNano())
 	sesh := &tables.Session{
@@ -1081,7 +984,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 	if err := authDB.InsertOrUpdateUserSession(ctx, sessionID, sesh); err != nil {
 		return err
 	}
-	redirURL := cookie.GetCookie(r, redirCookie)
+	redirURL := cookie.GetCookie(r, cookie.RedirCookie)
 	if redirURL == "" {
 		redirURL = "/" // default to redirecting home.
 	}
