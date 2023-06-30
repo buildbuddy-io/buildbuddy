@@ -107,4 +107,7 @@ message FrontendConfig {
 
   // Whether to show action history on the workflows page.
   bool workflow_history_enabled = 35;
+
+  // Whether the GitHub auth is enabled.
+  bool github_auth_enabled = 36;
 }

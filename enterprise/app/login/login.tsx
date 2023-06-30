@@ -7,6 +7,7 @@ import Input from "../../../app/components/input/input";
 import Button from "../../../app/components/button/button";
 import alertService from "../../../app/alert/alert_service";
 import { grp } from "../../../proto/group_ts_proto";
+import { ArrowRight, Github, HelpCircle, Lock, User } from "lucide-react";
 
 interface State {
   orgName?: string;
@@ -62,12 +63,11 @@ export default class LoginComponent extends React.Component<Props, State> {
   }
 
   handleLoginClicked(event: any) {
-    if (this.state.defaultToSSO) {
-      this.handleSSOClicked(event);
-      return;
-    }
-
     authService.login();
+  }
+
+  handleGithubClicked() {
+    window.location.href = "/login/github/";
   }
 
   handleSSOClicked(event: any) {
@@ -96,6 +96,18 @@ export default class LoginComponent extends React.Component<Props, State> {
     this.setState({ ssoSlug: e.target.value });
   }
 
+  authProviderName() {
+    if (!capabilities.config.configuredIssuers.length) {
+      return "";
+    }
+    if (capabilities.config.configuredIssuers[0].includes("accounts.google.com")) {
+      return "with Google";
+    }
+    if (capabilities.config.configuredIssuers[0].includes("okta.com")) {
+      return "with Okta";
+    }
+  }
+
   render() {
     if (this.isJoiningOrg() && !this.state.orgName) {
       return (
@@ -105,65 +117,47 @@ export default class LoginComponent extends React.Component<Props, State> {
       );
     }
 
-    let redirecting = this.props.search.has("redirect_url");
     return (
       <div className="login">
         <div className="container">
           <div className="login-box">
-            <div className={`login-hero ${!this.isJoiningOrg() ? "hide-on-mobile" : ""}`}>
-              <div className="login-hero-title">
-                {!redirecting && !this.isJoiningOrg() && (
-                  <>
-                    Faster Builds.
-                    <br />
-                    Happier Developers.
-                  </>
-                )}
-                {!redirecting && this.isJoiningOrg() && this.state.orgName && (
-                  <>Join {this.state.orgName} on BuildBuddy</>
-                )}
-                {redirecting && <>Login to continue</>}
-              </div>
-              <div className="hide-on-mobile">
-                BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to
-                build and test software 10x faster.
-              </div>
-            </div>
             <div className="login-buttons">
-              <button className="signup-button" onClick={this.handleLoginClicked.bind(this)}>
-                Sign up for BuildBuddy
+              <button debug-id="login-button" className="google-button" onClick={this.handleLoginClicked.bind(this)}>
+                <User /> Continue {this.authProviderName()}
               </button>
-              <button debug-id="login-button" className="login-button" onClick={this.handleLoginClicked.bind(this)}>
-                Log in to BuildBuddy
-              </button>
+              {capabilities.config.githubAuthEnabled && (
+                <button
+                  debug-id="github-button"
+                  className="github-button"
+                  onClick={this.handleGithubClicked.bind(this)}>
+                  <Github /> Continue with GitHub
+                </button>
+              )}
+              {capabilities.sso && (
+                <form className="sso" onSubmit={this.handleSSOClicked.bind(this)}>
+                  <div className={`sso-prompt ${this.state.showSSO ? "" : "hidden"}`}>
+                    <div className="sso-title">Team Slug</div>
+                    <Input
+                      debug-id="sso-slug"
+                      name="ssoSlug"
+                      value={this.state.ssoSlug}
+                      onChange={this.onChange.bind(this)}
+                      placeholder="my-team-slug"
+                      ref={this.ssoSlugButton}
+                    />
+                  </div>
+                  <button debug-id="sso-button" className={`sso-button ${this.state.ssoSlug ? "active" : ""}`}>
+                    <Lock /> Continue with {this.state.orgName} SSO
+                  </button>
+                </form>
+              )}
               {capabilities.anonymous && (
-                <button onClick={this.handleSetupClicked.bind(this)}>Use BuildBuddy without an account</button>
+                <button className="anon-button" onClick={this.handleSetupClicked.bind(this)}>
+                  <ArrowRight /> Anonymous mode
+                </button>
               )}
             </div>
           </div>
-          <div className="on-prem">
-            Want to run BuildBuddy on-prem? <a href="https://docs.buildbuddy.io/docs/on-prem">Click here</a> for
-            instructions.
-          </div>
-          {capabilities.sso && (
-            <form className="sso" onSubmit={this.handleSSOClicked.bind(this)}>
-              {this.state.showSSO && (
-                <>
-                  <Input
-                    debug-id="sso-slug"
-                    name="ssoSlug"
-                    value={this.state.ssoSlug}
-                    onChange={this.onChange.bind(this)}
-                    placeholder="my-team-slug"
-                    ref={this.ssoSlugButton}
-                  />
-                </>
-              )}
-              <Button debug-id="sso-button" className={`${this.state.ssoSlug ? "active" : ""}`}>
-                Log in with SSO
-              </Button>
-            </form>
-          )}
         </div>
       </div>
     );
