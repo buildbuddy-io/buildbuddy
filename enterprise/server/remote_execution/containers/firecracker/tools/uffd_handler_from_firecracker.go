@@ -226,18 +226,18 @@ func main() {
 	// Write-protect memory
 	// In order for this to work, you need the UFFD object to be initialized with write protection enabled
 	// Firecracker patch : https://github.com/maggie-lou/firecracker/pull/1/files
-	writeProtectData := uffdioWriteProtect{
-		Range: uffdioRange{
-			Start: vmStartMemory,
-			Len:   uint64(vmMemorySize),
-		},
-		Mode: C.UFFDIO_WRITEPROTECT_MODE_WP,
-	}
-	_, _, errNo := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_WRITEPROTECT, uintptr(unsafe.Pointer(&writeProtectData)))
-	if errNo != 0 {
-		fmt.Printf("Failed to call UFFDIO_WRITEPROTECT: %v\n", err)
-		os.Exit(1)
-	}
+	//writeProtectData := uffdioWriteProtect{
+	//	Range: uffdioRange{
+	//		Start: vmStartMemory,
+	//		Len:   uint64(vmMemorySize),
+	//	},
+	//	Mode: C.UFFDIO_WRITEPROTECT_MODE_WP,
+	//}
+	//_, _, errNo := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_WRITEPROTECT, uintptr(unsafe.Pointer(&writeProtectData)))
+	//if errNo != 0 {
+	//	fmt.Printf("Failed to call UFFDIO_WRITEPROTECT: %v\n", err)
+	//	os.Exit(1)
+	//}
 
 	go func() {
 		for {
@@ -278,7 +278,7 @@ func main() {
 				Dst:  vmStartMemory,
 				Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
 				Len:  uint64(vmMemorySize),
-				Mode: 0,
+				Mode: C.UFFDIO_COPY_MODE_WP,
 				Copy: 0,
 			}
 			_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
@@ -289,11 +289,11 @@ func main() {
 		}
 	}()
 
-	var character byte = 'A'
-	vmMemPtr := (*byte)(unsafe.Pointer(uintptr(vmStartMemory)))
-	*vmMemPtr = character
-
-	// Read the character from memory
-	readCharacter := *vmMemPtr
-	fmt.Printf("Character written to memory: %c\n", readCharacter)
+	//var character byte = 'A'
+	//vmMemPtr := (*byte)(unsafe.Pointer(uintptr(vmStartMemory)))
+	//*vmMemPtr = character
+	//
+	//// Read the character from memory
+	//readCharacter := *vmMemPtr
+	//fmt.Printf("Character written to memory: %c\n", readCharacter)
 }

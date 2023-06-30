@@ -169,6 +169,10 @@ func main() {
 
 			if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
 				fmt.Printf("Captured a write!")
+
+				// Here we can unlock the range so that you can write to it, by using another call to UFFDIO_WRITEPROTECT,
+				// but this time with mode set to 0 (this removes write-protection on the address)
+				// Otherwise we'll keep looping and hitting this case, as long as the write isn't resolved
 				continue
 			}
 
