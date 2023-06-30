@@ -87,6 +87,24 @@ type GithubAccessTokenResponse struct {
 	ErrorURI         string `json:"error_uri"`
 }
 
+type GithubUserResponse struct {
+	Login                   string `json:"login"`
+	ID                      int    `json:"id"`
+	NodeID                  string `json:"node_id"`
+	AvatarURL               string `json:"avatar_url"`
+	URL                     string `json:"url"`
+	HTMLURL                 string `json:"html_url"`
+	Type                    string `json:"type"`
+	Name                    string `json:"name"`
+	Company                 string `json:"company"`
+	Location                string `json:"location"`
+	Email                   string `json:"email"`
+	Bio                     string `json:"bio"`
+	CreatedAt               string `json:"created_at"`
+	UpdatedAt               string `json:"updated_at"`
+	TwoFactorAuthentication bool   `json:"two_factor_authentication"`
+}
+
 func (r *GithubAccessTokenResponse) Err() error {
 	if r.Error == "" {
 		return nil
@@ -193,6 +211,35 @@ func NewOAuthHandler(env environment.Env, clientID, clientSecret, path string) *
 	}
 }
 
+func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, redirectPath string) {
+	state := fmt.Sprintf("%d", random.RandUint64())
+	userID := r.FormValue("user_id")
+	groupID := r.FormValue("group_id")
+	redirectURL := r.FormValue("redirect_url")
+	if err := burl.ValidateRedirect(c.env, redirectURL); err != nil {
+		redirectWithError(w, r, err)
+		return
+	}
+	setCookie(w, stateCookieName, state)
+	setCookie(w, userIDCookieName, userID)
+	setCookie(w, groupIDCookieName, groupID)
+	setCookie(w, redirectCookieName, redirectURL)
+
+	var authURL string
+	if r.FormValue("install") == "true" && c.InstallURL != "" {
+		authURL = fmt.Sprintf("%s?state=%s", c.InstallURL, state)
+	} else {
+		authURL = fmt.Sprintf(
+			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
+			c.ClientID,
+			state,
+			url.QueryEscape(build_buddy_url.WithPath(redirectPath).String()),
+			"repo")
+	}
+
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+}
+
 func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, err := perms.AuthenticatedUser(r.Context(), c.env)
 	if err != nil {
@@ -213,32 +260,7 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If we are missing either the OAuth code or app installation ID, start the
 	// OAuth flow.
 	if r.FormValue("code") == "" && r.FormValue("installation_id") == "" {
-		state := fmt.Sprintf("%d", random.RandUint64())
-		userID := r.FormValue("user_id")
-		groupID := r.FormValue("group_id")
-		redirectURL := r.FormValue("redirect_url")
-		if err := burl.ValidateRedirect(c.env, redirectURL); err != nil {
-			redirectWithError(w, r, err)
-			return
-		}
-		setCookie(w, stateCookieName, state)
-		setCookie(w, userIDCookieName, userID)
-		setCookie(w, groupIDCookieName, groupID)
-		setCookie(w, redirectCookieName, redirectURL)
-
-		var authURL string
-		if r.FormValue("install") == "true" && c.InstallURL != "" {
-			authURL = fmt.Sprintf("%s?state=%s", c.InstallURL, state)
-		} else {
-			authURL = fmt.Sprintf(
-				"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
-				c.ClientID,
-				state,
-				url.QueryEscape(build_buddy_url.WithPath(c.Path).String()),
-				"repo")
-		}
-
-		http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+		c.StartAuthFlow(w, r, c.Path)
 		return
 	}
 
@@ -307,44 +329,9 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 		return status.FailedPreconditionError("missing group_id or user_id URL params")
 	}
 
-	client := &http.Client{}
-	url := fmt.Sprintf(
-		"https://github.com/login/oauth/access_token?client_id=%s&client_secret=%s&code=%s&state=%s",
-		c.ClientID,
-		c.ClientSecret,
-		code,
-		state)
-	req, err := http.NewRequest("POST", url, nil)
+	accessToken, err := c.Exchange(r)
 	if err != nil {
-		return status.PermissionDeniedErrorf("failed to create POST request: %s", err)
-	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return status.UnavailableErrorf("access token request failed: %s", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return status.UnavailableErrorf("failed to read response: %s", err)
-	}
-	if resp.StatusCode != 200 {
-		return status.UnknownErrorf("access token request failed: HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
-	var accessTokenResponse GithubAccessTokenResponse
-	if err := json.Unmarshal(body, &accessTokenResponse); err != nil {
-		return status.WrapError(err, "failed to unmarshal GitHub access token response")
-	}
-	if err := accessTokenResponse.Err(); err != nil {
-		return status.PermissionDeniedErrorf("GitHub returned error: %s", err)
-	}
-	if accessTokenResponse.RefreshToken != "" {
-		// TODO: Support refresh token.
-		log.Warningf("GitHub refresh tokens are currently unsupported. To fix this error, opt out of user-to-server token expiration in GitHub app settings.")
-		return status.PermissionDeniedErrorf("OAuth token exchange failed: response included unsupported refresh token")
+		return err
 	}
 
 	// Associate the token with the org (legacy OAuth app only).
@@ -355,7 +342,7 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 		log.Infof("Linking GitHub account for group %s", groupID)
 		err = c.env.GetDBHandle().DB(ctx).Exec(
 			`UPDATE "Groups" SET github_token = ? WHERE group_id = ?`,
-			accessTokenResponse.AccessToken, groupID).Error
+			accessToken, groupID).Error
 		if err != nil {
 			return status.PermissionDeniedErrorf("error linking github account to group: %v", err)
 		}
@@ -369,13 +356,67 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 		log.Infof("Linking GitHub account for user %s", userID)
 		err = c.env.GetDBHandle().DB(ctx).Exec(
 			`UPDATE "Users" SET github_token = ? WHERE user_id = ?`,
-			accessTokenResponse.AccessToken, userID).Error
+			accessToken, userID).Error
 		if err != nil {
 			return status.PermissionDeniedErrorf("Error linking github account to user: %v", err)
 		}
 	}
 
 	return nil
+}
+
+func (c *OAuthHandler) Exchange(r *http.Request) (string, error) {
+	state, err := validateState(r)
+	if err != nil {
+		return "", err
+	}
+
+	code := r.FormValue("code")
+	if code == "" {
+		return "", status.PermissionDeniedErrorf("no auth code set for github oauth exchange")
+	}
+
+	client := &http.Client{}
+	url := fmt.Sprintf(
+		"https://github.com/login/oauth/access_token?client_id=%s&client_secret=%s&code=%s&state=%s",
+		c.ClientID,
+		c.ClientSecret,
+		code,
+		state)
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return "", status.PermissionDeniedErrorf("failed to create POST request: %s", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", status.UnavailableErrorf("access token request failed: %s", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", status.UnavailableErrorf("failed to read response: %s", err)
+	}
+	if resp.StatusCode != 200 {
+		return "", status.UnknownErrorf("access token request failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var accessTokenResponse GithubAccessTokenResponse
+	if err := json.Unmarshal(body, &accessTokenResponse); err != nil {
+		return "", status.WrapError(err, "failed to unmarshal GitHub access token response")
+	}
+	if err := accessTokenResponse.Err(); err != nil {
+		return "", status.PermissionDeniedErrorf("GitHub returned error: %s", err)
+	}
+	if accessTokenResponse.RefreshToken != "" {
+		// TODO: Support refresh token.
+		log.Warningf("GitHub refresh tokens are currently unsupported. To fix this error, opt out of user-to-server token expiration in GitHub app settings.")
+		return "", status.PermissionDeniedErrorf("OAuth token exchange failed: response included unsupported refresh token")
+	}
+
+	return accessTokenResponse.AccessToken, nil
 }
 
 func (c *OAuthHandler) handleInstallation(w http.ResponseWriter, r *http.Request, rawID string) (redirected bool, err error) {
@@ -571,4 +612,31 @@ func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 	q.Set("error", errorParam)
 	redirectURL.RawQuery = q.Encode()
 	http.Redirect(w, r, redirectURL.String(), http.StatusTemporaryRedirect)
+}
+
+func GetUserInfo(token string) (*GithubUserResponse, error) {
+	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create request: %s", err)
+	}
+
+	req.Header.Set("Authorization", "token "+token)
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to send request: %s", err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to read response: %s", err)
+	}
+	if res.StatusCode != 200 {
+		return nil, status.UnknownErrorf("access token request failed: HTTP %d: %s", res.StatusCode, string(body))
+	}
+	var userResponse GithubUserResponse
+	if err := json.Unmarshal(body, &userResponse); err != nil {
+		return nil, status.WrapErrorf(err, "failed to unmarshal GitHub user response: %+v", string(body))
+	}
+	return &userResponse, nil
 }
