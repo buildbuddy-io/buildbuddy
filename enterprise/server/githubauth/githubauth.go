@@ -51,7 +51,7 @@ func (a *githubAuthenticator) Login(w http.ResponseWriter, r *http.Request) erro
 	if r.URL.Path != loginPath {
 		return status.UnauthenticatedError("not a github login")
 	}
-	a.handler().StartAuthFlow(w, r, "/auth/github/")
+	a.handler().StartAuthFlow(w, r, authPath)
 	return nil
 }
 
