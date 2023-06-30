@@ -35,18 +35,19 @@ curl --unix-socket ~/firecracker.socket -i \
 ** This handler assumes mem_file lives in root, and uses it as the backing memory file
 
 Instructions to test:
-1. Run the uffd handler: sudo go run enterprise/server/remote_execution/containers/firecracker/tools/uffd_handler_from_firecracker.go
+1. Run the uffd handler: go run enterprise/server/remote_execution/containers/firecracker/tools/uffd_handler_from_firecracker.go
 	- The socket path is hard coded to /home/maggie/sock/uffd_socket.sock
-2. Run firecracker from root: ./run_firecracker.sh
+2. Run firecracker from root: Copy commands in run_firecracker.sh
 	- You must download the firecracker repo: git clone https://github.com/firecracker-microvm/firecracker
 	- The socket path is hardcoded to ~/firecracker.socket
+	- You may not be able to run the bash script directly, because it executes in a sub-process
 3. Configure networking for a firecracker VM: ./prep_vm.sh
 4. Try to start a VM by loading a snapshot with UFFD configured as the backend
 
 curl --unix-socket ~/firecracker.socket -i     -X PUT 'http://localhost/snapshot/load'     -H  'Accept: application/json'     -H  'Content-Type: application/json'     -d '{
             "snapshot_path": "./snapshot_file",
             "mem_backend": {
-                "backend_path": "/home/maggie/sock/uffd.sock",
+                "backend_path": "/home/maggielou/uffd.sock",
                 "backend_type": "Uffd"
             },
             "enable_diff_snapshots": true,
@@ -238,51 +239,61 @@ func main() {
 		os.Exit(1)
 	}
 
-	for {
-		// Poll UFFD for messages
-		_, pollErr := unix.Poll(pollFDs, -1)
-		if pollErr != nil {
-			fmt.Printf("Failed to poll UFFD: %v\n", err)
-			os.Exit(1)
-		}
+	go func() {
+		for {
+			// Poll UFFD for messages
+			_, pollErr := unix.Poll(pollFDs, -1)
+			if pollErr != nil {
+				fmt.Printf("Failed to poll UFFD: %v\n", err)
+				os.Exit(1)
+			}
 
-		var event uffdMsg
-		_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
-		if err != 0 {
-			fmt.Printf("Failed to read event: %v\n", err)
-			os.Exit(1)
-		}
+			var event uffdMsg
+			_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
+			if err != 0 {
+				fmt.Printf("Failed to read event: %v\n", err)
+				os.Exit(1)
+			}
 
-		if event.Event != C.UFFD_EVENT_PAGEFAULT {
-			fmt.Printf("Unsupported UFFD event type %v", event.Event)
-			continue
-		}
+			if event.Event != C.UFFD_EVENT_PAGEFAULT {
+				fmt.Printf("Unsupported UFFD event type %v", event.Event)
+				continue
+			}
 
-		if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
-			fmt.Printf("Captured a write!")
-			continue
-		}
+			if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
+				fmt.Printf("Captured a write!")
+				continue
+			}
 
-		// Handle page fault by using a memory snapshot file created by snapshotting a different VM
+			// Handle page fault by using a memory snapshot file created by snapshotting a different VM
 
-		// Map requested address from page fault -> page of backing memory file
-		// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
-		// From https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#LL134C8-L134C84
-		//pageSize := os.Getpagesize()
-		//memoryPage := event.PageFault.Address & ^(uint64(pageSize - 1))
+			// Map requested address from page fault -> page of backing memory file
+			// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
+			// From https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#LL134C8-L134C84
+			//pageSize := os.Getpagesize()
+			//memoryPage := event.PageFault.Address & ^(uint64(pageSize - 1))
 
-		// Copy memory from backing snapshot file
-		copyData := uffdioCopy{
-			Dst:  vmStartMemory,
-			Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
-			Len:  uint64(vmMemorySize),
-			Mode: 0,
-			Copy: 0,
+			// Copy memory from backing snapshot file
+			copyData := uffdioCopy{
+				Dst:  vmStartMemory,
+				Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
+				Len:  uint64(vmMemorySize),
+				Mode: 0,
+				Copy: 0,
+			}
+			_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+			if err != 0 {
+				fmt.Printf("Failed to call UFFDIO_COPY: %v\n", err)
+				os.Exit(1)
+			}
 		}
-		_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
-		if err != 0 {
-			fmt.Printf("Failed to call UFFDIO_COPY: %v\n", err)
-			os.Exit(1)
-		}
-	}
+	}()
+
+	var character byte = 'A'
+	vmMemPtr := (*byte)(unsafe.Pointer(uintptr(vmStartMemory)))
+	*vmMemPtr = character
+
+	// Read the character from memory
+	readCharacter := *vmMemPtr
+	fmt.Printf("Character written to memory: %c\n", readCharacter)
 }
