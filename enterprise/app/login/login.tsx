@@ -122,7 +122,7 @@ export default class LoginComponent extends React.Component<Props, State> {
         <div className="container">
           <div className="login-box">
             <div className="login-buttons">
-              <button className="google-button" onClick={this.handleLoginClicked.bind(this)}>
+              <button debug-id="login-button" className="google-button" onClick={this.handleLoginClicked.bind(this)}>
                 <User /> Continue {this.authProviderName()}
               </button>
               {capabilities.config.githubAuthEnabled && (
