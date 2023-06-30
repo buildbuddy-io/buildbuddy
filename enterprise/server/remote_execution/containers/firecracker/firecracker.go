@@ -526,7 +526,7 @@ func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, 
 	if err != nil {
 		return "", err
 	}
-	if err := c.loader.UnpackSnapshot(ctx, snap, baseDir); err != nil {
+	if _, err := c.loader.UnpackSnapshot(ctx, snap, baseDir); err != nil {
 		return "", err
 	}
 	// The base snapshot is no longer useful since we're merging on top
@@ -747,7 +747,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
-	if err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot()); err != nil {
+	if _, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot()); err != nil {
 		return err
 	}
 

@@ -2,9 +2,11 @@ package snaploader
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -89,6 +91,14 @@ type CacheSnapshotOptions struct {
 	// This field is optional -- a snapshot may have a filesystem
 	// stored with it or it may have one attached at runtime.
 	WorkspaceFSPath string
+
+	// Labeled map of chunked artifacts backed by blockio.COWStore storage.
+	ChunkedFiles map[string]*blockio.COWStore
+}
+
+type UnpackedSnapshot struct {
+	// ChunkedFiles holds any chunked files that were part of the snapshot.
+	ChunkedFiles map[string]*blockio.COWStore
 }
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
@@ -124,7 +134,7 @@ type Loader interface {
 	// UnpackSnapshot unpacks a snapshot to the given directory.
 	// It returns UnavailableError if any snapshot artifacts have expired
 	// from cache.
-	UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) error
+	UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) (*UnpackedSnapshot, error)
 
 	// DeleteSnapshot removes the snapshot artifacts from cache
 	// as well as the manifest entry.
@@ -158,13 +168,24 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	return &Snapshot{key: key, manifest: manifest}, nil
 }
 
-func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) error {
+func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) (*UnpackedSnapshot, error) {
 	for _, fileNode := range snapshot.manifest.Files {
 		if !l.env.GetFileCache().FastLinkFile(fileNode, filepath.Join(outputDirectory, fileNode.GetName())) {
-			return status.UnavailableErrorf("snapshot artifact %q not found in local cache", fileNode.GetName())
+			return nil, status.UnavailableErrorf("snapshot artifact %q not found in local cache", fileNode.GetName())
 		}
 	}
-	return nil
+
+	unpacked := &UnpackedSnapshot{ChunkedFiles: map[string]*blockio.COWStore{}}
+	// Construct COWs from chunks.
+	for _, cf := range snapshot.manifest.ChunkedFiles {
+		cow, err := l.unpackCOW(ctx, cf, outputDirectory)
+		if err != nil {
+			return nil, status.WrapError(err, "unpack COW")
+		}
+		unpacked.ChunkedFiles[cf.GetName()] = cow
+	}
+
+	return unpacked, nil
 }
 
 func (l *FileCacheLoader) DeleteSnapshot(ctx context.Context, snapshot *Snapshot) error {
@@ -193,7 +214,13 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		l.env.GetFileCache().AddFile(fileNode, f)
 		manifest.Files = append(manifest.Files, fileNode)
 	}
-
+	for name, cow := range opts.ChunkedFiles {
+		cf, err := l.cacheCOW(ctx, name, cow)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "cache %q COW", name)
+		}
+		manifest.ChunkedFiles = append(manifest.ChunkedFiles, cf)
+	}
 	// Write the manifest file and put it in the filecache too. We'll
 	// retrieve this later in order to unpack the snapshot.
 	b, err := proto.Marshal(manifest)
@@ -205,6 +232,78 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		return nil, err
 	}
 	return &Snapshot{key: key, manifest: manifest}, nil
+}
+
+func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cow *blockio.COWStore, err error) {
+	dataDir := filepath.Join(outputDirectory, file.GetName())
+	if err := os.Mkdir(dataDir, 0755); err != nil {
+		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
+	}
+	var chunks []*blockio.Chunk
+	defer func() {
+		// If there was an error, clean up any chunks we created.
+		if err == nil {
+			return
+		}
+		for _, c := range chunks {
+			c.Close()
+		}
+	}()
+	for _, chunk := range file.Chunks {
+		size := file.GetChunkSize()
+		if remainder := file.GetSize() - chunk.GetOffset(); size > remainder {
+			size = remainder
+		}
+		d := &repb.Digest{Hash: chunk.GetDigestHash(), SizeBytes: size}
+		node := &repb.FileNode{Digest: d}
+		path := filepath.Join(dataDir, fmt.Sprintf("%d", chunk.GetOffset()))
+		if !l.env.GetFileCache().FastLinkFile(node, path) {
+			return nil, status.UnavailableErrorf("snapshot chunk %s/%d not found in local cache", file.GetName(), chunk.GetOffset())
+		}
+		mm, err := blockio.NewLazyMmap(path)
+		if err != nil {
+			return nil, status.WrapError(err, "create mmap for chunk")
+		}
+		c := &blockio.Chunk{Offset: chunk.GetOffset(), Store: mm}
+		chunks = append(chunks, c)
+	}
+	return blockio.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
+}
+
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blockio.COWStore) (*fcpb.ChunkedFile, error) {
+	size, err := cow.SizeBytes()
+	if err != nil {
+		return nil, err
+	}
+	cf := &fcpb.ChunkedFile{
+		Name:      name,
+		Size:      size,
+		ChunkSize: cow.ChunkSizeBytes(),
+	}
+	for _, c := range cow.Chunks() {
+		if cow.Dirty(c.Offset) {
+			// Sync dirty chunks to make sure the underlying file is up to date
+			// before we add it to cache.
+			if err := c.Sync(); err != nil {
+				return nil, status.WrapError(err, "sync dirty chunk")
+			}
+		}
+		d, err := digest.Compute(blockio.Reader(c), repb.DigestFunction_SHA256)
+		if err != nil {
+			return nil, err
+		}
+		node := &repb.FileNode{Digest: d}
+		path := filepath.Join(cow.DataDir(), cow.ChunkName(c.Offset))
+		// TODO: if the file is already cached, then instead of adding the file,
+		// just record a file access (to avoid the syscall overhead of
+		// unlink/relink).
+		l.env.GetFileCache().AddFile(node, path)
+		cf.Chunks = append(cf.Chunks, &fcpb.Chunk{
+			Offset:     c.Offset,
+			DigestHash: d.GetHash(),
+		})
+	}
+	return cf, nil
 }
 
 func hashStrings(strs ...string) string {

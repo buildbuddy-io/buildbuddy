@@ -2,6 +2,7 @@ package blockio_test
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -109,7 +110,7 @@ func TestCOW_SparseData(t *testing.T) {
 	n, err = c.WriteAt([]byte{1}, 0)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
-	err = c.Chunks[0].Sync()
+	err = c.Chunks()[0].Sync()
 	require.NoError(t, err)
 
 	// Make sure we wrote a dirty chunk with the expected contents, and only a
@@ -120,6 +121,118 @@ func TestCOW_SparseData(t *testing.T) {
 	expectedContent[0] = 1
 	require.Equal(t, expectedContent, b)
 	require.Equal(t, int64(1), numIOBlocks(t, dirtyPath))
+}
+
+func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
+	const chunkSize = 512 * 1024 // 512K
+	// TODO: figure out a more realistic distribution of read/write size
+	const ioSize = 4096
+	// Use a relatively small disk size to avoid expensive test setup.
+	const diskSize = 64 * 1024 * 1024
+	// Read/write a total volume equal to the disk size so that sequential
+	// read/write tests don't touch the same block twice.
+	const ioCountPerBenchOp = diskSize / ioSize
+
+	for _, test := range []struct {
+		name string
+
+		// Value 0-1 indicating the approx fraction of data blocks in the
+		// initial file (before chunking). Non-data blocks will be empty.
+		initialDensity float64
+
+		// Value 0-1 indicating what fraction of requests are reads.
+		readFraction float64
+		// Whether the requests are done sequentially. The offset will start
+		// at 0 and wrap around if needed. Otherwise, requests are random but
+		// will be page-aligned.
+		sequential bool
+	}{
+		{
+			name:           "SeqWrite_InitiallyEmpty",
+			initialDensity: 0,
+			readFraction:   0,
+			sequential:     true,
+		},
+		{
+			name:           "RandReadWrite_InitiallyEmpty",
+			initialDensity: 0,
+			readFraction:   0.9,
+			sequential:     false,
+		},
+		{
+			name:           "RandReadWrite_InitiallyHalfFull",
+			initialDensity: 0.5,
+			readFraction:   0.9,
+			sequential:     false,
+		},
+	} {
+		order := "Random"
+		if test.sequential {
+			order = "Sequential"
+		}
+		name := fmt.Sprintf("%s[D=%.1f,%s:N=%d:R=%.1f/W=%.1f]", test.name, test.initialDensity, order, ioCountPerBenchOp, test.readFraction, 1-test.readFraction)
+		b.Run(name, func(b *testing.B) {
+			b.StopTimer()
+			tmp := testfs.MakeTempDir(b)
+			for i := 0; i < b.N; i++ {
+				// Set up the initial file and chunk it up into a COW
+				f, err := os.CreateTemp(tmp, "")
+				require.NoError(b, err)
+				err = f.Truncate(diskSize)
+				ioBlockSize := ioBlockSize(b, f.Name())
+
+				buf := make([]byte, ioBlockSize*32)
+				require.NoError(b, err)
+				for off := int64(0); off < diskSize; off += int64(len(buf)) {
+					if rand.Float64() >= test.initialDensity {
+						continue
+					}
+					_, err := rand.Read(buf)
+					require.NoError(b, err)
+					_, err = f.WriteAt(buf, off)
+					require.NoError(b, err)
+				}
+				chunkDir, err := os.MkdirTemp(tmp, "")
+				require.NoError(b, err)
+				cow, err := blockio.ConvertFileToCOW(f.Name(), chunkSize, chunkDir)
+				require.NoError(b, err)
+				err = os.Remove(f.Name())
+				require.NoError(b, err)
+
+				// Prepare read/write bufs
+				randBuf := make([]byte, ioSize)
+				_, err = rand.Read(randBuf)
+				require.NoError(b, err)
+				readBuf := make([]byte, ioSize)
+				off := int64(0)
+
+				b.StartTimer()
+				for r := 0; r < ioCountPerBenchOp; r++ {
+					if !test.sequential {
+						off = rand.Int63n(ioBlockSize)
+					}
+					if rand.Float64() < test.readFraction {
+						_, err := cow.ReadAt(readBuf, off)
+						require.NoError(b, err)
+					} else {
+						_, err := cow.WriteAt(randBuf, off)
+						require.NoError(b, err)
+					}
+					if test.sequential {
+						off += ioSize
+						off %= diskSize
+					}
+				}
+				b.StopTimer()
+
+				// Clean up so we don't run out of resources mid-bench
+				err = cow.Close()
+				require.NoError(b, err)
+				err = os.RemoveAll(chunkDir)
+				require.NoError(b, err)
+			}
+		})
+	}
 }
 
 func testStore(t *testing.T, s blockio.Store, path string) {
@@ -215,6 +328,13 @@ func numIOBlocks(t *testing.T, path string) int64 {
 	// See https://askubuntu.com/a/1308745
 	statBlocksPerIOBlock := int64(s.Blksize) / 512
 	return s.Blocks / statBlocksPerIOBlock
+}
+
+func ioBlockSize(t testing.TB, path string) int64 {
+	st := &syscall.Stat_t{}
+	err := syscall.Stat(path, st)
+	require.NoError(t, err)
+	return int64(st.Blksize)
 }
 
 func concatBytes(chunks ...[]byte) []byte {
