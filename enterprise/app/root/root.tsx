@@ -176,12 +176,11 @@ export default class EnterpriseRootComponent extends React.Component {
           </div>
         )}
         <div
-          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""} ${
-            login ? "dark" : ""
-          }`}>
+          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""}`}>
           <div className={`page ${menu ? "has-menu" : ""}`}>
             {menu && (
               <MenuComponent
+                light={login}
                 user={this.state.user}
                 showHamburger={!this.state.user && !!invocationId}
                 preferences={this.state.preferences}>
@@ -318,7 +317,7 @@ export default class EnterpriseRootComponent extends React.Component {
                 </div>
               )}
               {!this.state.loading && !code && <FooterComponent />}
-              {this.state.loading && <div className="loading loading-dark"></div>}
+              {this.state.loading && <div className="loading loading"></div>}
             </div>
           </div>
           <GroupSearchComponent />

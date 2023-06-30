@@ -10,6 +10,7 @@ interface Props {
   preferences: UserPreferences;
   user?: User;
   showHamburger: boolean;
+  light?: boolean;
 }
 interface State {
   menuExpanded: boolean;
@@ -67,12 +68,12 @@ export default class MenuComponent extends React.Component<Props, State> {
         {this.state.menuExpanded && (
           <div className="side-menu-shade" onClick={this.handleShadeClicked.bind(this)}></div>
         )}
-        <div className="menu">
+        <div className={`menu ${this.props.light ? "light" : ""}`}>
           <div className="container">
             <div>
               <a href="/">
                 <div className="title">
-                  <img src="/image/logo_white.svg" />
+                  <img src={this.props.light ? "/image/logo_dark.svg" : "/image/logo_white.svg"} />
                 </div>
               </a>
             </div>
