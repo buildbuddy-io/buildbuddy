@@ -223,6 +223,8 @@ func main() {
 	}
 
 	// Write-protect memory
+	// In order for this to work, you need the UFFD object to be initialized with write protection enabled
+	// Firecracker patch : https://github.com/maggie-lou/firecracker/pull/1/files
 	writeProtectData := uffdioWriteProtect{
 		Range: uffdioRange{
 			Start: vmStartMemory,
