@@ -29,9 +29,10 @@ const (
 		#include <linux/userfaultfd.h>
 	*/
 	// printf("(hex)%x\n", _IOWR(UFFDIO, _UFFDIO_API, struct uffdio_api));
-	UFFDIO_API      = 0xc018aa3f
-	UFFDIO_REGISTER = 0xc020aa00
-	UFFDIO_COPY     = 0xc028aa03
+	UFFDIO_API          = 0xc018aa3f
+	UFFDIO_REGISTER     = 0xc020aa00
+	UFFDIO_COPY         = 0xc028aa03
+	UFFDIO_WRITEPROTECT = 0xc018aa06
 )
 
 type uffdioApi struct {
@@ -70,6 +71,11 @@ type uffdioCopy struct {
 	Len  uint64 // Number of bytes to copy
 	Mode uint64 // Flags controlling behavior of copy
 	Copy int64  // Number of bytes copied, or negated error
+}
+
+type uffdioWriteProtect struct {
+	Range uffdioRange
+	Mode  uint64
 }
 
 func main() {
@@ -117,7 +123,7 @@ func main() {
 			Start: uint64(uintptr(unsafe.Pointer(startAddr))),
 			Len:   uint64(lenToManage),
 		},
-		Mode: C.UFFDIO_REGISTER_MODE_MISSING,
+		Mode: C.UFFDIO_REGISTER_MODE_MISSING | C.UFFDIO_REGISTER_MODE_WP,
 	}
 	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_REGISTER, uintptr(unsafe.Pointer(&registerData)))
 	if err != 0 {
@@ -161,6 +167,11 @@ func main() {
 
 			fmt.Printf("Address is %v", event.Event)
 
+			if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
+				fmt.Printf("Captured a write!")
+				continue
+			}
+
 			copyData := uffdioCopy{
 				Dst:  event.PageFault.Address,
 				Src:  uint64(uintptr(unsafe.Pointer(&pageToCopy[0]))),
@@ -181,9 +192,30 @@ func main() {
 	l := 0xf
 	c := addr[l]
 	fmt.Printf("Read value %v in main(): ", c)
+
+	// Try writing to it without write-protection on
+	addr[l] = 'R'
+
+	// Try write-protecting the region after it's already been allocated?
+	writeProtectData := uffdioWriteProtect{
+		Range: uffdioRange{
+			Start: uint64(uintptr(unsafe.Pointer(startAddr))),
+			Len:   uint64(lenToManage),
+		},
+		Mode: C.UFFDIO_WRITEPROTECT_MODE_WP,
+	}
+	_, _, errNo := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_WRITEPROTECT, uintptr(unsafe.Pointer(&writeProtectData)))
+	if errNo != 0 {
+		fmt.Printf("Failed to call UFFDIO_WRITEPROTECT: %d\n", errNo)
+		os.Exit(1)
+	}
+
+	fmt.Println("Now trying to write to it")
+	addr[l] = 'U'
+
+	fmt.Printf("Reading new value %v", addr[l])
+
 	l += 1024
 	c = addr[l]
 	fmt.Printf("Read value %v in main(): ", c)
-	for {
-	}
 }
