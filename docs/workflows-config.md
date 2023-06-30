@@ -287,6 +287,14 @@ A named group of Bazel commands that run when triggered.
   Defaults to `"amd64"`. `"arm64"` is also supported when running under
   `os: "darwin"`, but requires using self-hosted Apple silicon (ARM-based)
   Mac executors running on a dedicated `workflows` pool.
+- **`pool`** (`string`): The executor pool name for running workflows.
+  This option has no effect unless `self_hosted: true` is also specified.
+- **`self_hosted`** (`boolean`): Whether to run the workflow on
+  self-hosted executors. The executor's default isolation type will be
+  used to run workflows. Unless `pool` is also specified, the configured
+  pool name for the self-hosted workflow executors must be `"workflows"`.
+  This option is ignored for macOS workflows, since macOS workflows are
+  always required to be self-hosted.
 - **`container_image`** (`string`): The Linux container image to use
   (has no effect for Mac workflows). Supported values are `"ubuntu-18.04"`
   and `"ubuntu-20.04"`. Defaults to `"ubuntu-18.04"`.

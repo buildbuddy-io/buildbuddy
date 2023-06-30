@@ -1112,7 +1112,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.WorkflowsPoolName()},
+				{Name: "Pool", Value: ws.poolForAction(workflowAction)},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: platform.DockerUserPropertyName, Value: workflowAction.User},
@@ -1149,6 +1149,13 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)
 	return actionDigest, err
+}
+
+func (ws *workflowService) poolForAction(action *config.Action) string {
+	if action.SelfHosted && action.Pool != "" {
+		return action.Pool
+	}
+	return ws.WorkflowsPoolName()
 }
 
 func (ws *workflowService) WorkflowsPoolName() string {

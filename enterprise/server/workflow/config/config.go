@@ -27,6 +27,7 @@ type Action struct {
 	Triggers          *Triggers         `yaml:"triggers"`
 	OS                string            `yaml:"os"`
 	Arch              string            `yaml:"arch"`
+	Pool              string            `yaml:"pool"`
 	SelfHosted        bool              `yaml:"self_hosted"`
 	ContainerImage    string            `yaml:"container_image"`
 	ResourceRequests  ResourceRequests  `yaml:"resource_requests"`
