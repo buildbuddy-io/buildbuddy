@@ -24,7 +24,6 @@ go_library(
         "//server/util/status",
         "//server/util/url",
         "@com_github_coreos_go_oidc//:go-oidc",
-        "@com_github_golang_jwt_jwt//:jwt",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//credentials",
