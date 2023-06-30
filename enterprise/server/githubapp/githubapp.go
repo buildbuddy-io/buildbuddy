@@ -63,6 +63,10 @@ func Register(env environment.Env) error {
 	return nil
 }
 
+func IsEnabled() bool {
+	return *enabled
+}
+
 // GitHubApp implements the BuildBuddy GitHub app. Users install the app to
 // their personal account or organization, granting access to some or all
 // repositories.
