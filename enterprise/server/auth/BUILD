@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/githubauth",
         "//enterprise/server/oidc",
         "//enterprise/server/saml",
         "//server/environment",

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -38,6 +39,12 @@ func Register(ctx context.Context, env environment.Env) error {
 		samlAuthenticator := saml.NewSAMLAuthenticator(env)
 		httpAuthenticators = append(httpAuthenticators, samlAuthenticator)
 		userAuthenticators = append(userAuthenticators, samlAuthenticator)
+	}
+
+	if githubauth.IsEnabled(env) {
+		ga := githubauth.NewGithubAuthenticator(env)
+		httpAuthenticators = append(httpAuthenticators, ga)
+		userAuthenticators = append(userAuthenticators, ga)
 	}
 
 	authenticator := &authenticator{
@@ -77,14 +84,16 @@ type authenticator struct {
 }
 
 func (a *authenticator) Login(w http.ResponseWriter, r *http.Request) error {
-	var err error
+	errors := make([]error, 0)
 	for _, authenticator := range a.http {
-		if err = authenticator.Login(w, r); err == nil {
+		if err := authenticator.Login(w, r); err == nil {
 			return nil
+		} else {
+			errors = append(errors, err)
 		}
 	}
-	if err != nil {
-		return err
+	if len(errors) > 0 {
+		return errors[0]
 	}
 	return status.NotFoundErrorf("No authenticator registered to handle login path: %s", r.URL.Path)
 }
@@ -95,14 +104,16 @@ func (a *authenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	return status.UnauthenticatedError("Logged out!")
 }
 func (a *authenticator) Auth(w http.ResponseWriter, r *http.Request) error {
-	var err error
+	errors := make([]error, 0)
 	for _, authenticator := range a.http {
-		if err = authenticator.Auth(w, r); err == nil {
+		if err := authenticator.Auth(w, r); err == nil {
 			return nil
+		} else {
+			errors = append(errors, err)
 		}
 	}
-	if err != nil {
-		return err
+	if len(errors) > 0 {
+		return errors[0]
 	}
 	return status.NotFoundErrorf("No authenticator registered to auth path: %s", r.URL.Path)
 }

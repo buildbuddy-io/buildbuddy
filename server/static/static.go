@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubauth"
 	iss_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
@@ -143,6 +144,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		DefaultToDenseMode:                     *defaultToDenseMode,
 		GithubEnabled:                          github.IsLegacyOAuthAppEnabled(),
 		GithubAppEnabled:                       env.GetGitHubApp() != nil,
+		GithubAuthEnabled:                      githubauth.IsEnabled(env),
 		AnonymousUsageEnabled:                  env.GetAuthenticator().AnonymousUsageEnabled(),
 		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),
 		UserOwnedExecutorsEnabled:              remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
