@@ -378,7 +378,7 @@ func (qw *queueWorker) RemoteWriteBlocked(ctx context.Context, wreq *bspb.WriteR
 func defaultCapabilities() *repb.ServerCapabilities {
 	var compressors = []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
 	return &repb.ServerCapabilities{
-		// Support bazel 2.0 -> 2.3
+		// Support REAPI 2.0 -> 2.3
 		LowApiVersion:  &smpb.SemVer{Major: int32(2)},
 		HighApiVersion: &smpb.SemVer{Major: int32(2), Minor: int32(3)},
 		CacheCapabilities: &repb.CacheCapabilities{
