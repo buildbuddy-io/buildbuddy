@@ -1498,8 +1498,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
             "gazelle:resolve go github.com/containernetworking/cni/pkg/types/current @com_github_containernetworking_cni//pkg/types/current",
         ],
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
-        sum = "h1:HTnxnX9pvQkQOHjv+TppzUyi2BNFL/7aegSlqIK/usY=",
-        version = "v1.0.0",
+        replace = "github.com/bduffany/firecracker-go-sdk",
+        sum = "h1:gxdryq8e81djt9+N7gUa4FVJO427la9UUQEiMo2B8tE=",
+        version = "v0.0.0-20230702173145-62f8e172aec2",
+    )
+    go_repository(
+        name = "com_github_firefart_nonamedreturns",
+        importpath = "github.com/firefart/nonamedreturns",
+        sum = "h1:fSvcq6ZpK/uBAgJEGMvzErlzyM4NELLqqdTofVjVNag=",
+        version = "v1.0.1",
     )
 
     go_repository(
@@ -1775,8 +1782,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_openapi_analysis",
         importpath = "github.com/go-openapi/analysis",
-        sum = "h1:ZDFLvSNxpDaomuCueM0BlSXxpANBlFYiBvr+GXrvIHc=",
-        version = "v0.21.4",
+        sum = "h1:hXFrOYFHUAMQdu6zwAiKKJHJQ8kqZs1ux/ru1P1wLJU=",
+        version = "v0.21.2",
     )
     go_repository(
         name = "com_github_go_openapi_errors",
@@ -1800,8 +1807,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_openapi_loads",
         importpath = "github.com/go-openapi/loads",
-        sum = "h1:r2a/xFIYeZ4Qd2TnGpWDIQNcP80dIaZgf704za8enro=",
-        version = "v0.21.2",
+        sum = "h1:Wb3nVZpdEzDTcly8S4HMkey6fjARRzb7iEaySimlDW0=",
+        version = "v0.21.1",
     )
     go_repository(
         name = "com_github_go_openapi_runtime",
@@ -2858,8 +2865,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_j_keck_arping",
         importpath = "github.com/j-keck/arping",
-        sum = "h1:hlLhuXgQkzIJTZuhMigvG/CuSkaspeaD9hRDk2zuiMI=",
-        version = "v1.0.2",
+        sum = "h1:742eGXur0715JMq73aD95/FU0XpVKXqNuTnEfXsLOYQ=",
+        version = "v0.0.0-20160618110441-2cf9dc699c56",
     )
 
     go_repository(
