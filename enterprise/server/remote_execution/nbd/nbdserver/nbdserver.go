@@ -20,13 +20,9 @@ type Device struct {
 	Metadata *nbdpb.DeviceMetadata
 }
 
-func NewExt4Device(path, name string) (*Device, error) {
-	m, err := blockio.NewMmap(path)
-	if err != nil {
-		return nil, err
-	}
+func NewExt4Device(store blockio.Store, name string) (*Device, error) {
 	return &Device{
-		Store: m,
+		Store: store,
 		Metadata: &nbdpb.DeviceMetadata{
 			Name:           name,
 			FilesystemType: nbdpb.FilesystemType_EXT4_FILESYSTEM_TYPE,

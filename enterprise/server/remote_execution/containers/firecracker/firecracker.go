@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/armon/circbuf"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver"
@@ -116,6 +117,9 @@ const (
 	// minScratchDiskSizeBytes is the minimum size needed for the scratch disk.
 	// This is needed because the init binary needs some space to copy files around.
 	minScratchDiskSizeBytes = 64e6
+
+	// Chunk size to use when creating COW images from files.
+	cowChunkSizeBytes = 512 * 1024
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
@@ -316,9 +320,9 @@ type FirecrackerContainer struct {
 
 	// When NBD is enabled, this is the running NBD server that serves the VM
 	// disks.
-	nbdServer       *nbdserver.Server
-	scratchDevice   *nbdserver.Device
-	workspaceDevice *nbdserver.Device
+	nbdServer      *nbdserver.Server
+	scratchStore   *blockio.COWStore
+	workspaceStore *blockio.COWStore
 
 	jailerRoot         string            // the root dir the jailer will work in
 	machine            *fcclient.Machine // the firecracker machine object.
@@ -552,13 +556,13 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 	// files. This is particularly important when the files are backed with an
 	// mmap. The File backing the mmap may differ from the in-memory contents
 	// until we explicitly call msync.
-	if c.workspaceDevice != nil {
-		if err := c.workspaceDevice.Sync(); err != nil {
+	if c.workspaceStore != nil {
+		if err := c.workspaceStore.Sync(); err != nil {
 			return status.WrapError(err, "failed to sync workspace device store")
 		}
 	}
-	if c.scratchDevice != nil {
-		if err := c.scratchDevice.Sync(); err != nil {
+	if c.scratchStore != nil {
+		if err := c.scratchStore.Sync(); err != nil {
 			return status.WrapError(err, "failed to sync scratchfs device store")
 		}
 	}
@@ -652,8 +656,15 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
-		ScratchFSPath:       filepath.Join(c.getChroot(), scratchFSName),
-		WorkspaceFSPath:     c.workspaceFSPath(),
+	}
+	if *enableNBD {
+		opts.ChunkedFiles = map[string]*blockio.COWStore{
+			scratchDriveID:   c.scratchStore,
+			workspaceDriveID: c.workspaceStore,
+		}
+	} else {
+		opts.ScratchFSPath = c.scratchFSPath()
+		opts.WorkspaceFSPath = c.workspaceFSPath()
 	}
 
 	snaploaderStart := time.Now()
@@ -747,8 +758,22 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
-	if _, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot()); err != nil {
+	unpacked, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot())
+	if err != nil {
 		return err
+	}
+	if len(unpacked.ChunkedFiles) > 0 && !*enableNBD {
+		return status.InternalError("blockio support is disabled but snapshot contains chunked files")
+	}
+	for name, cow := range unpacked.ChunkedFiles {
+		switch name {
+		case scratchDriveID:
+			c.scratchStore = cow
+		case workspaceDriveID:
+			c.workspaceStore = cow
+		default:
+			return status.InternalErrorf("snapshot contains unsupported chunked artifact %q", name)
+		}
 	}
 
 	if err := c.setupNBDServer(ctx); err != nil {
@@ -788,26 +813,85 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	return nil
 }
 
-// createWorkspaceImage creates a new ext4 image from the action working dir.
-func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspacePath string) error {
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
-
-	workspaceSizeBytes, err := disk.DirSize(workspacePath)
+// initScratchImage creates the empty scratch ext4 disk for the VM.
+func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string) error {
+	scratchDiskSizeBytes := ext4.MinDiskImageSizeBytes + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
+	if err := ext4.MakeEmptyImage(ctx, path, scratchDiskSizeBytes); err != nil {
+		return err
+	}
+	if !*enableNBD {
+		return nil
+	}
+	chunkDir := filepath.Join(filepath.Dir(path), scratchDriveID)
+	cow, err := c.convertToCOW(ctx, path, chunkDir)
 	if err != nil {
 		return err
 	}
-	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + workspaceDiskSlackSpaceMB*1e6
+	c.scratchStore = cow
+	return nil
+}
+
+// createWorkspaceImage creates a new ext4 image from the action working dir.
+func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspaceDir, ext4ImagePath string) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	// The existing workspace disk may still be mounted in the VM, so we unlink
 	// it then create a new file rather than overwriting the existing file
 	// to avoid corruption.
-	if err := disk.RemoveIfExists(c.workspaceFSPath()); err != nil {
+	if err := os.RemoveAll(ext4ImagePath); err != nil {
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
-	if err := ext4.DirectoryToImage(ctx, workspacePath, c.workspaceFSPath(), workspaceDiskSizeBytes); err != nil {
-		return status.WrapError(err, "failed to convert workspace dir to ext4 image")
+	if workspaceDir == "" {
+		if err := ext4.MakeEmptyImage(ctx, ext4ImagePath, ext4.MinDiskImageSizeBytes); err != nil {
+			return err
+		}
+	} else {
+		workspaceSizeBytes, err := disk.DirSize(workspaceDir)
+		if err != nil {
+			return err
+		}
+		workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + workspaceDiskSlackSpaceMB*1e6
+		if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
+			return status.WrapError(err, "failed to convert workspace dir to ext4 image")
+		}
 	}
+	if !*enableNBD {
+		return nil
+	}
+	// If there's already a workspace store created, then we're swapping in a
+	// new one; close the old one to prevent further writes to disk.
+	if c.workspaceStore != nil {
+		c.workspaceStore.Close()
+		c.workspaceStore = nil
+	}
+	// Remove existing workspace chunk dir if it exists.
+	chunkDir := filepath.Join(filepath.Dir(ext4ImagePath), workspaceDriveID)
+	if err := os.RemoveAll(chunkDir); err != nil {
+		return err
+	}
+	cow, err := c.convertToCOW(ctx, ext4ImagePath, chunkDir)
+	if err != nil {
+		return err
+	}
+	c.workspaceStore = cow
 	return nil
+}
+
+func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string) (*blockio.COWStore, error) {
+	if err := os.Mkdir(chunkDir, 0755); err != nil {
+		return nil, status.WrapError(err, "make chunk dir")
+	}
+	cow, err := blockio.ConvertFileToCOW(filePath, cowChunkSizeBytes, chunkDir)
+	if err != nil {
+		return nil, err
+	}
+	// Original non-chunked image is no longer needed.
+	if err := os.RemoveAll(filePath); err != nil {
+		cow.Close()
+		return nil, err
+	}
+	return cow, nil
 }
 
 // hotSwapWorkspace unmounts the workspace drive from a running firecracker
@@ -821,17 +905,15 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 		return status.WrapError(err, "failed to unmount workspace")
 	}
 
+	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, c.workspaceFSPath()); err != nil {
+		return status.WrapError(err, "failed to create workspace image")
+	}
+
 	if *enableNBD {
-		// Create a new backing store for the new workspace.
-		wd, err := nbdserver.NewExt4Device(c.workspaceFSPath(), workspaceDriveID)
+		wd, err := nbdserver.NewExt4Device(c.workspaceStore, workspaceDriveID)
 		if err != nil {
 			return status.WrapError(err, "failed to create new workspace NBD")
 		}
-		// Close the old device and swap in the new one.
-		if err := c.workspaceDevice.Close(); err != nil {
-			log.Warningf("Failed to close workspace nbd: %s", err)
-		}
-		c.workspaceDevice = wd
 		c.nbdServer.SetDevice(wd.Metadata.GetName(), wd)
 	} else {
 		chrootRelativeImagePath := filepath.Base(c.workspaceFSPath())
@@ -1125,6 +1207,18 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	if *enableNBD {
+		// Reassemble the workspace chunks into a single file.
+		// TODO(bduffany): figure out how to avoid doing this work, e.g. by
+		// mounting the workspace disk as a local NBD on the host.
+		// For now, this approach is acceptable because firecracker workspaces
+		// are typically small or empty (e.g. workflows run in $HOME rather than
+		// the workspace dir).
+		if err := c.workspaceStore.WriteFile(c.workspaceFSPath()); err != nil {
+			return err
+		}
+	}
+
 	start := time.Now()
 	defer func() {
 		log.CtxDebugf(ctx, "copyOutputsToWorkspace took %s", time.Since(start))
@@ -1220,6 +1314,12 @@ func (c *FirecrackerContainer) setupNBDServer(ctx context.Context) error {
 	if c.nbdServer != nil {
 		return nil
 	}
+	if c.workspaceStore == nil {
+		return status.FailedPreconditionError("workspaceStore is nil")
+	}
+	if c.scratchStore == nil {
+		return status.FailedPreconditionError("scratchStore is nil")
+	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1227,17 +1327,14 @@ func (c *FirecrackerContainer) setupNBDServer(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
-
-	sd, err := nbdserver.NewExt4Device(c.scratchFSPath(), scratchDriveID)
+	wd, err := nbdserver.NewExt4Device(c.workspaceStore, workspaceDriveID)
 	if err != nil {
 		return err
 	}
-	c.scratchDevice = sd
-	wd, err := nbdserver.NewExt4Device(c.workspaceFSPath(), workspaceDriveID)
+	sd, err := nbdserver.NewExt4Device(c.scratchStore, scratchDriveID)
 	if err != nil {
 		return err
 	}
-	c.workspaceDevice = wd
 
 	c.nbdServer, err = nbdserver.New(ctx, c.env, sd, wd)
 	if err != nil {
@@ -1391,15 +1488,13 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		scratchFSPath = filepath.Join(c.tempDir, scratchFSName)
 		workspaceFSPath = filepath.Join(c.tempDir, workspaceFSName)
 	}
-
-	scratchDiskSizeBytes := ext4.MinDiskImageSizeBytes + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
-	if err := ext4.MakeEmptyImage(ctx, scratchFSPath, scratchDiskSizeBytes); err != nil {
-		return err
+	if err := c.initScratchImage(ctx, scratchFSPath); err != nil {
+		return status.WrapError(err, "create initial scratch image")
 	}
 	// Create an empty workspace image initially; the real workspace will be
 	// hot-swapped just before running each command in order to ensure that the
 	// workspace contents are up to date.
-	if err := ext4.MakeEmptyImage(ctx, workspaceFSPath, ext4.MinDiskImageSizeBytes); err != nil {
+	if err := c.createWorkspaceImage(ctx, "" /*=workspaceDir*/, workspaceFSPath); err != nil {
 		return err
 	}
 	log.CtxDebugf(ctx, "Scratch and workspace disk images written to %q", c.tempDir)
@@ -1465,6 +1560,7 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 	statsListener := func(stats *repb.UsageStats) {
 		container.Metrics.Observe(c, stats)
 	}
+	log.CtxDebug(ctx, "Starting Execute stream.")
 	return vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 }
 
@@ -1713,13 +1809,13 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.nbdServer.Stop()
 		c.nbdServer = nil
 	}
-	if c.workspaceDevice != nil {
-		c.workspaceDevice.Close()
-		c.workspaceDevice = nil
+	if c.workspaceStore != nil {
+		c.workspaceStore.Close()
+		c.workspaceStore = nil
 	}
-	if c.scratchDevice != nil {
-		c.scratchDevice.Close()
-		c.scratchDevice = nil
+	if c.scratchStore != nil {
+		c.scratchStore.Close()
+		c.scratchStore = nil
 	}
 	return lastErr
 }
@@ -1775,9 +1871,6 @@ func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
 	defer conn.Close()
 	execClient := vmxpb.NewExecClient(conn)
 
-	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir); err != nil {
-		return status.WrapError(err, "failed to create workspace image")
-	}
 	return c.hotSwapWorkspace(ctx, execClient)
 }
 
