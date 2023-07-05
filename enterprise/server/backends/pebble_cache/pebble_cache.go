@@ -1331,7 +1331,7 @@ func getLastAccessUsec(b []byte) int64 {
 		}
 
 		v, _ := protowire.ConsumeVarint(b)
-		return protowire.DecodeZigZag(v)
+		return int64(v)
 	}
 	return 0
 }
