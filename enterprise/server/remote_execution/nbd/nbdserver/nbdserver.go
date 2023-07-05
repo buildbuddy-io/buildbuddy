@@ -3,6 +3,7 @@ package nbdserver
 import (
 	"context"
 	"net"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -33,7 +34,9 @@ func NewExt4Device(store blockio.Store, name string) (*Device, error) {
 // Server runs on the host and serves block device contents for
 // a ClientDevice to read and write.
 type Server struct {
-	server  *grpc.Server
+	server *grpc.Server
+
+	mu      sync.RWMutex
 	devices map[string]*Device
 }
 
@@ -54,7 +57,15 @@ func New(ctx context.Context, env environment.Env, devices ...*Device) (*Server,
 	}, nil
 }
 
+func (s *Server) getDevice(name string) *Device {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.devices[name]
+}
+
 func (s *Server) SetDevice(name string, device *Device) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.devices[name] = device
 }
 
@@ -75,7 +86,7 @@ func (s *Server) Stop() error {
 }
 
 func (s *Server) Metadata(ctx context.Context, req *nbdpb.MetadataRequest) (*nbdpb.MetadataResponse, error) {
-	d := s.devices[req.GetName()]
+	d := s.getDevice(req.GetName())
 	if d == nil {
 		return nil, status.NotFoundErrorf("device %q not found", req.GetName())
 	}
@@ -92,7 +103,7 @@ func (s *Server) Metadata(ctx context.Context, req *nbdpb.MetadataRequest) (*nbd
 
 func (s *Server) Read(ctx context.Context, req *nbdpb.ReadRequest) (*nbdpb.ReadResponse, error) {
 	name := req.GetName()
-	d := s.devices[name]
+	d := s.getDevice(name)
 	if d == nil {
 		return nil, status.NotFoundErrorf("device %q not found", name)
 	}
@@ -105,7 +116,7 @@ func (s *Server) Read(ctx context.Context, req *nbdpb.ReadRequest) (*nbdpb.ReadR
 
 func (s *Server) Write(ctx context.Context, req *nbdpb.WriteRequest) (*nbdpb.WriteResponse, error) {
 	name := req.GetName()
-	d := s.devices[name]
+	d := s.getDevice(name)
 	if d == nil {
 		return nil, status.NotFoundErrorf("device %q not found", name)
 	}
