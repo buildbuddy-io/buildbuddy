@@ -124,8 +124,7 @@ go_test(
     args = [
         "--executor.firecracker_enable_nbd=true",
         "--executor.firecracker_debug_stream_vm_logs=true",
-        # TODO: enable UFFD once it's implemented
-        # "--executor.firecracker_enable_uffd=true",
+        "--executor.firecracker_enable_uffd=true",
     ],
     exec_properties = {
         "test.Pool": "bare",
