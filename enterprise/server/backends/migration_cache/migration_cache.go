@@ -881,7 +881,7 @@ func cacheTypeLabel(ct rspb.CacheType) string {
 }
 
 func (mc *MigrationCache) Start() error {
-	mc.quitChan = make(chan struct{}, 0)
+	mc.quitChan = make(chan struct{})
 	mc.eg.Go(func() error {
 		mc.copyDataInBackground()
 		return nil

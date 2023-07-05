@@ -2986,7 +2986,7 @@ func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.
 }
 
 func (p *PebbleCache) Start() error {
-	p.quitChan = make(chan struct{}, 0)
+	p.quitChan = make(chan struct{})
 	for _, evictor := range p.evictors {
 		evictor := evictor
 		p.eg.Go(func() error {

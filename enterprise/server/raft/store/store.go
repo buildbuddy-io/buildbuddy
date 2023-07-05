@@ -725,7 +725,7 @@ func (s *Store) handleSplits(quitChan <-chan struct{}) error {
 }
 
 func (s *Store) Start() error {
-	s.quitChan = make(chan struct{}, 0)
+	s.quitChan = make(chan struct{})
 
 	// A grpcServer is run which is responsible for presenting a meta API
 	// to manage raft nodes on each host, as well as an API to shuffle data
