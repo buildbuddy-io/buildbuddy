@@ -99,6 +99,12 @@ func cleanExecutorRoot(t *testing.T, path string) {
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 
+	// Use temp file for skopeo auth file.
+	// See https://github.com/containers/skopeo/issues/1240
+	tmp := testfs.MakeTempDir(t)
+	err := os.Setenv("REGISTRY_AUTH_FILE", filepath.Join(tmp, "auth.json"))
+	require.NoError(t, err)
+
 	b, err := bundle.Get()
 	require.NoError(t, err)
 	env.SetFileResolver(fileresolver.New(b, "enterprise"))

@@ -36,6 +36,7 @@ go_library(
             "//enterprise/server/remote_execution/nbd/nbdserver",
             "//enterprise/server/remote_execution/platform",
             "//enterprise/server/remote_execution/snaploader",
+            "//enterprise/server/remote_execution/uffd",
             "//enterprise/server/remote_execution/vmexec_client",
             "//enterprise/server/util/container",
             "//enterprise/server/util/ext4",
@@ -114,14 +115,16 @@ go_test(
     ],
 )
 
-# TODO(bduffany): once NBD is fully enabled, set NBD flag(s) on
+# TODO(bduffany): once blockio is fully enabled, set blockio flag(s) on
 # firecracker_test and remove this one.
 go_test(
-    name = "firecracker_test_nbd",
+    name = "firecracker_test_blockio",
     timeout = "long",
     srcs = ["firecracker_test.go"],
     args = [
         "--executor.firecracker_enable_nbd=true",
+        # TODO: enable UFFD once it's implemented
+        # "--executor.firecracker_enable_uffd=true",
     ],
     exec_properties = {
         "test.Pool": "bare",
