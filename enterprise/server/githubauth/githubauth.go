@@ -33,6 +33,11 @@ var (
 	jwtKey = flagutil.New("github.jwt_key", "", "The key to use when signing JWT tokens for github auth.", flagutil.SecretTag)
 )
 
+type authenticatedGitHubUser struct {
+	Profile     *github.GithubUserResponse
+	AccessToken string
+}
+
 type githubAuthenticator struct {
 	env environment.Env
 }
@@ -137,12 +142,12 @@ func (a *githubAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 		return r.Context()
 	}
 
-	c, userToken, err := a.authenticateUser(w, r)
+	c, authenticatedUser, err := a.authenticateUser(w, r)
 	ctx := r.Context()
-	if userToken != nil {
+	if authenticatedUser != nil {
 		// Store the user information in the context even if authentication fails.
 		// This information is used in the user creation flow.
-		ctx = context.WithValue(ctx, contextUserKey, userToken)
+		ctx = context.WithValue(ctx, contextUserKey, authenticatedUser)
 	}
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
@@ -151,7 +156,7 @@ func (a *githubAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 }
 
 func (a *githubAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
-	t, ok := ctx.Value(contextUserKey).(*github.GithubUserResponse)
+	t, ok := ctx.Value(contextUserKey).(*authenticatedGitHubUser)
 	if !ok {
 		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 		return status.UnauthenticatedError("No user token available to fill user")
@@ -162,15 +167,17 @@ func (a *githubAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 		return err
 	}
 
-	names := strings.SplitN(t.Name, " ", 1)
+	names := strings.SplitN(t.Profile.Name, " ", 1)
 	user.UserID = pk
-	user.SubID = subjectFromGithubUser(t)
+	user.SubID = subjectFromGithubUser(t.Profile)
 	user.FirstName = names[0]
 	if len(names) > 1 {
 		user.LastName = names[1]
 	}
-	user.Email = t.Email
-	user.ImageURL = t.AvatarURL
+	user.Email = t.Profile.Email
+	user.ImageURL = t.Profile.AvatarURL
+	user.GithubToken = t.AccessToken
+
 	return nil
 }
 
@@ -211,7 +218,7 @@ func (a *githubAuthenticator) SSOEnabled() bool {
 	return false
 }
 
-func (a *githubAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*claims.Claims, *github.GithubUserResponse, error) {
+func (a *githubAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*claims.Claims, *authenticatedGitHubUser, error) {
 	issuer := cookie.GetCookie(r, cookie.AuthIssuerCookie)
 	if issuer != githubIssuer {
 		return nil, nil, status.PermissionDeniedError("%s: not a Github authenticated user")
@@ -244,7 +251,7 @@ func (a *githubAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		// flow to request a refresh token, since otherwise the login flow will
 		// assume (based on the existence of this cookie) that a valid session exists with a refresh token already set.
 		cookie.ClearLoginCookie(w)
-		return nil, ut, status.PermissionDeniedErrorf("%s: session not found", authutil.LoggedOutMsg)
+		return nil, &authenticatedGitHubUser{Profile: ut}, status.PermissionDeniedErrorf("%s: session not found", authutil.LoggedOutMsg)
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
@@ -252,7 +259,7 @@ func (a *githubAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// the token below.
 	if ut, err := verifyTokenAndExtractUser(jwtCookie, true /*=checkExpiry*/); err == nil {
 		claims, err := claims.ClaimsFromSubID(ctx, a.env, subjectFromGithubUser(ut))
-		return claims, ut, err
+		return claims, &authenticatedGitHubUser{Profile: ut, AccessToken: sesh.AccessToken}, err
 	}
 
 	// WE only refresh the token if:
@@ -289,7 +296,7 @@ func (a *githubAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 
 	cookie.SetLoginCookie(w, newJwt, issuer, sessionID, newToken.Expiry)
 	claims, err := claims.ClaimsFromSubID(ctx, a.env, subjectFromGithubUser(newToken.GithubUser))
-	return claims, ut, err
+	return claims, &authenticatedGitHubUser{Profile: newToken.GithubUser, AccessToken: sesh.AccessToken}, err
 }
 
 func (a *githubAuthenticator) renewToken(ctx context.Context, authToken string) (*token, error) {
