@@ -531,7 +531,7 @@ func persistTestActionOutputs(ctx context.Context, env environment.Env, inv *inp
 			}
 			fullPath := path.Join(inv.GetInvocationId(), cacheArtifactsBlobstorePath, resultURI.Path)
 			if err := persistArtifact(ctx, env, resultURI, fullPath); err != nil {
-				log.Errorf(
+				log.Warningf(
 					"Error persisting '%s' for target '%s' for invocation %s: %s",
 					f.Name,
 					e.BuildEvent.Id.GetTestResult().Label,
