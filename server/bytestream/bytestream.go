@@ -156,7 +156,7 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 	// error message.
 	if err != nil {
 		if !status.IsNotFoundError(err) {
-			log.Errorf("Error byte-streaming from %q: %s", stripUser(url), err)
+			log.Warningf("Error byte-streaming from %q: %s", stripUser(url), err)
 		}
 		return status.UnavailableErrorf("failed to read byte stream resource %q", stripUser(url))
 	}
