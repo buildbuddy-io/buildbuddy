@@ -120,14 +120,15 @@ func NewCacheProxy(ctx context.Context, env environment.Env, conn *grpc.ClientCo
 
 func (p *CacheProxy) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
 	res, err := p.cpbClient.GetCapabilities(ctx, req)
-	if err == nil {
-		if b, err := protojson.Marshal(res); err == nil {
-			log.Infof("Remote capabilities: %s", string(b))
-		}
+	if err != nil {
+		d := defaultCapabilities()
+		log.Warningf("Failed to fetch capabilities from remote server due to %s, returning default capabilities: %+v", err, d)
+		return d, nil
 	}
-	d := defaultCapabilities()
-	log.Warningf("Failed to fetch capabilities from remote server, returning default capabilities: %+v", d)
-	return d, nil
+	if b, err := protojson.Marshal(res); err == nil {
+		log.Infof("Remote capabilities: %s", string(b))
+	}
+	return res, err
 }
 
 func (p *CacheProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
