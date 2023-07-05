@@ -169,6 +169,13 @@ func TestInsertUser(t *testing.T) {
 	})
 	require.NoError(t, err, "inserting a user with an existing email is OK as long as UserID/SubID are unique")
 
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: "US5",
+		SubID:  "SubID5",
+		Email:  "",
+	})
+	require.NoError(t, err, "inserting a user with no email address should succeed")
+
 	// These should all fail:
 	for _, test := range []struct {
 		Name string
@@ -176,7 +183,6 @@ func TestInsertUser(t *testing.T) {
 	}{
 		{Name: "MissingUserID", User: &tables.User{UserID: "", SubID: "SubID3", Email: "user3@org3.io"}},
 		{Name: "MissingSubID", User: &tables.User{UserID: "US3", SubID: "", Email: "user3@org3.io"}},
-		{Name: "MissingEmail", User: &tables.User{UserID: "US3", SubID: "SubID3", Email: ""}},
 		{Name: "DuplicateUserID", User: &tables.User{UserID: "US1", SubID: "SubID3", Email: "user3@org3.io"}},
 		{Name: "DuplicateSubID", User: &tables.User{UserID: "US3", SubID: "SubID1", Email: "user3@org3.io"}},
 	} {
