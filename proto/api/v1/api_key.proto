@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+message CreateUserApiKeyRequest {
+  // User email to create the API key for. This must match the authenticated
+  // user email unless `auth.enable_admin_user_api_key_creation` is enabled in
+  // the server config.
+  string user_email = 1;
+
+  // Optional. The user-specified label of this API key to help remember what
+  // it's for.
+  string label = 2;
+
+  // Optional. Capabilities granted to this API key.
+  repeated ApiKey.Capability capability = 3;
+
+  // Whether to generate a TLS certificate corresponding to the key and include
+  // it in the response. The expiration of the certificaate can be configured
+  // with `ssl.client_cert_lifespan`.
+  bool generate_certificate = 4;
+}
+
+message CreateUserApiKeyResponse {
+  Credentials credentials = 1;
+}
+
+message Credentials {
+  // The API key used to access BuildBuddy.
+  ApiKey api_key = 1;
+
+  // The certificate corresponding to this API key.
+  // Will not be present if certificate generation is not requested or
+  // not configured.
+  Certificate certificate = 2;
+}
+
+message ApiKey {
+  // The unique ID of this API key.
+  // ex: "AK123456789"
+  string id = 1;
+
+  // The string value of this API key which is passed in API requests.
+  string value = 2;
+
+  // Optional. The user-specified label of this API key to help remember what
+  // it's for.
+  string label = 3;
+
+  // A capability associated with an API key.
+  //
+  // Values are powers of 2 so that bitmask operations can be used
+  // to check capabilities.
+  enum Capability {
+    UNKNOWN_CAPABILITY = 0;
+    // Allows writing to the content-addressable store and action cache.
+    CACHE_WRITE_CAPABILITY = 1;  // 2^0
+    // Allows registering an executor with the scheduler.
+    REGISTER_EXECUTOR_CAPABILITY = 2;  // 2^1
+    // Allows writing to the content-addressable store only.
+    CAS_WRITE_CAPABILITY = 4;  // 2^2
+  }
+
+  // Capabilities associated with this API key.
+  repeated Capability capability = 4;
+
+  // True if this API key is visible to developers.
+  bool visible_to_developers = 5;
+
+  // True if this is a user owned key.
+  bool user_owned = 6;
+}
+
+message Certificate {
+  // String representation of certificate file.
+  string cert = 1;
+
+  // String representation of key file.
+  string key = 2;
+}

@@ -570,3 +570,7 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 		ActionStatuses: actionStatuses,
 	}, nil
 }
+
+func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserApiKeyRequest) (*apipb.CreateUserApiKeyResponse, error) {
+	return nil, status.UnimplementedError("unimplemented")
+}

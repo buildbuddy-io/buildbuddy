@@ -3,6 +3,7 @@ syntax = "proto3";
 package api.v1;
 
 import "proto/api/v1/action.proto";
+import "proto/api/v1/api_key.proto";
 import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
 import "proto/api/v1/log.proto";
@@ -56,4 +57,9 @@ service ApiService {
   // Github App authentication is required. The API does not support running
   // legacy workflows.
   rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
+
+  // Creates a user API key. This requires user API keys to be enabled in org
+  // settings and `api.enable_api_key_management` to be enabled.
+  rpc CreateUserApiKey(CreateUserApiKeyRequest)
+      returns (CreateUserApiKeyResponse);
 }
