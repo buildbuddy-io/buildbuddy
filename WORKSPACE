@@ -85,6 +85,20 @@ go_download_sdk(
     version = "1.20.5",
 )
 
+go_download_sdk(
+    name = "go_sdk_windows",
+    goarch = "amd64",
+    goos = "windows",
+    version = "1.20.5",
+)
+
+go_download_sdk(
+    name = "go_sdk_windows_amr64",
+    goarch = "arm64",
+    goos = "windows",
+    version = "1.20.5",
+)
+
 go_register_toolchains(
     nogo = "@//:vet",
 )
