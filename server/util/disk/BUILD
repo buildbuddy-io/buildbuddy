@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "disk",
@@ -27,4 +27,14 @@ go_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+go_test(
+    name = "disk_test",
+    srcs = ["disk_test.go"],
+    deps = [
+        ":disk",
+        "//server/testutil/testfs",
+        "@com_github_stretchr_testify//require",
+    ],
 )
