@@ -192,6 +192,7 @@ export default class EnterpriseRootComponent extends React.Component {
                 path={this.state.path}
                 tab={this.state.tab}
                 user={this.state.user}
+                dense={this.state.preferences.denseModeEnabled}
                 search={this.state.search}></SidebarComponent>
             )}
             <div
