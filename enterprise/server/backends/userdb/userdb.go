@@ -63,7 +63,10 @@ var (
 )
 
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
-	name := u.Email
+	name := "My Organization"
+	if u.Email != "" {
+		name = u.Email
+	}
 	if u.FirstName != "" || u.LastName != "" {
 		name = strings.TrimSpace(strings.Join([]string{u.FirstName, u.LastName}, " "))
 	}
@@ -575,14 +578,14 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 	if u.SubID == "" {
 		return status.FailedPreconditionError("SubID is required")
 	}
-	if u.Email == "" {
-		return status.FailedPreconditionErrorf("Auth token does not contain an email address")
+	emailDomain := ""
+	if u.Email != "" {
+		emailParts := strings.Split(u.Email, "@")
+		if len(emailParts) != 2 {
+			return status.FailedPreconditionErrorf("Invalid email address: %s", u.Email)
+		}
+		emailDomain = emailParts[1]
 	}
-	emailParts := strings.Split(u.Email, "@")
-	if len(emailParts) != 2 {
-		return status.FailedPreconditionErrorf("Invalid email address: %s", u.Email)
-	}
-	emailDomain := emailParts[1]
 
 	groupIDs := make([]string, 0)
 	for _, group := range u.Groups {
@@ -595,7 +598,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 
 	// If the user signed up using an authenticator associated with a group (i.e. SAML or OIDC SSO),
 	// don't add it to a group based on domain.
-	if len(u.Groups) == 0 && *addUserToDomainGroup {
+	if len(u.Groups) == 0 && *addUserToDomainGroup && emailDomain != "" {
 		dg, err := d.getDomainOwnerGroup(ctx, tx, emailDomain)
 		if err != nil {
 			log.Errorf("error in createUser: %s", err)
