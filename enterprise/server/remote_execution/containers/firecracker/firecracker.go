@@ -674,7 +674,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
-	time.Sleep(1 * time.Minute)
+	time.Sleep(30 * time.Second)
 
 	// If we're creating a snapshot for the first time, create a COWStore from
 	// the initial full snapshot. (If we have a diff snapshot, then we already
