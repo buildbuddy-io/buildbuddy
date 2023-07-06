@@ -93,7 +93,7 @@ go_download_sdk(
 )
 
 go_download_sdk(
-    name = "go_sdk_windows_amr64",
+    name = "go_sdk_windows_arm64",
     goarch = "arm64",
     goos = "windows",
     version = "1.20.5",
