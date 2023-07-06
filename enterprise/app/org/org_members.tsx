@@ -218,7 +218,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         <div className="affected-users-list">
           {selectedMembers.map((member) => (
             <div className={`affected-users-list-item ${this.isLoggedInUser(member) ? "flagged-self-user" : ""}`}>
-              {member.user?.email}
+              {member.user?.email || member.user?.name?.full}
             </div>
           ))}
         </div>
@@ -269,12 +269,12 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
               onClick={() => this.onClickRow(member?.user?.userId?.id || "")}>
               <div>
                 <Checkbox
-                  title={`Select ${member?.user?.email}`}
+                  title={`Select ${member?.user?.email || member?.user?.name?.full}`}
                   className="org-member-checkbox"
                   checked={this.state.selectedUserIds.has(member?.user?.userId?.id || "")}
                 />
               </div>
-              <div className="org-member-email">{member?.user?.email}</div>
+              <div className="org-member-email">{member?.user?.email || member?.user?.name?.full}</div>
               <div className="org-member-role">{ROLE_LABELS[member?.role || 0]}</div>
             </div>
           ))}

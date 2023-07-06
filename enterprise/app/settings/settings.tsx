@@ -259,8 +259,9 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                             <Banner type="info">
                               {capabilities.config.userOwnedKeysEnabled && (
                                 <>
-                                  To log in as <b>{this.props.user.displayUser.email}</b>, an organization administrator
-                                  must enable user-owned API keys in Org details.{" "}
+                                  To log in as{" "}
+                                  <b>{this.props.user.displayUser.email || this.props.user.displayUser.name?.full}</b>,
+                                  an organization administrator must enable user-owned API keys in Org details.{" "}
                                 </>
                               )}
                               To log in as the organization <b>{this.props.user.selectedGroupName()}</b>, copy one of
