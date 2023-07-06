@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 	"time"
@@ -24,6 +25,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -118,10 +120,13 @@ func NewCacheProxy(ctx context.Context, env environment.Env, conn *grpc.ClientCo
 
 func (p *CacheProxy) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
 	res, err := p.cpbClient.GetCapabilities(ctx, req)
-	if err == nil {
-		if b, err := protojson.Marshal(res); err == nil {
-			log.Infof("Remote capabilities: %s", string(b))
-		}
+	if err != nil {
+		d := defaultCapabilities()
+		log.Warningf("Failed to fetch capabilities from remote server due to %s, returning default capabilities: %+v", err, d)
+		return d, nil
+	}
+	if b, err := protojson.Marshal(res); err == nil {
+		log.Infof("Remote capabilities: %s", string(b))
 	}
 	return res, err
 }
@@ -369,4 +374,41 @@ func (qw *queueWorker) RemoteWriteBlocked(ctx context.Context, wreq *bspb.WriteR
 		writeResourceName: wreq.GetResourceName(),
 	}
 	return qw.handleWriteRequest(req)
+}
+
+func defaultCapabilities() *repb.ServerCapabilities {
+	var compressors = []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
+	return &repb.ServerCapabilities{
+		// Support REAPI 2.0 -> 2.3
+		LowApiVersion:  &smpb.SemVer{Major: int32(2)},
+		HighApiVersion: &smpb.SemVer{Major: int32(2), Minor: int32(3)},
+		CacheCapabilities: &repb.CacheCapabilities{
+			DigestFunctions: digest.SupportedDigestFunctions(),
+			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
+				UpdateEnabled: true,
+			},
+			CachePriorityCapabilities: &repb.PriorityCapabilities{
+				Priorities: []*repb.PriorityCapabilities_PriorityRange{
+					{
+						MinPriority: 0,
+						MaxPriority: 0,
+					},
+				},
+			},
+			MaxBatchTotalSizeBytes:          0, // Default to protocol limit.
+			SymlinkAbsolutePathStrategy:     repb.SymlinkAbsolutePathStrategy_ALLOWED,
+			SupportedCompressors:            compressors,
+			SupportedBatchUpdateCompressors: compressors,
+		},
+		ExecutionCapabilities: &repb.ExecutionCapabilities{
+			DigestFunction: repb.DigestFunction_SHA256,
+			ExecEnabled:    true,
+			ExecutionPriorityCapabilities: &repb.PriorityCapabilities{
+				Priorities: []*repb.PriorityCapabilities_PriorityRange{
+					{MinPriority: math.MinInt32, MaxPriority: math.MaxInt32},
+				},
+			},
+			DigestFunctions: digest.SupportedDigestFunctions(),
+		},
+	}
 }
