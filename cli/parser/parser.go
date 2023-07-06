@@ -462,7 +462,7 @@ func runBazelHelpWithCache(topic string) (string, error) {
 	buf := &bytes.Buffer{}
 	log.Printf("\x1b[90mGathering metadata for bazel %s...\x1b[m", topic)
 	opts := &bazelisk.RunOpts{Stdout: io.MultiWriter(tmp, buf)}
-	exitCode, err := bazelisk.Run([]string{"help", topic}, opts)
+	exitCode, err := bazelisk.Run([]string{"--ignore_all_rc_files", "help", topic}, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to run bazel: %s", err)
 	}
