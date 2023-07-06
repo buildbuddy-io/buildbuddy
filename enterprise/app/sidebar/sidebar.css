@@ -255,6 +255,6 @@
   }
 
   .sidebar .sidebar-toggle {
-    display: block;
+    display: flex;
   }
 }
