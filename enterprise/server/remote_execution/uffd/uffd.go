@@ -246,19 +246,15 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		// DO NOT SUBMIT
 		log.Debugf("faultAddr=0x%x, faultPageAddr=0x%x, storeOffset=0x%x", event.PageFault.Address, guestPageAddr, faultStoreOffset)
 
-		log.Warningf("msg address is %v, start is %v", event.PageFault.Address, vmStartMemory)
-
-		// Next message is at an earlier address - we don't need to copy all the memory
-		lenFromStart := event.PageFault.Address - uint64(vmStartMemory)
-
-		lenFromLastMsg := lastMemoryAddress - event.PageFault.Address
+		lenFromStart := uint64(guestPageAddr) - uint64(vmStartMemory)
+		//lenFromLastMsg := lastMemoryAddress - event.PageFault.Address
 		copyData := uffdioCopy{
-			Dst: event.PageFault.Address,
+			Dst: uint64(guestPageAddr),
 			Src: uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[lenFromStart]))),
 			// For now, copy just the one page to the VM memory range. TODO:
 			// It's probably much more efficient to copy the whole part of the
 			// chunk that overlaps with the mapped memory region.
-			Len:  lenFromLastMsg,
+			Len:  uint64(pageSize),
 			Mode: 0,
 			Copy: 0,
 		}
