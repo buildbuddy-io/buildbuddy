@@ -110,6 +110,7 @@ type RealEnv struct {
 	sociArtifactStoreClient          socipb.SociArtifactStoreClient
 	singleFlightDeduper              interfaces.SingleFlightDeduper
 	promQuerier                      interfaces.PromQuerier
+	auditLog                         interfaces.AuditLogger
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -626,4 +627,11 @@ func (r *RealEnv) GetPromQuerier() interfaces.PromQuerier {
 }
 func (r *RealEnv) SetPromQuerier(q interfaces.PromQuerier) {
 	r.promQuerier = q
+}
+
+func (r *RealEnv) GetAuditLogger() interfaces.AuditLogger {
+	return r.auditLog
+}
+func (r *RealEnv) SetAuditLogger(l interfaces.AuditLogger) {
+	r.auditLog = l
 }

@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:acl_go_proto",
         "//proto:api_key_go_proto",
+        "//proto:auditlog_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:encryption_go_proto",
         "//proto:execution_stats_go_proto",
@@ -37,5 +38,6 @@ go_library(
         "@com_github_prometheus_client_model//go",
         "@io_gorm_gorm//:gorm",
         "@org_golang_google_grpc//credentials",
+        "@org_golang_google_protobuf//proto",
     ],
 )

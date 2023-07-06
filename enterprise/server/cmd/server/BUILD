@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/api",
+        "//enterprise/server/auditlog",
         "//enterprise/server/auth",
         "//enterprise/server/backends/authdb",
         "//enterprise/server/backends/configsecrets",

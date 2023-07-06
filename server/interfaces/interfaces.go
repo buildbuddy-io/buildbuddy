@@ -13,11 +13,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -306,6 +308,7 @@ type OLAPDBHandle interface {
 	FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error
 	FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
+	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
 }
 
 type InvocationDB interface {
@@ -1159,4 +1162,9 @@ type PromQuerier interface {
 // ConfigSecretProvider provides secrets interpolation into configs.
 type ConfigSecretProvider interface {
 	GetSecret(ctx context.Context, name string) ([]byte, error)
+}
+
+type AuditLogger interface {
+	Log(ctx context.Context, resource *alpb.ResourceID, method string, request proto.Message)
+	GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error)
 }

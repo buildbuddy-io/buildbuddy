@@ -162,4 +162,6 @@ type Env interface {
 	SetSingleFlightDeduper(interfaces.SingleFlightDeduper)
 	GetPromQuerier() interfaces.PromQuerier
 	SetPromQuerier(interfaces.PromQuerier)
+	GetAuditLogger() interfaces.AuditLogger
+	SetAuditLogger(logger interfaces.AuditLogger)
 }
