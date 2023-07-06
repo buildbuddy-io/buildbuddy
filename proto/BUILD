@@ -21,6 +21,20 @@ proto_library(
 )
 
 proto_library(
+    name = "auditlog_proto",
+    srcs = [
+        "auditlog.proto",
+    ],
+    deps = [
+        ":acl_proto",
+        ":api_key_proto",
+        ":context_proto",
+        ":group_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
     name = "bazel_query_proto",
     srcs = ["bazel_query.proto"],
 )
@@ -407,6 +421,7 @@ proto_library(
     srcs = ["buildbuddy_service.proto"],
     deps = [
         ":api_key_proto",
+        ":auditlog_proto",
         ":bazel_config_proto",
         ":cache_proto",
         ":encryption_proto",
@@ -584,6 +599,18 @@ go_proto_library(
     proto = ":api_key_proto",
     deps = [
         ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "auditlog_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/auditlog",
+    proto = ":auditlog_proto",
+    deps = [
+        ":acl_go_proto",
+        ":api_key_go_proto",
+        ":context_go_proto",
+        ":group_go_proto",
     ],
 )
 
@@ -913,6 +940,7 @@ go_proto_library(
     proto = ":buildbuddy_service_proto",
     deps = [
         ":api_key_go_proto",
+        ":auditlog_go_proto",
         ":bazel_config_go_proto",
         ":cache_go_proto",
         ":encryption_go_proto",
@@ -1162,6 +1190,18 @@ ts_proto_library(
     proto = ":api_key_proto",
     deps = [
         ":context_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "auditlog_ts_proto",
+    proto = ":auditlog_proto",
+    deps = [
+        ":acl_ts_proto",
+        ":api_key_ts_proto",
+        ":context_ts_proto",
+        ":group_ts_proto",
+        ":timestamp_ts_proto",
     ],
 )
 
@@ -1509,6 +1549,7 @@ ts_proto_library(
     proto = ":buildbuddy_service_proto",
     deps = [
         ":api_key_ts_proto",
+        ":auditlog_ts_proto",
         ":bazel_config_ts_proto",
         ":cache_ts_proto",
         ":encryption_ts_proto",
