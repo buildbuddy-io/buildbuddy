@@ -853,3 +853,31 @@ func TestLocalEnvironmentalError(t *testing.T) {
 		runnerInvocation.GetInvocationStatus(),
 		"runner invocation status not be COMPLETE_INVOCATION_STATUS")
 }
+
+func TestFailedGitSetup_StillPublishesBuildMetadata(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	_, headCommitSHA := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		// Use an invalid repo path so that the git repo setup fails.
+		"--pushed_repo_url=file://INVALID_REPO_PATH",
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://INVALID_REPO_PATH",
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+
+	require.NotEqual(t, 0, result.ExitCode)
+	runnerInvocation := singleInvocation(t, app, result)
+
+	require.Equal(
+		t, "CI_RUNNER", runnerInvocation.GetRole(),
+		"should publish workflow invocation metadata to BES despite failed repo setup")
+}
