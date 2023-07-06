@@ -185,6 +185,24 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		return status.WrapError(err, "get memory store size bytes")
 	}
 
+	// Map the requested address from page fault address -> page of backing
+	// memory file.
+	// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
+	// From https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#LL134C8-L134C84
+	backingMemorySnapshotFile := "/home/maggie/mem.snap"
+	file, err := os.OpenFile(backingMemorySnapshotFile, os.O_RDWR, 0)
+	if err != nil {
+		fmt.Println("Failed to open file:", err)
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, int(fileInfo.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE)
+	if mmapErr != nil {
+		fmt.Printf("Failed to mmap backing memory file: %v\n", err)
+		os.Exit(1)
+	}
+
 	lastMemoryAddress := uint64(vmStartMemory + vmMemorySize)
 	for {
 		// Poll UFFD for messages
@@ -208,24 +226,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		}
 
 		log.Warningf("Got a message for address %d", event.PageFault.Address)
-
-		// Map the requested address from page fault address -> page of backing
-		// memory file.
-		// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
-		// From https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#LL134C8-L134C84
-		backingMemorySnapshotFile := "/home/maggie/mem.snap"
-		file, err := os.OpenFile(backingMemorySnapshotFile, os.O_RDWR, 0)
-		if err != nil {
-			fmt.Println("Failed to open file:", err)
-		}
-		defer file.Close()
-
-		fileInfo, err := file.Stat()
-		backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, int(fileInfo.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE)
-		if mmapErr != nil {
-			fmt.Printf("Failed to mmap backing memory file: %v\n", err)
-			os.Exit(1)
-		}
 
 		guestPageAddr := uintptr(event.PageFault.Address & ^(uint64(pageSize) - 1))
 		faultStoreOffset, err := guestMemoryAddrToStoreOffset(guestPageAddr, mappings)
