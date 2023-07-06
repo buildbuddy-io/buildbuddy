@@ -195,7 +195,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_awslabs_soci_snapshotter",
         importpath = "github.com/awslabs/soci-snapshotter",
         replace = "github.com/buildbuddy-io/soci-snapshotter",
-        sum = "h1:GeOlKRZIm2YErgGPAnydPRvtzg2A5IV9Qh+MyM14qYc=;",
+        sum = "h1:GeOlKRZIm2YErgGPAnydPRvtzg2A5IV9Qh+MyM14qYc=",
         version = "v0.0.1",
     )
 
@@ -6329,13 +6329,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sha256 = "da38c7afed40a7a6dc91363003fe18d8f3197f5ddcbcde08fb075fa55aa3037c",
         executable = True,
         downloaded_file_path = "soci-store-c1b8cd5a19f8ec80bc0bb488a897d8b00a4a4723-linux-amd64",
-    )
-    http_file(
-        name = "com_github_iain_macdonald_soci_snapshotter-soci-store-v0.2.3-linux-amd64",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.2.3-linux-amd64"],
-        sha256 = "e34ac9d5538b9f054ed44776e1f0a9bcedb6ec14acd3d6e433a712597338f147",
-        executable = True,
-        downloaded_file_path = "soci-store-v0.2.3-linux-amd64",
     )
 
     http_file(
