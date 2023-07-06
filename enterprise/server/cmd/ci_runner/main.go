@@ -572,37 +572,9 @@ func run() error {
 	if err := buildEventReporter.Start(ws.startTime); err != nil {
 		return status.WrapError(err, "could not publish started event")
 	}
-	if err := ws.setup(ctx); err != nil {
-		_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
-		return status.WrapError(err, "failed to set up git repo")
-	}
-	cfg, err := readConfig()
+	result, err := ws.RunAction(ctx, buildEventReporter)
 	if err != nil {
 		_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
-		return status.WrapError(err, "failed to read BuildBuddy config")
-	}
-
-	var action *config.Action
-	if *bazelSubCommand != "" {
-		action = &config.Action{
-			Name: "run",
-			BazelCommands: []string{
-				*bazelSubCommand,
-			},
-		}
-	} else if *actionName != "" {
-		// If a specific action was specified, filter to configured
-		// actions with a matching action name.
-		action, err = findAction(cfg.Actions, *actionName)
-		if err != nil {
-			return err
-		}
-	} else {
-		return status.InvalidArgumentError("One of --action or --bazel_sub_command must be specified.")
-	}
-
-	result, err := ws.RunAction(ctx, action, buildEventReporter)
-	if err != nil {
 		return err
 	}
 	if err := buildEventReporter.Stop(result.exitCode, result.exitCodeName); err != nil {
@@ -624,14 +596,13 @@ func (r *actionResult) Error() string {
 }
 
 // RunAction runs the specified action and streams the progress to the invocation via the buildEventReporter.
-func (ws *workspace) RunAction(ctx context.Context, action *config.Action, buildEventReporter *buildEventReporter) (*actionResult, error) {
+func (ws *workspace) RunAction(ctx context.Context, buildEventReporter *buildEventReporter) (*actionResult, error) {
 	// NB: Anything logged to `ar.log` gets output to both the stdout of this binary
 	// and the logs uploaded to BuildBuddy for this action. Anything that we want
 	// the user to see in the invocation UI needs to go in that log, instead of
 	// the global `log.Print`.
 	ar := &actionRunner{
 		isWorkflow: *workflowID != "",
-		action:     action,
 		reporter:   buildEventReporter,
 		rootDir:    ws.rootDir,
 		hostname:   ws.hostname,
@@ -690,7 +661,6 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
 	isWorkflow bool
-	action     *config.Action
 	reporter   *buildEventReporter
 	rootDir    string
 	username   string
@@ -698,76 +668,9 @@ type actionRunner struct {
 }
 
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
-	ar.reporter.Printf("Running action %q", ar.action.Name)
-
-	// Only print this to the local logs -- it's mostly useful for development purposes.
-	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
-
 	// NOTE: In this func we return immediately with an error of nil if event publishing fails,
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
-
-	wfc := &bespb.WorkflowConfigured{
-		WorkflowId:         *workflowID,
-		ActionName:         ar.action.Name,
-		ActionTriggerEvent: *triggerEvent,
-		PushedRepoUrl:      *pushedRepoURL,
-		PushedBranch:       *pushedBranch,
-		CommitSha:          *commitSHA,
-		TargetRepoUrl:      *targetRepoURL,
-		TargetBranch:       *targetBranch,
-		Os:                 runtime.GOOS,
-		Arch:               runtime.GOARCH,
-		ContainerImage:     ar.action.ContainerImage,
-	}
-	wfcEvent := &bespb.BuildEvent{
-		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
-		Payload: &bespb.BuildEvent_WorkflowConfigured{WorkflowConfigured: wfc},
-	}
-
-	cic := &bespb.ChildInvocationsConfigured{}
-	cicEvent := &bespb.BuildEvent{
-		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
-		Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
-	}
-	// If the triggering commit merges cleanly with the target branch, the runner
-	// will execute the configured bazel commands. Otherwise, the runner will
-	// exit early without running those commands and does not need to create
-	// invocation streams for them.
-	if ws.setupError == nil {
-		for _, bazelCmd := range ar.action.BazelCommands {
-			iid, err := newUUID()
-			if err != nil {
-				return err
-			}
-			wfc.Invocation = append(wfc.Invocation, &bespb.WorkflowConfigured_InvocationMetadata{
-				InvocationId: iid,
-				BazelCommand: bazelCmd,
-			})
-			wfcEvent.Children = append(wfcEvent.Children, &bespb.BuildEventId{
-				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
-					InvocationId: iid,
-				}},
-			})
-			cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
-				InvocationId: iid,
-				BazelCommand: bazelCmd,
-			})
-			cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
-				Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-					InvocationId: iid,
-				}},
-			})
-		}
-	}
-	if ar.isWorkflow {
-		if err := ar.reporter.Publish(wfcEvent); err != nil {
-			return nil
-		}
-	}
-	if err := ar.reporter.Publish(cicEvent); err != nil {
-		return nil
-	}
 
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{},
@@ -794,6 +697,79 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 	}
 	if err := ar.reporter.Publish(buildMetadataEvent); err != nil {
+		return nil
+	}
+
+	// Only print this to the local logs -- it's mostly useful for development purposes.
+	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
+
+	if err := ws.setup(ctx); err != nil {
+		return status.WrapError(err, "failed to set up git repo")
+	}
+	action, err := getActionToRun()
+	if err != nil {
+		return status.WrapError(err, "failed to get action to run")
+	}
+
+	wfc := &bespb.WorkflowConfigured{
+		WorkflowId:         *workflowID,
+		ActionName:         action.Name,
+		ActionTriggerEvent: *triggerEvent,
+		PushedRepoUrl:      *pushedRepoURL,
+		PushedBranch:       *pushedBranch,
+		CommitSha:          *commitSHA,
+		TargetRepoUrl:      *targetRepoURL,
+		TargetBranch:       *targetBranch,
+		Os:                 runtime.GOOS,
+		Arch:               runtime.GOARCH,
+		ContainerImage:     action.ContainerImage,
+	}
+	wfcEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
+		Payload: &bespb.BuildEvent_WorkflowConfigured{WorkflowConfigured: wfc},
+	}
+	if ar.isWorkflow {
+		if err := ar.reporter.Publish(wfcEvent); err != nil {
+			return nil
+		}
+	}
+
+	cic := &bespb.ChildInvocationsConfigured{}
+	cicEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
+		Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
+	}
+	// If the triggering commit merges cleanly with the target branch, the runner
+	// will execute the configured bazel commands. Otherwise, the runner will
+	// exit early without running those commands and does not need to create
+	// invocation streams for them.
+	if ws.setupError == nil {
+		for _, bazelCmd := range action.BazelCommands {
+			iid, err := newUUID()
+			if err != nil {
+				return err
+			}
+			wfc.Invocation = append(wfc.Invocation, &bespb.WorkflowConfigured_InvocationMetadata{
+				InvocationId: iid,
+				BazelCommand: bazelCmd,
+			})
+			wfcEvent.Children = append(wfcEvent.Children, &bespb.BuildEventId{
+				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
+					InvocationId: iid,
+				}},
+			})
+			cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
+				InvocationId: iid,
+				BazelCommand: bazelCmd,
+			})
+			cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
+				Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+					InvocationId: iid,
+				}},
+			})
+		}
+	}
+	if err := ar.reporter.Publish(cicEvent); err != nil {
 		return nil
 	}
 
@@ -824,14 +800,14 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return ws.setupError
 	}
 
-	for i, bazelCmd := range ar.action.BazelCommands {
+	for i, bazelCmd := range action.BazelCommands {
 		cmdStartTime := time.Now()
 
 		if i >= len(wfc.GetInvocation()) {
 			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
 		}
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		args, err := bazelArgs(ar.rootDir, ar.action.BazelWorkspaceDir, bazelCmd)
+		args, err := bazelArgs(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
@@ -854,7 +830,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
-		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
+		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), action.Env, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
@@ -935,6 +911,27 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 	return nil
+}
+
+func getActionToRun() (*config.Action, error) {
+	if *bazelSubCommand != "" {
+		return &config.Action{
+			Name: "run",
+			BazelCommands: []string{
+				*bazelSubCommand,
+			},
+		}, nil
+	}
+	if *actionName != "" {
+		cfg, err := readConfig()
+		if err != nil {
+			return nil, status.WrapError(err, "failed to read BuildBuddy config")
+		}
+		// If a specific action was specified, filter to configured
+		// actions with a matching action name.
+		return findAction(cfg.Actions, *actionName)
+	}
+	return nil, status.InvalidArgumentError("One of --action or --bazel_sub_command must be specified.")
 }
 
 type runInfo struct {
