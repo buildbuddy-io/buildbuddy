@@ -27,7 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/containerd/containerd/images"
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/match"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -62,7 +62,7 @@ const (
 	// The SOCI Index build tool. !!! WARNING !!! This is embedded in both the
 	// ZToCs and SOCI index, so changing it will invalidate all previously
 	// generated and stored soci artifacts, forcing a re-pull and re-index.
-	buildToolIdentifier = "BuildBuddy SOCI Artifact Store v0.1"
+	buildToolIdentifier = "BuildBuddy SOCI Artifact Store v0.2"
 
 	// Media type for binary data (e.g. ZTOC format).
 	octetStreamMediaType = "application/octet-stream"
