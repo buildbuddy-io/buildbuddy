@@ -642,6 +642,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	}
 
 	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
+	log.Warningf("Memory snapshot file at %s", memSnapshotPath)
 	vmStateSnapshotPath := filepath.Join(c.getChroot(), vmStateSnapshotName)
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
@@ -672,6 +673,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		// Use the merged memory snapshot.
 		memSnapshotPath = baseMemSnapshotPath
 	}
+
+	time.Sleep(1 * time.Minute)
 
 	// If we're creating a snapshot for the first time, create a COWStore from
 	// the initial full snapshot. (If we have a diff snapshot, then we already
@@ -780,9 +783,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	vmCtx, cancel := context.WithCancel(context.Background())
 	c.cancelVmCtx = cancel
 	var snapOpt fcclient.Opt
+	log.Warningf("full mem snapshot name %s", fullMemSnapshotName)
 	if *enableUFFD {
 		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffd)
-		snapOpt = fcclient.WithSnapshot(uffdSockName, "/home/maggie/snapshot_file", uffdType)
+		snapOpt = fcclient.WithSnapshot(uffdSockName, vmStateSnapshotName, uffdType)
 	} else {
 		snapOpt = fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName)
 	}
