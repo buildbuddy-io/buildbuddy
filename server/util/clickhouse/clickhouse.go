@@ -207,6 +207,13 @@ func (h *DBHandle) FlushTestTargetStatuses(ctx context.Context, entries []*schem
 	return nil
 }
 
+func (h *DBHandle) InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error {
+	if err := h.insertWithRetrier(ctx, (&schema.AuditLog{}).TableName(), 1, entry); err != nil {
+		return status.UnavailableErrorf("failed to create audit log: %s", err)
+	}
+	return nil
+}
+
 func recordMetricsAfterFn(db *gorm.DB) {
 	if db.DryRun || db.Statement == nil {
 		return
