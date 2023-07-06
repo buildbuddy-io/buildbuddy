@@ -139,6 +139,8 @@ var (
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
+	credentialHelper = flag.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
+
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
 
@@ -455,6 +457,9 @@ func main() {
 
 func run() error {
 	flag.Parse()
+	if *credentialHelper {
+		return runCredentialHelper()
+	}
 
 	ws := &workspace{
 		startTime:          time.Now(),
@@ -498,6 +503,14 @@ func run() error {
 			return status.WrapError(err, "set CI=true")
 		}
 	}
+	// Set BUILDBUDDY_CI_RUNNER_ABSPATH so that we can re-invoke ourselves
+	// as the git credential helper reliably, even after chdir.
+	absPath, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		return status.WrapError(err, "compute CI runner binary abspath")
+	}
+	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
+
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
 		return status.WrapError(err, "ensure HOME")
@@ -1479,6 +1492,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 }
 
 func (ws *workspace) config(ctx context.Context) error {
+	// Set up repo-local config.
 	cfg := [][]string{
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
@@ -1491,6 +1505,18 @@ func (ws *workspace) config(ctx context.Context) error {
 			return err
 		}
 	}
+
+	// Set up global config (~/.gitconfig) but only on Linux for now since Linux
+	// workflows are isolated.
+	// TODO(bduffany): find a solution that works for Mac workflows too.
+	if runtime.GOOS == "linux" {
+		// Credential helper is used for external git deps fetched by bazel so
+		// it needs to be in the global config.
+		if err := configureGlobalCredentialHelper(ctx); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1771,5 +1797,43 @@ func getStructuredCommandLine() *clpb.CommandLine {
 				}},
 			},
 		},
+	}
+}
+
+func configureGlobalCredentialHelper(ctx context.Context) error {
+	if !strings.HasPrefix(*targetRepoURL, "https://") {
+		return nil
+	}
+	repoToken := os.Getenv(repoTokenEnvVarName)
+	if repoToken == "" {
+		return nil
+	}
+	u, err := url.Parse(*targetRepoURL)
+	if err != nil {
+		return nil // if URL is unparseable, do nothing
+	}
+	repoHostURL := fmt.Sprintf("https://%s", u.Host)
+	configKey := fmt.Sprintf("credential.%s.helper", repoHostURL)
+	configValue := fmt.Sprintf("!%s --credential_helper", os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"))
+	if _, err := git(ctx, io.Discard, "config", "--global", configKey, configValue); err != nil {
+		return err
+	}
+	return nil
+}
+
+func runCredentialHelper() error {
+	// Do nothing with request details on stdin for now. We only configure the
+	// credential helper for the target repo URL, so the details should always
+	// match the target repo.
+	io.Copy(io.Discard, os.Stdin)
+
+	cmd := flag.Args()[0]
+	switch cmd {
+	case "get":
+		fmt.Printf("username=%s\npassword=%s\n", os.Getenv(repoTokenEnvVarName), os.Getenv(repoTokenEnvVarName))
+		return nil
+	default:
+		// Do nothing
+		return nil
 	}
 }
