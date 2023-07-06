@@ -211,7 +211,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		// memory file.
 		// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
 		// From https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#LL134C8-L134C84
-		backingMemorySnapshotFile := "/home/maggie/mem.snap"
+		backingMemorySnapshotFile := "/home/maggie/mem_file"
 		file, err := os.OpenFile(backingMemorySnapshotFile, os.O_RDWR, 0)
 		if err != nil {
 			fmt.Println("Failed to open file:", err)

@@ -782,7 +782,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	var snapOpt fcclient.Opt
 	if *enableUFFD {
 		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffd)
-		snapOpt = fcclient.WithSnapshot(uffdSockName, vmStateSnapshotName, uffdType)
+		snapOpt = fcclient.WithSnapshot(uffdSockName, "/home/maggie/snapshot_file", uffdType)
 	} else {
 		snapOpt = fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName)
 	}
