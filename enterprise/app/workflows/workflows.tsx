@@ -153,7 +153,18 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     this.setState({ workflowsLoading: true });
     this.fetchWorkflowsRPC = rpcService.service
       .getWorkflows(new workflow.GetWorkflowsRequest())
-      .then((response) => this.setState({ workflowsResponse: response }))
+      .then((response) => {
+        this.setState({ workflowsResponse: response });
+        if (capabilities.config.workflowHistoryEnabled) {
+          const repoUrls = response.workflow.reduce((out, w) => {
+            if (w.repoUrl) {
+              out.push(w.repoUrl);
+            }
+            return out;
+          }, [] as string[]);
+          this.fetchWorkflowHistory(repoUrls);
+        }
+      })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ workflowsLoading: false }));
   }
