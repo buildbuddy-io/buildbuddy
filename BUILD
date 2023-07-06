@@ -1,14 +1,80 @@
-load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "staticcheck_analyzers")
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "staticcheck_analyzers")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 load("@npm//@bazel/typescript:index.bzl", "ts_config")
 load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
 
+write_file(
+    name = "nogo_config",
+    out = "nogo_config.json",
+    content = [
+        json.encode_indent(
+            {
+                "exhaustive": {
+                    "only_files": {
+                        "/server/": "Server code",
+                        "/enterprise/server/": "Enterprise server code",
+                    },
+                    "analyzer_flags": {
+                        "default-signifies-exhaustive": "true",
+                    },
+                },
+                "fieldalignment": {
+                    "only_files": {
+                        "/server/": "Server code",
+                        "/enterprise/server/": "Enterprise server code",
+                    },
+                    "exclude_files": {
+                        ".*": "Disable entirely for now",
+                        ".*\\.pb\\.go": "Auto-generated proto files",
+                    },
+                },
+                "nilness": {
+                    "only_files": {
+                        "/server/": "Server code",
+                        "/enterprise/server/": "Enterprise server code",
+                    },
+                    "exclude_files": {
+                        ".*_cgo_gotypes\\.go": "cgo internal files",
+                    },
+                },
+            } | {
+                analyzer: {
+                    "only_files": {
+                        "/server/": "Server code",
+                        "/enterprise/server/": "Enterprise server code",
+                    },
+                }
+                for analyzer in [
+                    "assign",
+                    "cgocall",
+                    "composites",
+                    "copylocks",
+                    "lostcancel",
+                    "stdmethods",
+                    "stringintconv",
+                    "structtag",
+                    "unreachable",
+                    "unsafeptr",
+                ]
+            } | {
+                analyzer: {
+                    "exclude_files": {
+                        "external[\\\\,\\/]": "third_party",
+                    },
+                }
+                for analyzer in ANALYZERS
+            },
+        ),
+    ],
+)
+
 nogo(
     name = "vet",
-    config = "nogo_config.json",
+    config = ":nogo_config.json",
     vet = True,
     visibility = ["//visibility:public"],
     deps = [
