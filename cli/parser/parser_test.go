@@ -144,6 +144,22 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
+			[]string{"--noworkspace_rc", "--bazelrc=.bazelrc", "run", "--config=foo"},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"run",
+				"--common_global_flag_1",
+				"--common_global_flag_2",
+				"--build_flag_1",
+				"--config_foo_global_flag",
+				"--build_config_foo_flag",
+				"--build_config_forward_ref_flag",
+				"--build_config_foo_multi_1",
+				"--build_config_foo_multi_2",
+			},
+		},
+		{
 			[]string{"--explicit_startup_flag", "query"},
 			[]string{
 				"--startup_flag_1",
