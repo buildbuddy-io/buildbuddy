@@ -176,7 +176,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	mappings := setup.Mappings
 
 	vmStartMemory := mappings[0].BaseHostVirtAddr
-	vmMemorySize := mappings[0].Size
+	vmSize := mappings[0].Size
 
 	pollFDs := []unix.PollFd{{Fd: int32(uffd), Events: C.POLLIN}}
 	pageSize := os.Getpagesize()
@@ -203,7 +203,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		os.Exit(1)
 	}
 
-	lastMemoryAddress := uint64(vmStartMemory + vmMemorySize)
+	log.Warningf("Backing memory starts at 0x%x", uintptr(unsafe.Pointer(&backingMemoryAddr[0])))
+
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -224,8 +225,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
 			return status.InternalErrorf("got message with WP flag, but write protection is not yet supported")
 		}
-
-		log.Warningf("Got a message for address %d", event.PageFault.Address)
 
 		guestPageAddr := uintptr(event.PageFault.Address & ^(uint64(pageSize) - 1))
 		faultStoreOffset, err := guestMemoryAddrToStoreOffset(guestPageAddr, mappings)
@@ -254,12 +253,29 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 			// For now, copy just the one page to the VM memory range. TODO:
 			// It's probably much more efficient to copy the whole part of the
 			// chunk that overlaps with the mapped memory region.
-			Len:  uint64(pageSize),
+			Len:  uint64(vmSize) - lenFromStart,
 			Mode: 0,
 			Copy: 0,
 		}
 
-		// DO NOT SUBMIT
+		_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+		if errno != 0 {
+			return status.WrapError(errno, "UFFDIO_COPY")
+		}
+
+		log.Debugf("Sending %s", &copyData)
+		log.Debugf("UFFDIO_COPY completed successfully")
+
+		copyData = uffdioCopy{
+			Dst: uint64(vmStartMemory),
+			Src: uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
+			// For now, copy just the one page to the VM memory range. TODO:
+			// It's probably much more efficient to copy the whole part of the
+			// chunk that overlaps with the mapped memory region.
+			Len:  uint64(lenFromStart),
+			Mode: 0,
+			Copy: 0,
+		}
 
 		_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 		if errno != 0 {
