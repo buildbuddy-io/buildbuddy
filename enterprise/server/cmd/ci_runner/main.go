@@ -1827,7 +1827,14 @@ func runCredentialHelper() error {
 	cmd := flag.Args()[0]
 	switch cmd {
 	case "get":
-		fmt.Printf("username=%s\npassword=%s\n", os.Getenv(repoTokenEnvVarName), os.Getenv(repoTokenEnvVarName))
+		username := os.Getenv(repoUserEnvVarName)
+		if username == "" {
+			// git requires a username from the cred helper but GitHub doesn't
+			// care what the username is (it just looks at the token), so just
+			// set an arbitrary username.
+			username = "x-access-token"
+		}
+		fmt.Printf("username=%s\npassword=%s\n", username, os.Getenv(repoTokenEnvVarName))
 		return nil
 	default:
 		// Do nothing
