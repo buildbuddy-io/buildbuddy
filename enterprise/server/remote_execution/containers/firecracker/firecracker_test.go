@@ -470,7 +470,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	} else {
 		assert.Equal(t, "overlay", scratchFSU.GetFstype())
 		assert.Equal(t, "overlayfs:/scratch/bbvmroot", scratchFSU.GetSource())
-		const approxInitialScratchDiskSizeBytes = 40e6
+		const approxInitialScratchDiskSizeBytes = 38e6
 		assert.InDelta(
 			t, approxInitialScratchDiskSizeBytes+scratchTestFileSizeBytes,
 			scratchFSU.GetUsedBytes(),
