@@ -34,6 +34,7 @@ go_library(
         "@com_github_elastic_gosigar//:gosigar",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_exp//slices",
         "@org_golang_x_sync//errgroup",

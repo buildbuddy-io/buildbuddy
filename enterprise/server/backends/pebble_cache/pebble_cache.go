@@ -46,6 +46,7 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1298,6 +1299,48 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterat
 	return md, err
 }
 
+func (p *PebbleCache) lookupLastAccessTime(iter pebble.Iterator, key filestore.PebbleKey) (int64, error) {
+	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
+		keyBytes, err := key.Bytes(version)
+		if err != nil {
+			return 0, err
+		}
+		if iter.SeekGE(keyBytes) && bytes.Equal(iter.Key(), keyBytes) {
+			return getLastAccessUsec(iter.Value()), nil
+		}
+	}
+	return 0, status.NotFoundErrorf("key %q not found", key)
+}
+
+// getLastAccessUsec processes the FileMetadata as a sequence of (tag,value)
+// pairs. It loops through the pairs until hitting the tag for last_acess_usec,
+// then it returns the value. This lets us avoid a full parse of FileMetadata.
+func getLastAccessUsec(b []byte) int64 {
+	// This needs to match the tag for the last_access_usec field in FileMetadata
+	// in proto/raft.proto
+	const lastAccessUsecTag = 4
+	for len(b) > 0 {
+		tag, typ, n := protowire.ConsumeTag(b)
+		if n < 0 {
+			return 0
+		}
+		b = b[n:]
+
+		if tag != lastAccessUsecTag {
+			n = protowire.ConsumeFieldValue(tag, typ, b)
+			if n < 0 {
+				return 0
+			}
+			b = b[n:]
+			continue
+		}
+
+		v, _ := protowire.ConsumeVarint(b)
+		return int64(v)
+	}
+	return 0
+}
+
 // iterHasKey returns a bool indicating if the provided iterator has the
 // exact key specified.
 func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) (bool, error) {
@@ -1434,9 +1477,11 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		found, err := p.iterHasKey(iter, key)
-		if !found || err != nil {
+		lastAccessUsec, err := p.lookupLastAccessTime(iter, key)
+		if err != nil {
 			missing = append(missing, r.GetDigest())
+		} else {
+			p.sendAtimeUpdate(key, lastAccessUsec)
 		}
 		unlockFn()
 	}
@@ -1518,8 +1563,8 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, de
 	p.edits <- up
 }
 
-func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) {
-	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec int64) {
+	atime := time.UnixMicro(lastAccessUsec)
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return
 	}
@@ -2930,7 +2975,7 @@ func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.
 		}
 		return nil, err
 	}
-	p.sendAtimeUpdate(key, fileMetadata)
+	p.sendAtimeUpdate(key, fileMetadata.GetLastAccessUsec())
 
 	if !rawStorage {
 		if shouldDecrypt {
