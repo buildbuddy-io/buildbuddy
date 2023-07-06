@@ -1312,7 +1312,12 @@ func (p *PebbleCache) lookupLastAccessTime(iter pebble.Iterator, key filestore.P
 	return 0, status.NotFoundErrorf("key %q not found", key)
 }
 
+// getLastAccessUsec processes the FileMetadata as a sequence of (tag,value)
+// pairs. It loops through the pairs until hitting the tag for last_acess_usec,
+// then it returns the value. This lets us avoid a full parse of FileMetadata.
 func getLastAccessUsec(b []byte) int64 {
+	// This needs to match the tag for the last_access_usec field in FileMetadata
+	// in proto/raft.proto
 	const lastAccessUsecTag = 4
 	for len(b) > 0 {
 		tag, typ, n := protowire.ConsumeTag(b)
@@ -1475,8 +1480,9 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 		lastAccessUsec, err := p.lookupLastAccessTime(iter, key)
 		if err != nil {
 			missing = append(missing, r.GetDigest())
+		} else {
+			p.sendAtimeUpdate(key, lastAccessUsec)
 		}
-		p.sendAtimeUpdate(key, lastAccessUsec)
 		unlockFn()
 	}
 	return missing, nil
