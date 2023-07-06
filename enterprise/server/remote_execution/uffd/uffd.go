@@ -180,7 +180,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 
 	pollFDs := []unix.PollFd{{Fd: int32(uffd), Events: C.POLLIN}}
 	pageSize := os.Getpagesize()
-	storeLength, err := memoryStore.SizeBytes()
+	//storeLength, err := memoryStore.SizeBytes()
 	if err != nil {
 		return status.WrapError(err, "get memory store size bytes")
 	}
