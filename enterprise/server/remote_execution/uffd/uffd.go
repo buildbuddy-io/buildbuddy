@@ -175,6 +175,9 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	uffd := setup.Fd
 	mappings := setup.Mappings
 
+	vmStartMemory := mappings[0].BaseHostVirtAddr
+	vmMemorySize := mappings[0].Size
+
 	pollFDs := []unix.PollFd{{Fd: int32(uffd), Events: C.POLLIN}}
 	pageSize := os.Getpagesize()
 	storeLength, err := memoryStore.SizeBytes()
@@ -202,36 +205,52 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 			return status.InternalErrorf("got message with WP flag, but write protection is not yet supported")
 		}
 
+		log.Warningf("Got a message for address %d", event.PageFault.Address)
+
 		// Map the requested address from page fault address -> page of backing
 		// memory file.
 		// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
 		// From https://github.com/firecracker-microvm/firecracker/blob/main/tests/host_tools/uffd/src/uffd_utils.rs#LL134C8-L134C84
+		backingMemorySnapshotFile := "/home/maggielou/mem.snap"
+		file, err := os.OpenFile(backingMemorySnapshotFile, os.O_RDWR, 0)
+		if err != nil {
+			fmt.Println("Failed to open file:", err)
+		}
+		defer file.Close()
+
+		fileInfo, err := file.Stat()
+		backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, int(fileInfo.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE)
+		if mmapErr != nil {
+			fmt.Printf("Failed to mmap backing memory file: %v\n", err)
+			os.Exit(1)
+		}
+
 		guestPageAddr := uintptr(event.PageFault.Address & ^(uint64(pageSize) - 1))
 		faultStoreOffset, err := guestMemoryAddrToStoreOffset(guestPageAddr, mappings)
 		if err != nil {
 			return status.WrapError(err, "translate to store offset")
 		}
-		hostPageAddr, err := memoryStore.GetPageAddress(uintptr(faultStoreOffset), false /*=write*/)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
-
-		// Should never map a partial page at the end of the file, but just
-		// warn in this case for now.
-		if remainder := storeLength - int64(faultStoreOffset); remainder < int64(pageSize) {
-			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
-		}
+		//hostPageAddr, err := memoryStore.GetPageAddress(uintptr(faultStoreOffset), false /*=write*/)
+		//if err != nil {
+		//	return status.WrapError(err, "get backing page address")
+		//}
+		//
+		//// Should never map a partial page at the end of the file, but just
+		//// warn in this case for now.
+		//if remainder := storeLength - int64(faultStoreOffset); remainder < int64(pageSize) {
+		//	log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
+		//}
 
 		// DO NOT SUBMIT
 		log.Debugf("faultAddr=0x%x, faultPageAddr=0x%x, storeOffset=0x%x", event.PageFault.Address, guestPageAddr, faultStoreOffset)
 
 		copyData := uffdioCopy{
-			Dst: uint64(guestPageAddr),
-			Src: uint64(hostPageAddr),
+			Dst: uint64(vmStartMemory),
+			Src: uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
 			// For now, copy just the one page to the VM memory range. TODO:
 			// It's probably much more efficient to copy the whole part of the
 			// chunk that overlaps with the mapped memory region.
-			Len:  uint64(pageSize),
+			Len:  uint64(vmMemorySize),
 			Mode: 0,
 			Copy: 0,
 		}
