@@ -166,9 +166,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     this.setState({ reposLoading: true });
     this.fetchReposRPC = rpcService.service
       .getLinkedGitHubRepos(new github.GetLinkedReposRequest())
-      .then((response) => {
-        this.setState({ reposResponse: response });
-      })
+      .then((response) => this.setState({ reposResponse: response }))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ reposLoading: false }));
   }
