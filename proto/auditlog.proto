@@ -102,7 +102,6 @@ message GroupUserState {
   grp.Group.Role role = 2;
 }
 
-
 message GetAuditLogsRequest {
   context.RequestContext request_context = 1;
 
