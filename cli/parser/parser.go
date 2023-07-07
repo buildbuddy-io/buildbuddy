@@ -640,7 +640,17 @@ func parseRcRule(line string) (*RcRule, error) {
 
 func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
 	options := make([]*RcRule, 0)
+	seen := map[string]bool{}
 	for _, filePath := range filePaths {
+		r, err := realpath(filePath)
+		if err != nil {
+			continue
+		}
+		if seen[r] {
+			continue
+		}
+		seen[r] = true
+
 		file, err := os.Open(filePath)
 		if err != nil {
 			continue

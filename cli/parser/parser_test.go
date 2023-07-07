@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -282,6 +283,76 @@ func TestParseBazelrc_CircularImport(t *testing.T) {
 	_, err = expandConfigs(ws, []string{"build"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
+}
+
+func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"WORKSPACE":    "",
+		".rc1":         `test --test_arg=1`,
+		".rc2":         `test --test_arg=2`,
+		".imports-rc1": `import %workspace%/.rc1`,
+		".bazelrc":     `run --build_metadata=WORKSPACERC=1`,
+	})
+	// Make some hardlinks/symlinks for testing as well.
+	err := os.Symlink(filepath.Join(ws, ".rc1"), filepath.Join(ws, ".rc1-symlink"))
+	require.NoError(t, err)
+	err = os.Link(filepath.Join(ws, ".rc1"), filepath.Join(ws, ".rc1-hardlink"))
+	require.NoError(t, err)
+
+	workspacerc := filepath.Join(ws, ".bazelrc")
+	rc1 := filepath.Join(ws, ".rc1")
+	// NOTE: not using filepath.Join() here since it returned the `Clean`ed
+	// path, which defeats what we're trying to test here.
+	rc1AltPath := ws + "/../" + filepath.Dir(ws) + ".rc1"
+	rc2 := filepath.Join(ws, ".rc2")
+	rc1Symlink := filepath.Join(ws, ".rc1-symlink")
+	rc1Hardlink := filepath.Join(ws, ".rc1-hardlink")
+	importsRC1 := filepath.Join(ws, ".imports-rc1")
+
+	for _, test := range []struct {
+		name                 string
+		args                 []string
+		expectedExpandedArgs []string
+	}{
+		{
+			name:                 "ShouldIgnoreDuplicateBazelrcWithExactPathMatch",
+			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + rc1, "test"},
+			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2"},
+		},
+		{
+			name:                 "ShouldIgnoreDuplicateBazelrcWithEquivalentPathMatch",
+			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + rc1AltPath, "test"},
+			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2"},
+		},
+		{
+			name:                 "ShouldIgnoreDuplicateBazelrcWithEquivalentSymlinkTargetPathMatch",
+			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + rc1Symlink, "test"},
+			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2"},
+		},
+		{
+			name:                 "ShouldIgnoreExplicitWorkspacercReference",
+			args:                 []string{"--bazelrc=" + workspacerc, "run"},
+			expectedExpandedArgs: []string{"--ignore_all_rc_files", "run", "--build_metadata=WORKSPACERC=1"},
+		},
+		{
+			name:                 "ShouldNotIgnoreDuplicateBazelrcWithHardlinkTargetMatch",
+			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + rc1Hardlink, "test"},
+			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2", "--test_arg=1"},
+		},
+		{
+			name:                 "ShouldNotIgnoreDuplicateBazelrcImportedExplicitly",
+			args:                 []string{"--bazelrc=" + rc1, "--bazelrc=" + rc2, "--bazelrc=" + importsRC1, "test"},
+			expectedExpandedArgs: []string{"--ignore_all_rc_files", "test", "--test_arg=1", "--test_arg=2", "--test_arg=1"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			expandedArgs, err := expandConfigs(ws, test.args)
+
+			require.NoError(t, err, "error expanding %s", test.args)
+			assert.Equal(t, test.expectedExpandedArgs, expandedArgs)
+		})
+	}
 }
 
 func TestCanonicalizeArgs(t *testing.T) {
