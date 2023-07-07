@@ -66,7 +66,7 @@ func expandStringValue(value string) (string, error) {
 // LoadFromFile parses the flags and loads the config from a string.
 func LoadFromData(data string) error {
 	if err := flagyaml.PopulateFlagsFromData(data); err != nil {
-		return nil
+		return err
 	}
 	var lastErr error
 	common.DefaultFlagSet.VisitAll(func(f *flag.Flag) {
