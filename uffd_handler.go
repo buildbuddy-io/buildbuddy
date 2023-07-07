@@ -187,15 +187,19 @@ func (h *Handler) handle(ctx context.Context) error {
 		if errno != 0 {
 			return status.WrapError(errno, "read event from uffd")
 		}
+
+		// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
+		guestPageAddr := uintptr(event.PageFault.Address & ^(uint64(pageSize) - 1))
+		accessedPage := uint64(guestPageAddr-vmStartMemory) / uint64(pageSize)
+		bytesBeforeAccess := uint64(pageSize * int(accessedPage))
 		copyData := uffdioCopy{
-			Dst:  uint64(vmStartMemory),
-			Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
-			Len:  uint64(vmSize),
+			Dst:  uint64(guestPageAddr),
+			Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[bytesBeforeAccess]))),
+			Len:  uint64(pageSize),
 			Mode: 0,
 			Copy: 0,
 		}
 
-		// DO NOT SUBMIT
 		log.Debugf("Sending %s", &copyData)
 		_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 		if errno != 0 {
