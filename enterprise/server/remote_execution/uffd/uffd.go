@@ -247,7 +247,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		copyData := uffdioCopy{
 			Dst:  uint64(vmStartMemory),
 			Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
-			Len:  uint64(vmSize),
+			Len:  uint64(pageSize * 100),
 			Mode: 0,
 			Copy: 0,
 		}
@@ -259,8 +259,25 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		if errno != 0 {
 			return status.WrapError(errno, "UFFDIO_COPY")
 		}
-
 		log.Debugf("UFFDIO_COPY completed successfully")
+
+		copyData = uffdioCopy{
+			Dst: uint64(vmStartMemory) + uint64(pageSize*100),
+			Src: uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[pageSize*100]))),
+			// For now, copy just the one page to the VM memory range. TODO:
+			// It's probably much more efficient to copy the whole part of the
+			// chunk that overlaps with the mapped memory region.
+			Len:  uint64(vmSize) - uint64(pageSize*100),
+			Mode: 0,
+			Copy: 0,
+		}
+
+		log.Debugf("Sending %s", &copyData)
+		_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+		if errno != 0 {
+			return status.WrapError(errno, "UFFDIO_COPY")
+		}
+		log.Debugf("UFFDIO_COPY 2 completed successfully")
 	}
 }
 
