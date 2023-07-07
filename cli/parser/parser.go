@@ -248,7 +248,7 @@ func parseBazelHelp(help, topic string) *OptionSet {
 	var options []*Option
 	for _, line := range strings.Split(help, "\n") {
 		line = strings.TrimSuffix(line, "\r")
-		if opt := parseHelpLine(line); opt != nil {
+		if opt := parseHelpLine(line, topic); opt != nil {
 			options = append(options, opt)
 		}
 	}
@@ -256,7 +256,7 @@ func parseBazelHelp(help, topic string) *OptionSet {
 	return NewOptionSet(options, isStartupOptions)
 }
 
-func parseHelpLine(line string) *Option {
+func parseHelpLine(line, topic string) *Option {
 	m := bazelFlagHelpPattern.FindStringSubmatch(line)
 	if m == nil {
 		return nil
@@ -267,6 +267,14 @@ func parseHelpLine(line string) *Option {
 	description := m[bazelFlagHelpPattern.SubexpIndex("description")]
 
 	multi := strings.HasSuffix(description, "; may be used multiple times")
+
+	if topic == "startup_options" {
+		// Startup options don't exactly match the schema used by bazel
+		// subcommands; account for a few special cases here.
+		if name == "bazelrc" || name == "host_jvm_args" {
+			multi = true
+		}
+	}
 
 	return &Option{
 		Name:      name,
