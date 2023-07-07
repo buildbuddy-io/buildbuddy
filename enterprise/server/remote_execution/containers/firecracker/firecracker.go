@@ -643,6 +643,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 
 	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
 	vmStateSnapshotPath := filepath.Join(c.getChroot(), vmStateSnapshotName)
+	log.Warningf("Memory snapshot file at %s", memSnapshotPath)
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
 	if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
@@ -672,6 +673,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		// Use the merged memory snapshot.
 		memSnapshotPath = baseMemSnapshotPath
 	}
+
+	time.Sleep(18 * time.Second)
 
 	// If we're creating a snapshot for the first time, create a COWStore from
 	// the initial full snapshot. (If we have a diff snapshot, then we already

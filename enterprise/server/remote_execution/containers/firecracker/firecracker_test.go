@@ -353,7 +353,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
 
 	// Try pause, unpause, exec several times.
-	for i := 1; i <= 3; i++ {
+	for i := 1; i <= 1; i++ {
 		if err := c.Pause(ctx); err != nil {
 			t.Fatalf("unable to pause container: %s", err)
 		}

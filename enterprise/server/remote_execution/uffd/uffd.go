@@ -175,12 +175,31 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	uffd := setup.Fd
 	mappings := setup.Mappings
 
+	vmStartMemory := mappings[0].BaseHostVirtAddr
+	vmSize := mappings[0].Size
+
 	pollFDs := []unix.PollFd{{Fd: int32(uffd), Events: C.POLLIN}}
 	pageSize := os.Getpagesize()
-	storeLength, err := memoryStore.SizeBytes()
+	//storeLength, err := memoryStore.SizeBytes()
+	//if err != nil {
+	//	return status.WrapError(err, "get memory store size bytes")
+	//}
+
+	backingMemorySnapshotFile := "/home/maggie/full-mem.snap"
+	file, err := os.OpenFile(backingMemorySnapshotFile, os.O_RDWR, 0)
 	if err != nil {
-		return status.WrapError(err, "get memory store size bytes")
+		fmt.Println("Failed to open file:", err)
 	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	backingMemoryAddr, mmapErr := syscall.Mmap(int(file.Fd()), 0, int(fileInfo.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE)
+	if mmapErr != nil {
+		fmt.Printf("Failed to mmap backing memory file: %v\n", err)
+		os.Exit(1)
+	}
+	log.Warningf("Backing memory starts at %v", uintptr(unsafe.Pointer(&backingMemoryAddr[0])))
+
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -211,19 +230,19 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		if err != nil {
 			return status.WrapError(err, "translate to store offset")
 		}
-		hostPageAddr, err := memoryStore.GetPageAddress(uintptr(faultStoreOffset), false /*=write*/)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
-
-		// Should never map a partial page at the end of the file, but just
-		// warn in this case for now.
-		if remainder := storeLength - int64(faultStoreOffset); remainder < int64(pageSize) {
-			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
-		}
+		//hostPageAddr, err := memoryStore.GetPageAddress(uintptr(faultStoreOffset), false /*=write*/)
+		//if err != nil {
+		//	return status.WrapError(err, "get backing page address")
+		//}
+		//
+		//// Should never map a partial page at the end of the file, but just
+		//// warn in this case for now.
+		//if remainder := storeLength - int64(faultStoreOffset); remainder < int64(pageSize) {
+		//	log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
+		//}
 
 		// DO NOT SUBMIT
-		log.Debugf("faultAddr=0x%x, faultPageAddr=0x%x, storeOffset=0x%x", event.PageFault.Address, guestPageAddr, faultStoreOffset)
+		log.Debugf("event.PageFault.Address=%v, alignedAddress=%v, storeOffset=0x%x", event.PageFault.Address, guestPageAddr, faultStoreOffset)
 
 		copyData := uffdioCopy{
 			Dst: uint64(guestPageAddr),
