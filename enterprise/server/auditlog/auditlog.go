@@ -32,11 +32,8 @@ const (
 	ListAPIKeys  = "apiKeys.list"
 	DeleteAPIKey = "apiKeys.delete"
 
-	UpdateGroup = "groups.update"
-
-	CreateGroupUser = "groupUsers.create"
-	DeleteGroupUser = "groupUsers.delete"
-	UpdateGroupUser = "groupUsers.update"
+	UpdateGroup           = "groups.update"
+	UpdateGroupMembership = "groups.updateMembership"
 
 	CreateSecret = "secrets.create"
 	UpdateSecret = "secrets.update"

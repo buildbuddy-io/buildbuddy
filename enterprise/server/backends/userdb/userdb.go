@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -19,10 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 const (
@@ -247,7 +246,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *t
 	if err != nil {
 		return "", err
 	}
-	if err = d.addUserToGroup(tx, userID, groupID); err != nil {
+	if err = d.addUserToGroup(ctx, tx, userID, groupID, role.Default); err != nil {
 		return "", err
 	}
 	return groupID, nil
@@ -327,16 +326,10 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 	return d.h.DB(ctx).Exec(q, args...).Error
 }
 
-func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID string) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
-		return d.addUserToGroup(tx, userID, groupID)
-	})
-}
-
-func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) error {
+func (d *UserDB) addUserToGroup(ctx context.Context, tx *db.DB, userID, groupID string, userRole role.Role) (retErr error) {
 	// Count the number of users in the group.
 	// If there are no existing users, then user should join with admin role,
-	// otherwise they should join with default role.
+	// otherwise they should join with provided role.
 	row := &struct{ Count int64 }{}
 	err := tx.Raw(`
 		SELECT COUNT(*) AS count FROM "UserGroups"
@@ -345,15 +338,15 @@ func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) error {
 	if err != nil {
 		return err
 	}
-	r := role.Default
 	if row.Count == 0 {
-		r = role.Admin
+		userRole = role.Admin
 	}
 
 	existing, err := getUserGroup(tx, userID, groupID)
 	if err != nil && !db.IsRecordNotFound(err) {
 		return err
 	}
+
 	if existing != nil {
 		if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
 			return tx.Exec(`
@@ -363,16 +356,17 @@ func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) error {
 				AND group_group_id = ?
 				`,
 				grpb.GroupMembershipStatus_MEMBER,
-				r,
+				userRole,
 				userID,
 				groupID,
 			).Error
 		}
 		return status.AlreadyExistsError("You're already in this organization.")
 	}
+
 	return tx.Exec(
 		`INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)`,
-		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
+		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), userRole,
 	).Error
 }
 
@@ -403,7 +397,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 		membershipStatus = grpb.GroupMembershipStatus_REQUESTED
 		if group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(tu.Email) {
 			membershipStatus = grpb.GroupMembershipStatus_MEMBER
-			return d.addUserToGroup(tx, userID, groupID)
+			return d.addUserToGroup(ctx, tx, userID, groupID, role.Default)
 		}
 
 		// Check if there's an existing request and return AlreadyExists if so.
@@ -486,6 +480,54 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	return users, nil
 }
 
+func (d *UserDB) removeUserFromGroup(ctx context.Context, tx *db.DB, userID string, groupID string) error {
+	ug, err := getUserGroup(tx, userID, groupID)
+	if err != nil {
+		return err
+	}
+	if ug == nil {
+		return nil
+	}
+	if err := tx.Exec(`
+						DELETE FROM "UserGroups"
+						WHERE user_user_id = ? AND group_group_id = ?`,
+		userID,
+		groupID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`
+						DELETE FROM "APIKeys"
+						WHERE user_id = ? AND group_id = ?`,
+		userID,
+		groupID).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *UserDB) updateUserRole(ctx context.Context, tx *db.DB, userID string, groupID string, newRole role.Role) error {
+	ug, err := getUserGroup(tx, userID, groupID)
+	if err != nil {
+		return err
+	}
+	if ug == nil {
+		return nil
+	}
+	if role.Role(ug.Role) == newRole {
+		return nil
+	}
+	err = tx.Exec(`
+					UPDATE "UserGroups"
+					SET role = ?
+					WHERE user_user_id = ? AND group_group_id = ?
+				`, newRole, userID, groupID,
+	).Error
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
 	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
 		return err
@@ -499,22 +541,11 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 		for _, update := range updates {
 			switch update.GetMembershipAction() {
 			case grpb.UpdateGroupUsersRequest_Update_REMOVE:
-				if err := tx.Exec(`
-						DELETE FROM "UserGroups"
-						WHERE user_user_id = ? AND group_group_id = ?`,
-					update.GetUserId().GetId(),
-					groupID).Error; err != nil {
-					return err
-				}
-				if err := tx.Exec(`
-						DELETE FROM "APIKeys"
-						WHERE user_id = ? AND group_id = ?`,
-					update.GetUserId().GetId(),
-					groupID).Error; err != nil {
+				if err := d.removeUserFromGroup(ctx, tx, update.GetUserId().GetId(), groupID); err != nil {
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_ADD:
-				if err := d.addUserToGroup(tx, update.GetUserId().GetId(), groupID); err != nil {
+				if err := d.addUserToGroup(ctx, tx, update.GetUserId().GetId(), groupID, role.FromProto(update.GetRole())); err != nil {
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_UNKNOWN_MEMBERSHIP_ACTION:
@@ -523,17 +554,10 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 			}
 
 			if update.Role != grpb.Group_UNKNOWN_ROLE {
-				err := tx.Exec(`
-					UPDATE "UserGroups"
-					SET role = ?
-					WHERE user_user_id = ? AND group_group_id = ?
-				`, role.FromProto(update.Role), update.GetUserId().GetId(), groupID,
-				).Error
-				if err != nil {
+				if err := d.updateUserRole(ctx, tx, update.GetUserId().GetId(), groupID, role.FromProto(update.GetRole())); err != nil {
 					return err
 				}
 			}
-
 		}
 		return nil
 	})
