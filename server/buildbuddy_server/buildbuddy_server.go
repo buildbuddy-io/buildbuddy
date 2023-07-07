@@ -881,7 +881,7 @@ func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 }
 func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
-		return wfs.GetWorkflows(ctx, req)
+		return wfs.GetWorkflows(ctx, req.GetRequestContext())
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
@@ -1005,7 +1005,7 @@ func (s *BuildBuddyServer) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.G
 	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	return a.GetLinkedGitHubRepos(ctx, req)
+	return a.GetLinkedGitHubRepos(ctx)
 }
 func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
 	a := s.env.GetGitHubApp()

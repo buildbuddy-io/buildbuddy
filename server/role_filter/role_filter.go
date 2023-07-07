@@ -64,6 +64,7 @@ var (
 		"GetStatDrilldown",
 		"GetSuggestion",
 		"SearchExecution",
+		"GetWorkflowHistory",
 		// Per-invocation actions
 		"UpdateInvocation",
 		"DeleteInvocation",
@@ -112,7 +113,6 @@ var (
 		"CreateWorkflow",
 		"DeleteWorkflow",
 		"GetWorkflows",
-		"GetWorkflowHistory",
 		"GetRepos",
 		// RBE deployment view
 		"GetExecutionNodes",
