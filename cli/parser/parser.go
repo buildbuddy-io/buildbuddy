@@ -853,8 +853,8 @@ func consumeRCFileArgs(args []string, workspaceDir string) (newArgs []string, rc
 				continue
 			}
 
-			if !filepath.IsAbs(bazelrcArg) {
-				bazelrcArg = filepath.Join(workspaceDir, bazelrcArg)
+			if a, err := filepath.Abs(bazelrcArg); err == nil {
+				bazelrcArg = a
 			}
 
 			explicitBazelrcPaths = append(explicitBazelrcPaths, bazelrcArg)
