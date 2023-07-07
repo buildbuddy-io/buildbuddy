@@ -155,14 +155,15 @@ func ConfigureSidecar(args []string) []string {
 		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
 	}
 
+	// If there aren't any sidecar arguments, we don't need to spin up a sidecar at all.
+	if len(sidecarArgs) == 0 {
+		return args
+	}
+
 	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
 		sidecarArgs = append(sidecarArgs, "--synchronous_write")
 		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
 		args = append(args, "--bes_upload_mode=wait_for_upload_complete")
-	}
-
-	if len(sidecarArgs) == 0 {
-		return args
 	}
 
 	sidecarArgs = append(sidecarArgs, []string{
