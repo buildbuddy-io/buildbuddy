@@ -13,7 +13,6 @@ ts_library(
         "//enterprise/app/workflows:workflows_user",
         "@npm//@types/react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
 
@@ -161,6 +160,5 @@ ts_library(
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
