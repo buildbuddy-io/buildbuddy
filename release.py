@@ -228,10 +228,10 @@ def main():
         print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
         time.sleep(2)
-        create_and_push_tag(old_version, new_version, release_notes)
+        #create_and_push_tag(old_version, new_version, release_notes)
         print("Pushed tag for new version %s" % new_version)
 
-    update_docker_images(new_version, args.skip_latest_tag)
+    #update_docker_images(new_version, args.skip_latest_tag)
     print("Done -- proceed with the release guide!")
 
 if __name__ == "__main__":
