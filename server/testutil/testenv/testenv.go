@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
@@ -23,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -165,6 +167,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	}
 	te.RealEnv.SetBlobstore(bs)
 	te.RealEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
+	require.NoError(t, buildbuddy_server.Register(te))
 
 	return te
 }

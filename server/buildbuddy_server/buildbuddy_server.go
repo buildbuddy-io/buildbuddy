@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
+	"github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
@@ -333,6 +335,9 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	if err := userDB.UpdateGroupUsers(ctx, req.GetGroupId(), req.GetUpdate()); err != nil {
 		return nil, err
 	}
+	if al := s.env.GetAuditLog(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(req.GetGroupId()), auditlog.UpdateGroupMembership, req)
+	}
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
 
@@ -436,6 +441,9 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	}
 	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
 		return nil, err
+	}
+	if al := s.env.GetAuditLog(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(req.Id), auditlog.UpdateGroup, req)
 	}
 	return &grpb.UpdateGroupResponse{}, nil
 }
