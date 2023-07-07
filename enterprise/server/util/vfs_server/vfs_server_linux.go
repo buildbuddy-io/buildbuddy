@@ -1,5 +1,4 @@
-//go:build linux && !android
-// +build linux,!android
+//go:build linux && !android && (amd64 || arm64)
 
 package vfs_server
 
