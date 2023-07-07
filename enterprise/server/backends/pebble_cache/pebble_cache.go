@@ -20,6 +20,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -51,6 +52,7 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
@@ -91,6 +93,9 @@ var (
 
 	// Compression related flags
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
+
+	// Chunking related flags
+	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes_bytes", 0, "Average size of chunks that's stored in the cache")
 )
 
 var (
@@ -148,6 +153,7 @@ type Options struct {
 	MaxSizeBytes           int64
 	BlockCacheSizeBytes    int64
 	MaxInlineFileSizeBytes int64
+	AverageChunkSizeBytes  int
 
 	AtimeUpdateThreshold *time.Duration
 	AtimeBufferSize      *int
@@ -177,6 +183,7 @@ type PebbleCache struct {
 	maxSizeBytes           int64
 	blockCacheSizeBytes    int64
 	maxInlineFileSizeBytes int64
+	averageChunkSizeBytes  int
 
 	atimeUpdateThreshold time.Duration
 	atimeBufferSize      int
@@ -272,6 +279,7 @@ func Register(env environment.Env) error {
 		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
 		AtimeBufferSize:             atimeBufferSizeFlag,
 		MinEvictionAge:              minEvictionAgeFlag,
+		AverageChunkSizeBytes:       *averageChunkSizeBytes,
 	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
@@ -405,6 +413,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		maxSizeBytes:                opts.MaxSizeBytes,
 		blockCacheSizeBytes:         opts.BlockCacheSizeBytes,
 		maxInlineFileSizeBytes:      opts.MaxInlineFileSizeBytes,
+		averageChunkSizeBytes:       opts.AverageChunkSizeBytes,
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
 		atimeBufferSize:             *opts.AtimeBufferSize,
 		minEvictionAge:              *opts.MinEvictionAge,
@@ -1627,6 +1636,9 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	case storageMetadata.GetInlineMetadata() != nil:
 		// Already deleted; see comment above.
 		break
+	case storageMetadata.GetChunkedMetadata() != nil:
+		// need to clean up the remaining chunks.
+		break
 	default:
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
@@ -1693,6 +1705,169 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	return pebble.ReadCloserWithFunc(rc, db.Close), nil
 }
 
+// A writer that will chunk the raw content using Content-Define Chunking,
+// and then encrypt and compress when needed
+type cdcWriter struct {
+	ctx        context.Context
+	pc         *PebbleCache
+	db         pebble.IPebbleDB
+	fileRecord *rfpb.FileRecord
+	key        filestore.PebbleKey
+
+	writtenChunks  []*resource.ResourceName
+	shouldCompress bool
+	isCompressed   bool
+
+	chunker *chunker.Chunker
+}
+
+func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, isCompressed bool) (interfaces.CommittedWriteCloser, error) {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	cdcw := &cdcWriter{
+		ctx:            ctx,
+		pc:             p,
+		db:             db,
+		key:            key,
+		fileRecord:     fileRecord,
+		shouldCompress: shouldCompress,
+		isCompressed:   isCompressed,
+	}
+
+	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunkWhenSingle, cdcw.writeChunkWhenMultiple)
+	cdcw.chunker = chunker
+
+	cwc := ioutil.NewCustomCommitWriteCloser(cdcw)
+	cwc.CloseFn = db.Close
+	cwc.CommitFn = func(bytesWritten int64) error {
+		if err := cdcw.Close(); err != nil {
+			return err
+		}
+
+		numChunks, err := chunker.NumChunks()
+		if err != nil {
+			return err
+		}
+		now := p.clock.Now().UnixMicro()
+
+		if numChunks > 1 {
+			md := &rfpb.FileMetadata{
+				FileRecord:      fileRecord,
+				StorageMetadata: cdcw.Metadata(),
+				StoredSizeBytes: bytesWritten,
+				LastAccessUsec:  now,
+				LastModifyUsec:  now,
+			}
+			return p.writeMetadata(ctx, db, key, md)
+		}
+		return nil
+	}
+	return cwc, nil
+}
+
+func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.PebbleKey, chunkData []byte) error {
+	ctx := cdcw.ctx
+	p := cdcw.pc
+	inlineWriter := p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
+	wcm, err := p.newWrappedWriter(ctx, inlineWriter, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed)
+	if err != nil {
+		return err
+	}
+	_, err = wcm.Write(chunkData)
+	if err != nil {
+		return err
+	}
+	if err := wcm.Close(); err != nil {
+		return err
+	}
+	if err := wcm.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cdcw *cdcWriter) writeChunkWhenSingle(chunkData []byte) error {
+	// When there is only one single chunk, we want to store the original file
+	// record with the original key instead of computed digest from the
+	// chunkData. This is because the chunkData can be compressed or encrypted,
+	// so the digest computed from it will be different from the original digest.
+	return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, chunkData)
+}
+
+func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
+	ctx := cdcw.ctx
+	p := cdcw.pc
+
+	d, err := digest.Compute(bytes.NewReader(chunkData), cdcw.fileRecord.GetDigestFunction())
+	if err != nil {
+		return err
+	}
+	r := &resource.ResourceName{
+		Digest:         d,
+		InstanceName:   cdcw.fileRecord.GetIsolation().GetRemoteInstanceName(),
+		CacheType:      cdcw.fileRecord.GetIsolation().GetCacheType(),
+		DigestFunction: cdcw.fileRecord.GetDigestFunction(),
+		Compressor:     cdcw.fileRecord.GetCompressor(),
+	}
+	if cdcw.shouldCompress && r.Compressor == repb.Compressor_IDENTITY {
+		// we need to compress the chunk, but this data hasn't been compressed yet.
+		// so we need to set the resource name to identity to signal to the nested
+		// writer to compress it.
+		r.Compressor = repb.Compressor_IDENTITY
+	} else {
+		r.Compressor = repb.Compressor_ZSTD
+	}
+	fileRecord, err := p.makeFileRecord(ctx, r)
+
+	if err != nil {
+		return err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return err
+	}
+	err = cdcw.writeRawChunk(fileRecord, key, chunkData)
+	if err != nil {
+		return err
+	}
+	cdcw.writtenChunks = append(cdcw.writtenChunks, r)
+	return nil
+}
+
+func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
+	// If the bytes being written are compressed, we decompress them in
+	// order to generate CDC chunks, then compress those chunks.
+	if cdcw.isCompressed {
+		decompressed, err := compression.DecompressZstd(nil, buf)
+		if err != nil {
+			return -1, err
+		}
+		_, err = cdcw.chunker.Write(decompressed)
+		return len(buf), err
+	}
+	return cdcw.chunker.Write(buf)
+}
+
+func (cdcw *cdcWriter) Close() error {
+	defer cdcw.db.Close()
+	return cdcw.chunker.Close()
+}
+
+func (cdcw *cdcWriter) Metadata() *rfpb.StorageMetadata {
+	return &rfpb.StorageMetadata{
+		ChunkedMetadata: &rfpb.StorageMetadata_ChunkedMetadata{
+			Resource: cdcw.writtenChunks,
+		},
+	}
+}
+
 // zstdCompressor compresses bytes before writing them to the nested writer
 type zstdCompressor struct {
 	cacheName string
@@ -1749,6 +1924,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	// If data is not already compressed, return a writer that will compress it before writing
 	// Only compress data over a given size for more optimal compression ratios
 	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
+	isCompressed := r.GetCompressor() == repb.Compressor_ZSTD
 	if shouldCompress {
 		r = &rspb.ResourceName{
 			Digest:         r.GetDigest(),
@@ -1766,6 +1942,11 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	key, err := p.fileStorer.PebbleKey(fileRecord)
 	if err != nil {
 		return nil, err
+	}
+
+	if p.averageChunkSizeBytes > 0 {
+		// we enabled cdc chunking
+		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
 	}
 
 	var wcm interfaces.MetadataWriteCloser
@@ -1864,9 +2045,11 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	}
 
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
-		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
-		p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
-		metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
+		if md.GetStorageMetadata().GetChunkedMetadata() == nil {
+			partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
+			p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
+			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
+		}
 	}
 
 	return err
@@ -2635,6 +2818,8 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore
 		}
 	case storageMetadata.GetInlineMetadata() != nil:
 		break
+	case storageMetadata.GetChunkedMetadata() != nil:
+		break
 	default:
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
@@ -2888,6 +3073,39 @@ type readCloser struct {
 	io.Closer
 }
 
+// newChunkedReader returns a reader to read chunked content.
+// When shouldDecompress is true, the content readed is decompressed.
+func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *rfpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error) {
+	missing, err := p.FindMissing(ctx, chunkedMD.GetResource())
+	if err != nil {
+		return nil, err
+	}
+	if len(missing) > 0 {
+		return nil, status.NotFoundError("chunks were missing")
+	}
+
+	pr, pw := io.Pipe()
+	go func() {
+		for _, resourceName := range chunkedMD.GetResource() {
+			rn := proto.Clone(resourceName).(*resource.ResourceName)
+			if shouldDecompress && rn.GetCompressor() == repb.Compressor_ZSTD {
+				rn.Compressor = repb.Compressor_IDENTITY
+			}
+			buf, err := p.Get(ctx, rn)
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			if _, err := pw.Write(buf); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+		pw.Close()
+	}()
+	return pr, nil
+}
+
 func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
@@ -2935,7 +3153,15 @@ func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.
 		limit = uncompressedLimit
 	}
 
-	reader, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	shouldDecompress := cachedCompression == repb.Compressor_ZSTD && requestedCompression == repb.Compressor_IDENTITY
+
+	var reader io.ReadCloser
+	md := fileMetadata.GetStorageMetadata()
+	if chunkedMD := md.GetChunkedMetadata(); chunkedMD != nil {
+		reader, err = p.newChunkedReader(ctx, chunkedMD, shouldDecompress)
+	} else {
+		reader, err = p.fileStorer.NewReader(ctx, blobDir, md, offset, limit)
+	}
 	if err != nil {
 		if status.IsNotFoundError(err) || os.IsNotExist(err) {
 			unlockFn := p.locker.Lock(key.LockID())
@@ -2954,7 +3180,9 @@ func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.
 			}
 			reader = d
 		}
-		if cachedCompression == repb.Compressor_ZSTD && requestedCompression == repb.Compressor_IDENTITY {
+		if shouldDecompress && md.GetChunkedMetadata() == nil {
+			// We don't need to decompress the chunked reader's content since
+			// it already returns decompressed content from its children.
 			dr, err := compression.NewZstdDecompressingReader(reader)
 			if err != nil {
 				return nil, err

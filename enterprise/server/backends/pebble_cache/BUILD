@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
+        "//enterprise/server/util/chunker",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
