@@ -8,7 +8,7 @@ export type WorkflowsProps = {
   user: User;
 };
 
-export default class WorkflowsComponent extends React.Component<WorkflowsProps> {
+export default class WorkflowsDispatchComponent extends React.Component<WorkflowsProps> {
   render() {
     if (this.props.user.isGroupAdmin()) {
       return <WorkflowsAdminComponent path={this.props.path} user={this.props.user}></WorkflowsAdminComponent>;

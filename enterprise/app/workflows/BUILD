@@ -5,8 +5,8 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 exports_files(["workflows.css"])
 
 ts_library(
-    name = "workflows",
-    srcs = ["workflows.tsx"],
+    name = "workflows_dispatch",
+    srcs = ["workflows_dispatch.tsx"],
     deps = [
         "//app/auth:auth_service",
         "//enterprise/app/workflows:workflows_admin",

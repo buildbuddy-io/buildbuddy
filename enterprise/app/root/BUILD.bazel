@@ -37,7 +37,7 @@ ts_library(
         "//enterprise/app/tap",
         "//enterprise/app/trends",
         "//enterprise/app/usage",
-        "//enterprise/app/workflows",
+        "//enterprise/app/workflows:workflows_dispatch",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
