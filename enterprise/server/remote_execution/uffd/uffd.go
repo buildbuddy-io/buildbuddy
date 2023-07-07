@@ -200,6 +200,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 	log.Warningf("Backing memory starts at %v", uintptr(unsafe.Pointer(&backingMemoryAddr[0])))
 
+	firstMessage := true
+	var bytesBeforeAccess uint64
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -246,17 +248,28 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 
 		accessedPage := uint64(guestPageAddr-vmStartMemory) / uint64(pageSize)
 		log.Warningf("Accessing page #%d", accessedPage)
-		bytesBeforeAccess := uint64(pageSize * int(accessedPage))
 
-		copyData := uffdioCopy{
-			Dst: uint64(vmStartMemory) + bytesBeforeAccess,
-			Src: uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[bytesBeforeAccess]))),
-			// For now, copy just the one page to the VM memory range. TODO:
-			// It's probably much more efficient to copy the whole part of the
-			// chunk that overlaps with the mapped memory region.
-			Len:  uint64(vmSize) - bytesBeforeAccess,
-			Mode: 0,
-			Copy: 0,
+		var copyData uffdioCopy
+		if firstMessage {
+			bytesBeforeAccess = uint64(pageSize * int(accessedPage))
+			copyData = uffdioCopy{
+				Dst: uint64(vmStartMemory) + bytesBeforeAccess,
+				Src: uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[bytesBeforeAccess]))),
+				// For now, copy just the one page to the VM memory range. TODO:
+				// It's probably much more efficient to copy the whole part of the
+				// chunk that overlaps with the mapped memory region.
+				Len:  uint64(vmSize) - bytesBeforeAccess,
+				Mode: 0,
+				Copy: 0,
+			}
+		} else {
+			copyData = uffdioCopy{
+				Dst:  uint64(vmStartMemory),
+				Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
+				Len:  bytesBeforeAccess,
+				Mode: 0,
+				Copy: 0,
+			}
 		}
 		log.Debugf("Sending %s", &copyData)
 
@@ -265,21 +278,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 			return status.WrapError(errno, "UFFDIO_COPY")
 		}
 		log.Debugf("UFFDIO_COPY completed successfully")
-
-		copyData = uffdioCopy{
-			Dst:  uint64(vmStartMemory),
-			Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[0]))),
-			Len:  bytesBeforeAccess,
-			Mode: 0,
-			Copy: 0,
-		}
-
-		log.Debugf("Sending %s", &copyData)
-		_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
-		if errno != 0 {
-			return status.WrapError(errno, "UFFDIO_COPY")
-		}
-		log.Debugf("UFFDIO_COPY 2 completed successfully")
+		firstMessage = false
 	}
 }
 
