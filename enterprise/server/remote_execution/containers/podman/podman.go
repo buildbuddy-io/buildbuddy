@@ -232,6 +232,7 @@ func (p *Provider) NewContainer(ctx context.Context, image string, options *Podm
 
 type PodmanOptions struct {
 	ForceRoot          bool
+	Init               bool
 	User               string
 	DefaultNetworkMode string
 	Network            string
@@ -366,6 +367,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	if c.imageStreamingEnabled {
 		args = append(args, enableStreamingStoreArg)
+	}
+	if c.options.Init {
+		args = append(args, "--init")
 	}
 	return args
 }

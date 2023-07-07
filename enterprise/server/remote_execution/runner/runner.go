@@ -1117,6 +1117,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
+		opts.DockerInit = props.DockerInit
 		opts.DockerUser = props.DockerUser
 		opts.DockerNetwork = props.DockerNetwork
 		ctr = docker.NewDockerContainer(
@@ -1126,6 +1127,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 	case platform.PodmanContainerType:
 		opts := &podman.PodmanOptions{
 			ForceRoot:            props.DockerForceRoot,
+			Init:                 props.DockerInit,
 			User:                 props.DockerUser,
 			Network:              props.DockerNetwork,
 			DefaultNetworkMode:   *dockerNetwork,

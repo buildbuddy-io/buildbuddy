@@ -1051,10 +1051,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	os := strings.ToLower(workflowAction.OS)
 	computeUnits := *workflowsMacComputeUnits
 	// Use the CI runner image if the OS supports containerized actions.
+	isSharedFirecrackerWorkflow := *enableFirecracker && !workflowAction.SelfHosted
 	if os == "" || os == platform.LinuxOperatingSystemName {
 		computeUnits = *workflowsLinuxComputeUnits
 		containerImage = ws.containerImage(workflowAction)
-		if *enableFirecracker && !workflowAction.SelfHosted {
+		if isSharedFirecrackerWorkflow {
 			isolationType = string(platform.FirecrackerContainerType)
 			// When using Firecracker, write all outputs to the scratch disk, which
 			// has more space than the workspace disk and doesn't need to be extracted
@@ -1134,6 +1135,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.EstimatedCPUPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedCPU()},
 			},
 		},
+	}
+	if !isSharedFirecrackerWorkflow {
+		// For docker/podman workflows, run with `--init` so that the bazel
+		// process can be reaped.
+		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+			Name:  platform.DockerInitPropertyName,
+			Value: "true",
+		})
 	}
 	for _, path := range workflowAction.GitCleanExclude {
 		cmd.Arguments = append(cmd.Arguments, "--git_clean_exclude="+path)

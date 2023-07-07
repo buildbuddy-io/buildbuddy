@@ -49,6 +49,7 @@ type DockerOptions struct {
 	EnableSiblingContainers bool
 	UseHostNetwork          bool
 	ForceRoot               bool
+	DockerInit              bool
 	DockerUser              string
 	DockerMountMode         string
 	InheritUserIDs          bool
@@ -284,10 +285,17 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 		binds = append(binds, fmt.Sprintf("%s:%s%s", r.options.Socket, r.options.Socket, mountMode))
 	}
 	binds = append(binds, r.options.Volumes...)
+	var initPtr *bool
+	if r.options.DockerInit {
+		initPtr = &r.options.DockerInit
+		// If dockerInit platform prop is false/unspecified, then leave the Init
+		// option nil, which means "use dockerd configured settings"
+	}
 	return &dockercontainer.HostConfig{
 		NetworkMode: networkMode,
 		Binds:       binds,
 		CapAdd:      capAdd,
+		Init:        initPtr,
 		Resources: dockercontainer.Resources{
 			Devices: devices,
 			Ulimits: []*units.Ulimit{
