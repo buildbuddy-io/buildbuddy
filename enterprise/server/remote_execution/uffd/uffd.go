@@ -176,7 +176,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	mappings := setup.Mappings
 
 	vmStartMemory := mappings[0].BaseHostVirtAddr
-	vmSize := mappings[0].Size
 
 	pollFDs := []unix.PollFd{{Fd: int32(uffd), Events: C.POLLIN}}
 	pageSize := os.Getpagesize()
@@ -200,7 +199,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 	log.Warningf("Backing memory starts at %v", uintptr(unsafe.Pointer(&backingMemoryAddr[0])))
 
-	lastAddressToCopy := vmStartMemory + vmSize
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -252,7 +250,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		copyData := uffdioCopy{
 			Dst:  uint64(guestPageAddr),
 			Src:  uint64(uintptr(unsafe.Pointer(&backingMemoryAddr[bytesBeforeAccess]))),
-			Len:  uint64(lastAddressToCopy - guestPageAddr),
+			Len:  uint64(pageSize),
 			Mode: 0,
 			Copy: 0,
 		}
@@ -263,7 +261,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 			return status.WrapError(errno, "UFFDIO_COPY")
 		}
 		log.Debugf("UFFDIO_COPY completed successfully")
-		lastAddressToCopy = guestPageAddr
 	}
 }
 
