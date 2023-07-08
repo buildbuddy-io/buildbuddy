@@ -8,6 +8,8 @@ go_library(
     deps = [
         "//proto:auditlog_go_proto",
         "//server/util/status",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
     ],
 )
