@@ -55,7 +55,7 @@
     "pako": "^1.0.11",
     "path-browserify": "^1.0.1",
     "prettier": "^2.1.1",
-    "protobufjs": "^7.0.0",
+    "protobufjs": "^7.2.4",
     "react": "^16.8.6",
     "react-date-range": "^1.3.0",
     "react-dom": "^16.8.6",
