@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"strings"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -22,10 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/chacha20"
-
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 const (
@@ -440,7 +439,7 @@ func redactInvalidAPIKey(key string) string {
 	return key[:1] + "***" + key[len(key)-1:]
 }
 
-func (d *AuthDB) createAPIKey(db *db.DB, userID, groupID, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) createAPIKey(ctx context.Context, db *db.DB, userID, groupID, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	key, err := newAPIKeyToken()
 	if err != nil {
 		return nil, err
@@ -495,7 +494,7 @@ func (d *AuthDB) createAPIKey(db *db.DB, userID, groupID, label string, caps []a
 	if err != nil {
 		return nil, err
 	}
-	return &tables.APIKey{
+	ak := &tables.APIKey{
 		APIKeyID:            pk,
 		UserID:              userID,
 		GroupID:             groupID,
@@ -504,7 +503,8 @@ func (d *AuthDB) createAPIKey(db *db.DB, userID, groupID, label string, caps []a
 		Perms:               keyPerms,
 		Capabilities:        capabilities.ToInt(caps),
 		VisibleToDevelopers: visibleToDevelopers,
-	}, nil
+	}
+	return ak, nil
 }
 
 func newAPIKeyToken() (string, error) {
@@ -530,14 +530,14 @@ func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 		return nil, err
 	}
 
-	return d.createAPIKey(d.h.DB(ctx), "" /*=userID*/, groupID, label, caps, visibleToDevelopers)
+	return d.createAPIKey(ctx, d.h.DB(ctx), "" /*=userID*/, groupID, label, caps, visibleToDevelopers)
 }
 
-func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(tx *db.DB, groupID string, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx *db.DB, groupID string, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
-	return d.createAPIKey(tx, "" /*=userID*/, groupID, label, caps, visibleToDevelopers)
+	return d.createAPIKey(ctx, tx, "" /*=userID*/, groupID, label, caps, visibleToDevelopers)
 }
 
 // Returns whether the given capabilities list contains any capabilities that
@@ -601,7 +601,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 			return status.PermissionDeniedErrorf("group %q does not have user-owned keys enabled", groupID)
 		}
 
-		key, err := d.createAPIKey(tx, u.GetUserID(), groupID, label, capabilities, false /*=visibleToDevelopers*/)
+		key, err := d.createAPIKey(ctx, tx, u.GetUserID(), groupID, label, capabilities, false /*=visibleToDevelopers*/)
 		if err != nil {
 			return err
 		}
@@ -746,7 +746,7 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 		if err := d.authorizeNewAPIKeyCapabilities(ctx, existingKey.UserID, existingKey.GroupID, capabilities.FromInt(key.Capabilities)); err != nil {
 			return err
 		}
-		return tx.Exec(`
+		err = tx.Exec(`
 			UPDATE "APIKeys"
 			SET
 				label = ?,
@@ -759,15 +759,23 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 			key.VisibleToDevelopers,
 			key.APIKeyID,
 		).Error
+		if err != nil {
+			return err
+		}
+		return nil
 	})
 }
 
 func (d *AuthDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 	return d.h.DB(ctx).Transaction(func(tx *db.DB) error {
-		if _, err := d.authorizeAPIKeyWrite(ctx, tx, apiKeyID); err != nil {
+		_, err := d.authorizeAPIKeyWrite(ctx, tx, apiKeyID)
+		if err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM "APIKeys" WHERE api_key_id = ?`, apiKeyID).Error
+		if err := tx.Exec(`DELETE FROM "APIKeys" WHERE api_key_id = ?`, apiKeyID).Error; err != nil {
+			return err
+		}
+		return nil
 	})
 }
 
