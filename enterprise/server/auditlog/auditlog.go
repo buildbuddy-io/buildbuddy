@@ -35,19 +35,17 @@ type Logger struct {
 	payloadTypes map[protoreflect.MessageDescriptor]protoreflect.FieldDescriptor
 }
 
-func GroupAPIKeyResourceID(id, name string) *alpb.ResourceID {
+func GroupAPIKeyResourceID(id string) *alpb.ResourceID {
 	return &alpb.ResourceID{
 		Type: alpb.ResourceType_GROUP_API_KEY,
 		Id:   id,
-		Name: name,
 	}
 }
 
-func UserAPIKeyResourceID(id, name string) *alpb.ResourceID {
+func UserAPIKeyResourceID(id string) *alpb.ResourceID {
 	return &alpb.ResourceID{
 		Type: alpb.ResourceType_USER_API_KEY,
 		Id:   id,
-		Name: name,
 	}
 }
 

@@ -1342,7 +1342,7 @@ func TestGroupAuditLogs(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
-	al := &testauditlog.FakeAuditLog{}
+	al := testauditlog.New(t)
 	env.SetAuditLogger(al)
 	udb := env.GetUserDB()
 	ctx := context.Background()
@@ -1394,7 +1394,7 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
-	al := &testauditlog.FakeAuditLog{}
+	al := testauditlog.New(t)
 	env.SetAuditLogger(al)
 	udb := env.GetUserDB()
 	ctx := context.Background()
