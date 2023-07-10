@@ -2,11 +2,14 @@ package log
 
 import (
 	"log"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 )
 
 const (
+	verboseEnvVarName = "BB_VERBOSE"
+
 	debugPrefix   = "\x1b[33m[bb-debug]\x1b[m "
 	WarningPrefix = "\x1b[33mWarning:\x1b[m "
 )
@@ -15,7 +18,14 @@ var verbose bool
 
 func Configure(args []string) []string {
 	verboseFlagVal, args := arg.Pop(args, "verbose")
+	if verboseFlagVal == "" {
+		verboseFlagVal = os.Getenv(verboseEnvVarName)
+	}
 	verbose = verboseFlagVal == "1" || verboseFlagVal == "true"
+	if verbose {
+		// Propagate the flag value to nested invocations (via env var)
+		os.Setenv(verboseEnvVarName, "1")
+	}
 	log.SetFlags(0)
 	return args
 }
