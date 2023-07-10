@@ -301,7 +301,7 @@ class Router {
   }
 
   canAccessWorkflowsPage(user?: User) {
-    const workflowsAdmin = capabilities.workflows && Boolean(user?.canCall("getWorkflows"));
+    const workflowsAdmin = capabilities.workflows && Boolean(user?.canCall("createWorkflow"));
     const workflowsUser =
       capabilities.workflows &&
       capabilities.config.workflowHistoryEnabled &&
