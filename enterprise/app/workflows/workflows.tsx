@@ -35,7 +35,7 @@ export type WorkflowsProps = {
   user: User;
 };
 
-export default class WorkflowsAdminComponent extends React.Component<WorkflowsProps> {
+export default class WorkflowsComponent extends React.Component<WorkflowsProps> {
   render() {
     const { path, user } = this.props;
 
