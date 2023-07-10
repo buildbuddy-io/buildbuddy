@@ -478,8 +478,8 @@ type ApiService interface {
 type WorkflowService interface {
 	CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
 	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
-	GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error)
-	GetWorkflowHistory(ctx context.Context, req *wfpb.GetWorkflowHistoryRequest) (*wfpb.GetWorkflowHistoryResponse, error)
+	GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error)
+	GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error)
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
@@ -508,7 +508,7 @@ type GitHubApp interface {
 	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 
-	GetLinkedGitHubRepos(context.Context, *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error)
+	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
 	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
 

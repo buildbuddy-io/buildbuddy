@@ -421,14 +421,16 @@ func (ws *workflowService) providerForRepo(u *url.URL) (interfaces.GitProvider, 
 	return nil, status.InvalidArgumentErrorf("could not find git provider for %s", u.Hostname())
 }
 
-func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
+func (ws *workflowService) GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error) {
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
+
+	u, err := perms.AuthenticatedUser(ctx, ws.env)
 	if err != nil {
 		return nil, err
 	}
+	groupID := u.GetGroupID()
 
 	rsp := &wfpb.GetWorkflowsResponse{}
 	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM "Workflows"`)
@@ -821,17 +823,39 @@ func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl 
 	return q, nil
 }
 
-func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.GetWorkflowHistoryRequest) (*wfpb.GetWorkflowHistoryResponse, error) {
+func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error) {
 	if ws.env.GetDBHandle() == nil || ws.env.GetOLAPDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
 
-	repos := req.GetRepoUrls()
+	linkedRepos, err := ws.env.GetGitHubApp().GetLinkedGitHubRepos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	repos := linkedRepos.GetRepoUrls()
+	if len(repos) == 0 {
+		// Fall back to legacy workflow registrations.
+		repos = []string{}
+		workflows, err := ws.GetWorkflows(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, wf := range workflows.GetWorkflow() {
+			if wf.GetRepoUrl() != "" {
+				repos = append(repos, wf.GetRepoUrl())
+			}
+		}
+	}
+
+	if len(repos) == 0 {
+		return &wfpb.GetWorkflowHistoryResponse{}, nil
+	}
+
 	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// Only fetch workflow data for stuff that has run in the last 7 days.
+	// Only fetch workflow history for stuff that has run in the last 7 days.
 	timeLimitMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 
 	// Find the names of all of the actions for each repo.
@@ -890,6 +914,10 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	// No workflows configured for any repos yet.
+	if len(actionHistoryQStrs) == 0 {
+		return &wfpb.GetWorkflowHistoryResponse{}, nil
 	}
 	finalActionHistoryQStr := strings.Join(actionHistoryQStrs, " UNION ALL ")
 

@@ -169,10 +169,6 @@ message ActionHistory {
 message GetWorkflowHistoryRequest {
   // The request context.
   context.RequestContext request_context = 1;
-
-  // The repos where we expect to find workflow config--we will only check for
-  // config matching the logged-in user's currently selected organization.
-  repeated string repo_urls = 2;
 }
 
 message GetWorkflowHistoryResponse {

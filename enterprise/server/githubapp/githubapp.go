@@ -428,7 +428,7 @@ func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*
 	return installation, nil
 }
 
-func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error) {
+func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedReposResponse, error) {
 	u, err := perms.AuthenticatedUser(ctx, a.env)
 	if err != nil {
 		return nil, err

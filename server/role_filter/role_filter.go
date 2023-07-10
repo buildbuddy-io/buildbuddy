@@ -64,6 +64,12 @@ var (
 		"GetStatDrilldown",
 		"GetSuggestion",
 		"SearchExecution",
+		// Workflow configuration and history (read-only).
+		"GetWorkflows",
+		"GetRepos",
+		"GetWorkflowHistory",
+		// Github configuration (read-only).
+		"GetLinkedGitHubRepos",
 		// Per-invocation actions
 		"UpdateInvocation",
 		"DeleteInvocation",
@@ -96,7 +102,6 @@ var (
 		"UnlinkGitHubAppInstallation",
 		// Org GitHub repo management
 		"GetAccessibleGitHubRepos",
-		"GetLinkedGitHubRepos",
 		"LinkGitHubRepo",
 		"UnlinkGitHubRepo",
 		// Org API key management
@@ -111,9 +116,6 @@ var (
 		// Workflow management
 		"CreateWorkflow",
 		"DeleteWorkflow",
-		"GetWorkflows",
-		"GetWorkflowHistory",
-		"GetRepos",
 		// RBE deployment view
 		"GetExecutionNodes",
 		// BuildBuddy usage data
