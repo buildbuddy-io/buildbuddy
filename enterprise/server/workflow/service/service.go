@@ -915,6 +915,10 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	// No workflows configured for any repos yet.
+	if len(actionHistoryQStrs) == 0 {
+		return &wfpb.GetWorkflowHistoryResponse{}, nil
+	}
 	finalActionHistoryQStr := strings.Join(actionHistoryQStrs, " UNION ALL ")
 
 	historyRows, err := ws.env.GetDBHandle().RawWithOptions(ctx, db.Opts().WithQueryName("query_workflow_action_history"), finalActionHistoryQStr, actionHistoryQArgs...).Rows()
