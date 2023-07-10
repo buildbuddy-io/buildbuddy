@@ -6,7 +6,7 @@ import SetupComponent from "../../../app/docs/setup";
 import AlertComponent from "../../../app/alert/alert";
 import faviconService from "../../../app/favicon/favicon";
 import FooterComponent from "../../../app/footer/footer";
-import WorkflowsDispatchComponent from "../workflows/workflows_dispatch";
+import WorkflowsComponent from "../workflows/workflows";
 import InvocationComponent from "../../../app/invocation/invocation";
 import MenuComponent from "../../../app/menu/menu";
 import router, { Path } from "../../../app/router/router";
@@ -288,9 +288,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   {usage && this.state.user && <UsageComponent user={this.state.user} />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
-                  {workflows && this.state.user && (
-                    <WorkflowsDispatchComponent path={this.state.path} user={this.state.user} />
-                  )}
+                  {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent
