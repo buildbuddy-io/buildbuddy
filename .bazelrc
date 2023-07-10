@@ -36,6 +36,9 @@ build:remote-shared --verbose_failures
 # Unresolved symlinks are used for rules_js.
 build:remote-shared --experimental_allow_unresolved_symlinks
 
+# TEST: remote downloader
+build:remote --experimental_remote_downloader=grpcs://remote.buildbuddy.io
+
 # Build with --config=remote to use BuildBuddy RBE.
 build:remote --config=remote-shared
 build:remote --config=cache
