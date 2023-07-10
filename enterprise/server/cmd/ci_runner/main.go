@@ -1636,6 +1636,7 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)
+		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
 
 	// Primitive configs pointing to BB endpoints. These are purposely very
