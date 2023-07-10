@@ -1,5 +1,4 @@
-//go:build darwin && !ios
-// +build darwin,!ios
+//go:build darwin && !ios && (amd64 || arm64)
 
 package vfs
 
