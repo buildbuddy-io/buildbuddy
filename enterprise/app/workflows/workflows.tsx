@@ -293,50 +293,45 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
               ))}
             </div>
           )}
-          {isAdmin && (
-            <>
-              <SimpleModalDialog
-                title="Unlink repository"
-                isOpen={Boolean(this.state.repoToUnlink)}
-                onRequestClose={() => this.setState({ repoToUnlink: null })}
-                submitLabel="Unlink"
-                destructive
-                onSubmit={() => this.onClickUnlinkRepo()}
-                loading={this.state.isUnlinkingRepo}>
-                <p>
-                  Are you sure you want to unlink <strong>{formatURL(this.state.repoToUnlink || "")}</strong>? This will
-                  prevent BuildBuddy workflows from being run.
-                </p>
-              </SimpleModalDialog>
-              <SimpleModalDialog
-                title="Unlink repository"
-                isOpen={Boolean(this.state.workflowToDelete)}
-                onRequestClose={() => this.setState({ workflowToDelete: null })}
-                submitLabel="Unlink"
-                destructive
-                onSubmit={() => this.onClickUnlinkWorkflow()}
-                loading={this.state.isDeletingWorkflow}>
-                <p>
-                  Are you sure you want to unlink{" "}
-                  <strong>{formatURL(this.state.workflowToDelete?.repoUrl || "")}</strong>? This will prevent BuildBuddy
-                  workflows from being run.
-                </p>
-              </SimpleModalDialog>
-              <SimpleModalDialog
-                title="Run workflow in clean container"
-                isOpen={Boolean(this.state.showCleanWorkflowWarning)}
-                onRequestClose={() => this.setState({ showCleanWorkflowWarning: false })}
-                submitLabel="Okay"
-                destructive
-                onSubmit={() => this.setState({ showCleanWorkflowWarning: false })}>
-                <p>Are you sure you want to run the workflow in a clean container?</p>
-                <p>
-                  This will prevent all existing workflow containers from being reused by other workflow runs, making
-                  them slower, so this flag is not encouraged.
-                </p>
-              </SimpleModalDialog>
-            </>
-          )}
+          <SimpleModalDialog
+            title="Unlink repository"
+            isOpen={Boolean(this.state.repoToUnlink)}
+            onRequestClose={() => this.setState({ repoToUnlink: null })}
+            submitLabel="Unlink"
+            destructive
+            onSubmit={() => this.onClickUnlinkRepo()}
+            loading={this.state.isUnlinkingRepo}>
+            <p>
+              Are you sure you want to unlink <strong>{formatURL(this.state.repoToUnlink || "")}</strong>? This will
+              prevent BuildBuddy workflows from being run.
+            </p>
+          </SimpleModalDialog>
+          <SimpleModalDialog
+            title="Unlink repository"
+            isOpen={Boolean(this.state.workflowToDelete)}
+            onRequestClose={() => this.setState({ workflowToDelete: null })}
+            submitLabel="Unlink"
+            destructive
+            onSubmit={() => this.onClickUnlinkWorkflow()}
+            loading={this.state.isDeletingWorkflow}>
+            <p>
+              Are you sure you want to unlink <strong>{formatURL(this.state.workflowToDelete?.repoUrl || "")}</strong>?
+              This will prevent BuildBuddy workflows from being run.
+            </p>
+          </SimpleModalDialog>
+          <SimpleModalDialog
+            title="Run workflow in clean container"
+            isOpen={Boolean(this.state.showCleanWorkflowWarning)}
+            onRequestClose={() => this.setState({ showCleanWorkflowWarning: false })}
+            submitLabel="Okay"
+            destructive
+            onSubmit={() => this.setState({ showCleanWorkflowWarning: false })}>
+            <p>Are you sure you want to run the workflow in a clean container?</p>
+            <p>
+              This will prevent all existing workflow containers from being reused by other workflow runs, making them
+              slower, so this flag is not encouraged.
+            </p>
+          </SimpleModalDialog>
         </div>
       </div>
     );
@@ -461,7 +456,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       <div className="workflow-item container">
         <div className="workflow-item-column">
           <div className="workflow-item-row">
-            {this.props.isAdmin && this.state.runWorkflowActionStatuses && (
+            {this.state.runWorkflowActionStatuses && (
               <Banner type="success">
                 Executed workflow actions:
                 <div>{this.renderWorkflowResults()}</div>

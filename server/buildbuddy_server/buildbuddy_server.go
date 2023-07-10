@@ -881,13 +881,13 @@ func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 }
 func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
-		return wfs.GetWorkflows(ctx, req.GetRequestContext())
+		return wfs.GetWorkflows(ctx)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) GetWorkflowHistory(ctx context.Context, req *wfpb.GetWorkflowHistoryRequest) (*wfpb.GetWorkflowHistoryResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
-		return wfs.GetWorkflowHistory(ctx, req)
+		return wfs.GetWorkflowHistory(ctx)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

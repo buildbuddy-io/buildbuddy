@@ -421,14 +421,16 @@ func (ws *workflowService) providerForRepo(u *url.URL) (interfaces.GitProvider, 
 	return nil, status.InvalidArgumentErrorf("could not find git provider for %s", u.Hostname())
 }
 
-func (ws *workflowService) GetWorkflows(ctx context.Context, protoContext *ctxpb.RequestContext) (*wfpb.GetWorkflowsResponse, error) {
+func (ws *workflowService) GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error) {
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, protoContext)
+
+	u, err := perms.AuthenticatedUser(ctx, ws.env)
 	if err != nil {
 		return nil, err
 	}
+	groupID := u.GetGroupID()
 
 	rsp := &wfpb.GetWorkflowsResponse{}
 	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM "Workflows"`)
@@ -821,7 +823,7 @@ func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl 
 	return q, nil
 }
 
-func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.GetWorkflowHistoryRequest) (*wfpb.GetWorkflowHistoryResponse, error) {
+func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error) {
 	if ws.env.GetDBHandle() == nil || ws.env.GetOLAPDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
@@ -834,7 +836,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context, req *wfpb.Get
 	if len(repos) == 0 {
 		// Fall back to legacy workflow registrations.
 		repos = []string{}
-		workflows, err := ws.GetWorkflows(ctx, req.GetRequestContext())
+		workflows, err := ws.GetWorkflows(ctx)
 		if err != nil {
 			return nil, err
 		}
