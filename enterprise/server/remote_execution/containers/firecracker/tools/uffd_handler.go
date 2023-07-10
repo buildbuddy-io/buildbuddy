@@ -123,7 +123,7 @@ func main() {
 			Start: uint64(uintptr(unsafe.Pointer(startAddr))),
 			Len:   uint64(lenToManage),
 		},
-		Mode: C.UFFDIO_REGISTER_MODE_MISSING | C.UFFDIO_REGISTER_MODE_WP,
+		Mode: C.UFFDIO_REGISTER_MODE_MISSING,
 	}
 	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_REGISTER, uintptr(unsafe.Pointer(&registerData)))
 	if err != 0 {
@@ -156,7 +156,6 @@ func main() {
 				fmt.Printf("Failed to poll UFFD: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Num ready is %d", nready)
 
 			var event uffdMsg
 			_, _, err := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
@@ -164,8 +163,6 @@ func main() {
 				fmt.Printf("Failed to read event: %v\n", err)
 				os.Exit(1)
 			}
-
-			fmt.Printf("Address is %v", event.Event)
 
 			if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
 				fmt.Printf("Captured a write!")
@@ -175,6 +172,7 @@ func main() {
 				// Otherwise we'll keep looping and hitting this case, as long as the write isn't resolved
 				continue
 			}
+			fmt.Printf("Flags are %v", event.PageFault.Flags)
 
 			copyData := uffdioCopy{
 				Dst:  event.PageFault.Address,
@@ -192,34 +190,10 @@ func main() {
 		}
 	}()
 
-	fmt.Println("Down here")
+	// Write to virtual memory
+	fmt.Println("Starting work")
 	l := 0xf
-	c := addr[l]
-	fmt.Printf("Read value %v in main(): ", c)
-
-	// Try writing to it without write-protection on
 	addr[l] = 'R'
-
-	// Try write-protecting the region after it's already been allocated?
-	writeProtectData := uffdioWriteProtect{
-		Range: uffdioRange{
-			Start: uint64(uintptr(unsafe.Pointer(startAddr))),
-			Len:   uint64(lenToManage),
-		},
-		Mode: C.UFFDIO_WRITEPROTECT_MODE_WP,
-	}
-	_, _, errNo := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_WRITEPROTECT, uintptr(unsafe.Pointer(&writeProtectData)))
-	if errNo != 0 {
-		fmt.Printf("Failed to call UFFDIO_WRITEPROTECT: %d\n", errNo)
-		os.Exit(1)
-	}
-
-	fmt.Println("Now trying to write to it")
-	addr[l] = 'U'
-
-	fmt.Printf("Reading new value %v", addr[l])
-
-	l += 1024
-	c = addr[l]
+	c := addr[l]
 	fmt.Printf("Read value %v in main(): ", c)
 }
