@@ -961,8 +961,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_creack_pty",
         importpath = "github.com/creack/pty",
-        sum = "h1:QeVUsEDNrLBW4tMgZHvxy18sKtr6VI492kBhUfhDJNI=",
-        version = "v1.1.17",
+        sum = "h1:n56/Zwd5o6whRC5PMGretI4IdRLlmBXYNjScPaBgsbY=",
+        version = "v1.1.18",
     )
     go_repository(
         name = "com_github_crewjam_httperr",
