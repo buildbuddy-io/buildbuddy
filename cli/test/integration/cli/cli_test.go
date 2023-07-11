@@ -238,6 +238,29 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 		"CLI should set commit SHA metadata")
 }
 
+func TestTerminalOutput(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"test.sh": `#!/usr/bin/env bash
+			for i in {1..5}; do
+				echo "$i"
+				sleep 0.1
+			done
+		`,
+		"BUILD": `sh_test(name = "test", srcs = ["test.sh"])`,
+	})
+
+	term := testcli.PTY(t)
+	term.Run(testcli.Command(t, ws, "test", "...", "--test_output=streamed"))
+
+	// Make sure Bazel's progress output doesn't get interspersed with the test
+	// output.
+	require.Contains(t, term.Render(), "1\n2\n3\n4\n5\n")
+	// Make sure Bazel understands that it's connected to a terminal - it should
+	// produce colorful output.
+	require.Contains(t, term.Render(), "\x1b[32mINFO")
+}
+
 func retryUntilSuccess(t *testing.T, f func() error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
