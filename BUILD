@@ -177,6 +177,11 @@ gazelle(
     gazelle = ":bb_gazelle_binary",
 )
 
+go_sdk_tool(
+    name = "go",
+    goroot_relative_path = "bin/go",
+)
+
 # Example usage: "bazel run //:gofmt -- -w ."
 go_sdk_tool(
     name = "gofmt",
