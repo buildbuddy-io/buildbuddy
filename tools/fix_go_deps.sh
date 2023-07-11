@@ -1,11 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
+: "${GO_PATH:=}"
 : "${GAZELLE_PATH:=}"
 
 GAZELLE_COMMAND=(bazelisk run //:gazelle --)
 if [[ "$GAZELLE_PATH" ]]; then
   GAZELLE_COMMAND=("$GAZELLE_PATH")
+fi
+
+GO_COMMAND=(bazelisk run //:go --)
+if [[ "$GO_PATH" ]]; then
+  GO_COMMAND=("$GO_PATH")
 fi
 
 DIFF_MODE=0
@@ -34,7 +40,7 @@ trap cleanup EXIT
 # and we don't want to require that (yet, at least). So use the `-e`
 # option to ask `go mod tidy` to proceed even if it encounters errors
 # loading packages.
-if ! go mod tidy -e &>"$tmp_log_file"; then
+if ! "${GO_COMMAND[@]}" mod tidy -e &>"$tmp_log_file"; then
   echo "Command 'go mod tidy -e' failed. Logs:" >&2
   cat "$tmp_log_file" >&2
   exit 1

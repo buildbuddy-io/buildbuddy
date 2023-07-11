@@ -8,7 +8,12 @@ def _go_sdk_tool_impl(ctx):
     go = go_context(ctx)
     tool_path = paths.join(go.sdk_root.dirname, ctx.attr.goroot_relative_path)
     tool = None
-    for f in go.sdk_tools:
+
+    sdk_tools = []
+    sdk_tools.append(go.go)  # `go` binary
+    sdk_tools.extend(go.sdk_tools)  # all other tools, e.g. `gofmt`
+
+    for f in sdk_tools:
         if f.path == tool_path:
             tool = f
             break
