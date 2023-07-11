@@ -54,6 +54,15 @@ func run() (exitCode int, err error) {
 	// (--verbose, etc.)
 	args := log.Configure(os.Args[1:])
 
+	log.Debugf("CLI started at %s", start)
+	log.Debugf("args[0]: %s", os.Args[0])
+	log.Debugf("env: BAZEL_REAL=%s", os.Getenv("BAZEL_REAL"))
+	log.Debugf("env: BAZELISK_SKIP_WRAPPER=%s", os.Getenv("BAZELISK_SKIP_WRAPPER"))
+	log.Debugf("env: USE_BAZEL_VERSION=%s", os.Getenv("USE_BAZEL_VERSION"))
+	log.Debugf("env: BB_USE_BAZEL_VERSION=%s", os.Getenv("BB_USE_BAZEL_VERSION"))
+
+	bazelisk.ResolveVersion()
+
 	// Make sure startup args are always in the format --foo=bar.
 	args, err = parser.CanonicalizeStartupArgs(args)
 	if err != nil {

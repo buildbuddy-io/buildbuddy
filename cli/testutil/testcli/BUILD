@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//cli/storage",
         "//server/testutil/testbazel",
+        "//server/testutil/testbazelisk",
         "//server/testutil/testfs",
         "//server/testutil/testgit",
         "//server/util/lockingbuffer",

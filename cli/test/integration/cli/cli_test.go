@@ -3,6 +3,7 @@ package cli_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,39 @@ func TestBazelVersion(t *testing.T) {
 	require.Contains(t, output, "Build label: "+testbazel.Version)
 	// Make sure we don't print any warnings.
 	require.NotContains(t, output, log.WarningPrefix)
+}
+
+func TestInvokeViaBazelisk(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelversion": fmt.Sprintf("%s\n%s\n", testcli.BinaryPath(t), testbazel.BinaryPath(t)),
+	})
+
+	{
+		// Make sure we can invoke the CLI under bazelisk, using the
+		// .bazelversion trick.
+		cmd := testcli.BazeliskCommand(t, ws, "version")
+		b, err := testcli.CombinedOutput(cmd)
+
+		require.NoError(t, err, "output: %s", string(b))
+		require.Contains(t, string(b), "bb unknown")
+		require.Contains(t, string(b), "Build label: "+testbazel.Version)
+	}
+	{
+		// Make sure that if we're using the .bazelversion trick, we still have
+		// a way to override the bazel version via env var
+		// (BB_USE_BAZEL_VERSION).
+		cmd := testcli.BazeliskCommand(t, ws, "version")
+		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION=6.0.0")
+		// Sanity check: make sure testbazel.Version is different from the one
+		// we're testing here.
+		require.NotEqual(t, "6.0.0", testbazel.Version)
+		b, err := testcli.CombinedOutput(cmd)
+
+		require.NoError(t, err, "output: %s", string(b))
+		require.Contains(t, string(b), "bb unknown")
+		require.Contains(t, string(b), "Build label: 6.0.0")
+	}
 }
 
 func TestBazelHelp(t *testing.T) {

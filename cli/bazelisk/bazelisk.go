@@ -12,6 +12,7 @@ import (
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
 
@@ -99,7 +100,7 @@ func InvokeRunScript(path string) (exitCode int, err error) {
 // This will return true when referencing a CLI release in .bazelversion such as
 // "buildbuddy-io/0.0.13" and then running `bazelisk`.
 func IsInvokedByBazelisk() bool {
-	return os.Getenv("BAZELISK_SKIP_WRAPPER") == "true"
+	return filepath.Base(os.Args[0]) == "bazelisk" || os.Getenv("BAZELISK_SKIP_WRAPPER") == "true"
 }
 
 // makePipeWriter adapts a writer to an *os.File by using an os.Pipe().
@@ -167,6 +168,27 @@ func getBazeliskHome() (string, error) {
 	return filepath.Join(userCacheDir, "bazelisk"), nil
 }
 
+func getEnvVersion() string {
+	// When using the .bazelversion method, users still need a way to be able to
+	// specify a CLI version via env, while still allowing bazelisk to invoke
+	// the CLI instead of bazel. "BB_USE_BAZEL_VERSION" gives users a way to do
+	// that.
+	if v := os.Getenv("BB_USE_BAZEL_VERSION"); v != "" {
+		return v
+	}
+	return os.Getenv("USE_BAZEL_VERSION")
+}
+
+func setEnvVersion(value string) error {
+	if err := os.Setenv("BB_USE_BAZEL_VERSION", value); err != nil {
+		return err
+	}
+	if err := os.Setenv("USE_BAZEL_VERSION", value); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ResolveVersion returns the actual bazel version that will be used by
 // bazelisk.
 // This will either return a version string like "5.0.0" or an absolute path to
@@ -175,7 +197,7 @@ func ResolveVersion() (string, error) {
 	if err := setBazelVersion(); err != nil {
 		return "", err
 	}
-	rawVersion := os.Getenv("USE_BAZEL_VERSION")
+	rawVersion := getEnvVersion()
 	// If using a file path "version", return the file path directly.
 	if filepath.IsAbs(rawVersion) {
 		return rawVersion, nil
@@ -220,6 +242,7 @@ func ResolveVersion() (string, error) {
 func setBazelVersion() error {
 	setVersionOnce.Do(func() {
 		setVersionErr = setBazelVersionImpl()
+		log.Debugf("setBazelVersion: Set env version to %s", getEnvVersion())
 	})
 	return setVersionErr
 }
@@ -237,11 +260,13 @@ func isCLIVersion(version string) bool {
 }
 
 func setBazelVersionImpl() error {
-	// If USE_BAZEL_VERSION is already set and not pointing to us (the BB CLI),
-	// preserve that value.
-	envVersion := os.Getenv("USE_BAZEL_VERSION")
+	// If the version is already set via env var and not pointing to us (the BB
+	// CLI), preserve that value.
+	envVersion := getEnvVersion()
 	if envVersion != "" && !isCLIVersion(envVersion) {
-		return nil
+		// Set the env version to its current value so that both env vars take
+		// on the value (BB_USE_BAZEL_VERSION and USE_BAZEL_VERSION)
+		return setEnvVersion(envVersion)
 	}
 
 	// TODO: Handle the cases where we were invoked via .bazeliskrc
@@ -249,12 +274,13 @@ func setBazelVersionImpl() error {
 
 	ws, err := workspace.Path()
 	if err != nil {
-		return os.Setenv("USE_BAZEL_VERSION", "latest")
+		return setEnvVersion("latest")
 	}
 	parts, err := ParseVersionDotfile(filepath.Join(ws, ".bazelversion"))
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	log.Debugf(".bazelversion file contents: %s", parts)
 	// If we appear first in .bazelversion, ignore that version to prevent
 	// bazelisk from invoking us recursively.
 	if IsInvokedByBazelisk() {
@@ -265,10 +291,9 @@ func setBazelVersionImpl() error {
 	// If we couldn't find a non-BB bazel version in .bazelversion at this
 	// point, default to "latest".
 	if len(parts) == 0 {
-		return os.Setenv("USE_BAZEL_VERSION", "latest")
+		return setEnvVersion("latest")
 	}
-
-	return os.Setenv("USE_BAZEL_VERSION", parts[0])
+	return setEnvVersion(parts[0])
 }
 
 // ParseVersionDotfile returns the non-empty lines from the given .bazelversion
