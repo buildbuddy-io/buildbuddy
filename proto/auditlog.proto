@@ -2,10 +2,11 @@ syntax = "proto3";
 
 package auditlog;
 
+import "proto/acl.proto";
 import "proto/api_key.proto";
 import "proto/context.proto";
 import "proto/grp.proto";
-import "proto/acl.proto";
+import "proto/invocation.proto";
 import "google/protobuf/timestamp.proto";
 
 message AuthenticatedAPIKey {
@@ -35,9 +36,8 @@ enum ResourceType {
   GROUP_API_KEY = 1;
   USER_API_KEY = 2;
   GROUP = 3;
-  GROUP_USER = 4;
-  SECRET = 5;
-  INVOCATION = 6;
+  SECRET = 4;
+  INVOCATION = 5;
 }
 
 message ResourceID {
@@ -59,18 +59,16 @@ message Entry {
 
   // Additional metadata describing the change performed.
   // Only one field will be populated depending on the event type.
-  message ResourceState {
+  message ResourceRequest {
     api_key.CreateApiKeyRequest create_api_key = 1;
     api_key.GetApiKeysRequest get_api_keys = 2;
     api_key.UpdateApiKeyRequest update_api_key = 3;
     api_key.DeleteApiKeyRequest delete_api_key = 4;
     grp.UpdateGroupRequest update_group = 5;
     grp.UpdateGroupUsersRequest update_group_users = 6;
-    invocation.UpdateInvocationRequest update_invocation = 4;
+    invocation.UpdateInvocationRequest update_invocation = 7;
   }
-  ResourceState old_state = 5;
-  ResourceState new_state = 6;
-  string diff_state = 7;
+  ResourceRequest request = 5;
 }
 
 message User {
