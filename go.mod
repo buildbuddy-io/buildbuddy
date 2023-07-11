@@ -41,7 +41,7 @@ require (
 	github.com/cockroachdb/pebble v0.0.0-20220408210401-5591b6b889f9
 	github.com/containerd/containerd v1.6.19
 	github.com/coreos/go-oidc v2.2.1+incompatible
-	github.com/creack/pty v1.1.17
+	github.com/creack/pty v1.1.18
 	github.com/crewjam/saml v0.4.13
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/docker/docker v23.0.1+incompatible
