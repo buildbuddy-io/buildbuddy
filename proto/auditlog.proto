@@ -60,10 +60,13 @@ message Entry {
   // Additional metadata describing the change performed.
   // Only one field will be populated depending on the event type.
   message ResourceState {
-    APIKeyState api_key = 1;
-    GroupState group = 2;
-    GroupUserState group_users = 3;
-    InvocationState invocation = 4;
+    api_key.CreateApiKeyRequest create_api_key = 1;
+    api_key.GetApiKeysRequest get_api_keys = 2;
+    api_key.UpdateApiKeyRequest update_api_key = 3;
+    api_key.DeleteApiKeyRequest delete_api_key = 4;
+    grp.UpdateGroupRequest update_group = 5;
+    grp.UpdateGroupUsersRequest update_group_users = 6;
+    invocation.UpdateInvocationRequest update_invocation = 4;
   }
   ResourceState old_state = 5;
   ResourceState new_state = 6;
@@ -73,33 +76,6 @@ message Entry {
 message User {
   string user_id = 1;
   string user_email = 2;
-}
-
-message APIKeyState {
-  string label = 1;
-  User user = 2;
-  repeated api_key.ApiKey.Capability capabilities = 3;
-  bool visible_to_developers = 4;
-}
-
-message InvocationState {
-  acl.ACL acl = 1;
-}
-
-message GroupState {
-  string name = 1;
-  string url_identifier = 2;
-  string auto_add_domain_members = 3;
-  bool invocation_sharing_enabled = 4;
-  bool user_owned_api_keys_enabled = 5;
-  bool default_to_self_hosted_executors = 6;
-  bool cache_customer_managed_encryption_key_enabled = 7;
-  grp.SuggestionPreference suggestion_preference = 8;
-}
-
-message GroupUserState {
-  User user = 1;
-  grp.Group.Role role = 2;
 }
 
 message GetAuditLogsRequest {
