@@ -7,6 +7,9 @@ load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
 
+# Rendered JSON result could be checked by doing:
+#   bazel build //:no_go_config
+#   cat bazel-bin/no_go_config.json | jq .
 write_file(
     name = "nogo_config",
     out = "nogo_config.json",
@@ -14,59 +17,53 @@ write_file(
         json.encode_indent(
             {
                 "exhaustive": {
-                    "only_files": {
-                        "/server/": "Server code",
-                        "/enterprise/server/": "Enterprise server code",
+                    "exclude_files": {
+                        "external[\\\\,\\/]": "third_party",
                     },
                     "analyzer_flags": {
                         "default-signifies-exhaustive": "true",
                     },
                 },
-                "fieldalignment": {
-                    "only_files": {
-                        "/server/": "Server code",
-                        "/enterprise/server/": "Enterprise server code",
-                    },
-                    "exclude_files": {
-                        ".*": "Disable entirely for now",
-                        ".*\\.pb\\.go": "Auto-generated proto files",
-                    },
-                },
-                "nilness": {
-                    "only_files": {
-                        "/server/": "Server code",
-                        "/enterprise/server/": "Enterprise server code",
-                    },
-                    "exclude_files": {
-                        ".*_cgo_gotypes\\.go": "cgo internal files",
-                    },
-                },
-            } | {
-                analyzer: {
-                    "only_files": {
-                        "/server/": "Server code",
-                        "/enterprise/server/": "Enterprise server code",
-                    },
-                }
-                for analyzer in [
-                    "assign",
-                    "cgocall",
-                    "composites",
-                    "copylocks",
-                    "lostcancel",
-                    "stdmethods",
-                    "stringintconv",
-                    "structtag",
-                    "unreachable",
-                    "unsafeptr",
-                ]
             } | {
                 analyzer: {
                     "exclude_files": {
                         "external[\\\\,\\/]": "third_party",
+                        # TODO(sluongng): this should be fixed on rules_go side
+                        # https://github.com/bazelbuild/rules_go/issues/3619
+                        "cgo[\\\\,\\/]github.com[\\\\,\\/]shirou[\\\\,\\/]gopsutil[\\\\,\\/]": "third_party cgo",
                     },
                 }
-                for analyzer in ANALYZERS
+                for analyzer in ANALYZERS + [
+                    "asmdecl",
+                    "assign",
+                    "atomicalign",
+                    # "cgocall",
+                    "composites",
+                    "copylocks",
+                    "deepequalerrors",
+                    "errorsas",
+                    # "fieldalignment",
+                    "framepointer",
+                    "httpresponse",
+                    "ifaceassert",
+                    "loopclosure",
+                    "lostcancel",
+                    # template methods currently cause this analyzer to panic
+                    # "nilness",
+                    # Everyone shadows `err`
+                    # "shadow",
+                    "shift",
+                    "sortslice",
+                    "stdmethods",
+                    "stringintconv",
+                    "structtag",
+                    "tests",
+                    "testinggoroutine",
+                    "unmarshal",
+                    "unreachable",
+                    "unsafeptr",
+                    "unusedresult",
+                ]
             },
         ),
     ],
@@ -78,33 +75,35 @@ nogo(
     vet = True,
     visibility = ["//visibility:public"],
     deps = [
-        "@org_golang_x_tools//go/analysis/passes/asmdecl:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/assign:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/atomicalign:go_default_library",
-        # "@org_golang_x_tools//go/analysis/passes/cgocall:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/composite:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/copylock:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/deepequalerrors:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/errorsas:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/fieldalignment:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/framepointer:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/httpresponse:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/ifaceassert:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/loopclosure:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/lostcancel:go_default_library",
-        # "@org_golang_x_tools//go/analysis/passes/nilness:go_default_library", # template methods currently cause this analyzer to panic
-        # "@org_golang_x_tools//go/analysis/passes/shadow:go_default_library", # Everyone shadows `err`
-        "@org_golang_x_tools//go/analysis/passes/shift:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/sortslice:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/stdmethods:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/stringintconv:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/structtag:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/tests:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/testinggoroutine:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/unmarshal:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/unreachable:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/unsafeptr:go_default_library",
-        "@org_golang_x_tools//go/analysis/passes/unusedresult:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/asmdecl",
+        "@org_golang_x_tools//go/analysis/passes/assign",
+        "@org_golang_x_tools//go/analysis/passes/atomicalign",
+        # "@org_golang_x_tools//go/analysis/passes/cgocall",
+        "@org_golang_x_tools//go/analysis/passes/composite",
+        "@org_golang_x_tools//go/analysis/passes/copylock",
+        "@org_golang_x_tools//go/analysis/passes/deepequalerrors",
+        "@org_golang_x_tools//go/analysis/passes/errorsas",
+        # "@org_golang_x_tools//go/analysis/passes/fieldalignment",
+        "@org_golang_x_tools//go/analysis/passes/framepointer",
+        "@org_golang_x_tools//go/analysis/passes/httpresponse",
+        "@org_golang_x_tools//go/analysis/passes/ifaceassert",
+        "@org_golang_x_tools//go/analysis/passes/loopclosure",
+        "@org_golang_x_tools//go/analysis/passes/lostcancel",
+        # template methods currently cause this analyzer to panic
+        # "@org_golang_x_tools//go/analysis/passes/nilness",
+        # Everyone shadows `err`
+        # "@org_golang_x_tools//go/analysis/passes/shadow",
+        "@org_golang_x_tools//go/analysis/passes/shift",
+        "@org_golang_x_tools//go/analysis/passes/sortslice",
+        "@org_golang_x_tools//go/analysis/passes/stdmethods",
+        "@org_golang_x_tools//go/analysis/passes/stringintconv",
+        "@org_golang_x_tools//go/analysis/passes/structtag",
+        "@org_golang_x_tools//go/analysis/passes/tests",
+        "@org_golang_x_tools//go/analysis/passes/testinggoroutine",
+        "@org_golang_x_tools//go/analysis/passes/unmarshal",
+        "@org_golang_x_tools//go/analysis/passes/unreachable",
+        "@org_golang_x_tools//go/analysis/passes/unsafeptr",
+        "@org_golang_x_tools//go/analysis/passes/unusedresult",
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
         "-S1019",

@@ -283,7 +283,6 @@ func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 			return stream.SendAndClose(lastRsp)
 		}
 	}
-	return nil
 }
 
 func (p *CacheProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {

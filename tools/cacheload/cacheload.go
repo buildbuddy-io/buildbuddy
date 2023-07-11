@@ -213,7 +213,6 @@ func main() {
 				log.Printf("Write: %d, Read: %d QPS", writeQPSCounter.Get(), readQPSCounter.Get())
 			}
 		}
-		return nil
 	})
 
 	for i := 0; i < numWriters; i++ {
