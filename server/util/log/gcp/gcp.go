@@ -11,7 +11,7 @@ import (
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	logpb "google.golang.org/genproto/googleapis/logging/v2"
+	logpb "cloud.google.com/go/logging/apiv2/loggingpb"
 )
 
 var (

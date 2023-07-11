@@ -8,7 +8,7 @@ go_library(
     deps = [
         "@com_github_rs_zerolog//:zerolog",
         "@com_google_cloud_go_logging//:logging",
-        "@go_googleapis//google/logging/v2:logging_go_proto",
+        "@com_google_cloud_go_logging//apiv2/loggingpb",
         "@org_golang_google_protobuf//types/known/structpb",
     ],
 )

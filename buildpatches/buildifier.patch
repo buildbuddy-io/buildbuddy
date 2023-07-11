@@ -24,15 +24,16 @@ index 0a1b81a..1b4d9fb 100644
 +}
 +
 +func Run() int {
-        flag.Usage = usage
-        flag.Parse()
-        args := flag.Args()
-@@ -188,7 +193,7 @@ func main() {
-        diff = differ
+        c := config.New()
 
-        exitCode := run(&args, &warningsList)
+	      flags := c.FlagSet("buildifier", flag.ExitOnError)
+@@ -159,7 +164,7 @@ func main() {
+        b := buildifier{c, differ}
+	      exitCode := b.run(args)
+
 -       os.Exit(exitCode)
 +       return exitCode
  }
 
- func run(args, warningsList *[]string) int {
+ type buildifier struct {
+
