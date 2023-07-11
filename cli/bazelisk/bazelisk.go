@@ -40,7 +40,7 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 	gcs := &repositories.GCSRepo{}
 	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
 	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
+	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gcs, true)
 
 	if opts.Stdout != nil {
 		close, err := redirectStdio(opts.Stdout, &os.Stdout)
@@ -82,7 +82,7 @@ func ConfigureRunScript(args []string) (newArgs []string, scriptPath string, err
 }
 
 func InvokeRunScript(path string) (exitCode int, err error) {
-	if err := os.Chmod(path, 0755); err != nil {
+	if err := os.Chmod(path, 0o755); err != nil {
 		return -1, err
 	}
 	// TODO: Exec() replaces the current process, so it prevents us from running
@@ -152,7 +152,7 @@ func createRepositories() *core.Repositories {
 	gcs := &repositories.GCSRepo{}
 	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
 	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	return core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
+	return core.CreateRepositories(gcs, gcs, gitHub, gcs, gcs, true)
 }
 
 func getBazeliskHome() (string, error) {
