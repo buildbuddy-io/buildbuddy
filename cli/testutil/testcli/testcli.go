@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazelisk"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -30,6 +31,11 @@ var (
 	initEnvOnce sync.Once
 )
 
+// BinaryPath returns the path to the CLI binary.
+func BinaryPath(t *testing.T) string {
+	return testfs.RunfilePath(t, "cli/cmd/bb/bb_/bb")
+}
+
 // Command returns an *exec.Cmd for the CLI binary.
 func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	initEnvOnce.Do(func() {
@@ -41,17 +47,23 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 		err = os.Setenv("BB_SIDECAR_ARGS", "--app.log_level=debug")
 		require.NoError(t, err)
 	})
-
-	path := testfs.RunfilePath(t, "cli/cmd/bb/bb_/bb")
 	if *verbose {
 		args = append(args, "--verbose=1")
 	}
-	cmd := exec.Command(path, args...)
+	cmd := exec.Command(BinaryPath(t), args...)
 	cmd.Dir = workspacePath
 	if *streamOutputs {
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 	}
+	return cmd
+}
+
+// BazeliskCommand returns a bazelisk command to invoke the CLI via the
+// .bazelversion trick.
+func BazeliskCommand(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
+	cmd := Command(t, workspacePath, args...)
+	cmd.Args[0] = testbazelisk.BinaryPath(t)
 	return cmd
 }
 
