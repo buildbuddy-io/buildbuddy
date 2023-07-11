@@ -135,6 +135,9 @@ func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.Updat
 	if err := db.UpdateInvocationACL(ctx, &authenticatedUser, req.GetInvocationId(), req.GetAcl()); err != nil {
 		return nil, err
 	}
+	if al := s.env.GetAuditLog(); al != nil {
+		al.Log(ctx, auditlog.InvocationResourceID(req.GetInvocationId()), auditlog.UpdateInvocation, req)
+	}
 	return &inpb.UpdateInvocationResponse{}, nil
 }
 
