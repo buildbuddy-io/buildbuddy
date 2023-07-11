@@ -32,6 +32,7 @@ proto_library(
     ],
     deps = [
         "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:wrappers_proto",
     ],
 )
 
@@ -136,6 +137,14 @@ proto_library(
     name = "github_proto",
     srcs = ["github.proto"],
     deps = [":context_proto"],
+)
+
+proto_library(
+    name = "package_load_metrics_proto",
+    srcs = ["package_load_metrics.proto"],
+    deps = [
+        "@com_google_protobuf//:duration_proto",
+    ],
 )
 
 proto_library(
@@ -309,6 +318,7 @@ proto_library(
         ":command_line_proto",
         ":failure_details_proto",
         ":invocation_policy_proto",
+        ":package_load_metrics_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
@@ -668,6 +678,12 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "package_load_metrics_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/package_load_metrics",
+    proto = ":package_load_metrics_proto",
+)
+
+go_proto_library(
     name = "publish_build_event_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event",
@@ -695,6 +711,7 @@ go_proto_library(
         ":command_line_go_proto",
         ":failure_details_go_proto",
         ":invocation_policy_go_proto",
+        ":package_load_metrics_go_proto",
     ],
 )
 
@@ -1203,6 +1220,14 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "package_load_metrics_ts_proto",
+    proto = ":package_load_metrics_proto",
+    deps = [
+        ":duration_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "quota_ts_proto",
     proto = ":quota_proto",
     deps = [
@@ -1286,6 +1311,7 @@ ts_proto_library(
         ":duration_ts_proto",
         ":failure_details_ts_proto",
         ":invocation_policy_ts_proto",
+        ":package_load_metrics_ts_proto",
         ":timestamp_ts_proto",
     ],
 )
@@ -1295,6 +1321,7 @@ ts_proto_library(
     proto = ":build_status_proto",
     deps = [
         ":any_ts_proto",
+        ":wrappers_ts_proto",
     ],
 )
 

@@ -116,7 +116,6 @@ service Execution {
   // instance name omitted. `digest_function` MUST thus be omitted if its value
   // is one of MD5, MURMUR3, SHA1, SHA256, SHA384, SHA512, or VSO.
   //
-  //
   // The server does not need to guarantee that a call to this method leads to
   // at most one execution of the action. The server MAY execute the action
   // multiple times, potentially in parallel. These redundant executions MAY
@@ -233,7 +232,7 @@ service ActionCache {
 //   segments, used to distinguish between the various instances on the server,
 //   in a manner defined by the server. If it is the empty path, the leading
 //   slash is omitted, so that  the `resource_name` becomes
-// `uploads/{uuid}/blobs/{digest_function/}{hash}/{size}{/optional_metadata}`.
+//   `uploads/{uuid}/blobs/{digest_function/}{hash}/{size}{/optional_metadata}`.
 //   To simplify parsing, a path segment cannot equal any of the following
 //   keywords: `blobs`, `uploads`, `actions`, `actionResults`, `operations`,
 //   `capabilities` or `compressed-blobs`.
@@ -1543,6 +1542,10 @@ message ExecuteOperationMetadata {
   // [ByteStream.Read][google.bytestream.ByteStream.Read] to stream the
   // standard error from the endpoint hosting streamed responses.
   string stderr_stream_name = 4;
+
+  // The client can read this field to view details about the ongoing
+  // execution.
+  ExecutedActionMetadata partial_execution_metadata = 5;
 }
 
 // A request message for
@@ -1875,8 +1878,64 @@ message DigestFunction {
     // See https://github.com/aappleby/smhasher/wiki/MurmurHash3 .
     MURMUR3 = 7;
 
-    // The BLAKE3 digest function.
-    // See https://github.com/BLAKE3-team/BLAKE3
+    // The SHA-256 digest function, modified to use a Merkle tree for
+    // large objects. This permits implementations to store large blobs
+    // as a decomposed sequence of 2^j sized chunks, where j >= 10,
+    // while being able to validate integrity at the chunk level.
+    //
+    // Furthermore, on systems that do not offer dedicated instructions
+    // for computing SHA-256 hashes (e.g., the Intel SHA and ARMv8
+    // cryptographic extensions), SHA256TREE hashes can be computed more
+    // efficiently than plain SHA-256 hashes by using generic SIMD
+    // extensions, such as Intel AVX2 or ARM NEON.
+    //
+    // SHA256TREE hashes are computed as follows:
+    //
+    // - For blobs that are 1024 bytes or smaller, the hash is computed
+    //   using the regular SHA-256 digest function.
+    //
+    // - For blobs that are more than 1024 bytes in size, the hash is
+    //   computed as follows:
+    //
+    //   1. The blob is partitioned into a left (leading) and right
+    //      (trailing) blob. These blobs have lengths m and n
+    //      respectively, where m = 2^k and 0 < n <= m.
+    //
+    //   2. Hashes of the left and right blob, Hash(left) and
+    //      Hash(right) respectively, are computed by recursively
+    //      applying the SHA256TREE algorithm.
+    //
+    //   3. A single invocation is made to the SHA-256 block cipher with
+    //      the following parameters:
+    //
+    //          M = Hash(left) || Hash(right)
+    //          H = {
+    //              0xcbbb9d5d, 0x629a292a, 0x9159015a, 0x152fecd8,
+    //              0x67332667, 0x8eb44a87, 0xdb0c2e0d, 0x47b5481d,
+    //          }
+    //
+    //      The values of H are the leading fractional parts of the
+    //      square roots of the 9th to the 16th prime number (23 to 53).
+    //      This differs from plain SHA-256, where the first eight prime
+    //      numbers (2 to 19) are used, thereby preventing trivial hash
+    //      collisions between small and large objects.
+    //
+    //   4. The hash of the full blob can then be obtained by
+    //      concatenating the outputs of the block cipher:
+    //
+    //          Hash(blob) = a || b || c || d || e || f || g || h
+    //
+    //      Addition of the original values of H, as normally done
+    //      through the use of the Davies-Meyer structure, is not
+    //      performed. This isn't necessary, as the block cipher is only
+    //      invoked once.
+    //
+    // Test vectors of this digest function can be found in the
+    // accompanying sha256tree_test_vectors.txt file.
+    SHA256TREE = 8;
+
+    // The BLAKE3 hash function.
+    // See https://github.com/BLAKE3-team/BLAKE3.
     BLAKE3 = 9;
   }
 }
@@ -1938,6 +1997,9 @@ message Compressor {
     // It is advised to use algorithms such as Zstandard instead, as
     // those are faster and/or provide a better compression ratio.
     DEFLATE = 2;
+
+    // Brotli compression.
+    BROTLI = 3;
   }
 }
 
