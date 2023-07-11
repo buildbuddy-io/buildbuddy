@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "db",
-    srcs = ["db.go"],
+    srcs = [
+        "db.go",
+        "db_cgo.go",
+        "db_nocgo.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/db",
     visibility = ["//visibility:public"],
     deps = [
