@@ -225,4 +225,29 @@ secret_struct_slice_flag:
 		require.NoError(t, err)
 		require.Equal(t, []secretHolder{{Secret: "FIRST\nSECRET"}, {Secret: "SECOND\nSECRET"}}, *secretStructSliceFlag)
 	}
+
+}
+
+func TestLoadFromData(t *testing.T) {
+	// Can successfully parse int config item
+	{
+		flags := replaceFlagsForTesting(t)
+		_ = flags.Int("must_be_a_number", 0, "")
+		err := config.LoadFromData(strings.TrimSpace(`
+must_be_a_number: 4
+	`))
+		require.NoError(t, err)
+	}
+
+	// Parse error when config value causes type mismatch
+	{
+		flags := replaceFlagsForTesting(t)
+		_ = flags.Int("must_be_a_number", 0, "")
+		err := config.LoadFromData(strings.TrimSpace(`
+must_be_a_number: "not a string, like this"
+	`))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "retyping YAML map")
+		require.Contains(t, err.Error(), "into int")
+	}
 }
