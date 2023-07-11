@@ -308,8 +308,7 @@ type AuditLog struct {
 
 	Method string
 
-	OldState string
-	NewState string
+	Request string
 }
 
 func (i *AuditLog) ExcludedFields() []string {
