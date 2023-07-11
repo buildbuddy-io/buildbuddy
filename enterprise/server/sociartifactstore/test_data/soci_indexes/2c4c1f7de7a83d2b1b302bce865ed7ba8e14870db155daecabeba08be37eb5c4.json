@@ -9,7 +9,7 @@
   "layers": [
     {
       "mediaType": "application/octet-stream",
-      "digest": "sha256:85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2",
+      "digest": "sha256:5fa40df4606c1d9daa7119a18f7106b672d352f6f56d250547b41572bcf384de",
       "size": 99024,
       "annotations": {
         "com.amazon.soci.image-layer-digest": "sha256:64c41441ac5ce31a9eb7939a2322015c05afc8fa631c7f7cf5e5b14c73d9bf49",
@@ -18,7 +18,7 @@
     },
     {
       "mediaType": "application/octet-stream",
-      "digest": "sha256:ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
+      "digest": "sha256:aa58f9f015faed905d18144fe7aaf55bac280a8276f84a08e05b970a95fd56bb",
       "size": 99024,
       "annotations": {
         "com.amazon.soci.image-layer-digest": "sha256:ae97859e70356aa8ffc46329f5e98d1078acaf754bbffc40907bbea18b2c6f5a",
@@ -31,5 +31,5 @@
     "digest": "sha256:1c3a8719d58c87979fe094dad303d0dd3f0419e6e566e4dbdb08ccbde0aec0ae",
     "size": 915
   },
-  "annotations": { "com.amazon.soci.build-tool-identifier": "BuildBuddy SOCI Artifact Store v0.1" }
+  "annotations": { "com.amazon.soci.build-tool-identifier": "BuildBuddy SOCI Artifact Store v0.2" }
 }

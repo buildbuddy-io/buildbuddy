@@ -57,23 +57,23 @@ func TestIndexExists(t *testing.T) {
 	imageName := pushImage(t, r, image, "test")
 
 	sociIndexDigest := repb.Digest{
-		Hash:      "7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea",
+		Hash:      "2c4c1f7de7a83d2b1b302bce865ed7ba8e14870db155daecabeba08be37eb5c4",
 		SizeBytes: 1225,
 	}
 	ztocDigest1 := repb.Digest{
-		Hash:      "85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2",
+		Hash:      "5fa40df4606c1d9daa7119a18f7106b672d352f6f56d250547b41572bcf384de",
 		SizeBytes: 99024,
 	}
 	ztocDigest2 := repb.Digest{
-		Hash:      "ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
+		Hash:      "aa58f9f015faed905d18144fe7aaf55bac280a8276f84a08e05b970a95fd56bb",
 		SizeBytes: 99024,
 	}
 	serializedSociIndexResourceName, err := digest.NewResourceName(&sociIndexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
 	require.NoError(t, err)
 
-	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json", rspb.CacheType_CAS)
-	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc", rspb.CacheType_CAS)
-	writeFileContentsToCache(ctx, t, env, &ztocDigest2, "test_data/ztocs/ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c.ztoc", rspb.CacheType_CAS)
+	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/2c4c1f7de7a83d2b1b302bce865ed7ba8e14870db155daecabeba08be37eb5c4.json", rspb.CacheType_CAS)
+	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/5fa40df4606c1d9daa7119a18f7106b672d352f6f56d250547b41572bcf384de.ztoc", rspb.CacheType_CAS)
+	writeFileContentsToCache(ctx, t, env, &ztocDigest2, "test_data/ztocs/aa58f9f015faed905d18144fe7aaf55bac280a8276f84a08e05b970a95fd56bb.ztoc", rspb.CacheType_CAS)
 	writeDataToCache(ctx, t, env,
 		getSociIndexKey(t, "sha256:dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b"),
 		[]byte(serializedSociIndexResourceName),
@@ -119,23 +119,23 @@ func TestIndexPartiallyExists(t *testing.T) {
 	imageName := pushImage(t, r, image, "test")
 
 	sociIndexDigest := repb.Digest{
-		Hash:      "7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea",
+		Hash:      "2c4c1f7de7a83d2b1b302bce865ed7ba8e14870db155daecabeba08be37eb5c4",
 		SizeBytes: 1225,
 	}
 	ztocDigest1 := repb.Digest{
-		Hash:      "85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2",
+		Hash:      "5fa40df4606c1d9daa7119a18f7106b672d352f6f56d250547b41572bcf384de",
 		SizeBytes: 99024,
 	}
 	ztocDigest2 := repb.Digest{
-		Hash:      "ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
+		Hash:      "aa58f9f015faed905d18144fe7aaf55bac280a8276f84a08e05b970a95fd56bb",
 		SizeBytes: 99024,
 	}
 	serializedSociIndexResourceName, err := digest.NewResourceName(&sociIndexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
 	require.NoError(t, err)
 
-	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea.json", rspb.CacheType_CAS)
-	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2.ztoc", rspb.CacheType_CAS)
-	// Don't write the second ztoc (ffc7a...) to the cache.
+	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/2c4c1f7de7a83d2b1b302bce865ed7ba8e14870db155daecabeba08be37eb5c4.json", rspb.CacheType_CAS)
+	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/5fa40df4606c1d9daa7119a18f7106b672d352f6f56d250547b41572bcf384de.ztoc", rspb.CacheType_CAS)
+	// Don't write the second ztoc (aa58f...) to the cache.
 	writeDataToCache(ctx, t, env,
 		getSociIndexKey(t, "sha256:dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b"),
 		[]byte(serializedSociIndexResourceName),
@@ -181,15 +181,15 @@ func TestIndexDoesNotExist(t *testing.T) {
 	imageName := pushImage(t, r, image, "test")
 
 	sociIndexDigest := repb.Digest{
-		Hash:      "7579d04981896723ddd70ed633e9a801e869bd3d954251216adf3feef092c5ea",
+		Hash:      "2c4c1f7de7a83d2b1b302bce865ed7ba8e14870db155daecabeba08be37eb5c4",
 		SizeBytes: 1225,
 	}
 	ztocDigest1 := repb.Digest{
-		Hash:      "85e0877f6edf3eed5ea44c29b8c7adf7d2fa58a2d088b39593376c438dc311a2",
+		Hash:      "5fa40df4606c1d9daa7119a18f7106b672d352f6f56d250547b41572bcf384de",
 		SizeBytes: 99024,
 	}
 	ztocDigest2 := repb.Digest{
-		Hash:      "ffc7a206c8fc2f5239e3e7281e2d2c1f40af93d605c6a353a3146e577fb0e90c",
+		Hash:      "aa58f9f015faed905d18144fe7aaf55bac280a8276f84a08e05b970a95fd56bb",
 		SizeBytes: 99024,
 	}
 
@@ -254,7 +254,7 @@ func TestSmallImage(t *testing.T) {
 	require.NoError(t, err)
 
 	sociIndexDigest := repb.Digest{
-		Hash:      "5ac32762b7b94a4be9e90b9e2fcfb068a84b47dd917f8b696f3cd0e494fb7346",
+		Hash:      "4754590de3b842493a00d0d71825e30cd99597e6b06eb46cb68d987279cb3a12",
 		SizeBytes: 514,
 	}
 	expected := socipb.GetArtifactsResponse{
