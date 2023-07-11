@@ -17,6 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
+	"github.com/creack/pty"
 	"github.com/stretchr/testify/require"
 )
 
@@ -108,4 +111,53 @@ func DumpSidecarLog(t *testing.T) {
 		return
 	}
 	require.FailNowf(t, "could not find sidecar logs in cache dir", "")
+}
+
+type Terminal struct {
+	t      *testing.T
+	output *lockingbuffer.LockingBuffer
+	// File is the file used for writing to the terminal.
+	File *os.File
+}
+
+// PTY returns a pseudoterminal for use in tests.
+func PTY(t *testing.T) *Terminal {
+	ptmx, tty, err := pty.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = tty.Close()
+		_ = ptmx.Close()
+	})
+	term := &Terminal{
+		t: t, File: tty, output: lockingbuffer.New(),
+	}
+	w := io.Writer(term.output)
+	if *streamOutputs {
+		w = io.MultiWriter(term.output, os.Stderr)
+	}
+	go io.Copy(w, ptmx)
+	return term
+}
+
+// Run runs the given command, writing the output to the terminal.
+func (t *Terminal) Run(cmd *exec.Cmd) {
+	cmd.Stdout = t.File
+	cmd.Stderr = t.File
+	err := cmd.Run()
+	require.NoError(t.t, err)
+}
+
+// Raw returns the raw terminal content.
+func (t *Terminal) Raw() string {
+	return t.output.String()
+}
+
+// Render returns the effective contents currently displayed on the terminal
+// screen. For example, if the raw contents contain an ANSI sequence to delete a
+// line, that line will not be returned by this function.
+func (t *Terminal) Render() string {
+	screen := terminal.NewScreenWriter()
+	_, err := screen.Write([]byte(t.Raw()))
+	require.NoError(t.t, err)
+	return string(screen.Render())
 }

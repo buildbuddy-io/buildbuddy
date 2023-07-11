@@ -12,6 +12,9 @@ go_library(
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
         "//server/testutil/testgit",
+        "//server/util/lockingbuffer",
+        "//server/util/terminal",
+        "@com_github_creack_pty//:pty",
         "@com_github_stretchr_testify//require",
     ],
 )

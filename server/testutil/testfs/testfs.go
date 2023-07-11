@@ -120,6 +120,11 @@ func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]stri
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			assert.FailNow(t, "write failed", err)
 		}
+		// Make scripts executable.
+		if strings.HasSuffix(relPath, ".sh") {
+			err := os.Chmod(path, 0755)
+			require.NoError(t, err)
+		}
 	}
 }
 

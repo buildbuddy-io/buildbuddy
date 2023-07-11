@@ -993,7 +993,7 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 		// Note: we don't listen to resize events (SIGWINCH) and re-inherit the
 		// size, because Bazel itself doesn't do that currently. So it wouldn't
 		// make a difference either way.
-		opts.Stdout = os.Stdout
+		opts.Stdout = tty
 		opts.Stderr = tty
 		go io.Copy(w, ptmx)
 	}
