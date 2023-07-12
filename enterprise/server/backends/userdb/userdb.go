@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"gorm.io/gorm"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"

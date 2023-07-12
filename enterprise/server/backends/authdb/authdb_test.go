@@ -411,7 +411,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	al := testauditlog.New(t)
-	env.SetAuditLog(al)
+	env.SetAuditLogger(al)
 	udb := env.GetUserDB()
 
 	// Create a user
