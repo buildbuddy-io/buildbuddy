@@ -246,8 +246,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_awslabs_soci_snapshotter",
         importpath = "github.com/awslabs/soci-snapshotter",
         replace = "github.com/buildbuddy-io/soci-snapshotter",
-        sum = "h1:GeOlKRZIm2YErgGPAnydPRvtzg2A5IV9Qh+MyM14qYc=",
-        version = "v0.0.1",
+        sum = "h1:1kEJq3IYRa97x+erW+Yjbix6+JzfwmpIOf0YXjL1zIs=",
+        version = "v0.0.4",
     )
 
     go_repository(
