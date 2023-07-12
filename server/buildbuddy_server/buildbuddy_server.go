@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
-	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
@@ -39,6 +38,7 @@ import (
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"

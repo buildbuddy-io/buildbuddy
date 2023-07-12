@@ -8,9 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -22,6 +19,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 const (
@@ -329,7 +330,7 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) (retErr error) {
 	// Count the number of users in the group.
 	// If there are no existing users, then user should join with admin role,
-	// otherwise they should join with provided role.
+	// otherwise they should join with default role.
 	row := &struct{ Count int64 }{}
 	err := tx.Raw(`
 		SELECT COUNT(*) AS count FROM "UserGroups"
@@ -363,7 +364,6 @@ func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) (retErr error
 		}
 		return status.AlreadyExistsError("You're already in this organization.")
 	}
-
 	return tx.Exec(
 		`INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)`,
 		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
