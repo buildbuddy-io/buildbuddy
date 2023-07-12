@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sort"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -106,6 +107,8 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		})
 		forwardingStreams = append(forwardingStreams, fwdStream)
 	}
+	var closeStreamsOnce sync.Once
+	defer closeStreamsOnce.Do(func() { closeForwardingStreams(forwardingStreams) })
 
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
@@ -136,12 +139,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	for {
 		select {
 		case <-channelDone:
-			closeForwardingStreams(forwardingStreams)
 			return disconnectWithErr(status.FromContextError(channel.Context()))
 		case err := <-errCh:
-			closeForwardingStreams(forwardingStreams)
 			if err == io.EOF {
 				if s.synchronous {
+					closeStreamsOnce.Do(func() { closeForwardingStreams(forwardingStreams) })
 					if err := eg.Wait(); err != nil {
 						return disconnectWithErr(err)
 					}
@@ -160,7 +162,6 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			}
 
 			if err := channel.HandleEvent(in); err != nil {
-				closeForwardingStreams(forwardingStreams)
 				if status.IsAlreadyExistsError(err) {
 					log.CtxWarningf(ctx, "AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
 					return err
@@ -172,7 +173,6 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 				err := stream.Send(in)
 				// Async proxying is best effort--only handle errors in synchronous mode
 				if s.synchronous && err != nil {
-					closeForwardingStreams(forwardingStreams)
 					return disconnectWithErr(err)
 				}
 			}
