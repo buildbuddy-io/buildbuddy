@@ -1,0 +1,23 @@
+.audit-logs {
+  margin-top: 32px;
+}
+
+.audit-log-entry {
+  display: flex;
+}
+
+.audit-log-entry .timestamp {
+  width: 250px;
+}
+
+.audit-log-entry .actor {
+  width: 200px;
+}
+
+.audit-log-entry .method {
+  width: 200px;
+}
+
+.audit-log-entry .payload {
+  width: 600px;
+}

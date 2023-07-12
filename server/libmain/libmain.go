@@ -91,6 +91,7 @@ var (
 		"/workflows/",
 		"/executors/",
 		"/code/",
+		"/audit-logs/",
 	}
 )
 
