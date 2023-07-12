@@ -369,7 +369,7 @@ type AuthDB interface {
 	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
 	// checking that the user has admin rights on the group. This should only
 	// be used when a new group is being created.
-	CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx *gorm.DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKeyWithoutAuthCheck(tx *gorm.DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
 	GetUserOwnedKeysEnabled() bool

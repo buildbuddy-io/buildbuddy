@@ -244,7 +244,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *t
 		return "", err
 	}
 	// Initialize the group with a group-owned key.
-	_, err = d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, groupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/)
+	_, err = d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(tx, groupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/)
 	if err != nil {
 		return "", err
 	}
@@ -576,7 +576,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 				if err := tx.Create(g).Error; err != nil {
 					return err
 				}
-				if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, DefaultGroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+				if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(tx, DefaultGroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 					return err
 				}
 				return nil
@@ -645,7 +645,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		}
 		// For now, user-owned groups are assigned an org-level API key, and
 		// users have to explicitly enable user-owned keys.
-		if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, sug.GroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+		if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(tx, sug.GroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 			return err
 		}
 		groupIDs = append(groupIDs, sug.GroupID)
