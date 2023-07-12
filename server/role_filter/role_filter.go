@@ -123,6 +123,8 @@ var (
 		// Encryption.
 		"GetEncryptionConfig",
 		"SetEncryptionConfig",
+		// Audit logs.
+		"GetAuditLogs",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different

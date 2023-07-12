@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package auditlog;
+
+import "proto/acl.proto";
+import "proto/api_key.proto";
+import "proto/context.proto";
+import "proto/grp.proto";
+import "proto/invocation.proto";
+import "google/protobuf/timestamp.proto";
+
+message AuthenticatedAPIKey {
+  // The ID of the API key, e.g. AK123456.
+  string id = 1;
+  // The label of the API key at the time of the event.
+  string label = 2;
+}
+
+message AuthenticatedUser {
+  // The ID of the user, e.g. US123
+  string user_id = 1;
+  // Email address of the user, may not be populated for certain account types.
+  string user_email = 2;
+}
+
+message AuthenticationInfo {
+  // Populated for events on behalf of authenticated users.
+  AuthenticatedUser user = 1;
+  // Populated for events on behalf of authenticated API keys.
+  AuthenticatedAPIKey api_key = 2;
+  string client_ip = 3;
+}
+
+enum ResourceType {
+  UNKNOWN_RESOURCE = 0;
+  GROUP_API_KEY = 1;
+  USER_API_KEY = 2;
+  GROUP = 3;
+  SECRET = 4;
+  INVOCATION = 5;
+}
+
+message ResourceID {
+  ResourceType type = 1;
+  string id = 2;
+  string name = 3;
+}
+
+message Entry {
+  google.protobuf.Timestamp event_time = 1;
+
+  AuthenticationInfo authentication_info = 2;
+
+  ResourceID resource = 3;
+
+  // Operation performed on resource, e.g. apiKeys.create, apiKeys.update,
+  // groups.update, etc
+  string method = 4;
+
+  // Additional metadata describing the change performed.
+  // Only one field will be populated depending on the event type.
+  message ResourceRequest {
+    api_key.CreateApiKeyRequest create_api_key = 1;
+    api_key.GetApiKeysRequest get_api_keys = 2;
+    api_key.UpdateApiKeyRequest update_api_key = 3;
+    api_key.DeleteApiKeyRequest delete_api_key = 4;
+    grp.UpdateGroupRequest update_group = 5;
+    grp.UpdateGroupUsersRequest update_group_users = 6;
+    invocation.UpdateInvocationRequest update_invocation = 7;
+  }
+  ResourceRequest request = 5;
+}
+
+message GetAuditLogsRequest {
+  context.RequestContext request_context = 1;
+
+  string page_token = 2;
+  google.protobuf.Timestamp timestamp_after = 3;
+  google.protobuf.Timestamp timestamp_before = 4;
+}
+
+message GetAuditLogsResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated Entry entries = 2;
+  string next_page_token = 3;
+}

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
@@ -1343,4 +1344,8 @@ func (s *BuildBuddyServer) GetEncryptionConfig(ctx context.Context, request *enp
 		return nil, status.FailedPreconditionError("encryption not enabled in the server")
 	}
 	return crypter.GetEncryptionConfig(ctx, request)
+}
+
+func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *auditlog.GetAuditLogsRequest) (*auditlog.GetAuditLogsResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
 }

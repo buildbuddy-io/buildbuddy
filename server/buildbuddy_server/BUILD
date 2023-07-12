@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/config",
         "//proto:api_key_go_proto",
+        "//proto:auditlog_go_proto",
         "//proto:bazel_config_go_proto",
         "//proto:cache_go_proto",
         "//proto:encryption_go_proto",

@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/api_key.proto";
+import "proto/auditlog.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
 import "proto/eventlog.proto";
@@ -188,4 +189,8 @@ service BuildBuddyService {
       returns (encryption.SetEncryptionConfigResponse);
   rpc GetEncryptionConfig(encryption.GetEncryptionConfigRequest)
       returns (encryption.GetEncryptionConfigResponse);
+
+  // Audit log API.
+  rpc GetAuditLogs(auditlog.GetAuditLogsRequest)
+      returns (auditlog.GetAuditLogsResponse);
 }
