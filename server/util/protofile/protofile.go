@@ -209,16 +209,19 @@ func (q *blobQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) error {
+// ReadProto reads a proto from the stream, and returns the number of bytes
+// read. The number of bytes read does not include the size of the varint length
+// header.
+func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) (n int, err error) {
 	for {
 		if w.readBuf == nil {
 			// Load file
 			fileData, err := w.q.pop(ctx)
 			if err != nil {
 				if gstatus.Code(err) == gcodes.NotFound {
-					return io.EOF
+					return 0, io.EOF
 				}
-				return err
+				return 0, err
 			}
 			w.readBuf = bytes.NewBuffer(fileData)
 		}
@@ -231,8 +234,8 @@ func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) 
 		protoBytes := make([]byte, count)
 		w.readBuf.Read(protoBytes)
 		if err := proto.Unmarshal(protoBytes, msg); err != nil {
-			return err
+			return len(protoBytes), err
 		}
-		return nil
+		return len(protoBytes), nil
 	}
 }

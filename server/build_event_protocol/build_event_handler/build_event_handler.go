@@ -91,6 +91,7 @@ var (
 	chunkFileSizeBytes      = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
 	enableChunkedEventLogs  = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
 	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not diaplay properly.")
+	maxEventStreamReadSize  = flag.Int64("storage.build_event_stream_read_size_max_bytes", 750_000_000, "Max build event stream read size in bytes.")
 	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
 
 	cacheStatsFinalizationDelay = flag.Duration(
@@ -1383,11 +1384,17 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		events := []*inpb.InvocationEvent{}
 		structuredCommandLines := []*command_line.CommandLine{}
 		pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
+		totalLength := int64(0)
 		for {
 			event := &inpb.InvocationEvent{}
-			err := pr.ReadProto(ctx, event)
+			n, err := pr.ReadProto(ctx, event)
 			if err == io.EOF {
 				break
+			}
+			totalLength += int64(n)
+			if totalLength > *maxEventStreamReadSize {
+				log.Warningf("Invocation event stream exceeds max configured size of %d bytes", *maxEventStreamReadSize)
+				return status.ResourceExhaustedErrorf("invocation total size exceeds max size of %d bytes", *maxEventStreamReadSize)
 			}
 			if err != nil {
 				log.Warningf("Error reading proto from log: %s", err)

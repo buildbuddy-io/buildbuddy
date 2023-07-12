@@ -106,7 +106,7 @@ func main() {
 	log.Infof("Replaying events...")
 	for {
 		ie := &inpb.InvocationEvent{}
-		err := pr.ReadProto(ctx, ie)
+		_, err := pr.ReadProto(ctx, ie)
 		if err != nil {
 			if err == io.EOF {
 				if sequenceNum == 0 {

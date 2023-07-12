@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -1156,4 +1157,32 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
 	assert.NoError(t, err)
 	assert.True(t, exists)
+}
+
+func TestInvocationMaxSize(t *testing.T) {
+	// Disable event buffering just for this test so that we can read events
+	// back as soon as they are published.
+	flags.Set(t, "storage.chunk_file_size_bytes", 1)
+	// Force reads to always return errors by setting an artificially low read
+	// size limit.
+	flags.Set(t, "storage.build_event_stream_read_size_max_bytes", 1)
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel := handler.OpenChannel(ctx, testInvocationID)
+
+	// Send unauthenticated started event without an api key
+	request := streamRequest(startedEvent("--remote_upload_local_results"), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	// Look up the invocation and make sure it's public
+	_, err = build_event_handler.LookupInvocation(te, ctx, testInvocationID)
+	require.True(t, status.IsResourceExhaustedError(err), "expected ResourceExhausted, got %T", err)
 }
