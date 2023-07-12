@@ -143,6 +143,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		case err := <-errCh:
 			if err == io.EOF {
 				if s.synchronous {
+					// Close the streams early so that we can Wait() for any forwarding errors.
 					closeStreamsOnce.Do(func() { closeForwardingStreams(forwardingStreams) })
 					if err := eg.Wait(); err != nil {
 						return disconnectWithErr(err)
