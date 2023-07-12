@@ -21,6 +21,8 @@ var (
 	zooPath                = flag.String("olap_database.zoo_path", "/clickhouse/{installation}/{cluster}/tables/{shard}/{database}/{table}", "The path to the table name in zookeeper, used to set up data replication")
 	replicaName            = flag.String("olap_database.replica_name", "{replica}", "The replica name of the table in zookeeper")
 	clusterName            = flag.String("olap_database.cluster_name", "{cluster}", "The cluster name of the database")
+	// Temporary flag until schema is finalized.
+	createAuditLogTable = flag.Bool("olap_database.create_audit_log_table", false, "Whether to create the audit log table schema.")
 )
 
 const (
@@ -42,11 +44,15 @@ type Table interface {
 }
 
 func getAllTables() []Table {
-	return []Table{
+	tbls := []Table{
 		&Invocation{},
 		&Execution{},
 		&TestTargetStatus{},
 	}
+	if *createAuditLogTable {
+		tbls = append(tbls, &AuditLog{})
+	}
+	return tbls
 }
 
 func getTableClusterOption() string {
@@ -281,6 +287,44 @@ func (t *TestTargetStatus) TableName() string {
 
 func (t *TestTargetStatus) TableOptions() string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine())
+}
+
+type AuditLog struct {
+	AuditLogID    string
+	GroupID       string
+	EventTimeUsec int64
+
+	AuthAPIKeyID    string
+	AuthAPIKeyLabel string
+
+	AuthUserID    string
+	AuthUserEmail string
+
+	ClientIP string
+
+	ResourceID   string
+	ResourceName string
+	ResourceType uint8
+
+	Method string
+
+	Request string
+}
+
+func (i *AuditLog) ExcludedFields() []string {
+	return []string{}
+}
+
+func (i *AuditLog) AdditionalFields() []string {
+	return []string{}
+}
+
+func (i *AuditLog) TableName() string {
+	return "AuditLogs"
+}
+
+func (i *AuditLog) TableOptions() string {
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, event_time_usec, audit_log_id)", getEngine())
 }
 
 // hasProjection checks whether a projection exist in the clickhouse
