@@ -22,7 +22,7 @@ export default class ScorecardCardComponent extends React.Component<Props, State
   };
 
   getActionUrl(digestHash: string) {
-    return `/invocation/${this.props.model.getId()}?actionDigest=${digestHash}#action`;
+    return `/invocation/${this.props.model.getInvocationId()}?actionDigest=${digestHash}#action`;
   }
 
   onClickShowAll() {

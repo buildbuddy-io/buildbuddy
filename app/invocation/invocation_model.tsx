@@ -24,8 +24,8 @@ export const InvocationStatus = invocation_status.InvocationStatus;
 
 export default class InvocationModel {
   // The invocations array is guaranteed to have at least 1 invocation.
-  private readonly invocations: invocation.Invocation[];
-  cacheStats: cache.CacheStats[] = [];
+  readonly invocation: invocation.Invocation;
+  readonly cacheStats: cache.CacheStats[];
   scoreCard?: cache.ScoreCard;
   botSuggestions: string[] = [];
   onChange: Subject<void> = new Subject();
@@ -75,171 +75,162 @@ export default class InvocationModel {
 
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
-  private constructor(primaryInvocation: invocation.Invocation, others: invocation.Invocation[]) {
-    this.invocations = [primaryInvocation, ...others];
-  }
+  constructor(invocation: invocation.Invocation) {
+    this.invocation = invocation;
+    this.cacheStats = invocation.cacheStats ? [invocation.cacheStats] : [];
+    if (invocation.scoreCard) this.scoreCard = invocation.scoreCard;
+    for (let cl of invocation.structuredCommandLine) {
+      this.structuredCommandLine.push(cl as command_line.CommandLine);
+    }
 
-  static modelFromInvocations(primaryInvocation: invocation.Invocation, others: invocation.Invocation[]) {
-    const model = new InvocationModel(primaryInvocation, others);
-    model.cacheStats = model.invocations
-      .map((invocation) => invocation.cacheStats)
-      .filter((cacheStat) => !!cacheStat) as cache.CacheStats[];
-
-    for (let invocation of model.invocations) {
-      if (invocation.scoreCard) model.scoreCard = invocation.scoreCard;
-      for (let cl of invocation.structuredCommandLine) {
-        model.structuredCommandLine.push(cl as command_line.CommandLine);
+    for (let event of invocation.event) {
+      let buildEvent = event.buildEvent;
+      if (!buildEvent) {
+        continue;
       }
-
-      for (let event of invocation.event) {
-        let buildEvent = event.buildEvent;
-        if (!buildEvent) {
-          continue;
+      if (buildEvent.namedSetOfFiles && buildEvent.id?.namedSet?.id) {
+        this.fileSetIDToFilesMap.set(buildEvent.id.namedSet.id, buildEvent.namedSetOfFiles.files);
+      }
+      if (buildEvent.configured) this.targets.push(buildEvent as build_event_stream.BuildEvent);
+      if (buildEvent.configured && buildEvent.id?.targetConfigured?.label) {
+        this.configuredMap.set(buildEvent.id.targetConfigured.label, event as invocation.InvocationEvent);
+      }
+      if (buildEvent.completed && buildEvent.id?.targetCompleted?.label) {
+        this.completedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
+      }
+      if (buildEvent.fetch && buildEvent.id?.fetch?.url) {
+        this.fetchEventURLs.push(buildEvent.id.fetch.url);
+      }
+      if (buildEvent.testResult && buildEvent.id?.testResult?.label) {
+        let results = this.testResultMap.get(buildEvent.id.testResult.label) || [];
+        results.push(event as invocation.InvocationEvent);
+        this.testResultMap.set(buildEvent.id.testResult.label, results);
+      }
+      if (buildEvent.action && buildEvent.id?.actionCompleted?.label) {
+        let results = this.actionMap.get(buildEvent.id.actionCompleted.label) || [];
+        results.push(event as invocation.InvocationEvent);
+        this.actionMap.set(buildEvent.id.actionCompleted.label, results);
+      }
+      if (buildEvent.testSummary && buildEvent.id?.testSummary?.label) {
+        this.testSummaryMap.set(buildEvent.id.testSummary.label, event as invocation.InvocationEvent);
+      }
+      if (buildEvent.started) this.started = buildEvent.started as build_event_stream.BuildStarted;
+      if (buildEvent.expanded) this.expanded = buildEvent as build_event_stream.BuildEvent;
+      if (buildEvent.finished) this.finished = buildEvent.finished as build_event_stream.BuildFinished;
+      if (buildEvent.aborted && buildEvent.aborted.reason == build_event_stream.Aborted.AbortReason.SKIPPED) {
+        this.skipped.push(buildEvent as build_event_stream.BuildEvent);
+        if (buildEvent.id?.targetCompleted?.label) {
+          this.skippedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
         }
-        if (buildEvent.namedSetOfFiles && buildEvent.id?.namedSet?.id) {
-          model.fileSetIDToFilesMap.set(buildEvent.id.namedSet.id, buildEvent.namedSetOfFiles.files);
-        }
-        if (buildEvent.configured) model.targets.push(buildEvent as build_event_stream.BuildEvent);
-        if (buildEvent.configured && buildEvent.id?.targetConfigured?.label) {
-          model.configuredMap.set(buildEvent.id.targetConfigured.label, event as invocation.InvocationEvent);
-        }
-        if (buildEvent.completed && buildEvent.id?.targetCompleted?.label) {
-          model.completedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
-        }
-        if (buildEvent.fetch && buildEvent.id?.fetch?.url) {
-          model.fetchEventURLs.push(buildEvent.id.fetch.url);
-        }
-        if (buildEvent.testResult && buildEvent.id?.testResult?.label) {
-          let results = model.testResultMap.get(buildEvent.id.testResult.label) || [];
-          results.push(event as invocation.InvocationEvent);
-          model.testResultMap.set(buildEvent.id.testResult.label, results);
-        }
-        if (buildEvent.action && buildEvent.id?.actionCompleted?.label) {
-          let results = model.actionMap.get(buildEvent.id.actionCompleted.label) || [];
-          results.push(event as invocation.InvocationEvent);
-          model.actionMap.set(buildEvent.id.actionCompleted.label, results);
-        }
-        if (buildEvent.testSummary && buildEvent.id?.testSummary?.label) {
-          model.testSummaryMap.set(buildEvent.id.testSummary.label, event as invocation.InvocationEvent);
-        }
-        if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
-        if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
-        if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
-        if (buildEvent.aborted && buildEvent.aborted.reason == build_event_stream.Aborted.AbortReason.SKIPPED) {
-          model.skipped.push(buildEvent as build_event_stream.BuildEvent);
-          if (buildEvent.id?.targetCompleted?.label) {
-            model.skippedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
-          }
-        } else if (buildEvent.aborted) {
-          model.aborted = buildEvent as build_event_stream.BuildEvent;
-        }
-        if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
-        if (buildEvent.workspaceStatus) {
-          model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
-        }
-        if (buildEvent.workflowConfigured) {
-          model.workflowConfigured = buildEvent.workflowConfigured as build_event_stream.WorkflowConfigured;
-        }
-        if (buildEvent.childInvocationsConfigured) {
-          model.childInvocationsConfigured = buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured;
-        }
-        if (buildEvent.workflowCommandCompleted && buildEvent.id?.workflowCommandCompleted?.invocationId) {
-          model.childInvocationCompletedByInvocationId.set(
-            buildEvent.id.workflowCommandCompleted.invocationId,
-            buildEvent.workflowCommandCompleted
-          );
-        }
-        if (buildEvent.childInvocationCompleted && buildEvent.id?.childInvocationCompleted?.invocationId) {
-          model.childInvocationCompletedByInvocationId.set(
-            buildEvent.id.childInvocationCompleted.invocationId,
-            buildEvent.childInvocationCompleted
-          );
-        }
-        if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") {
-          model.configuration = buildEvent.configuration as build_event_stream.Configuration;
-        }
-        if (buildEvent.workspaceInfo) {
-          model.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
-        }
-        if (buildEvent.optionsParsed) {
-          model.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
-        }
-        if (buildEvent.buildMetrics) {
-          model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
-        }
-        if (buildEvent.buildToolLogs) {
-          model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
-        }
-        if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
-        }
-        if (buildEvent.buildMetadata) {
-          for (const [key, value] of Object.entries(buildEvent.buildMetadata.metadata || {})) {
-            model.buildMetadataMap.set(key, value);
-          }
+      } else if (buildEvent.aborted) {
+        this.aborted = buildEvent as build_event_stream.BuildEvent;
+      }
+      if (buildEvent.buildToolLogs) this.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
+      if (buildEvent.workspaceStatus) {
+        this.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
+      }
+      if (buildEvent.workflowConfigured) {
+        this.workflowConfigured = buildEvent.workflowConfigured as build_event_stream.WorkflowConfigured;
+      }
+      if (buildEvent.childInvocationsConfigured) {
+        this.childInvocationsConfigured = buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured;
+      }
+      if (buildEvent.workflowCommandCompleted && buildEvent.id?.workflowCommandCompleted?.invocationId) {
+        this.childInvocationCompletedByInvocationId.set(
+          buildEvent.id.workflowCommandCompleted.invocationId,
+          buildEvent.workflowCommandCompleted
+        );
+      }
+      if (buildEvent.childInvocationCompleted && buildEvent.id?.childInvocationCompleted?.invocationId) {
+        this.childInvocationCompletedByInvocationId.set(
+          buildEvent.id.childInvocationCompleted.invocationId,
+          buildEvent.childInvocationCompleted
+        );
+      }
+      if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") {
+        this.configuration = buildEvent.configuration as build_event_stream.Configuration;
+      }
+      if (buildEvent.workspaceInfo) {
+        this.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
+      }
+      if (buildEvent.optionsParsed) {
+        this.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
+      }
+      if (buildEvent.buildMetrics) {
+        this.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
+      }
+      if (buildEvent.buildToolLogs) {
+        this.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
+      }
+      if (buildEvent.unstructuredCommandLine) {
+        this.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+      }
+      if (buildEvent.buildMetadata) {
+        for (const [key, value] of Object.entries(buildEvent.buildMetadata.metadata || {})) {
+          this.buildMetadataMap.set(key, value);
         }
       }
     }
-    model.rootCauseTargetLabels = new Set(
-      [...model.completedMap.values()]
+    this.rootCauseTargetLabels = new Set(
+      [...this.completedMap.values()]
         .filter((e) => !e.buildEvent?.completed?.success)
         .map((e) => e.buildEvent?.children.filter((child) => child.actionCompleted?.label) || [])
         .flat()
         .map((child) => child.actionCompleted!.label)
     );
-    for (let label of model.completedMap.keys()) {
-      let buildEvent = model.completedMap.get(label)?.buildEvent;
-      let testResult = model.testSummaryMap.get(label)?.buildEvent?.testSummary;
+
+    for (let label of this.completedMap.keys()) {
+      let buildEvent = this.completedMap.get(label)?.buildEvent;
+      let testResult = this.testSummaryMap.get(label)?.buildEvent?.testSummary;
       if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FLAKY) {
-        model.flakyTest.push(buildEvent as build_event_stream.BuildEvent);
+        this.flakyTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FAILED_TO_BUILD) {
-        model.brokenTest.push(buildEvent as build_event_stream.BuildEvent);
+        this.brokenTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.PASSED) {
-        model.succeededTest.push(buildEvent as build_event_stream.BuildEvent);
+        this.succeededTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.TIMEOUT) {
-        model.timeoutTest.push(buildEvent as build_event_stream.BuildEvent);
+        this.timeoutTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult) {
-        model.failedTest.push(buildEvent as build_event_stream.BuildEvent);
+        this.failedTest.push(buildEvent as build_event_stream.BuildEvent);
       }
 
       if (buildEvent?.completed?.success) {
-        model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
+        this.succeeded.push(buildEvent as build_event_stream.BuildEvent);
       } else {
-        model.failed.push(buildEvent as build_event_stream.BuildEvent);
+        this.failed.push(buildEvent as build_event_stream.BuildEvent);
       }
     }
 
-    for (let item of model.workspaceStatus?.item || []) {
-      model.workspaceStatusMap.set(item.key, item.value);
+    for (let item of this.workspaceStatus?.item || []) {
+      this.workspaceStatusMap.set(item.key, item.value);
     }
-    for (let log of model.toolLogs?.log || []) {
-      model.toolLogMap.set(log.name, new TextDecoder().decode(log.contents || new Uint8Array()));
+    for (let log of this.toolLogs?.log || []) {
+      this.toolLogMap.set(log.name, new TextDecoder().decode(log.contents || new Uint8Array()));
     }
-    for (let commandLine of model.structuredCommandLine) {
+    for (let commandLine of this.structuredCommandLine) {
       for (let section of commandLine.sections || []) {
         for (let option of section.optionList?.option || []) {
-          model.optionsMap.set(option.optionName, option.optionValue);
+          this.optionsMap.set(option.optionName, option.optionValue);
           if (option.optionName == "client_env") {
             let pair = option.optionValue.split("=");
             if (pair.length == 2) {
-              model.clientEnvMap.set(pair[0], pair[1]);
+              this.clientEnvMap.set(pair[0], pair[1]);
             }
           }
           if (option.optionName == "build_metadata") {
             let parts = option.optionValue.split("=");
             if (parts.length >= 2) {
               let key = parts.shift();
-              model.buildMetadataMap.set(key!, parts.join("="));
+              this.buildMetadataMap.set(key!, parts.join("="));
             }
           }
         }
       }
     }
-    return model;
   }
 
   getUser(possessive: boolean) {
-    let invocationUser = this.getPrimaryInvocation().user;
+    let invocationUser = this.invocation.user;
     if (invocationUser) {
       return possessive ? `${invocationUser}'s` : invocationUser;
     }
@@ -261,24 +252,18 @@ export default class InvocationModel {
    * If no groups are provided or if the group is not found, null is returned.
    */
   findOwnerGroup(groups: grp.Group[] | undefined) {
-    if (this.invocations.length > 1) {
-      console.error("findOwnerGroup may only be called from single-invocation views.");
-      return null;
-    }
-
     if (!groups?.length) return null;
 
-    const invocation = this.getPrimaryInvocation();
-    return groups.find((group) => group.id === invocation.acl?.groupId) || null;
+    return groups.find((group) => group.id === this.invocation.acl?.groupId) || null;
   }
 
   isAnonymousInvocation(): boolean {
-    return this.getPrimaryInvocation().acl?.groupId === "";
+    return this.invocation.acl?.groupId === "";
   }
 
   hasCacheWriteCapability(): boolean {
     return Boolean(
-      this.getPrimaryInvocation().createdWithCapabilities?.some(
+      this.invocation.createdWithCapabilities?.some(
         (existingCapability) =>
           existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY ||
           existingCapability == api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY
@@ -286,28 +271,20 @@ export default class InvocationModel {
     );
   }
 
-  getId(): string {
-    return this.getPrimaryInvocation().invocationId;
-  }
-
-  getPrimaryInvocation(): invocation.Invocation {
-    return this.invocations[0];
-  }
-
-  getInvocations(): invocation.Invocation[] {
-    return this.invocations;
+  getInvocationId(): string {
+    return this.invocation.invocationId;
   }
 
   getAttempt() {
-    return this.getPrimaryInvocation().attempt;
+    return this.invocation.attempt;
   }
 
   getHost() {
-    return this.getPrimaryInvocation().host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
   }
 
   getTags(): invocation.Invocation.Tag[] {
-    return (capabilities.config.tagsUiEnabled && this.getPrimaryInvocation().tags) || [];
+    return (capabilities.config.tagsUiEnabled && this.invocation.tags) || [];
   }
 
   booleanCommandLineOption(name: string, defaultValue = false): boolean {
@@ -392,20 +369,20 @@ export default class InvocationModel {
     return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
   }
 
-  getGithubRepo() {
-    return this.getPrimaryInvocation().repoUrl || "";
+  getGithubRepo(): string {
+    return this.invocation.repoUrl;
   }
 
-  getGithubSHA() {
-    return this.getPrimaryInvocation().commitSha || "";
+  getGithubSHA(): string {
+    return this.invocation.commitSha;
   }
 
   getGithubRef() {
     return this.clientEnvMap.get("GITHUB_REF");
   }
 
-  getGithubBranch() {
-    return this.getPrimaryInvocation().branchName || "";
+  getGithubBranch(): string {
+    return this.invocation.branchName;
   }
 
   getGithubRun() {
@@ -425,7 +402,7 @@ export default class InvocationModel {
   }
 
   getRole(): string {
-    return this.getPrimaryInvocation().role ?? "";
+    return this.invocation.role;
   }
 
   isWorkflowInvocation() {
@@ -460,10 +437,7 @@ export default class InvocationModel {
 
   getAllPatterns(patternLimit?: number) {
     let patterns =
-      this.getPrimaryInvocation().pattern ||
-      this.expanded?.id?.pattern?.pattern ||
-      this.aborted?.id?.pattern?.pattern ||
-      [];
+      this.invocation.pattern || this.expanded?.id?.pattern?.pattern || this.aborted?.id?.pattern?.pattern || [];
     if (patternLimit && patterns.length > patternLimit) {
       return `${patterns.slice(0, patternLimit).join(", ")} and ${patterns.length - 3} more`;
     }
@@ -494,7 +468,7 @@ export default class InvocationModel {
     if (this.toolLogMap.has("elapsed time")) {
       return +this.toolLogMap.get("elapsed time")! * 1000000;
     }
-    return +(this.getPrimaryInvocation().durationUsec ?? 0);
+    return +(this.invocation.durationUsec ?? 0);
   }
 
   getDurationSeconds() {
@@ -508,7 +482,7 @@ export default class InvocationModel {
   }
 
   getTiming() {
-    let invocationStatus = this.getPrimaryInvocation().invocationStatus;
+    let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return "disconnected";
     }
@@ -519,12 +493,9 @@ export default class InvocationModel {
   }
 
   getStatus() {
-    const invocation = this.getPrimaryInvocation();
-    if (!invocation) return "";
-
-    switch (invocation.invocationStatus) {
+    switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
-        return invocation.success ? "Succeeded" : "Failed";
+        return this.invocation.success ? "Succeeded" : "Failed";
       case InvocationStatus.PARTIAL_INVOCATION_STATUS:
         return "In progress...";
       case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
@@ -535,12 +506,9 @@ export default class InvocationModel {
   }
 
   getStatusClass() {
-    const invocation = this.getPrimaryInvocation();
-    if (!invocation) return "";
-
-    switch (invocation.invocationStatus) {
+    switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
-        return invocation.success ? "success" : "failure";
+        return this.invocation.success ? "success" : "failure";
       case InvocationStatus.PARTIAL_INVOCATION_STATUS:
         return "in-progress";
       case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
@@ -551,15 +519,15 @@ export default class InvocationModel {
   }
 
   isComplete() {
-    return this.getPrimaryInvocation().invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
+    return this.invocation.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 
   isInProgress() {
-    return this.getPrimaryInvocation().invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
+    return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
   getFaviconType() {
-    let invocationStatus = this.getPrimaryInvocation().invocationStatus;
+    let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
     }
@@ -573,7 +541,7 @@ export default class InvocationModel {
   }
 
   getStatusIcon() {
-    let invocationStatus = this.getPrimaryInvocation().invocationStatus;
+    let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
     }
@@ -673,7 +641,7 @@ export default class InvocationModel {
   }
 
   hasChunkedEventLogs(): boolean {
-    return this.getPrimaryInvocation().hasChunkedEventLogs || false;
+    return this.invocation.hasChunkedEventLogs || false;
   }
 
   fetchSuggestions(service: string) {
@@ -681,7 +649,7 @@ export default class InvocationModel {
     if (service == "openai") {
       req.service = suggestion.SuggestionService.OPENAI;
     }
-    req.invocationId = this.getId();
+    req.invocationId = this.getInvocationId();
     return rpcService.service
       .getSuggestion(req)
       .then((res) => {

@@ -145,7 +145,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         if (!response.invocation || response.invocation.length === 0) {
           throw new BuildBuddyError("NotFound", "Invocation not found.");
         }
-        const model = InvocationModel.modelFromInvocations(response.invocation[0], response.invocation.slice(1));
+        const model = new InvocationModel(response.invocation[0]);
         // Only show the in-progress screen if we don't have any events yet.
         const showInProgressScreen = model.isInProgress() && !response.invocation[0].event?.length;
         this.setState({
@@ -176,7 +176,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (!model.hasChunkedEventLogs()) {
       // Use the inlined console buffer if this invocation was created before
       // log chunking existed.
-      return model.getPrimaryInvocation().consoleBuffer;
+      return model.invocation.consoleBuffer;
     }
     return this.logsModel?.getLogs() ?? "";
   }
@@ -261,7 +261,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
-      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model?.getPrimaryInvocation().attempt ?? 0));
+      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
     };
 
     const suggestions = getSuggestions({
@@ -274,17 +274,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
       <div className="invocation">
         <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
           {this.props.preferences.denseModeEnabled ? (
-            <DenseInvocationOverviewComponent
-              user={this.props.user}
-              invocationId={this.props.invocationId}
-              model={this.state.model}
-            />
+            <DenseInvocationOverviewComponent user={this.props.user} model={this.state.model} />
           ) : (
-            <InvocationOverviewComponent
-              invocationId={this.props.invocationId}
-              model={this.state.model}
-              user={this.props.user}
-            />
+            <InvocationOverviewComponent user={this.props.user} model={this.state.model} />
           )}
           {!isBazelInvocation && (
             <div className="container">

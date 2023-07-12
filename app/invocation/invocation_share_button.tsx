@@ -70,14 +70,10 @@ export default class InvocationShareButtonComponent extends React.Component<
   private getInitialState(): State {
     return {
       isOpen: false,
-      acl: this.getInvocation()?.acl ?? undefined,
+      acl: this.props.model.invocation.acl ?? undefined,
       isLoading: false,
       keyboardShortcutHandle: "",
     };
-  }
-
-  private getInvocation(): invocation.Invocation | undefined {
-    return this.props.model.getInvocations().find((invocation) => invocation.invocationId === this.props.invocationId);
   }
 
   private onShareButtonClick() {
@@ -94,7 +90,7 @@ export default class InvocationShareButtonComponent extends React.Component<
 
   private async onVisibilitySelectionChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const visibility = e.target.value as VisibilitySelection;
-    const newAcl = new acl.ACL(this.getInvocation()?.acl ?? {});
+    const newAcl = new acl.ACL(this.props.model.invocation.acl ?? {});
     if (!newAcl.othersPermissions) {
       this.setState({ error: "Something went wrong. Refresh the page and try again." });
       return;
@@ -127,7 +123,7 @@ export default class InvocationShareButtonComponent extends React.Component<
     }
     const owningGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isEnabledByOrg = Boolean(owningGroup?.sharingEnabled);
-    const isUnauthenticatedBuild = Boolean(!this.getInvocation()?.acl?.userId?.id);
+    const isUnauthenticatedBuild = Boolean(!this.props.model.invocation.acl?.userId?.id);
     const canChangePermissions = isEnabledByOrg && !isUnauthenticatedBuild;
 
     const visibility: VisibilitySelection = this.state.acl?.othersPermissions?.read ? "public" : "group";

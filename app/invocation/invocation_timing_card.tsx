@@ -95,7 +95,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     this.setState({ loading: true });
     rpcService
-      .fetchBytestreamFile(profileFile.uri, this.props.model.getId() ?? "", isGzipped ? "arraybuffer" : "json")
+      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), isGzipped ? "arraybuffer" : "json")
       .then((contents: any) => {
         if (isGzipped) {
           contents = parseProfile(pako.inflate(contents, { to: "string" }));
@@ -113,7 +113,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     }
 
     try {
-      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile.uri, this.props.model.getId() ?? "");
+      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile.uri, this.props.model.getInvocationId());
     } catch {
       console.error("Error downloading bytestream timing profile");
     }

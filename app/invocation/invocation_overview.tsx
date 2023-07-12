@@ -31,7 +31,6 @@ import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;
-  invocationId: string;
   user?: User;
 }
 export default class InvocationOverviewComponent extends React.Component<Props> {
@@ -104,9 +103,9 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
                 {parentWorkflowId ? "Workflow" : "Bazel invocation"} {parentInvocationId}
               </Link>
             )}
-            <span>Invocation {this.props.invocationId}</span>
+            <span>Invocation {this.props.model.getInvocationId()}</span>
           </div>
-          <InvocationButtons invocationId={this.props.invocationId} model={this.props.model} user={this.props.user} />
+          <InvocationButtons model={this.props.model} user={this.props.user} />
         </div>
         <div className="titles">
           {(this.props.model.isBazelInvocation() || this.props.model.isHostedBazelInvocation()) && (
