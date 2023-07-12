@@ -8,7 +8,6 @@ import (
 	"reflect"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -152,11 +151,6 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 		// name like "POST /rpc/BuildBuddyService/", it will instead appear
 		// with the name: "POST /rpc/BuildBuddyService/GetUser".
 		ctx := r.Context()
-		span := trace.SpanFromContext(ctx)
-		if span.IsRecording() {
-			span.SetName(fmt.Sprintf("%s %s", r.Method, r.RequestURI))
-		}
-
 		reqVal := reflect.ValueOf(ctx.Value(contextProtoMessageKey).(proto.Message))
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(ctx), reqVal}
 		rspArr := method.Call(args)
