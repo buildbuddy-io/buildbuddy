@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/current_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -170,6 +171,7 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, metho
 		AuditLogID:    fmt.Sprintf("AL%d", random.RandUint64()),
 		GroupID:       u.GetGroupID(),
 		EventTimeUsec: time.Now().UnixMicro(),
+		ClientIP:      current_request.ClientIP(ctx),
 		AuthUserID:    u.GetUserID(),
 		AuthUserEmail: ui.Email,
 		Method:        method,
