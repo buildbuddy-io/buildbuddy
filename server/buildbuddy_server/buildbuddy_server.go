@@ -1378,7 +1378,7 @@ func (s *BuildBuddyServer) GetEncryptionConfig(ctx context.Context, request *enp
 }
 
 func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
-	al := s.env.GetAuditLog()
+	al := s.env.GetAuditLogger()
 	if al == nil {
 		return nil, status.FailedPreconditionError("audit logs not enabled in the server")
 	}
