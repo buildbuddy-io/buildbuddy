@@ -15,7 +15,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/ziputil",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//proto",
     ],
 )

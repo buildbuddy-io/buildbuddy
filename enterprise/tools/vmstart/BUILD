@@ -27,7 +27,7 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/status",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/prototext",
     ],

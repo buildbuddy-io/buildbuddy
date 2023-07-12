@@ -16,7 +16,7 @@ go_library(
         "@com_github_bojand_ghz//printer",
         "@com_github_bojand_ghz//runner",
         "@com_github_jhump_protoreflect//desc",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",

@@ -55,7 +55,7 @@ go_library(
         "//server/util/scratchspace",
         "//server/util/status",
         "//server/util/tracing",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
     ],
 )

@@ -22,7 +22,7 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
@@ -50,7 +50,7 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//status",
     ],

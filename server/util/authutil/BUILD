@@ -10,7 +10,7 @@ go_library(
         "//server/util/alert",
         "//server/util/role",
         "//server/util/status",
-        "@org_golang_google_genproto//googleapis/rpc/errdetails",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],

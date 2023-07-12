@@ -21,7 +21,7 @@ go_library(
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
         "@org_golang_x_sync//errgroup",

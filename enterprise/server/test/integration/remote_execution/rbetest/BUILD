@@ -65,7 +65,7 @@ go_library(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/prototext",

@@ -174,18 +174,6 @@ gazelle_binary(
 # gazelle:exclude **/node_modules/**
 # TODO(siggisim): remove once we support .css imports properly
 # gazelle:exclude website/**
-# gazelle:resolve proto go google/longrunning/operations.proto @org_golang_google_genproto//googleapis/longrunning
-# gazelle:resolve proto go google/rpc/annotations.proto @org_golang_google_genproto//googleapis/api/annotations
-# gazelle:resolve proto go google/rpc/client.proto @org_golang_google_genproto//googleapis/rpc/client
-# gazelle:resolve proto go google/rpc/code.proto @org_golang_google_genproto//googleapis/rpc/code
-# gazelle:resolve proto go google/rpc/field_behavior.proto @org_golang_google_genproto//googleapis/rpc/field_behavior
-# gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto//googleapis/rpc/status
-# gazelle:resolve proto proto google/longrunning/operations.proto @googleapis//google/longrunning:operations_proto
-# gazelle:resolve proto proto google/rpc/annotations.proto @googleapis//google/rpc:annotations_proto
-# gazelle:resolve proto proto google/rpc/client.proto @googleapis//google/rpc:client_proto
-# gazelle:resolve proto proto google/rpc/code.proto @googleapis//google/rpc:code_proto
-# gazelle:resolve proto proto google/rpc/field_behavior.proto @googleapis//google/rpc:field_behavior_proto
-# gazelle:resolve proto proto google/rpc/status.proto @googleapis//google/rpc:status_proto
 gazelle(
     name = "gazelle",
     gazelle = ":bb_gazelle_binary",

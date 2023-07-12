@@ -29,7 +29,7 @@ go_test(
         "//proto:raft_go_proto",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto//googleapis/rpc/status",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
     ],
 )

@@ -61,6 +61,6 @@ go_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common_go_proto",
-        "@org_golang_google_genproto//googleapis/rpc/status",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )

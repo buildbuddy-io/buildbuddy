@@ -12,7 +12,7 @@ go_library(
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@com_github_zeebo_blake3//:blake3",
-        "@org_golang_google_genproto//googleapis/rpc/errdetails",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",

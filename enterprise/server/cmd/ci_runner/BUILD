@@ -37,7 +37,7 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@com_github_logrusorgru_aurora//:aurora",
         "@in_gopkg_yaml_v2//:yaml_v2",
-        "@org_golang_google_genproto//googleapis/bytestream",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/durationpb",
