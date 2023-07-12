@@ -2420,7 +2420,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_googleapis_gax_go_v2",
         build_directives = [
-            "gazelle:resolve go google.golang.org/api/googleapi @org_golang_google_api//googleapi:googleapi",
+            "gazelle:resolve proto go google/rpc/code.proto @org_golang_google_genproto//googleapis/rpc/code",
+            "gazelle:resolve proto proto google/rpc/code.proto @googleapis//google/rpc:code_proto",
         ],
         importpath = "github.com/googleapis/gax-go/v2",
         sum = "h1:9V9PWXEsWnPpQhu/PeQIkS4eGzMlTLGgt80cUUI8Ki4=",
@@ -2448,10 +2449,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_googlecloudplatform_cloudsql_proxy",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/api/googleapi @org_golang_google_api//googleapi:googleapi",
-            "gazelle:resolve go google.golang.org/api/sqladmin/v1beta4 @org_golang_google_api//sqladmin/v1beta4:v1beta4",
-        ],
         importpath = "github.com/GoogleCloudPlatform/cloudsql-proxy",
         sum = "h1:PKOekn3HT5IdC0i/6xj/QGGXdCm/T57yP0RAbmtPa3k=",
         version = "v1.33.8",
@@ -5326,9 +5323,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_google_cloud_go",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/api/googleapi @org_golang_google_api//googleapi:googleapi",
-        ],
         importpath = "cloud.google.com/go",
         sum = "h1:wwearW+L7sAPSomPIgJ3bVn6Ck00HGQnn5HMLwf0azo=",
         version = "v0.110.3",
@@ -6003,17 +5997,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_google_cloud_go_storage",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/api/googleapi @org_golang_google_api//googleapi:googleapi",
-            "gazelle:resolve go google.golang.org/api/option @org_golang_google_api//option:option",
-            "gazelle:resolve go google.golang.org/api/iterator @org_golang_google_api//iterator:iterator",
-            "gazelle:resolve go google.golang.org/api/option/internaloption @org_golang_google_api//option/internaloption:internaloption",
-            "gazelle:resolve go google.golang.org/api/transport/grpc @org_golang_google_api//transport/grpc:grpc",
-            "gazelle:resolve go google.golang.org/api/storage/v1 @org_golang_google_api//storage/v1:storage",
-            "gazelle:resolve go google.golang.org/api/iamcredentials/v1 @org_golang_google_api//iamcredentials/v1:iamcredentials",
-            "gazelle:resolve go google.golang.org/api/transport/http @org_golang_google_api//transport/http:http",
-            "gazelle:resolve go google.golang.org/api/transport @org_golang_google_api//transport:transport",
-        ],
         importpath = "cloud.google.com/go/storage",
         sum = "h1:+S3LjjEN2zZ+L5hOwj4+1OkGCsLVe0NzpXKQ1pSdTCI=",
         version = "v1.31.0",
