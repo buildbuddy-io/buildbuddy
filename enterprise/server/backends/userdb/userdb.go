@@ -246,7 +246,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *t
 	if err != nil {
 		return "", err
 	}
-	if err = d.addUserToGroup(ctx, tx, userID, groupID, role.Default); err != nil {
+	if err = d.addUserToGroup(tx, userID, groupID); err != nil {
 		return "", err
 	}
 	return groupID, nil
@@ -326,7 +326,7 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 	return d.h.DB(ctx).Exec(q, args...).Error
 }
 
-func (d *UserDB) addUserToGroup(ctx context.Context, tx *db.DB, userID, groupID string, userRole role.Role) (retErr error) {
+func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) (retErr error) {
 	// Count the number of users in the group.
 	// If there are no existing users, then user should join with admin role,
 	// otherwise they should join with provided role.
@@ -338,15 +338,15 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx *db.DB, userID, groupID 
 	if err != nil {
 		return err
 	}
+	r := role.Default
 	if row.Count == 0 {
-		userRole = role.Admin
+		r = role.Admin
 	}
 
 	existing, err := getUserGroup(tx, userID, groupID)
 	if err != nil && !db.IsRecordNotFound(err) {
 		return err
 	}
-
 	if existing != nil {
 		if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
 			return tx.Exec(`
@@ -356,7 +356,7 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx *db.DB, userID, groupID 
 				AND group_group_id = ?
 				`,
 				grpb.GroupMembershipStatus_MEMBER,
-				userRole,
+				r,
 				userID,
 				groupID,
 			).Error
@@ -366,7 +366,7 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx *db.DB, userID, groupID 
 
 	return tx.Exec(
 		`INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)`,
-		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), userRole,
+		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
 	).Error
 }
 
@@ -397,7 +397,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 		membershipStatus = grpb.GroupMembershipStatus_REQUESTED
 		if group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(tu.Email) {
 			membershipStatus = grpb.GroupMembershipStatus_MEMBER
-			return d.addUserToGroup(ctx, tx, userID, groupID, role.Default)
+			return d.addUserToGroup(tx, userID, groupID)
 		}
 
 		// Check if there's an existing request and return AlreadyExists if so.
@@ -545,7 +545,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_ADD:
-				if err := d.addUserToGroup(ctx, tx, update.GetUserId().GetId(), groupID, role.FromProto(update.GetRole())); err != nil {
+				if err := d.addUserToGroup(tx, update.GetUserId().GetId(), groupID); err != nil {
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_UNKNOWN_MEMBERSHIP_ACTION:
