@@ -38,6 +38,8 @@ write_file(
                     "assign",
                     "atomicalign",
                     # "cgocall",
+                    "buildtag",
+                    "cgocall",
                     "composites",
                     "copylocks",
                     "deepequalerrors",
