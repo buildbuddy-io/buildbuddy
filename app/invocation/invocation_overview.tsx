@@ -103,7 +103,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
                 {parentWorkflowId ? "Workflow" : "Bazel invocation"} {parentInvocationId}
               </Link>
             )}
-            <span>Invocation {this.props.model.getId()}</span>
+            <span>Invocation {this.props.model.getInvocationId()}</span>
           </div>
           <InvocationButtons model={this.props.model} user={this.props.user} />
         </div>

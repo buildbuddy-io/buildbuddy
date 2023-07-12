@@ -271,7 +271,7 @@ export default class InvocationModel {
     );
   }
 
-  getId(): string {
+  getInvocationId(): string {
     return this.invocation.invocationId;
   }
 
@@ -649,7 +649,7 @@ export default class InvocationModel {
     if (service == "openai") {
       req.service = suggestion.SuggestionService.OPENAI;
     }
-    req.invocationId = this.getId();
+    req.invocationId = this.getInvocationId();
     return rpcService.service
       .getSuggestion(req)
       .then((res) => {

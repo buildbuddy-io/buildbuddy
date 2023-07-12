@@ -59,7 +59,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
     this.setState({ isDeleteModalLoading: true, deleteModalError: null });
     try {
       await rpcService.service.deleteInvocation(
-        new invocation.DeleteInvocationRequest({ invocationId: this.props.model.getId() })
+        new invocation.DeleteInvocationRequest({ invocationId: this.props.model.getInvocationId() })
       );
       router.navigateHome();
     } catch (e) {

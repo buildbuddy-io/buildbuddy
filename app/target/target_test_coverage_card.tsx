@@ -37,7 +37,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
-    if (!testCoverageUrl || !this.props.model.getId()) {
+    if (!testCoverageUrl || !this.props.model.getInvocationId()) {
       this.setState({ lcov: null });
       return;
     }
@@ -47,7 +47,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       return;
     }
 
-    const invocationId = this.props.model.getId();
+    const invocationId = this.props.model.getInvocationId();
     if (!invocationId) {
       this.setState({ lcov: null });
       return;
@@ -112,7 +112,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
                           repoPath
                             ? `${repoPath}${
                                 record.sourceFile
-                              }?lcov=${testCoverageUrl}&invocation_id=${this.props.model.getId()}&commit=${this.props.model.getCommit()}`
+                              }?lcov=${testCoverageUrl}&invocation_id=${this.props.model.getInvocationId()}&commit=${this.props.model.getCommit()}`
                             : "#"
                         }>
                         <span className="coverage-source">{record.sourceFile}</span>:{" "}

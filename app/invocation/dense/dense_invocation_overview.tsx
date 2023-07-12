@@ -28,7 +28,7 @@ export default class DenseInvocationOverviewComponent extends React.Component<Pr
               {isBazelInvocation ? <>Invocation</> : <>Workflow invocation</>}
             </div>
             <div className="dense-invocation-invocation-id">
-              {this.props.model.getId()} ({this.props.model.getFormattedStartedDate()})
+              {this.props.model.getInvocationId()} ({this.props.model.getFormattedStartedDate()})
             </div>
           </div>
           <InvocationButtons model={this.props.model} user={this.props.user} />

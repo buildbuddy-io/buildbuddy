@@ -38,14 +38,14 @@ export default class InvocationButtons extends React.Component<InvocationButtons
     return (
       <div className="invocation-top-right-buttons">
         {showRerunButton && <WorkflowRerunButton model={this.props.model} />}
-        {showCancelButton && <InvocationCancelButton invocationId={this.props.model.getId()} />}
-        <InvocationCompareButton invocationId={this.props.model.getId()} />
+        {showCancelButton && <InvocationCancelButton invocationId={this.props.model.getInvocationId()} />}
+        <InvocationCompareButton invocationId={this.props.model.getInvocationId()} />
 
         <SuggestionButton user={this.props.user} model={this.props.model} />
         <InvocationShareButton
           user={this.props.user}
           model={this.props.model}
-          invocationId={this.props.model.getId()}
+          invocationId={this.props.model.getInvocationId()}
         />
         <InvocationMenuComponent user={this.props.user} model={this.props.model} />
       </div>
