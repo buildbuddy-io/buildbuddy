@@ -291,8 +291,8 @@ func (t *TestTargetStatus) TableOptions() string {
 
 type AuditLog struct {
 	AuditLogID    string
-	GroupID       string `gorm:"primaryKey;"`
-	EventTimeUsec int64  `gorm:"primaryKey;"`
+	GroupID       string
+	EventTimeUsec int64
 
 	AuthAPIKeyID    string
 	AuthAPIKeyLabel string

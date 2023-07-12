@@ -71,19 +71,12 @@ message Entry {
   ResourceRequest request = 5;
 }
 
-message User {
-  string user_id = 1;
-  string user_email = 2;
-}
-
 message GetAuditLogsRequest {
   context.RequestContext request_context = 1;
 
   string page_token = 2;
   google.protobuf.Timestamp timestamp_after = 3;
   google.protobuf.Timestamp timestamp_before = 4;
-  ResourceID resource = 5;
-  string method = 6;
 }
 
 message GetAuditLogsResponse {
