@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/awslabs/soci-snapshotter/compression"
 	"github.com/awslabs/soci-snapshotter/soci"
 	"github.com/awslabs/soci-snapshotter/ztoc"
+	"github.com/awslabs/soci-snapshotter/ztoc/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -62,7 +62,7 @@ const (
 	// The SOCI Index build tool. !!! WARNING !!! This is embedded in both the
 	// ZToCs and SOCI index, so changing it will invalidate all previously
 	// generated and stored soci artifacts, forcing a re-pull and re-index.
-	buildToolIdentifier = "BuildBuddy SOCI Artifact Store v0.1"
+	buildToolIdentifier = "BuildBuddy SOCI Artifact Store v0.2"
 
 	// Media type for binary data (e.g. ZTOC format).
 	octetStreamMediaType = "application/octet-stream"
