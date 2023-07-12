@@ -1301,6 +1301,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_docker_docker",
         importpath = "github.com/docker/docker",
+        # TODO(sluongng): remove this patch once https://github.com/moby/moby/issues/45935 is fixed.
+        patch_args = ["-p1"],
+        patches = ["@{}//buildpatches:docker-host.patch".format(workspace_name)],
         sum = "h1:eATx+oLz9WdNVkQrr0qjQ8HvRJ4bOOxfzEo8R+dA3cg=",
         version = "v24.0.2+incompatible",
     )
