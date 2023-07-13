@@ -223,6 +223,9 @@ func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConf
 	v.setStringValue(actionNameFieldName, wfc.GetActionName())
 }
 
+// IsImportantEvent returns true for events that are non-skippable.
+// Events are usually not skipped, but when processing extra-large invocations,
+// non-important events may be dropped to conserve resources.
 func IsImportantEvent(event *build_event_stream.BuildEvent) bool {
 	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
