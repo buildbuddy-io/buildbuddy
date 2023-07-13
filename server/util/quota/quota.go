@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/current_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -25,7 +25,7 @@ func GetKey(ctx context.Context, env environment.Env) (string, error) {
 	if groupID := getGroupID(ctx, env); groupID != "" {
 		return groupID, nil
 	}
-	if ip := current_request.ClientIP(ctx); ip != "" {
+	if ip := clientip.Get(ctx); ip != "" {
 		return ip, nil
 	}
 	return "", status.InternalErrorf("quota key is empty")

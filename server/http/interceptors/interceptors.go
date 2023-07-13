@@ -22,7 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/current_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -127,7 +127,7 @@ func ClientIP(next http.Handler) http.Handler {
 		if ip, _, err := net.SplitHostPort(clientIP); err == nil {
 			clientIP = ip
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), current_request.ClientIPContextKey, clientIP)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientip.ContextKey, clientIP)))
 	})
 }
 

@@ -14,7 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/current_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -115,7 +115,7 @@ func addClientIPToContext(ctx context.Context) context.Context {
 	// For GCLB, the header format is [client supplied IP,]client IP, LB IP
 	// We always look at the client IP as seen by GCLB as the client supplied
 	// value can't be trusted if it's present.
-	return context.WithValue(ctx, current_request.ClientIPContextKey, ips[len(ips)-2])
+	return context.WithValue(ctx, clientip.ContextKey, ips[len(ips)-2])
 }
 
 func copyHeadersToContext(ctx context.Context) context.Context {
