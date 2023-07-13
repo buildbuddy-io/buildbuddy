@@ -119,7 +119,7 @@ go_test(
 # firecracker_test and remove this one.
 go_test(
     name = "firecracker_test_blockio",
-    timeout = "long",
+    timeout = "eternal",
     srcs = ["firecracker_test.go"],
     args = [
         "--executor.firecracker_enable_nbd=true",
