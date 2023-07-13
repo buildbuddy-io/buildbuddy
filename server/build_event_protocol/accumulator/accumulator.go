@@ -21,8 +21,9 @@ const (
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 	disableTargetTrackingFieldName        = "disableTargetTracking"
 
-	// The maximum number of important files and artifacts to possibly copy from cache -> blobstore.
-	// If more than this number are present, they will be dropped.
+	// The maximum number of important files and artifacts to possibly copy
+	// from cache -> blobstore. If more than this number are present, they
+	// will be dropped.
 	maxPersistableArtifacts = 1000
 )
 

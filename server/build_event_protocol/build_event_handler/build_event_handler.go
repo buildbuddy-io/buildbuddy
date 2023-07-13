@@ -67,8 +67,8 @@ const (
 	// How many workers to spin up for writing cache stats to the DB.
 	numStatsRecorderWorkers = 8
 
-	// How many workers to spin up for looking up invocations before webhooks are
-	// notified.
+	// How many workers to spin up for looking up invocations before
+	// webhooks are notified.
 	numWebhookInvocationLookupWorkers = 8
 	// How many workers to spin up for notifying webhooks.
 	numWebhookNotifyWorkers = 16
@@ -79,14 +79,16 @@ const (
 	// Default number of actions shown by bazel
 	defaultActionsShown = 8
 
-	// Exit code in Finished event indicating that the build was interrupted (i.e. killed by user).
+	// Exit code in Finished event indicating that the build was interrupted
+	// (i.e. killed by user).
 	InterruptedExitCode = 8
 
-	// First sequence number that we expect to see in the ordered build event
-	// stream.
+	// First sequence number that we expect to see in the ordered build
+	// event stream.
 	firstExpectedSequenceNumber = 1
 
-	// Skip unimportant events if more than this many are received in a single build event stream.
+	// Skip unimportant events if more than this many are received in a
+	// single build event stream.
 	maxEventCount = 100_000
 )
 
