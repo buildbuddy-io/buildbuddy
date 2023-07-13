@@ -20,6 +20,10 @@ const (
 	actionNameFieldName                   = "actionName"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 	disableTargetTrackingFieldName        = "disableTargetTracking"
+
+	// The maximum number of important files and artifacts to possibly copy from cache -> blobstore.
+	// If more than this number are present, they will be dropped.
+	maxPersistableArtifacts = 1000
 )
 
 var (
@@ -123,6 +127,13 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 			}
 			if u.Scheme == "bytestream" {
 				v.hasBytestreamTestActionOutputs = true
+
+				// To protect our backends from thrashing -- stop
+				// copying outputs if there are way too many. This can
+				// happen if a ruleset is buggy.
+				if len(v.testOutputURIs) >= maxPersistableArtifacts {
+					continue
+				}
 				v.testOutputURIs = append(v.testOutputURIs, u)
 			}
 		}

@@ -87,11 +87,7 @@ const (
 	firstExpectedSequenceNumber = 1
 
 	// Skip unimportant events if more than this many are received in a single build event stream.
-	maxEventCount = 10000
-
-	// The maximum number of important files and artifacts to possibly copy from cache -> blobstore.
-	// If more than this number are present, they will be dropped.
-	maxPersistableArtifacts = 1000
+	maxEventCount = 100_000
 )
 
 var (
@@ -435,13 +431,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(50) // Max concurrency when copying files from cache->blobstore.
-	for i, uri := range task.persist.URIs {
-		if i > maxPersistableArtifacts {
-			// To protect our backends from thrashing -- stop
-			// copying outputs if there are way too many. This can
-			// happen if a ruleset is buggy.
-			continue
-		}
+	for _, uri := range task.persist.URIs {
 		uri := uri
 		eg.Go(func() error {
 			fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
