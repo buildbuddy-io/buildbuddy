@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
+	sspb "github.com/awslabs/soci-snapshotter/proto"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -66,6 +67,7 @@ var (
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
 	sociArtifactStoreTarget = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
+	sociStoreKeychainPort   = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -102,7 +104,8 @@ const (
 	// The directory whre soci indexes are stored
 	sociIndexDirectory = "/var/lib/soci-snapshotter-grpc/indexes/"
 
-	sociStorePath = "/var/lib/soci-store/store"
+	sociStorePath         = "/var/lib/soci-store/store"
+	sociStoreCredCacheTtl = 1 * time.Hour
 )
 
 type pullStatus struct {
@@ -116,12 +119,13 @@ type Provider struct {
 	buildRoot               string
 	streamableImages        []string
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
+	sociStoreKeychainClient sspb.LocalKeychainClient
 }
 
 func runSociStore(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
-		cmd := exec.CommandContext(ctx, "soci-store", sociStorePath)
+		cmd := exec.CommandContext(ctx, "soci-store", "--local_keychain_port", strconv.Itoa(*sociStoreKeychainPort), sociStorePath)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
@@ -175,9 +179,14 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		)
 	}
 	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
+	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
 	if *imageStreamingEnabled {
 		var err error
 		sociArtifactStoreClient, err = intializeSociArtifactStoreClient(env, *sociArtifactStoreTarget)
+		if err != nil {
+			return nil, err
+		}
+		sociStoreKeychainClient, err = initializeSociStoreKeychainClient(env, fmt.Sprintf("grpc://localhost:%d", *sociStoreKeychainPort))
 		if err != nil {
 			return nil, err
 		}
@@ -187,6 +196,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		imageCacheAuth:          imageCacheAuthenticator,
 		streamableImages:        *streamableImages,
 		sociArtifactStoreClient: sociArtifactStoreClient,
+		sociStoreKeychainClient: sociStoreKeychainClient,
 		buildRoot:               buildRoot,
 	}, nil
 }
@@ -200,6 +210,17 @@ func intializeSociArtifactStoreClient(env environment.Env, target string) (socip
 	env.GetHealthChecker().AddHealthCheck(
 		"grpc_soci_artifact_store_connection", healthcheck.NewGRPCHealthCheck(conn))
 	return socipb.NewSociArtifactStoreClient(conn), nil
+}
+
+func initializeSociStoreKeychainClient(env environment.Env, target string) (sspb.LocalKeychainClient, error) {
+	conn, err := grpc_client.DialTarget(target)
+	if err != nil {
+		return nil, err
+	}
+	log.Infof("Connecting to soci store local keychain target: %s", target)
+	env.GetHealthChecker().AddHealthCheck(
+		"grpc_soci_store_keychain_connection", healthcheck.NewGRPCHealthCheck(conn))
+	return sspb.NewLocalKeychainClient(conn), nil
 }
 
 func (p *Provider) NewContainer(ctx context.Context, image string, options *PodmanOptions) (container.CommandContainer, error) {
@@ -224,6 +245,7 @@ func (p *Provider) NewContainer(ctx context.Context, image string, options *Podm
 		// controlling global image streaming.
 		imageStreamingEnabled:   *imageStreamingEnabled || p.sociArtifactStoreClient != nil,
 		sociArtifactStoreClient: p.sociArtifactStoreClient,
+		sociStoreKeychainClient: p.sociStoreKeychainClient,
 
 		buildRoot: p.buildRoot,
 		options:   options,
@@ -257,6 +279,7 @@ type podmanCommandContainer struct {
 
 	imageStreamingEnabled   bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
+	sociStoreKeychainClient sspb.LocalKeychainClient
 
 	options *PodmanOptions
 
@@ -720,6 +743,26 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 		// includes the fix for this bug.
 		// TODO(iain): diagnose and report the bug.
 		podmanArgs = append(podmanArgs, enableStreamingStoreArg)
+
+		if !creds.IsEmpty() {
+			// The soci-store, which streams container images from the remote
+			// repository and makes them available to the executor via a FUSE
+			// runs as a separate process and thus does not have access to the
+			// user-provided container access credentials. To address this,
+			// send the credentials to the store via this gRPC service so it
+			// can cache and use them.
+			putCredsReq := sspb.PutCredentialsRequest{
+				ImageName: c.image,
+				Credentials: &sspb.Credentials{
+					Username: creds.Username,
+					Password: creds.Password,
+				},
+				ExpiresInSeconds: int64(sociStoreCredCacheTtl.Seconds()),
+			}
+			if _, err := c.sociStoreKeychainClient.PutCredentials(ctx, &putCredsReq); err != nil {
+				return err
+			}
+		}
 	}
 
 	if !creds.IsEmpty() {
