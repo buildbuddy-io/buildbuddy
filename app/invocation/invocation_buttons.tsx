@@ -10,7 +10,6 @@ import SuggestionButton from "./suggestion_button";
 
 export interface InvocationButtonsProps {
   model: InvocationModel;
-  invocationId: string;
   user?: User;
 }
 
@@ -20,7 +19,7 @@ export default class InvocationButtons extends React.Component<InvocationButtons
   };
 
   private canRerunWorkflow() {
-    if (!this.props.user?.groups.some((group) => group.id === this.props.model.getPrimaryInvocation().acl?.groupId)) {
+    if (!this.props.user?.groups.some((group) => group.id === this.props.model.invocation.acl?.groupId)) {
       return false;
     }
 
@@ -39,16 +38,16 @@ export default class InvocationButtons extends React.Component<InvocationButtons
     return (
       <div className="invocation-top-right-buttons">
         {showRerunButton && <WorkflowRerunButton model={this.props.model} />}
-        {showCancelButton && <InvocationCancelButton invocationId={this.props.invocationId} />}
-        <InvocationCompareButton invocationId={this.props.invocationId} />
+        {showCancelButton && <InvocationCancelButton invocationId={this.props.model.getInvocationId()} />}
+        <InvocationCompareButton invocationId={this.props.model.getInvocationId()} />
 
         <SuggestionButton user={this.props.user} model={this.props.model} />
-        <InvocationShareButton user={this.props.user} model={this.props.model} invocationId={this.props.invocationId} />
-        <InvocationMenuComponent
+        <InvocationShareButton
           user={this.props.user}
           model={this.props.model}
-          invocationId={this.props.invocationId}
+          invocationId={this.props.model.getInvocationId()}
         />
+        <InvocationMenuComponent user={this.props.user} model={this.props.model} />
       </div>
     );
   }

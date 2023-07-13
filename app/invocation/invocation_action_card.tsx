@@ -48,7 +48,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const digest = parseDigest(this.props.search.get("actionDigest") ?? "");
     const actionUrl = `bytestream://${this.getCacheAddress()}/blobs/${digest.hash}/${digest.sizeBytes ?? 1}`;
     rpcService
-      .fetchBytestreamFile(actionUrl, this.props.model.getId() ?? "", "arraybuffer")
+      .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
         let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
         this.setState({
@@ -65,7 +65,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     let inputRootFile =
       "bytestream://" + this.getCacheAddress() + "/blobs/" + rootDigest.hash + "/" + rootDigest.sizeBytes;
     rpcService
-      .fetchBytestreamFile(inputRootFile, this.props.model.getId() ?? "", "arraybuffer")
+      .fetchBytestreamFile(inputRootFile, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
         let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         let inputDirs: InputNode[] = tempRoot.directories.map(
@@ -91,7 +91,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const digest = parseDigest(digestParam ?? "");
     const actionResultUrl = `actioncache://${this.getCacheAddress()}/blobs/ac/${digest.hash}/${digest.sizeBytes ?? 1}`;
     rpcService
-      .fetchBytestreamFile(actionResultUrl, this.props.model.getId() ?? "", "arraybuffer")
+      .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
         const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
         this.setState({
@@ -112,7 +112,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       actionResult.stdoutDigest?.sizeBytes;
 
     rpcService
-      .fetchBytestreamFile(stdoutUrl, this.props.model.getId() ?? "")
+      .fetchBytestreamFile(stdoutUrl, this.props.model.getInvocationId())
       .then((content: string) => {
         this.setState({
           stdout: content,
@@ -128,7 +128,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "/" +
       actionResult.stderrDigest?.sizeBytes;
     rpcService
-      .fetchBytestreamFile(stderrUrl, this.props.model.getId() ?? "")
+      .fetchBytestreamFile(stderrUrl, this.props.model.getInvocationId())
       .then((content: string) => {
         this.setState({
           stderr: content,
@@ -146,7 +146,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "/" +
       action.commandDigest?.sizeBytes;
     rpcService
-      .fetchBytestreamFile(commandFile, this.props.model.getId() ?? "", "arraybuffer")
+      .fetchBytestreamFile(commandFile, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
         this.setState({
           command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
@@ -170,7 +170,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     rpcService.downloadBytestreamFile(
       file.path,
       "bytestream://" + this.getCacheAddress() + "/blobs/" + file.digest?.hash + "/" + file.digest?.sizeBytes,
-      this.props.model.getId() ?? ""
+      this.props.model.getInvocationId()
     );
   }
 
@@ -294,11 +294,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
     if (node.type == "file") {
-      rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getId() ?? "");
+      rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getInvocationId());
       return;
     }
     rpcService
-      .fetchBytestreamFile(dirUrl, this.props.model.getId() ?? "", "arraybuffer")
+      .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
         let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         this.state.treeShaToExpanded.set(digestString, true);

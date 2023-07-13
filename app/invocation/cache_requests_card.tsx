@@ -139,7 +139,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     rpc_service.service
       .getCacheScoreCard(
         cache.GetCacheScoreCardRequest.create({
-          invocationId: this.props.model.getId(),
+          invocationId: this.props.model.getInvocationId(),
           orderBy: this.getOrderBy(),
           descending: this.getDescending(),
           groupBy: this.getGroupBy(),
@@ -183,7 +183,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   private getActionUrl(digestHash: string) {
-    return `/invocation/${this.props.model.getId()}?actionDigest=${digestHash}#action`;
+    return `/invocation/${this.props.model.getInvocationId()}?actionDigest=${digestHash}#action`;
   }
 
   private hasSavingsData(result: cache.ScoreCard.Result): boolean {
@@ -645,7 +645,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 }
 
 function areResultsAvailable(model: InvocationModel): boolean {
-  return model.getPrimaryInvocation().invocationStatus !== invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS;
+  return model.invocation.invocationStatus !== invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS;
 }
 
 const RequestsCardContainer: React.FC<JSX.IntrinsicElements["div"]> = ({ className, children, ...props }) => (

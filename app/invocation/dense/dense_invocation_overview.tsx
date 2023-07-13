@@ -7,7 +7,6 @@ import InvocationModel from "../invocation_model";
 interface Props {
   user?: User;
   model: InvocationModel;
-  invocationId: string;
 }
 export default class DenseInvocationOverviewComponent extends React.Component<Props> {
   handleUserClicked() {
@@ -29,10 +28,10 @@ export default class DenseInvocationOverviewComponent extends React.Component<Pr
               {isBazelInvocation ? <>Invocation</> : <>Workflow invocation</>}
             </div>
             <div className="dense-invocation-invocation-id">
-              {this.props.invocationId} ({this.props.model.getFormattedStartedDate()})
+              {this.props.model.getInvocationId()} ({this.props.model.getFormattedStartedDate()})
             </div>
           </div>
-          <InvocationButtons invocationId={this.props.invocationId} model={this.props.model} user={this.props.user} />
+          <InvocationButtons model={this.props.model} user={this.props.user} />
         </div>
         <div className={`dense-invocation-status-bar ${this.props.model.getStatusClass()}`}>
           <div>

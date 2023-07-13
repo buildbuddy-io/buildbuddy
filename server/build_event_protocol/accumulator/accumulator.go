@@ -20,6 +20,11 @@ const (
 	actionNameFieldName                   = "actionName"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 	disableTargetTrackingFieldName        = "disableTargetTracking"
+
+	// The maximum number of important files and artifacts to possibly copy
+	// from cache -> blobstore. If more than this number are present, they
+	// will be dropped.
+	maxPersistableArtifacts = 1000
 )
 
 var (
@@ -68,6 +73,7 @@ type BEValues struct {
 	profileName                    string
 	hasBytestreamTestActionOutputs bool
 
+	testOutputURIs []*url.URL
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
 	parser *event_parser.StreamingEventParser
@@ -115,10 +121,21 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		}
 	case *build_event_stream.BuildEvent_TestResult:
 		for _, f := range p.TestResult.TestActionOutput {
-			if u, err := url.Parse(f.GetUri()); err != nil {
+			u, err := url.Parse(f.GetUri())
+			if err != nil {
 				log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
-			} else if u.Scheme == "bytestream" {
+				continue
+			}
+			if u.Scheme == "bytestream" {
 				v.hasBytestreamTestActionOutputs = true
+
+				// To protect our backends from thrashing -- stop
+				// copying outputs if there are way too many. This can
+				// happen if a ruleset is buggy.
+				if len(v.testOutputURIs) >= maxPersistableArtifacts {
+					continue
+				}
+				v.testOutputURIs = append(v.testOutputURIs, u)
 			}
 		}
 	}
@@ -176,6 +193,10 @@ func (v *BEValues) HasBytestreamTestActionOutputs() bool {
 	return v.hasBytestreamTestActionOutputs
 }
 
+func (v *BEValues) TestOutputURIs() []*url.URL {
+	return v.testOutputURIs
+}
+
 func (v *BEValues) getStringValue(fieldName string) string {
 	if existing, ok := v.valuesMap[fieldName]; ok {
 		return existing
@@ -212,4 +233,30 @@ func (v *BEValues) populateWorkspaceInfoFromBuildMetadata(metadata *build_event_
 func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConfigured) {
 	v.setStringValue(workflowIDFieldName, wfc.GetWorkflowId())
 	v.setStringValue(actionNameFieldName, wfc.GetActionName())
+}
+
+// IsImportantEvent returns true for events that are non-skippable.
+// Events are usually not skipped, but when processing extra-large invocations,
+// non-important events may be dropped to conserve resources.
+func IsImportantEvent(event *build_event_stream.BuildEvent) bool {
+	switch event.Payload.(type) {
+	case *build_event_stream.BuildEvent_Started:
+		return true
+	case *build_event_stream.BuildEvent_OptionsParsed:
+		return true
+	case *build_event_stream.BuildEvent_BuildMetadata:
+		return true
+	case *build_event_stream.BuildEvent_WorkspaceStatus:
+		return true
+	case *build_event_stream.BuildEvent_WorkflowConfigured:
+		return true
+	case *build_event_stream.BuildEvent_StructuredCommandLine:
+		return true
+	case *build_event_stream.BuildEvent_UnstructuredCommandLine:
+		return true
+	case *build_event_stream.BuildEvent_Finished:
+		return true
+	default:
+		return false
+	}
 }

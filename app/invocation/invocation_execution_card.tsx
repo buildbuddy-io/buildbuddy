@@ -63,7 +63,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
   fetchExecution() {
     let request = new execution_stats.GetExecutionRequest();
     request.executionLookup = new execution_stats.ExecutionLookup();
-    request.executionLookup.invocationId = this.props.model.getId() ?? "";
+    request.executionLookup.invocationId = this.props.model.getInvocationId();
     let inProgressBeforeRequestWasMade = this.props.inProgress;
     rpcService.service.getExecution(request).then((response) => {
       this.setState({ executions: response.execution, loading: false });
@@ -291,7 +291,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
               {filteredActions.length ? (
                 <InvocationExecutionTable
                   executions={filteredActions.sort(this.sort.bind(this)).slice(0, this.state.limit)}
-                  invocationIdProvider={() => this.props.model.getId() ?? ""}></InvocationExecutionTable>
+                  invocationIdProvider={() => this.props.model.getInvocationId()}></InvocationExecutionTable>
               ) : (
                 <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}

@@ -67,8 +67,8 @@ const (
 	// How many workers to spin up for writing cache stats to the DB.
 	numStatsRecorderWorkers = 8
 
-	// How many workers to spin up for looking up invocations before webhooks are
-	// notified.
+	// How many workers to spin up for looking up invocations before
+	// webhooks are notified.
 	numWebhookInvocationLookupWorkers = 8
 	// How many workers to spin up for notifying webhooks.
 	numWebhookNotifyWorkers = 16
@@ -79,12 +79,17 @@ const (
 	// Default number of actions shown by bazel
 	defaultActionsShown = 8
 
-	// Exit code in Finished event indicating that the build was interrupted (i.e. killed by user).
+	// Exit code in Finished event indicating that the build was interrupted
+	// (i.e. killed by user).
 	InterruptedExitCode = 8
 
-	// First sequence number that we expect to see in the ordered build event
-	// stream.
+	// First sequence number that we expect to see in the ordered build
+	// event stream.
 	firstExpectedSequenceNumber = 1
+
+	// Skip unimportant events if more than this many are received in a
+	// single build event stream.
+	maxEventCount = 100_000
 )
 
 var (
@@ -93,10 +98,7 @@ var (
 	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not diaplay properly.")
 	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
 
-	cacheStatsFinalizationDelay = flag.Duration(
-		"cache_stats_finalization_delay", 500*time.Millisecond,
-		"The time allowed for all metrics collectors across all apps to flush their "+
-			"local cache stats to the backing storage, before finalizing stats in the DB.")
+	cacheStatsFinalizationDelay = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
 )
 
 var cacheArtifactsBlobstorePath = path.Join("artifacts", "cache")
@@ -428,27 +430,21 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	if auth := r.env.GetAuthenticator(); auth != nil {
 		ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
 	}
-	if task.persist.TestActionOutputs {
-		// TODO (zoey): Switch to streaming build events to avoid loading the whole BES into memory
-		inv, err := LookupInvocation(r.env, ctx, task.invocationJWT.id)
-		if err != nil {
-			log.CtxErrorf(ctx, "LookupInvocation failed when attempting to persist test logs: %s", err)
-		}
-		persistTestActionOutputs(ctx, r.env, inv, "test_action_outputs")
-	}
+
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(50) // Max concurrency when copying files from cache->blobstore.
 	for _, uri := range task.persist.URIs {
-		if uri == nil {
-			// no artifact exists to persist
-			continue
-		}
-		if uri.Scheme != "bytestream" {
-			log.CtxErrorf(ctx, "Unsupported scheme to persist artifact: %s", uri.Path)
-			continue
-		}
-		fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
-		if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
-			log.CtxError(ctx, err.Error())
-		}
+		uri := uri
+		eg.Go(func() error {
+			fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
+			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
+				log.CtxError(ctx, err.Error())
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		log.CtxErrorf(ctx, "Failed to persist cache artifacts to blobstore: %s", err)
 	}
 }
 
@@ -512,36 +508,6 @@ func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, pat
 		)
 	}
 	return nil
-}
-
-func persistTestActionOutputs(ctx context.Context, env environment.Env, inv *inpb.Invocation, subpath string) {
-	for _, e := range inv.GetEvent() {
-		p, ok := e.BuildEvent.Payload.(*build_event_stream.BuildEvent_TestResult)
-		if !ok {
-			continue
-		}
-		for _, f := range p.TestResult.TestActionOutput {
-			resultURI, err := url.Parse(f.GetUri())
-			if err != nil {
-				log.Errorf("Error parsing URI for test result: %s", f.GetUri())
-				continue
-			}
-			if resultURI.Scheme != "bytestream" {
-				continue
-			}
-			fullPath := path.Join(inv.GetInvocationId(), cacheArtifactsBlobstorePath, resultURI.Path)
-			if err := persistArtifact(ctx, env, resultURI, fullPath); err != nil {
-				log.Warningf(
-					"Error persisting '%s' for target '%s' for invocation %s: %s",
-					f.Name,
-					e.BuildEvent.Id.GetTestResult().Label,
-					inv.GetInvocationId(),
-					err.Error(),
-				)
-				continue
-			}
-		}
-	}
 }
 
 type notifyWebhookTask struct {
@@ -837,18 +803,15 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 
 	persist := &PersistArtifacts{}
 	if !*disablePersistArtifacts {
-		persist.URIs = make([]*url.URL, 0)
+		testOutputURIs := e.beValues.TestOutputURIs()
+		persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
 		if e.beValues.BytestreamProfileURI() != nil {
 			persist.URIs = append(persist.URIs, e.beValues.BytestreamProfileURI())
 		}
-		persist.TestActionOutputs = e.beValues.HasBytestreamTestActionOutputs()
+		persist.URIs = append(persist.URIs, testOutputURIs...)
 	}
 
-	e.statsRecorder.Enqueue(
-		ctx,
-		invocation,
-		persist,
-	)
+	e.statsRecorder.Enqueue(ctx, invocation, persist)
 	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil
 }
@@ -1329,6 +1292,26 @@ func getOptionValues(options []string, optionName string) []string {
 	return values
 }
 
+type invocationEventCB func(*inpb.InvocationEvent) error
+
+func streamRawInvocationEvents(env environment.Env, ctx context.Context, streamID string, callback invocationEventCB) error {
+	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
+	for {
+		event := &inpb.InvocationEvent{}
+		err := pr.ReadProto(ctx, event)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if err := callback(event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
 	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
@@ -1382,16 +1365,21 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		beValues := accumulator.NewBEValues(invocation)
 		events := []*inpb.InvocationEvent{}
 		structuredCommandLines := []*command_line.CommandLine{}
-		pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
-		for {
-			event := &inpb.InvocationEvent{}
-			err := pr.ReadProto(ctx, event)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				log.Warningf("Error reading proto from log: %s", err)
-				return err
+
+		eventCount := 0
+		err := streamRawInvocationEvents(env, ctx, streamID, func(event *inpb.InvocationEvent) error {
+			eventCount += 1
+			// Certain buggy rulesets will mark intermediate output
+			// files as important-outputs. This can result in very
+			// large BES streams which use a ton of memory and are
+			// not displayable by the browser. If we detect a large
+			// number of events coming through, begin dropping non-
+			// important events so that this invocation can be
+			// displayed.
+			if eventCount > maxEventCount {
+				if !accumulator.IsImportantEvent(event.BuildEvent) {
+					return nil
+				}
 			}
 			if redactor != nil {
 				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
@@ -1402,7 +1390,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 					return err
 				}
 			}
-			events = append(events, event)
+
 			switch p := event.BuildEvent.Payload.(type) {
 			case *build_event_stream.BuildEvent_Progress:
 				if screenWriter != nil {
@@ -1417,7 +1405,14 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			case *build_event_stream.BuildEvent_StructuredCommandLine:
 				structuredCommandLines = append(structuredCommandLines, p.StructuredCommandLine)
 			}
+
+			events = append(events, event)
+			return nil
+		})
+		if err != nil {
+			return err
 		}
+
 		invocation.Event = events
 		// TODO: Can we remove this StructuredCommandLine field? These are
 		// already available in the events list.

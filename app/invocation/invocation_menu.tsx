@@ -22,7 +22,6 @@ import InvocationModel from "./invocation_model";
 
 export interface InvocationMenuComponentProps {
   model: InvocationModel;
-  invocationId: string;
   user?: User;
 }
 
@@ -60,7 +59,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
     this.setState({ isDeleteModalLoading: true, deleteModalError: null });
     try {
       await rpcService.service.deleteInvocation(
-        new invocation.DeleteInvocationRequest({ invocationId: this.props.invocationId })
+        new invocation.DeleteInvocationRequest({ invocationId: this.props.model.getInvocationId() })
       );
       router.navigateHome();
     } catch (e) {
@@ -75,10 +74,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
       return <></>;
     }
 
-    const invocation = this.props.model
-      .getInvocations()
-      .find((invocation) => invocation.invocationId === this.props.invocationId);
-    const hasWritePermissions = this.props.user && invocation && canWrite(this.props.user, invocation);
+    const hasWritePermissions = this.props.user && canWrite(this.props.user, this.props.model.invocation);
 
     return (
       <>

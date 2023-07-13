@@ -26,7 +26,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
-      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.model.getId() ?? "");
+      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.model.getInvocationId());
     }
   }
 
@@ -87,7 +87,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                   {target.outputs.map((output) => (
                     <div className="artifact-line">
                       <a
-                        href={rpcService.getBytestreamUrl(output.uri, this.props.model.getId() ?? "", {
+                        href={rpcService.getBytestreamUrl(output.uri, this.props.model.getInvocationId(), {
                           filename: output.name,
                         })}
                         className="artifact-name"
@@ -99,7 +99,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                           className="artifact-view"
                           href={`/code/buildbuddy-io/buildbuddy/?bytestream_url=${encodeURIComponent(
                             output.uri
-                          )}&invocation_id=${this.props.model.getId()}&filename=${output.name}`}>
+                          )}&invocation_id=${this.props.model.getInvocationId()}&filename=${output.name}`}>
                           <FileCode /> View
                         </a>
                       )}
