@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"reflect"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/current_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -154,14 +152,6 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 		// name like "POST /rpc/BuildBuddyService/", it will instead appear
 		// with the name: "POST /rpc/BuildBuddyService/GetUser".
 		ctx := r.Context()
-
-		// XXX should we move this to HTTP interceptor?
-		clientIP := r.RemoteAddr
-		if ip, _, err := net.SplitHostPort(clientIP); err == nil {
-			clientIP = ip
-		}
-		ctx = context.WithValue(ctx, current_request.ClientIPContextKey, clientIP)
-
 		span := trace.SpanFromContext(ctx)
 		if span.IsRecording() {
 			span.SetName(fmt.Sprintf("%s %s", r.Method, r.RequestURI))
