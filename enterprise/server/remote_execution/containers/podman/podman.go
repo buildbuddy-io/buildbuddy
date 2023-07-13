@@ -873,7 +873,6 @@ func runPodman(ctx context.Context, subCommand string, stdio *container.Stdio, a
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
-
 	result := commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
 	return result
 }
