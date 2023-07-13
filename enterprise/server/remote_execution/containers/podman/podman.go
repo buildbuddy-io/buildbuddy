@@ -115,6 +115,7 @@ type Provider struct {
 	env                     environment.Env
 	imageCacheAuth          *container.ImageCacheAuthenticator
 	buildRoot               string
+	imageStreamingEnabled   bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
 	sociStoreKeychainClient sspb.LocalKeychainClient
 }
@@ -190,6 +191,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 	return &Provider{
 		env:                     env,
 		imageCacheAuth:          imageCacheAuthenticator,
+		imageStreamingEnabled:   *imageStreamingEnabled,
 		sociArtifactStoreClient: sociArtifactStoreClient,
 		sociStoreKeychainClient: sociStoreKeychainClient,
 		buildRoot:               buildRoot,
@@ -219,12 +221,7 @@ func initializeSociStoreKeychainClient(env environment.Env, target string) (sspb
 }
 
 func (p *Provider) NewContainer(ctx context.Context, image string, imageIsPublic bool, options *PodmanOptions) (container.CommandContainer, error) {
-	var imageIsStreamable bool
-	if imageIsPublic {
-		imageIsStreamable = *imageStreamingEnabled
-	} else {
-		imageIsStreamable = *imageStreamingEnabled && *privateImageStreamingEnabled
-	}
+	imageIsStreamable := p.imageStreamingEnabled && (imageIsPublic || *privateImageStreamingEnabled)
 	if imageIsStreamable {
 		if err := disk.WaitUntilExists(context.Background(), sociStorePath, disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("soci-store not available: %s", err)
