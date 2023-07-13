@@ -5742,8 +5742,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_google_cloud_go_longrunning",
         importpath = "cloud.google.com/go/longrunning",
         sum = "h1:Fr7TXftcqTudoyRJa113hyaqlGdiBQkp0Gq7tErFDWI=",
-        # Version 3.0 has a bug that breaks building with bazel:
-        # https://github.com/googleapis/google-cloud-go/issues/7233
         version = "v0.5.1",
     )
     go_repository(
