@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -59,10 +58,9 @@ var (
 
 	// TODO(iain): delete executor.podman.run_soci_snapshotter flag once
 	// the snapshotter doesn't need root permissions to run.
-	runSociSnapshotter    = flag.Bool("executor.podman.run_soci_snapshotter", true, "If true, runs the soci snapshotter locally if needed for image streaming.")
-	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all podman images are streamed using soci artifacts generated and stored in the apps.")
-	// TODO(iain): delete the streamableImages flag
-	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of podman images that can be streamed using registry-stored soci artifacts. Note that if executor.podman.enable_image_streaming is set then all images are streamed using app-stored soci artifacts and the value of this flag is ignored.")
+	runSociSnapshotter           = flag.Bool("executor.podman.run_soci_snapshotter", true, "If true, runs the soci snapshotter locally if needed for image streaming.")
+	imageStreamingEnabled        = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all public (non-authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
+	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
@@ -117,7 +115,7 @@ type Provider struct {
 	env                     environment.Env
 	imageCacheAuth          *container.ImageCacheAuthenticator
 	buildRoot               string
-	streamableImages        []string
+	imageStreamingEnabled   bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
 	sociStoreKeychainClient sspb.LocalKeychainClient
 }
@@ -141,7 +139,9 @@ func runSociStore(ctx context.Context) {
 }
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
-	if *imageStreamingEnabled || len(*streamableImages) > 0 {
+	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
+	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
+	if *imageStreamingEnabled {
 		if *runSociSnapshotter {
 			go runSociStore(env.GetServerContext())
 		}
@@ -177,10 +177,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 				},
 			),
 		)
-	}
-	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
-	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
-	if *imageStreamingEnabled {
+
 		var err error
 		sociArtifactStoreClient, err = intializeSociArtifactStoreClient(env, *sociArtifactStoreTarget)
 		if err != nil {
@@ -194,7 +191,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 	return &Provider{
 		env:                     env,
 		imageCacheAuth:          imageCacheAuthenticator,
-		streamableImages:        *streamableImages,
+		imageStreamingEnabled:   *imageStreamingEnabled,
 		sociArtifactStoreClient: sociArtifactStoreClient,
 		sociStoreKeychainClient: sociStoreKeychainClient,
 		buildRoot:               buildRoot,
@@ -223,27 +220,18 @@ func initializeSociStoreKeychainClient(env environment.Env, target string) (sspb
 	return sspb.NewLocalKeychainClient(conn), nil
 }
 
-func (p *Provider) NewContainer(ctx context.Context, image string, options *PodmanOptions) (container.CommandContainer, error) {
-	imageIsStreamable := false
-	for _, streamableImage := range p.streamableImages {
-		if image == streamableImage {
-			imageIsStreamable = true
-			break
-		}
-	}
+func (p *Provider) NewContainer(ctx context.Context, image string, imageIsPublic bool, options *PodmanOptions) (container.CommandContainer, error) {
+	imageIsStreamable := p.imageStreamingEnabled && (imageIsPublic || *privateImageStreamingEnabled)
 	if imageIsStreamable {
 		if err := disk.WaitUntilExists(context.Background(), sociStorePath, disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("soci-store not available: %s", err)
 		}
 	}
 	return &podmanCommandContainer{
-		env:            p.env,
-		imageCacheAuth: p.imageCacheAuth,
-		image:          image,
-
-		// The nil-ness of sociArtifactStoreClient acts as a boolean
-		// controlling global image streaming.
-		imageStreamingEnabled:   *imageStreamingEnabled || p.sociArtifactStoreClient != nil,
+		env:                     p.env,
+		imageCacheAuth:          p.imageCacheAuth,
+		image:                   image,
+		imageIsStreamable:       imageIsStreamable,
 		sociArtifactStoreClient: p.sociArtifactStoreClient,
 		sociStoreKeychainClient: p.sociStoreKeychainClient,
 
@@ -277,7 +265,7 @@ type podmanCommandContainer struct {
 	buildRoot string
 	workDir   string
 
-	imageStreamingEnabled   bool
+	imageIsStreamable       bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
 	sociStoreKeychainClient sspb.LocalKeychainClient
 
@@ -388,7 +376,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	if c.options.Runtime != "" {
 		args = append(args, "--runtime="+c.options.Runtime)
 	}
-	if c.imageStreamingEnabled {
+	if c.imageIsStreamable {
 		args = append(args, enableStreamingStoreArg)
 	}
 	if c.options.Init {
@@ -516,7 +504,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	if c.imageStreamingEnabled {
+	if c.imageIsStreamable {
 		return true, nil
 	}
 
@@ -554,7 +542,7 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	if *imageStreamingEnabled && c.sociArtifactStoreClient != nil {
+	if c.imageIsStreamable {
 		startTime := time.Now()
 		if err := c.getSociArtifacts(ctx, creds); err != nil {
 			return err
@@ -732,7 +720,7 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.PullCredentials) error {
 	podmanArgs := make([]string, 0, 2)
 
-	if c.imageStreamingEnabled {
+	if c.imageIsStreamable {
 		// Ideally we would not have to do a "podman pull" when image streaming
 		// is enabled, but we suspect there's a concurrency bug in podman
 		// related to looking up additional layer information from providers
