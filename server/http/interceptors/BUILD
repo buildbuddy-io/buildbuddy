@@ -12,7 +12,7 @@ go_library(
         "//server/metrics",
         "//server/role_filter",
         "//server/util/alert",
-        "//server/util/current_request",
+        "//server/util/clientip",
         "//server/util/log",
         "//server/util/request_context",
         "//server/util/uuid",
