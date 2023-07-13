@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"reflect"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/current_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -157,8 +157,8 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 
 		// XXX should we move this to HTTP interceptor?
 		clientIP := r.RemoteAddr
-		if pts := strings.Split(clientIP, ":"); len(pts) > 1 {
-			clientIP = pts[0]
+		if ip, _, err := net.SplitHostPort(clientIP); err == nil {
+			clientIP = ip
 		}
 		ctx = context.WithValue(ctx, current_request.ClientIPContextKey, clientIP)
 

@@ -177,6 +177,7 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, metho
 		entry.ResourceID = resource.Id
 		entry.ResourceName = resource.Name
 	}
+	log.Warningf("ENTRY: %+v", entry)
 
 	if err := l.dbh.InsertAuditLog(ctx, entry); err != nil {
 		return status.WrapError(err, "could not insert audit log")
