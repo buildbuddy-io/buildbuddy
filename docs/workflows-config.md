@@ -198,11 +198,12 @@ or `"ubuntu-20.04"`.
 
 By default, workflow VMs have the following resources available:
 
- - 3 CPU
- - 8 GB of RAM
- - 20 GB of disk space
+- 3 CPU
+- 8 GB of RAM
+- 20 GB of disk space
 
 These values are configurable using [resource requests](#resourcerequests).
+
 ## Mac configuration
 
 By default, workflows will execute on BuildBuddy's Linux executors,
