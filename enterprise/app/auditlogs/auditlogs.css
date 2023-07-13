@@ -1,3 +1,9 @@
+.audit-logs-page .popup-wrapper {
+  position: relative;
+  width: fit-content;
+  margin-bottom: 10px;
+}
+
 .audit-logs {
   margin-top: 32px;
 }
@@ -6,22 +12,49 @@
   display: flex;
 }
 
-.audit-log-entry .timestamp {
+.audit-logs-header {
+  display: flex;
+}
+
+.audit-logs-header div {
+  background-color: #eee;
+  border: 1px solid #f1f3f4;
+  padding: 8px;
+}
+
+.audit-log-entry > div {
+  border: 1px solid #f1f3f4;
+  padding: 8px;
+}
+
+.audit-logs .timestamp {
   width: 250px;
 }
 
-.audit-log-entry .actor {
+.audit-logs .user {
   width: 200px;
 }
 
-.audit-log-entry .resource {
+.audit-logs .user div {
+  margin-bottom: 8px;
+}
+
+.audit-logs .resource {
   width: 250px;
 }
 
-.audit-log-entry .method {
+.audit-logs .resource div {
+  margin-bottom: 8px;
+}
+
+.audit-logs .method {
   width: 200px;
 }
 
-.audit-log-entry .payload {
+.audit-logs .request {
   width: 600px;
+}
+
+.audit-logs .request pre {
+  margin: 0;
 }

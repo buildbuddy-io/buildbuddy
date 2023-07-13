@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -42,6 +43,8 @@ const (
 
 	DeleteInvocation = "invocations.delete"
 	UpdateInvocation = "invocations.update"
+
+	pageSize = 20
 )
 
 type Logger struct {
@@ -208,15 +211,19 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 		SELECT * FROM AuditLogs
 	`)
 	qb.AddWhereClause("group_id = ?", u.GetGroupID())
-	if req.GetTimestampBefore() != nil {
-		qb.AddWhereClause("event_time_usec >= ?", req.GetTimestampAfter().AsTime().UnixMicro())
+	qb.AddWhereClause("event_time_usec >= ?", req.GetTimestampAfter().AsTime().UnixMicro())
+	qb.AddWhereClause("event_time_usec <= ?", req.GetTimestampBefore().AsTime().UnixMicro())
+	if req.PageToken != "" {
+		ts, err := strconv.ParseInt(req.PageToken, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		qb.AddWhereClause("event_time_usec >= ?", ts)
 	}
-	if req.GetTimestampBefore() != nil {
-		qb.AddWhereClause("event_time_usec <= ?", req.GetTimestampBefore().AsTime().UnixMicro())
-	}
+	qb.SetLimit(pageSize + 1)
 	q, args := qb.Build()
 
-	rows, err := l.dbh.DB(ctx).Raw(q, args).Rows()
+	rows, err := l.dbh.DB(ctx).Raw(q, args...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -231,6 +238,18 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 		var request alpb.Entry_ResourceRequest
 		if err := proto.Unmarshal([]byte(e.Request), &request); err != nil {
 			return nil, err
+		}
+
+		if len(resp.Entries) == pageSize {
+			resp.NextPageToken = strconv.FormatInt(e.EventTimeUsec, 10)
+			continue
+		}
+
+		resourceType := alpb.ResourceType(e.ResourceType)
+		// If no resource is specified, the resource is implicitely the owning
+		// organization.
+		if resourceType == alpb.ResourceType_UNKNOWN_RESOURCE {
+			resourceType = alpb.ResourceType_GROUP
 		}
 
 		resp.Entries = append(resp.Entries, &alpb.Entry{

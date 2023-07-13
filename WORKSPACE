@@ -2,8 +2,7 @@ workspace(
     name = "buildbuddy",
 )
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
 # Bazel platforms
 
@@ -382,8 +381,8 @@ http_archive(
 # protoc-gen-protobufjs (for .proto to .js codegen)
 http_archive(
     name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
-    sha256 = "9a43cb8f5353fa6e0858aa694d34e55e395c64703a7370cc116bd4501c46b622",
-    urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.8/protoc-gen-protobufjs-v0.0.8.tar.gz"],
+    sha256 = "ef3f8fb9a417fa7c1e2fe53003221f118214cf014294bfbc5dcfbb2ed1560e83",
+    urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.9/protoc-gen-protobufjs-v0.0.9.tar.gz"],
 )
 
 # esbuild (for bundling JS)
