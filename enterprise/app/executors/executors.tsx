@@ -1,3 +1,4 @@
+import { Cpu, Laptop } from "lucide-react";
 import React from "react";
 import Banner from "../../../app/components/banner/banner";
 import rpcService from "../../../app/service/rpc_service";
@@ -155,10 +156,29 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
               }
               return (
                 <>
-                  <h2>
-                    {executors[0].node?.os || ""}/{executors[0].node?.arch || ""}{" "}
-                    {executors[0].node?.pool || "Default Pool"}
-                  </h2>
+                  <div className="executor-pool-header">
+                    <span>
+                      <h2>{executors[0].node?.pool || "Default Pool"}</h2>
+                    </span>
+                    {executors[0].node?.os && (
+                      <span>
+                        <Laptop className="icon" />
+                        <a>
+                          {" "}
+                          <b>OS:</b> {executors[0].node?.os}
+                        </a>
+                      </span>
+                    )}
+                    {executors[0].node?.arch && (
+                      <span>
+                        <Cpu className="icon" />
+                        <a>
+                          {" "}
+                          <b>Arch:</b> {executors[0].node?.arch}
+                        </a>
+                      </span>
+                    )}
+                  </div>
                   {executors.length == 1 && <p>There is 1 self-hosted executor in this pool.</p>}
                   {executors.length > 1 && <p>There are {executors.length} self-hosted executors in this pool.</p>}
                   {executors.length < 3 && (

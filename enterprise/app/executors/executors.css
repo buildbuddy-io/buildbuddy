@@ -54,3 +54,18 @@
   margin-bottom: 32px;
   max-width: 600px;
 }
+
+.executor-pool-header {
+  display: table;
+  width: 30%;
+  table-layout: fixed;
+}
+
+.executor-pool-header span {
+  display: table-cell;
+  text-align: center;
+}
+
+div.demo span:first-child {
+  text-align: left;
+}
