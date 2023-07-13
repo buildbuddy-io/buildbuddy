@@ -6,6 +6,7 @@ import (
 	"io/fs"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
@@ -285,6 +286,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := prom.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := auditlog.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

@@ -44,6 +44,10 @@ func (h *Handle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation
 	return nil
 }
 
+func (h *Handle) InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error {
+	return nil
+}
+
 func (h *Handle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	executionIDs := make([]string, 0, len(executions))
 	for _, e := range executions {
