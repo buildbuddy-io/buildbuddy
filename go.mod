@@ -3,9 +3,6 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.20
 
 replace (
-	// There's a bug building longrunning v0.3.0 with bazel:
-	// https://github.com/bazelbuild/rules_go/issues/3423
-	cloud.google.com/go/longrunning v0.5.1 => cloud.google.com/go/longrunning v0.2.1
 	github.com/awslabs/soci-snapshotter => github.com/buildbuddy-io/soci-snapshotter v0.0.4
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.7.0-patched-1
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
