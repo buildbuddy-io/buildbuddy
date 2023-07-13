@@ -1461,10 +1461,6 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	sort.Slice(resources, func(i, j int) bool {
-		return resources[i].GetDigest().GetHash() < resources[j].GetDigest().GetHash()
-	})
-
 	var missing []*repb.Digest
 	for _, r := range resources {
 		fileRecord, err := p.makeFileRecord(ctx, r)
