@@ -240,6 +240,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 					UserId:    e.AuthUserID,
 					UserEmail: e.AuthUserEmail,
 				},
+				ClientIp: e.ClientIP,
 			},
 			Resource: &alpb.ResourceID{
 				Type: alpb.ResourceType(e.ResourceType),

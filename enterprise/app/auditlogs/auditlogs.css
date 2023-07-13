@@ -14,6 +14,10 @@
   width: 200px;
 }
 
+.audit-log-entry .resource {
+  width: 250px;
+}
+
 .audit-log-entry .method {
   width: 200px;
 }
