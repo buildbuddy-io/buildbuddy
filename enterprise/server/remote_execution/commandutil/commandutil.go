@@ -190,10 +190,9 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener
 		defer close(processTerminated)
 		return cmd.Wait()
 	}
-	if err := wait(); err != nil {
-		return nil, err
-	}
-	return <-statsCh, nil
+	err := wait()
+	stats := <-statsCh
+	return stats, err
 }
 
 // KillProcessTree kills the given pid as well as any descendant processes.
