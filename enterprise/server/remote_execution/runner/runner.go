@@ -1138,7 +1138,8 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			EnableStats:          *podmanEnableStats,
 			EnableImageStreaming: props.EnablePodmanImageStreaming,
 		}
-		c, err := p.podmanProvider.NewContainer(ctx, props.ContainerImage, opts)
+		imageIsPublic := props.ContainerRegistryUsername == "" && props.ContainerRegistryPassword == ""
+		c, err := p.podmanProvider.NewContainer(ctx, props.ContainerImage, imageIsPublic, opts)
 		if err != nil {
 			return nil, err
 		}
