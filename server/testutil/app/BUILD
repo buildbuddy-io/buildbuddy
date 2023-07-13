@@ -12,8 +12,8 @@ go_library(
         "//server/testutil/testfs",
         "//server/testutil/testport",
         "//server/testutil/testserver",
-        "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
     ],
 )

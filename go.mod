@@ -115,10 +115,10 @@ require (
 	golang.org/x/text v0.10.0
 	golang.org/x/time v0.3.0
 	google.golang.org/api v0.129.0
-	google.golang.org/genproto v0.0.0-20230629202037-9506855d4529
+	google.golang.org/genproto v0.0.0-20230706204954-ccb25ca9f130
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20230629202037-9506855d4529
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230629202037-9506855d4529
-	google.golang.org/grpc v1.56.1
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230711160842-782d3b101e98
+	google.golang.org/grpc v1.56.2
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -130,7 +130,7 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.110.3 // indirect
+	cloud.google.com/go v0.110.4 // indirect
 	cloud.google.com/go/compute v1.20.1 // indirect
 	cloud.google.com/go/iam v1.1.1 // indirect
 	cloud.google.com/go/longrunning v0.5.1 // indirect

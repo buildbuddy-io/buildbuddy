@@ -37,7 +37,7 @@ go_test(
         "@com_github_lni_dragonboat_v3//statemachine",
         "@com_github_lni_goutils//random",
         "@com_github_stretchr_testify//require",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],

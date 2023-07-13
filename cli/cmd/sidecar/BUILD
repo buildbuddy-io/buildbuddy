@@ -21,7 +21,7 @@ go_library(
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
-        "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//reflection",

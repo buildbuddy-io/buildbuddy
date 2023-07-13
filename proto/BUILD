@@ -75,7 +75,7 @@ proto_library(
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -126,7 +126,7 @@ proto_library(
         ":scheduler_proto",
         ":stat_filter_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -185,7 +185,9 @@ proto_library(
         ":build_events_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:empty_proto",
-        "@go_googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:client_proto",
+        "@googleapis//google/api:field_behavior_proto",
     ],
 )
 
@@ -197,7 +199,7 @@ proto_library(
     deps = [
         ":remote_execution_proto",
         ":resource_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -284,7 +286,7 @@ proto_library(
         ":context_proto",
         ":invocation_status_proto",
         "@com_google_protobuf//:duration_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -306,7 +308,7 @@ proto_library(
     deps = [
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -480,9 +482,9 @@ proto_library(
         ":semver_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@go_googleapis//google/api:annotations_proto",
-        "@go_googleapis//google/longrunning:longrunning_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/longrunning:operations_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -493,10 +495,10 @@ proto_library(
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@go_googleapis//google/api:annotations_proto",
-        "@go_googleapis//google/bytestream:bytestream_proto",
-        "@go_googleapis//google/longrunning:longrunning_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/bytestream:bytestream_proto",
+        "@googleapis//google/longrunning:operations_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -510,9 +512,9 @@ proto_library(
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@com_google_protobuf//:wrappers_proto",
-        "@go_googleapis//google/api:annotations_proto",
-        "@go_googleapis//google/longrunning:longrunning_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/longrunning:operations_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -529,7 +531,7 @@ proto_library(
     name = "telemetry_proto",
     srcs = ["telemetry.proto"],
     deps = [
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -541,7 +543,7 @@ proto_library(
         ":context_proto",
         ":trace_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -672,7 +674,7 @@ go_proto_library(
         ":resource_go_proto",
         ":scheduler_go_proto",
         ":stat_filter_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -719,7 +721,7 @@ go_proto_library(
     proto = ":publish_build_event_proto",
     deps = [
         ":build_events_go_proto",
-        "@go_googleapis//google/api:annotations_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 
@@ -822,7 +824,7 @@ go_proto_library(
     proto = ":vmexec_proto",
     deps = [
         ":remote_execution_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -857,7 +859,7 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":invocation_status_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -868,7 +870,7 @@ go_proto_library(
     deps = [
         ":remote_execution_go_proto",
         ":resource_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1039,7 +1041,7 @@ go_proto_library(
         ":context_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1080,9 +1082,9 @@ go_proto_library(
     deps = [
         ":remote_execution_go_proto",
         ":semver_go_proto",
-        "@go_googleapis//google/api:annotations_go_proto",
-        "@go_googleapis//google/longrunning:longrunning_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto//googleapis/longrunning",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1092,10 +1094,10 @@ go_proto_library(
     proto = ":remote_execution_log_proto",
     deps = [
         ":remote_execution_go_proto",
-        "@go_googleapis//google/api:annotations_go_proto",
-        "@go_googleapis//google/bytestream:bytestream_go_proto",
-        "@go_googleapis//google/longrunning:longrunning_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto//googleapis/longrunning",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1107,9 +1109,9 @@ go_proto_library(
     deps = [
         ":scheduler_go_proto",
         ":semver_go_proto",
-        "@go_googleapis//google/api:annotations_go_proto",
-        "@go_googleapis//google/longrunning:longrunning_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto//googleapis/longrunning",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1119,7 +1121,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/telemetry",
     proto = ":telemetry_proto",
     deps = [
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1132,7 +1134,7 @@ go_proto_library(
         ":acl_go_proto",
         ":context_go_proto",
         ":trace_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1464,33 +1466,27 @@ ts_proto_library(
 
 ts_proto_library(
     name = "grpc_code_ts_proto",
-    proto = "@go_googleapis//google/rpc:code_proto",
+    proto = "@googleapis//google/rpc:code_proto",
 )
 
 ts_proto_library(
     name = "grpc_status_ts_proto",
-    proto = "@go_googleapis//google/rpc:status_proto",
+    proto = "@googleapis//google/rpc:status_proto",
     deps = [":any_ts_proto"],
 )
 
 ts_proto_library(
-    name = "google_api_ts_proto",
-    proto = "@go_googleapis//google/api:api_proto",
-)
-
-ts_proto_library(
     name = "google_api_annotations_ts_proto",
-    proto = "@go_googleapis//google/api:annotations_proto",
+    proto = "@googleapis//google/api:annotations_proto",
     deps = [
         ":descriptor_ts_proto",
         ":duration_ts_proto",
-        ":google_api_ts_proto",
     ],
 )
 
 ts_proto_library(
     name = "google_longrunning_ts_proto",
-    proto = "@go_googleapis//google/longrunning:longrunning_proto",
+    proto = "@googleapis//google/longrunning:operations_proto",
     deps = [
         ":any_ts_proto",
         ":duration_ts_proto",

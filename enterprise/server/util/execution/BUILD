@@ -11,7 +11,7 @@ go_library(
         "//proto:stored_invocation_go_proto",
         "//server/remote_cache/digest",
         "//server/tables",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",

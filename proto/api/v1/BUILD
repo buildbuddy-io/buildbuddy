@@ -11,7 +11,7 @@ proto_library(
     deps = [
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -49,7 +49,7 @@ proto_library(
         ":common_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@go_googleapis//google/rpc:status_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -61,6 +61,6 @@ go_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common_go_proto",
-        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
