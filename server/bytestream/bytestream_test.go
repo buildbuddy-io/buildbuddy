@@ -80,9 +80,9 @@ func createBytestreamer(b []byte) Bytestreamer {
 	}
 }
 
-func validateZipContents(t *testing.T, entry *zipb.ManifestEntry, expectedContent string, streamer Bytestreamer) {
+func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.ManifestEntry, expectedContent string, streamer Bytestreamer) {
 	var buf bytes.Buffer
-	streamSingleFileFromBytestreamZipInternal(nil, nil, nil, entry, &buf, streamer)
+	streamSingleFileFromBytestreamZipInternal(ctx, nil, nil, entry, &buf, streamer)
 	out := make([]byte, entry.GetUncompressedSize())
 	_, err := io.ReadFull(&buf, out)
 	if err != nil {
@@ -99,7 +99,8 @@ func TestReadZipFileContents(t *testing.T) {
 	manifest, _ := parseZipManifestFooter(b, 0, int64(len(b)))
 
 	streamer := createBytestreamer(b)
-	validateZipContents(t, manifest.GetEntry()[0], "bazel", streamer)
-	validateZipContents(t, manifest.GetEntry()[1], "buildbuddy", streamer)
-	validateZipContents(t, manifest.GetEntry()[2], "san dimas high school football rules", streamer)
+	ctx := context.Background()
+	validateZipContents(t, ctx, manifest.GetEntry()[0], "bazel", streamer)
+	validateZipContents(t, ctx, manifest.GetEntry()[1], "buildbuddy", streamer)
+	validateZipContents(t, ctx, manifest.GetEntry()[2], "san dimas high school football rules", streamer)
 }
