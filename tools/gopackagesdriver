@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+cd $SCRIPT_DIR/..
+exec bazel run -- @io_bazel_rules_go//go/tools/gopackagesdriver "${@}"
