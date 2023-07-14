@@ -11,6 +11,7 @@ go_library(
         "//server/interfaces",
         "//server/util/authutil",
         "//server/util/clickhouse/schema",
+        "//server/util/clientip",
         "//server/util/log",
         "//server/util/query_builder",
         "//server/util/random",

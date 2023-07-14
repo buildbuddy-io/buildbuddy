@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/util/clientip",
         "//server/util/status",
-        "@org_golang_google_grpc//metadata",
     ],
 )

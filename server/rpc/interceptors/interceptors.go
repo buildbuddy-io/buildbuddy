@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -97,6 +98,26 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 	return ctx
 }
 
+func addClientIPToContext(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+
+	hdrs := md.Get("X-Forwarded-For")
+	if len(hdrs) == 0 {
+		return ctx
+	}
+	ips := strings.Split(hdrs[0], ",")
+	if len(ips) < 2 {
+		return ctx
+	}
+	// For GCLB, the header format is [client supplied IP,]client IP, LB IP
+	// We always look at the client IP as seen by GCLB as the client supplied
+	// value can't be trusted if it's present.
+	return context.WithValue(ctx, clientip.ContextKey, ips[len(ips)-2])
+}
+
 func copyHeadersToContext(ctx context.Context) context.Context {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		for headerName, contextKey := range headerContextKeys {
@@ -170,6 +191,18 @@ func requestIDStreamServerInterceptor() grpc.StreamServerInterceptor {
 // into the context if one is not already present.
 func requestIDUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return ContextReplacingUnaryServerInterceptor(addRequestIdToContext)
+}
+
+// clientIPStreamInterceptor is a server interceptor that inserts the client IP
+// into the context.
+func clientIPStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return ContextReplacingStreamServerInterceptor(addClientIPToContext)
+}
+
+// clientIPUnaryInterceptor is a server interceptor that inserts the client IP
+// into the context.
+func ClientIPUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return ContextReplacingUnaryServerInterceptor(addClientIPToContext)
 }
 
 func addInvocationIdToLog(ctx context.Context) context.Context {
@@ -320,6 +353,7 @@ func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		unaryRecoveryInterceptor(),
+		ClientIPUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
 		invocationIDLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
@@ -334,6 +368,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
 		streamRecoveryInterceptor(),
+		clientIPStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),

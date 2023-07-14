@@ -2,9 +2,11 @@ package interceptors
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"flag"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -20,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -115,6 +118,16 @@ func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Han
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+func ClientIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clientIP := r.RemoteAddr
+		if ip, _, err := net.SplitHostPort(clientIP); err == nil {
+			clientIP = ip
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientip.ContextKey, clientIP)))
 	})
 }
 
@@ -285,6 +298,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
+		ClientIP,
 		RecoverAndAlert,
 	})
 }
@@ -297,6 +311,7 @@ func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
+		ClientIP,
 		RecoverAndAlert,
 	})
 }
@@ -311,6 +326,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
+		ClientIP,
 		RecoverAndAlert,
 	})
 }
