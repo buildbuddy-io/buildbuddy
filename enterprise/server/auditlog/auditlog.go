@@ -170,8 +170,8 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 
 // TODO(vadim): support API key auth
 // TODO(vadim): populate client IP
-func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, method string, request proto.Message) {
-	if err := l.insertLog(ctx, resource, method, request); err != nil {
+func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, request proto.Message) {
+	if err := l.insertLog(ctx, resource, action, request); err != nil {
 		log.Warningf("could not insert audit log: %s", err)
 	}
 }
