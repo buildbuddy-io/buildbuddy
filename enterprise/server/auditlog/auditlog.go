@@ -26,26 +26,6 @@ var (
 	auditLogsEnabled = flag.Bool("app.audit_logs_enabled", false, "Whether to log administrative events to an audit log. Requires OLAP database to be configured.")
 )
 
-const (
-	CreateAPIKey = "apiKeys.create"
-	UpdateAPIKey = "apiKeys.update"
-	ListAPIKeys  = "apiKeys.list"
-	DeleteAPIKey = "apiKeys.delete"
-
-	UpdateGroup = "groups.update"
-
-	CreateGroupUser = "groupUsers.create"
-	DeleteGroupUser = "groupUsers.delete"
-	UpdateGroupUser = "groupUsers.update"
-
-	CreateSecret = "secrets.create"
-	UpdateSecret = "secrets.update"
-	DeleteSecret = "secrets.delete"
-
-	DeleteInvocation = "invocations.delete"
-	UpdateInvocation = "invocations.update"
-)
-
 type Logger struct {
 	env environment.Env
 	dbh interfaces.OLAPDBHandle
@@ -137,7 +117,7 @@ func clearRequestContext(request proto.Message) proto.Message {
 	return request
 }
 
-func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, method string, request proto.Message) error {
+func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, request proto.Message) error {
 	u, err := l.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return status.WrapError(err, "auth failed")
@@ -172,7 +152,7 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, metho
 		EventTimeUsec: time.Now().UnixMicro(),
 		AuthUserID:    u.GetUserID(),
 		AuthUserEmail: ui.Email,
-		Method:        method,
+		Action:        uint8(action),
 		Request:       string(requestBytes),
 	}
 	if resource.GetType() != alpb.ResourceType_GROUP {
@@ -248,7 +228,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 				Id:   e.ResourceID,
 				Name: e.ResourceName,
 			},
-			Method:  e.Method,
+			Action:  alpb.Action(e.Action),
 			Request: &request,
 		})
 	}

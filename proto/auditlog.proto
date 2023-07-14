@@ -40,6 +40,15 @@ enum ResourceType {
   INVOCATION = 5;
 }
 
+enum Action {
+  ACTION_UNKNOWN = 0;
+  ACTION_CREATE = 1;
+  ACTION_UPDATE = 2;
+  ACTION_DELETE = 3;
+  ACTION_LIST = 4;
+  ACTION_UPDATE_MEMBERSHIP = 5;
+}
+
 message ResourceID {
   ResourceType type = 1;
   string id = 2;
@@ -53,9 +62,8 @@ message Entry {
 
   ResourceID resource = 3;
 
-  // Operation performed on resource, e.g. apiKeys.create, apiKeys.update,
-  // groups.update, etc
-  string method = 4;
+  // Operation performed on resource.
+  Action action = 4;
 
   // Additional metadata describing the change performed.
   // Only one field will be populated depending on the event type.

@@ -306,7 +306,7 @@ type AuditLog struct {
 	ResourceName string
 	ResourceType uint8
 
-	Method string
+	Action uint8
 
 	Request string
 }
