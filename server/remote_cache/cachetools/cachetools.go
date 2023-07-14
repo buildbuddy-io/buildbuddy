@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -565,8 +564,8 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 			return err
 		}
 		for _, fileResponse := range rsp.GetResponses() {
-			if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
-				return gstatus.Error(codes.Code(fileResponse.GetStatus().GetCode()), fmt.Sprintf("Error uploading file: %v", fileResponse.GetDigest()))
+			if fileResponse.GetStatus().GetCode() != int32(gcodes.OK) {
+				return gstatus.Error(gcodes.Code(fileResponse.GetStatus().GetCode()), fmt.Sprintf("Error uploading file: %v", fileResponse.GetDigest()))
 			}
 		}
 		return nil
