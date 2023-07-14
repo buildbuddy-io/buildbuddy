@@ -321,7 +321,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	// it too soon after establishing the clientStream, and remove this delay.
 	const closeStreamDelay = 10 * time.Millisecond
 	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream); err != nil {
-		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error %q: %s", execTask, err)
+		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error: %s", err)
 		time.Sleep(time.Until(start.Add(closeStreamDelay)))
 		_, _ = clientStream.CloseAndRecv()
 		return retry, err
