@@ -10,7 +10,7 @@ import (
 
 type FakeEntry struct {
 	Resource *alpb.ResourceID
-	Method   string
+	Action   alpb.Action
 	Request  proto.Message
 }
 
@@ -18,10 +18,10 @@ type FakeAuditLog struct {
 	entries []*FakeEntry
 }
 
-func (f *FakeAuditLog) Log(ctx context.Context, resource *alpb.ResourceID, method string, req proto.Message) {
+func (f *FakeAuditLog) Log(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, req proto.Message) {
 	f.entries = append(f.entries, &FakeEntry{
 		Resource: resource,
-		Method:   method,
+		Action:   action,
 		Request:  req,
 	})
 }
