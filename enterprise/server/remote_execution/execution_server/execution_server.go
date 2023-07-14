@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
@@ -39,13 +40,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	gstatus "google.golang.org/grpc/status"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -1022,7 +1023,11 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	} else {
 		return status.InternalErrorf("Unsupported platform %s", plat.OS)
 	}
-	return ut.Increment(ctx, counts)
+	labels, err := usageutil.Labels(ctx)
+	if err != nil {
+		return status.WrapError(err, "compute usage labels")
+	}
+	return ut.Increment(ctx, counts, labels)
 }
 
 func (s *ExecutionServer) fetchCommandForTask(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Command, error) {

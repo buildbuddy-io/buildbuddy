@@ -466,7 +466,7 @@ type UsageService interface {
 type UsageTracker interface {
 	// Increment adds the given usage counts to the current collection period
 	// for the authenticated group ID. It is safe for concurrent access.
-	Increment(ctx context.Context, counts *tables.UsageCounts) error
+	Increment(ctx context.Context, counts *tables.UsageCounts, labels *tables.UsageLabels) error
 	StartDBFlush()
 	StopDBFlush()
 }

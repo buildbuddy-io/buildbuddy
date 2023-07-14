@@ -34,6 +34,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/tracing",
+        "//server/util/usageutil",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_gorm_gorm//:gorm",
