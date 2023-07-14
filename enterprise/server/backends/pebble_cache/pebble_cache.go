@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -46,7 +47,6 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1316,29 +1316,11 @@ func (p *PebbleCache) lookupLastAccessTime(iter pebble.Iterator, key filestore.P
 // pairs. It loops through the pairs until hitting the tag for last_acess_usec,
 // then it returns the value. This lets us avoid a full parse of FileMetadata.
 func getLastAccessUsec(b []byte) int64 {
-	// This needs to match the tag for the last_access_usec field in FileMetadata
-	// in proto/raft.proto
-	const lastAccessUsecTag = 4
-	for len(b) > 0 {
-		tag, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return 0
-		}
-		b = b[n:]
-
-		if tag != lastAccessUsecTag {
-			n = protowire.ConsumeFieldValue(tag, typ, b)
-			if n < 0 {
-				return 0
-			}
-			b = b[n:]
-			continue
-		}
-
-		v, _ := protowire.ConsumeVarint(b)
-		return int64(v)
-	}
-	return 0
+	// This needs to match the field number for the last_access_usec field in
+	// FileMetadata in proto/raft.proto
+	const lastAccessUsecFieldNumber = 4
+	v, _ := pbwireutil.ConsumeFirstVarint(b, lastAccessUsecFieldNumber)
+	return int64(v)
 }
 
 // iterHasKey returns a bool indicating if the provided iterator has the

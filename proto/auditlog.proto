@@ -41,12 +41,12 @@ enum ResourceType {
 }
 
 enum Action {
-  UNKNOWN_ACTION = 0;
-  CREATE = 1;
-  UPDATE = 2;
-  LIST = 3;
-  DELETE = 4;
-  UPDATE_MEMBERSHIP = 5;
+  ACTION_UNKNOWN = 0;
+  ACTION_CREATE = 1;
+  ACTION_UPDATE = 2;
+  ACTION_DELETE = 3;
+  ACTION_LIST = 4;
+  ACTION_UPDATE_MEMBERSHIP = 5;
 }
 
 message ResourceID {
@@ -62,6 +62,7 @@ message Entry {
 
   ResourceID resource = 3;
 
+  // Operation performed on resource.
   Action action = 4;
 
   // Additional metadata describing the change performed.

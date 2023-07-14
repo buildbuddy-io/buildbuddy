@@ -1,18 +1,16 @@
 import React from "react";
 import rpcService from "../../../app/service/rpc_service";
-import { auditlog } from "../../../proto/auditlog_ts_proto";
+import {auditlog} from "../../../proto/auditlog_ts_proto";
 import * as proto from "../../../app/util/proto";
 import * as format from "../../../app/format/format";
-import {audit} from "rxjs/operators";
+import {formatDateRange} from "../../../app/format/format";
 import Button, {OutlinedButton} from "../../../app/components/button/button";
 import {Calendar} from "lucide-react";
-import {formatDateRange} from "../../../app/format/format";
 import Popup from "../../../app/components/popup/popup";
 import {DateRangePicker, OnChangeProps, RangeWithKey} from "react-date-range";
-import {Simulate} from "react-dom/test-utils";
-import ended = Simulate.ended;
 import error_service from "../../../app/errors/error_service";
 import Spinner from "../../../app/components/spinner/spinner";
+import Action = auditlog.Action;
 
 interface State {
   loading: boolean
@@ -141,6 +139,22 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
     </>)
   }
 
+  renderAction(action: auditlog.Action) {
+    switch (action) {
+      case Action.ACTION_CREATE:
+        return "Create"
+      case Action.ACTION_DELETE:
+        return "Delete"
+      case Action.ACTION_UPDATE:
+        return "Update"
+      case Action.ACTION_LIST:
+        return "List"
+      case Action.ACTION_UPDATE_MEMBERSHIP:
+        return "Update Membership"
+    }
+    return ""
+  }
+
   renderRequest(request: auditlog.Entry.ResourceRequest | null | undefined) {
     if (!request) {
       return ""
@@ -225,7 +239,7 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
                     {this.renderUser(entry.authenticationInfo!)}
                   </div>
                 <div className="resource">{this.renderResource(entry.resource!)}</div>
-                  <div className="method">{this.methods[entry.method]}</div>
+                  <div className="method">{this.renderAction(entry.action)}</div>
                   <div className="request"><pre>{this.renderRequest(entry.request)}</pre></div>
                 </div>
               );
