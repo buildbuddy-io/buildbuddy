@@ -1380,7 +1380,7 @@ func TestGroupAuditLogs(t *testing.T) {
 	e := al.GetAllEntries()[0]
 	require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
 	require.Equal(t, groupID, e.Resource.GetId())
-	require.Equal(t, auditlog.UpdateGroup, e.Method)
+	require.Equal(t, alpb.Action_ACTION_UPDATE, e.Action)
 
 	req := e.Request.(*grpb.UpdateGroupRequest)
 	require.Equal(t, req.Name, "new name")
@@ -1434,7 +1434,7 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
 		require.Equal(t, groupID, e.Resource.GetId())
-		require.Equal(t, auditlog.UpdateGroupMembership, e.Method)
+		require.Equal(t, auditlog.UpdateGroupMembership, e.Action)
 		require.Equal(t, req, e.Request)
 	}
 
@@ -1454,7 +1454,7 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
 		require.Equal(t, groupID, e.Resource.GetId())
-		require.Equal(t, auditlog.UpdateGroupMembership, e.Method)
+		require.Equal(t, auditlog.UpdateGroupMembership, e.Action)
 
 		require.Equal(t, req, e.Request)
 	}
@@ -1475,7 +1475,7 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
 		require.Equal(t, groupID, e.Resource.GetId())
-		require.Equal(t, auditlog.UpdateGroupMembership, e.Method)
+		require.Equal(t, auditlog.UpdateGroupMembership, e.Action)
 
 		require.Equal(t, req, e.Request)
 	}

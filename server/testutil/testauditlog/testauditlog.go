@@ -13,7 +13,7 @@ import (
 
 type FakeEntry struct {
 	Resource *alpb.ResourceID
-	Method   string
+	Action   alpb.Action
 	Request  proto.Message
 }
 
@@ -35,7 +35,7 @@ func New(t *testing.T) *FakeAuditLog {
 	return &FakeAuditLog{t: t, payloadTypes: payloadTypes}
 }
 
-func (f *FakeAuditLog) Log(ctx context.Context, resource *alpb.ResourceID, method string, req proto.Message) {
+func (f *FakeAuditLog) Log(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, req proto.Message) {
 	_, ok := f.payloadTypes[req.ProtoReflect().Descriptor()]
 	if !ok {
 		require.FailNowf(f.t, "request type missing from Entry ResourceRequest proto", "missing type: %s", req.ProtoReflect().Descriptor().FullName())
@@ -43,7 +43,7 @@ func (f *FakeAuditLog) Log(ctx context.Context, resource *alpb.ResourceID, metho
 	}
 	f.entries = append(f.entries, &FakeEntry{
 		Resource: resource,
-		Method:   method,
+		Action:   action,
 		Request:  req,
 	})
 }

@@ -136,7 +136,7 @@ func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.InvocationResourceID(req.GetInvocationId()), auditlog.UpdateInvocation, req)
+		al.Log(ctx, auditlog.InvocationResourceID(req.GetInvocationId()), alpb.Action_ACTION_UPDATE, req)
 	}
 	return &inpb.UpdateInvocationResponse{}, nil
 }
@@ -338,7 +338,7 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetGroupId()), auditlog.UpdateGroupMembership, req)
+		al.Log(ctx, auditlog.GroupResourceID(req.GetGroupId()), alpb.Action_ACTION_UPDATE_MEMBERSHIP, req)
 	}
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
@@ -445,7 +445,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.Id), auditlog.UpdateGroup, req)
+		al.Log(ctx, auditlog.GroupResourceID(req.Id), alpb.Action_ACTION_UPDATE, req)
 	}
 	return &grpb.UpdateGroupResponse{}, nil
 }
@@ -484,7 +484,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 		})
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(""), auditlog.ListAPIKeys, req)
+		al.Log(ctx, auditlog.GroupAPIKeyResourceID(""), alpb.Action_ACTION_LIST, req)
 	}
 	return rsp, nil
 }
@@ -501,7 +501,7 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(k.APIKeyID), auditlog.CreateAPIKey, req)
+		al.Log(ctx, auditlog.GroupAPIKeyResourceID(k.APIKeyID), alpb.Action_ACTION_CREATE, req)
 	}
 	return &akpb.CreateApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
@@ -548,7 +548,7 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(req.GetId()), auditlog.UpdateAPIKey, req)
+		al.Log(ctx, auditlog.GroupAPIKeyResourceID(req.GetId()), alpb.Action_ACTION_UPDATE, req)
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
 }
@@ -562,7 +562,7 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(req.GetId()), auditlog.DeleteAPIKey, req)
+		al.Log(ctx, auditlog.GroupAPIKeyResourceID(req.GetId()), alpb.Action_ACTION_DELETE, req)
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
@@ -602,7 +602,7 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(k.APIKeyID), auditlog.CreateAPIKey, req)
+		al.Log(ctx, auditlog.UserAPIKeyResourceID(k.APIKeyID), alpb.Action_ACTION_CREATE, req)
 	}
 	return &akpb.CreateApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
@@ -631,7 +631,7 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(req.GetId()), auditlog.UpdateAPIKey, req)
+		al.Log(ctx, auditlog.UserAPIKeyResourceID(req.GetId()), alpb.Action_ACTION_UPDATE, req)
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
 }
@@ -645,7 +645,7 @@ func (s *BuildBuddyServer) DeleteUserApiKey(ctx context.Context, req *akpb.Delet
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(req.GetId()), auditlog.DeleteAPIKey, req)
+		al.Log(ctx, auditlog.UserAPIKeyResourceID(req.GetId()), alpb.Action_ACTION_DELETE, req)
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
 }

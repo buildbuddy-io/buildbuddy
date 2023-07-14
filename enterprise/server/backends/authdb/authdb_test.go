@@ -449,7 +449,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
 		require.Equal(t, resp.ApiKey.Id, e.Resource.GetId())
-		require.Equal(t, auditlog.CreateAPIKey, e.Method)
+		require.Equal(t, auditlog.CreateAPIKey, e.Action)
 		require.Equal(t, req, e.Request)
 		key = resp.ApiKey
 	}
@@ -463,7 +463,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		require.Len(t, al.GetAllEntries(), 1)
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
-		require.Equal(t, auditlog.ListAPIKeys, e.Method)
+		require.Equal(t, auditlog.ListAPIKeys, e.Action)
 		require.Equal(t, req, e.Request)
 	}
 
@@ -482,7 +482,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
 		require.Equal(t, key.Id, e.Resource.GetId())
-		require.Equal(t, auditlog.UpdateAPIKey, e.Method)
+		require.Equal(t, auditlog.UpdateAPIKey, e.Action)
 		require.Equal(t, req, e.Request)
 	}
 
@@ -498,7 +498,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
 		require.Equal(t, key.Id, e.Resource.GetId())
-		require.Equal(t, auditlog.DeleteAPIKey, e.Method)
+		require.Equal(t, auditlog.DeleteAPIKey, e.Action)
 		require.Equal(t, req, e.Request)
 	}
 
@@ -516,7 +516,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_USER_API_KEY, e.Resource.GetType())
 		require.Equal(t, resp.ApiKey.Id, e.Resource.GetId())
-		require.Equal(t, auditlog.CreateAPIKey, e.Method)
+		require.Equal(t, auditlog.CreateAPIKey, e.Action)
 		require.Equal(t, req, e.Request)
 		key = resp.ApiKey
 	}
@@ -544,7 +544,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_USER_API_KEY, e.Resource.GetType())
 		require.Equal(t, key.Id, e.Resource.GetId())
-		require.Equal(t, auditlog.UpdateAPIKey, e.Method)
+		require.Equal(t, auditlog.UpdateAPIKey, e.Action)
 		require.Equal(t, req, e.Request)
 	}
 
@@ -559,7 +559,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_USER_API_KEY, e.Resource.GetType())
 		require.Equal(t, key.Id, e.Resource.GetId())
-		require.Equal(t, auditlog.DeleteAPIKey, e.Method)
+		require.Equal(t, auditlog.DeleteAPIKey, e.Action)
 		require.Equal(t, req, e.Request)
 	}
 }

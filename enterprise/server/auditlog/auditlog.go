@@ -28,9 +28,10 @@ var (
 	auditLogsEnabled = flag.Bool("app.audit_logs_enabled", false, "Whether to log administrative events to an audit log. Requires OLAP database to be configured.")
 )
 
-	UpdateGroupUser = "groupUsers.update"
-
+const (
 	pageSize = 20
+)
+
 type Logger struct {
 	env environment.Env
 	dbh interfaces.OLAPDBHandle
@@ -175,10 +176,34 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 
 // TODO(vadim): support API key auth
 // TODO(vadim): populate client IP
-func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, method string, request proto.Message) {
-	if err := l.insertLog(ctx, resource, method, request); err != nil {
+func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, request proto.Message) {
+	if err := l.insertLog(ctx, resource, action, request); err != nil {
 		log.Warningf("could not insert audit log: %s", err)
 	}
+}
+
+// cleanRequest clears out redundant noise from the requests.
+func cleanRequest(e *alpb.Entry_ResourceRequest) *alpb.Entry_ResourceRequest {
+	e = proto.Clone(e).(*alpb.Entry_ResourceRequest)
+	if r := e.CreateApiKey; r != nil {
+		r.GroupId = ""
+	}
+	if r := e.GetApiKeys; r != nil {
+		r.GroupId = ""
+	}
+	if r := e.UpdateApiKey; r != nil {
+		r.Id = ""
+	}
+	if r := e.DeleteApiKey; r != nil {
+		r.Id = ""
+	}
+	if r := e.UpdateGroup; r != nil {
+		r.Id = ""
+	}
+	if r := e.UpdateGroupUsers; r != nil {
+		r.GroupId = ""
+	}
+	return e
 }
 
 func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
@@ -205,6 +230,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 		qb.AddWhereClause("event_time_usec >= ?", ts)
 	}
 	qb.SetLimit(pageSize + 1)
+	qb.SetOrderBy("event_time_usec", true)
 	q, args := qb.Build()
 
 	rows, err := l.dbh.DB(ctx).Raw(q, args...).Rows()
@@ -246,12 +272,12 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 				ClientIp: e.ClientIP,
 			},
 			Resource: &alpb.ResourceID{
-				Type: alpb.ResourceType(e.ResourceType),
+				Type: resourceType,
 				Id:   e.ResourceID,
 				Name: e.ResourceName,
 			},
 			Action:  alpb.Action(e.Action),
-			Request: &request,
+			Request: cleanRequest(&request),
 		})
 	}
 
