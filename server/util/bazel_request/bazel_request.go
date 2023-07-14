@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -42,34 +42,10 @@ func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 }
 
 func GetInvocationID(ctx context.Context) string {
-	const toolInvocationIDTag = 3
-
+	const toolInvocationIDFieldNumber = 3
 	b := getRequestMetadataBytes(ctx)
-	// The proto wire representation is just a sequence of (tag, value) pairs.
-	// The loop below iterates through these pairs until hitting the
-	// tool_invocation_id field tag, then returns its string value.
-	// This lets us avoid a full parse of the RequestMetadata on every request.
-	for len(b) > 0 {
-		tag, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return ""
-		}
-		b = b[n:]
-
-		if tag != toolInvocationIDTag {
-			n = protowire.ConsumeFieldValue(tag, typ, b)
-			if n < 0 {
-				return ""
-			}
-			b = b[n:]
-			continue
-		}
-
-		s, _ := protowire.ConsumeString(b)
-		return s
-	}
-
-	return ""
+	value, _ := pbwireutil.ConsumeFirstString(b, toolInvocationIDFieldNumber)
+	return value
 }
 
 type Version struct {
