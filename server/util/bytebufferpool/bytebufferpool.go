@@ -5,11 +5,35 @@ import (
 	"sync"
 )
 
+// safeSyncPool is a wrapper around `sync.Pool` that provides type safety
+// using Go generics.
+type safeSyncPool[T any] struct {
+	pool sync.Pool
+}
+
+func newSafeSyncPool[T any](newFn func() T) safeSyncPool[T] {
+	return safeSyncPool[T]{
+		pool: sync.Pool{
+			New: func() interface{} {
+				return newFn()
+			},
+		},
+	}
+}
+
+func (p *safeSyncPool[T]) Get() T {
+	return p.pool.Get().(T)
+}
+
+func (p *safeSyncPool[T]) Put(buf T) {
+	p.pool.Put(buf)
+}
+
 // Pool is a wrapper around `sync.Pool` that manages pool for buffers of different lengths of n (using power of 2).
 type Pool struct {
 	// pools contain slices of lengths that are powers of 2. the slice itself is indexed by the exponent.
 	// index 0 containing a pool of 2^0 length slices, index 1 containing 2^1 length slices and so forth.
-	pools         []sync.Pool
+	pools         []safeSyncPool[*[]byte]
 	maxBufferSize int
 }
 
@@ -17,11 +41,12 @@ func New(maxBufferSize int) *Pool {
 	bp := &Pool{}
 	for size := 1; ; size *= 2 {
 		size := size
-		bp.pools = append(bp.pools, sync.Pool{
-			New: func() interface{} {
-				return make([]byte, size)
+		bp.pools = append(bp.pools, newSafeSyncPool(
+			func() *[]byte {
+				a := make([]byte, size)
+				return &a
 			},
-		})
+		))
 		if size >= maxBufferSize {
 			break
 		}
@@ -42,7 +67,7 @@ func (bp *Pool) Get(length int64) []byte {
 	if idx >= len(bp.pools) {
 		idx = len(bp.pools) - 1
 	}
-	return bp.pools[idx].Get().([]byte)
+	return *bp.pools[idx].Get()
 }
 
 // Put returns a byte slice back into the pool.
@@ -55,5 +80,5 @@ func (bp *Pool) Put(buf []byte) {
 	if idx >= len(bp.pools) {
 		idx = len(bp.pools) - 1
 	}
-	bp.pools[idx].Put(buf)
+	bp.pools[idx].Put(&buf)
 }
