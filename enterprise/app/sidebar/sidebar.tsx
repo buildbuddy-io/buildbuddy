@@ -219,9 +219,11 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <span className="sidebar-item-text">Usage</span>
             </SidebarLink>
           )}
-          <SidebarLink selected={this.isAuditLogsSelected()} href={Path.auditLogsPath}>
-            <View className="icon" /> Audit Logs
-          </SidebarLink>
+          {capabilities.config.auditLogsUiEnabled && (
+            <SidebarLink selected={this.isAuditLogsSelected()} href={Path.auditLogsPath}>
+              <View className="icon" /> Audit Logs
+            </SidebarLink>
+          )}
           <a className="sidebar-item" href="https://www.buildbuddy.io/docs/" target="_blank" title="Docs">
             <BookOpen className="icon" />
             <span className="sidebar-item-text">Docs</span>
