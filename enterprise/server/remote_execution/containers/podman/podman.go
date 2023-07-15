@@ -364,6 +364,11 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	if c.options.Runtime != "" {
 		args = append(args, "--runtime="+c.options.Runtime)
+		if filepath.Base(c.options.Runtime) == "runsc" {
+			// gVisor will attempt to setup cgroups, but podman has
+			// already done that, so tell gVisor not to.
+			args = append(args, "--runtime-flag=ignore-cgroups")
+		}
 	}
 	if c.imageStreamingEnabled {
 		args = append(args, enableStreamingStoreArg)
