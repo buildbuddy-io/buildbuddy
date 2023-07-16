@@ -13,6 +13,8 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -41,6 +43,7 @@ var (
 type Workspace struct {
 	env     environment.Env
 	rootDir string
+	overlay *overlayfs.Overlay
 	// dirPerms are the permissions set on the workspace root directory as well as
 	// any input or output directories created by the executor. It does not affect
 	// file permissions.
@@ -67,6 +70,9 @@ type Opts struct {
 	// for output dirs.
 	Preserve    bool
 	CleanInputs string
+	// UseOverlayfs specifies whether the workspace should use overlayfs to
+	// allow copy-on-write for workspace inputs.
+	UseOverlayfs bool
 }
 
 // New creates a new workspace directly under the given parent directory.
@@ -84,9 +90,19 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
 	}
 
+	var overlay *overlayfs.Overlay
+	if opts.UseOverlayfs {
+		overlayOpts := overlayfs.Opts{DirPerms: dirPerms}
+		overlay, err = overlayfs.Convert(context.TODO(), rootDir, overlayOpts)
+		if err != nil {
+			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
+		}
+	}
+
 	return &Workspace{
 		env:      env,
 		rootDir:  rootDir,
+		overlay:  overlay,
 		dirPerms: dirPerms,
 		Opts:     opts,
 		Inputs:   map[string]*repb.FileNode{},
@@ -96,6 +112,18 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 // Path returns the absolute path to the workspace root directory.
 func (ws *Workspace) Path() string {
 	return ws.rootDir
+}
+
+// lowerdir returns the lower layer of the workspace to which immutable inputs
+// are downloaded. Output files can also be found here after calling Apply(),
+// which applies the diff from the upperdir to the lowerdir.
+//
+// If overlayfs is not enabled then this just returns the workspace directory.
+func (ws *Workspace) lowerdir() string {
+	if ws.overlay == nil {
+		return ws.Path()
+	}
+	return ws.overlay.LowerDir
 }
 
 // SetTask sets the next task to be executed within the workspace.
@@ -109,7 +137,7 @@ func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
 		outputDirs = cmd.GetOutputDirectories()
 		outputPaths = append(cmd.GetOutputFiles(), cmd.GetOutputDirectories()...)
 	}
-	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), outputDirs, outputPaths, ws.dirPerms)
+	ws.dirHelper = dirtools.NewDirHelper(ws.lowerdir(), outputDirs, outputPaths, ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -157,7 +185,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), tree, ws.rootDir, opts)
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), tree, ws.lowerdir(), opts)
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
@@ -250,11 +278,11 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	var txInfo *dirtools.TransferInfo
 	var stdoutDigest, stderrDigest *repb.Digest
 
-	eg, egCtx := errgroup.WithContext(ctx)
+	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		// Errors uploading stderr/stdout are swallowed.
 		var err error
-		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
+		stdoutDigest, err = cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to upload stdout: %s", err)
 		}
@@ -263,15 +291,30 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	eg.Go(func() error {
 		// Errors uploading stderr/stdout are swallowed.
 		var err error
-		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
+		stderrDigest, err = cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to upload stderr: %s", err)
 		}
 		return nil
 	})
 	eg.Go(func() error {
+		if ws.overlay != nil {
+			// When overlayfs is enabled, apply the changes from upperdir to
+			// lowerdir, since dirHelper's root dir is configured as the
+			// lowerdir and it needs to see the output files.
+			//
+			// Optimization: if recycling is not enabled, then at this point the
+			// runner should be removed and cannot affect any files in the
+			// workspace anymore, so it is safe to rename the outputs files in
+			// upperdir here rather than copying.
+			recyclingEnabled := platform.IsTrue(platform.FindValue(ws.task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
+			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
+			if err := ws.overlay.Apply(ctx, opts); err != nil {
+				return status.WrapError(err, "apply overlay upperdir changes")
+			}
+		}
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.Path(), cmd, executeResponse.Result)
+		txInfo, err = dirtools.UploadTree(ctx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.lowerdir(), cmd, executeResponse.Result)
 		return err
 	})
 	var logsMu sync.Mutex
@@ -310,6 +353,10 @@ func (ws *Workspace) Remove(ctx context.Context) error {
 	// No need to keep the lock held while removing; other operations will
 	// immediately fail since we've set the removing bit.
 	ws.mu.Unlock()
+
+	if ws.overlay != nil {
+		return ws.overlay.Remove(ctx)
+	}
 
 	// Sometimes removal fails if badly-behaved actions write their
 	// directories read-only. Use force-removal to handle these cases.

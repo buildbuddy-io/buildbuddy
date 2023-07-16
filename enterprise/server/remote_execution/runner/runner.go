@@ -69,6 +69,7 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+	enableOverlayfs           = flag.Bool("executor.enable_workspace_overlayfs", false, "Enable overlayfs for executor workspaces. This provides a stronger guarantee that the executor's local cache cannot be modified by actions. Only available on Linux, and requires the executor to have mount() permissions as well as the overlayfs kernel module to be enabled.")
 )
 
 const (
@@ -975,6 +976,7 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 		Preserve:        props.PreserveWorkspace,
 		CleanInputs:     props.CleanWorkspaceInputs,
 		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
+		UseOverlayfs:    *enableOverlayfs && props.WorkloadIsolationType != string(platform.FirecrackerContainerType),
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
