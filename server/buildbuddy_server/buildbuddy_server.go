@@ -13,10 +13,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
-<<<<<<< HEAD
-	"github.com/buildbuddy-io/buildbuddy/proto/auditlog"
-=======
->>>>>>> df464e4e3 (style fix)
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
