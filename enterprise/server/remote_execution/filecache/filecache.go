@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -92,7 +93,7 @@ func sizeFn(value interface{}) int64 {
 func evictFn(value interface{}, reason lru.EvictionReason) {
 	v, ok := value.(*entry)
 	if !ok {
-		log.Errorf("Unexpected filecache entry type %T", value)
+		alert.UnexpectedEvent("filecache", "Unexpected filecache entry type %T", value)
 		return
 	}
 

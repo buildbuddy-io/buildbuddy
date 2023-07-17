@@ -10,6 +10,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/metrics",
+        "//server/util/alert",
         "//server/util/disk",
         "//server/util/fastcopy",
         "//server/util/log",
