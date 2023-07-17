@@ -1217,7 +1217,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 	return groupID, DefaultPartitionID
 }
 
-func (p *PebbleCache) encryptionEnabled(ctx context.Context, partitionID string) (bool, error) {
+func (p *PebbleCache) encryptionEnabled(ctx context.Context) (bool, error) {
 	auth := p.env.GetAuthenticator()
 	if auth == nil {
 		return false, nil
@@ -1244,7 +1244,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 
 	groupID, partID := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 
-	encryptionEnabled, err := p.encryptionEnabled(ctx, partID)
+	encryptionEnabled, err := p.encryptionEnabled(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1877,7 +1877,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	}
 
 	wc := interfaces.CommittedWriteCloser(cwc)
-	shouldEncrypt, err := p.encryptionEnabled(ctx, fileRecord.GetIsolation().GetPartitionId())
+	shouldEncrypt, err := p.encryptionEnabled(ctx)
 	if err != nil {
 		_ = wc.Close()
 		return nil, err
@@ -2943,7 +2943,7 @@ func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.
 
 	shouldDecrypt := fileMetadata.EncryptionMetadata != nil
 	if shouldDecrypt {
-		encryptionEnabled, err := p.encryptionEnabled(ctx, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+		encryptionEnabled, err := p.encryptionEnabled(ctx)
 		if err != nil {
 			return nil, err
 		}
