@@ -12,6 +12,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
+        "//server/util/alert",
         "//server/util/authutil",
         "//server/util/db",
         "//server/util/log",
@@ -19,7 +20,6 @@ go_library(
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
-        "@io_gorm_gorm//clause",
     ],
 )
 
