@@ -93,12 +93,13 @@ func evictFn(value interface{}, reason lru.EvictionReason) {
 	// TODO(sluongng): consider using Go generic to avoid type assertion.
 	v, ok := value.(*entry)
 	if !ok {
-		log.Warningf("could not cast filecache's value to entry struct: %v", value)
+		log.Errorf("Unexpected filecache entry type %T", value)
 		return
 	}
 
-	err := syscall.Unlink(v.value)
-	log.Errorf("failed to unlink filecache entry %q: %s", v.value, err)
+  if err := syscall.Unlink(v.value); err != nil {
+	  log.Errorf("Failed to unlink filecache entry %q: %s", v.value, err)
+  }
 	if reason == lru.SizeEviction {
 		age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
 		metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
