@@ -37,6 +37,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   abstract newRequest(values?: Record<string, any>): T;
   abstract submitRequest(): void;
   abstract showSuggestionPreference(): boolean;
+  abstract isNewOrg(): boolean;
 
   async onSubmit(e: any) {
     e.preventDefault();
@@ -93,7 +94,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   renderFields() {
     const { request, initialRequest } = this.state;
     const domain =
-      this.props.user.selectedGroup?.id == (request as grp.UpdateGroupRequest)?.id
+      !this.isNewOrg()
         ? this.props.user.selectedGroup?.ownedDomain || getDomainFromEmail(this.props.user.displayUser.email)
         : getDomainFromEmail(this.props.user.displayUser.email);
     return (

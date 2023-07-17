@@ -24,6 +24,10 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
     return true;
   }
 
+  isNewOrg(): boolean {
+    return false;
+  }
+
   private populateWithSelectedGroup() {
     const group = this.props.user.selectedGroup;
 

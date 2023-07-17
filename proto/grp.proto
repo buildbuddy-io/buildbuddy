@@ -209,9 +209,6 @@ message CreateGroupResponse {
 message UpdateGroupRequest {
   context.RequestContext request_context = 5;
 
-  // The ID of the group to be updated.
-  string id = 1;
-
   // The name of this group (may be displayed to users).
   // Ex. "Tyler Williams Group"
   string name = 2;

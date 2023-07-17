@@ -398,17 +398,17 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
 	if urlIdentifier != "" {
-		if group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); group != nil && group.GroupID != req.GetId() {
+		if group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); group != nil && group.GroupID != req.GetRequestContext().GetGroupId() {
 			return nil, status.InvalidArgumentError("URL is already in use")
 		} else if err != nil && gstatus.Code(err) != gcodes.NotFound {
 			return nil, err
 		}
 	}
 	if group == nil {
-		if req.GetId() == "" {
+		if req.GetRequestContext().GetGroupId() == "" {
 			return nil, status.InvalidArgumentError("Missing organization identifier.")
 		}
-		group, err = userDB.GetGroupByID(ctx, req.GetId())
+		group, err = userDB.GetGroupByID(ctx, req.GetRequestContext().GetGroupId())
 		if err != nil {
 			return nil, err
 		}
