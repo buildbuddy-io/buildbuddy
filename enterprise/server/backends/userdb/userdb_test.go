@@ -24,6 +24,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grp "github.com/buildbuddy-io/buildbuddy/proto/group"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -1364,7 +1365,7 @@ func TestGroupAuditLogs(t *testing.T) {
 	userCtx = authUserCtx(ctx, env, t, "US1")
 
 	_, err = env.GetBuildBuddyServer().UpdateGroup(userCtx, &grpb.UpdateGroupRequest{
-		Id:                          groupID,
+		RequestContext:              &ctxpb.RequestContext{GroupId: groupID},
 		Name:                        "new name",
 		AutoPopulateFromOwnedDomain: true,
 		UrlIdentifier:               "my-group-name",
@@ -1420,7 +1421,7 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 	{
 		al.Reset()
 		req := &grpb.UpdateGroupUsersRequest{
-			GroupId: groupID,
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 			Update: []*grpb.UpdateGroupUsersRequest_Update{{
 				UserId:           &uidpb.UserId{Id: "US2"},
 				MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
@@ -1441,7 +1442,7 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 	{
 		al.Reset()
 		req := &grpb.UpdateGroupUsersRequest{
-			GroupId: groupID,
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 			Update: []*grpb.UpdateGroupUsersRequest_Update{{
 				UserId: &uidpb.UserId{Id: "US2"},
 				Role:   grpb.Group_DEVELOPER_ROLE,
@@ -1462,7 +1463,7 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 	{
 		al.Reset()
 		req := &grpb.UpdateGroupUsersRequest{
-			GroupId: groupID,
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 			Update: []*grpb.UpdateGroupUsersRequest_Update{{
 				UserId:           &uidpb.UserId{Id: "US2"},
 				MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
