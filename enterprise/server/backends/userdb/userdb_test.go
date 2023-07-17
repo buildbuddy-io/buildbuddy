@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -22,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	grp "github.com/buildbuddy-io/buildbuddy/proto/group"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -61,9 +63,11 @@ func newFakeUser(userID, domain string) *tables.User {
 	}
 }
 
-func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, domain string) {
-	err := env.GetUserDB().InsertUser(ctx, newFakeUser(userID, domain))
+func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, domain string) *tables.User {
+	user := newFakeUser(userID, domain)
+	err := env.GetUserDB().InsertUser(ctx, user)
 	require.NoError(t, err)
+	return user
 }
 
 func getOrgAPIKey(t *testing.T, ctx context.Context, env environment.Env, groupID string) *tables.APIKey {
@@ -1332,4 +1336,146 @@ func TestRequestToJoinGroup_DomainMember_AlreadyRequested_EmptyGroup_GetAdminRol
 	require.NoError(t, err)
 	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
 	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+}
+
+func TestGroupAuditLogs(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	al := &testauditlog.FakeAuditLog{}
+	env.SetAuditLogger(al)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create a user
+	createUser(t, ctx, env, "US1", "org1.io")
+	userCtx := authUserCtx(ctx, env, t, "US1")
+
+	// Create a new group as US1
+	groupURL := "my-group"
+	groupID, err := udb.CreateGroup(userCtx, &tables.Group{
+		Name:          "old name",
+		URLIdentifier: &groupURL,
+	})
+	require.NoError(t, err)
+	al.Reset()
+
+	// Re-authenticate to pick up the new group membership
+	userCtx = authUserCtx(ctx, env, t, "US1")
+
+	_, err = env.GetBuildBuddyServer().UpdateGroup(userCtx, &grpb.UpdateGroupRequest{
+		Id:                          groupID,
+		Name:                        "new name",
+		AutoPopulateFromOwnedDomain: true,
+		UrlIdentifier:               "my-group-name",
+		SharingEnabled:              false,
+		UseGroupOwnedExecutors:      true,
+		SuggestionPreference:        grpb.SuggestionPreference_ADMINS_ONLY,
+		UserOwnedKeysEnabled:        true,
+	})
+	require.NoError(t, err)
+	require.Len(t, al.GetAllEntries(), 1)
+
+	e := al.GetAllEntries()[0]
+	require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
+	require.Equal(t, groupID, e.Resource.GetId())
+	require.Equal(t, alpb.Action_ACTION_UPDATE, e.Action)
+
+	req := e.Request.(*grpb.UpdateGroupRequest)
+	require.Equal(t, req.Name, "new name")
+	require.True(t, req.AutoPopulateFromOwnedDomain)
+	require.False(t, req.SharingEnabled)
+	require.True(t, req.UserOwnedKeysEnabled)
+	require.True(t, req.UseGroupOwnedExecutors)
+	require.Equal(t, grpb.SuggestionPreference_ADMINS_ONLY, req.SuggestionPreference)
+}
+
+func TestGroupMembershipAuditLogs(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	al := &testauditlog.FakeAuditLog{}
+	env.SetAuditLogger(al)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create a user
+	createUser(t, ctx, env, "US1", "org1.io")
+	userCtx := authUserCtx(ctx, env, t, "US1")
+
+	// Create a new group as US1
+	groupURL := "my-group"
+	groupID, err := udb.CreateGroup(userCtx, &tables.Group{
+		Name:          "old name",
+		URLIdentifier: &groupURL,
+	})
+	require.NoError(t, err)
+	al.Reset()
+
+	// Re-authenticate to pick up the new group membership
+	userCtx = authUserCtx(ctx, env, t, "US1")
+
+	createUser(t, ctx, env, "US2", "org1.io")
+	// Add user to group.
+	{
+		al.Reset()
+		req := &grpb.UpdateGroupUsersRequest{
+			GroupId: groupID,
+			Update: []*grpb.UpdateGroupUsersRequest_Update{{
+				UserId:           &uidpb.UserId{Id: "US2"},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+				Role:             grpb.Group_ADMIN_ROLE,
+			}}}
+		_, err = env.GetBuildBuddyServer().UpdateGroupUsers(userCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
+		require.Equal(t, groupID, e.Resource.GetId())
+		require.Equal(t, alpb.Action_ACTION_UPDATE_MEMBERSHIP, e.Action)
+		require.Equal(t, req, e.Request)
+	}
+
+	// Update role.
+	{
+		al.Reset()
+		req := &grpb.UpdateGroupUsersRequest{
+			GroupId: groupID,
+			Update: []*grpb.UpdateGroupUsersRequest_Update{{
+				UserId: &uidpb.UserId{Id: "US2"},
+				Role:   grpb.Group_DEVELOPER_ROLE,
+			}}}
+		_, err = env.GetBuildBuddyServer().UpdateGroupUsers(userCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
+		require.Equal(t, groupID, e.Resource.GetId())
+		require.Equal(t, alpb.Action_ACTION_UPDATE_MEMBERSHIP, e.Action)
+
+		require.Equal(t, req, e.Request)
+	}
+
+	// Remove user from group.
+	{
+		al.Reset()
+		req := &grpb.UpdateGroupUsersRequest{
+			GroupId: groupID,
+			Update: []*grpb.UpdateGroupUsersRequest_Update{{
+				UserId:           &uidpb.UserId{Id: "US2"},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+			}}}
+		_, err = env.GetBuildBuddyServer().UpdateGroupUsers(userCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
+		require.Equal(t, groupID, e.Resource.GetId())
+		require.Equal(t, alpb.Action_ACTION_UPDATE_MEMBERSHIP, e.Action)
+
+		require.Equal(t, req, e.Request)
+	}
 }

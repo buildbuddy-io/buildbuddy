@@ -327,13 +327,7 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 	return d.h.DB(ctx).Exec(q, args...).Error
 }
 
-func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID string) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
-		return d.addUserToGroup(tx, userID, groupID)
-	})
-}
-
-func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) error {
+func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) (retErr error) {
 	// Count the number of users in the group.
 	// If there are no existing users, then user should join with admin role,
 	// otherwise they should join with default role.
@@ -486,6 +480,54 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	return users, nil
 }
 
+func (d *UserDB) removeUserFromGroup(ctx context.Context, tx *db.DB, userID string, groupID string) error {
+	ug, err := getUserGroup(tx, userID, groupID)
+	if err != nil {
+		return err
+	}
+	if ug == nil {
+		return nil
+	}
+	if err := tx.Exec(`
+						DELETE FROM "UserGroups"
+						WHERE user_user_id = ? AND group_group_id = ?`,
+		userID,
+		groupID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`
+						DELETE FROM "APIKeys"
+						WHERE user_id = ? AND group_id = ?`,
+		userID,
+		groupID).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *UserDB) updateUserRole(ctx context.Context, tx *db.DB, userID string, groupID string, newRole role.Role) error {
+	ug, err := getUserGroup(tx, userID, groupID)
+	if err != nil {
+		return err
+	}
+	if ug == nil {
+		return nil
+	}
+	if role.Role(ug.Role) == newRole {
+		return nil
+	}
+	err = tx.Exec(`
+					UPDATE "UserGroups"
+					SET role = ?
+					WHERE user_user_id = ? AND group_group_id = ?
+				`, newRole, userID, groupID,
+	).Error
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
 	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
 		return err
@@ -499,18 +541,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 		for _, update := range updates {
 			switch update.GetMembershipAction() {
 			case grpb.UpdateGroupUsersRequest_Update_REMOVE:
-				if err := tx.Exec(`
-						DELETE FROM "UserGroups"
-						WHERE user_user_id = ? AND group_group_id = ?`,
-					update.GetUserId().GetId(),
-					groupID).Error; err != nil {
-					return err
-				}
-				if err := tx.Exec(`
-						DELETE FROM "APIKeys"
-						WHERE user_id = ? AND group_id = ?`,
-					update.GetUserId().GetId(),
-					groupID).Error; err != nil {
+				if err := d.removeUserFromGroup(ctx, tx, update.GetUserId().GetId(), groupID); err != nil {
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_ADD:
@@ -523,17 +554,10 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 			}
 
 			if update.Role != grpb.Group_UNKNOWN_ROLE {
-				err := tx.Exec(`
-					UPDATE "UserGroups"
-					SET role = ?
-					WHERE user_user_id = ? AND group_group_id = ?
-				`, role.FromProto(update.Role), update.GetUserId().GetId(), groupID,
-				).Error
-				if err != nil {
+				if err := d.updateUserRole(ctx, tx, update.GetUserId().GetId(), groupID, role.FromProto(update.GetRole())); err != nil {
 					return err
 				}
 			}
-
 		}
 		return nil
 	})
