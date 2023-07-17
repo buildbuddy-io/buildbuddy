@@ -78,11 +78,14 @@ func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {
 type CacheSnapshotOptions struct {
 	// The following fields are all required.
 	VMConfiguration     *fcpb.VMConfiguration
-	MemSnapshotPath     string
 	VMStateSnapshotPath string
 	KernelImagePath     string
 	InitrdImagePath     string
 	ContainerFSPath     string
+
+	// MemSnapshotPath is the memory snapshot file path. It is required if the
+	// memory file is not represented as a ChunkedFile.
+	MemSnapshotPath string
 
 	// This field is optional -- a snapshot may have a scratch filesystem
 	// attached or it may have one attached at runtime.
@@ -103,11 +106,13 @@ type UnpackedSnapshot struct {
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
 	files := []string{
-		snapOpts.MemSnapshotPath,
 		snapOpts.VMStateSnapshotPath,
 		snapOpts.KernelImagePath,
 		snapOpts.InitrdImagePath,
 		snapOpts.ContainerFSPath,
+	}
+	if snapOpts.MemSnapshotPath != "" {
+		files = append(files, snapOpts.MemSnapshotPath)
 	}
 	if snapOpts.ScratchFSPath != "" {
 		files = append(files, snapOpts.ScratchFSPath)

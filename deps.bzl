@@ -1498,8 +1498,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
             "gazelle:resolve go github.com/containernetworking/cni/pkg/types/current @com_github_containernetworking_cni//pkg/types/current",
         ],
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
-        sum = "h1:HTnxnX9pvQkQOHjv+TppzUyi2BNFL/7aegSlqIK/usY=",
-        version = "v1.0.0",
+        replace = "github.com/bduffany/firecracker-go-sdk",
+        sum = "h1:gxdryq8e81djt9+N7gUa4FVJO427la9UUQEiMo2B8tE=",
+        version = "v0.0.0-20230702173145-62f8e172aec2",
     )
 
     go_repository(
@@ -1829,6 +1830,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:QLMzNJnMGPRNDCbySlcj1x01tzU8/9LTTL9hZZZogBU=",
         version = "v0.22.4",
     )
+
     go_repository(
         name = "com_github_go_openapi_validate",
         importpath = "github.com/go-openapi/validate",
