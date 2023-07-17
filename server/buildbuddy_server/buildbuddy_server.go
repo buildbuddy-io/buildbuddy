@@ -331,7 +331,7 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if err := userDB.UpdateGroupUsers(ctx, req.GetGroupId(), req.GetUpdate()); err != nil {
+	if err := userDB.UpdateGroupUsers(ctx, req.GetRequestContext().GetGroupId(), req.GetUpdate()); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
@@ -402,17 +402,17 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
 	if urlIdentifier != "" {
-		if group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); group != nil && group.GroupID != req.GetId() {
+		if group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); group != nil && group.GroupID != req.GetRequestContext().GetGroupId() {
 			return nil, status.InvalidArgumentError("URL is already in use")
 		} else if err != nil && gstatus.Code(err) != gcodes.NotFound {
 			return nil, err
 		}
 	}
 	if group == nil {
-		if req.GetId() == "" {
+		if req.GetRequestContext().GetGroupId() == "" {
 			return nil, status.InvalidArgumentError("Missing organization identifier.")
 		}
-		group, err = userDB.GetGroupByID(ctx, req.GetId())
+		group, err = userDB.GetGroupByID(ctx, req.GetRequestContext().GetGroupId())
 		if err != nil {
 			return nil, err
 		}
@@ -464,7 +464,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	tableKeys, err := authDB.GetAPIKeys(ctx, req.GetGroupId())
+	tableKeys, err := authDB.GetAPIKeys(ctx, req.GetRequestContext().GetGroupId())
 	if err != nil {
 		return nil, err
 	}
@@ -489,7 +489,7 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	k, err := authDB.CreateAPIKey(
-		ctx, req.GetGroupId(), req.GetLabel(), req.GetCapability(),
+		ctx, req.GetRequestContext().GetGroupId(), req.GetLabel(), req.GetCapability(),
 		req.GetVisibleToDevelopers())
 	if err != nil {
 		return nil, err
@@ -557,7 +557,7 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	groupID := req.GetGroupId()
+	groupID := req.GetRequestContext().GetGroupId()
 	tableKeys, err := authDB.GetUserAPIKeys(ctx, groupID)
 	if err != nil {
 		return nil, err
@@ -582,7 +582,7 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	k, err := authDB.CreateUserAPIKey(ctx, req.GetGroupId(), req.GetLabel(), req.GetCapability())
+	k, err := authDB.CreateUserAPIKey(ctx, req.GetRequestContext().GetGroupId(), req.GetLabel(), req.GetCapability())
 	if err != nil {
 		return nil, err
 	}
