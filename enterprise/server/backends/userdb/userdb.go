@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -19,11 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"gorm.io/gorm"
-
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 const (
@@ -730,10 +728,6 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		return err
 	})
 	return user, err
-}
-
-func (d *UserDB) GetUserByID(ctx context.Context, tx *gorm.DB, userID string) (*tables.User, error) {
-	return d.getUser(tx, userID)
 }
 
 func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
