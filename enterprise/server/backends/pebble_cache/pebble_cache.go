@@ -1693,28 +1693,6 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	return pebble.ReadCloserWithFunc(rc, db.Close), nil
 }
 
-type writeCloser struct {
-	interfaces.MetadataWriteCloser
-	closeFn      func(n int64) error
-	bytesWritten int64
-}
-
-func (dc *writeCloser) Close() error {
-	if err := dc.MetadataWriteCloser.Close(); err != nil {
-		return err
-	}
-	return dc.closeFn(dc.bytesWritten)
-}
-
-func (dc *writeCloser) Write(p []byte) (int, error) {
-	n, err := dc.MetadataWriteCloser.Write(p)
-	if err != nil {
-		return 0, err
-	}
-	dc.bytesWritten += int64(n)
-	return n, nil
-}
-
 // zstdCompressor compresses bytes before writing them to the nested writer
 type zstdCompressor struct {
 	cacheName string
