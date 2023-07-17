@@ -164,7 +164,11 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
     if (vals.length == 0) {
       return ""
     }
+    // Only one field of ResourceRequest will be set, and we want to display
+    // the contents of that field, so we grab vals[0].
     let s = JSON.stringify(vals[0], null, 4)
+    // To make the request look slightly nicer, we strip the outer { and }
+    // braces and remove the 4 space indentation from the fields.
     let lines = s.split("\n")
     lines = lines.map((l) => l.slice(4))
     return lines.slice(1, lines.length - 1).join("\n")
