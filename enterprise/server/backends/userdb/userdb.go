@@ -8,9 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -22,6 +19,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 const (
