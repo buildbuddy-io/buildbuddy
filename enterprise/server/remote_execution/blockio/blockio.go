@@ -49,7 +49,8 @@ func (f *File) SizeBytes() (int64, error) {
 	return fileSizeBytes(f.File)
 }
 
-// Mmap implements the Store interface using a memory-mapped file.
+// Mmap implements the Store interface using a memory-mapped file. This allows processes to read/write to the file as if it
+// was memory, as opposed to having to interact with it via I/O file operations.
 type Mmap struct {
 	data   []byte
 	mapped bool
@@ -168,7 +169,7 @@ func (m *Mmap) StartAddress() (uintptr, error) {
 			return 0, err
 		}
 	}
-	return uintptr(unsafe.Pointer(&m.data[0])), nil
+	return memoryAddress(m.data), nil
 }
 
 func fileSizeBytes(f *os.File) (int64, error) {
@@ -242,8 +243,9 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 	}, nil
 }
 
-// GetPageAddress returns a memory address for the given byte offset which can
-// be used to handle a page fault with userfaultfd.
+// GetPageAddress returns the memory address for the given byte offset into the store.
+//
+// This memory address can be used to handle a page fault with userfaultfd.
 //
 // If reading a lazily mmapped chunk, this will cause the chunk to be mmapped
 // so that the returned address is valid.
@@ -251,9 +253,9 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 // If write is set to true, and the page is not dirty, then a copy is first
 // performed so that the returned chunk can be written to without modifying
 // readonly chunks.
-func (c *COWStore) GetPageAddress(address uintptr, write bool) (uintptr, error) {
-	chunkStartOffset := c.chunkStartOffset(int64(address))
-	chunkRelativeAddress := address - uintptr(chunkStartOffset)
+func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
+	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 	if write && !c.dirty[chunkStartOffset] {
 		if err := c.copyChunk(chunkStartOffset); err != nil {
 			return 0, status.WrapError(err, "copy chunk")
@@ -263,8 +265,7 @@ func (c *COWStore) GetPageAddress(address uintptr, write bool) (uintptr, error) 
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
 		// can only happen for reads, since for writes we call copyChunk above.
-		ptr := uintptr(unsafe.Pointer(&c.zeroBuf[0]))
-		return ptr + uintptr(chunkRelativeAddress), nil
+		return memoryAddress(c.zeroBuf) + chunkRelativeAddress, nil
 	}
 	// Non-empty chunk; initialize the lazy mmap (if applicable) and return
 	// the offset relative to the memory start address.
@@ -276,7 +277,7 @@ func (c *COWStore) GetPageAddress(address uintptr, write bool) (uintptr, error) 
 	if err != nil {
 		return 0, status.WrapError(err, "mmap start adddress")
 	}
-	return start + uintptr(chunkRelativeAddress), nil
+	return start + chunkRelativeAddress, nil
 }
 
 // Chunks returns all chunks sorted by offset.
@@ -647,4 +648,9 @@ func (r *storeReader) Read(p []byte) (n int, err error) {
 		r.store = nil
 	}
 	return r.sr.Read(p)
+}
+
+// memoryAddress returns the memory address of the first byte of a slice
+func memoryAddress(s []byte) uintptr {
+	return uintptr(unsafe.Pointer(&s[0]))
 }
