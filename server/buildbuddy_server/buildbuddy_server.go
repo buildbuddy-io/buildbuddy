@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
@@ -38,6 +37,7 @@ import (
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
@@ -1346,6 +1346,10 @@ func (s *BuildBuddyServer) GetEncryptionConfig(ctx context.Context, request *enp
 	return crypter.GetEncryptionConfig(ctx, request)
 }
 
-func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *auditlog.GetAuditLogsRequest) (*auditlog.GetAuditLogsResponse, error) {
-	return nil, status.UnimplementedError("not implemented")
+func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
+	al := s.env.GetAuditLogger()
+	if al == nil {
+		return nil, status.FailedPreconditionError("audit logs not enabled in the server")
+	}
+	return al.GetLogs(ctx, request)
 }

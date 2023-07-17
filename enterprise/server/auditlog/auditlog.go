@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -27,6 +28,11 @@ var (
 	auditLogsEnabled = flag.Bool("app.audit_logs_enabled", false, "Whether to log administrative events to an audit log. Requires OLAP database to be configured.")
 )
 
+const (
+	// maximum number of entries we return in a single GetLogs request.
+	pageSize = 20
+)
+
 type Logger struct {
 	env environment.Env
 	dbh interfaces.OLAPDBHandle
@@ -39,7 +45,6 @@ func GroupAPIKeyResourceID(id, name string) *alpb.ResourceID {
 	return &alpb.ResourceID{
 		Type: alpb.ResourceType_GROUP_API_KEY,
 		Id:   id,
-		Name: name,
 	}
 }
 
@@ -47,7 +52,6 @@ func UserAPIKeyResourceID(id, name string) *alpb.ResourceID {
 	return &alpb.ResourceID{
 		Type: alpb.ResourceType_USER_API_KEY,
 		Id:   id,
-		Name: name,
 	}
 }
 
@@ -178,6 +182,35 @@ func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb
 	}
 }
 
+// cleanRequest clears out redundant noise from the requests.
+// There are two types of IDs we scrub:
+//  1. group ID -- audit logs are already scoped to groups so including this
+//     information in the shown request is redundant.
+//  2. resource IDs -- audit logs include a resource identifier for every entry
+//     so the ID under the request is redundant.
+func cleanRequest(e *alpb.Entry_ResourceRequest) *alpb.Entry_ResourceRequest {
+	e = proto.Clone(e).(*alpb.Entry_ResourceRequest)
+	if r := e.CreateApiKey; r != nil {
+		r.GroupId = ""
+	}
+	if r := e.GetApiKeys; r != nil {
+		r.GroupId = ""
+	}
+	if r := e.UpdateApiKey; r != nil {
+		r.Id = ""
+	}
+	if r := e.DeleteApiKey; r != nil {
+		r.Id = ""
+	}
+	if r := e.UpdateGroup; r != nil {
+		r.Id = ""
+	}
+	if r := e.UpdateGroupUsers; r != nil {
+		r.GroupId = ""
+	}
+	return e
+}
+
 func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
 	u, err := l.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -192,15 +225,20 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 		SELECT * FROM AuditLogs
 	`)
 	qb.AddWhereClause("group_id = ?", u.GetGroupID())
-	if req.GetTimestampBefore() != nil {
-		qb.AddWhereClause("event_time_usec >= ?", req.GetTimestampAfter().AsTime().UnixMicro())
+	qb.AddWhereClause("event_time_usec >= ?", req.GetTimestampAfter().AsTime().UnixMicro())
+	qb.AddWhereClause("event_time_usec <= ?", req.GetTimestampBefore().AsTime().UnixMicro())
+	if req.PageToken != "" {
+		ts, err := strconv.ParseInt(req.PageToken, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		qb.AddWhereClause("event_time_usec >= ?", ts)
 	}
-	if req.GetTimestampBefore() != nil {
-		qb.AddWhereClause("event_time_usec <= ?", req.GetTimestampBefore().AsTime().UnixMicro())
-	}
+	qb.SetLimit(pageSize + 1)
+	qb.SetOrderBy("event_time_usec", true)
 	q, args := qb.Build()
 
-	rows, err := l.dbh.DB(ctx).Raw(q, args).Rows()
+	rows, err := l.dbh.DB(ctx).Raw(q, args...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +255,18 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 			return nil, err
 		}
 
+		if len(resp.Entries) == pageSize {
+			resp.NextPageToken = strconv.FormatInt(e.EventTimeUsec, 10)
+			continue
+		}
+
+		resourceType := alpb.ResourceType(e.ResourceType)
+		// If no resource is specified, the resource is implicitely the owning
+		// organization.
+		if resourceType == alpb.ResourceType_UNKNOWN_RESOURCE {
+			resourceType = alpb.ResourceType_GROUP
+		}
+
 		resp.Entries = append(resp.Entries, &alpb.Entry{
 			EventTime: timestamppb.New(time.UnixMicro(e.EventTimeUsec)),
 			AuthenticationInfo: &alpb.AuthenticationInfo{
@@ -224,14 +274,15 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 					UserId:    e.AuthUserID,
 					UserEmail: e.AuthUserEmail,
 				},
+				ClientIp: e.ClientIP,
 			},
 			Resource: &alpb.ResourceID{
-				Type: alpb.ResourceType(e.ResourceType),
+				Type: resourceType,
 				Id:   e.ResourceID,
 				Name: e.ResourceName,
 			},
 			Action:  alpb.Action(e.Action),
-			Request: &request,
+			Request: cleanRequest(&request),
 		})
 	}
 
