@@ -110,4 +110,7 @@ message FrontendConfig {
 
   // Whether the GitHub auth is enabled.
   bool github_auth_enabled = 36;
+
+  // Whether to show the Audit Logs option in the sidebar.
+  bool audit_logs_ui_enabled = 37;
 }

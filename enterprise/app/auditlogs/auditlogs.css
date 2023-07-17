@@ -1,0 +1,60 @@
+.audit-logs-page .popup-wrapper {
+  position: relative;
+  width: fit-content;
+  margin-bottom: 10px;
+}
+
+.audit-logs {
+  margin-top: 32px;
+}
+
+.audit-log-entry {
+  display: flex;
+}
+
+.audit-logs-header {
+  display: flex;
+}
+
+.audit-logs-header div {
+  background-color: #eee;
+  border: 1px solid #f1f3f4;
+  padding: 8px;
+}
+
+.audit-log-entry > div {
+  border: 1px solid #f1f3f4;
+  padding: 8px;
+}
+
+.audit-logs .timestamp {
+  width: 250px;
+}
+
+.audit-logs .user {
+  width: 200px;
+}
+
+.audit-logs .user div {
+  margin-bottom: 8px;
+}
+
+.audit-logs .resource {
+  width: 250px;
+}
+
+.audit-logs .resource div {
+  margin-bottom: 8px;
+}
+
+.audit-logs .method {
+  width: 200px;
+}
+
+.audit-logs .request {
+  width: 600px;
+}
+
+.audit-logs .request pre {
+  margin: 0;
+}

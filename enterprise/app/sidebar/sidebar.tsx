@@ -23,6 +23,7 @@ import {
   Terminal,
   PanelLeftClose,
   PanelLeftOpen,
+  View,
 } from "lucide-react";
 import React from "react";
 import authService, { User } from "../../../app/auth/auth_service";
@@ -130,6 +131,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
     return this.props.path.startsWith("/usage/");
   }
 
+  isAuditLogsSelected() {
+    return this.props.path.startsWith("/audit-logs/");
+  }
+
   refreshCurrentPage() {
     rpcService.events.next("refresh");
   }
@@ -212,6 +217,11 @@ export default class SidebarComponent extends React.Component<Props, State> {
             <SidebarLink selected={this.isUsageSelected()} href={Path.usagePath} title="Usage">
               <Gauge className="icon" />
               <span className="sidebar-item-text">Usage</span>
+            </SidebarLink>
+          )}
+          {router.canAccessAuditLogsPage(this.props.user) && capabilities.config.auditLogsUiEnabled && (
+            <SidebarLink selected={this.isAuditLogsSelected()} href={Path.auditLogsPath}>
+              <View className="icon" /> Audit Logs
             </SidebarLink>
           )}
           <a className="sidebar-item" href="https://www.buildbuddy.io/docs/" target="_blank" title="Docs">
