@@ -90,7 +90,7 @@ func (c *CustomCommitWriteCloser) Close() error {
 }
 
 // NewCustomCommitWriteCloser wraps an io.Writer/interfaces.CommittedWriteCloser
-// and returns a pointer to a CustomCommitWriteCloser, which implents
+// and returns a pointer to a CustomCommitWriteCloser, which implements
 // interfaces.CommittedWriteCloser but allows adding on custom logic that will
 // be called when Commit or Close methods are called.
 func NewCustomCommitWriteCloser(w io.Writer) *CustomCommitWriteCloser {
