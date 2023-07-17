@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
@@ -67,6 +68,7 @@ var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version"
 var debugStreamVMLogs = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 var debugTerminal = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
 var enableNBD = flag.Bool("executor.firecracker_enable_nbd", false, "Enables network block devices for firecracker VMs.")
+var enableUFFD = flag.Bool("executor.firecracker_enable_uffd", false, "Enables userfaultfd for firecracker VMs.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 
 const (
@@ -85,10 +87,15 @@ const (
 	// The vSock path (also relative to the chroot).
 	firecrackerVSockPath = "/run/v.sock"
 
+	// UFFD socket path relative to the chroot.
+	uffdSockName = "uffd.sock"
+
 	// The names to use when creating snapshots (relative to chroot).
 	vmStateSnapshotName = "vmstate.snap"
 	fullMemSnapshotName = "full-mem.snap"
 	diffMemSnapshotName = "diff-mem.snap"
+	// Directory storing the memory file chunks.
+	memoryChunkDirName = "memory"
 
 	fullSnapshotType = "Full"
 	diffSnapshotType = "Diff"
@@ -324,6 +331,9 @@ type FirecrackerContainer struct {
 	scratchStore   *blockio.COWStore
 	workspaceStore *blockio.COWStore
 
+	memoryStore *blockio.COWStore
+	uffdHandler *uffd.Handler
+
 	jailerRoot         string            // the root dir the jailer will work in
 	machine            *fcclient.Machine // the firecracker machine object.
 	vmLog              *VMLog
@@ -427,16 +437,23 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	return c, nil
 }
 
-// mergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks into the baseSnapshotPath file.
-func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapshotPath string, concurrency int, bufSize int) error {
+// mergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks
+// into the baseSnapshotPath file or the baseSnapshotStore if non-nil.
+func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *blockio.COWStore, diffSnapshotPath string, concurrency int, bufSize int) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	out, err := os.OpenFile(baseSnapshotPath, os.O_WRONLY, 0644)
-	if err != nil {
-		return status.UnavailableErrorf("Could not open base snapshot file %q: %s", baseSnapshotPath, err)
+	var out io.WriterAt
+	if baseSnapshotStore == nil {
+		f, err := os.OpenFile(baseSnapshotPath, os.O_WRONLY, 0644)
+		if err != nil {
+			return status.UnavailableErrorf("Could not open base snapshot file %q: %s", baseSnapshotPath, err)
+		}
+		defer f.Close()
+		out = f
+	} else {
+		out = baseSnapshotStore
 	}
-	defer out.Close()
 
 	in, err := os.Open(diffSnapshotPath)
 	if err != nil {
@@ -592,25 +609,32 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	memSnapshotFile := fullMemSnapshotName
 	baseMemSnapshotPath := ""
 
-	// If a snapshot already exists, get a reference to the memory snapshot so
-	// that we can perform a diff snapshot and merge the modified pages on top
-	// of the existing memory snapshot.
-	baseSnapshotUnpackDir, err := c.unpackBaseSnapshot(ctx)
-	if err != nil {
-		// Ignore Unavailable errors since it just means there's no base
-		// snapshot yet (which will happen on the first task executed), or the
-		// snapshot was evicted from cache. When this happens, just fall back to
-		// taking a full snapshot.
-		if !status.IsUnavailableError(err) {
-			return err
+	if *enableUFFD {
+		if c.memoryStore != nil {
+			snapshotType = diffSnapshotType
+			memSnapshotFile = diffMemSnapshotName
 		}
 	} else {
-		// Once we've merged the base snapshot and linked it to filecache, we
-		// don't need the unpack dir anymore and can unlink.
-		defer os.RemoveAll(baseSnapshotUnpackDir)
-		baseMemSnapshotPath = filepath.Join(baseSnapshotUnpackDir, fullMemSnapshotName)
-		snapshotType = diffSnapshotType
-		memSnapshotFile = diffMemSnapshotName
+		// If a snapshot already exists, get a reference to the memory snapshot so
+		// that we can perform a diff snapshot and merge the modified pages on top
+		// of the existing memory snapshot.
+		baseSnapshotUnpackDir, err := c.unpackBaseSnapshot(ctx)
+		if err != nil {
+			// Ignore Unavailable errors since it just means there's no base
+			// snapshot yet (which will happen on the first task executed), or the
+			// snapshot was evicted from cache. When this happens, just fall back to
+			// taking a full snapshot.
+			if !status.IsUnavailableError(err) {
+				return err
+			}
+		} else {
+			// Once we've merged the base snapshot and linked it to filecache, we
+			// don't need the unpack dir anymore and can unlink.
+			defer os.RemoveAll(baseSnapshotUnpackDir)
+			baseMemSnapshotPath = filepath.Join(baseSnapshotUnpackDir, fullMemSnapshotName)
+			snapshotType = diffSnapshotType
+			memSnapshotFile = diffMemSnapshotName
+		}
 	}
 
 	if err := c.pauseVM(ctx); err != nil {
@@ -639,9 +663,9 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 
 	log.CtxDebugf(ctx, "VMM CreateSnapshot %s took %s", snapshotType, time.Since(machineStart))
 
-	if baseMemSnapshotPath != "" {
+	if snapshotType == diffSnapshotType {
 		mergeStart := time.Now()
-		if err := mergeDiffSnapshot(ctx, baseMemSnapshotPath, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
+		if err := mergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
 			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
@@ -649,27 +673,42 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
+	// If we're creating a snapshot for the first time, create a COWStore from
+	// the initial full snapshot. (If we have a diff snapshot, then we already
+	// updated the memoryStore in mergeDiffSnapshot above).
+	if *enableUFFD && c.memoryStore == nil {
+		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
+		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir)
+		if err != nil {
+			return status.WrapError(err, "convert memory snapshot to COWStore")
+		}
+		c.memoryStore = memoryStore
+	}
+
 	opts := &snaploader.CacheSnapshotOptions{
 		VMConfiguration:     c.vmConfig,
-		MemSnapshotPath:     memSnapshotPath,
 		VMStateSnapshotPath: vmStateSnapshotPath,
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
+		ChunkedFiles:        map[string]*blockio.COWStore{},
 	}
 	if *enableNBD {
-		opts.ChunkedFiles = map[string]*blockio.COWStore{
-			scratchDriveID:   c.scratchStore,
-			workspaceDriveID: c.workspaceStore,
-		}
+		opts.ChunkedFiles[scratchDriveID] = c.scratchStore
+		opts.ChunkedFiles[workspaceDriveID] = c.workspaceStore
 	} else {
 		opts.ScratchFSPath = c.scratchFSPath()
 		opts.WorkspaceFSPath = c.workspaceFSPath()
 	}
+	if *enableUFFD {
+		opts.ChunkedFiles[memoryChunkDirName] = c.memoryStore
+	} else {
+		opts.MemSnapshotPath = memSnapshotPath
+	}
 
 	snaploaderStart := time.Now()
 	if _, err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
-		return err
+		return status.WrapError(err, "add snapshot to cache")
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
 	return nil
@@ -724,8 +763,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			CgroupVersion:  cgroupVersion,
 		},
 		Snapshot: fcclient.SnapshotConfig{
-			MemFilePath:         fullMemSnapshotName,
-			SnapshotPath:        vmStateSnapshotName,
 			EnableDiffSnapshots: true,
 			ResumeVM:            true,
 		},
@@ -742,10 +779,18 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	vmCtx, cancel := context.WithCancel(context.Background())
 	c.cancelVmCtx = cancel
+	var snapOpt fcclient.Opt
+	if *enableUFFD {
+		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffd)
+		snapOpt = fcclient.WithSnapshot(uffdSockName, vmStateSnapshotName, uffdType)
+	} else {
+		snapOpt = fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName)
+	}
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
-		fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName),
+		snapOpt,
 	}
+
 	log.CtxDebugf(ctx, "fullMemSnapshotName: %s, vmStateSnapshotName %s", fullMemSnapshotName, vmStateSnapshotName)
 
 	machine, err := fcclient.NewMachine(vmCtx, cfg, machineOpts...)
@@ -762,7 +807,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(unpacked.ChunkedFiles) > 0 && !*enableNBD {
+	if len(unpacked.ChunkedFiles) > 0 && !(*enableNBD || *enableUFFD) {
 		return status.InternalError("blockio support is disabled but snapshot contains chunked files")
 	}
 	for name, cow := range unpacked.ChunkedFiles {
@@ -771,6 +816,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			c.scratchStore = cow
 		case workspaceDriveID:
 			c.workspaceStore = cow
+		case memoryChunkDirName:
+			c.memoryStore = cow
 		default:
 			return status.InternalErrorf("snapshot contains unsupported chunked artifact %q", name)
 		}
@@ -778,6 +825,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	if err := c.setupNBDServer(ctx); err != nil {
 		return status.WrapError(err, "failed to init nbd server")
+	}
+
+	if err := c.setupUFFDHandler(ctx); err != nil {
+		return err
 	}
 
 	err = (func() error {
@@ -879,18 +930,21 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 }
 
 func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string) (*blockio.COWStore, error) {
+	start := time.Now()
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
 	cow, err := blockio.ConvertFileToCOW(filePath, cowChunkSizeBytes, chunkDir)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "convert file to COW")
 	}
-	// Original non-chunked image is no longer needed.
+	// Original non-chunked file is no longer needed.
 	if err := os.RemoveAll(filePath); err != nil {
 		cow.Close()
 		return nil, err
 	}
+	size, _ := cow.SizeBytes()
+	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
 	return cow, nil
 }
 
@@ -1304,6 +1358,26 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 		return err
 	}
 	c.cleanupVethPair = cleanupVethPair
+	return nil
+}
+
+func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
+	if c.memoryStore == nil {
+		// No memory file to serve over UFFD; do nothing.
+		return nil
+	}
+	if c.uffdHandler != nil {
+		return status.InternalErrorf("uffd handler is already running")
+	}
+	h, err := uffd.NewHandler()
+	if err != nil {
+		return status.WrapError(err, "create uffd handler")
+	}
+	c.uffdHandler = h
+	sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
+	if err := h.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
+		return status.WrapError(err, "start uffd handler")
+	}
 	return nil
 }
 
@@ -1816,6 +1890,14 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if c.scratchStore != nil {
 		c.scratchStore.Close()
 		c.scratchStore = nil
+	}
+	if c.uffdHandler != nil {
+		c.uffdHandler.Stop()
+		c.uffdHandler = nil
+	}
+	if c.memoryStore != nil {
+		c.memoryStore.Close()
+		c.memoryStore = nil
 	}
 	return lastErr
 }
