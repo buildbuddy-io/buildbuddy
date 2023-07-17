@@ -23,6 +23,7 @@ import TrendsComponent from "../trends/trends";
 import Shortcuts from "../../../app/shortcuts/shortcuts";
 import UsageComponent from "../usage/usage";
 import GroupSearchComponent from "../group_search/group_search";
+import AuditLogsComponent from "../auditlogs/auditlogs";
 import { AlertCircle, LogOut } from "lucide-react";
 import { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
@@ -130,6 +131,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let orgJoinAuthenticated = this.state.path.startsWith("/join") && this.state.user;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
+    let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
     let tests = this.state.user && this.state.path.startsWith("/tests");
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
@@ -150,7 +152,8 @@ export default class EnterpriseRootComponent extends React.Component {
       !historyUser &&
       !historyRepo &&
       !historyBranch &&
-      !historyCommit;
+      !historyCommit &&
+      !auditLogs;
 
     let setup =
       (this.state.path.startsWith("/docs/setup") && (this.state.user || capabilities.anonymous)) ||
@@ -286,6 +289,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     </Suspense>
                   )}
                   {usage && this.state.user && <UsageComponent user={this.state.user} />}
+                  {auditLogs && this.state.user && <AuditLogsComponent />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}

@@ -24,6 +24,7 @@ ts_library(
         "//app/preferences",
         "//app/router",
         "//app/shortcuts",
+        "//enterprise/app/auditlogs",
         "//enterprise/app/code",
         "//enterprise/app/executors",
         "//enterprise/app/group_search",

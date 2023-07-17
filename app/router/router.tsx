@@ -447,6 +447,7 @@ export class Path {
   static editOrgPath = "/org/edit";
   static trendsPath = "/trends/";
   static usagePath = "/usage/";
+  static auditLogsPath = "/audit-logs/";
   static executorsPath = "/executors/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
