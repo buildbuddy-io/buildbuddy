@@ -55,17 +55,22 @@
   max-width: 600px;
 }
 
-.executor-pool-header {
-  display: table;
-  width: 30%;
-  table-layout: fixed;
+.executors-page .executor-details {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
 }
 
-.executor-pool-header span {
-  display: table-cell;
-  text-align: center;
+.executors-page .executor-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-div.demo span:first-child {
-  text-align: left;
+.executors-page .pool-size-warning {
+  margin: 0;
+  margin-top: 16px;
+  max-width: initial;
+  display: inline-flex;
 }
