@@ -331,6 +331,10 @@ class Router {
     return Boolean(user?.canCall("listSecrets"));
   }
 
+  canAccessAuditLogsPage(user?: User) {
+    return Boolean(user?.canCall("getAuditLogs"));
+  }
+
   getTab() {
     let tab = window.location.hash.split("@")[0];
     return tab == "#" ? "" : tab;
