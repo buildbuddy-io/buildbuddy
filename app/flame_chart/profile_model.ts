@@ -53,6 +53,8 @@ const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
   ["CPU usage (total)", "system cpu"],
   ["Memory usage (total)", "system memory"],
   ["System load average", "load"],
+  ["Network Up usage (total)", "system network up (Mbps)"],
+  ["Network Down usage (total)", "system network down (Mbps)"],
 ]);
 
 export function parseProfile(data: string): Profile {
