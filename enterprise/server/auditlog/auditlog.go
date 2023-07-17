@@ -29,6 +29,7 @@ var (
 )
 
 const (
+	// maximum number of entries we return in a single GetLogs request.
 	pageSize = 20
 )
 
@@ -182,6 +183,11 @@ func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb
 }
 
 // cleanRequest clears out redundant noise from the requests.
+// There are two types of IDs we scrub:
+//  1. group ID -- audit logs are already scoped to groups so including this
+//     information in the shown request is redundant.
+//  2. resource IDs -- audit logs include a resource identifier for every entry
+//     so the ID under the request is redundant.
 func cleanRequest(e *alpb.Entry_ResourceRequest) *alpb.Entry_ResourceRequest {
 	e = proto.Clone(e).(*alpb.Entry_ResourceRequest)
 	if r := e.CreateApiKey; r != nil {
