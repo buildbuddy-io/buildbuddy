@@ -140,6 +140,9 @@ var (
 )
 
 func k8sPodID() (string, error) {
+	if podID := os.Getenv("K8S_POD_ID"); podID != "" {
+		return podID, nil
+	}
 	if _, err := os.Stat("/proc/1/cpuset"); err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
