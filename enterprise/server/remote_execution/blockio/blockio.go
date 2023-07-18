@@ -350,12 +350,10 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
-		if !c.dirty[chunkOffset] {
-			// If we're newly dirtying a chunk, copy.
-			if err := c.copyChunk(chunkOffset); err != nil {
-				return 0, status.WrapError(err, "failed to copy chunk")
-			}
+		if err := c.copyChunk(chunkOffset); err != nil {
+			return 0, status.WrapError(err, "failed to copy chunk")
 		}
+
 		chunkRelativeOffset := (off + int64(n)) % c.chunkSizeBytes
 		writeSize := int(c.chunkSizeBytes - chunkRelativeOffset)
 		if writeSize > len(p) {
