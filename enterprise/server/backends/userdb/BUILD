@@ -22,7 +22,6 @@ go_library(
         "//server/util/random",
         "//server/util/role",
         "//server/util/status",
-        "@io_gorm_gorm//:gorm",
     ],
 )
 

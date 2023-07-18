@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
@@ -436,8 +437,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 	{
 		al.Reset()
 		req := &akpb.CreateApiKeyRequest{
-			RequestContext:      nil,
-			GroupId:             groupID,
+			RequestContext:      &ctxpb.RequestContext{GroupId: groupID},
 			Label:               "my key",
 			Capability:          []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
 			VisibleToDevelopers: true,
@@ -456,7 +456,9 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 	// List Org API keys.
 	{
 		al.Reset()
-		req := &akpb.GetApiKeysRequest{GroupId: groupID}
+		req := &akpb.GetApiKeysRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		}
 		_, err = env.GetBuildBuddyServer().GetApiKeys(adminCtx, req)
 		require.NoError(t, err)
 		require.Len(t, al.GetAllEntries(), 1)
@@ -505,9 +507,9 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 	{
 		al.Reset()
 		req := &akpb.CreateApiKeyRequest{
-			GroupId:    groupID,
-			Label:      "my key",
-			Capability: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+			Label:          "my key",
+			Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 		}
 		resp, err := env.GetBuildBuddyServer().CreateUserApiKey(adminCtx, req)
 		require.NoError(t, err)
@@ -523,7 +525,9 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 	// List User API keys (no audit log entries).
 	{
 		al.Reset()
-		req := &akpb.GetApiKeysRequest{GroupId: groupID}
+		req := &akpb.GetApiKeysRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		}
 		_, err = env.GetBuildBuddyServer().GetUserApiKeys(adminCtx, req)
 		require.NoError(t, err)
 		require.Empty(t, al.GetAllEntries())
