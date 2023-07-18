@@ -45,11 +45,11 @@ import (
 )
 
 const (
-	busyboxImage = "docker.io/library/busybox:latest"
+	busyboxImage = "mirror.gcr.io/library/busybox:latest"
 	// Alternate image to use if getting rate-limited by docker hub
 	// busyboxImage = "gcr.io/google-containers/busybox:latest"
 
-	ubuntuImage              = "marketplace.gcr.io/google/ubuntu2004"
+	ubuntuImage              = "mirror.gcr.io/library/ubuntu:20.04"
 	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 
 	// Minimum memory needed for a firecracker VM. This may need to be increased
