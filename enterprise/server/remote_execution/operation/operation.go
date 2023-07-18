@@ -84,7 +84,10 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 			log.Warningf("Attempted state change on %q but context is done.", taskID)
 			return status.UnavailableErrorf("Context cancelled: %s", stream.Context().Err())
 		default:
-			return stream.Send(op)
+			if err := stream.Send(op); err != nil {
+				return status.WrapError(err, "failed to send execution status update")
+			}
+			return nil
 		}
 	}
 }
@@ -103,7 +106,7 @@ func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *di
 	default:
 		if err := stream.Send(op); err != nil {
 			log.Errorf("Error sending operation %+v on stream", op)
-			return err
+			return status.WrapError(err, "failed to send execution status update")
 		}
 	}
 	return nil
