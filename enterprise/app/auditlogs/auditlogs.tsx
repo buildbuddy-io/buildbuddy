@@ -129,16 +129,15 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
         res = "Invocation";
         break;
     }
-    let label = "";
-    if (resourceID.name) {
-      label = resourceID.name;
-    } else if (resourceID.id) {
-      label = resourceID.id;
-    }
     return (
       <>
         <div>{res}</div>
-        <div>{label}</div>
+        {resourceID.id && (
+          <div>{resourceID.id}</div>
+        )}
+        {resourceID.name && (
+          <div>"{resourceID.name}"</div>
+        )}
       </>
     );
   }

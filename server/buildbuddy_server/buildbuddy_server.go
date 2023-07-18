@@ -481,7 +481,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 		})
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(""), alpb.Action_LIST, req)
+		al.Log(ctx, &alpb.ResourceID{Type: alpb.ResourceType_GROUP_API_KEY}, alpb.Action_LIST, req)
 	}
 	return rsp, nil
 }
@@ -498,7 +498,12 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(k.APIKeyID), alpb.Action_CREATE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_GROUP_API_KEY,
+			Id:   k.APIKeyID,
+			Name: k.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_CREATE, req)
 	}
 	return &akpb.CreateApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
@@ -535,6 +540,10 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	existingKey, err := authDB.GetAPIKey(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	tk := &tables.APIKey{
 		APIKeyID:            req.GetId(),
 		Label:               req.GetLabel(),
@@ -545,7 +554,12 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(req.GetId()), alpb.Action_UPDATE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_GROUP_API_KEY,
+			Id:   req.GetId(),
+			Name: existingKey.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_UPDATE, req)
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
 }
@@ -555,11 +569,20 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	existingKey, err := authDB.GetAPIKey(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	if err := authDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(req.GetId()), alpb.Action_DELETE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_GROUP_API_KEY,
+			Id:   req.GetId(),
+			Name: existingKey.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_DELETE, req)
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
@@ -599,7 +622,12 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(k.APIKeyID), alpb.Action_CREATE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_USER_API_KEY,
+			Id:   k.APIKeyID,
+			Name: k.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_CREATE, req)
 	}
 	return &akpb.CreateApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
@@ -618,6 +646,10 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	existingKey, err := authDB.GetAPIKey(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	updates := &tables.APIKey{
 		APIKeyID:            req.GetId(),
 		Label:               req.GetLabel(),
@@ -628,7 +660,12 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(req.GetId()), alpb.Action_UPDATE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_USER_API_KEY,
+			Id:   req.GetId(),
+			Name: existingKey.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_UPDATE, req)
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
 }
@@ -638,11 +675,20 @@ func (s *BuildBuddyServer) DeleteUserApiKey(ctx context.Context, req *akpb.Delet
 	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	existingKey, err := authDB.GetAPIKey(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	if err := authDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(req.GetId()), alpb.Action_DELETE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_USER_API_KEY,
+			Id:   req.GetId(),
+			Name: existingKey.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_DELETE, req)
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
 }

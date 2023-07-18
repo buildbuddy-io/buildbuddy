@@ -41,20 +41,6 @@ type Logger struct {
 	payloadTypes map[protoreflect.MessageDescriptor]protoreflect.FieldDescriptor
 }
 
-func GroupAPIKeyResourceID(id string) *alpb.ResourceID {
-	return &alpb.ResourceID{
-		Type: alpb.ResourceType_GROUP_API_KEY,
-		Id:   id,
-	}
-}
-
-func UserAPIKeyResourceID(id string) *alpb.ResourceID {
-	return &alpb.ResourceID{
-		Type: alpb.ResourceType_USER_API_KEY,
-		Id:   id,
-	}
-}
-
 func GroupResourceID(id string) *alpb.ResourceID {
 	return &alpb.ResourceID{
 		Type: alpb.ResourceType_GROUP,
@@ -211,6 +197,25 @@ func cleanRequest(e *alpb.Entry_ResourceRequest) *alpb.Entry_ResourceRequest {
 	return e
 }
 
+func (l *Logger) enrichRequest(ctx context.Context, e *alpb.Entry_ResourceRequest) (*alpb.Entry_ResourceRequest, error) {
+	e = proto.Clone(e).(*alpb.Entry_ResourceRequest)
+	if r := e.UpdateGroupUsers; r != nil {
+		for _, u := range r.Update {
+			uid := u.GetUserId().GetId()
+			userData, err := l.env.GetUserDB().GetUserByID(ctx, uid)
+			if err != nil {
+				return nil, err
+			}
+			if userData.Email != "" {
+				u.UserId.Id += " (" + userData.Email + ")"
+			} else if userData.FirstName != "" && userData.LastName != "" {
+				u.UserId.Id += " (" + userData.FirstName + " " + userData.LastName + ")"
+			}
+		}
+	}
+	return e, nil
+}
+
 func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
 	u, err := l.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -250,8 +255,8 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 			return nil, err
 		}
 
-		var request alpb.Entry_ResourceRequest
-		if err := proto.Unmarshal([]byte(e.Request), &request); err != nil {
+		request := &alpb.Entry_ResourceRequest{}
+		if err := proto.Unmarshal([]byte(e.Request), request); err != nil {
 			return nil, err
 		}
 
@@ -265,6 +270,13 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 		// organization.
 		if resourceType == alpb.ResourceType_UNKNOWN_RESOURCE {
 			resourceType = alpb.ResourceType_GROUP
+		}
+
+		er, err := l.enrichRequest(ctx, request)
+		if err == nil {
+			request = er
+		} else {
+			log.Warningf("could not enrich request: %s", err)
 		}
 
 		resp.Entries = append(resp.Entries, &alpb.Entry{
@@ -282,7 +294,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 				Name: e.ResourceName,
 			},
 			Action:  alpb.Action(e.Action),
-			Request: cleanRequest(&request),
+			Request: cleanRequest(request),
 		})
 	}
 
