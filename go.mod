@@ -3,7 +3,7 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.20
 
 replace (
-	github.com/awslabs/soci-snapshotter => github.com/buildbuddy-io/soci-snapshotter v0.0.4
+	github.com/awslabs/soci-snapshotter => github.com/buildbuddy-io/soci-snapshotter v0.0.5
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.7.0-patched-1
 	github.com/firecracker-microvm/firecracker-go-sdk => github.com/bduffany/firecracker-go-sdk v0.0.0-20230702173145-62f8e172aec2
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
