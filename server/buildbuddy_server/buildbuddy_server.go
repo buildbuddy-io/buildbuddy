@@ -335,7 +335,7 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_ACTION_UPDATE_MEMBERSHIP, req)
+		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_UPDATE_MEMBERSHIP, req)
 	}
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
@@ -442,7 +442,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_ACTION_UPDATE, req)
+		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_UPDATE, req)
 	}
 	return &grpb.UpdateGroupResponse{}, nil
 }
