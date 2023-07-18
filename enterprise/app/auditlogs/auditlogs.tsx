@@ -145,15 +145,15 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
 
   renderAction(action: auditlog.Action) {
     switch (action) {
-      case Action.ACTION_CREATE:
+      case Action.CREATE:
         return "Create";
-      case Action.ACTION_DELETE:
+      case Action.DELETE:
         return "Delete";
-      case Action.ACTION_UPDATE:
+      case Action.UPDATE:
         return "Update";
-      case Action.ACTION_LIST:
+      case Action.LIST:
         return "List";
-      case Action.ACTION_UPDATE_MEMBERSHIP:
+      case Action.UPDATE_MEMBERSHIP:
         return "Update Membership";
     }
     return "";

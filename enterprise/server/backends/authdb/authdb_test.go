@@ -14,8 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -23,6 +25,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 )
 
 func TestSessionInsertUpdateDeleteRead(t *testing.T) {
@@ -381,6 +386,185 @@ func TestLookupUserFromSubID(t *testing.T) {
 	require.Truef(
 		t, db.IsRecordNotFound(err),
 		"expected RecordNotFound error; got: %v", err)
+}
+
+func newFakeUser(userID, domain string) *tables.User {
+	return &tables.User{
+		UserID:    userID,
+		SubID:     userID + "-SubID",
+		FirstName: userID + "-FirstName",
+		LastName:  userID + "-LastName",
+		Email:     userID + "@" + domain,
+	}
+}
+
+func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, domain string) *tables.User {
+	user := newFakeUser(userID, domain)
+	err := env.GetUserDB().InsertUser(ctx, user)
+	require.NoError(t, err)
+	return user
+}
+
+func TestAPIKeyAuditLogs(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	al := testauditlog.New(t)
+	env.SetAuditLogger(al)
+	udb := env.GetUserDB()
+
+	// Create a user
+	userID := "US1"
+	userDomain := "org1.io"
+	admin := createUser(t, ctx, env, userID, userDomain)
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	// Create a new group as US1
+	groupID, err := udb.CreateGroup(adminCtx, &tables.Group{
+		UserOwnedKeysEnabled: true,
+	})
+	require.NoError(t, err)
+
+	// Re-authenticate to pick up the new group membership
+	adminCtx, err = auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	// Create Org API key.
+	var key *akpb.ApiKey
+	{
+		al.Reset()
+		req := &akpb.CreateApiKeyRequest{
+			RequestContext:      &ctxpb.RequestContext{GroupId: groupID},
+			Label:               "my key",
+			Capability:          []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+			VisibleToDevelopers: true,
+		}
+		resp, err := env.GetBuildBuddyServer().CreateApiKey(adminCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
+		require.Equal(t, resp.ApiKey.Id, e.Resource.GetId())
+		require.Equal(t, alpb.Action_CREATE, e.Action)
+		require.Equal(t, req, e.Request)
+		key = resp.ApiKey
+	}
+
+	// List Org API keys.
+	{
+		al.Reset()
+		req := &akpb.GetApiKeysRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		}
+		_, err = env.GetBuildBuddyServer().GetApiKeys(adminCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
+		require.Equal(t, alpb.Action_LIST, e.Action)
+		require.Equal(t, req, e.Request)
+	}
+
+	// Update Org API key.
+	{
+		al.Reset()
+		req := &akpb.UpdateApiKeyRequest{
+			Id:                  key.Id,
+			Label:               "new label",
+			Capability:          []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY},
+			VisibleToDevelopers: false,
+		}
+		_, err = env.GetBuildBuddyServer().UpdateApiKey(adminCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
+		require.Equal(t, key.Id, e.Resource.GetId())
+		require.Equal(t, alpb.Action_UPDATE, e.Action)
+		require.Equal(t, req, e.Request)
+	}
+
+	// Delete Org API key.
+	{
+		al.Reset()
+		req := &akpb.DeleteApiKeyRequest{
+			Id: key.Id,
+		}
+		_, err = env.GetBuildBuddyServer().DeleteApiKey(adminCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
+		require.Equal(t, key.Id, e.Resource.GetId())
+		require.Equal(t, alpb.Action_DELETE, e.Action)
+		require.Equal(t, req, e.Request)
+	}
+
+	// Create User API key.
+	{
+		al.Reset()
+		req := &akpb.CreateApiKeyRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+			Label:          "my key",
+			Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		}
+		resp, err := env.GetBuildBuddyServer().CreateUserApiKey(adminCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_USER_API_KEY, e.Resource.GetType())
+		require.Equal(t, resp.ApiKey.Id, e.Resource.GetId())
+		require.Equal(t, alpb.Action_CREATE, e.Action)
+		require.Equal(t, req, e.Request)
+		key = resp.ApiKey
+	}
+
+	// List User API keys (no audit log entries).
+	{
+		al.Reset()
+		req := &akpb.GetApiKeysRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		}
+		_, err = env.GetBuildBuddyServer().GetUserApiKeys(adminCtx, req)
+		require.NoError(t, err)
+		require.Empty(t, al.GetAllEntries())
+	}
+
+	// Update User API key.
+	{
+		al.Reset()
+		req := &akpb.UpdateApiKeyRequest{
+			Id:         key.Id,
+			Label:      "new label",
+			Capability: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+		}
+		_, err = env.GetBuildBuddyServer().UpdateUserApiKey(adminCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_USER_API_KEY, e.Resource.GetType())
+		require.Equal(t, key.Id, e.Resource.GetId())
+		require.Equal(t, alpb.Action_UPDATE, e.Action)
+		require.Equal(t, req, e.Request)
+	}
+
+	{
+		al.Reset()
+		req := &akpb.DeleteApiKeyRequest{
+			Id: key.Id,
+		}
+		_, err = env.GetBuildBuddyServer().DeleteUserApiKey(adminCtx, req)
+		require.NoError(t, err)
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_USER_API_KEY, e.Resource.GetType())
+		require.Equal(t, key.Id, e.Resource.GetId())
+		require.Equal(t, alpb.Action_DELETE, e.Action)
+		require.Equal(t, req, e.Request)
+	}
 }
 
 func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env) []*tables.APIKey {

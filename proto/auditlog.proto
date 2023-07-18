@@ -42,11 +42,11 @@ enum ResourceType {
 
 enum Action {
   ACTION_UNKNOWN = 0;
-  ACTION_CREATE = 1;
-  ACTION_UPDATE = 2;
-  ACTION_DELETE = 3;
-  ACTION_LIST = 4;
-  ACTION_UPDATE_MEMBERSHIP = 5;
+  CREATE = 1;
+  UPDATE = 2;
+  DELETE = 3;
+  LIST = 4;
+  UPDATE_MEMBERSHIP = 5;
 }
 
 message ResourceID {
