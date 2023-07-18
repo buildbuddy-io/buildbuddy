@@ -62,6 +62,12 @@ import (
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+
+	// Force this package to be a direct dependency in `go.mod` so that
+	// `go mod tidy` doesn't work differently when generated protos are linked
+	// or copied into the source tree
+	// (the generated protos depend on this package)
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 )
 
 var (
