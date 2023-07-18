@@ -36,7 +36,7 @@ var (
 )
 
 func init() {
-	*log.LogLevel = "debug"
+	*log.LogLevel = "warn"
 	*log.IncludeShortFileName = true
 	log.Configure()
 }
