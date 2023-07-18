@@ -1138,7 +1138,8 @@ func (s *BuildBuddyServer) ListSecrets(ctx context.Context, req *skpb.ListSecret
 }
 func (s *BuildBuddyServer) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, error) {
 	if secretService := s.env.GetSecretService(); secretService != nil {
-		return secretService.UpdateSecret(ctx, req)
+		rsp, _, err := secretService.UpdateSecret(ctx, req)
+		return rsp, err
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
