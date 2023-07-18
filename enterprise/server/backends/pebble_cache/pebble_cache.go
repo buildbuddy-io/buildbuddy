@@ -1780,9 +1780,19 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		wcm = fw
 	}
 
+	return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress)
+}
+
+// newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write,
+// it will
+// (1) compress the data if shouldCompress is true; and then
+// (2) encrypt the data if encryption is enabled
+// (3) write the data using input wcm's Write method.
+// On Commit, it will write the metadata for fileRecord.
+func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.MetadataWriteCloser, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
 	// Grab another lease and pass the Close function to the writer
 	// so it will be closed when the writer is.
-	db, err = p.leaser.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1800,40 +1810,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 			LastAccessUsec:     now,
 			LastModifyUsec:     now,
 		}
-		protoBytes, err := proto.Marshal(md)
-		if err != nil {
-			return err
-		}
-
-		iter := db.NewIter(nil /*default iterOptions*/)
-		defer iter.Close()
-
-		unlockFn := p.locker.Lock(key.LockID())
-		defer unlockFn()
-
-		if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
-			oldKeyBytes, err := key.Bytes(version)
-			if err != nil {
-				return err
-			}
-			if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
-				return err
-			}
-			p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*oldMD.GetStoredSizeBytes())
-		}
-
-		keyBytes, err := key.Bytes(p.activeDatabaseVersion())
-		if err != nil {
-			return err
-		}
-
-		if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
-			partitionID := fileRecord.GetIsolation().GetPartitionId()
-			p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
-			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
-		}
-
-		return err
+		return p.writeMetadata(ctx, db, key, md)
 	}
 
 	wc := interfaces.CommittedWriteCloser(cwc)
@@ -1843,7 +1820,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		return nil, err
 	}
 	if shouldEncrypt {
-		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, r.GetDigest(), wc)
+		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, fileRecord.GetDigest(), wc)
 		if err != nil {
 			_ = wc.Close()
 			return nil, status.UnavailableErrorf("encryptor not available: %s", err)
@@ -1853,10 +1830,46 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	}
 
 	if shouldCompress {
-		return NewZstdCompressor(p.name, wc, p.bufferPool, r.GetDigest().GetSizeBytes()), nil
+		return NewZstdCompressor(p.name, wc, p.bufferPool, fileRecord.GetDigest().GetSizeBytes()), nil
+	}
+	return wc, nil
+}
+
+func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *rfpb.FileMetadata) error {
+	protoBytes, err := proto.Marshal(md)
+	if err != nil {
+		return err
 	}
 
-	return wc, nil
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	unlockFn := p.locker.Lock(key.LockID())
+	defer unlockFn()
+
+	if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
+		oldKeyBytes, err := key.Bytes(version)
+		if err != nil {
+			return err
+		}
+		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
+			return err
+		}
+		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*oldMD.GetStoredSizeBytes())
+	}
+
+	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
+	if err != nil {
+		return err
+	}
+
+	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
+		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
+		p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
+		metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
+	}
+
+	return err
 }
 
 func (p *PebbleCache) DoneScanning() bool {
