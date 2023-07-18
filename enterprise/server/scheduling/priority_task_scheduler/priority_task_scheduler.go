@@ -314,7 +314,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
 		log.CtxWarningf(ctx, "Error opening publish operation stream: %s", err)
-		return true, err
+		return true, status.WrapError(err, "failed to open execution status update stream")
 	}
 	start := time.Now()
 	// TODO(http://go/b/1192): Figure out why CloseAndRecv() hangs if we call
@@ -328,7 +328,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	}
 	time.Sleep(time.Until(start.Add(closeStreamDelay)))
 	if _, err = clientStream.CloseAndRecv(); err != nil {
-		return true, err
+		return true, status.WrapError(err, "failed to finalize execution update stream")
 	}
 	return false, nil
 }
