@@ -272,9 +272,9 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 			resourceType = alpb.ResourceType_GROUP
 		}
 
-		er, err := l.enrichRequest(ctx, request)
+		r, err := l.enrichRequest(ctx, request)
 		if err == nil {
-			request = er
+			request = r
 		} else {
 			log.Warningf("could not enrich request: %s", err)
 		}
