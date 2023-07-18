@@ -1783,6 +1783,12 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress)
 }
 
+// newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write,
+// it will
+// (1) compress the data if shouldCompress is true; and then
+// (2) encrypt the data if encryption is enabled
+// (3) write the data using input wcm's Write method.
+// On Commit, it will write the metadata for fileRecord.
 func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.MetadataWriteCloser, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
 	// Grab another lease and pass the Close function to the writer
 	// so it will be closed when the writer is.
