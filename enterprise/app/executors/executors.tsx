@@ -11,6 +11,7 @@ import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
 import LinkButton from "../../../app/components/button/link_button";
+import { Cpu, Hash, Laptop, LucideIcon } from "lucide-react";
 
 enum FetchType {
   Executors,
@@ -155,14 +156,24 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
               }
               return (
                 <>
-                  <h2>
-                    {executors[0].node?.os || ""}/{executors[0].node?.arch || ""}{" "}
-                    {executors[0].node?.pool || "Default Pool"}
-                  </h2>
-                  {executors.length == 1 && <p>There is 1 self-hosted executor in this pool.</p>}
-                  {executors.length > 1 && <p>There are {executors.length} self-hosted executors in this pool.</p>}
+                  <h2>{executors[0].node?.pool || "Default Pool"}</h2>
+                  <div className="executor-details">
+                    <ExecutorDetail Icon={Hash} label="">
+                      {executors.length} {executors.length === 1 ? "executor" : "executors"}
+                    </ExecutorDetail>
+                    <ExecutorDetail Icon={Laptop} label="OS">
+                      {executors[0].node?.os || "unknown"}
+                    </ExecutorDetail>
+                    <ExecutorDetail Icon={Cpu} label="Arch">
+                      {executors[0].node?.arch || "unknown"}
+                    </ExecutorDetail>
+                  </div>
                   {executors.length < 3 && (
-                    <p>For better performance and reliability, we suggest running a minimum of 3 executors per pool.</p>
+                    <div>
+                      <Banner type="warning" className="pool-size-warning">
+                        For better performance and reliability, we suggest running a minimum of 3 executors per pool.
+                      </Banner>
+                    </div>
                   )}
                   {executors.map(
                     (node) => node.node && <ExecutorCardComponent node={node.node} isDefault={node.isDefault} />
@@ -174,6 +185,18 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
       </>
     );
   }
+}
+
+function ExecutorDetail({ Icon, label, children }: { Icon: LucideIcon; label: string; children: React.ReactNode }) {
+  return (
+    <span className="executor-detail">
+      <Icon className="icon" />
+      <span>
+        {label && <>{label}: </>}
+        <b>{children}</b>
+      </span>
+    </span>
+  );
 }
 
 type TabId = "status" | "setup";

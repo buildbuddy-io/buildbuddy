@@ -54,3 +54,23 @@
   margin-bottom: 32px;
   max-width: 600px;
 }
+
+.executors-page .executor-details {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.executors-page .executor-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.executors-page .pool-size-warning {
+  margin: 0;
+  margin-top: 16px;
+  max-width: initial;
+  display: inline-flex;
+}
