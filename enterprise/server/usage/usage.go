@@ -288,12 +288,12 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			pk.PeriodStartUsec,
 		).Rows()
 		if err != nil {
-			return status.WrapError(err, "query rows")
+			return err
 		}
 
 		schema, err := db.TableSchema(tx, &tables.Usage{})
 		if err != nil {
-			return status.WrapError(err, "schema")
+			return status.WrapError(err, "failed to get usage table schema")
 		}
 
 		existingRowCount := 0
@@ -301,7 +301,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			existingRowCount++
 			fields := map[string]any{}
 			if err := tx.ScanRows(rows, &fields); err != nil {
-				return status.WrapError(err, "scan row")
+				return err
 			}
 
 			unsupportedField := ""
@@ -317,12 +317,12 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 				}
 			}
 			if unsupportedField != "" {
-				log.Warningf("Existing usage row contains unsupported column %q with nonempty value %q; dropping usage data.", unsupportedField, unsupportedFieldValue)
+				alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since existing usage row contains unsupported column %q = %q", unsupportedField, unsupportedFieldValue)
 				return nil
 			}
 		}
 		if err := rows.Err(); err != nil {
-			return status.WrapError(err, "prepare row")
+			return err
 		}
 
 		tu := &tables.Usage{
@@ -339,7 +339,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			// Drop the usage update and alert about it, but there's not much we
 			// can do to recover in this case so don't roll back the transaction
 			// (since that would cause the flush to keep being retried).
-			alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction rolled back since it would affect more than one row")
+			alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since it would affect more than one row")
 			return nil
 		}
 
