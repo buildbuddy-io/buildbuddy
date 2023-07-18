@@ -24,12 +24,14 @@ go_test(
     tags = [
         "no-sandbox",  # sandbox-exec is not compatible with Bazel's sandbox environment
     ],
-    target_compatible_with = ["@platforms//os:macos"],
-    deps = [
-        ":sandbox",
-        "//enterprise/server/remote_execution/container",
-        "//proto:remote_execution_go_proto",
-        "//server/testutil/testfs",
-        "@com_github_stretchr_testify//assert",
-    ],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:darwin": [
+            ":sandbox",
+            "//enterprise/server/remote_execution/container",
+            "//proto:remote_execution_go_proto",
+            "//server/testutil/testfs",
+            "@com_github_stretchr_testify//assert",
+        ],
+        "//conditions:default": [],
+    }),
 )
