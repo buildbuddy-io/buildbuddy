@@ -32,13 +32,6 @@ go_test(
             "//server/testutil/testfs",
             "@com_github_stretchr_testify//assert",
         ],
-        "@io_bazel_rules_go//go/platform:ios": [
-            ":sandbox",
-            "//enterprise/server/remote_execution/container",
-            "//proto:remote_execution_go_proto",
-            "//server/testutil/testfs",
-            "@com_github_stretchr_testify//assert",
-        ],
         "//conditions:default": [],
     }),
 )
