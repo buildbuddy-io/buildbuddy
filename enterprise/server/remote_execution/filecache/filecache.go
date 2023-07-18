@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -90,12 +91,18 @@ func sizeFn(value interface{}) int64 {
 }
 
 func evictFn(value interface{}, reason lru.EvictionReason) {
-	if v, ok := value.(*entry); ok {
-		syscall.Unlink(v.value)
-		if reason == lru.SizeEviction {
-			age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
-			metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
-		}
+	v, ok := value.(*entry)
+	if !ok {
+		alert.UnexpectedEvent("filecache", "Unexpected filecache entry type %T", value)
+		return
+	}
+
+	if err := syscall.Unlink(v.value); err != nil {
+		log.Errorf("Failed to unlink filecache entry %q: %s", v.value, err)
+	}
+	if reason == lru.SizeEviction {
+		age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
+		metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
 	}
 }
 
