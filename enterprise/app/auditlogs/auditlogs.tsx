@@ -132,12 +132,8 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
     return (
       <>
         <div>{res}</div>
-        {resourceID.id && (
-          <div>{resourceID.id}</div>
-        )}
-        {resourceID.name && (
-          <div>"{resourceID.name}"</div>
-        )}
+        {resourceID.id && <div>{resourceID.id}</div>}
+        {resourceID.name && <div>"{resourceID.name}"</div>}
       </>
     );
   }
