@@ -108,6 +108,7 @@ func runBBServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 
 	go runFunc()
+	t.Cleanup(func() { grpcServer.GracefulStop() } )
 
 	clientConn, err := env.LocalGRPCConn(ctx)
 	if err != nil {
@@ -130,10 +131,10 @@ func makeTempRepo(t *testing.T) string {
 // request.
 func pingWebhook(t *testing.T, url string) {
 	res, err := http.Post(url, "", bytes.NewReader([]byte{}))
+	require.NoError(t, err)
 	// Log the response body for debug purposes.
 	body, _ := io.ReadAll(res.Body)
 	t.Log(string(body))
-	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 }
 
