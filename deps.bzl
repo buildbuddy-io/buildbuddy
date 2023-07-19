@@ -553,18 +553,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:pgAtgj+A31JBVtEHu2uHuEx0n+2ukqUJnS2vVe5pQNA=",
         version = "v0.4.1",
     )
-    go_repository(
-        name = "com_github_bsm_ginkgo_v2",
-        importpath = "github.com/bsm/ginkgo/v2",
-        sum = "h1:aOAnND1T40wEdAtkGSkvSICWeQ8L3UASX7YVCqQx+eQ=",
-        version = "v2.5.0",
-    )
-    go_repository(
-        name = "com_github_bsm_gomega",
-        importpath = "github.com/bsm/gomega",
-        sum = "h1:JhAwLmtRzXFTx2AkALSLa8ijZafntmhSoU63Ok18Uq8=",
-        version = "v1.20.0",
-    )
+
     go_repository(
         name = "com_github_bufbuild_protocompile",
         importpath = "github.com/bufbuild/protocompile",
@@ -1879,8 +1868,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_redis_redis",
         importpath = "github.com/go-redis/redis",
-        sum = "h1:K0pv1D7EQUjfyoMql+r/jZqCLizCGKFlFgcHWWmHQjg=",
-        version = "v6.15.9+incompatible",
+        sum = "h1:BKZuG6mCnRj5AOaWJXoCgf6rqTYnYJLe4en2hxT7r9o=",
+        version = "v6.15.8+incompatible",
     )
 
     go_repository(
@@ -1895,12 +1884,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:BqyYJgvdSr2S/6O2l7zmCj26ocUTxDLgagsGIRfkS+Q=",
         version = "v8.11.5",
     )
-    go_repository(
-        name = "com_github_go_redis_redis_v7",
-        importpath = "github.com/go-redis/redis/v7",
-        sum = "h1:7obg6wUoj05T0EpY0o8B59S9w5yeMWql7sw2kwNW1x4=",
-        version = "v7.4.0",
-    )
 
     go_repository(
         name = "com_github_go_redis_redis_v8",
@@ -1912,8 +1895,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_redsync_redsync_v4",
         importpath = "github.com/go-redsync/redsync/v4",
-        sum = "h1:rq2RvdTI0obznMdxKUWGdmmulo7lS9yCzb8fgDKOlbM=",
-        version = "v4.8.1",
+        replace = "github.com/bduffany/redsync/v4",
+        sum = "h1:wyBDr+ApDWybbLGMSsepl30KzPAl+HlIQMhJSoLdRKg=",
+        version = "v4.4.1-minimal",
     )
     go_repository(
         name = "com_github_go_sourcemap_sourcemap",
@@ -4488,12 +4472,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:OF3QCZUuyPxuGEP7B4ypUa7sB/iHtqOTDYZXGM8KOdQ=",
         version = "v0.1.7",
     )
-    go_repository(
-        name = "com_github_redis_go_redis_v9",
-        importpath = "github.com/redis/go-redis/v9",
-        sum = "h1:BA426Zqe/7r56kCcvxYLWe1mkaz71LKF77GwgFzSxfE=",
-        version = "v9.0.2",
-    )
+
     go_repository(
         name = "com_github_remyoudompheng_bigfft",
         importpath = "github.com/remyoudompheng/bigfft",
@@ -4863,12 +4842,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/stretchr/testify",
         sum = "h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcUk=",
         version = "v1.8.4",
-    )
-    go_repository(
-        name = "com_github_stvp_tempredis",
-        importpath = "github.com/stvp/tempredis",
-        sum = "h1:QVqDTf3h2WHt08YuiTGPZLls0Wq99X9bWd0Q5ZSBesM=",
-        version = "v0.0.0-20181119212430-b82af8480203",
     )
 
     go_repository(
