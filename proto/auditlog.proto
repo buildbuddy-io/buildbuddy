@@ -76,6 +76,15 @@ message Entry {
     grp.UpdateGroupUsersRequest update_group_users = 6;
     invocation.UpdateInvocationRequest update_invocation = 7;
   }
+  message Request {
+    ResourceRequest request = 1;
+
+    message IDDescriptor {
+      string id = 1;
+      string value = 2;
+    }
+    repeated IDDescriptor id_descriptors = 6;
+  }
   ResourceRequest request = 5;
 }
 

@@ -87,15 +87,15 @@ func Register(env environment.Env) error {
 }
 
 // wrapRequestProto automatically finds and sets the correct child message of
-// the ResourceState proto based on the type of the passed proto.
-func (l *Logger) wrapRequestProto(payload proto.Message) (*alpb.Entry_ResourceRequest, error) {
+// the ResourceRequest proto based on the type of the passed proto.
+func (l *Logger) wrapRequestProto(payload proto.Message) (*alpb.Entry_Request, error) {
 	fd, ok := l.payloadTypes[payload.ProtoReflect().Descriptor()]
 	if !ok {
 		return nil, status.InvalidArgumentErrorf("invalid payload proto: %s", payload.ProtoReflect().Descriptor())
 	}
-	payloadWrapper := &alpb.Entry_ResourceRequest{}
-	payloadWrapper.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(payload.ProtoReflect()))
-	return payloadWrapper, nil
+	requestWrapper := &alpb.Entry_ResourceRequest{}
+	requestWrapper.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(payload.ProtoReflect()))
+	return &alpb.Entry_Request{Request: requestWrapper}, nil
 }
 
 func clearRequestContext(request proto.Message) proto.Message {
@@ -129,6 +129,9 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 		rp, err := l.wrapRequestProto(request)
 		if err != nil {
 			return status.WrapErrorf(err, "could not wrap request proto")
+		}
+		if err := l.fillIDDescriptors(ctx, rp); err != nil {
+			log.Warningf("could not fill ID descriptors: %s", err)
 		}
 		rpb, err := proto.Marshal(rp)
 		if err != nil {
@@ -197,23 +200,28 @@ func cleanRequest(e *alpb.Entry_ResourceRequest) *alpb.Entry_ResourceRequest {
 	return e
 }
 
-func (l *Logger) enrichRequest(ctx context.Context, e *alpb.Entry_ResourceRequest) (*alpb.Entry_ResourceRequest, error) {
-	e = proto.Clone(e).(*alpb.Entry_ResourceRequest)
-	if r := e.UpdateGroupUsers; r != nil {
+func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) error {
+	if r := e.Request.UpdateGroupUsers; r != nil {
 		for _, u := range r.Update {
 			uid := u.GetUserId().GetId()
 			userData, err := l.env.GetUserDB().GetUserByID(ctx, uid)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if userData.Email != "" {
-				u.UserId.Id += " (" + userData.Email + ")"
+				e.IdDescriptors = append(e.IdDescriptors, &alpb.Entry_Request_IDDescriptor{
+					Id:    u.GetUserId().GetId(),
+					Value: userData.Email,
+				})
 			} else if userData.FirstName != "" && userData.LastName != "" {
-				u.UserId.Id += " (" + userData.FirstName + " " + userData.LastName + ")"
+				e.IdDescriptors = append(e.IdDescriptors, &alpb.Entry_Request_IDDescriptor{
+					Id:    u.GetUserId().GetId(),
+					Value: userData.FirstName + " " + userData.LastName,
+				})
 			}
 		}
 	}
-	return e, nil
+	return nil
 }
 
 func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
@@ -270,13 +278,6 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 		// organization.
 		if resourceType == alpb.ResourceType_UNKNOWN_RESOURCE {
 			resourceType = alpb.ResourceType_GROUP
-		}
-
-		r, err := l.enrichRequest(ctx, request)
-		if err == nil {
-			request = r
-		} else {
-			log.Warningf("could not enrich request: %s", err)
 		}
 
 		resp.Entries = append(resp.Entries, &alpb.Entry{
