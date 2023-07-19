@@ -133,29 +133,9 @@ const (
 )
 
 var (
-	podIDFromCpusetRegexp = regexp.MustCompile(`/kubepods(/.*?)?/pod([a-z0-9\-]{36})/`)
-
 	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
 	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
 )
-
-func k8sPodID() (string, error) {
-	if _, err := os.Stat("/proc/1/cpuset"); err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	buf, err := os.ReadFile("/proc/1/cpuset")
-	if err != nil {
-		return "", err
-	}
-	cpuset := string(buf)
-	if m := podIDFromCpusetRegexp.FindStringSubmatch(cpuset); m != nil {
-		return m[2], nil
-	}
-	return "", nil
-}
 
 func ContextBasedShutdownEnabled() bool {
 	return *contextBasedShutdown
@@ -591,7 +571,7 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 	if hc == nil {
 		return nil, status.FailedPreconditionError("Missing health checker")
 	}
-	podID, err := k8sPodID()
+	podID, err := resources.GetK8sPodUID()
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}

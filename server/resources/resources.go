@@ -3,6 +3,7 @@ package resources
 import (
 	"flag"
 	"os"
+	"regexp"
 	"runtime"
 	"strconv"
 	"sync"
@@ -27,6 +28,7 @@ const (
 	hostnameEnvVarName = "MY_HOSTNAME"
 	portEnvVarName     = "MY_PORT"
 	poolEnvVarName     = "MY_POOL"
+	podUIDVarName      = "K8S_POD_UID"
 )
 
 const (
@@ -37,6 +39,10 @@ var (
 	allocatedRAMBytes  int64
 	allocatedCPUMillis int64
 	once               sync.Once
+)
+
+var (
+	podIDFromCpusetRegexp = regexp.MustCompile(`/kubepods(/.*?)?/pod([a-z0-9\-]{36})/`)
 )
 
 func init() {
@@ -153,4 +159,25 @@ func GetZone() (string, error) {
 		return "", status.UnavailableError("not running on GCE")
 	}
 	return metadata.Zone()
+}
+
+func GetK8sPodUID() (string, error) {
+	if podID := os.Getenv(podUIDVarName); podID != "" {
+		return podID, nil
+	}
+	if _, err := os.Stat("/proc/1/cpuset"); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	buf, err := os.ReadFile("/proc/1/cpuset")
+	if err != nil {
+		return "", err
+	}
+	cpuset := string(buf)
+	if m := podIDFromCpusetRegexp.FindStringSubmatch(cpuset); m != nil {
+		return m[2], nil
+	}
+	return "", nil
 }
