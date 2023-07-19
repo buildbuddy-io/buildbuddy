@@ -27,7 +27,7 @@ type FakeAuditLog struct {
 
 func New(t *testing.T) *FakeAuditLog {
 	payloadTypes := make(map[protoreflect.MessageDescriptor]protoreflect.FieldDescriptor)
-	pfs := (&alpb.Entry_ResourceRequest{}).ProtoReflect().Descriptor().Fields()
+	pfs := (&alpb.Entry_APIRequest{}).ProtoReflect().Descriptor().Fields()
 	for i := 0; i < pfs.Len(); i++ {
 		pf := pfs.Get(i)
 		payloadTypes[pf.Message()] = pf

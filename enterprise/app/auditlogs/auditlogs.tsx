@@ -155,7 +155,7 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
   }
 
   renderRequest(request: auditlog.Entry.Request | null | undefined) {
-    if (!request || !request.request) {
+    if (!request || !request.apiRequest) {
       return "";
     }
 
@@ -166,15 +166,15 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
     for (const desc of request.idDescriptors) {
       idDescriptors.set(desc.id, desc.value);
     }
-    if (request.request.updateGroupUsers) {
-      for (const update of request.request.updateGroupUsers.update) {
+    if (request.apiRequest.updateGroupUsers) {
+      for (const update of request.apiRequest.updateGroupUsers.update) {
         if (update.userId?.id && idDescriptors.has(update.userId.id)) {
           update.userId.id += " (" + idDescriptors.get(update.userId.id) + ")";
         }
       }
     }
 
-    let obj = request.request.toJSON();
+    let obj = request.apiRequest.toJSON();
     let vals = Object.values(obj);
     if (vals.length == 0) {
       return "";

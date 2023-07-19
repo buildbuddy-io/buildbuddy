@@ -72,7 +72,7 @@ func Register(env environment.Env) error {
 	}
 
 	payloadTypes := make(map[protoreflect.MessageDescriptor]protoreflect.FieldDescriptor)
-	pfs := (&alpb.Entry_ResourceRequest{}).ProtoReflect().Descriptor().Fields()
+	pfs := (&alpb.Entry_APIRequest{}).ProtoReflect().Descriptor().Fields()
 	for i := 0; i < pfs.Len(); i++ {
 		pf := pfs.Get(i)
 		payloadTypes[pf.Message()] = pf
@@ -93,9 +93,9 @@ func (l *Logger) wrapRequestProto(payload proto.Message) (*alpb.Entry_Request, e
 	if !ok {
 		return nil, status.InvalidArgumentErrorf("invalid payload proto: %s", payload.ProtoReflect().Descriptor())
 	}
-	requestWrapper := &alpb.Entry_ResourceRequest{}
-	requestWrapper.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(payload.ProtoReflect()))
-	return &alpb.Entry_Request{Request: requestWrapper}, nil
+	apiRequest := &alpb.Entry_APIRequest{}
+	apiRequest.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(payload.ProtoReflect()))
+	return &alpb.Entry_Request{ApiRequest: apiRequest}, nil
 }
 
 func clearRequestContext(request proto.Message) proto.Message {
@@ -179,22 +179,22 @@ func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb
 //     so the ID under the request is redundant.
 func cleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
 	e = proto.Clone(e).(*alpb.Entry_Request)
-	if r := e.Request.CreateApiKey; r != nil {
+	if r := e.ApiRequest.CreateApiKey; r != nil {
 		r.GroupId = ""
 	}
-	if r := e.Request.GetApiKeys; r != nil {
+	if r := e.ApiRequest.GetApiKeys; r != nil {
 		r.GroupId = ""
 	}
-	if r := e.Request.UpdateApiKey; r != nil {
+	if r := e.ApiRequest.UpdateApiKey; r != nil {
 		r.Id = ""
 	}
-	if r := e.Request.DeleteApiKey; r != nil {
+	if r := e.ApiRequest.DeleteApiKey; r != nil {
 		r.Id = ""
 	}
-	if r := e.Request.UpdateGroup; r != nil {
+	if r := e.ApiRequest.UpdateGroup; r != nil {
 		r.Id = ""
 	}
-	if r := e.Request.UpdateGroupUsers; r != nil {
+	if r := e.ApiRequest.UpdateGroupUsers; r != nil {
 		r.GroupId = ""
 	}
 	return e
@@ -203,7 +203,7 @@ func cleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
 func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) error {
 	userIDs := make(map[string]struct{})
 
-	if r := e.Request.UpdateGroupUsers; r != nil {
+	if r := e.ApiRequest.UpdateGroupUsers; r != nil {
 		for _, u := range r.Update {
 			userIDs[u.GetUserId().GetId()] = struct{}{}
 		}
