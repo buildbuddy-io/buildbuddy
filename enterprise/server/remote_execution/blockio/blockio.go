@@ -92,15 +92,15 @@ func NewMmapFd(fd, size int) (*Mmap, error) {
 }
 
 func (m *Mmap) initMap() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
 	if m.path == "" {
 		return status.InternalError("missing file path")
 	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.mapped {
 		// Already mapped - return early
 		return nil
@@ -163,11 +163,15 @@ func (m *Mmap) Sync() error {
 }
 
 func (m *Mmap) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.closed = true
 	if !m.mapped {
 		return nil
 	}
 	m.mapped = false
+
 	return syscall.Munmap(m.data)
 }
 
