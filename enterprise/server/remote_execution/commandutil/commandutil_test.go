@@ -210,7 +210,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 		// way to make the setpgid system call.
 		testfs.RunfilePath(t, "enterprise/server/remote_execution/commandutil/test_binary/test_binary_/test_binary"),
 	}}
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 
 	res := commandutil.Run(ctx, cmd, wd, nil /*=statsListener*/, &container.Stdio{})
