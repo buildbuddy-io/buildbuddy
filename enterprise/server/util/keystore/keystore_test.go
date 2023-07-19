@@ -38,7 +38,7 @@ func TestTestKMS(t *testing.T) {
 	plaintext := []byte("woo boy wouldn't want this to get out")
 	associatedData := []byte("big_secret")
 
-	masterKey, err := kmsClient.FetchMasterKey()
+	masterKey, err := kmsClient.FetchMasterKey(context.Background())
 	require.NoError(t, err)
 
 	ciphertext, err := masterKey.Encrypt(plaintext, associatedData)
@@ -60,7 +60,7 @@ func TestGenerateKey(t *testing.T) {
 	err := kms.Register(te)
 	require.NoError(t, err)
 
-	pubKey64, encPrivKey64, err := keystore.GenerateSealedBoxKeys(te)
+	pubKey64, encPrivKey64, err := keystore.GenerateSealedBoxKeys(context.Background(), te)
 	require.NoError(t, err)
 	require.NotNil(t, pubKey64)
 	require.NotNil(t, encPrivKey64)
@@ -84,7 +84,7 @@ func TestBoxSealAndOpen(t *testing.T) {
 	err := kms.Register(te)
 	require.NoError(t, err)
 
-	pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(te)
+	pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(context.Background(), te)
 	require.NoError(t, err)
 
 	{
@@ -92,7 +92,7 @@ func TestBoxSealAndOpen(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, anonSealedBox)
 
-		plainText, err := keystore.OpenAnonymousSealedBox(te, pubKey, encPrivKey, anonSealedBox)
+		plainText, err := keystore.OpenAnonymousSealedBox(context.Background(), te, pubKey, encPrivKey, anonSealedBox)
 		require.NoError(t, err)
 		require.Equal(t, "sEcRet", plainText)
 	}
@@ -103,9 +103,9 @@ func TestBoxSealAndOpen(t *testing.T) {
 		require.NotNil(t, anonSealedBox)
 
 		// Using different pub/priv keys to open this box should fail.
-		pubKey2, encPrivKey2, err := keystore.GenerateSealedBoxKeys(te)
+		pubKey2, encPrivKey2, err := keystore.GenerateSealedBoxKeys(context.Background(), te)
 		require.NoError(t, err)
-		plainText, err := keystore.OpenAnonymousSealedBox(te, pubKey2, encPrivKey2, anonSealedBox)
+		plainText, err := keystore.OpenAnonymousSealedBox(context.Background(), te, pubKey2, encPrivKey2, anonSealedBox)
 		require.Error(t, err)
 		require.NotEqual(t, "sEcRet", plainText)
 	}
@@ -117,7 +117,7 @@ func TestBoxSealAndOpen(t *testing.T) {
 
 		// Using a different master key to open this box should fail.
 		generateKMSKey(t, kmsDir, "masterKey")
-		plainText, err := keystore.OpenAnonymousSealedBox(te, pubKey, encPrivKey, anonSealedBox)
+		plainText, err := keystore.OpenAnonymousSealedBox(context.Background(), te, pubKey, encPrivKey, anonSealedBox)
 		require.Error(t, err)
 		require.NotEqual(t, "sEcRet", plainText)
 	}
