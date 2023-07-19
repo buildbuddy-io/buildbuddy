@@ -29,7 +29,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"gorm.io/gorm/schema"
 
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
@@ -1009,14 +1008,4 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 		return true
 	}
 	return false
-}
-
-// TableSchema can be used to get the schema for a given table.
-func TableSchema(db *DB, model any) (*schema.Schema, error) {
-	stmt := &gorm.Statement{DB: db}
-	// Note: Parse() is cheap since gorm uses a cache internally.
-	if err := stmt.Parse(model); err != nil {
-		return nil, err
-	}
-	return stmt.Schema, nil
 }
