@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -181,7 +182,7 @@ func (ut *tracker) StartDBFlush() {
 			select {
 			case <-time.After(flushInterval):
 				if err := ut.FlushToDB(ctx); err != nil {
-					log.Errorf("Failed to flush usage data to DB: %s", err)
+					alert.UnexpectedEvent("usage_data_flush_failed", "Error flushing usage data to DB: %s", err)
 				}
 			case <-ut.stopFlush:
 				return
