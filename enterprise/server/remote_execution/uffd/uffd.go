@@ -185,7 +185,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
 		if pollErr != nil {
-			return status.WrapError(err, "poll uffd")
+			return status.WrapError(pollErr, "poll uffd")
 		}
 
 		var event uffdMsg
