@@ -85,7 +85,7 @@ message Entry {
     }
     repeated IDDescriptor id_descriptors = 6;
   }
-  ResourceRequest request = 5;
+  Request request = 5;
 }
 
 message GetAuditLogsRequest {

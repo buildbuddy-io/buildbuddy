@@ -154,11 +154,27 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
     return "";
   }
 
-  renderRequest(request: auditlog.Entry.ResourceRequest | null | undefined) {
-    if (!request) {
+  renderRequest(request: auditlog.Entry.Request | null | undefined) {
+    if (!request || !request.request) {
       return "";
     }
-    let obj = request.toJSON();
+
+    // Populate any available ID descriptor information by appending it
+    // directly to the field value. We can display this in a prettier
+    // way in the future, but this will do for now.
+    const idDescriptors = new Map<string, string>();
+    for (const desc of request.idDescriptors) {
+      idDescriptors.set(desc.id, desc.value);
+    }
+    if (request.request.updateGroupUsers) {
+      for (const update of request.request.updateGroupUsers.update) {
+        if (update.userId?.id && idDescriptors.has(update.userId.id)) {
+          update.userId.id += " (" + idDescriptors.get(update.userId.id) + ")";
+        }
+      }
+    }
+
+    let obj = request.request.toJSON();
     let vals = Object.values(obj);
     if (vals.length == 0) {
       return "";

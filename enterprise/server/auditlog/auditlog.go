@@ -177,50 +177,53 @@ func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb
 //     information in the shown request is redundant.
 //  2. resource IDs -- audit logs include a resource identifier for every entry
 //     so the ID under the request is redundant.
-func cleanRequest(e *alpb.Entry_ResourceRequest) *alpb.Entry_ResourceRequest {
-	e = proto.Clone(e).(*alpb.Entry_ResourceRequest)
-	if r := e.CreateApiKey; r != nil {
+func cleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
+	e = proto.Clone(e).(*alpb.Entry_Request)
+	if r := e.Request.CreateApiKey; r != nil {
 		r.GroupId = ""
 	}
-	if r := e.GetApiKeys; r != nil {
+	if r := e.Request.GetApiKeys; r != nil {
 		r.GroupId = ""
 	}
-	if r := e.UpdateApiKey; r != nil {
+	if r := e.Request.UpdateApiKey; r != nil {
 		r.Id = ""
 	}
-	if r := e.DeleteApiKey; r != nil {
+	if r := e.Request.DeleteApiKey; r != nil {
 		r.Id = ""
 	}
-	if r := e.UpdateGroup; r != nil {
+	if r := e.Request.UpdateGroup; r != nil {
 		r.Id = ""
 	}
-	if r := e.UpdateGroupUsers; r != nil {
+	if r := e.Request.UpdateGroupUsers; r != nil {
 		r.GroupId = ""
 	}
 	return e
 }
 
 func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) error {
+	userIDs := make(map[string]struct{})
+
 	if r := e.Request.UpdateGroupUsers; r != nil {
 		for _, u := range r.Update {
-			uid := u.GetUserId().GetId()
-			userData, err := l.env.GetUserDB().GetUserByID(ctx, uid)
-			if err != nil {
-				return err
-			}
-			if userData.Email != "" {
-				e.IdDescriptors = append(e.IdDescriptors, &alpb.Entry_Request_IDDescriptor{
-					Id:    u.GetUserId().GetId(),
-					Value: userData.Email,
-				})
-			} else if userData.FirstName != "" && userData.LastName != "" {
-				e.IdDescriptors = append(e.IdDescriptors, &alpb.Entry_Request_IDDescriptor{
-					Id:    u.GetUserId().GetId(),
-					Value: userData.FirstName + " " + userData.LastName,
-				})
-			}
+			userIDs[u.GetUserId().GetId()] = struct{}{}
 		}
 	}
+
+	for uid := range userIDs {
+		userData, err := l.env.GetUserDB().GetUserByID(ctx, uid)
+		if err != nil {
+			return err
+		}
+		value := userData.Email
+		if userData.Email == "" {
+			value = userData.FirstName + " " + userData.LastName
+		}
+		e.IdDescriptors = append(e.IdDescriptors, &alpb.Entry_Request_IDDescriptor{
+			Id:    uid,
+			Value: value,
+		})
+	}
+
 	return nil
 }
 
@@ -263,7 +266,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 			return nil, err
 		}
 
-		request := &alpb.Entry_ResourceRequest{}
+		request := &alpb.Entry_Request{}
 		if err := proto.Unmarshal([]byte(e.Request), request); err != nil {
 			return nil, err
 		}
