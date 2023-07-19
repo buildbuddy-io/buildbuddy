@@ -8,6 +8,7 @@ ts_library(
     name = "api_keys",
     srcs = ["api_keys.tsx"],
     deps = [
+        "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
@@ -17,6 +18,7 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
+        "//app/util:clipboard",
         "//app/util:errors",
         "//proto:api_key_ts_proto",
         "@npm//@types/react",

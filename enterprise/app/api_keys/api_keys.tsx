@@ -1,4 +1,4 @@
-import { Key } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Key } from "lucide-react";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
@@ -13,6 +13,8 @@ import Dialog, {
 import TextInput from "../../../app/components/input/input";
 import Spinner from "../../../app/components/spinner/spinner";
 import Modal from "../../../app/components/modal/modal";
+import alert_service from "../../../app/alert/alert_service";
+import { copyToClipboard } from "../../../app/util/clipboard";
 import errorService from "../../../app/errors/error_service";
 import { CancelableRpc } from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
@@ -461,10 +463,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
               <div className="api-key-capabilities">
                 <span>{describeCapabilities(key)}</span>
               </div>
-              <div className="api-key-value">
-                <Key className="icon" />
-                <span>{key.value}</span>
-              </div>
+              <ApiKeyField value={key.value} />
               {this.props.user.canCall("updateApiKey") && (
                 <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
                   Edit
@@ -575,4 +574,59 @@ function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
     isSubmitting: false,
     request,
   };
+}
+
+interface ApiKeyFieldProps {
+  value: string;
+}
+
+interface ApiKeyFieldState {
+  isCopied: boolean;
+  hideValue: boolean;
+  displayValue: string;
+}
+
+const ApiKeyFieldDefaultState: ApiKeyFieldState = {
+  isCopied: false,
+  hideValue: true,
+  displayValue: "************",
+};
+
+class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
+  state = ApiKeyFieldDefaultState;
+
+  // onClick handler function for the copy button
+  private handleCopyClick() {
+    copyToClipboard(this.props.value);
+    this.setState({ isCopied: true }, () => {
+      alert_service.success("Copied API key to clipboard");
+    });
+    setTimeout(() => {
+      this.setState({ isCopied: false });
+    }, 4000);
+  }
+
+  // onClick handler function for the hide/reveal button
+  private toggleHideValue() {
+    this.setState({
+      hideValue: !this.state.hideValue,
+      displayValue: this.state.hideValue ? this.props.value : ApiKeyFieldDefaultState.displayValue,
+    });
+  }
+
+  render() {
+    const { isCopied, hideValue, displayValue } = this.state;
+
+    return (
+      <div className="api-key-value">
+        <span>{displayValue}</span>
+        <button className="api-key-value-copy" onClick={this.handleCopyClick.bind(this)} disabled={isCopied}>
+          {isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
+        </button>
+        <button className="api-key-value-hide" onClick={this.toggleHideValue.bind(this)}>
+          {hideValue ? <Eye className="icon" /> : <EyeOff className="icon" />}
+        </button>
+      </div>
+    );
+  }
 }
