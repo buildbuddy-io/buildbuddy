@@ -185,6 +185,10 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
 		if pollErr != nil {
+			if pollErr == unix.EINTR {
+				// Poll call was interrupted by another signal - retry
+				continue
+			}
 			return status.WrapError(pollErr, "poll uffd")
 		}
 
