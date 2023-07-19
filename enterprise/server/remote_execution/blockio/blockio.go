@@ -95,15 +95,15 @@ func (m *Mmap) initMap() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.mapped {
+		// Already mapped - return early
+		return nil
+	}
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
 	if m.path == "" {
 		return status.InternalError("missing file path")
-	}
-	if m.mapped {
-		// Already mapped - return early
-		return nil
 	}
 
 	f, err := os.OpenFile(m.path, os.O_RDWR, 0)
@@ -187,10 +187,8 @@ func (m *Mmap) SizeBytes() (int64, error) {
 // StartAddress returns the address of the first mapped byte. If this is a lazy
 // mmap, calling this func will force an mmap if not already mapped.
 func (m *Mmap) StartAddress() (uintptr, error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
+	if err := m.initMap(); err != nil {
+		return 0, err
 	}
 	return memoryAddress(m.data), nil
 }
