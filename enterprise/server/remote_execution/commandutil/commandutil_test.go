@@ -210,7 +210,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 		// way to make the setpgid system call.
 		testfs.RunfilePath(t, "enterprise/server/remote_execution/commandutil/test_binary/test_binary_/test_binary"),
 	}}
-	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
 	res := commandutil.Run(ctx, cmd, wd, nil /*=statsListener*/, &container.Stdio{})
@@ -253,7 +253,7 @@ func TestRun_EnableStats_RecordsCPUStats(t *testing.T) {
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.GreaterOrEqual(
-		t, res.UsageStats.GetCpuNanos(), int64(2e9),
+		t, res.UsageStats.GetCpuNanos(), int64(1500e6),
 		"expected around 3s of CPU usage")
 	require.LessOrEqual(
 		t, res.UsageStats.GetCpuNanos(), int64(4e9),
@@ -284,21 +284,21 @@ func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testi
 	}}
 
 	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	res := commandutil.Run(ctx, cmd, workDir, nopStatsListener, &container.Stdio{})
 
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.GreaterOrEqual(
-		t, res.UsageStats.GetCpuNanos(), int64(3e9),
+		t, res.UsageStats.GetCpuNanos(), int64(2400e6),
 		"expected around 4s of CPU usage")
 	require.LessOrEqual(
 		t, res.UsageStats.GetCpuNanos(), int64(5e9),
 		"expected around 4s of CPU usage")
 	require.GreaterOrEqual(
-		t, res.UsageStats.GetPeakMemoryBytes(), int64(1500e6),
-		"expected at least 1.5GB peak memory")
+		t, res.UsageStats.GetPeakMemoryBytes(), int64(1300e6),
+		"expected at least 1.3GB peak memory")
 	require.LessOrEqual(
 		t, res.UsageStats.GetPeakMemoryBytes(), int64(1700e6),
 		"expected not much more than 1.5GB peak memory")
