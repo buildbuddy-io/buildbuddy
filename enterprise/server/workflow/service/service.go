@@ -146,12 +146,14 @@ type workflowService struct {
 
 	wg    sync.WaitGroup
 	tasks chan *startWorkflowTask
+	bbUrl *url.URL
 }
 
 func NewWorkflowService(env environment.Env) *workflowService {
 	ws := &workflowService{
 		env:   env,
 		tasks: make(chan *startWorkflowTask, webhookWorkerTaskQueueSize),
+		bbUrl: build_buddy_url.WithPath(""),
 	}
 	ws.startBackgroundWorkers()
 	return ws
@@ -220,7 +222,7 @@ func (ws *workflowService) getWebhookURL(webhookID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	wu := build_buddy_url.WithPath(u.String())
+	wu := ws.bbUrl.ResolveReference(&url.URL{Path: u.String()})
 	return wu.String(), nil
 }
 
@@ -1123,7 +1125,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--invocation_id=" + invocationID,
 			"--action_name=" + workflowAction.Name,
 			"--bes_backend=" + events_api_url.String(),
-			"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
+			"--bes_results_url=" + ws.bbUrl.ResolveReference(&url.URL{Path: "/invocation/"}).String(),
 			"--cache_backend=" + cache_api_url.String(),
 			"--rbe_backend=" + remote_exec_api_url.String(),
 			"--remote_instance_name=" + instanceName,
@@ -1486,7 +1488,7 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 
 func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) error {
 	// TODO: Create a help section in the docs that explains this error status, and link to it
-	status := github.NewGithubStatusPayload(actionName, build_buddy_url.String(), "Check requires approving review", github.ErrorState)
+	status := github.NewGithubStatusPayload(actionName, ws.bbUrl.String(), "Check requires approving review", github.ErrorState)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
 	if err != nil {
 		return err
@@ -1496,7 +1498,7 @@ func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf 
 }
 
 func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID string) error {
-	invocationURL := build_buddy_url.WithPath("/invocation/" + invocationID)
+	invocationURL := ws.bbUrl.ResolveReference(&url.URL{Path: "/invocation/" + invocationID})
 	invocationURL.RawQuery = "queued=true"
 	status := github.NewGithubStatusPayload(actionName, invocationURL.String(), "Queued...", github.PendingState)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
