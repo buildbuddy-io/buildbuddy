@@ -20,6 +20,7 @@ ts_library(
         "//proto:bazel_config_ts_proto",
         "//proto:scheduler_ts_proto",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
         "@npm//rxjs",
         "@npm//tslib",
