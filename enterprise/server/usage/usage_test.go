@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
@@ -112,7 +113,7 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
-	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
 	// Increment some counts
@@ -197,7 +198,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
 	flags.Set(t, "app.region", "us-west1")
-	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
 	// Increment for group 1, then group 2
@@ -270,7 +271,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
-	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
 	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
@@ -313,7 +314,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
-	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
 	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
@@ -343,7 +344,7 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	ctx := authContext(te, "US1")
 
 	flags.Set(t, "app.region", "us-west1")
-	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
 	// Write 2 collection periods worth of data.
@@ -404,10 +405,10 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	ctx2 := authContext(te2, "US1")
 	clock := testclock.StartingAt(usage1Collection1Start)
 	flags.Set(t, "app.region", "us-west1")
-	ut1, err := usage.NewTracker(te1, clock, usage.NewFlushLock(te1))
+	ut1, err := usage.NewTracker(te1, clock, newFlushLock(t, te1))
 	require.NoError(t, err)
 	flags.Set(t, "app.region", "europe-north1")
-	ut2, err := usage.NewTracker(te2, clock, usage.NewFlushLock(te2))
+	ut2, err := usage.NewTracker(te2, clock, newFlushLock(t, te2))
 	require.NoError(t, err)
 
 	// Record and flush usage in 2 different regions.
@@ -452,7 +453,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
-	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
 	// Increment twice to test both insert and update queries.
@@ -515,4 +516,10 @@ func isDeadlockError(err error) bool {
 		return err.Number == 1213
 	}
 	return false
+}
+
+func newFlushLock(t *testing.T, te *testenv.TestEnv) interfaces.DistributedLock {
+	lock, err := usage.NewFlushLock(te)
+	require.NoError(t, err)
+	return lock
 }

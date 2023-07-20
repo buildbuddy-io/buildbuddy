@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -471,6 +472,35 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 	e2, err := rdb.Get(ctx, "expiring2").Result()
 	require.NoError(t, err)
 	assert.Equal(t, "value2", e2)
+}
+
+func TestWeakLock(t *testing.T) {
+	ctx := context.Background()
+	addr := testredis.Start(t).Target
+	rdb := redis.NewClient(redisutil.TargetToOptions(addr))
+	const oneYear = 365 * 24 * time.Hour
+	lock1App1, err := redisutil.NewWeakLock(rdb, "lock1", oneYear)
+	require.NoError(t, err)
+	lock1App2, err := redisutil.NewWeakLock(rdb, "lock1", oneYear)
+	require.NoError(t, err)
+	lock2App2, err := redisutil.NewWeakLock(rdb, "lock2", oneYear)
+	require.NoError(t, err)
+
+	// lock1 is not yet held, so app 1 should be able to acquire.
+	err = lock1App1.Lock(ctx)
+	require.NoError(t, err)
+	// lock1 is held by app 1, so app 2 should NOT be able to acquire.
+	err = lock1App2.Lock(ctx)
+	require.True(t, status.IsResourceExhaustedError(err), "unexpected error %T", err)
+	// lock2 is not held by anyone though, so app 2 should be able to acquire.
+	err = lock2App2.Lock(ctx)
+	require.NoError(t, err)
+	// app1 should be able to release lock1 successfully.
+	err = lock1App1.Unlock(ctx)
+	require.NoError(t, err)
+	// app2 should now be able to acquire lock1.
+	err = lock1App2.Lock(ctx)
+	require.NoError(t, err)
 }
 
 func BenchmarkCommandBuffer_Flush_HIncrBy(b *testing.B) {

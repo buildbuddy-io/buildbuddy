@@ -88,7 +88,7 @@ var (
 
 // NewFlushLock returns a distributed lock that can be used with NewTracker
 // to help serialize access to the usage data in Redis across apps.
-func NewFlushLock(env environment.Env) interfaces.DistributedLock {
+func NewFlushLock(env environment.Env) (interfaces.DistributedLock, error) {
 	return redisutil.NewWeakLock(env.GetDefaultRedisClient(), redisUsageLockKey, redisUsageLockExpiry)
 }
 
@@ -106,7 +106,11 @@ func RegisterTracker(env environment.Env) error {
 	if !usage_config.UsageTrackingEnabled() {
 		return nil
 	}
-	ut, err := NewTracker(env, timeutil.NewClock(), NewFlushLock(env))
+	lock, err := NewFlushLock(env)
+	if err != nil {
+		return err
+	}
+	ut, err := NewTracker(env, timeutil.NewClock(), lock)
 	if err != nil {
 		return err
 	}
