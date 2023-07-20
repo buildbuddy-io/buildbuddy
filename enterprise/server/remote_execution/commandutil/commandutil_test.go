@@ -222,7 +222,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 
 func TestRun_EnableStats_RecordsMemoryStats(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{
-		"python3", "-c", useMemPythonScript(1e9, 2*time.Second),
+		"python3", "-c", useMemPythonScript(500e6, 2*time.Second),
 	}}
 
 	ctx := context.Background()
@@ -233,11 +233,11 @@ func TestRun_EnableStats_RecordsMemoryStats(t *testing.T) {
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.GreaterOrEqual(
-		t, res.UsageStats.PeakMemoryBytes, int64(1e9),
-		"expected at least 1GB of memory usage")
+		t, res.UsageStats.PeakMemoryBytes, int64(500e6),
+		"expected at least 500MB of memory usage")
 	require.LessOrEqual(
-		t, res.UsageStats.PeakMemoryBytes, int64(1.1e9),
-		"expected not much more than 1GB of memory usage")
+		t, res.UsageStats.PeakMemoryBytes, int64(550e6),
+		"expected not much more than 500MB of memory usage")
 }
 
 func TestRun_EnableStats_RecordsCPUStats(t *testing.T) {
@@ -253,7 +253,7 @@ func TestRun_EnableStats_RecordsCPUStats(t *testing.T) {
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.GreaterOrEqual(
-		t, res.UsageStats.GetCpuNanos(), int64(1500e6),
+		t, res.UsageStats.GetCpuNanos(), int64(500e6),
 		"expected around 3s of CPU usage")
 	require.LessOrEqual(
 		t, res.UsageStats.GetCpuNanos(), int64(4e9),
@@ -265,8 +265,8 @@ func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testi
 	testfs.WriteAllFileContents(t, workDir, map[string]string{
 		"cpu1.py": useCPUPythonScript(3 * time.Second),
 		"cpu2.py": useCPUPythonScript(1 * time.Second),
-		"mem1.py": useMemPythonScript(1e9, 3*time.Second),
-		"mem2.py": useMemPythonScript(500e6, 2*time.Second),
+		"mem1.py": useMemPythonScript(500e6, 3*time.Second),
+		"mem2.py": useMemPythonScript(250e6, 2*time.Second),
 	})
 	// Run 3 python processes concurrently, staggering them a bit to  make sure
 	// we measure over time. Wrap some with 'sh -c' to test that we can handle
@@ -291,17 +291,17 @@ func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testi
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.GreaterOrEqual(
-		t, res.UsageStats.GetCpuNanos(), int64(2400e6),
+		t, res.UsageStats.GetCpuNanos(), int64(1e9),
 		"expected around 4s of CPU usage")
 	require.LessOrEqual(
 		t, res.UsageStats.GetCpuNanos(), int64(5e9),
 		"expected around 4s of CPU usage")
 	require.GreaterOrEqual(
-		t, res.UsageStats.GetPeakMemoryBytes(), int64(1300e6),
-		"expected at least 1.3GB peak memory")
+		t, res.UsageStats.GetPeakMemoryBytes(), int64(750e6),
+		"expected at least 750MB peak memory")
 	require.LessOrEqual(
-		t, res.UsageStats.GetPeakMemoryBytes(), int64(1700e6),
-		"expected not much more than 1.5GB peak memory")
+		t, res.UsageStats.GetPeakMemoryBytes(), int64(800e6),
+		"expected not much more than 750MB peak memory")
 }
 
 // Returns a python script that consumes 1 CPU core continuously for the given
