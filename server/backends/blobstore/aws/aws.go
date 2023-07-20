@@ -56,6 +56,13 @@ type AwsS3BlobStore struct {
 	uploader   *s3manager.Uploader
 }
 
+func unwrap(err error) error {
+	for unwrappable, ok := err.(interface{ Unwrap() error }); ok; unwrappable, ok = unwrappable.Unwrap().(interface{ Unwrap() error }) {
+		err = unwrappable.Unwrap()
+	}
+	return err
+}
+
 func UseAwsS3BlobStore() bool {
 	return *awsS3Bucket != ""
 }
@@ -145,7 +152,7 @@ func (a *AwsS3BlobStore) bucketExists(ctx context.Context, bucketName string) (b
 	if err == nil {
 		return true, nil
 	}
-	aerr, ok := err.(smithy.APIError)
+	aerr, ok := unwrap(err).(smithy.APIError)
 	// AWS returns codes as strings
 	// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
 	if ok && aerr.ErrorCode() != "NotFound" {
@@ -195,7 +202,7 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 	spn.End()
 
 	if err != nil {
-		if aerr, ok := err.(smithy.APIError); ok {
+		if aerr, ok := unwrap(err).(smithy.APIError); ok {
 			if aerr.ErrorCode() == "NoSuchKey" {
 				return nil, status.NotFoundError(err.Error())
 			}
@@ -269,7 +276,7 @@ func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 	defer spn.End()
 	_, err := a.client.HeadObject(ctx, params)
 	if err != nil {
-		if aerr, ok := err.(smithy.APIError); ok && aerr.ErrorCode() == "NotFound" {
+		if aerr, ok := unwrap(err).(smithy.APIError); ok && aerr.ErrorCode() == "NotFound" {
 			return false, nil
 		}
 		return false, err

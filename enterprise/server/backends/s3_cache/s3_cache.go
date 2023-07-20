@@ -166,13 +166,10 @@ func (s3c *S3Cache) bucketExists(ctx context.Context, bucketName string) (bool, 
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if _, err := s3c.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucketName}); err != nil {
-		aerr, ok := err.(smithy.APIError)
-		// AWS returns codes as strings
-		// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
-		if !ok || aerr.ErrorCode() != "NotFound" {
-			return false, err
+		if isNotFoundErr(err) {
+			return false, nil
 		}
-		return false, nil
+		return false, err
 	}
 	return true, nil
 }
@@ -203,22 +200,24 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 	})
 	spn.End()
 	if err != nil {
-		awsErr, ok := err.(smithy.APIError)
+		awsErr, ok := unwrap(err).(smithy.APIError)
 		if ok && awsErr.ErrorCode() != "NoSuchLifecycleConfiguration" {
 			return err
 		}
 	}
-	for _, rule := range attrs.Rules {
-		if rule.Expiration == nil {
-			break
-		}
+	if attrs != nil {
+		for _, rule := range attrs.Rules {
+			if rule.Expiration == nil {
+				break
+			}
 
-		if rule.Status != s3types.ExpirationStatusEnabled {
-			break
-		}
+			if rule.Status != s3types.ExpirationStatusEnabled {
+				break
+			}
 
-		if rule.Expiration.Days == ageInDays {
-			return nil
+			if rule.Expiration.Days == ageInDays {
+				return nil
+			}
 		}
 	}
 	traceCtx, spn = tracing.StartSpan(ctx)
@@ -258,8 +257,15 @@ func (s3c *S3Cache) key(ctx context.Context, r *rspb.ResourceName) (string, erro
 	return k, nil
 }
 
+func unwrap(err error) error {
+	for unwrappable, ok := err.(interface{ Unwrap() error }); ok; unwrappable, ok = unwrappable.Unwrap().(interface{ Unwrap() error }) {
+		err = unwrappable.Unwrap()
+	}
+	return err
+}
+
 func isNotFoundErr(err error) bool {
-	awsErr, ok := err.(smithy.APIError)
+	awsErr, ok := unwrap(err).(smithy.APIError)
 	if !ok {
 		return false
 	}
@@ -543,6 +549,8 @@ func (s3c *S3Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompress
 	if isNotFoundErr(err) {
 		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+	} else if err != nil {
+		return nil, status.InternalErrorf("Error getting s3 object at key %s for cache: %v", k, err)
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	return io.NopCloser(timer.NewInstrumentedReader(result.Body, r.GetDigest().GetSizeBytes())), err
