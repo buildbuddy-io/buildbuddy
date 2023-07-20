@@ -338,7 +338,12 @@ func main() {
 		"ff02::2		ip6-allrouters",
 	}
 	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
-	die(os.WriteFile("/etc/resolv.conf", []byte("nameserver 8.8.8.8"), 0755))
+	nameServers := []string{
+		"nameserver 8.8.8.8",
+		"nameserver 8.8.4.4",
+		"nameserver 1.1.1.1",
+	}
+	die(os.WriteFile("/etc/resolv.conf", []byte(strings.Join(nameServers, "\n")), 0755))
 	if _, err := os.Stat("/etc/mtab"); err != nil {
 		if os.IsNotExist(err) {
 			die(syscall.Symlink("/proc/mounts", "/etc/mtab"))
