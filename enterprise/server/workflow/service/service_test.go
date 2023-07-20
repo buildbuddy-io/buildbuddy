@@ -108,7 +108,7 @@ func runBBServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 
 	go runFunc()
-	t.Cleanup(func() { grpcServer.GracefulStop() } )
+	t.Cleanup(func() { grpcServer.GracefulStop() })
 
 	clientConn, err := env.LocalGRPCConn(ctx)
 	if err != nil {
