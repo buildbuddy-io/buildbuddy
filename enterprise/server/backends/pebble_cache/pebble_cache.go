@@ -1841,7 +1841,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		isCompressed:   isCompressed,
 	}
 
-	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunkWhenSingle, cdcw.writeChunkWhenMultiple)
+	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, fileRecord, key, cdcw.getFileRecordAndKeyForChunk, cdcw.writeRawChunk)
 	cdcw.chunker = chunker
 
 	cwc := ioutil.NewCustomCommitWriteCloser(cdcw)
@@ -1851,16 +1851,20 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			return err
 		}
 
-		numChunks, err := chunker.NumChunks()
+		writtenChunks, err := chunker.WrittenChunks()
 		if err != nil {
 			return err
 		}
 		now := p.clock.Now().UnixMicro()
 
-		if numChunks > 1 {
+		if len(writtenChunks) > 1 {
 			md := &rfpb.FileMetadata{
-				FileRecord:      fileRecord,
-				StorageMetadata: cdcw.Metadata(),
+				FileRecord: fileRecord,
+				StorageMetadata: &rfpb.StorageMetadata{
+					ChunkedMetadata: &rfpb.StorageMetadata_ChunkedMetadata{
+						Resource: writtenChunks,
+					},
+				},
 				StoredSizeBytes: bytesWritten,
 				LastAccessUsec:  now,
 				LastModifyUsec:  now,
@@ -1893,21 +1897,12 @@ func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.
 	return nil
 }
 
-func (cdcw *cdcWriter) writeChunkWhenSingle(chunkData []byte) error {
-	// When there is only one single chunk, we want to store the original file
-	// record with the original key instead of computed digest from the
-	// chunkData. This is because the chunkData can be compressed or encrypted,
-	// so the digest computed from it will be different from the original digest.
-	return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, chunkData)
-}
-
-func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
+func (cdcw *cdcWriter) getFileRecordAndKeyForChunk(chunkData []byte) (*rfpb.FileRecord, filestore.PebbleKey, error) {
 	ctx := cdcw.ctx
 	p := cdcw.pc
-
 	d, err := digest.Compute(bytes.NewReader(chunkData), cdcw.fileRecord.GetDigestFunction())
 	if err != nil {
-		return err
+		return nil, filestore.PebbleKey{}, err
 	}
 	r := &resource.ResourceName{
 		Digest:         d,
@@ -1927,18 +1922,13 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	fileRecord, err := p.makeFileRecord(ctx, r)
 
 	if err != nil {
-		return err
+		return nil, filestore.PebbleKey{}, err
 	}
 	key, err := p.fileStorer.PebbleKey(fileRecord)
 	if err != nil {
-		return err
+		return nil, filestore.PebbleKey{}, err
 	}
-	err = cdcw.writeRawChunk(fileRecord, key, chunkData)
-	if err != nil {
-		return err
-	}
-	cdcw.writtenChunks = append(cdcw.writtenChunks, r)
-	return nil
+	return fileRecord, key, err
 }
 
 func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
@@ -1958,14 +1948,6 @@ func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
 func (cdcw *cdcWriter) Close() error {
 	defer cdcw.db.Close()
 	return cdcw.chunker.Close()
-}
-
-func (cdcw *cdcWriter) Metadata() *rfpb.StorageMetadata {
-	return &rfpb.StorageMetadata{
-		ChunkedMetadata: &rfpb.StorageMetadata_ChunkedMetadata{
-			Resource: cdcw.writtenChunks,
-		},
-	}
 }
 
 // zstdCompressor compresses bytes before writing them to the nested writer

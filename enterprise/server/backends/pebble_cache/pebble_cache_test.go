@@ -1630,9 +1630,6 @@ func TestNoEarlyEviction(t *testing.T) {
 	}
 }
 
-func testLRU(t *testing.T, testACEviction bool) {
-}
-
 func TestLRU(t *testing.T) {
 	testCases := []struct {
 		desc                   string
@@ -1706,6 +1703,7 @@ func TestLRU(t *testing.T) {
 						cacheType = rspb.CacheType_AC
 					}
 					r, buf := testdigest.NewRandomResourceAndBuf(t, tc.digestSize, cacheType, "")
+					log.Infof("%s: digest: %s", desc, r.GetDigest().GetHash())
 					resourceKeys[i] = r
 					err := pc.Set(ctx, r, buf)
 					require.NoError(t, err)
@@ -1734,6 +1732,7 @@ func TestLRU(t *testing.T) {
 						cacheType = rspb.CacheType_AC
 					}
 					r, buf := testdigest.NewRandomResourceAndBuf(t, tc.digestSize, cacheType, "")
+					log.Infof("%s: quartile: %d, digest: %s", desc, quartile, r.GetDigest().GetHash())
 					resourceKeys = append(resourceKeys, r)
 					err := pc.Set(ctx, r, buf)
 					require.NoError(t, err)
@@ -1768,7 +1767,7 @@ func TestLRU(t *testing.T) {
 						sample += d.GetHash()
 						sample += ", "
 					}
-					log.Infof("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
+					log.Infof("%s: Evicted %d keys in quartile: %d (%s)", desc, count, quartile, sample)
 				}
 
 				// None of the files "used" just before adding more should have been
