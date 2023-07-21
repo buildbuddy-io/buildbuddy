@@ -277,6 +277,8 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_usage"), func(tx *db.DB) error {
+		log.Debugf("Flushing usage counts for key %+v", pk)
+
 		// First check whether the row already exists. Make sure to select for
 		// update in order to lock the row.
 		rows, err := tx.Raw(`
@@ -321,7 +323,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 				}
 			}
 			if unsupportedField != "" {
-				alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since existing usage row contains unsupported column %q = %q", unsupportedField, unsupportedFieldValue)
+				alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since existing usage row contains unsupported column %q = %q (key = %+v)", unsupportedField, unsupportedFieldValue, pk)
 				return nil
 			}
 		}
@@ -337,19 +339,21 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			UsageCounts:     *counts,
 		}
 		if existingRowCount == 0 {
+			log.Debugf("Creating new usage row for key %+v", pk)
 			return tx.Create(tu).Error
 		}
 		if existingRowCount > 1 {
 			// Drop the usage update and alert about it, but there's not much we
 			// can do to recover in this case so don't roll back the transaction
 			// (since that would cause the flush to keep being retried).
-			alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since it would affect more than one row")
+			alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since it would affect more than one row (key = %+v)", pk)
 			return nil
 		}
 
 		// Update the usage row, but only if collection period data has not already
 		// been written (for example, if the previous flush failed to delete the
 		// data from Redis).
+		log.Debugf("Updating existing usage row for key %+v", pk)
 		res := tx.Exec(`
 			UPDATE "Usages"
 			SET
@@ -389,7 +393,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			// Note: this should never happen since we should be first querying
 			// the rows to update above, and only applying the update if the
 			// number of selected rows was 1.
-			alert.UnexpectedEvent("usage_update_logic_error", "Usage update transaction rolled back due to unexpected affected row count %d", res.RowsAffected)
+			alert.UnexpectedEvent("usage_update_logic_error", "Usage update transaction rolled back due to unexpected affected row count %d (key = %+v)", res.RowsAffected, pk)
 			// Note: returning an error here causes the transaction to be rolled
 			// back.
 			return status.InternalErrorf("unexpected number of rows affected (%d)", res.RowsAffected)
