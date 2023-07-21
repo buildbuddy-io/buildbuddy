@@ -823,8 +823,6 @@ github.com/bazelbuild/rules_go v0.40.1 h1:+JfzEgvtYJ/cQVPWPdyMEXheRaSb/zCKy/uHl5
 github.com/bazelbuild/rules_go v0.40.1/go.mod h1:TMHmtfpvyfsxaqfL9WnahCsXMWDMICTw7XeK9yVb+YU=
 github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95 h1:zmBkl2nxjRojoW9PtGVEtW/91kHieotlD7cL9vFq06c=
 github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95/go.mod h1:M+vCvqp/1BViNuVL630BoiGqld9Q1vQzvf9bN/dWTeg=
-github.com/bduffany/firecracker-go-sdk v0.0.0-20230702173145-62f8e172aec2 h1:gxdryq8e81djt9+N7gUa4FVJO427la9UUQEiMo2B8tE=
-github.com/bduffany/firecracker-go-sdk v0.0.0-20230702173145-62f8e172aec2/go.mod h1:RqiGH6vVZm0B4IszC7IbrIKp/X5bx6qc6Vl9DDMUlqE=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e h1:Th4pNly+xoH2szOq4aA+uAFmg5h37BCyq3pFqnZGJ70=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e/go.mod h1:led5f4NrGeXrUKOlQA36mgNtNs7gVo86eZUOX42q5+8=
 github.com/beevik/etree v1.1.0/go.mod h1:r8Aw8JqVegEf0w2fDnATrX9VpkMcyFeM0FhwO62wh+A=
@@ -1860,6 +1858,8 @@ github.com/lufia/plan9stats v0.0.0-20230326075908-cb1d2100619a/go.mod h1:JKx41uQ
 github.com/lyft/protoc-gen-star v0.6.0/go.mod h1:TGAoBVkt8w7MPG72TrKIu85MIdXwDuzJYeZuUPFPNwA=
 github.com/lyft/protoc-gen-star v0.6.1/go.mod h1:TGAoBVkt8w7MPG72TrKIu85MIdXwDuzJYeZuUPFPNwA=
 github.com/lyft/protoc-gen-star/v2 v2.0.1/go.mod h1:RcCdONR2ScXaYnQC5tUzxzlpA3WVYF7/opLeUgcQs/o=
+github.com/maggie-lou/firecracker-go-sdk v0.0.0-20230720-3150f29 h1:GFW2PsEfzXBQ4RB8eNLZ2cYgL5FJWjS3ewJgIAdRdL4=
+github.com/maggie-lou/firecracker-go-sdk v0.0.0-20230720-3150f29/go.mod h1:RqiGH6vVZm0B4IszC7IbrIKp/X5bx6qc6Vl9DDMUlqE=
 github.com/magiconair/properties v1.8.0/go.mod h1:PppfXfuXeibc/6YijjN8zIbojt8czPbwD3XqdrwzmxQ=
 github.com/magiconair/properties v1.8.1/go.mod h1:PppfXfuXeibc/6YijjN8zIbojt8czPbwD3XqdrwzmxQ=
 github.com/magiconair/properties v1.8.6/go.mod h1:y3VJvCyxH9uVvJTWEGAELF3aiYNyPKd5NZ3oSwXrF60=
