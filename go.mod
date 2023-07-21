@@ -36,7 +36,7 @@ require (
 	github.com/buildkite/terminal-to-html/v3 v3.8.0
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.2.0
-	github.com/cockroachdb/pebble v0.0.0-20220408210401-5591b6b889f9
+	github.com/cockroachdb/pebble v0.0.0-20230720154706-692f3b61a3c4
 	github.com/containerd/containerd v1.7.2
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/creack/pty v1.1.18
@@ -54,6 +54,7 @@ require (
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gobwas/glob v0.2.3
 	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/golang/protobuf v1.5.3
 	github.com/google/go-cmp v0.5.9
 	github.com/google/go-containerregistry v0.15.2
 	github.com/google/go-github/v43 v43.0.0
@@ -162,6 +163,7 @@ require (
 	github.com/cockroachdb/errors v1.10.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
+	github.com/cockroachdb/tokenbucket v0.0.0-20230613231145-182959a1fad6 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
 	github.com/containernetworking/cni v1.1.2 // indirect
@@ -204,7 +206,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/flatbuffers v23.5.9+incompatible // indirect
