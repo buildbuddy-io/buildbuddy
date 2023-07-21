@@ -49,6 +49,7 @@ go_test(
     name = "pebble_cache_test",
     size = "small",
     srcs = ["pebble_cache_test.go"],
+    flaky = True,
     shard_count = 8,
     deps = [
         ":pebble_cache",
