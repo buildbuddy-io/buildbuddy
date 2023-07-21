@@ -1240,8 +1240,8 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	buf += db.Metrics().String()
 	writeStalls, stallDuration := p.eventListener.writeStallStats()
 	diskSlows, diskStalls := p.eventListener.diskStallStats()
-	buf += fmt.Sprintf("Write stalls: %d, total stall duration: %s", writeStalls, stallDuration)
-	buf += fmt.Sprintf("Disk slow count: %d, disk stall count: %d", diskSlows, diskStalls)
+	buf += fmt.Sprintf("Write stalls: %d, total stall duration: %s\n", writeStalls, stallDuration)
+	buf += fmt.Sprintf("Disk slow count: %d, disk stall count: %d\n", diskSlows, diskStalls)
 
 	diskEstimateBytes, err := db.EstimateDiskUsage(keys.MinByte, keys.MaxByte)
 	if err == nil {
