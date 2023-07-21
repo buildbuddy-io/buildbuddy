@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 )
 
@@ -66,14 +67,16 @@ type OnRefresh[T Key] func(ctx context.Context, key T) (skip bool, timestamp tim
 //	https://github.com/redis/redis/blob/unstable/src/evict.c#L118 and
 //	http://antirez.com/news/109
 type LRU[T Key] struct {
-	samplesPerEviction int
-	deletesPerEviction int
-	samplePoolSize     int
-	maxSizeBytes       int64
-	onEvict            OnEvict[T]
-	onSample           OnSample[T]
-	onRefresh          OnRefresh[T]
-	limiter            *rate.Limiter
+	samplesPerEviction          int
+	deletesPerEviction          int
+	samplePoolSize              int
+	maxSizeBytes                int64
+	onEvict                     OnEvict[T]
+	onSample                    OnSample[T]
+	onRefresh                   OnRefresh[T]
+	evictionResampleLatencyUsec prometheus.Observer
+	evictionEvictLatencyUsec    prometheus.Observer
+	limiter                     *rate.Limiter
 
 	samplePool []*Sample[T]
 
@@ -99,6 +102,12 @@ type Opts[T Key] struct {
 	// memory at a time. Increasing this number uses more memory but
 	// improves sampled-LRU accuracy.
 	SamplePoolSize int
+	// EvictionResampleLatencyUsec is an optional metric to update with latency
+	// for resampling during a single eviction iteration.
+	EvictionResampleLatencyUsec prometheus.Observer
+	// EvictionEvictLatencyUsec is an optional metric to update with latency
+	// for eviction of a single key.
+	EvictionEvictLatencyUsec prometheus.Observer
 	// RateLimit is the maximum number of evictions to perform per second.
 	// If not set, no limit is enforced.
 	RateLimit float64
@@ -136,14 +145,16 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 		rateLimit = rate.Inf
 	}
 	l := &LRU[T]{
-		samplePoolSize:     opts.SamplePoolSize,
-		samplesPerEviction: opts.SamplesPerEviction,
-		deletesPerEviction: deletesPerEviction,
-		maxSizeBytes:       opts.MaxSizeBytes,
-		onEvict:            opts.OnEvict,
-		onSample:           opts.OnSample,
-		onRefresh:          opts.OnRefresh,
-		limiter:            rate.NewLimiter(rateLimit, 1),
+		samplePoolSize:              opts.SamplePoolSize,
+		samplesPerEviction:          opts.SamplesPerEviction,
+		deletesPerEviction:          deletesPerEviction,
+		maxSizeBytes:                opts.MaxSizeBytes,
+		onEvict:                     opts.OnEvict,
+		onSample:                    opts.OnSample,
+		onRefresh:                   opts.OnRefresh,
+		evictionResampleLatencyUsec: opts.EvictionResampleLatencyUsec,
+		evictionEvictLatencyUsec:    opts.EvictionEvictLatencyUsec,
+		limiter:                     rate.NewLimiter(rateLimit, 1),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	l.ctx = ctx
@@ -298,12 +309,17 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 	// Resample every time we evict keys.
 	// N.B. We might end up evicting less than deletesPerEviction keys below
 	// but sampling extra keys is harmless.
+	start := time.Now()
 	if err := l.resampleK(l.deletesPerEviction); err != nil {
 		return nil, err
+	}
+	if l.evictionResampleLatencyUsec != nil {
+		l.evictionResampleLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
 	}
 
 	var evicted []*Sample[T]
 	for {
+		start = time.Now()
 		evictedKey, err := l.evictSingleKey()
 		if status.IsNotFoundError(err) {
 			// If no candidates were evictable in the whole pool, resample
@@ -315,6 +331,9 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 			continue
 		} else if err != nil {
 			return nil, err
+		}
+		if l.evictionEvictLatencyUsec != nil {
+			l.evictionEvictLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
 		}
 
 		evicted = append(evicted, evictedKey)
