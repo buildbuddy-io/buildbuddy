@@ -16,6 +16,8 @@ const (
 	// evictCheckPeriod is how often the janitor thread will wake up to
 	// check the cache size.
 	evictCheckPeriod = 1 * time.Second
+
+	defaultDeletesPerEviction = 5
 )
 
 type Key interface {
@@ -65,6 +67,7 @@ type OnRefresh[T Key] func(ctx context.Context, key T) (skip bool, timestamp tim
 //	http://antirez.com/news/109
 type LRU[T Key] struct {
 	samplesPerEviction int
+	deletesPerEviction int
 	samplePoolSize     int
 	maxSizeBytes       int64
 	onEvict            OnEvict[T]
@@ -89,6 +92,9 @@ type Opts[T Key] struct {
 	// new deletion candidate to the sample pool. Increasing this number
 	// makes eviction slower but improves sampled-LRU accuracy.
 	SamplesPerEviction int
+	// DeletesPerEviction is the number of keys to evict from the sample pool
+	// in one eviction cycle before refilling the sample pool.
+	DeletesPerEviction int
 	// SamplePoolSize is the number of deletion candidates to maintain in
 	// memory at a time. Increasing this number uses more memory but
 	// improves sampled-LRU accuracy.
@@ -109,6 +115,10 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 	if opts.SamplesPerEviction == 0 {
 		return nil, status.FailedPreconditionError("samples per eviction is required")
 	}
+	deletesPerEviction := opts.DeletesPerEviction
+	if opts.DeletesPerEviction == 0 {
+		deletesPerEviction = defaultDeletesPerEviction
+	}
 	if opts.MaxSizeBytes == 0 {
 		return nil, status.FailedPreconditionError("max size is required")
 	}
@@ -128,6 +138,7 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 	l := &LRU[T]{
 		samplePoolSize:     opts.SamplePoolSize,
 		samplesPerEviction: opts.SamplesPerEviction,
+		deletesPerEviction: deletesPerEviction,
 		maxSizeBytes:       opts.MaxSizeBytes,
 		onEvict:            opts.OnEvict,
 		onSample:           opts.OnSample,
@@ -236,63 +247,94 @@ func (l *LRU[T]) resampleK(k int) error {
 	return nil
 }
 
+func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
+	for i := len(l.samplePool) - 1; i >= 0; i-- {
+		sample := l.samplePool[i]
+		l.mu.Lock()
+		oldLocalSizeBytes := l.localSizeBytes
+		oldGlobalSizeBytes := l.globalSizeBytes
+		l.mu.Unlock()
+
+		log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
+		skip, err := l.onEvict(l.ctx, sample)
+		if err != nil {
+			log.Warningf("Could not evict %q: %s", sample.Key, err)
+			continue
+		}
+
+		l.mu.Lock()
+
+		// The user (e.g. pebble cache) is the source of truth of the size
+		// data, but the LRU also needs to do its own accounting in between
+		// the times that the user provides a size update to the LRU.
+		// We skip our own accounting here if we detect that the size has
+		// changed since it means the user provided their own size update
+		// which takes priority.
+		if l.localSizeBytes == oldLocalSizeBytes {
+			l.localSizeBytes -= sample.SizeBytes
+		}
+		if l.globalSizeBytes == oldGlobalSizeBytes {
+			// Assume eviction on remote servers is happening at the same
+			// rate as local eviction. It's fine to be wrong as we expect the
+			// actual sizes to be periodically to be reset to the true numbers
+			// using UpdateSizeBytes from data received from other servers.
+			l.globalSizeBytes -= int64(float64(sample.SizeBytes) * float64(l.globalSizeBytes) / float64(l.localSizeBytes))
+		}
+		l.mu.Unlock()
+
+		l.samplePool = append(l.samplePool[:i], l.samplePool[i+1:]...)
+
+		if skip {
+			continue
+		}
+
+		return sample, nil
+	}
+
+	return nil, status.NotFoundErrorf("could not find sample to evict")
+}
+
 func (l *LRU[T]) evict() (*Sample[T], error) {
-	// Resample every time we evict a key
-	if err := l.resampleK(1); err != nil {
+	// Resample every time we evict keys.
+	// N.B. We might end up evicting less than deletesPerEviction keys below
+	// but sampling extra keys is harmless.
+	if err := l.resampleK(l.deletesPerEviction); err != nil {
 		return nil, err
 	}
 
+	var evicted []*Sample[T]
 	for {
-		for i := len(l.samplePool) - 1; i >= 0; i-- {
-			sample := l.samplePool[i]
-			l.mu.Lock()
-			oldLocalSizeBytes := l.localSizeBytes
-			oldGlobalSizeBytes := l.globalSizeBytes
-			l.mu.Unlock()
-
-			log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
-			skip, err := l.onEvict(l.ctx, sample)
-			if err != nil {
-				log.Warningf("Could not evict %q: %s", sample.Key, err)
-				continue
+		evictedKey, err := l.evictSingleKey()
+		if status.IsNotFoundError(err) {
+			// If no candidates were evictable in the whole pool, resample
+			// the pool.
+			l.samplePool = l.samplePool[:0]
+			if err := l.resampleK(l.samplePoolSize); err != nil {
+				return nil, err
 			}
-
-			l.mu.Lock()
-
-			// The user (e.g. pebble cache) is the source of truth of the size
-			// data, but the LRU also needs to do its own accounting in between
-			// the times that the user provides a size update to the LRU.
-			// We skip our own accounting here if we detect that the size has
-			// changed since it means the user provided their own size update
-			// which takes priority.
-			if l.localSizeBytes == oldLocalSizeBytes {
-				l.localSizeBytes -= sample.SizeBytes
-			}
-			if l.globalSizeBytes == oldGlobalSizeBytes {
-				// Assume eviction on remote servers is happening at the same
-				// rate as local eviction. It's fine to be wrong as we expect the
-				// actual sizes to be periodically to be reset to the true numbers
-				// using UpdateSizeBytes from data received from other servers.
-				l.globalSizeBytes -= int64(float64(sample.SizeBytes) * float64(l.globalSizeBytes) / float64(l.localSizeBytes))
-			}
-			l.mu.Unlock()
-
-			l.samplePool = append(l.samplePool[:i], l.samplePool[i+1:]...)
-
-			if skip {
-				continue
-			}
-
-			return sample, nil
-		}
-
-		// If no candidates were evictable in the whole pool, resample
-		// the pool.
-		l.samplePool = l.samplePool[:0]
-		if err := l.resampleK(l.samplePoolSize); err != nil {
+			continue
+		} else if err != nil {
 			return nil, err
 		}
+
+		evicted = append(evicted, evictedKey)
+
+		if len(evicted) == l.deletesPerEviction {
+			break
+		}
+
+		l.mu.Lock()
+		globalSizeBytes := l.globalSizeBytes
+		localSizeBytes := l.localSizeBytes
+		l.mu.Unlock()
+
+		// Cache is under the max, so we can stop early.
+		if globalSizeBytes <= l.maxSizeBytes || localSizeBytes == 0 {
+			break
+		}
 	}
+
+	return evicted[len(evicted)-1], nil
 }
 
 func (l *LRU[T]) ttl() error {
