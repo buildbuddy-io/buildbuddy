@@ -31,6 +31,7 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "//server/util/statusz",
+        "//server/util/tracing",
         "@com_github_docker_go_units//:go-units",
         "@com_github_elastic_gosigar//:gosigar",
         "@com_github_jonboulle_clockwork//:clockwork",
