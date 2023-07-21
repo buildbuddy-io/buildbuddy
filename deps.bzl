@@ -6972,7 +6972,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     http_archive(
         name = "com_github_maggie-lou_firecracker-v0.0.0-20230720-cf5f56f",
-        sha256 = "29194e13888358c6332995199ee288c081a8a23e68f0046944e4bb7f6548af57",
+        sha256 = "29f59ff51c554fca261980fec7845a9a6fa3db21f274e0a6f5e096cafc56c114",
         urls = ["https://github.com/maggie-lou/firecracker/releases/download/v0.0.0-20230720-cf5f56f/firecracker-v0.0.0-20230720-cf5f56f.tgz"],
         build_file_content = 'exports_files(["firecracker-v0.0.0-20230720-cf5f56f", "jailer-v0.0.0-20230720-cf5f56f"])',
     )
