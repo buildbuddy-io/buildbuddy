@@ -25,7 +25,6 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	grp "github.com/buildbuddy-io/buildbuddy/proto/group"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -275,7 +274,7 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 	selfOwnedGroup := u.Groups[0].Group
 	require.Equal(t, "US1", selfOwnedGroup.UserID, "user ID of self-owned group should be the owner's user ID")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, selfOwnedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, selfOwnedGroup.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "self-owned group should have 1 member")
@@ -313,7 +312,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	selectedGroup := u.Groups[0].Group
 	require.Equal(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should be the org's group")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, selectedGroup.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "org group should have 1 member")
@@ -332,7 +331,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	selectedGroup = u2.Groups[0].Group
 	require.NotEqual(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should not be the org's group")
 
-	groupUsers, err = udb.GetGroupUsers(ctx2, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err = udb.GetGroupUsers(ctx2, selectedGroup.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "org1.io should still have 1 member, since US2 is in org2.io")
@@ -352,7 +351,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 	// Have US1 inspect their group members again (for org1); they should
 	// now see one more member (US3).
-	groupUsers, err = udb.GetGroupUsers(ctx1, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err = udb.GetGroupUsers(ctx1, selectedGroup.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 2, "org1.io group should have 2 members, since US3 is in org1.io")
@@ -386,7 +385,7 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 	require.Equal(t, userdb.DefaultGroupID, u.Groups[0].Group.GroupID)
 
 	defaultGroup := u.Groups[0].Group
-	groupUsers, err := udb.GetGroupUsers(ctx1, defaultGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, defaultGroup.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 	require.Len(t, groupUsers, 2, "default group should have 2 members")
 	us1 := findGroupUser(t, "US1", groupUsers)
@@ -443,7 +442,7 @@ func TestCreateGroup(t *testing.T) {
 	ctx1 = authUserCtx(ctx, env, t, "US1")
 
 	// Make sure they are the group admin
-	groupUsers, err := udb.GetGroupUsers(ctx1, groupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, groupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err, "failed to get group users")
 	require.Len(t, groupUsers, 1)
 	gu := groupUsers[0]
@@ -593,7 +592,7 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 	}})
 	require.NoError(t, err, "US1 should be able to update their own group role")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 	us1 := findGroupUser(t, "US1", groupUsers)
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us1.Role, "US1 role should be DEVELOPER")
@@ -601,7 +600,7 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 
-	_, err = udb.GetGroupUsers(ctx2, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	_, err = udb.GetGroupUsers(ctx2, us1Group.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.True(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDeniedError if US2 tries to list US1's group users; got: %T",
@@ -1195,7 +1194,7 @@ func TestRequestToJoinGroup_DomainNonMember_CreatesRequest(t *testing.T) {
 
 	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
 	require.NoError(t, err)
-	require.Equal(t, grp.GroupMembershipStatus_REQUESTED, s)
+	require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, s)
 	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
 
 	// Submit the same request again; should get AlreadyExists and should still
@@ -1203,7 +1202,7 @@ func TestRequestToJoinGroup_DomainNonMember_CreatesRequest(t *testing.T) {
 	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
 	require.Equal(t, status.Message(err), "You've already requested to join this organization.")
-	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
 }
 
@@ -1217,7 +1216,7 @@ func TestRequestToJoinGroup_AlreadyInGroup_GetAlreadyExists(t *testing.T) {
 	s, err := udb.RequestToJoinGroup(ctx1, "GR1")
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
 	require.Equal(t, status.Message(err), "You're already in this organization.")
-	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx1, env, "GR1").Role))
 }
 
@@ -1235,7 +1234,7 @@ func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {
 
 	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
 	require.NoError(t, err)
-	require.Equal(t, grp.GroupMembershipStatus_MEMBER, s)
+	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
 	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
 
 	// Try to join again via domain association; should get AlreadyExists and
@@ -1243,7 +1242,7 @@ func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {
 	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
 	require.Equal(t, status.Message(err), "You're already in this organization.")
-	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
 }
 
@@ -1266,7 +1265,7 @@ func TestRequestToJoinGroup_DomainMember_EmptyGroup_GetsAdminRole(t *testing.T) 
 
 	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
 	require.NoError(t, err)
-	require.Equal(t, grp.GroupMembershipStatus_MEMBER, s)
+	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
 	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
 }
 
@@ -1284,7 +1283,7 @@ func TestRequestToJoinGroup_DomainMember_AlreadyInGroup_GetAlreadyExistsError(t 
 	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
 	require.Equal(t, status.Message(err), "You're already in this organization.")
-	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
 }
 

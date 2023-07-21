@@ -21,13 +21,13 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 		"WORKSPACE": "",
 		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
-	buildArgs := append([]string{
+	buildArgs := []string{
 		"//:a",
 		"--show_progress=0",
 		"--build_metadata=COMMIT_SHA=cc5011e9a82b545885025d5f08b531bfbbf95d5b",
 		"--build_metadata=REPO_URL=https://github.com/test-owner/test-repo",
 		"--remote_upload_local_results=1",
-	})
+	}
 
 	webtester.Login(wt, target)
 
@@ -138,13 +138,13 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 		"WORKSPACE": "",
 		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
-	buildArgs := append([]string{
+	buildArgs := []string{
 		"//:a",
 		"--show_progress=0",
 		"--build_metadata=COMMIT_SHA=cc5011e9a82b545885025d5f08b531bfbbf95d5b",
 		"--build_metadata=REPO_URL=https://github.com/test-owner/test-repo",
 		"--remote_upload_local_results=1",
-	})
+	}
 
 	webtester.Login(wt, target)
 
