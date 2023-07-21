@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
@@ -1279,6 +1280,9 @@ func (p *PebbleCache) blobDir() string {
 }
 
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	fileMetadata := &rfpb.FileMetadata{}
 	var lastErr error
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
@@ -1300,6 +1304,9 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterat
 }
 
 func (p *PebbleCache) lookupLastAccessTime(iter pebble.Iterator, key filestore.PebbleKey) (int64, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
@@ -1339,6 +1346,9 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 }
 
 func readFileMetadata(reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	fileMetadata := &rfpb.FileMetadata{}
 	buf, err := pebble.GetCopy(reader, keyBytes)
 	if err != nil {
@@ -1836,6 +1846,9 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.Metad
 }
 
 func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *rfpb.FileMetadata) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
