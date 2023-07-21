@@ -1303,7 +1303,7 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterat
 	return md, err
 }
 
-func (p *PebbleCache) lookupLastAccessTime(iter pebble.Iterator, key filestore.PebbleKey) (int64, error) {
+func (p *PebbleCache) lookupLastAccessTime(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (int64, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
@@ -1345,7 +1345,7 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 	return false, nil
 }
 
-func readFileMetadata(reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
+func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
@@ -1465,7 +1465,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		lastAccessUsec, err := p.lookupLastAccessTime(iter, key)
+		lastAccessUsec, err := p.lookupLastAccessTime(ctx, iter, key)
 		if err != nil {
 			missing = append(missing, r.GetDigest())
 		} else {
@@ -2438,7 +2438,7 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 	unlockFn := e.locker.RLock(pebbleKey.LockID())
 	defer unlockFn()
 
-	md, err := readFileMetadata(db, key.bytes)
+	md, err := readFileMetadata(ctx, db, key.bytes)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("could not refresh atime for %q: %s", key.String(), err)
