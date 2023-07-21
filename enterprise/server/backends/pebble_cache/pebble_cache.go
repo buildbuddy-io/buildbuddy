@@ -370,8 +370,6 @@ func defaultPebbleOptions() *pebble.Options {
 	// These values Borrowed from CockroachDB.
 	return &pebble.Options{
 		MaxConcurrentCompactions:    func() { return 10 },
-		L0StopWritesThreshold:       1000,
-		MemTableStopWritesThreshold: 4,
 		MemTableSize:                64 << 20, // 64 MB
 	}
 }
