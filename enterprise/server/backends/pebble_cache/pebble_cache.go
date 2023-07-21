@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -134,6 +135,10 @@ const (
 	// Default values for Options
 	DefaultBlockCacheSizeBytes    = int64(1000 * megabyte)
 	DefaultMaxInlineFileSizeBytes = int64(1024)
+
+	// Maximum amount of time to wait for a pebble Sync. A warning will be
+	// logged if a sync takes longer than this.
+	maxSyncDuration = 10 * time.Second
 )
 
 // Options is a struct containing the pebble cache configuration options.
@@ -211,7 +216,56 @@ type PebbleCache struct {
 
 	minBytesAutoZstdCompression int64
 
-	oldMetrics pebble.Metrics
+	oldMetrics    pebble.Metrics
+	eventListener *pebbleEventListener
+}
+
+type pebbleEventListener struct {
+	// Atomicly accessed metrics updated by pebble callbacks.
+	writeStallCount      int64
+	writeStallDuration   time.Duration
+	writeStallStartNanos int64
+	diskSlowCount        int64
+	diskStallCount       int64
+}
+
+func (el *pebbleEventListener) writeStallStats() (int64, time.Duration) {
+	count := atomic.LoadInt64(&el.writeStallCount)
+	durationInt := atomic.LoadInt64((*int64)(&el.writeStallDuration))
+	return count, time.Duration(durationInt)
+}
+
+func (el *pebbleEventListener) diskStallStats() (int64, int64) {
+	slowCount := atomic.LoadInt64(&el.diskSlowCount)
+	stallCount := atomic.LoadInt64(&el.diskStallCount)
+	return slowCount, stallCount
+}
+
+func (el *pebbleEventListener) WriteStallBegin(info pebble.WriteStallBeginInfo) {
+	startNanos := time.Now().UnixNano()
+	atomic.StoreInt64(&el.writeStallStartNanos, startNanos)
+	atomic.AddInt64(&el.writeStallCount, 1)
+}
+
+func (el *pebbleEventListener) WriteStallEnd() {
+	startNanos := atomic.SwapInt64(&el.writeStallStartNanos, 0)
+	if startNanos == 0 {
+		return
+	}
+	stallDuration := time.Now().UnixNano() - startNanos
+	if stallDuration < 0 {
+		return
+	}
+	atomic.AddInt64((*int64)(&el.writeStallDuration), stallDuration)
+}
+
+func (el *pebbleEventListener) DiskSlow(info pebble.DiskSlowInfo) {
+	if info.Duration.Seconds() >= maxSyncDuration.Seconds() {
+		atomic.AddInt64(&el.diskStallCount, 1)
+		log.Errorf("Pebble Cache: disk stall: unable to write %q in %.2f seconds.", info.Path, info.Duration.Seconds())
+		return
+	}
+	atomic.AddInt64(&el.diskSlowCount, 1)
 }
 
 type keyMigrator interface {
@@ -367,11 +421,16 @@ func ensureDefaultPartitionExists(opts *Options) {
 }
 
 // defaultPebbleOptions returns default pebble config options.
-func defaultPebbleOptions() *pebble.Options {
+func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 	// These values Borrowed from CockroachDB.
 	return &pebble.Options{
 		MaxConcurrentCompactions: 10,
 		MemTableSize:             64 << 20, // 64 MB
+		EventListener: pebble.EventListener{
+			WriteStallBegin: el.WriteStallBegin,
+			WriteStallEnd:   el.WriteStallEnd,
+			DiskSlow:        el.DiskSlow,
+		},
 	}
 }
 
@@ -386,7 +445,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 	ensureDefaultPartitionExists(opts)
 
-	pebbleOptions := defaultPebbleOptions()
+	el := &pebbleEventListener{}
+	pebbleOptions := defaultPebbleOptions(el)
 	if opts.BlockCacheSizeBytes > 0 {
 		c := pebble.NewCache(opts.BlockCacheSizeBytes)
 		defer c.Unref()
@@ -428,6 +488,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		fileStorer:                  filestore.New(),
 		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
+		eventListener:               el,
 	}
 
 	versionMetadata, err := pc.databaseVersionMetadata()
@@ -1177,6 +1238,11 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 
 	buf := "<pre>"
 	buf += db.Metrics().String()
+	writeStalls, stallDuration := p.eventListener.writeStallStats()
+	diskSlows, diskStalls := p.eventListener.diskStallStats()
+	buf += fmt.Sprintf("Write stalls: %d, total stall duration: %s\n", writeStalls, stallDuration)
+	buf += fmt.Sprintf("Disk slow count: %d, disk stall count: %d\n", diskSlows, diskStalls)
+
 	diskEstimateBytes, err := db.EstimateDiskUsage(keys.MinByte, keys.MaxByte)
 	if err == nil {
 		buf += fmt.Sprintf("Estimated pebble DB disk usage: %d bytes\n", diskEstimateBytes)
