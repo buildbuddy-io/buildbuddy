@@ -367,8 +367,13 @@ func ensureDefaultPartitionExists(opts *Options) {
 
 // defaultPebbleOptions returns default pebble config options.
 func defaultPebbleOptions() *pebble.Options {
-	// TODO: tune options here.
-	return &pebble.Options{}
+	// These values Borrowed from CockroachDB.
+	return &pebble.Options{
+		MaxConcurrentCompactions:    func() { return 10 },
+		L0StopWritesThreshold:       1000,
+		MemTableStopWritesThreshold: 4,
+		MemTableSize:                64 << 20, // 64 MB
+	}
 }
 
 // NewPebbleCache creates a new cache from the provided env and opts.
