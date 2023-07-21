@@ -2075,12 +2075,18 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		cacheName:         cacheName,
 		anonPseudoGroupID: fmt.Sprintf("GR%020d", random.RandUint64()),
 	}
+	metricLbls := prometheus.Labels{
+		metrics.PartitionID:    part.ID,
+		metrics.CacheNameLabel: cacheName,
+	}
 	l, err := approxlru.New(&approxlru.Opts[*evictionKey]{
-		SamplePoolSize:     *samplePoolSize,
-		SamplesPerEviction: *samplesPerEviction,
-		DeletesPerEviction: *deletesPerEviction,
-		RateLimit:          float64(*evictionRateLimit),
-		MaxSizeBytes:       int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
+		SamplePoolSize:              *samplePoolSize,
+		SamplesPerEviction:          *samplesPerEviction,
+		DeletesPerEviction:          *deletesPerEviction,
+		EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(metricLbls),
+		EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
+		RateLimit:                   float64(*evictionRateLimit),
+		MaxSizeBytes:                int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
 		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) (skip bool, err error) {
 			return pe.evict(ctx, sample)
 		},
