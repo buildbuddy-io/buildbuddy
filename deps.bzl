@@ -2020,8 +2020,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_stack_stack",
         importpath = "github.com/go-stack/stack",
-        sum = "h1:5SgMzNM5HxrEjV0ww2lTmX6E2Izsfxas4+YHWRs3Lsk=",
-        version = "v1.8.0",
+        sum = "h1:ntEHSVwIt7PNXNpgPmVfMrNhLtgjlmnZha2kOpuRiDw=",
+        version = "v1.8.1",
     )
     go_repository(
         name = "com_github_go_task_slim_sprig",
