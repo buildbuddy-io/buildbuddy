@@ -1125,6 +1125,8 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		LowerBound: keys.MinByte,
 		UpperBound: keys.MaxByte,
 	})
+	// We update the iter variable later on, so we need to wrap the Close call
+	// in a func to operate on the correct iterator instance.
 	defer func() {
 		iter.Close()
 	}()
