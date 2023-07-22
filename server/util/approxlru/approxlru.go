@@ -251,6 +251,9 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 		}
 		if sample.Timestamp != timestamp {
 			log.Warningf("Evictor skipping %q; atime has changed %s -> %s", sample.Key, sample.Timestamp, timestamp)
+			// Update the timestamp to the new value so this sample can be
+			// removed later when the pool is trimmed.
+			sample.Timestamp = timestamp
 			continue
 		}
 
