@@ -228,22 +228,7 @@ func (l *LRU[T]) resampleK(k int) error {
 		}
 	}
 
-	filtered := make([]*Sample[T], 0, len(l.samplePool))
-
-	// refresh all the entries already in the pool.
-	for _, sample := range l.samplePool {
-		skip, timestamp, err := l.onRefresh(l.ctx, sample.Key)
-		if err != nil {
-			log.Warningf("Could not refresh timestamp for %q: %s", sample.Key, err)
-		}
-		if skip {
-			continue
-		}
-		sample.Timestamp = timestamp
-		filtered = append(filtered, sample)
-	}
-
-	l.samplePool = append(filtered, additions...)
+	l.samplePool = append(l.samplePool, additions...)
 
 	if len(l.samplePool) > 0 {
 		sort.Slice(l.samplePool, func(i, j int) bool {
@@ -261,13 +246,30 @@ func (l *LRU[T]) resampleK(k int) error {
 func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 	for i := len(l.samplePool) - 1; i >= 0; i-- {
 		sample := l.samplePool[i]
+
 		l.mu.Lock()
 		oldLocalSizeBytes := l.localSizeBytes
 		oldGlobalSizeBytes := l.globalSizeBytes
 		l.mu.Unlock()
 
-		log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
-		skip, err := l.onEvict(l.ctx, sample)
+		skip, timestamp, err := l.onRefresh(l.ctx, sample.Key)
+		if err != nil {
+			log.Infof("Could not refresh timestamp for %q: %s", sample.Key, err)
+			continue
+		}
+		if skip {
+			continue
+		}
+		if sample.Timestamp != timestamp {
+			log.Infof("Evictor skipping %q; atime has changed %s -> %s", sample.Key, sample.Timestamp, timestamp)
+			// Update the timestamp to the new value so this sample can be
+			// removed later when the pool is trimmed.
+			sample.Timestamp = timestamp
+			continue
+		}
+
+		log.Warningf("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
+		skip, err = l.onEvict(l.ctx, sample)
 		if err != nil {
 			log.Warningf("Could not evict %q: %s", sample.Key, err)
 			continue
