@@ -1599,8 +1599,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_firecracker_microvm_firecracker_go_sdk",
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
         replace = "github.com/buildbuddy-io/firecracker-go-sdk",
-        sum = "h1:0bHUo5cWOO6PR9lIhotz7o6WG7VHRbfe0OcrQVnRm+I=",
-        version = "v0.0.0-20230722-1d5c50b",
+        sum = "h1:Wx6fPNZOs0SJ9NpTsLbJsItORvEM9D94k/vr8ZwIBEg=",
+        version = "v0.0.0-20230721-1d5c50b",
     )
 
     go_repository(
