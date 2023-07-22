@@ -243,14 +243,14 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 
 		skip, timestamp, err := l.onRefresh(l.ctx, sample.Key)
 		if err != nil {
-			log.Warningf("Could not refresh timestamp for %q: %s", sample.Key, err)
+			log.Infof("Could not refresh timestamp for %q: %s", sample.Key, err)
 			continue
 		}
 		if skip {
 			continue
 		}
 		if sample.Timestamp != timestamp {
-			log.Warningf("Evictor skipping %q; atime has changed %s -> %s", sample.Key, sample.Timestamp, timestamp)
+			log.Infof("Evictor skipping %q; atime has changed %s -> %s", sample.Key, sample.Timestamp, timestamp)
 			// Update the timestamp to the new value so this sample can be
 			// removed later when the pool is trimmed.
 			sample.Timestamp = timestamp
