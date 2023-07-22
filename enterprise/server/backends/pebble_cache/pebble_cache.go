@@ -1152,8 +1152,10 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		// Create a new iterator once in a while to avoid holding on to sstables
 		// for too long.
 		if totalCount != 0 && totalCount%1_000_000 == 0 {
+			k := make([]byte, len(iter.Key()))
+			copy(k, iter.Key())
 			newIter := db.NewIter(&pebble.IterOptions{
-				LowerBound: iter.Key(),
+				LowerBound: k,
 				UpperBound: keys.MaxByte,
 			})
 			iter.Close()
