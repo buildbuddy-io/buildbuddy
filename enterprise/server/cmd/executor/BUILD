@@ -72,14 +72,14 @@ go_binary(
 
 genrule(
     name = "firecracker_rename",
-    srcs = ["@com_github_maggie-lou_firecracker-v0.0.0-20230720-cf5f56f//:firecracker-v0.0.0-20230720-cf5f56f"],
+    srcs = ["@com_github_buildbuddy_io_firecracker_firecracker-v0.0.0-20230720-cf5f56f//:firecracker-v0.0.0-20230720-cf5f56f"],
     outs = ["firecracker"],
     cmd = "cp $(SRCS) $@",
 )
 
 genrule(
     name = "jailer_rename",
-    srcs = ["@com_github_maggie-lou_firecracker-v0.0.0-20230720-cf5f56f//:jailer-v0.0.0-20230720-cf5f56f"],
+    srcs = ["@com_github_buildbuddy_io_firecracker_firecracker-v0.0.0-20230720-cf5f56f//:jailer-v0.0.0-20230720-cf5f56f"],
     outs = ["jailer"],
     cmd = "cp $(SRCS) $@",
 )
