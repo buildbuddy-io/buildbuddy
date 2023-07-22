@@ -2517,7 +2517,7 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 		return true, time.Time{}, nil
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
-	age := time.Since(atime)
+	age := e.clock.Since(atime)
 	if age < e.minEvictionAge {
 		return true, time.Time{}, nil
 	}
@@ -2635,7 +2635,6 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 					SizeBytes: fileMetadata.GetStoredSizeBytes(),
 					Timestamp: atime,
 				}
-
 				samples = append(samples, sample)
 			}
 

@@ -235,6 +235,7 @@ func (l *LRU[T]) resampleK(k int) error {
 func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 	for i := len(l.samplePool) - 1; i >= 0; i-- {
 		sample := l.samplePool[i]
+
 		l.mu.Lock()
 		oldLocalSizeBytes := l.localSizeBytes
 		oldGlobalSizeBytes := l.globalSizeBytes
@@ -248,12 +249,12 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 		if skip {
 			continue
 		}
-		if timestamp != sample.Timestamp {
+		if sample.Timestamp != timestamp {
 			log.Warningf("Evictor skipping %q; atime has changed %s -> %s", sample.Key, sample.Timestamp, timestamp)
 			continue
 		}
 
-		log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
+		log.Warningf("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
 		skip, err = l.onEvict(l.ctx, sample)
 		if err != nil {
 			log.Warningf("Could not evict %q: %s", sample.Key, err)

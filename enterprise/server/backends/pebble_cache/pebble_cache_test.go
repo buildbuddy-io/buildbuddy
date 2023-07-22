@@ -2338,7 +2338,7 @@ func TestSampling(t *testing.T) {
 
 	// Advance time (to force newer atime) and write the same digest
 	// encrypted. The encrypted key should have the same digest prefix as the
-	// unencrypted key and come before the unencrypted key in lexicographical f
+	// unencrypted key and come before the unencrypted key in lexicographical
 	// order.
 	clock.Advance(5 * time.Minute)
 	err = pc.Set(ctx, rn, buf)
