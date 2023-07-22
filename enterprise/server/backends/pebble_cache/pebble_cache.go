@@ -1149,20 +1149,9 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		default:
 		}
 
-		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
-			continue
-		}
-
-		if time.Since(lastUpdate) > 1*time.Minute {
-			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s", pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)))
-			lastUpdate = time.Now()
-		}
-
-		totalCount++
-
 		// Create a new iterator once in a while to avoid holding on to sstables
 		// for too long.
-		if totalCount%1_000_000 == 0 {
+		if totalCount != 0 && totalCount%1_000_000 == 0 {
 			newIter := db.NewIter(&pebble.IterOptions{
 				LowerBound: iter.Key(),
 				UpperBound: keys.MaxByte,
@@ -1173,6 +1162,17 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			}
 			iter = newIter
 		}
+
+		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
+			continue
+		}
+
+		if time.Since(lastUpdate) > 1*time.Minute {
+			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s", pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)))
+			lastUpdate = time.Now()
+		}
+
+		totalCount++
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
 		keyBytes := iter.Key()
