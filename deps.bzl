@@ -6964,17 +6964,16 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_archive(
-        name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
-        sha256 = "56933aa04a64d3bf6991f9b1be127ac9896fe597d2fba194c67c2dd4368bbae3",
-        urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
-        build_file_content = 'exports_files(["stargz-store"])',
-    )
-
-    http_archive(
         name = "com_github_buildbuddy_io_firecracker_firecracker-v0.0.0-20230720-cf5f56f",
         sha256 = "29f59ff51c554fca261980fec7845a9a6fa3db21f274e0a6f5e096cafc56c114",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v0.0.0-20230720-cf5f56f.tgz"],
         build_file_content = 'exports_files(["firecracker-v0.0.0-20230720-cf5f56f", "jailer-v0.0.0-20230720-cf5f56f"])',
+    )
+    http_archive(
+        name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
+        sha256 = "56933aa04a64d3bf6991f9b1be127ac9896fe597d2fba194c67c2dd4368bbae3",
+        urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
+        build_file_content = 'exports_files(["stargz-store"])',
     )
 
     http_file(
