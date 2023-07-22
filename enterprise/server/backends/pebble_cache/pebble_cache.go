@@ -1125,7 +1125,9 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		LowerBound: keys.MinByte,
 		UpperBound: keys.MaxByte,
 	})
-	defer iter.Close()
+	defer func() {
+		iter.Close()
+	}()
 
 	pr := message.NewPrinter(language.English)
 	fileMetadata := &rfpb.FileMetadata{}
@@ -1157,6 +1159,20 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		}
 
 		totalCount++
+
+		// Create a new iterator once in a while to avoid holding on to sstables
+		// for too long.
+		if totalCount%1_000_000 == 0 {
+			newIter := db.NewIter(&pebble.IterOptions{
+				LowerBound: iter.Key(),
+				UpperBound: keys.MaxByte,
+			})
+			iter.Close()
+			if !newIter.First() {
+				break
+			}
+			iter = newIter
+		}
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
 		keyBytes := iter.Key()
