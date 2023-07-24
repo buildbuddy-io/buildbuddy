@@ -163,3 +163,50 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		t, int64(7.13/2*1000), ts.GetEstimatedMilliCpu(),
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
+
+func TestEstimate_RespectsMinimumSize(t *testing.T) {
+	sz := tasksize.Estimate(&repb.ExecutionTask{
+		Command: &repb.Command{Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{{
+				Name: "EstimatedCPU", Value: "1m",
+			}},
+		}},
+	})
+	require.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
+}
+
+func TestSizer_RespectsMinimumSize(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+
+	env := testenv.GetTestEnv(t)
+	rdb := testredis.Start(t).Client()
+	env.SetRemoteExecutionRedisClient(rdb)
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	env.SetAuthenticator(auth)
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
+		},
+	}
+
+	execStart := time.Now()
+	md := &repb.ExecutedActionMetadata{
+		UsageStats: &repb.UsageStats{
+			CpuNanos:        1,
+			PeakMemoryBytes: 1,
+		},
+		ExecutionStartTimestamp: timestamppb.New(execStart),
+		// Set the completed timestamp so that the exec duration is 1 second.
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
+	}
+
+	err = sizer.Update(ctx, task.GetCommand(), md)
+	require.NoError(t, err)
+
+	ts := sizer.Get(ctx, task)
+	assert.Equal(t, tasksize.MinimumMilliCPU, ts.GetEstimatedMilliCpu())
+}
