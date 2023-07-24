@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
-	"gorm.io/gorm/clause"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 )
@@ -278,6 +277,60 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_usage"), func(tx *db.DB) error {
+		log.Debugf("Flushing usage counts for key %+v", pk)
+
+		// First check whether the row already exists. Make sure to select for
+		// update in order to lock the row.
+		rows, err := tx.Raw(`
+			SELECT *
+			FROM "Usages"
+			WHERE
+				region = ?
+				AND group_id = ?
+				AND period_start_usec = ?
+			`+dbh.SelectForUpdateModifier(),
+			pk.Region,
+			pk.GroupID,
+			pk.PeriodStartUsec,
+		).Rows()
+		if err != nil {
+			return err
+		}
+
+		schema, err := db.TableSchema(tx, &tables.Usage{})
+		if err != nil {
+			return status.WrapError(err, "failed to get usage table schema")
+		}
+
+		existingRowCount := 0
+		for rows.Next() {
+			existingRowCount++
+			fields := map[string]any{}
+			if err := tx.ScanRows(rows, &fields); err != nil {
+				return err
+			}
+
+			unsupportedField := ""
+			var unsupportedFieldValue any
+			for f, v := range fields {
+				if v == nil || v == "" {
+					continue
+				}
+				if _, ok := schema.FieldsByDBName[f]; !ok {
+					unsupportedField = f
+					unsupportedFieldValue = v
+					break
+				}
+			}
+			if unsupportedField != "" {
+				alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since existing usage row contains unsupported column %q = %q (key = %+v)", unsupportedField, unsupportedFieldValue, pk)
+				return nil
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+
 		tu := &tables.Usage{
 			GroupID:         pk.GroupID,
 			PeriodStartUsec: pk.PeriodStartUsec,
@@ -285,21 +338,23 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			FinalBeforeUsec: c.End().UnixMicro(),
 			UsageCounts:     *counts,
 		}
-		// Create a row for the corresponding usage period if one doesn't already
-		// exist.
-		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(tu)
-		if res.Error != nil {
-			return res.Error
+		if existingRowCount == 0 {
+			log.Debugf("Creating new usage row for key %+v", pk)
+			return tx.Create(tu).Error
 		}
-		if res.RowsAffected != 0 {
-			// Insert worked; we're done.
+		if existingRowCount > 1 {
+			// Drop the usage update and alert about it, but there's not much we
+			// can do to recover in this case so don't roll back the transaction
+			// (since that would cause the flush to keep being retried).
+			alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since it would affect more than one row (key = %+v)", pk)
 			return nil
 		}
 
 		// Update the usage row, but only if collection period data has not already
 		// been written (for example, if the previous flush failed to delete the
 		// data from Redis).
-		return tx.Exec(`
+		log.Debugf("Updating existing usage row for key %+v", pk)
+		res := tx.Exec(`
 			UPDATE "Usages"
 			SET
 				final_before_usec = ?,
@@ -330,7 +385,20 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			tu.PeriodStartUsec,
 			tu.Region,
 			c.Start().UnixMicro(),
-		).Error
+		)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 1 {
+			// Note: this should never happen since we should be first querying
+			// the rows to update above, and only applying the update if the
+			// number of selected rows was 1.
+			alert.UnexpectedEvent("usage_update_logic_error", "Usage update transaction rolled back due to unexpected affected row count %d (key = %+v)", res.RowsAffected, pk)
+			// Note: returning an error here causes the transaction to be rolled
+			// back.
+			return status.InternalErrorf("unexpected number of rows affected (%d)", res.RowsAffected)
+		}
+		return nil
 	})
 }
 
