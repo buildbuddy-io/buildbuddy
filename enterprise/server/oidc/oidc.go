@@ -235,17 +235,17 @@ type apiKeyGroupCacheEntry struct {
 type apiKeyGroupCache struct {
 	// Note that even though we base this off an LRU cache, every entry has a hard expiration
 	// time to force a refresh of the underlying data.
-	lru interfaces.LRU
+	lru interfaces.LRU[*apiKeyGroupCacheEntry]
 	ttl time.Duration
 	mu  sync.Mutex
 }
 
 func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
-	config := &lru.Config{
+	config := &lru.Config[*apiKeyGroupCacheEntry]{
 		MaxSize: apiKeyGroupCacheSize,
-		SizeFn:  func(v interface{}) int64 { return 1 },
+		SizeFn:  func(v *apiKeyGroupCacheEntry) int64 { return 1 },
 	}
-	lru, err := lru.NewLRU(config)
+	lru, err := lru.NewLRU[*apiKeyGroupCacheEntry](config)
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
 	}
@@ -254,16 +254,10 @@ func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
 
 func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
 	c.mu.Lock()
-	v, ok := c.lru.Get(apiKey)
+	entry, ok := c.lru.Get(apiKey)
 	c.mu.Unlock()
 	if !ok {
 		return nil, ok
-	}
-	entry, ok := v.(*apiKeyGroupCacheEntry)
-	if !ok {
-		// Should never happen.
-		log.Errorf("Data in cache was of wrong type, got type %T", v)
-		return nil, false
 	}
 	if time.Now().After(entry.expiresAfter) {
 		return nil, false

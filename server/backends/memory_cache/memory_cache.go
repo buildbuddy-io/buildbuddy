@@ -25,14 +25,14 @@ import (
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
 type MemoryCache struct {
-	l    interfaces.LRU
+	l    interfaces.LRU[[]byte]
 	lock *sync.RWMutex
 }
 
-func sizeFn(value interface{}) int64 {
+func sizeFn(value []byte) int64 {
 	size := int64(0)
-	if v, ok := value.([]byte); ok {
-		size += int64(len(v))
+	if value != nil {
+		size += int64(len(value))
 	}
 	return size
 }
@@ -57,7 +57,7 @@ func Register(env environment.Env) error {
 }
 
 func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
-	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, SizeFn: sizeFn})
+	l, err := lru.NewLRU[[]byte](&lru.Config[[]byte]{MaxSize: maxSizeBytes, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
@@ -114,19 +114,14 @@ func (m *MemoryCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 
-	vb, ok := v.([]byte)
-	if !ok {
-		return nil, status.InternalErrorf("not a []byte")
-	}
-
 	// TODO - Add digest size support for AC
 	digestSizeBytes := int64(-1)
 	if r.GetCacheType() == rspb.CacheType_CAS {
-		digestSizeBytes = int64(len(vb))
+		digestSizeBytes = int64(len(v))
 	}
 
 	return &interfaces.CacheMetadata{
-		StoredSizeBytes: int64(len(vb)),
+		StoredSizeBytes: int64(len(v)),
 		DigestSizeBytes: digestSizeBytes,
 	}, nil
 }
@@ -157,11 +152,7 @@ func (m *MemoryCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 	if !ok {
 		return nil, status.NotFoundErrorf("Key %s not found", r.GetDigest())
 	}
-	value, ok := v.([]byte)
-	if !ok {
-		return nil, status.InternalErrorf("LRU type assertion failed for %s", r.GetDigest())
-	}
-	return value, nil
+	return v, nil
 }
 
 func (m *MemoryCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {

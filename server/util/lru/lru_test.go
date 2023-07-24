@@ -15,12 +15,12 @@ type eviction struct {
 func TestAdd(t *testing.T) {
 	evictions := []eviction{}
 
-	l, err := lru.NewLRU(&lru.Config{
+	l, err := lru.NewLRU[int](&lru.Config[int]{
 		MaxSize: 10,
-		OnEvict: func(value interface{}, reason lru.EvictionReason) {
-			evictions = append(evictions, eviction{value.(int), reason})
+		OnEvict: func(value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{value, reason})
 		},
-		SizeFn: func(value interface{}) int64 { return int64(value.(int)) },
+		SizeFn: func(value int) int64 { return int64(value) },
 	})
 	require.NoError(t, err)
 
@@ -46,12 +46,12 @@ func TestAdd(t *testing.T) {
 func TestAdd_UpdateInPlace(t *testing.T) {
 	evictions := []eviction{}
 
-	l, err := lru.NewLRU(&lru.Config{
+	l, err := lru.NewLRU[int](&lru.Config[int]{
 		MaxSize: 10,
-		OnEvict: func(value interface{}, reason lru.EvictionReason) {
-			evictions = append(evictions, eviction{value.(int), reason})
+		OnEvict: func(value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{value, reason})
 		},
-		SizeFn:        func(value interface{}) int64 { return int64(value.(int)) },
+		SizeFn:        func(value int) int64 { return int64(value) },
 		UpdateInPlace: true,
 	})
 	require.NoError(t, err)
@@ -75,12 +75,12 @@ func TestAdd_UpdateInPlace(t *testing.T) {
 func TestPushBack(t *testing.T) {
 	evictions := []eviction{}
 
-	l, err := lru.NewLRU(&lru.Config{
+	l, err := lru.NewLRU[int](&lru.Config[int]{
 		MaxSize: 10,
-		OnEvict: func(value interface{}, reason lru.EvictionReason) {
-			evictions = append(evictions, eviction{value.(int), reason})
+		OnEvict: func(value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{value, reason})
 		},
-		SizeFn: func(value interface{}) int64 { return int64(value.(int)) },
+		SizeFn: func(value int) int64 { return int64(value) },
 	})
 	require.NoError(t, err)
 
@@ -98,12 +98,12 @@ func TestPushBack(t *testing.T) {
 func TestRemoveOldest(t *testing.T) {
 	evictions := []eviction{}
 
-	l, err := lru.NewLRU(&lru.Config{
+	l, err := lru.NewLRU[int](&lru.Config[int]{
 		MaxSize: 10,
-		OnEvict: func(value interface{}, reason lru.EvictionReason) {
-			evictions = append(evictions, eviction{value.(int), reason})
+		OnEvict: func(value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{value, reason})
 		},
-		SizeFn: func(value interface{}) int64 { return int64(value.(int)) },
+		SizeFn: func(value int) int64 { return int64(value) },
 	})
 	require.NoError(t, err)
 
@@ -113,11 +113,11 @@ func TestRemoveOldest(t *testing.T) {
 
 	oldest, ok := l.RemoveOldest()
 	require.True(t, ok)
-	require.Equal(t, 5, oldest.(int))
+	require.Equal(t, 5, oldest)
 	require.Equal(t, []eviction{{5, lru.SizeEviction}}, evictions)
 
 	oldest, ok = l.RemoveOldest()
 	require.True(t, ok)
-	require.Equal(t, 4, oldest.(int))
+	require.Equal(t, 4, oldest)
 	require.Equal(t, []eviction{{5, lru.SizeEviction}, {4, lru.SizeEviction}}, evictions)
 }

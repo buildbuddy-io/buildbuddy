@@ -258,15 +258,15 @@ type ClaimsCache struct {
 	ttl time.Duration
 
 	mu  sync.Mutex
-	lru interfaces.LRU
+	lru interfaces.LRU[*Claims]
 }
 
 func NewClaimsCache(ctx context.Context, ttl time.Duration) (*ClaimsCache, error) {
-	config := &lru.Config{
+	config := &lru.Config[*Claims]{
 		MaxSize: claimsCacheSize,
-		SizeFn:  func(v interface{}) int64 { return 1 },
+		SizeFn:  func(v *Claims) int64 { return 1 },
 	}
-	lru, err := lru.NewLRU(config)
+	lru, err := lru.NewLRU[*Claims](config)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +279,7 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 	c.mu.Unlock()
 
 	if ok {
-		if claims := v.(*Claims); claims.ExpiresAt > time.Now().Unix() {
+		if claims := v; claims.ExpiresAt > time.Now().Unix() {
 			return claims, nil
 		}
 	}
