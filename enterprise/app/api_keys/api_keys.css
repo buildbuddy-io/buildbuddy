@@ -80,12 +80,8 @@
   flex-grow: 1;
   white-space: nowrap;
   text-overflow: ellipsis;
-  overflow-x: hidden;
   text-align: left;
-}
-
-.api-keys .api-key-value > span {
-  font-size: 14px;
+  overflow-x: hidden;
 }
 
 .api-keys .api-key-value {
@@ -102,12 +98,33 @@
   overflow-x: hidden;
 }
 
+.api-keys .api-key-value button {
+  padding: 8px;
+  color: var(--color-black);
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  appearance: none;
+  outline: 0;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.06);
+  }
+}
+
 .api-keys .api-key-label svg,
 .api-keys .api-key-value svg {
   width: 16px;
   height: 16px;
-  margin-right: 8px;
   opacity: 0.7;
+}
+
+.api-keys .api-key-label svg {
+  margin-right: 8px;
+}
+
+.api-keys .api-key-label svg {
+  margin-right: 0px;
 }
 
 .api-keys .api-key-list-item {

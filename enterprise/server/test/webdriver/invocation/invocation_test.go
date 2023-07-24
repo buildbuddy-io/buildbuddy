@@ -172,6 +172,7 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 		wt.Find(`.dialog-wrapper [name="label"]`).SendKeys("test-personal-key")
 		wt.FindByDebugID("cas-only-radio-button").Click()
 		wt.Find(`.dialog-wrapper button[type="submit"]`).Click()
+		wt.Find(`.api-key-value-hide`).Click()
 		apiKey = wt.Find(`.api-key-value`).Text()
 	}
 
