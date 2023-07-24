@@ -589,11 +589,13 @@ interface ApiKeyFieldState {
 const ApiKeyFieldDefaultState: ApiKeyFieldState = {
   isCopied: false,
   hideValue: true,
-  displayValue: "************",
+  displayValue: "••••••••••••••••••••",
 };
 
 class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
   state = ApiKeyFieldDefaultState;
+
+  private copyTimeout: number | undefined;
 
   // onClick handler function for the copy button
   private handleCopyClick() {
@@ -601,7 +603,8 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
     this.setState({ isCopied: true }, () => {
       alert_service.success("Copied API key to clipboard");
     });
-    setTimeout(() => {
+    clearTimeout(this.copyTimeout);
+    this.copyTimeout = window.setTimeout(() => {
       this.setState({ isCopied: false });
     }, 4000);
   }
@@ -620,12 +623,12 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
     return (
       <div className="api-key-value">
         <span>{displayValue}</span>
-        <button className="api-key-value-copy" onClick={this.handleCopyClick.bind(this)} disabled={isCopied}>
+        <OutlinedButton className="api-key-value-copy icon-button" onClick={this.handleCopyClick.bind(this)}>
           {isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
-        </button>
-        <button className="api-key-value-hide" onClick={this.toggleHideValue.bind(this)}>
+        </OutlinedButton>
+        <OutlinedButton className="api-key-value-hide icon-button" onClick={this.toggleHideValue.bind(this)}>
           {hideValue ? <Eye className="icon" /> : <EyeOff className="icon" />}
-        </button>
+        </OutlinedButton>
       </div>
     );
   }
