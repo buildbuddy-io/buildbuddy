@@ -622,7 +622,7 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
 
     return (
       <div className="api-key-value">
-        <span>{displayValue}</span>
+        <span className="display-value">{displayValue}</span>
         <OutlinedButton className="api-key-value-copy icon-button" onClick={this.handleCopyClick.bind(this)}>
           {isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
         </OutlinedButton>

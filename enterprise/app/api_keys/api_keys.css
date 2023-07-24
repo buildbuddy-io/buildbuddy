@@ -71,12 +71,11 @@
 
 .api-keys .api-key-value {
   box-sizing: border-box;
-  flex-basis: 240px;
+  width: fit-content;
   flex-shrink: 0;
 }
 
-.api-keys .api-key-label > span,
-.api-keys .api-key-value > span {
+.api-keys .api-key-label > span {
   flex-grow: 1;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -95,8 +94,11 @@
   display: flex;
   align-items: center;
   white-space: nowrap;
-  text-overflow: ellipsis;
   overflow-x: hidden;
+}
+
+.api-keys .api-key-value .display-value {
+  margin-right: 4px;
 }
 
 .api-keys .api-key-value button {
