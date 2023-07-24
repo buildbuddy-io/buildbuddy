@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -34,6 +35,7 @@ func NewExt4Device(store blockio.Store, name string) (*Device, error) {
 // Server runs on the host and serves block device contents for
 // a ClientDevice to read and write.
 type Server struct {
+	env    environment.Env
 	server *grpc.Server
 
 	mu      sync.RWMutex
@@ -53,6 +55,7 @@ func New(ctx context.Context, env environment.Env, devices ...*Device) (*Server,
 		m[name] = d
 	}
 	return &Server{
+		env:     env,
 		devices: m,
 	}, nil
 }
@@ -72,7 +75,7 @@ func (s *Server) SetDevice(name string, device *Device) {
 // Start starts the device server.
 // lis will be closed when calling Stop().
 func (s *Server) Start(lis net.Listener) error {
-	s.server = grpc.NewServer()
+	s.server = grpc.NewServer(grpc_server.CommonGRPCServerOptions(s.env)...)
 	nbdpb.RegisterBlockDeviceServer(s.server, s)
 	go func() {
 		_ = s.server.Serve(lis)
