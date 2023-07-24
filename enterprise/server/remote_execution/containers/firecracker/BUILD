@@ -123,6 +123,7 @@ go_test(
     srcs = ["firecracker_test.go"],
     args = [
         "--executor.firecracker_enable_nbd=true",
+        "--executor.firecracker_debug_stream_vm_logs=true",
         # TODO: enable UFFD once it's implemented
         # "--executor.firecracker_enable_uffd=true",
     ],
