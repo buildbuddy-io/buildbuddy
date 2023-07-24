@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -36,7 +35,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
@@ -184,23 +182,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Clean up net namespaces in case vestiges remain from a previous executor.
-	if !networking.PreserveExistingNetNamespaces() {
-		if err := networking.DeleteNetNamespaces(rootContext); err != nil {
-			log.Debugf("Error cleaning up old net namespaces:  %s", err)
-		}
-	}
-	if err := networking.ConfigurePolicyBasedRoutingForSecondaryNetwork(rootContext); err != nil {
-		fmt.Printf("Error configuring secondary network: %s", err)
-		os.Exit(1)
-	}
-
-	if networking.IsSecondaryNetworkEnabled() {
-		if err := podman.ConfigureSecondaryNetwork(rootContext); err != nil {
-			fmt.Printf("Error configuring secondary network for podman: %s", err)
-			os.Exit(1)
-		}
-	}
+	setupNetworking(rootContext)
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := GetConfiguredEnvironmentOrDie(healthChecker)

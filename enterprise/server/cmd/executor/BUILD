@@ -6,7 +6,11 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "executor_lib",
-    srcs = ["executor.go"],
+    srcs = [
+        "executor.go",
+        "executor_linux.go",
+        "executor_notlinux.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor",
     visibility = ["//visibility:public"],
     deps = [
@@ -18,7 +22,6 @@ go_library(
         "//enterprise/server/backends/redis_cache",
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/containers/podman",
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/runner",
@@ -39,7 +42,6 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/monitoring",
-        "//server/util/networking",
         "//server/util/status",
         "//server/util/tracing",
         "//server/xcode",
@@ -47,7 +49,13 @@ go_library(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//encoding/gzip",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/containers/podman",
+            "//server/util/networking",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_binary(
