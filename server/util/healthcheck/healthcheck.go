@@ -29,7 +29,7 @@ import (
 var (
 	maxShutdownDuration           = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
 	shutdownLameduckDuration      = flag.Duration("shutdown_lameduck_duration", 0, "If set, the server will be marked unready but not run shutdown functions until this period passes.")
-	logGoroutineProfileOnShutdown = flag.Bool("debug.log_goroutine_profile_on_shutdown", false, "Whether to print all goroutine stack traces on shutdown.")
+	logGoroutineProfileOnShutdown = flag.Bool("debug.log_goroutine_profile_on_shutdown", false, "Whether to log all goroutine stack traces on shutdown.")
 )
 
 const (
