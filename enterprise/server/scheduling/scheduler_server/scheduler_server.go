@@ -681,15 +681,22 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	if n > maxUnclaimedTasksTracked {
 		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
 		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
-		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err(); err != nil {
+		nRemoved, err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Result()
+		if err != nil {
 			log.CtxWarningf(ctx, "Error trimming unclaimed tasks: %s", err)
+		} else {
+			log.CtxInfof(ctx, "Trimmed %d unclaimed tasks from pool %+v", nRemoved, np.key)
 		}
 	}
 
 	// Also trim any stale tasks from the set. The data is stored in score order so this is a cheap operation.
 	cutoff := time.Now().Add(-unclaimedTaskMaxAge).Unix()
-	if err := np.rdb.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(cutoff, 10)).Err(); err != nil {
+	nRemoved, err := np.rdb.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(cutoff, 10)).Result()
+	if err != nil {
 		log.CtxWarningf(ctx, "Error deleting old unclaimed tasks: %s", err)
+	}
+	if nRemoved > 0 {
+		log.CtxInfof(ctx, "Removed %d old unclaimed tasks from pool %+v", nRemoved, np.key)
 	}
 
 	return nil
