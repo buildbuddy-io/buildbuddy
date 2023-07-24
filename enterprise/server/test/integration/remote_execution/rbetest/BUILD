@@ -54,6 +54,7 @@ go_library(
         "//server/testutil/testport",
         "//server/util/fileresolver",
         "//server/util/grpc_client",
+        "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/retry",
