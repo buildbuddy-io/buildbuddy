@@ -1479,31 +1479,11 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	db, err := p.leaser.DB()
+	missing, err := p.FindMissing(ctx, []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
-	defer db.Close()
-
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	fileRecord, err := p.makeFileRecord(ctx, r)
-	if err != nil {
-		return false, err
-	}
-	key, err := p.fileStorer.PebbleKey(fileRecord)
-	if err != nil {
-		return false, err
-	}
-	unlockFn := p.locker.RLock(key.LockID())
-	defer unlockFn()
-
-	found, err := p.iterHasKey(iter, key)
-	if err != nil {
-		return false, err
-	}
-	return found, nil
+	return len(missing) == 0, nil
 }
 
 func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
