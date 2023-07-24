@@ -80,14 +80,14 @@ go_binary(
 
 genrule(
     name = "firecracker_rename",
-    srcs = ["@com_github_firecracker_microvm_firecracker-v1.1.1-x86_64//:firecracker-v1.1.1-x86_64"],
+    srcs = ["@com_github_buildbuddy_io_firecracker_firecracker-v1.4.0-20230720-cf5f56f//:firecracker-v1.4.0-20230720-cf5f56f"],
     outs = ["firecracker"],
     cmd = "cp $(SRCS) $@",
 )
 
 genrule(
     name = "jailer_rename",
-    srcs = ["@com_github_firecracker_microvm_firecracker-v1.1.1-x86_64//:jailer-v1.1.1-x86_64"],
+    srcs = ["@com_github_buildbuddy_io_firecracker_firecracker-v1.4.0-20230720-cf5f56f//:jailer-v1.4.0-20230720-cf5f56f"],
     outs = ["jailer"],
     cmd = "cp $(SRCS) $@",
 )

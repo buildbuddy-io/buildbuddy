@@ -6909,17 +6909,16 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_archive(
+        name = "com_github_buildbuddy_io_firecracker_firecracker-v1.4.0-20230720-cf5f56f",
+        sha256 = "b36d9ad62ca467d2794635c4f19b0993c11bb46ed3b575037287964f9c82cc9b",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.4.0-20230720-cf5f56f.tgz"],
+        build_file_content = 'exports_files(["firecracker-v1.4.0-20230720-cf5f56f", "jailer-v1.4.0-20230720-cf5f56f"])',
+    )
+    http_archive(
         name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
         sha256 = "56933aa04a64d3bf6991f9b1be127ac9896fe597d2fba194c67c2dd4368bbae3",
         urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
         build_file_content = 'exports_files(["stargz-store"])',
-    )
-    http_archive(
-        name = "com_github_firecracker_microvm_firecracker-v1.1.1-x86_64",
-        sha256 = "29194e13888358c6332995199ee288c081a8a23e68f0046944e4bb7f6548af57",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.1.1/firecracker-v1.1.1-x86_64.tgz"],
-        strip_prefix = "release-v1.1.1-x86_64",
-        build_file_content = 'exports_files(["firecracker-v1.1.1-x86_64", "jailer-v1.1.1-x86_64"])',
     )
 
     http_file(
