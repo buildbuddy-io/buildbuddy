@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_x_exp//maps",
         "@org_golang_x_sys//unix",

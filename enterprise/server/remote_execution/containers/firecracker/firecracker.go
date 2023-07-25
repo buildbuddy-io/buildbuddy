@@ -474,6 +474,7 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 		// Ensure goroutines don't cross chunk boundaries and cause race conditions when writing
 		perThreadBytes = alignToMultiple(perThreadBytes, cowChunkSizeBytes)
 	}
+	log.Warningf("perThreadBytes %v", perThreadBytes)
 	for i := 0; i < concurrency; i++ {
 		i := i
 		offset := perThreadBytes * int64(i)
@@ -516,6 +517,7 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 				if err != nil {
 					return err
 				}
+				log.Warningf("Thread %v is writing at offset %v", i, offset)
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
 				}

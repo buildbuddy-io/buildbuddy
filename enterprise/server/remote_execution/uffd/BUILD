@@ -6,12 +6,21 @@ go_library(
     cgo = True,
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd",
     visibility = ["//visibility:public"],
-    deps = [
-        "//enterprise/server/remote_execution/blockio",
-        "//server/util/log",
-        "//server/util/status",
-        "@org_golang_x_sys//unix",
-    ],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:android": [
+            "//enterprise/server/remote_execution/blockio",
+            "//server/util/log",
+            "//server/util/status",
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/blockio",
+            "//server/util/log",
+            "//server/util/status",
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 package(default_visibility = ["//enterprise:__subpackages__"])

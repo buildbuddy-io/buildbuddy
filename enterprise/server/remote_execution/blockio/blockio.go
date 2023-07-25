@@ -2,6 +2,7 @@ package blockio
 
 import (
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"io"
 	"os"
 	"path/filepath"
@@ -348,6 +349,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 
 func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	chunkOffset := c.chunkStartOffset(off)
+	log.Warningf("Offset %v maps to start offset %v", off, chunkOffset)
 	n := 0
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
