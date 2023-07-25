@@ -47,9 +47,9 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	flags.Set(t, "database.data_source", dataSource)
 	hc := testhealthcheck.NewTestingHealthChecker()
 	env := real_environment.NewRealEnv(hc)
-	dbh, err := db.GetConfiguredDatabase(env)
-	require.NoError(t, err)
 	ctx := context.Background()
+	dbh, err := db.GetConfiguredDatabase(ctx, env)
+	require.NoError(t, err)
 	db := dbh.DB(ctx)
 	err = db.Exec(`UPDATE "Groups" SET invocation_webhook_url = ?`, ws.URL.String()).Error
 	require.NoError(t, err)
