@@ -54,7 +54,6 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
@@ -1814,7 +1813,7 @@ type cdcWriter struct {
 	fileRecord *rfpb.FileRecord
 	key        filestore.PebbleKey
 
-	writtenChunks  []*resource.ResourceName
+	writtenChunks  []*rspb.ResourceName
 	shouldCompress bool
 	isCompressed   bool
 
@@ -1904,7 +1903,7 @@ func (cdcw *cdcWriter) getFileRecordAndKeyForChunk(chunkData []byte) (*rfpb.File
 	if err != nil {
 		return nil, filestore.PebbleKey{}, err
 	}
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:         d,
 		InstanceName:   cdcw.fileRecord.GetIsolation().GetRemoteInstanceName(),
 		CacheType:      cdcw.fileRecord.GetIsolation().GetCacheType(),
@@ -3178,7 +3177,7 @@ func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *rfpb.Stor
 	pr, pw := io.Pipe()
 	go func() {
 		for _, resourceName := range chunkedMD.GetResource() {
-			rn := proto.Clone(resourceName).(*resource.ResourceName)
+			rn := proto.Clone(resourceName).(*rspb.ResourceName)
 			if shouldDecompress && rn.GetCompressor() == repb.Compressor_ZSTD {
 				rn.Compressor = repb.Compressor_IDENTITY
 			}
