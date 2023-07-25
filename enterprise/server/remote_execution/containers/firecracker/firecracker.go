@@ -1709,11 +1709,13 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 
 	if c.fsLayout == nil {
+		log.Warningf("c.fsLayout is set")
 		if err := c.syncWorkspace(ctx); err != nil {
 			result.Error = status.WrapError(err, "failed to sync workspace")
 			return result
 		}
 	} else {
+		log.Warningf("c.fsLayout is set")
 		req := &vmfspb.PrepareRequest{}
 		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
 		if err != nil {
