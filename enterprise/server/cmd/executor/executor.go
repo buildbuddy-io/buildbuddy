@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -31,12 +30,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
@@ -47,6 +44,7 @@ import (
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
@@ -63,9 +61,6 @@ var (
 	monitoringPort    = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 	monitoringSSLPort = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
-
-	// Define a grpc_port flag to avoid breaking old executor configs.
-	_ = flagutil.New("grpc_port", 0, "gRPC server port.", flagutil.DeprecatedTag("This flag no longer has any effect and will be removed in a future executor version."))
 )
 
 func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.RealEnv) {
@@ -184,23 +179,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Clean up net namespaces in case vestiges remain from a previous executor.
-	if !networking.PreserveExistingNetNamespaces() {
-		if err := networking.DeleteNetNamespaces(rootContext); err != nil {
-			log.Debugf("Error cleaning up old net namespaces:  %s", err)
-		}
-	}
-	if err := networking.ConfigurePolicyBasedRoutingForSecondaryNetwork(rootContext); err != nil {
-		fmt.Printf("Error configuring secondary network: %s", err)
-		os.Exit(1)
-	}
-
-	if networking.IsSecondaryNetworkEnabled() {
-		if err := podman.ConfigureSecondaryNetwork(rootContext); err != nil {
-			fmt.Printf("Error configuring secondary network for podman: %s", err)
-			os.Exit(1)
-		}
-	}
+	setupNetworking(rootContext)
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := GetConfiguredEnvironmentOrDie(healthChecker)

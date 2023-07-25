@@ -21,13 +21,13 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 		"WORKSPACE": "",
 		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
-	buildArgs := append([]string{
+	buildArgs := []string{
 		"//:a",
 		"--show_progress=0",
 		"--build_metadata=COMMIT_SHA=cc5011e9a82b545885025d5f08b531bfbbf95d5b",
 		"--build_metadata=REPO_URL=https://github.com/test-owner/test-repo",
 		"--remote_upload_local_results=1",
-	})
+	}
 
 	webtester.Login(wt, target)
 
@@ -138,13 +138,13 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 		"WORKSPACE": "",
 		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
-	buildArgs := append([]string{
+	buildArgs := []string{
 		"//:a",
 		"--show_progress=0",
 		"--build_metadata=COMMIT_SHA=cc5011e9a82b545885025d5f08b531bfbbf95d5b",
 		"--build_metadata=REPO_URL=https://github.com/test-owner/test-repo",
 		"--remote_upload_local_results=1",
-	})
+	}
 
 	webtester.Login(wt, target)
 
@@ -164,16 +164,14 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	// Create a personal API key with CAS-only permissions
 	wt.Find(`[href="/settings/personal/api-keys"]`).Click()
 	existingKeys := wt.FindAll(`.api-key-value`)
-	apiKey := ""
-	if len(existingKeys) > 0 {
-		apiKey = existingKeys[0].Text()
-	} else {
+	if len(existingKeys) == 0 {
 		wt.FindByDebugID("create-new-api-key").Click()
 		wt.Find(`.dialog-wrapper [name="label"]`).SendKeys("test-personal-key")
 		wt.FindByDebugID("cas-only-radio-button").Click()
 		wt.Find(`.dialog-wrapper button[type="submit"]`).Click()
-		apiKey = wt.Find(`.api-key-value`).Text()
 	}
+	wt.Find(`.api-key-value-hide`).Click()
+	apiKey := wt.Find(".api-key-value").Text()
 
 	// Get the build flags for BES + cache, using the personal API key
 	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(

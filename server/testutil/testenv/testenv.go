@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
@@ -21,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -36,7 +36,7 @@ var (
 )
 
 func init() {
-	*log.LogLevel = "warn"
+	*log.LogLevel = "debug"
 	*log.IncludeShortFileName = true
 	log.Configure()
 }
@@ -98,11 +98,7 @@ func (te *TestEnv) LocalGRPCConn(ctx context.Context, opts ...grpc.DialOption) (
 
 // GRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.
 func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
-	grpcOptions := []grpc.ServerOption{
-		interceptors.GetUnaryInterceptor(te),
-		interceptors.GetStreamInterceptor(te),
-	}
-	srv := grpc.NewServer(grpcOptions...)
+	srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(te)...)
 	runFunc := func() {
 		if err := srv.Serve(lis); err != nil {
 			log.Fatal(err.Error())
@@ -147,7 +143,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	default:
 		t.Fatalf("Unsupported db type: %s", *databaseType)
 	}
-	dbHandle, err := db.GetConfiguredDatabase(te)
+	dbHandle, err := db.GetConfiguredDatabase(context.Background(), te)
 	if err != nil {
 		t.Fatal(err)
 	}

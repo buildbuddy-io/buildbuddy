@@ -3,6 +3,7 @@ package config
 import (
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"gopkg.in/yaml.v2"
@@ -154,6 +155,9 @@ func matchesAnyBranch(branches []string, branch string) bool {
 			return true
 		}
 		if b == branch {
+			return true
+		}
+		if b == "gh-readonly-queue/*" && strings.HasPrefix(branch, "gh-readonly-queue/") {
 			return true
 		}
 	}

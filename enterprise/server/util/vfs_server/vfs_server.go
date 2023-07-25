@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -789,7 +790,7 @@ func (p *Server) setlk(ctx context.Context, req *vfspb.SetLkRequest, wait bool) 
 }
 
 func (p *Server) Start(lis net.Listener) error {
-	p.server = grpc.NewServer()
+	p.server = grpc.NewServer(grpc_server.CommonGRPCServerOptions(p.env)...)
 	vfspb.RegisterFileSystemServer(p.server, p)
 	go func() {
 		_ = p.server.Serve(lis)

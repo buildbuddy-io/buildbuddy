@@ -71,43 +71,55 @@
 
 .api-keys .api-key-value {
   box-sizing: border-box;
-  flex-basis: 240px;
+  width: fit-content;
   flex-shrink: 0;
 }
 
-.api-keys .api-key-label > span,
-.api-keys .api-key-value > span {
+.api-keys .api-key-label > span {
   flex-grow: 1;
   white-space: nowrap;
   text-overflow: ellipsis;
-  overflow-x: hidden;
   text-align: left;
-}
-
-.api-keys .api-key-value > span {
-  font-size: 14px;
+  overflow-x: hidden;
 }
 
 .api-keys .api-key-value {
   font-family: monospace;
-  font-size: 16px;
+  font-size: 12px;
   background: #eee;
   border-radius: 8px;
-  padding: 0 16px;
+  padding-left: 16px;
+  padding-right: 4px;
   align-self: stretch;
   display: flex;
   align-items: center;
   white-space: nowrap;
-  text-overflow: ellipsis;
   overflow-x: hidden;
+}
+
+.api-keys .api-key-value .display-value {
+  margin-right: 4px;
+}
+
+.api-keys .api-key-value button {
+  width: 32px;
+  height: 32px;
+  border-color: transparent;
+  min-height: initial;
 }
 
 .api-keys .api-key-label svg,
 .api-keys .api-key-value svg {
   width: 16px;
   height: 16px;
+}
+
+.api-keys .api-key-label svg {
   margin-right: 8px;
-  opacity: 0.7;
+}
+
+.api-keys .api-key-label svg {
+  margin-right: 0px;
 }
 
 .api-keys .api-key-list-item {

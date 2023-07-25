@@ -29,7 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -144,7 +143,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 		require.NoError(t, err)
 		for i, resp := range batchUpdateResp.Responses {
 			require.Equal(t, "", resp.Status.Message)
-			require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i)
+			require.Equal(t, int32(gcodes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i)
 		}
 		sc := hit_tracker.ScoreCard(ctx, te, iid.String())
 		require.Len(t, sc.Results, 1)
@@ -180,7 +179,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	require.Len(t, sc.Results, len(readResp.Responses))
 	decompressedBlobs := make([][]byte, len(readResp.Responses))
 	for i, resp := range readResp.Responses {
-		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i)
+		require.Equal(t, int32(gcodes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i)
 		assert.Equal(t, int64(len(resp.Data)), sc.Results[i].TransferredSizeBytes)
 		decompressedBlobs[i] = zstdDecompress(t, resp.Data)
 	}
@@ -195,7 +194,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	require.NoError(t, err)
 	blobs := make([][]byte, len(readResp.Responses))
 	for i, resp := range readResp.Responses {
-		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i)
+		require.Equal(t, int32(gcodes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i)
 		blobs[i] = resp.Data
 	}
 	require.Equal(t, [][]byte{blob}, blobs)
@@ -223,7 +222,7 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	})
 	require.NoError(t, err)
 	for i, resp := range batchUpdateResp.Responses {
-		require.Equal(t, int32(codes.Unimplemented), resp.Status.Code, "BatchUpdateResponse[%d].Status != Unimplemented", i)
+		require.Equal(t, int32(gcodes.Unimplemented), resp.Status.Code, "BatchUpdateResponse[%d].Status != Unimplemented", i)
 	}
 }
 
@@ -349,7 +348,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 				require.NoError(t, err, tc.name)
 				for i, resp := range batchUpdateResp.Responses {
 					require.Equal(t, "", resp.Status.Message, tc.name)
-					require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i, tc.name)
+					require.Equal(t, int32(gcodes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i, tc.name)
 				}
 				sc := hit_tracker.ScoreCard(ctx, te, iid.String())
 				require.Len(t, sc.Results, 1, tc.name)
@@ -374,7 +373,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 			require.Len(t, sc.Results, len(readResp.Responses), tc.name)
 			downloadedBlobs := make([][]byte, len(readResp.Responses))
 			for i, resp := range readResp.Responses {
-				require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i, tc.name)
+				require.Equal(t, int32(gcodes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i, tc.name)
 				assert.Equal(t, int64(len(resp.Data)), sc.Results[i].TransferredSizeBytes, tc.name)
 				downloadedBlobs[i] = resp.Data
 			}

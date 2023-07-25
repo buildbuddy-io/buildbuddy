@@ -9,11 +9,10 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/util/log",
+        "//server/util/random",
         "//server/util/status",
         "@com_github_go_redis_redis_extra_redisotel_v8//:redisotel",
         "@com_github_go_redis_redis_v8//:redis",
-        "@com_github_go_redsync_redsync_v4//:redsync",
-        "@com_github_go_redsync_redsync_v4//redis/goredis/v8:goredis",
     ],
 )
 
@@ -24,6 +23,7 @@ go_test(
     deps = [
         ":redisutil",
         "//enterprise/server/testutil/testredis",
+        "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",

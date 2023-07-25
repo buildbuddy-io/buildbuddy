@@ -44,6 +44,12 @@ const (
 	DefaultCPUEstimate      = int64(600)
 	DefaultFreeDiskEstimate = int64(100 * 1e6) // 100 MB
 
+	// Minimum size values.
+	// These are an extra safeguard against overscheduling, and help account
+	// for task overhead that is not measured explicitly (e.g. task setup).
+
+	MinimumMilliCPU = int64(250)
+
 	// Additional resources needed depending on task characteristics
 
 	// FirecrackerAdditionalMemEstimateBytes represents the overhead incurred by
@@ -152,17 +158,17 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		// executor run this task once to estimate the size.
 		return nil
 	}
-	return &scpb.TaskSize{
+	return applyMinimums(&scpb.TaskSize{
 		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
-	}
+	})
 }
 
 func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
 	if s.model == nil {
 		return nil
 	}
-	return s.model.Predict(ctx, task)
+	return applyMinimums(s.model.Predict(ctx, task))
 }
 
 func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
@@ -358,9 +364,20 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 		freeDiskEstimate = MaxEstimatedFreeDisk
 	}
 
-	return &scpb.TaskSize{
+	return applyMinimums(&scpb.TaskSize{
 		EstimatedMemoryBytes:   memEstimate,
 		EstimatedMilliCpu:      cpuEstimate,
 		EstimatedFreeDiskBytes: freeDiskEstimate,
+	})
+}
+
+func applyMinimums(size *scpb.TaskSize) *scpb.TaskSize {
+	if size == nil {
+		return nil
 	}
+	clone := proto.Clone(size).(*scpb.TaskSize)
+	if clone.EstimatedMilliCpu < MinimumMilliCPU {
+		clone.EstimatedMilliCpu = MinimumMilliCPU
+	}
+	return clone
 }

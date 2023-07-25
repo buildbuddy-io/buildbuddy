@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -39,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
@@ -77,6 +79,7 @@ var (
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
+	deletesPerEviction        = flag.Int("cache.pebble.deletes_per_eviction", 5, "Maximum number keys to delete in one eviction attempt before resampling.")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 50, "Maximum number of entries to evict per second (per partition).")
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
@@ -138,6 +141,10 @@ const (
 	// Default values for Options
 	DefaultBlockCacheSizeBytes    = int64(1000 * megabyte)
 	DefaultMaxInlineFileSizeBytes = int64(1024)
+
+	// Maximum amount of time to wait for a pebble Sync. A warning will be
+	// logged if a sync takes longer than this.
+	maxSyncDuration = 10 * time.Second
 )
 
 // Options is a struct containing the pebble cache configuration options.
@@ -217,7 +224,56 @@ type PebbleCache struct {
 
 	minBytesAutoZstdCompression int64
 
-	oldMetrics pebble.Metrics
+	oldMetrics    pebble.Metrics
+	eventListener *pebbleEventListener
+}
+
+type pebbleEventListener struct {
+	// Atomicly accessed metrics updated by pebble callbacks.
+	writeStallCount      int64
+	writeStallDuration   time.Duration
+	writeStallStartNanos int64
+	diskSlowCount        int64
+	diskStallCount       int64
+}
+
+func (el *pebbleEventListener) writeStallStats() (int64, time.Duration) {
+	count := atomic.LoadInt64(&el.writeStallCount)
+	durationInt := atomic.LoadInt64((*int64)(&el.writeStallDuration))
+	return count, time.Duration(durationInt)
+}
+
+func (el *pebbleEventListener) diskStallStats() (int64, int64) {
+	slowCount := atomic.LoadInt64(&el.diskSlowCount)
+	stallCount := atomic.LoadInt64(&el.diskStallCount)
+	return slowCount, stallCount
+}
+
+func (el *pebbleEventListener) WriteStallBegin(info pebble.WriteStallBeginInfo) {
+	startNanos := time.Now().UnixNano()
+	atomic.StoreInt64(&el.writeStallStartNanos, startNanos)
+	atomic.AddInt64(&el.writeStallCount, 1)
+}
+
+func (el *pebbleEventListener) WriteStallEnd() {
+	startNanos := atomic.SwapInt64(&el.writeStallStartNanos, 0)
+	if startNanos == 0 {
+		return
+	}
+	stallDuration := time.Now().UnixNano() - startNanos
+	if stallDuration < 0 {
+		return
+	}
+	atomic.AddInt64((*int64)(&el.writeStallDuration), stallDuration)
+}
+
+func (el *pebbleEventListener) DiskSlow(info pebble.DiskSlowInfo) {
+	if info.Duration.Seconds() >= maxSyncDuration.Seconds() {
+		atomic.AddInt64(&el.diskStallCount, 1)
+		log.Errorf("Pebble Cache: disk stall: unable to write %q in %.2f seconds.", info.Path, info.Duration.Seconds())
+		return
+	}
+	atomic.AddInt64(&el.diskSlowCount, 1)
 }
 
 type keyMigrator interface {
@@ -374,9 +430,17 @@ func ensureDefaultPartitionExists(opts *Options) {
 }
 
 // defaultPebbleOptions returns default pebble config options.
-func defaultPebbleOptions() *pebble.Options {
-	// TODO: tune options here.
-	return &pebble.Options{}
+func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
+	// These values Borrowed from CockroachDB.
+	return &pebble.Options{
+		MaxConcurrentCompactions: 3,
+		MemTableSize:             64 << 20, // 64 MB
+		EventListener: pebble.EventListener{
+			WriteStallBegin: el.WriteStallBegin,
+			WriteStallEnd:   el.WriteStallEnd,
+			DiskSlow:        el.DiskSlow,
+		},
+	}
 }
 
 // NewPebbleCache creates a new cache from the provided env and opts.
@@ -390,7 +454,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 	ensureDefaultPartitionExists(opts)
 
-	pebbleOptions := defaultPebbleOptions()
+	el := &pebbleEventListener{}
+	pebbleOptions := defaultPebbleOptions(el)
 	if opts.BlockCacheSizeBytes > 0 {
 		c := pebble.NewCache(opts.BlockCacheSizeBytes)
 		defer c.Unref()
@@ -433,6 +498,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		fileStorer:                  filestore.New(),
 		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
+		eventListener:               el,
 	}
 
 	versionMetadata, err := pc.databaseVersionMetadata()
@@ -1068,7 +1134,11 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		LowerBound: keys.MinByte,
 		UpperBound: keys.MaxByte,
 	})
-	defer iter.Close()
+	// We update the iter variable later on, so we need to wrap the Close call
+	// in a func to operate on the correct iterator instance.
+	defer func() {
+		iter.Close()
+	}()
 
 	pr := message.NewPrinter(language.English)
 	fileMetadata := &rfpb.FileMetadata{}
@@ -1088,6 +1158,22 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		case <-quitChan:
 			return nil
 		default:
+		}
+
+		// Create a new iterator once in a while to avoid holding on to sstables
+		// for too long.
+		if totalCount != 0 && totalCount%1_000_000 == 0 {
+			k := make([]byte, len(iter.Key()))
+			copy(k, iter.Key())
+			newIter := db.NewIter(&pebble.IterOptions{
+				LowerBound: k,
+				UpperBound: keys.MaxByte,
+			})
+			iter.Close()
+			if !newIter.First() {
+				break
+			}
+			iter = newIter
 		}
 
 		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
@@ -1182,6 +1268,11 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 
 	buf := "<pre>"
 	buf += db.Metrics().String()
+	writeStalls, stallDuration := p.eventListener.writeStallStats()
+	diskSlows, diskStalls := p.eventListener.diskStallStats()
+	buf += fmt.Sprintf("Write stalls: %d, total stall duration: %s\n", writeStalls, stallDuration)
+	buf += fmt.Sprintf("Disk slow count: %d, disk stall count: %d\n", diskSlows, diskStalls)
+
 	diskEstimateBytes, err := db.EstimateDiskUsage(keys.MinByte, keys.MaxByte)
 	if err == nil {
 		buf += fmt.Sprintf("Estimated pebble DB disk usage: %d bytes\n", diskEstimateBytes)
@@ -1288,6 +1379,9 @@ func (p *PebbleCache) blobDir() string {
 }
 
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	fileMetadata := &rfpb.FileMetadata{}
 	var lastErr error
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
@@ -1308,7 +1402,10 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterat
 	return md, err
 }
 
-func (p *PebbleCache) lookupLastAccessTime(iter pebble.Iterator, key filestore.PebbleKey) (int64, error) {
+func (p *PebbleCache) lookupLastAccessTime(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (int64, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
@@ -1347,7 +1444,10 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 	return false, nil
 }
 
-func readFileMetadata(reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
+func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	fileMetadata := &rfpb.FileMetadata{}
 	buf, err := pebble.GetCopy(reader, keyBytes)
 	if err != nil {
@@ -1464,7 +1564,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		lastAccessUsec, err := p.lookupLastAccessTime(iter, key)
+		lastAccessUsec, err := p.lookupLastAccessTime(ctx, iter, key)
 		if err != nil {
 			missing = append(missing, r.GetDigest())
 		} else {
@@ -2017,6 +2117,9 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.Metad
 }
 
 func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *rfpb.FileMetadata) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
@@ -2175,11 +2278,18 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		cacheName:         cacheName,
 		anonPseudoGroupID: fmt.Sprintf("GR%020d", random.RandUint64()),
 	}
+	metricLbls := prometheus.Labels{
+		metrics.PartitionID:    part.ID,
+		metrics.CacheNameLabel: cacheName,
+	}
 	l, err := approxlru.New(&approxlru.Opts[*evictionKey]{
-		SamplePoolSize:     *samplePoolSize,
-		SamplesPerEviction: *samplesPerEviction,
-		RateLimit:          float64(*evictionRateLimit),
-		MaxSizeBytes:       int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
+		SamplePoolSize:              *samplePoolSize,
+		SamplesPerEviction:          *samplesPerEviction,
+		DeletesPerEviction:          *deletesPerEviction,
+		EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(metricLbls),
+		EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
+		RateLimit:                   float64(*evictionRateLimit),
+		MaxSizeBytes:                int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
 		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) (skip bool, err error) {
 			return pe.evict(ctx, sample)
 		},
@@ -2608,7 +2718,7 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 	unlockFn := e.locker.RLock(pebbleKey.LockID())
 	defer unlockFn()
 
-	md, err := readFileMetadata(db, key.bytes)
+	md, err := readFileMetadata(ctx, db, key.bytes)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("could not refresh atime for %q: %s", key.String(), err)
@@ -2616,7 +2726,7 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 		return true, time.Time{}, nil
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
-	age := time.Since(atime)
+	age := e.clock.Since(atime)
 	if age < e.minEvictionAge {
 		return true, time.Time{}, nil
 	}
@@ -2734,7 +2844,6 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 					SizeBytes: fileMetadata.GetStoredSizeBytes(),
 					Timestamp: atime,
 				}
-
 				samples = append(samples, sample)
 			}
 

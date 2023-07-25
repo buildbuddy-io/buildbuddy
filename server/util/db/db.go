@@ -19,7 +19,6 @@ import (
 
 	golog "log"
 
-	"github.com/aws/aws-sdk-go/service/rds/rdsutils"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
@@ -46,7 +45,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
-	awssession "github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	rdsauth "github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	gomysql "github.com/go-sql-driver/mysql"
 	gopostgres "github.com/jackc/pgx/v5/stdlib"
 	gosqlite "github.com/mattn/go-sqlite3"
@@ -536,8 +537,8 @@ func (c *connector) Driver() driver.Driver {
 	return c.d
 }
 
-func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
-	ds, err := ParseDatasource(fileResolver, dataSource, advancedConfig)
+func openDB(ctx context.Context, fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
+	ds, err := ParseDatasource(ctx, fileResolver, dataSource, advancedConfig)
 	if err != nil {
 		return nil, "", err
 	}
@@ -627,7 +628,7 @@ func (fd *fixedDSNDataSource) DSN() (string, error) {
 type awsIAMDataSource struct {
 	baseDSN dsnFormatter
 	region  string
-	session *awssession.Session
+	cfg     *aws.Config
 }
 
 func (aid *awsIAMDataSource) DriverName() string {
@@ -635,8 +636,8 @@ func (aid *awsIAMDataSource) DriverName() string {
 }
 
 func (aid *awsIAMDataSource) DSN() (string, error) {
-	creds := aid.session.Config.Credentials
-	token, err := rdsutils.BuildAuthToken(aid.baseDSN.Endpoint(), aid.region, aid.baseDSN.Username(), creds)
+	creds := aid.cfg.Credentials
+	token, err := rdsauth.BuildAuthToken(context.Background(), aid.baseDSN.Endpoint(), aid.region, aid.baseDSN.Username(), creds)
 	if err != nil {
 		return "", status.UnavailableErrorf("could not obtain AWS IAM auth token: %s", err)
 	}
@@ -662,7 +663,7 @@ func loadAWSRDSCACerts(fileResolver fs.FS) (*x509.CertPool, error) {
 	return certPool, nil
 }
 
-func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
+func ParseDatasource(ctx context.Context, fileResolver fs.FS, datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
 	if *advancedConfig != (AdvancedConfig{}) {
 		ac := advancedConfig
 		dsn, err := newDSNFormatter(ac)
@@ -698,14 +699,14 @@ func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *Adva
 				dsn.AddParam("allowCleartextPasswords", "true")
 			}
 
-			sess, err := awssession.NewSession()
+			cfg, err := awsconfig.LoadDefaultConfig(ctx)
 			if err != nil {
 				return nil, status.FailedPreconditionErrorf("could not initialize AWS session: %s", err)
 			}
 			return &awsIAMDataSource{
 				baseDSN: dsn,
 				region:  ac.Region,
-				session: sess,
+				cfg:     &cfg,
 			}, nil
 		}
 
@@ -832,7 +833,7 @@ func (r *dbStatsRecorder) recordStats() {
 	r.lastRecordedStats = stats
 }
 
-func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
+func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces.DBHandle, error) {
 	if *dataSource == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
@@ -848,7 +849,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 		}
 	}
 
-	primaryDB, driverName, err := openDB(env.GetFileResolver(), *dataSource, advDataSource)
+	primaryDB, driverName, err := openDB(ctx, env.GetFileResolver(), *dataSource, advDataSource)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
@@ -901,7 +902,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
-		replicaDB, readDialect, err := openDB(env.GetFileResolver(), *readReplica, advReadReplica)
+		replicaDB, readDialect, err := openDB(ctx, env.GetFileResolver(), *readReplica, advReadReplica)
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("could not configure read replica database: %s", err)
 		}

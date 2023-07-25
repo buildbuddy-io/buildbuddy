@@ -246,6 +246,8 @@ func IsImportantEvent(event *build_event_stream.BuildEvent) bool {
 		return true
 	case *build_event_stream.BuildEvent_BuildMetadata:
 		return true
+	case *build_event_stream.BuildEvent_BuildToolLogs:
+		return true
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
 		return true
 	case *build_event_stream.BuildEvent_WorkflowConfigured:

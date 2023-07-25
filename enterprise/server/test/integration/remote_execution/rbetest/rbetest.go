@@ -56,6 +56,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -264,7 +265,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 		APIKey1:     key.Value,
 		rootDataDir: rootDataDir,
 	}
-	rbe.testCommandController = newTestCommandController(t)
+	rbe.testCommandController = newTestCommandController(t, testEnv)
 	rbe.rbeClient = rbeclient.New(rbe)
 
 	t.Cleanup(func() {
@@ -607,7 +608,7 @@ func (c *testCommandController) waitDisconnected(ctx context.Context, name strin
 	return state.WaitDisconnected(ctx)
 }
 
-func newTestCommandController(t *testing.T) *testCommandController {
+func newTestCommandController(t *testing.T, env environment.Env) *testCommandController {
 	port := testport.FindFree(t)
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
@@ -622,7 +623,7 @@ func newTestCommandController(t *testing.T) *testCommandController {
 		commandState:        make(map[string]*testCommandState),
 	}
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	retpb.RegisterCommandControllerServer(server, controller)
 	go server.Serve(listener)
 

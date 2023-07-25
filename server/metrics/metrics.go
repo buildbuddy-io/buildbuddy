@@ -1850,6 +1850,28 @@ var (
 		Help:      "Age of encrypted keys (i.e. how long it has been since the keys were re-encrypted).",
 	})
 
+	PebbleCacheEvictionResampleLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_eviction_resample_latency_usec",
+		Help:      "Latency of resampling during a single eviction iteration.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 5*time.Second, 2),
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
+	PebbleCacheEvictionEvictLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_eviction_evict_latency_usec",
+		Help:      "Latency of evicting a single key.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 5*time.Second, 2),
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	PebbleCachePebbleCompactCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
