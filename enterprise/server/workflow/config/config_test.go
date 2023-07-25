@@ -42,8 +42,16 @@ func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
 	}{
 		{"main", "main", true},
 		{"main", "other", false},
+		{"main", "gh-readonly-queue/main/pr-1-1111111111111111111111111111111111111111", false},
 		{"*", "main", true},
 		{"*", "other", true},
+		{"*", "gh-readonly-queue/main/pr-1-1111111111111111111111111111111111111111", true},
+		{"gh-readonly-queue/*", "main", false},
+		{"gh-readonly-queue/*", "other", false},
+		{"gh-readonly-queue/*", "gh-readonly-queue", false},
+		{"gh-readonly-queue/*", "gh-readonly-queue/", true},
+		{"gh-readonly-queue/*", "gh-readonly-queue/main/pr-1-1111111111111111111111111111111111111111", true},
+		{"gh-readonly-queue/*", "gh-READONLY-queue/main/pr-1-1111111111111111111111111111111111111111", false},
 	} {
 		action := &config.Action{
 			Triggers: &config.Triggers{
