@@ -492,6 +492,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_bazelbuild_bazelisk",
+        build_directives = [
+            "gazelle:resolve github.com/bgentry/go-netrc/netrc @com_github_bgentry_go_netrc//netrc:go_default_library",
+        ],
         build_file_generation = "on",
         importpath = "github.com/bazelbuild/bazelisk",
         sum = "h1:TDt+a1PYrnBF9on3WRJUisXXFhCMrhcNo8OebyS5Q34=",
@@ -625,6 +628,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_bojand_ghz",
+        build_directives = [
+            "gazelle:proto package",
+        ],
         importpath = "github.com/bojand/ghz",
         sum = "h1:dTMxg+tUcLMw8BYi7vQPjXsrM2DJ20ns53hz1am1SbQ=",
         version = "v0.117.0",
@@ -938,6 +944,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_cncf_xds_go",
+        build_directives = [
+            "gazelle:resolve go github.com/envoyproxy/protoc-gen-validate/validate @com_github_envoyproxy_protoc_gen_validate//validate:go_default_library",
+        ],
         importpath = "github.com/cncf/xds/go",
         sum = "h1:/inchEIKaYC1Akx+H+gqO04wryn5h75LSazbRlnya1k=",
         version = "v0.0.0-20230607035331-e9ce68804cb4",
@@ -1524,6 +1533,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_envoyproxy_go_control_plane",
+        build_directives = [
+            "gazelle:resolve go github.com/envoyproxy/protoc-gen-validate/validate @com_github_envoyproxy_protoc_gen_validate//validate:go_default_library",
+        ],
         importpath = "github.com/envoyproxy/go-control-plane",
         sum = "h1:wSUXTlLfiAQRWs2F+p+EKOY9rUyis1MyGqJ2DIk5HpM=",
         version = "v0.11.1",
@@ -1597,6 +1609,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_firecracker_microvm_firecracker_go_sdk",
+        build_directives = [
+            "gazelle:resolve go github.com/containernetworking/cni/pkg/types/current @com_github_containernetworking_cni//pkg/types/current",
+        ],
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
         replace = "github.com/bduffany/firecracker-go-sdk",
         sum = "h1:gxdryq8e81djt9+N7gUa4FVJO427la9UUQEiMo2B8tE=",
@@ -2276,6 +2291,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_protobuf",
         importpath = "github.com/golang/protobuf",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:com_github_golang_protobuf-gazelle.patch"],
         sum = "h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=",
         version = "v1.5.3",
     )
@@ -4207,6 +4225,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_nishanths_exhaustive",
+        build_directives = [
+            "gazelle:map_kind go_library @io_bazel_rules_go//go:def.bzl",
+            "gazelle:resolve go switch/y @com_github_nishanths_exhaustive//exhaustive/testdata/src/switch/y",
+            "gazelle:resolve go map/y @com_github_nishanths_exhaustive//exhaustive/testdata/src/map/y",
+            "gazelle:resolve go golang.org/x/tools/go/analysis @org_golang_x_tools//go/analysis:go_default_library",
+            "gazelle:resolve go golang.org/x/tools/go/analysis/passes/inspect @org_golang_x_tools//go/analysis/passes/inspect:go_default_library",
+            "gazelle:resolve go golang.org/x/tools/go/ast/inspector @org_golang_x_tools//go/ast/inspector:go_default_library",
+            "gazelle:resolve go golang.org/x/tools/go/ast/astutil @org_golang_x_tools//go/ast/astutil:go_default_library",
+        ],
         importpath = "github.com/nishanths/exhaustive",
         sum = "h1:+ANTMqRNrqwInnP9aszg/0jDo+zbXa4x66U19Bx/oTk=",  # keep
         version = "v0.2.3",  # keep
@@ -4308,6 +4335,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_opencontainers_selinux",
+        build_directives = [
+            "gazelle:resolve go github.com/willf/bitset @com_github_willf_bitset//:bitset",
+        ],
         importpath = "github.com/opencontainers/selinux",
         sum = "h1:+5Zbo97w3Lbmb3PeqQtpmTkMwsW5nRI3YaLpt7tQ7oU=",
         version = "v1.11.0",
@@ -5378,7 +5408,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "gitlab.com/arm-research/smarter/smarter-device-manager",
         strip_prefix = "smarter-device-manager-v1.20.7",
         sha256 = "b2eb7e20373fbe257361fceff264037cac7d259ee075659fe1ec429c122e4d13",
+        build_directives = [
+            "gazelle:resolve go google.golang.org/grpc @org_golang_google_grpc//:grpc",
+        ],
         urls = ["https://gitlab.com/arm-research/smarter/smarter-device-manager/-/archive/v1.20.7/smarter-device-manager-v1.20.7.zip"],
+        type = "zip",
     )
 
     go_repository(
@@ -6540,6 +6574,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "io_opentelemetry_go_contrib_detectors_gcp",
+        build_directives = [
+            "gazelle:resolve go go.opentelemetry.io/otel/semconv/v1.4.0 @io_opentelemetry_go_otel//semconv/v1.4.0:v1_4_0",
+        ],
         importpath = "go.opentelemetry.io/contrib/detectors/gcp",
         sum = "h1:SsuF2+gqrnmTKSz+KLXcx3A4A7PZXqbuRZbm4I6HcX0=",
         version = "v1.17.0",
@@ -6547,6 +6584,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
+        build_directives = [
+            "gazelle:resolve go go.opentelemetry.io/otel/semconv/v1.4.0 @io_opentelemetry_go_otel//semconv/v1.4.0:v1_4_0",
+        ],
         importpath = "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc",
         sum = "h1:ZOLJc06r4CB42laIXg/7udr0pbZyuAihN10A/XuiQRY=",
         version = "v0.42.0",
@@ -6560,6 +6600,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "io_opentelemetry_go_otel",
+        # The OpenTelemetry packages use internal packages across module boundaries which is legal in Go but seems to
+        # confuse Gazelle.
+        build_directives = [
+            "gazelle:go_visibility @io_opentelemetry_go_otel_metric//:__subpackages__",
+        ],
+        build_file_proto_mode = "disable",
         importpath = "go.opentelemetry.io/otel",
         sum = "h1:Z7GVAX/UkAXPKsy94IU+i6thsQS4nb7LviLpnaNeW8s=",
         version = "v1.16.0",
@@ -6567,6 +6613,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "io_opentelemetry_go_otel_exporters_jaeger",
+        build_directives = [
+            "gazelle:resolve go go.opentelemetry.io/otel/semconv/v1.4.0 @io_opentelemetry_go_otel//semconv/v1.4.0:v1_4_0",
+        ],
         importpath = "go.opentelemetry.io/otel/exporters/jaeger",
         sum = "h1:YhxxmXZ011C0aDZKoNw+juVWAmEfv/0W2XBOv9aHTaA=",
         version = "v1.16.0",
@@ -6618,6 +6667,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "io_opentelemetry_go_otel_sdk",
+        build_directives = [
+            "gazelle:resolve go go.opentelemetry.io/otel/semconv/v1.4.0 @io_opentelemetry_go_otel//semconv/v1.4.0:v1_4_0",
+        ],
         importpath = "go.opentelemetry.io/otel/sdk",
         sum = "h1:Z1Ok1YsijYL0CSJpHt4cS3wDDh7p572grzNrBMiMWgE=",
         version = "v1.16.0",
@@ -6862,6 +6914,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_tools",
         importpath = "golang.org/x/tools",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_x_tools-gazelle.patch"],
         sum = "h1:tvDr/iQoUqNdohiYm0LmmKcBk+q86lb9EprIUFhHHGg=",
         version = "v0.10.0",
     )
