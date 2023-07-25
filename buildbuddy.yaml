@@ -77,7 +77,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare
+      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare --cache_test_results=false
 
 plugins:
   - path: cli/plugins/go-deps
