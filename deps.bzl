@@ -5378,6 +5378,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "gitlab.com/arm-research/smarter/smarter-device-manager",
         strip_prefix = "smarter-device-manager-v1.20.7",
         sha256 = "b2eb7e20373fbe257361fceff264037cac7d259ee075659fe1ec429c122e4d13",
+        build_directives = [
+            "gazelle:resolve go google.golang.org/grpc @org_golang_google_grpc//:grpc",
+        ],
         urls = ["https://gitlab.com/arm-research/smarter/smarter-device-manager/-/archive/v1.20.7/smarter-device-manager-v1.20.7.zip"],
     )
 
