@@ -119,7 +119,7 @@ go_test(
 # firecracker_test and remove this one.
 go_test(
     name = "firecracker_test_blockio",
-    size = "large",
+    size = "enormous",
     timeout = "long",
     srcs = ["firecracker_test.go"],
     args = [
