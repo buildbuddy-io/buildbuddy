@@ -163,9 +163,9 @@ const METRIC_OPTIONS: MetricOption[] = [
     }),
   },
   {
-    name: "CAS cache misses",
+    name: "Action cache misses",
     metric: stat_filter.Metric.create({
-      invocation: stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC,
+      invocation: stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC,
     }),
   },
   {
@@ -179,6 +179,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     }),
   },
   {
+    name: "Execution input download size",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC,
+    }),
+  },
+  {
     name: "Execution action execution time",
     metric: stat_filter.Metric.create({
       execution: stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC,
@@ -188,6 +194,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     name: "Execution output upload time",
     metric: stat_filter.Metric.create({
       execution: stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC,
+    }),
+  },
+  {
+    name: "Execution output upload size",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC,
     }),
   },
   {
@@ -230,6 +242,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
           return (v / 1000000).toFixed(2) + "s";
         case stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC:
+        case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
+        case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
           return format.bytes(v);
         default:
           return v.toString();
@@ -245,6 +259,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         case stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC:
           return format.bytes(v);
         case stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC:
+        case stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC:
         default:
           return v.toString();
       }

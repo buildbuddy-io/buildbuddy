@@ -8,14 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -23,6 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+
+	s3manager "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 )
 
 var (
@@ -37,7 +38,7 @@ var (
 	awsS3StaticCredentialsID      = flag.String("storage.aws_s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
 	awsS3StaticCredentialsSecret  = flagutil.New("storage.aws_s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.", flagutil.SecretTag)
 	awsS3StaticCredentialsToken   = flag.String("storage.aws_s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
-	awsS3DisableSSL               = flag.Bool("storage.aws_s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.")
+	awsS3DisableSSL               = flagutil.New("storage.aws_s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.", flagutil.DeprecatedTag("Specify a non-HTTPS endpoint instead."))
 	awsS3ForcePathStyle           = flag.Bool("storage.aws_s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
 )
 
@@ -49,10 +50,17 @@ const (
 
 // AWS stuff
 type AwsS3BlobStore struct {
-	s3         *s3.S3
+	client     *s3.Client
 	bucket     *string
 	downloader *s3manager.Downloader
 	uploader   *s3manager.Uploader
+}
+
+func unwrap(err error) error {
+	for unwrappable, ok := err.(interface{ Unwrap() error }); ok; unwrappable, ok = unwrappable.Unwrap().(interface{ Unwrap() error }) {
+		err = unwrappable.Unwrap()
+	}
+	return err
 }
 
 func UseAwsS3BlobStore() bool {
@@ -60,50 +68,67 @@ func UseAwsS3BlobStore() bool {
 }
 
 func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
-	config := &aws.Config{
-		Region: aws.String(*awsS3Region),
+	configOptions := []func(*config.LoadOptions) error{
+		config.WithRegion(*awsS3Region),
 	}
 	// See https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials
 	if *awsS3CredentialsProfile != "" {
 		log.Debugf("AWS blobstore credentials profile found: %q", *awsS3CredentialsProfile)
-		config.Credentials = credentials.NewSharedCredentials("", *awsS3CredentialsProfile)
+		configOptions = append(configOptions, config.WithSharedConfigProfile(*awsS3CredentialsProfile))
 	}
 	if *awsS3StaticCredentialsID != "" && *awsS3StaticCredentialsSecret != "" {
 		log.Debugf("AWS blobstore static credentials found: %q", *awsS3StaticCredentialsID)
-		config.Credentials = credentials.NewStaticCredentials(*awsS3StaticCredentialsID, *awsS3StaticCredentialsSecret, *awsS3StaticCredentialsToken)
+		configOptions = append(configOptions, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(*awsS3StaticCredentialsID, *awsS3StaticCredentialsSecret, *awsS3StaticCredentialsToken),
+		))
 	}
 	if *awsS3Endpoint != "" {
 		log.Debugf("AWS blobstore endpoint found: %q", *awsS3Endpoint)
-		config.Endpoint = aws.String(*awsS3Endpoint)
+		configOptions = append(configOptions, config.WithEndpointResolverWithOptions(
+			aws.EndpointResolverWithOptionsFunc(
+				func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+					return aws.Endpoint{
+						URL:               *awsS3Endpoint,
+						SigningRegion:     *awsS3Region,
+						HostnameImmutable: true,
+					}, nil
+				},
+			),
+		))
 	}
-	if *awsS3DisableSSL {
-		log.Debug("AWS blobstore disabling SSL")
-		config.DisableSSL = aws.Bool(*awsS3DisableSSL)
-	}
-	if *awsS3ForcePathStyle {
-		log.Debug("AWS blobstore forcing path style")
-		config.S3ForcePathStyle = aws.Bool(*awsS3ForcePathStyle)
-	}
-	sess, err := session.NewSession(config)
+	cfg, err := config.LoadDefaultConfig(ctx, configOptions...)
 	if err != nil {
 		return nil, err
 	}
-	log.Debug("AWS blobstore session created")
+	log.Debug("AWS blobstore config created")
 
 	if *awsS3WebIdentityTokenFilePath != "" {
-		config.Credentials = credentials.NewCredentials(stscreds.NewWebIdentityRoleProvider(sts.New(sess), *awsS3RoleARN, *awsS3RoleSessionName, *awsS3WebIdentityTokenFilePath))
+		cfg.Credentials = stscreds.NewWebIdentityRoleProvider(
+			sts.NewFromConfig(cfg),
+			*awsS3RoleARN,
+			stscreds.IdentityTokenFile(*awsS3WebIdentityTokenFilePath),
+			func(o *stscreds.WebIdentityRoleOptions) {
+				o.RoleSessionName = *awsS3RoleSessionName
+			},
+		)
 		log.Debugf("AWS web identity credentials set (%s, %s, %s)", *awsS3RoleARN, *awsS3RoleSessionName, *awsS3WebIdentityTokenFilePath)
 	}
 
 	// Create S3 service client
-	svc := s3.New(sess)
+	client := s3.NewFromConfig(
+		cfg,
+		func(o *s3.Options) {
+			log.Debug("AWS blobstore forcing path style")
+			o.UsePathStyle = *awsS3ForcePathStyle
+		},
+	)
 	log.Debug("AWS blobstore service client created")
 
 	awsBlobStore := &AwsS3BlobStore{
-		s3:         svc,
-		bucket:     aws.String(*awsS3Bucket),
-		downloader: s3manager.NewDownloader(sess),
-		uploader:   s3manager.NewUploader(sess),
+		client:     client,
+		bucket:     awsS3Bucket,
+		downloader: s3manager.NewDownloader(client),
+		uploader:   s3manager.NewUploader(client),
 	}
 
 	// S3 access points can't modify or delete buckets
@@ -122,15 +147,15 @@ func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
 
 func (a *AwsS3BlobStore) bucketExists(ctx context.Context, bucketName string) (bool, error) {
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err := a.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+	_, err := a.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucketName})
 	spn.End()
 	if err == nil {
 		return true, nil
 	}
-	aerr := err.(awserr.Error)
+	aerr, ok := unwrap(err).(smithy.APIError)
 	// AWS returns codes as strings
 	// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
-	if aerr.Code() != "NotFound" {
+	if ok && aerr.ErrorCode() != "NotFound" {
 		return false, err
 	}
 	return false, nil
@@ -147,15 +172,13 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 		log.Infof("Creating storage bucket: %s", bucketName)
 		ctx, spn := tracing.StartSpan(ctx)
 		defer spn.End()
-		if _, err := a.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
+		if _, err := a.client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &bucketName}); err != nil {
 			return err
 		}
 		log.Debug("Waiting until AWS Bucket exists")
 		ctx, cancel := context.WithTimeout(ctx, bucketWaitTimeout)
 		defer cancel()
-		return a.s3.WaitUntilBucketExistsWithContext(ctx, &s3.HeadBucketInput{
-			Bucket: aws.String(bucketName),
-		})
+		return s3.NewBucketExistsWaiter(a.client).Wait(ctx, &s3.HeadBucketInput{Bucket: &bucketName}, bucketWaitTimeout)
 	}
 	log.Debugf("AWS blobstore bucket %q already exists", bucketName)
 	return nil
@@ -169,18 +192,18 @@ func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 }
 
 func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte, error) {
-	buff := &aws.WriteAtBuffer{}
+	buff := &s3manager.WriteAtBuffer{}
 
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
+	_, err := a.downloader.Download(ctx, buff, &s3.GetObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    &blobName,
 	})
 	spn.End()
 
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "NoSuchKey" {
+		if aerr, ok := unwrap(err).(smithy.APIError); ok {
+			if aerr.ErrorCode() == "NoSuchKey" {
 				return nil, status.NotFoundError(err.Error())
 			}
 		}
@@ -201,14 +224,14 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 }
 
 func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressedData []byte) (int, error) {
-	uploadParams := &s3manager.UploadInput{
+	uploadParams := &s3.PutObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    &blobName,
 		Body:   bytes.NewReader(compressedData),
 	}
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	if _, err := a.uploader.UploadWithContext(ctx, uploadParams); err != nil {
+	if _, err := a.uploader.Upload(ctx, uploadParams); err != nil {
 		return -1, err
 	}
 	return len(compressedData), nil
@@ -224,32 +247,36 @@ func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    &blobName,
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	if _, err := a.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
+	if _, err := a.client.DeleteObject(ctx, deleteParams); err != nil {
 		return err
 	}
 
-	return a.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
-		Bucket: a.bucket,
-		Key:    aws.String(blobName),
-	})
+	return s3.NewObjectNotExistsWaiter(a.client).Wait(
+		ctx,
+		&s3.HeadObjectInput{
+			Bucket: a.bucket,
+			Key:    &blobName,
+		},
+		bucketWaitTimeout,
+	)
 }
 
 func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	params := &s3.HeadObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    &blobName,
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	_, err := a.s3.HeadObjectWithContext(ctx, params)
+	_, err := a.client.HeadObject(ctx, params)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
+		if aerr, ok := unwrap(err).(smithy.APIError); ok && aerr.ErrorCode() == "NotFound" {
 			return false, nil
 		}
 		return false, err
@@ -269,11 +296,11 @@ func (a *AwsS3BlobStore) Writer(ctx context.Context, blobName string) (interface
 	// Upload from pr in a separate Go routine.
 	go func() {
 		defer pr.Close()
-		_, err := a.uploader.UploadWithContext(
+		_, err := a.uploader.Upload(
 			ctx,
-			&s3manager.UploadInput{
+			&s3.PutObjectInput{
 				Bucket: a.bucket,
-				Key:    aws.String(blobName),
+				Key:    &blobName,
 				Body:   pr,
 			},
 		)

@@ -11,12 +11,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/extra/redisotel/v8"
 	"github.com/go-redis/redis/v8"
-	"github.com/go-redsync/redsync/v4"
-
-	redsync_goredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
 )
 
 var (
@@ -185,8 +183,19 @@ func NewSimpleClient(redisTarget string, checker interfaces.HealthChecker, healt
 	return redisClient
 }
 
+var unlockScript = redis.NewScript(`
+	if redis.call("GET", KEYS[1]) == ARGV[1] then
+		return redis.call("DEL", KEYS[1])
+	else
+		return 0
+	end
+`)
+
 type redlock struct {
-	rmu *redsync.Mutex
+	rdb    redis.UniversalClient
+	key    string
+	value  string
+	expiry time.Duration
 }
 
 // NewWeakLock returns a distributed lock implemented using a single Redis
@@ -200,26 +209,32 @@ type redlock struct {
 // (b) It does not retry failed locking attempts.
 //
 // See https://redis.io/topics/distlock
-func NewWeakLock(rdb redis.UniversalClient, key string, expiry time.Duration) *redlock {
-	pool := redsync_goredis.NewPool(rdb)
-	rs := redsync.New(pool)
-	rmu := rs.NewMutex(key, redsync.WithTries(1), redsync.WithExpiry(expiry))
-	return &redlock{rmu}
+func NewWeakLock(rdb redis.UniversalClient, key string, expiry time.Duration) (*redlock, error) {
+	value, err := random.RandomString(20)
+	if err != nil {
+		return nil, err
+	}
+	return &redlock{
+		rdb:    rdb,
+		key:    key,
+		value:  value,
+		expiry: expiry,
+	}, nil
 }
 
 func (r *redlock) Lock(ctx context.Context) error {
-	err := r.rmu.LockContext(ctx)
-	if err == nil {
-		return nil
+	ok, err := r.rdb.SetNX(ctx, r.key, r.value, r.expiry).Result()
+	if err != nil {
+		return status.UnavailableErrorf("failed to attempt redis lock acquisition: %s", err)
 	}
-	if err == redsync.ErrFailed {
-		return status.ResourceExhaustedErrorf("Failed to acquire redis lock: %s", err)
+	if !ok {
+		return status.ResourceExhaustedErrorf("failed to acquire redis lock: already acquired")
 	}
-	return err
+	return nil
 }
 
 func (r *redlock) Unlock(ctx context.Context) error {
-	_, err := r.rmu.UnlockContext(ctx)
+	_, err := unlockScript.Run(ctx, r.rdb, []string{r.key}, r.value).Result()
 	return err
 }
 

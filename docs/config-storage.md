@@ -88,7 +88,6 @@ storage:
     static_credentials_id: "YOUR_MINIO_ACCESS_KEY"
     static_credentials_secret: "YOUR_MINIO_SECRET"
     endpoint: "http://localhost:9000"
-    disable_ssl: true
     s3_force_path_style: true
     region: "us-east-1"
     bucket: "buildbuddy-storage-bucket"

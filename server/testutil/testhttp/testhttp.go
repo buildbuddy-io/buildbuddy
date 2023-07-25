@@ -12,9 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// StartServer runs a test-scoped HTTP server and returns the base server URL
-// in the format "http://localhost:PORT"
-func StartServer(t *testing.T, handler http.Handler) *url.URL {
+func NewServer(t *testing.T) (*url.URL, net.Listener) {
 	port := testport.FindFree(t)
 
 	addr := fmt.Sprintf("localhost:%d", port)
@@ -23,10 +21,17 @@ func StartServer(t *testing.T, handler http.Handler) *url.URL {
 
 	log.Debugf("Test HTTP server listening on %s", addr)
 
-	go http.Serve(lis, handler)
 	t.Cleanup(func() {
 		err := lis.Close()
 		require.NoError(t, err)
 	})
-	return &url.URL{Scheme: "http", Host: addr}
+	return &url.URL{Scheme: "http", Host: addr}, lis
+}
+
+// StartServer runs a test-scoped HTTP server and returns the base server URL
+// in the format "http://localhost:PORT"
+func StartServer(t *testing.T, handler http.Handler) *url.URL {
+	u, lis := NewServer(t)
+	go http.Serve(lis, handler)
+	return u
 }

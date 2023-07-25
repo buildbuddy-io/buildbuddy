@@ -894,11 +894,11 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker pull ubuntu:20.04 &>/dev/null
+			docker pull ` + ubuntuImage + ` 2>&1 >/dev/null
 
 			# Try running a few commands
-			docker run --rm ubuntu:20.04 echo Hello
-			docker run --rm ubuntu:20.04 echo world
+			docker run --rm ` + ubuntuImage + ` echo Hello
+			docker run --rm ` + ubuntuImage + ` echo world
 
 			# Write some output to the workspace to be preserved
 			touch preserves.txt
@@ -930,7 +930,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		stat preserves.txt >/dev/null
 
 		# Make sure we can run docker images from cache
-		docker run --rm ubuntu:20.04 echo world
+		docker run --rm ` + ubuntuImage + ` echo world
 		`,
 	})
 

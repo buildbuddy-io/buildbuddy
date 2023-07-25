@@ -34,6 +34,9 @@ type Options = pebble.Options
 type IterOptions = pebble.IterOptions
 type Snapshot = pebble.Snapshot
 type Metrics = pebble.Metrics
+type EventListener = pebble.EventListener
+type WriteStallBeginInfo = pebble.WriteStallBeginInfo
+type DiskSlowInfo = pebble.DiskSlowInfo
 
 type Iterator interface {
 	io.Closer

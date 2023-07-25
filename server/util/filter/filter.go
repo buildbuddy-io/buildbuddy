@@ -21,6 +21,10 @@ func executionMetricToDbField(m stat_filter.ExecutionMetricType, paramPrefix str
 		return fmt.Sprintf("(%soutput_upload_completed_timestamp_usec - %soutput_upload_start_timestamp_usec)", paramPrefix, paramPrefix), nil
 	case stat_filter.ExecutionMetricType_PEAK_MEMORY_EXECUTION_METRIC:
 		return paramPrefix + "peak_memory_bytes", nil
+	case stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
+		return paramPrefix + "file_download_size_bytes", nil
+	case stat_filter.ExecutionMetricType_OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
+		return paramPrefix + "file_upload_size_bytes", nil
 	default:
 		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}
@@ -42,6 +46,8 @@ func invocationMetricToDbField(m stat_filter.InvocationMetricType, paramPrefix s
 		return paramPrefix + "download_throughput_bytes_per_second", nil
 	case stat_filter.InvocationMetricType_CAS_CACHE_UPLOAD_SPEED_INVOCATION_METRIC:
 		return paramPrefix + "upload_throughput_bytes_per_second", nil
+	case stat_filter.InvocationMetricType_ACTION_CACHE_MISSES_INVOCATION_METRIC:
+		return paramPrefix + "action_cache_misses", nil
 	default:
 		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}

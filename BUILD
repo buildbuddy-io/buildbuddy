@@ -28,6 +28,7 @@ write_file(
                 analyzer: {
                     "exclude_files": {
                         "external[\\\\,\\/]": "third_party",
+                        ".*\\.pb\\.go": "Auto-generated proto files",
                         # TODO(sluongng): this should be fixed on rules_go side
                         # https://github.com/bazelbuild/rules_go/issues/3619
                         "cgo[\\\\,\\/]github.com[\\\\,\\/]shirou[\\\\,\\/]gopsutil[\\\\,\\/]": "third_party cgo",
@@ -118,7 +119,6 @@ nogo(
         "-S1034",
         "-S1037",
         "-S1024",
-        "-SA1012",
         "-SA1019",
         "-SA1024",
         "-SA1029",
@@ -126,7 +126,6 @@ nogo(
         "-SA4009",
         "-SA4010",
         "-SA4011",
-        "-SA4021",
         "-SA5001",
         "-SA5011",
         "-SA9001",
@@ -138,7 +137,6 @@ nogo(
         "-ST1012",
         "-ST1016",
         "-ST1017",
-        "-ST1019",
         "-ST1020",
         "-ST1021",
         "-ST1022",

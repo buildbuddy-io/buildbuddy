@@ -37,3 +37,6 @@
 #
 # Print out test logs if there is any error
 #test --test_output=errors
+#
+# Enable Skymeld to speed up build
+#build --config=skymeld

@@ -1,12 +1,14 @@
 package healthcheck
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
@@ -25,8 +27,9 @@ import (
 )
 
 var (
-	maxShutdownDuration      = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
-	shutdownLameduckDuration = flag.Duration("shutdown_lameduck_duration", 0, "If set, the server will be marked unready but not run shutdown functions until this period passes.")
+	maxShutdownDuration           = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
+	shutdownLameduckDuration      = flag.Duration("shutdown_lameduck_duration", 0, "If set, the server will be marked unready but not run shutdown functions until this period passes.")
+	logGoroutineProfileOnShutdown = flag.Bool("log_goroutine_profile_on_shutdown", false, "Whether to log all goroutine stack traces on shutdown.")
 )
 
 const (
@@ -131,6 +134,10 @@ func (h *HealthChecker) handleShutdownFuncs() {
 	fmt.Printf("Caught interrupt signal; shutting down...\n")
 	ctx, cancel := context.WithTimeout(context.Background(), *maxShutdownDuration)
 	defer cancel()
+
+	if *logGoroutineProfileOnShutdown {
+		logGoroutineProfile()
+	}
 
 	time.Sleep(*shutdownLameduckDuration)
 
@@ -309,4 +316,17 @@ func (h *HealthChecker) Check(ctx context.Context, req *hlpb.HealthCheckRequest)
 
 func (h *HealthChecker) Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error {
 	return status.UnimplementedError("Watch not implemented")
+}
+
+func logGoroutineProfile() {
+	p := pprof.Lookup("goroutine")
+	if p == nil {
+		return
+	}
+	b := &bytes.Buffer{}
+	// debug=1 results in more compact output like "64 goroutines @ <location>"
+	// compared to debug=2 which would show the full stack 64 times.
+	const debugParam = 1
+	p.WriteTo(b, debugParam)
+	log.Info(b.String())
 }
