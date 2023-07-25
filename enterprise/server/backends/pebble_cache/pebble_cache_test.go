@@ -42,7 +42,6 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
@@ -2471,7 +2470,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 			desc := fmt.Sprintf("%s_%s", tc.name, tp.desc)
 			t.Run(desc, func(t *testing.T) {
 				var dataToWrite []byte
-				var rnToWrite, rnToRead *resource.ResourceName
+				var rnToWrite, rnToRead *rspb.ResourceName
 				if tc.isWriteCompressed {
 					dataToWrite = compressedBuf
 					rnToWrite = compressedRN
