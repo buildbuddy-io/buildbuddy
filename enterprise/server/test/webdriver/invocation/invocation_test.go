@@ -164,17 +164,14 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	// Create a personal API key with CAS-only permissions
 	wt.Find(`[href="/settings/personal/api-keys"]`).Click()
 	existingKeys := wt.FindAll(`.api-key-value`)
-	apiKey := ""
-	if len(existingKeys) > 0 {
-		apiKey = existingKeys[0].Text()
-	} else {
+	if len(existingKeys) == 0 {
 		wt.FindByDebugID("create-new-api-key").Click()
 		wt.Find(`.dialog-wrapper [name="label"]`).SendKeys("test-personal-key")
 		wt.FindByDebugID("cas-only-radio-button").Click()
 		wt.Find(`.dialog-wrapper button[type="submit"]`).Click()
-		wt.Find(`.api-key-value-hide`).Click()
-		apiKey = wt.Find(`.api-key-value`).Text()
 	}
+	wt.Find(`.api-key-value-hide`).Click()
+	apiKey := wt.Find(".api-key-value").Text()
 
 	// Get the build flags for BES + cache, using the personal API key
 	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(
