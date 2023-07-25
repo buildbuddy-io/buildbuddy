@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -201,6 +202,8 @@ type Chunk struct {
 // A COWStore can be created either by splitting a file into chunks, or loading
 // chunks from a directory containing artifacts exported by a COWStore instance.
 type COWStore struct {
+	mu sync.RWMutex
+
 	// Chunks is a mapping of chunk offset to Store implementation.
 	chunks map[int64]*Chunk
 	// Indexes of chunks which have been copied from the original chunks due to
@@ -337,18 +340,19 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
-		if !c.dirty[chunkOffset] {
-			// If we're newly dirtying a chunk, copy.
-			if err := c.copyChunk(chunkOffset); err != nil {
-				return 0, status.WrapError(err, "failed to copy chunk")
-			}
+		if err := c.copyChunk(chunkOffset); err != nil {
+			return 0, status.WrapError(err, "failed to copy chunk")
 		}
+
 		chunkRelativeOffset := (off + int64(n)) % c.chunkSizeBytes
 		writeSize := int(c.chunkSizeBytes - chunkRelativeOffset)
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
-		nw, err := c.chunks[chunkOffset].WriteAt(p[:writeSize], chunkRelativeOffset)
+		c.mu.RLock()
+		chunk := c.chunks[chunkOffset]
+		c.mu.RUnlock()
+		nw, err := chunk.WriteAt(p[:writeSize], chunkRelativeOffset)
 		n += nw
 		if err != nil {
 			return n, err
@@ -366,7 +370,7 @@ func (c *COWStore) Sync() error {
 	var lastErr error
 	// TODO: maybe parallelize
 	for offset, chunk := range c.chunks {
-		if !c.dirty[offset] {
+		if !c.Dirty(offset) {
 			continue
 		}
 		if err := chunk.Sync(); err != nil {
@@ -393,6 +397,8 @@ func (s *COWStore) SizeBytes() (int64, error) {
 
 // Dirty returns whether the chunk at the given offset is dirty.
 func (s *COWStore) Dirty(chunkOffset int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.dirty[chunkOffset]
 }
 
@@ -446,6 +452,14 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 }
 
 func (s *COWStore) copyChunk(chunkStartOffset int64) (err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.dirty[chunkStartOffset] {
+		// Chunk is already dirty - no need to copy
+		return nil
+	}
+
 	src := s.chunks[chunkStartOffset]
 	// Once we've created a copy, we no longer need the source chunk.
 	defer func() {
