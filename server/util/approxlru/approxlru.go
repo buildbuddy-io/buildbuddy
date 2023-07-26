@@ -268,7 +268,7 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 			continue
 		}
 
-		log.Warningf("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
+		log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
 		skip, err = l.onEvict(l.ctx, sample)
 		if err != nil {
 			log.Warningf("Could not evict %q: %s", sample.Key, err)
