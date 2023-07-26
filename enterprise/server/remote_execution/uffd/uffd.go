@@ -234,7 +234,10 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		if err != nil {
 			return status.WrapError(err, "translate to store offset")
 		}
-		hostPageAddr, err := memoryStore.GetPageAddress(uintptr(faultStoreOffset), false /*=write*/)
+
+		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
+
+		hostAddr, allocatedLen, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
 		if err != nil {
 			return status.WrapError(err, "get backing page address")
 		}
@@ -245,8 +248,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
 		}
 
-		// TODO(Maggie): Copy entire chunk, as opposed to just a page
-		_, err = resolvePageFault(uffd, uint64(guestPageAddr), uint64(hostPageAddr), uint64(pageSize))
+		destAddr := uint64(guestPageAddr - relOffset)
+		_, err = resolvePageFault(uffd, destAddr, uint64(hostAddr), uint64(allocatedLen))
 		if err != nil {
 			return err
 		}
