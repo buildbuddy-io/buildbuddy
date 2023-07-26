@@ -3,6 +3,7 @@ package s3_cache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -200,8 +201,8 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 	})
 	spn.End()
 	if err != nil {
-		awsErr, ok := unwrap(err).(smithy.APIError)
-		if ok && awsErr.ErrorCode() != "NoSuchLifecycleConfiguration" {
+		var ae smithy.APIError
+		if ok := errors.As(err, &ae); ok && ae.ErrorCode() != "NoSuchLifecycleConfiguration" {
 			return err
 		}
 	}
@@ -257,24 +258,13 @@ func (s3c *S3Cache) key(ctx context.Context, r *rspb.ResourceName) (string, erro
 	return k, nil
 }
 
-func unwrap(err error) error {
-	for unwrappable, ok := err.(interface{ Unwrap() error }); ok; unwrappable, ok = unwrappable.Unwrap().(interface{ Unwrap() error }) {
-		err = unwrappable.Unwrap()
-	}
-	return err
-}
-
 func isNotFoundErr(err error) bool {
-	awsErr, ok := unwrap(err).(smithy.APIError)
-	if !ok {
-		return false
-	}
-	switch awsErr.ErrorCode() {
-	case "NotFound", "NoSuchKey":
+	var nf *s3types.NotFound
+	var nsk *s3types.NoSuchKey
+	if errors.As(err, &nf) || errors.As(err, &nsk) {
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
 func (s3c *S3Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
