@@ -313,7 +313,11 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			unsupportedField := ""
 			var unsupportedFieldValue any
 			for f, v := range fields {
-				if v == nil || v == "" {
+				// If a column that we don't yet know about has an empty label
+				// or is an int64 (i.e. counter value), then it's safe to
+				// update.
+				_, isInt64 := v.(int64)
+				if v == nil || v == "" || isInt64 {
 					continue
 				}
 				if _, ok := schema.FieldsByDBName[f]; !ok {

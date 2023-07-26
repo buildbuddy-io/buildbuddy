@@ -605,8 +605,15 @@ type UsageCounts struct {
 	ActionCacheHits        int64
 	TotalDownloadSizeBytes int64
 
-	// NOTE: New fields added here should be annotated with
-	// `gorm:"not null;default:0"`
+	// READ BEFORE ADDING NEW COUNT COLUMNS!
+	//
+	// - New fields added here should be annotated with
+	//   `gorm:"not null;default:0"`
+	//
+	// - Current usage flush logic only supports int64 values; if a new datatype
+	//   is really needed then update usage.go > flushCounts(),
+	//   but it's strongly recommended to use int64 and use finer-grained
+	//   resolution instead.
 
 	LinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
 	MacExecutionDurationUsec   int64 `gorm:"not null;default:0"`
@@ -652,6 +659,14 @@ type Usage struct {
 	// per-region, this effectively partitions the usage table by region, allowing
 	// the FinalBeforeUsec logic to work independently in each region.
 	Region string `gorm:"not null;index:group_period_region_index_v2,priority:3"`
+
+	// IMPORTANT: if adding a new column to the usage "key"
+	// (group/period/region/labels), make sure it is forwards compatible during
+	// an app rollout! See the "ForwardCompatible" tests in usage_test.go.
+	//
+	// A current limitation is that int64 columns are always treated as counts
+	// rather than keys, so if a new int64 column is added to the key then some
+	// usage may be misattributed during an app rollout.
 
 	UsageCounts
 }

@@ -86,6 +86,28 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	return usages
 }
 
+func queryAllUsagesRaw(t *testing.T, te *testenv.TestEnv) []map[string]any {
+	var out []map[string]any
+	ctx := context.Background()
+	dbh := te.GetDBHandle()
+	rows, err := dbh.DB(ctx).Raw(`
+		SELECT * From "Usages"
+		ORDER BY group_id, period_start_usec, region ASC;
+	`).Rows()
+	require.NoError(t, err)
+
+	for rows.Next() {
+		row := map[string]any{}
+		err := dbh.DB(ctx).ScanRows(rows, &row)
+		require.NoError(t, err)
+		// Throw out Model timestamps to simplify assertions.
+		row["created_at_usec"] = 0
+		row["updated_at_usec"] = 0
+		out = append(out, row)
+	}
+	return out
+}
+
 // requireNoFurtherDBAccess makes the test fail immediately if it tries to
 // access the DB after this function is called.
 func requireNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
@@ -576,6 +598,91 @@ func TestUsageTracker_Upsert_ForwardCompatibleWithNewLabelFields(t *testing.T) {
 			UsageCounts:     tables.UsageCounts{Invocations: 1},
 		},
 	}, usages)
+}
+
+func TestUsageTracker_Upsert_ForwardCompatibleWithNewCountFields(t *testing.T) {
+	flags.Set(t, "app.usage_tracking_enabled", true)
+	flags.Set(t, "app.region", "us-west1")
+	te := setupEnv(t)
+	clock := testclock.StartingAt(usage1Collection1Start)
+	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
+	require.NoError(t, err)
+	ctx := context.Background()
+	ctx1 := authContext(te, "US1")
+
+	// Simulate a newer app version migrating the usage schema such that it has
+	// a new label column "unsupported_count" which we don't yet know about.
+	err = te.GetDBHandle().DB(ctx).Exec(`
+		ALTER TABLE "Usages" ADD unsupported_count BIGINT
+	`).Error
+	require.NoError(t, err)
+
+	// We should still be able to write usage data despite this new column
+	// being added.
+	err = ut.Increment(ctx1, &tables.UsageCounts{Invocations: 1})
+	require.NoError(t, err)
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+	err = te.GetMetricsCollector().Flush(ctx)
+	require.NoError(t, err)
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	usages := queryAllUsages(t, te)
+	require.Equal(t, []*tables.Usage{
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: usage1Start.UnixMicro(),
+			FinalBeforeUsec: usage1Collection2Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+		},
+	}, usages)
+
+	// Even if the count is set to a non-zero value, we should still be able
+	// to update the row.
+	res := te.GetDBHandle().DB(ctx).Exec(`
+		UPDATE "Usages"
+		SET unsupported_count = ?
+		WHERE
+			region = ?
+			AND group_id = ?
+			AND period_start_usec = ?
+		`,
+		3,
+		"us-west1",
+		"GR1",
+		usage1Start.UnixMicro(),
+	)
+	require.NoError(t, res.Error)
+
+	err = ut.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 7})
+	require.NoError(t, err)
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+	err = te.GetMetricsCollector().Flush(ctx)
+	require.NoError(t, err)
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	usages = queryAllUsages(t, te)
+	require.Equal(t, []*tables.Usage{
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: usage1Start.UnixMicro(),
+			FinalBeforeUsec: usage1Collection4Start.UnixMicro(),
+			UsageCounts: tables.UsageCounts{
+				Invocations:  1,
+				CASCacheHits: 7,
+				// unsupported_count should be '3' here technically; we just
+				// can't see it yet.
+			},
+		},
+	}, usages)
+	// Sanity check that we didn't somehow clear out the unsupported_count
+	// column.
+	rawRows := queryAllUsagesRaw(t, te)
+	require.Equal(t, 1, len(rawRows))
+	require.Equal(t, int64(3), rawRows[0]["unsupported_count"])
 }
 
 func increasingCountsStartingAt(value int64) *tables.UsageCounts {
