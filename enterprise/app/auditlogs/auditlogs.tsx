@@ -129,16 +129,11 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
         res = "Invocation";
         break;
     }
-    let label = "";
-    if (resourceID.name) {
-      label = resourceID.name;
-    } else if (resourceID.id) {
-      label = resourceID.id;
-    }
     return (
       <>
         <div>{res}</div>
-        <div>{label}</div>
+        {resourceID.id && <div>{resourceID.id}</div>}
+        {resourceID.name && <div>"{resourceID.name}"</div>}
       </>
     );
   }
@@ -159,11 +154,27 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
     return "";
   }
 
-  renderRequest(request: auditlog.Entry.ResourceRequest | null | undefined) {
-    if (!request) {
+  renderRequest(request: auditlog.Entry.Request | null | undefined) {
+    if (!request || !request.apiRequest) {
       return "";
     }
-    let obj = request.toJSON();
+
+    // Populate any available ID descriptor information by appending it
+    // directly to the field value. We can display this in a prettier
+    // way in the future, but this will do for now.
+    const idDescriptors = new Map<string, string>();
+    for (const desc of request.idDescriptors) {
+      idDescriptors.set(desc.id, desc.value);
+    }
+    if (request.apiRequest.updateGroupUsers) {
+      for (const update of request.apiRequest.updateGroupUsers.update) {
+        if (update.userId?.id && idDescriptors.has(update.userId.id)) {
+          update.userId.id += " (" + idDescriptors.get(update.userId.id) + ")";
+        }
+      }
+    }
+
+    let obj = request.apiRequest.toJSON();
     let vals = Object.values(obj);
     if (vals.length == 0) {
       return "";

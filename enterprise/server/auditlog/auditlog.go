@@ -41,20 +41,6 @@ type Logger struct {
 	payloadTypes map[protoreflect.MessageDescriptor]protoreflect.FieldDescriptor
 }
 
-func GroupAPIKeyResourceID(id string) *alpb.ResourceID {
-	return &alpb.ResourceID{
-		Type: alpb.ResourceType_GROUP_API_KEY,
-		Id:   id,
-	}
-}
-
-func UserAPIKeyResourceID(id string) *alpb.ResourceID {
-	return &alpb.ResourceID{
-		Type: alpb.ResourceType_USER_API_KEY,
-		Id:   id,
-	}
-}
-
 func GroupResourceID(id string) *alpb.ResourceID {
 	return &alpb.ResourceID{
 		Type: alpb.ResourceType_GROUP,
@@ -86,7 +72,7 @@ func Register(env environment.Env) error {
 	}
 
 	payloadTypes := make(map[protoreflect.MessageDescriptor]protoreflect.FieldDescriptor)
-	pfs := (&alpb.Entry_ResourceRequest{}).ProtoReflect().Descriptor().Fields()
+	pfs := (&alpb.Entry_APIRequest{}).ProtoReflect().Descriptor().Fields()
 	for i := 0; i < pfs.Len(); i++ {
 		pf := pfs.Get(i)
 		payloadTypes[pf.Message()] = pf
@@ -101,15 +87,15 @@ func Register(env environment.Env) error {
 }
 
 // wrapRequestProto automatically finds and sets the correct child message of
-// the ResourceState proto based on the type of the passed proto.
-func (l *Logger) wrapRequestProto(payload proto.Message) (*alpb.Entry_ResourceRequest, error) {
+// the ResourceRequest proto based on the type of the passed proto.
+func (l *Logger) wrapRequestProto(payload proto.Message) (*alpb.Entry_Request, error) {
 	fd, ok := l.payloadTypes[payload.ProtoReflect().Descriptor()]
 	if !ok {
 		return nil, status.InvalidArgumentErrorf("invalid payload proto: %s", payload.ProtoReflect().Descriptor())
 	}
-	payloadWrapper := &alpb.Entry_ResourceRequest{}
-	payloadWrapper.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(payload.ProtoReflect()))
-	return payloadWrapper, nil
+	apiRequest := &alpb.Entry_APIRequest{}
+	apiRequest.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(payload.ProtoReflect()))
+	return &alpb.Entry_Request{ApiRequest: apiRequest}, nil
 }
 
 func clearRequestContext(request proto.Message) proto.Message {
@@ -143,6 +129,9 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 		rp, err := l.wrapRequestProto(request)
 		if err != nil {
 			return status.WrapErrorf(err, "could not wrap request proto")
+		}
+		if err := l.fillIDDescriptors(ctx, rp); err != nil {
+			log.Warningf("could not fill ID descriptors: %s", err)
 		}
 		rpb, err := proto.Marshal(rp)
 		if err != nil {
@@ -188,27 +177,54 @@ func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb
 //     information in the shown request is redundant.
 //  2. resource IDs -- audit logs include a resource identifier for every entry
 //     so the ID under the request is redundant.
-func cleanRequest(e *alpb.Entry_ResourceRequest) *alpb.Entry_ResourceRequest {
-	e = proto.Clone(e).(*alpb.Entry_ResourceRequest)
-	if r := e.CreateApiKey; r != nil {
+func cleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
+	e = proto.Clone(e).(*alpb.Entry_Request)
+	if r := e.ApiRequest.CreateApiKey; r != nil {
 		r.GroupId = ""
 	}
-	if r := e.GetApiKeys; r != nil {
+	if r := e.ApiRequest.GetApiKeys; r != nil {
 		r.GroupId = ""
 	}
-	if r := e.UpdateApiKey; r != nil {
+	if r := e.ApiRequest.UpdateApiKey; r != nil {
 		r.Id = ""
 	}
-	if r := e.DeleteApiKey; r != nil {
+	if r := e.ApiRequest.DeleteApiKey; r != nil {
 		r.Id = ""
 	}
-	if r := e.UpdateGroup; r != nil {
+	if r := e.ApiRequest.UpdateGroup; r != nil {
 		r.Id = ""
 	}
-	if r := e.UpdateGroupUsers; r != nil {
+	if r := e.ApiRequest.UpdateGroupUsers; r != nil {
 		r.GroupId = ""
 	}
 	return e
+}
+
+func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) error {
+	userIDs := make(map[string]struct{})
+
+	if r := e.ApiRequest.UpdateGroupUsers; r != nil {
+		for _, u := range r.Update {
+			userIDs[u.GetUserId().GetId()] = struct{}{}
+		}
+	}
+
+	for uid := range userIDs {
+		userData, err := l.env.GetUserDB().GetUserByID(ctx, uid)
+		if err != nil {
+			return err
+		}
+		value := userData.Email
+		if userData.Email == "" {
+			value = userData.FirstName + " " + userData.LastName
+		}
+		e.IdDescriptors = append(e.IdDescriptors, &alpb.Entry_Request_IDDescriptor{
+			Id:    uid,
+			Value: value,
+		})
+	}
+
+	return nil
 }
 
 func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
@@ -250,8 +266,8 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 			return nil, err
 		}
 
-		var request alpb.Entry_ResourceRequest
-		if err := proto.Unmarshal([]byte(e.Request), &request); err != nil {
+		request := &alpb.Entry_Request{}
+		if err := proto.Unmarshal([]byte(e.Request), request); err != nil {
 			return nil, err
 		}
 
@@ -282,7 +298,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 				Name: e.ResourceName,
 			},
 			Action:  alpb.Action(e.Action),
-			Request: cleanRequest(&request),
+			Request: cleanRequest(request),
 		})
 	}
 
