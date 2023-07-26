@@ -53,7 +53,6 @@ func (f *File) SizeBytes() (int64, error) {
 // Mmap implements the Store interface using a memory-mapped file. This allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
 type Mmap struct {
-	mu     sync.RWMutex
 	data   []byte
 	mapped bool
 	closed bool
@@ -92,8 +91,6 @@ func NewMmapFd(fd, size int) (*Mmap, error) {
 }
 
 func (m *Mmap) initMap() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if m.mapped {
 		// Already mapped - return early
@@ -132,8 +129,6 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 	if off < 0 || int(off)+len(p) > len(m.data) {
 		return 0, status.InvalidArgumentErrorf("invalid read at offset 0x%x length 0x%x", off, len(p))
 	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	copy(p, m.data[int(off):int(off)+len(p)])
 	return len(p), nil
 }
@@ -145,15 +140,11 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 	if off < 0 || int(off)+len(p) > len(m.data) {
 		return 0, status.InvalidArgumentErrorf("invalid write at offset 0x%x length 0x%x", off, len(p))
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	copy(m.data[int(off):int(off)+len(p)], p)
 	return len(p), nil
 }
 
 func (m *Mmap) Sync() error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 
 	if !m.mapped {
 		return nil
@@ -162,8 +153,6 @@ func (m *Mmap) Sync() error {
 }
 
 func (m *Mmap) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	m.closed = true
 	if !m.mapped {
@@ -178,8 +167,6 @@ func (m *Mmap) SizeBytes() (int64, error) {
 		return 0, err
 	}
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	return int64(len(m.data)), nil
 }
 
@@ -190,8 +177,6 @@ func (m *Mmap) StartAddress() (uintptr, error) {
 		return 0, err
 	}
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	return memoryAddress(m.data), nil
 }
 
