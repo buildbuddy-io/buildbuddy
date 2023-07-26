@@ -6,8 +6,10 @@ import "proto/acl.proto";
 import "proto/api_key.proto";
 import "proto/context.proto";
 import "proto/encryption.proto";
+import "proto/github.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
+import "proto/workflow.proto";
 import "google/protobuf/timestamp.proto";
 
 message AuthenticatedAPIKey {
@@ -49,6 +51,9 @@ enum Action {
   LIST = 4;
   UPDATE_MEMBERSHIP = 5;
   UPDATE_ENCRYPTION_CONFIG = 6;
+  LINK_GITHUB_REPO = 7;
+  UNLINK_GITHUB_REPO = 8;
+  EXECUTE_CLEAN_WORKFLOW = 9;
 }
 
 message ResourceID {
@@ -78,6 +83,9 @@ message Entry {
     grp.UpdateGroupUsersRequest update_group_users = 6;
     invocation.UpdateInvocationRequest update_invocation = 7;
     encryption.SetEncryptionConfigRequest set_encryption_config = 8;
+    github.LinkRepoRequest link_repo = 9;
+    github.UnlinkRepoRequest unlink_repo = 10;
+    workflow.ExecuteWorkflowRequest execute_workflow = 11;
   }
   message Request {
     APIRequest api_request = 1;

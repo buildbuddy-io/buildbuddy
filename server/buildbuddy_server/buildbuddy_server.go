@@ -988,6 +988,9 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
+		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
+			al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_EXECUTE_CLEAN_WORKFLOW, req)
+		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
@@ -1090,14 +1093,28 @@ func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRep
 	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	return a.LinkGitHubRepo(ctx, req)
+	rsp, err := a.LinkGitHubRepo(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GroupId), alpb.Action_LINK_GITHUB_REPO, req)
+	}
+	return rsp, nil
 }
 func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
 	a := s.env.GetGitHubApp()
 	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	return a.UnlinkGitHubRepo(ctx, req)
+	rsp, err := a.UnlinkGitHubRepo(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GroupId), alpb.Action_UNLINK_GITHUB_REPO, req)
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {

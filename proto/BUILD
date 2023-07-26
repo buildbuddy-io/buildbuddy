@@ -30,8 +30,10 @@ proto_library(
         ":api_key_proto",
         ":context_proto",
         ":encryption_proto",
+        ":github_proto",
         ":group_proto",
         ":invocation_proto",
+        ":workflow_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
@@ -625,8 +627,10 @@ go_proto_library(
         ":api_key_go_proto",
         ":context_go_proto",
         ":encryption_go_proto",
+        ":github_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
+        ":workflow_go_proto",
     ],
 )
 
@@ -1224,9 +1228,11 @@ ts_proto_library(
         ":api_key_ts_proto",
         ":context_ts_proto",
         ":encryption_ts_proto",
+        ":github_ts_proto",
         ":group_ts_proto",
         ":invocation_ts_proto",
         ":timestamp_ts_proto",
+        ":workflow_ts_proto",
     ],
 )
 
