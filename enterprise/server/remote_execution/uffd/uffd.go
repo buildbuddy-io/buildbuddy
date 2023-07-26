@@ -247,6 +247,11 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 
 		_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 		if errno != 0 {
+			if errno == unix.ENOENT {
+				// The faulting process changed its virtual memory layout simultaneously with an outstanding UFFDIO_COPY
+				// Abort the previous UFFDIO_COPY and continue to serve subsequent faults
+				continue
+			}
 			return status.WrapError(errno, "UFFDIO_COPY")
 		}
 
