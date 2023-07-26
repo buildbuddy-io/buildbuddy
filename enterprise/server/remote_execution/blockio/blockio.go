@@ -262,6 +262,21 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 	}, nil
 }
 
+func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
+	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
+	return chunkRelativeAddress
+}
+
+func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
+	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkStartAddress, err := c.GetPageAddress(uintptr(chunkStartOffset), write)
+	if err != nil {
+		return 0, 0, err
+	}
+	return chunkStartAddress, c.chunkSizeBytes, nil
+}
+
 // GetPageAddress returns the memory address for the given byte offset into the store.
 //
 // This memory address can be used to handle a page fault with userfaultfd.
