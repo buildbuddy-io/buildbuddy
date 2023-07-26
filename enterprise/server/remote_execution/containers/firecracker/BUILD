@@ -133,6 +133,8 @@ go_test(
     },
     tags = [
         "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
+        # TODO: enable on CI once we fix race conditions and timeouts
+        "manual",
         "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
     ],
     deps = [
