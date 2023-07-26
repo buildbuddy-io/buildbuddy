@@ -361,7 +361,10 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
-		nw, err := c.chunks[chunkOffset].WriteAt(p[:writeSize], chunkRelativeOffset)
+		c.mu.Lock()
+		chunk := c.chunks[chunkOffset]
+		c.mu.Unlock()
+		nw, err := chunk.WriteAt(p[:writeSize], chunkRelativeOffset)
 		n += nw
 		if err != nil {
 			return n, err
