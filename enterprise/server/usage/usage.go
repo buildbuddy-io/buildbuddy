@@ -2,6 +2,8 @@ package usage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"strconv"
@@ -23,7 +25,9 @@ import (
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 )
 
-var region = flag.String("app.region", "", "The region in which the app is running.")
+var (
+	region = flag.String("app.region", "", "The region in which the app is running.")
+)
 
 const (
 	// periodDuration determines the length of time for usage data
@@ -55,9 +59,24 @@ const (
 	// flushing fails due to transient errors.
 	redisKeyTTL = 5 * periodDuration
 
-	redisUsageKeyPrefix  = "usage/"
-	redisGroupsKeyPrefix = redisUsageKeyPrefix + "groups/"
-	redisCountsKeyPrefix = redisUsageKeyPrefix + "counts/"
+	// Redis storage layout for buffered usage counts (V2):
+	//
+	// "usage/collections/{period}" points to a set of "collection" JSON objects
+	// where each is a serialized `Collection` struct. The Collection struct is
+	// effectively the usage row "key": group ID + label values.
+	//
+	// "usage/counts/{period}/{sha256(collection_json)}" holds the usage counts
+	// for the collection during the collection period.
+	//
+	// To do a flush, apps look at the N most recent collection periods which
+	// are "settled" (i.e. no more data will be collected, and therefore ready
+	// to be flushed). Then, they query "usage/collections/{period}" to get the
+	// list of keys, then for each key, they look up the counts. The combined
+	// (key, counts) are assembled into a Usage row and inserted into the DB.
+
+	redisUsageKeyPrefix       = "usage/"
+	redisCollectionsKeyPrefix = redisUsageKeyPrefix + "collections/"
+	redisCountsKeyPrefix      = redisUsageKeyPrefix + "counts/"
 
 	// Time format used to store Redis keys.
 	// Example: 2020-01-01T00:00:00Z
@@ -141,7 +160,7 @@ func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.
 	}, nil
 }
 
-func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error {
+func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc *tables.UsageCounts) error {
 	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) && ut.env.GetAuthenticator().AnonymousUsageEnabled() {
@@ -161,15 +180,22 @@ func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error 
 
 	t := ut.currentPeriod()
 
-	// Add the group ID to the set of groups with usage
-	groupsCollectionPeriodKey := groupsRedisKey(t)
-	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, groupsCollectionPeriodKey, redisKeyTTL, groupID); err != nil {
-		return err
+	collection := &Collection{
+		GroupID:     groupID,
+		UsageLabels: *labels,
+	}
+	collectionJSON, err := json.Marshal(collection)
+	if err != nil {
+		return status.WrapError(err, "marshal collection")
 	}
 	// Increment the hash values
-	countsKey := countsRedisKey(groupID, t)
+	countsKey := countsRedisKey(t, collectionJSON)
 	if err := ut.env.GetMetricsCollector().IncrementCountsWithExpiry(ctx, countsKey, counts, redisKeyTTL); err != nil {
-		return err
+		return status.WrapError(err, "increment counts in redis")
+	}
+	// Add the collection hash to the set of collections with usage
+	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsRedisKey(t), redisKeyTTL, string(collectionJSON)); err != nil {
+		return status.WrapError(err, "add collection hash to set in redis")
 	}
 
 	return nil
@@ -232,16 +258,36 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a period which is not yet "settled".
 	for p := ut.oldestWritablePeriod(); ut.isSettled(p); p = p.Next() {
-		// Read groups
-		gk := groupsRedisKey(p)
-		groupIDs, err := ut.rdb.SMembers(ctx, gk).Result()
+		// Read collections (JSON-serialized Collection structs)
+		gk := collectionsRedisKey(p)
+		collectionJSONs, err := ut.rdb.SMembers(ctx, gk).Result()
 		if err != nil {
 			return err
 		}
+		if len(collectionJSONs) == 0 {
+			continue
+		}
 
-		for _, groupID := range groupIDs {
+		for _, collectionJSON := range collectionJSONs {
+			ok, err := ut.supportsCollection(ctx, collectionJSON)
+			if err != nil {
+				return status.WrapError(err, "check DB schema supports collection")
+			}
+			if !ok {
+				// Collection JSON contains a new column; let a newer app flush
+				// instead.
+				log.Infof("Usage collection JSON %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", collectionJSON, p)
+				return nil
+			}
+		}
+
+		for _, collectionJSON := range collectionJSONs {
+			collection := &Collection{}
+			if err := json.Unmarshal([]byte(collectionJSON), collection); err != nil {
+				return status.WrapError(err, "unmarshal collection json")
+			}
 			// Read usage counts from Redis
-			ck := countsRedisKey(groupID, p)
+			ck := countsRedisKey(p, []byte(collectionJSON))
 			h, err := ut.rdb.HGetAll(ctx, ck).Result()
 			if err != nil {
 				return err
@@ -251,10 +297,12 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				return err
 			}
 			// Update counts in the DB
-			if err := ut.flushCounts(ctx, groupID, p, counts); err != nil {
+			if err := ut.flushCounts(ctx, collection.GroupID, p, counts, &collection.UsageLabels); err != nil {
 				return err
 			}
-			// Clean up the counts from Redis
+			// Clean up the counts from Redis. Don't delete the collection JSON
+			// content though, since those aren't specific to collection periods
+			// and they might still be needed. Instead, just let those expire.
 			if _, err := ut.rdb.Del(ctx, ck).Result(); err != nil {
 				return err
 			}
@@ -268,11 +316,12 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	return nil
 }
 
-func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, counts *tables.UsageCounts) error {
+func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, counts *tables.UsageCounts, labels *tables.UsageLabels) error {
 	pk := &tables.Usage{
 		GroupID:         groupID,
 		PeriodStartUsec: p.Start().UnixMicro(),
 		Region:          ut.region,
+		UsageLabels:     *labels,
 	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("insert_usage"), func(tx *db.DB) error {
@@ -287,10 +336,14 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, co
 				region = ?
 				AND group_id = ?
 				AND period_start_usec = ?
+				AND origin = ?
+				AND client = ?
 			`+dbh.SelectForUpdateModifier(),
 			pk.Region,
 			pk.GroupID,
 			pk.PeriodStartUsec,
+			pk.Origin,
+			pk.Client,
 		).Take(&tables.Usage{}).Error
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err
@@ -304,6 +357,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, co
 			GroupID:         pk.GroupID,
 			PeriodStartUsec: pk.PeriodStartUsec,
 			Region:          pk.Region,
+			UsageLabels:     *labels,
 			UsageCounts:     *counts,
 			// While we're migrating to INSERT-only flushing, we still need to
 			// write FinalBeforeUsec to be compatible with old apps that still
@@ -334,6 +388,26 @@ func (ut *tracker) lastSettledPeriod() period {
 // usage data written to it and is therefore safe to flush to the DB.
 func (ut *tracker) isSettled(c period) bool {
 	return !time.Time(c).After(time.Time(ut.lastSettledPeriod()))
+}
+
+// Returns whether the given JSON representing a Collection struct contains
+// only fields that are supported by this app; i.e. it returns false if the
+// Collection was written by a newer app.
+func (ut *tracker) supportsCollection(ctx context.Context, collectionJSON string) (bool, error) {
+	fields := map[string]any{}
+	if err := json.Unmarshal([]byte(collectionJSON), &fields); err != nil {
+		return false, err
+	}
+	schema, err := db.TableSchema(ut.env.GetDBHandle().DB(ctx), &tables.Usage{})
+	if err != nil {
+		return false, err
+	}
+	for f := range fields {
+		if _, ok := schema.FieldsByDBName[f]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // period is an interval of time starting at the beginning of a minute
@@ -377,12 +451,19 @@ func (c period) String() string {
 	return c.Start().Format(redisTimeKeyFormat)
 }
 
-func groupsRedisKey(c period) string {
-	return fmt.Sprintf("%s%s", redisGroupsKeyPrefix, c)
+type Collection struct {
+	// TODO: maybe make GroupID a field of tables.UsageLabels.
+	GroupID string `json:"group_id,omitempty"`
+	tables.UsageLabels
 }
 
-func countsRedisKey(groupID string, c period) string {
-	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, groupID, c)
+func collectionsRedisKey(c period) string {
+	return fmt.Sprintf("%s%s", redisCollectionsKeyPrefix, c)
+}
+
+func countsRedisKey(c period, collectionJSON []byte) string {
+	jsonHash := sha256.Sum256(collectionJSON)
+	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, c, fmt.Sprintf("%x", jsonHash))
 }
 
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {

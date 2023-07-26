@@ -614,6 +614,15 @@ type UsageCounts struct {
 	TotalCachedActionExecUsec  int64 `gorm:"not null;default:0"`
 }
 
+type UsageLabels struct {
+	// Origin identifies the network/location of the usage.
+	Origin string `json:"origin,omitempty" gorm:"not null;default:''"`
+
+	// Client describes the type of client responsible for the usage, such as
+	// "bazel" or "executor".
+	Client string `json:"client,omitempty" gorm:"not null;default:''"`
+}
+
 // Usage holds usage counter values for a group during a particular time period.
 type Usage struct {
 	Model
@@ -654,6 +663,8 @@ type Usage struct {
 	Region string `gorm:"not null;index:group_period_region_index_v2,priority:3"`
 
 	UsageCounts
+
+	UsageLabels
 }
 
 func (*Usage) TableName() string {
