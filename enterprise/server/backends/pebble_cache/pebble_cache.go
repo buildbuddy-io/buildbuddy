@@ -97,7 +97,7 @@ var (
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
 
 	// Chunking related flags
-	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes_bytes", 0, "Average size of chunks that's stored in the cache")
+	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes", 0, "Average size of chunks that's stored in the cache")
 )
 
 var (
@@ -1813,11 +1813,15 @@ type cdcWriter struct {
 	fileRecord *rfpb.FileRecord
 	key        filestore.PebbleKey
 
-	writtenChunks  []*rspb.ResourceName
 	shouldCompress bool
 	isCompressed   bool
 
-	chunker *chunker.Chunker
+	chunker       *chunker.Chunker
+	writtenChunks []*rspb.ResourceName
+	numChunks     int
+	firstChunk    []byte
+
+	eg *errgroup.Group
 }
 
 func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, isCompressed bool) (interfaces.CommittedWriteCloser, error) {
@@ -1840,7 +1844,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		isCompressed:   isCompressed,
 	}
 
-	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunkWhenSingle, cdcw.writeChunkWhenMultiple)
+	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
 	cdcw.chunker = chunker
 
 	cwc := ioutil.NewCustomCommitWriteCloser(cdcw)
@@ -1849,26 +1853,44 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		if err := cdcw.Close(); err != nil {
 			return err
 		}
-
-		numChunks, err := chunker.NumChunks()
-		if err != nil {
-			return err
+		if cdcw.numChunks == 1 {
+			return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, cdcw.firstChunk)
 		}
 		now := p.clock.Now().UnixMicro()
 
-		if numChunks > 1 {
-			md := &rfpb.FileMetadata{
-				FileRecord:      fileRecord,
-				StorageMetadata: cdcw.Metadata(),
-				StoredSizeBytes: bytesWritten,
-				LastAccessUsec:  now,
-				LastModifyUsec:  now,
-			}
-			return p.writeMetadata(ctx, db, key, md)
+		md := &rfpb.FileMetadata{
+			FileRecord:      fileRecord,
+			StorageMetadata: cdcw.Metadata(),
+			StoredSizeBytes: bytesWritten,
+			LastAccessUsec:  now,
+			LastModifyUsec:  now,
 		}
-		return nil
+		return p.writeMetadata(ctx, db, key, md)
 	}
 	return cwc, nil
+}
+
+func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
+	cdcw.numChunks++
+
+	if cdcw.numChunks == 1 {
+		cdcw.firstChunk = make([]byte, len(chunkData))
+		copy(cdcw.firstChunk, chunkData)
+		return nil
+	}
+
+	if cdcw.numChunks == 2 {
+		cdcw.eg, cdcw.ctx = errgroup.WithContext(cdcw.ctx)
+		cdcw.eg.SetLimit(10)
+		if err := cdcw.writeChunkWhenMultiple(cdcw.firstChunk); err != nil {
+			return err
+		}
+	}
+	// we need to copy the data because once the chunker calls Next, chunkData
+	// will be invalidated.
+	data := make([]byte, len(chunkData))
+	copy(data, chunkData)
+	return cdcw.writeChunkWhenMultiple(data)
 }
 
 func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.PebbleKey, chunkData []byte) error {
@@ -1932,11 +1954,11 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	if err != nil {
 		return err
 	}
-	err = cdcw.writeRawChunk(fileRecord, key, chunkData)
-	if err != nil {
-		return err
-	}
 	cdcw.writtenChunks = append(cdcw.writtenChunks, r)
+
+	cdcw.eg.Go(func() error {
+		return cdcw.writeRawChunk(fileRecord, key, chunkData)
+	})
 	return nil
 }
 
@@ -1955,8 +1977,14 @@ func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
 }
 
 func (cdcw *cdcWriter) Close() error {
+	defer cdcw.chunker.Close()
 	defer cdcw.db.Close()
-	return cdcw.chunker.Close()
+	if cdcw.eg != nil {
+		if err := cdcw.eg.Wait(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (cdcw *cdcWriter) Metadata() *rfpb.StorageMetadata {
