@@ -9,6 +9,7 @@ import "proto/encryption.proto";
 import "proto/github.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
+import "proto/secrets.proto";
 import "proto/workflow.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -86,6 +87,7 @@ message Entry {
     github.LinkRepoRequest link_repo = 9;
     github.UnlinkRepoRequest unlink_repo = 10;
     workflow.ExecuteWorkflowRequest execute_workflow = 11;
+    secrets.UpdateSecretRequest update_secret = 12;
   }
   message Request {
     APIRequest api_request = 1;

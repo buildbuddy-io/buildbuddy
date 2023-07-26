@@ -1204,7 +1204,17 @@ func (s *BuildBuddyServer) ListSecrets(ctx context.Context, req *skpb.ListSecret
 }
 func (s *BuildBuddyServer) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, error) {
 	if secretService := s.env.GetSecretService(); secretService != nil {
-		rsp, _, err := secretService.UpdateSecret(ctx, req)
+		rsp, newSecret, err := secretService.UpdateSecret(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if al := s.env.GetAuditLogger(); al != nil {
+			action := alpb.Action_UPDATE
+			if newSecret {
+				action = alpb.Action_CREATE
+			}
+			al.Log(ctx, auditlog.SecretResourceID(req.GetSecret().GetName()), action, req)
+		}
 		return rsp, err
 	}
 	return nil, status.UnimplementedError("Not implemented")
