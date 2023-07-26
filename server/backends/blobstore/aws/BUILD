@@ -19,7 +19,7 @@ go_library(
         "@com_github_aws_aws_sdk_go_v2_credentials//stscreds",
         "@com_github_aws_aws_sdk_go_v2_feature_s3_manager//:manager",
         "@com_github_aws_aws_sdk_go_v2_service_s3//:s3",
+        "@com_github_aws_aws_sdk_go_v2_service_s3//types",
         "@com_github_aws_aws_sdk_go_v2_service_sts//:sts",
-        "@com_github_aws_smithy_go//:smithy-go",
     ],
 )
