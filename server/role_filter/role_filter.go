@@ -78,8 +78,10 @@ var (
 		// Org API keys (implementation only returns developer-visible keys
 		// for developers; admins can see all keys).
 		"GetApiKeys",
+		"GetApiKey",
 		// User-level API keys
 		"GetUserApiKeys",
+		"GetUserApiKey",
 		"CreateUserApiKey",
 		"UpdateUserApiKey",
 		"DeleteUserApiKey",
