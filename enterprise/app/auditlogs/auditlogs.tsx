@@ -150,6 +150,12 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
         return "List";
       case Action.UPDATE_MEMBERSHIP:
         return "Update Membership";
+      case Action.LINK_GITHUB_REPO:
+        return "Link GitHub Repo";
+      case Action.UNLINK_GITHUB_REPO:
+        return "Unlink GitHub Repo";
+      case Action.EXECUTE_CLEAN_WORKFLOW:
+        return "Execute Clean Workflow";
     }
     return "";
   }
