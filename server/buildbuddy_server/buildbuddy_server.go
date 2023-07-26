@@ -1363,7 +1363,14 @@ func (s *BuildBuddyServer) SetEncryptionConfig(ctx context.Context, request *enp
 	if crypter == nil {
 		return nil, status.FailedPreconditionError("encryption not enabled in the server")
 	}
-	return crypter.SetEncryptionConfig(ctx, request)
+	rsp, err := crypter.SetEncryptionConfig(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(request.GetRequestContext().GetGroupId()), alpb.Action_UPDATE_ENCRYPTION_CONFIG, request)
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) GetEncryptionConfig(ctx context.Context, request *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {

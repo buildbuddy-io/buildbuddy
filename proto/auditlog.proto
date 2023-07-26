@@ -5,6 +5,7 @@ package auditlog;
 import "proto/acl.proto";
 import "proto/api_key.proto";
 import "proto/context.proto";
+import "proto/encryption.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
 import "google/protobuf/timestamp.proto";
@@ -47,6 +48,7 @@ enum Action {
   DELETE = 3;
   LIST = 4;
   UPDATE_MEMBERSHIP = 5;
+  UPDATE_ENCRYPTION_CONFIG = 6;
 }
 
 message ResourceID {
@@ -75,6 +77,7 @@ message Entry {
     grp.UpdateGroupRequest update_group = 5;
     grp.UpdateGroupUsersRequest update_group_users = 6;
     invocation.UpdateInvocationRequest update_invocation = 7;
+    encryption.SetEncryptionConfigRequest set_encryption_config = 8;
   }
   ResourceRequest request = 5;
 }
