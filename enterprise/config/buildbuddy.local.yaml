@@ -19,12 +19,12 @@ cache:
   disk:
     root_directory: /tmp/${USER}-buildbuddy-enterprise-cache
 auth:
-  enable_anonymous_usage: true
-  enable_self_auth: true
-  # oauth_providers:
-  #   - issuer_url: "https://accounts.google.com"
-  #     client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
-  #     client_secret: "${BB_DEV_OAUTH_CLIENT_SECRET}"
+  #enable_anonymous_usage: true
+  #enable_self_auth: true
+  oauth_providers:
+    - issuer_url: "https://accounts.google.com"
+      client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
+      client_secret: "${BB_DEV_OAUTH_CLIENT_SECRET}"
 github:
   client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
   client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
