@@ -2343,8 +2343,8 @@ github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635/go.mod h1:hkRG
 github.com/tchap/go-patricia v2.2.6+incompatible/go.mod h1:bmLyhP68RS6kStMGxByiQ23RP/odRBOTVjwp2cDyi6I=
 github.com/tebeka/selenium v0.9.9 h1:cNziB+etNgyH/7KlNI7RMC1ua5aH1+5wUlFQyzeMh+w=
 github.com/tebeka/selenium v0.9.9/go.mod h1:5Fr8+pUvU6B1OiPfkdCKdXZyr5znvVkxuPd0NOdZCQc=
-github.com/tempoz/tink-go-awskms/v2 v2.0.1 h1:Dl4YuXqB2gBdA3f7zGsLRGSrHEKpyVfecZesfdPa1Gg=
-github.com/tempoz/tink-go-awskms/v2 v2.0.1/go.mod h1:LOumZvTaoJvSWueznYF6YsccAntM3WfcR2KQSEob7M8=
+github.com/tempoz/tink-go-awskms/v2 v2.0.2 h1:By2yryngCb60kxlUOJxSeolCUSgyvcscaijsSDvelqY=
+github.com/tempoz/tink-go-awskms/v2 v2.0.2/go.mod h1:LOumZvTaoJvSWueznYF6YsccAntM3WfcR2KQSEob7M8=
 github.com/testcontainers/testcontainers-go v0.14.0/go.mod h1:hSRGJ1G8Q5Bw2gXgPulJOLlEBaYJHeBSOkQM5JLG+JQ=
 github.com/tidwall/pretty v1.0.0/go.mod h1:XNkn88O1ChpSDQmQeStsy+sBenx6DDtFZJxhVysOjyk=
 github.com/tink-crypto/tink-go-gcpkms/v2 v2.0.0 h1:lDyp8rMI1JWZDAE0X7wjAPbQ7bqF3qpsdY6gbCTbRZk=

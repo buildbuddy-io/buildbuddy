@@ -4666,8 +4666,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_tink_crypto_tink_go_awskms_v2",
         importpath = "github.com/tink-crypto/tink-go-awskms/v2",
         replace = "github.com/tempoz/tink-go-awskms/v2",
-        sum = "h1:Dl4YuXqB2gBdA3f7zGsLRGSrHEKpyVfecZesfdPa1Gg=",
-        version = "v2.0.1",
+        sum = "h1:By2yryngCb60kxlUOJxSeolCUSgyvcscaijsSDvelqY=",
+        version = "v2.0.2",
     )
     go_repository(
         name = "com_github_tink_crypto_tink_go_gcpkms_v2",
