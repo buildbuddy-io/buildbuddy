@@ -267,15 +267,15 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
-	if write && !c.dirty[chunkStartOffset] {
-		if err := c.copyChunk(chunkStartOffset); err != nil {
+	if write {
+		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
 			return 0, status.WrapError(err, "copy chunk")
 		}
 	}
 	chunk := c.chunks[chunkStartOffset]
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
-		// can only happen for reads, since for writes we call copyChunk above.
+		// can only happen for reads, since for writes we call copyChunkIfNotDirty above.
 		return memoryAddress(c.zeroBuf) + chunkRelativeAddress, nil
 	}
 	// Non-empty chunk; initialize the lazy mmap (if applicable) and return
@@ -340,7 +340,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
-		if err := c.copyChunk(chunkOffset); err != nil {
+		if err := c.copyChunkIfNotDirty(chunkOffset); err != nil {
 			return 0, status.WrapError(err, "failed to copy chunk")
 		}
 
@@ -451,35 +451,34 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 	return size
 }
 
-func (s *COWStore) copyChunk(chunkStartOffset int64) (err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.dirty[chunkStartOffset] {
+func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
+	if s.Dirty(chunkStartOffset) {
 		// Chunk is already dirty - no need to copy
 		return nil
 	}
-
-	src := s.chunks[chunkStartOffset]
-	// Once we've created a copy, we no longer need the source chunk.
-	defer func() {
-		if src != nil {
-			src.Close()
-		}
-	}()
 
 	size := s.calculateChunkSize(chunkStartOffset)
 	dst, err := s.initDirtyChunk(chunkStartOffset, size)
 	if err != nil {
 		return status.WrapError(err, "initialize dirty chunk")
 	}
+
+	s.mu.Lock()
+	src := s.chunks[chunkStartOffset]
 	s.chunks[chunkStartOffset] = dst
 	s.dirty[chunkStartOffset] = true
+	s.mu.Unlock()
 
 	if src == nil {
 		// We had no data at this offset; nothing to copy.
 		return nil
 	}
+	// Once we've created a copy, we no longer need the source chunk.
+	defer func() {
+		if src != nil {
+			src.Close()
+		}
+	}()
 
 	b := s.copyBuf[:size]
 	// TODO: avoid a full read here in the case where the chunk contains holes.
