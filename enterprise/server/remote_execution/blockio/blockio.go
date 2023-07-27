@@ -226,8 +226,8 @@ type COWStore struct {
 	// This is used to serve memory page requests for holes.
 	zeroBuf []byte
 
-	// Scratch buffer used for copying chunks.
-	copyBuf []byte
+	// Concurrency-safe pool of buffers that can be used for copying chunks
+	copyBufPool sync.Pool
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -242,11 +242,17 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
 	}
+
 	return &COWStore{
-		chunks:         chunkMap,
-		dirty:          make(map[int64]bool, 0),
-		dataDir:        dataDir,
-		copyBuf:        make([]byte, chunkSizeBytes),
+		chunks:  chunkMap,
+		dirty:   make(map[int64]bool, 0),
+		dataDir: dataDir,
+		copyBufPool: sync.Pool{
+			New: func() any {
+				b := make([]byte, chunkSizeBytes)
+				return &b
+			},
+		},
 		zeroBuf:        make([]byte, chunkSizeBytes),
 		chunkSizeBytes: chunkSizeBytes,
 		totalSizeBytes: totalSizeBytes,
@@ -429,14 +435,18 @@ func (s *COWStore) WriteFile(path string) error {
 	if err := f.Truncate(s.totalSizeBytes); err != nil {
 		return status.WrapError(err, "truncate")
 	}
+
+	b := s.copyBufPool.Get().(*[]byte)
+	defer s.copyBufPool.Put(b)
+
 	for off, c := range s.chunks {
 		size := s.calculateChunkSize(off)
-		b := s.copyBuf[:size]
+		copyBuf := (*b)[:size]
 		// TODO: skip sparse regions in the chunk?
-		if _, err := readFullAt(c, b, 0); err != nil {
+		if _, err := readFullAt(c, copyBuf, 0); err != nil {
 			return status.WrapError(err, "read chunk")
 		}
-		if _, err := f.WriteAt(b, off); err != nil {
+		if _, err := f.WriteAt(copyBuf, off); err != nil {
 			return status.WrapError(err, "write chunk")
 		}
 	}
@@ -480,11 +490,14 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 		}
 	}()
 
-	b := s.copyBuf[:size]
+	b := s.copyBufPool.Get().(*[]byte)
+	defer s.copyBufPool.Put(b)
+	copyBuf := (*b)[:size]
+
 	// TODO: avoid a full read here in the case where the chunk contains holes.
 	// Can achieve this by having the Mmap keep around the underlying file
 	// descriptor and use fseek (SEEK_DATA) on it.
-	if _, err := readFullAt(src, b, 0); err != nil {
+	if _, err := readFullAt(src, copyBuf, 0); err != nil {
 		return status.WrapError(err, "read chunk for copy")
 	}
 	// Copy to the mmap but skip holes to avoid materializing them as blocks.
@@ -493,7 +506,7 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 		if remainder := size - off; blockSize > remainder {
 			blockSize = remainder
 		}
-		dataBlock := b[off : off+blockSize]
+		dataBlock := copyBuf[off : off+blockSize]
 		if IsEmptyOrAllZero(dataBlock) {
 			continue
 		}
