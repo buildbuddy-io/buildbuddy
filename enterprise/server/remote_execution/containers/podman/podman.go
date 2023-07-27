@@ -58,7 +58,8 @@ var (
 
 	// TODO(iain): delete executor.podman.run_soci_snapshotter flag once
 	// the snapshotter doesn't need root permissions to run.
-	runSociSnapshotter           = flag.Bool("executor.podman.run_soci_snapshotter", true, "If true, runs the soci snapshotter locally if needed for image streaming.")
+	sociStoreLogLevel            = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
+	runSociStoreLocally          = flag.Bool("executor.podman.run_soci_store", true, "If true, runs the soci store locally if needed for image streaming.")
 	imageStreamingEnabled        = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all public (non-authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 
@@ -123,7 +124,12 @@ type Provider struct {
 func runSociStore(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
-		cmd := exec.CommandContext(ctx, "soci-store", "--local_keychain_port", strconv.Itoa(*sociStoreKeychainPort), sociStorePath)
+		args := []string{fmt.Sprintf("--local_keychain_port=%d", *sociStoreKeychainPort)}
+		if *sociStoreLogLevel != "" {
+			args = append(args, fmt.Sprintf("--log-level=%s", *sociStoreLogLevel))
+		}
+		args = append(args, sociStorePath)
+		cmd := exec.CommandContext(ctx, "soci-store", args...)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
@@ -142,7 +148,7 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
 	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
 	if *imageStreamingEnabled {
-		if *runSociSnapshotter {
+		if *runSociStoreLocally {
 			go runSociStore(env.GetServerContext())
 		}
 
