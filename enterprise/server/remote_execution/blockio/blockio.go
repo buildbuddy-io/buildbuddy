@@ -201,8 +201,10 @@ type Chunk struct {
 //
 // A COWStore can be created either by splitting a file into chunks, or loading
 // chunks from a directory containing artifacts exported by a COWStore instance.
+//
+// A COWStore supports concurrent reads/writes, as long as they are to different chunks
 type COWStore struct {
-	mu sync.RWMutex
+	mu sync.RWMutex // Protects chunks and dirty
 
 	// Chunks is a mapping of chunk offset to Store implementation.
 	chunks map[int64]*Chunk
@@ -278,12 +280,16 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 			return 0, status.WrapError(err, "copy chunk")
 		}
 	}
+
+	c.mu.RLock()
 	chunk := c.chunks[chunkStartOffset]
+	c.mu.RUnlock()
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
 		// can only happen for reads, since for writes we call copyChunkIfNotDirty above.
 		return memoryAddress(c.zeroBuf) + chunkRelativeAddress, nil
 	}
+
 	// Non-empty chunk; initialize the lazy mmap (if applicable) and return
 	// the offset relative to the memory start address.
 	mm, ok := chunk.Store.(*Mmap)
@@ -299,7 +305,10 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 // Chunks returns all chunks sorted by offset.
 func (c *COWStore) Chunks() []*Chunk {
+	c.mu.RLock()
 	chunks := maps.Values(c.chunks)
+	c.mu.RUnlock()
+
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].Offset < chunks[j].Offset
 	})
@@ -321,7 +330,9 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		if readSize > len(p) {
 			readSize = len(p)
 		}
+		c.mu.RLock()
 		chunk := c.chunks[chunkOffset]
+		c.mu.RUnlock()
 		if chunk == nil {
 			// No chunk at this index yet; write all 0s.
 			for i := range p[:readSize] {
