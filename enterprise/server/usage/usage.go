@@ -276,7 +276,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, co
 		Region:          ut.region,
 	}
 	dbh := ut.env.GetDBHandle()
-	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_usage"), func(tx *db.DB) error {
+	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("insert_usage"), func(tx *db.DB) error {
 		log.Debugf("Flushing usage counts for key %+v", pk)
 
 		// First check whether the row already exists. Make sure to select for
@@ -297,7 +297,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, co
 			return err
 		}
 		if err == nil {
-			log.Warningf("Usage update dropped since the row already exists; this should only happen if redis locking has failed.")
+			alert.UnexpectedEvent("usage_update_skipped", "Usage flush skipped since the row already exists; this may indicate that redis locking is failing.")
 			return nil
 		}
 		// Row doesn't exist yet; create.
