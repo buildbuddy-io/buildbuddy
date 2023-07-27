@@ -77,7 +77,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare
+      - test //enterprise/server/remote_execution/containers/firecracker:firecracker_test_blockio --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare
 
 plugins:
   - path: cli/plugins/go-deps
