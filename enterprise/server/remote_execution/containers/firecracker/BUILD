@@ -83,6 +83,9 @@ go_test(
         "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
         "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
     ],
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         ":firecracker",
         "//enterprise:bundle",
@@ -136,6 +139,9 @@ go_test(
         # TODO: enable on CI once we fix race conditions and timeouts
         "manual",
         "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
+    ],
+    target_compatible_with = [
+        "@platforms//os:linux",
     ],
     deps = [
         ":firecracker",
