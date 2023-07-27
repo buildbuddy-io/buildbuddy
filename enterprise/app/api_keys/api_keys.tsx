@@ -19,6 +19,7 @@ import errorService from "../../../app/errors/error_service";
 import { CancelableRpc } from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
+import rpcService from "../../../app/service/rpc_service";
 
 export interface ApiKeysComponentProps {
   /** The authenticated user. */
@@ -463,7 +464,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
               <div className="api-key-capabilities">
                 <span>{describeCapabilities(key)}</span>
               </div>
-              <ApiKeyField value={key.value} />
+              <ApiKeyField apiKey={key} />
               {this.props.user.canCall("updateApiKey") && (
                 <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
                   Edit
@@ -577,7 +578,7 @@ function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
 }
 
 interface ApiKeyFieldProps {
-  value: string;
+  apiKey: api_key.ApiKey
 }
 
 interface ApiKeyFieldState {
@@ -596,25 +597,53 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
   state = ApiKeyFieldDefaultState;
 
   private copyTimeout: number | undefined;
+  private value: string | undefined;
+
+  componentDidMount() {
+    if (this.props.apiKey.value) {
+      this.value = this.props.apiKey.value
+    }
+  }
+
+  private async retrieveValue(fn: (val: string) => void) {
+    if (this.value) {
+      fn(this.value)
+      return
+    }
+    try {
+      const response = await rpcService.service.getApiKey(api_key.GetApiKeyRequest.create({
+        apiKeyId: this.props.apiKey.id,
+      }))
+      this.value = response.apiKey?.value
+      fn(this.value!)
+      return
+    } catch (e) {
+      errorService.handleError(e)
+    }
+  }
 
   // onClick handler function for the copy button
   private handleCopyClick() {
-    copyToClipboard(this.props.value);
-    this.setState({ isCopied: true }, () => {
-      alert_service.success("Copied API key to clipboard");
-    });
-    clearTimeout(this.copyTimeout);
-    this.copyTimeout = window.setTimeout(() => {
-      this.setState({ isCopied: false });
-    }, 4000);
+    this.retrieveValue((val: string) => {
+      copyToClipboard(val);
+      this.setState({isCopied: true}, () => {
+        alert_service.success("Copied API key to clipboard");
+      });
+      clearTimeout(this.copyTimeout);
+      this.copyTimeout = window.setTimeout(() => {
+        this.setState({isCopied: false});
+      }, 4000);
+    })
   }
 
   // onClick handler function for the hide/reveal button
   private toggleHideValue() {
-    this.setState({
-      hideValue: !this.state.hideValue,
-      displayValue: this.state.hideValue ? this.props.value : ApiKeyFieldDefaultState.displayValue,
-    });
+    this.retrieveValue((val: string) => {
+      this.setState({
+        hideValue: !this.state.hideValue,
+        displayValue: this.state.hideValue ? val : ApiKeyFieldDefaultState.displayValue,
+      });
+    })
   }
 
   render() {
