@@ -48,6 +48,9 @@ import (
 )
 
 var (
+	// TODO(#2523): remove this flag.
+	podmanPullLogLevel = flag.String("executor.podman.pull_log_level", "", "Level at which to log `podman pull` command output. Should be one of the standard log levels, all lowercase.")
+
 	// Note: to get these cgroup paths, run a podman container like
 	//     podman run --rm --name sleepy busybox sleep infinity
 	// then look at the output of
@@ -765,13 +768,26 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 			creds.Password,
 		))
 	}
+
+	if *podmanPullLogLevel != "" {
+		podmanArgs = append(podmanArgs, fmt.Sprintf("--log-level=%s", *podmanPullLogLevel))
+	}
+
 	podmanArgs = append(podmanArgs, c.image)
 	// Use server context instead of ctx to make sure that "podman pull" is not killed when the context
 	// is cancelled. If "podman pull" is killed when copying a parent layer, it will result in
 	// corrupted storage.  More details see https://github.com/containers/storage/issues/1136.
 	pullCtx, cancel := context.WithTimeout(c.env.GetServerContext(), *pullTimeout)
 	defer cancel()
-	pullResult := runPodman(pullCtx, "pull", &container.Stdio{}, podmanArgs...)
+	stdio := &container.Stdio{}
+	if *podmanPullLogLevel != "" {
+		stdio = &container.Stdio{
+			Stdin:  nil,
+			Stdout: log.Writer("[podman pull] "),
+			Stderr: log.Writer("[podman pull] "),
+		}
+	}
+	pullResult := runPodman(pullCtx, "pull", stdio, podmanArgs...)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
