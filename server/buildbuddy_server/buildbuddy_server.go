@@ -48,6 +48,7 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
@@ -1464,4 +1465,8 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 		return nil, status.FailedPreconditionError("audit logs not enabled in the server")
 	}
 	return al.GetLogs(ctx, request)
+}
+
+func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
 }

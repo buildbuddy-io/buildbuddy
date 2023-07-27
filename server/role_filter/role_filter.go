@@ -125,6 +125,8 @@ var (
 		"SetEncryptionConfig",
 		// Audit logs.
 		"GetAuditLogs",
+		// Repo management
+		"CreateRepo",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different

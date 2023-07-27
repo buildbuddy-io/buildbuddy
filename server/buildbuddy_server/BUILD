@@ -19,6 +19,7 @@ go_library(
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
         "//proto:quota_go_proto",
+        "//proto:repo_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:secrets_go_proto",
