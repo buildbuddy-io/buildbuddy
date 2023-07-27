@@ -1,9 +1,3 @@
-# Skymeld merges the analysis phase and execution phase.
-# This allows build and test executions to start before the analysis phase finishes,
-# thus speeding up the build overall .
-build:skymeld --experimental_skymeld_ui
-build:skymeld --experimental_merged_skyframe_analysis_execution
-
 # Build with --config=local to send build logs to your local server
 build:local --bes_results_url=http://localhost:8080/invocation/
 build:local --bes_backend=grpc://localhost:1985
@@ -160,6 +154,11 @@ build --enable_runfiles
 # Use syscall to create symlink in-process.
 # Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
 build --experimental_inprocess_symlink_creation
+
+# Skymeld merges the analysis phase and execution phase.
+# This allows build and test executions to start before the analysis phase finishes,
+# thus speeding up the build overall .
+build --experimental_merged_skyframe_analysis_execution
 
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
