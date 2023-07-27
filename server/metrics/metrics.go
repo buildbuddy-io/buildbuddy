@@ -430,8 +430,20 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "disk_cache_eviction_age_msec",
-		Buckets:   exponentialBucketRange(float64(1*time.Hour.Milliseconds()), float64(30*24*time.Hour.Milliseconds()), 2),
-		Help:      "Age of items evicted from the cache, in **milliseconds**.",
+		Buckets: customDurationMsecBuckets([]time.Duration{
+			6 * time.Hour,
+			12 * time.Hour,
+			1 * day,
+			2 * day,
+			3 * day,
+			4 * day,
+			5 * day,
+			6 * day,
+			7 * day,
+			14 * day,
+			21 * day,
+		}),
+		Help: "Age of items evicted from the cache, in **milliseconds**.",
 	}, []string{
 		PartitionID,
 		CacheNameLabel,
@@ -2113,4 +2125,12 @@ func durationUsecBuckets(min, max time.Duration, factor float64) []float64 {
 
 func durationMsecBuckets(min, max time.Duration, factor float64) []float64 {
 	return exponentialBucketRange(float64(min.Milliseconds()), float64(max.Milliseconds()), factor)
+}
+
+func customDurationMsecBuckets(durations []time.Duration) []float64 {
+	buckets := []float64{}
+	for _, d := range durations {
+		buckets = append(buckets, float64(d.Milliseconds()))
+	}
+	return buckets
 }
