@@ -231,9 +231,9 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	// Loop through usage periods starting from the oldest period
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a period which is not yet "settled".
-	for c := ut.oldestWritablePeriod(); ut.isSettled(c); c = c.Next() {
+	for p := ut.oldestWritablePeriod(); ut.isSettled(p); p = p.Next() {
 		// Read groups
-		gk := groupsRedisKey(c)
+		gk := groupsRedisKey(p)
 		groupIDs, err := ut.rdb.SMembers(ctx, gk).Result()
 		if err != nil {
 			return err
@@ -241,7 +241,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 
 		for _, groupID := range groupIDs {
 			// Read usage counts from Redis
-			ck := countsRedisKey(groupID, c)
+			ck := countsRedisKey(groupID, p)
 			h, err := ut.rdb.HGetAll(ctx, ck).Result()
 			if err != nil {
 				return err
@@ -251,7 +251,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				return err
 			}
 			// Update counts in the DB
-			if err := ut.flushCounts(ctx, groupID, c, counts); err != nil {
+			if err := ut.flushCounts(ctx, groupID, p, counts); err != nil {
 				return err
 			}
 			// Clean up the counts from Redis
