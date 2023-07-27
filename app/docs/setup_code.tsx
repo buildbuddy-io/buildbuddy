@@ -55,12 +55,12 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.bazelConfigResponse !== prevProps.bazelConfigResponse) {
-      this.setConfigResponse(this.props.bazelConfigResponse);
+      this.setConfigResponse(this.props.bazelConfigResponse!);
     }
   }
 
-  setConfigResponse(response?: bazel_config.IGetBazelConfigResponse) {
-    this.fetchAPIKeyValue(response!, 0);
+  setConfigResponse(response: bazel_config.IGetBazelConfigResponse) {
+    this.fetchAPIKeyValue(response, 0);
     this.setState({ bazelConfigResponse: response, selectedCredentialIndex: 0 });
   }
 
