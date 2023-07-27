@@ -1834,8 +1834,11 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		return nil, err
 	}
 
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(10)
 	cdcw := &cdcWriter{
 		ctx:            ctx,
+		eg:             eg,
 		pc:             p,
 		db:             db,
 		key:            key,
@@ -1851,6 +1854,9 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 	cwc.CloseFn = db.Close
 	cwc.CommitFn = func(bytesWritten int64) error {
 		if err := cdcw.Close(); err != nil {
+			return err
+		}
+		if err := cdcw.eg.Wait(); err != nil {
 			return err
 		}
 		if cdcw.numChunks == 1 {
@@ -1880,8 +1886,6 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 	}
 
 	if cdcw.numChunks == 2 {
-		cdcw.eg, cdcw.ctx = errgroup.WithContext(cdcw.ctx)
-		cdcw.eg.SetLimit(10)
 		if err := cdcw.writeChunkWhenMultiple(cdcw.firstChunk); err != nil {
 			return err
 		}
@@ -1979,11 +1983,6 @@ func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
 func (cdcw *cdcWriter) Close() error {
 	defer cdcw.chunker.Close()
 	defer cdcw.db.Close()
-	if cdcw.eg != nil {
-		if err := cdcw.eg.Wait(); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
