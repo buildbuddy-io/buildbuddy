@@ -1468,5 +1468,9 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 }
 
 func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	gh := s.env.GetGitHubApp()
+	if gh == nil {
+		return nil, status.FailedPreconditionError("github app not enabled in the server")
+	}
+	return gh.CreateRepo(ctx, request)
 }
