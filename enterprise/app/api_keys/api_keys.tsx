@@ -578,7 +578,7 @@ function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
 }
 
 interface ApiKeyFieldProps {
-  apiKey: api_key.ApiKey
+  apiKey: api_key.ApiKey;
 }
 
 interface ApiKeyFieldState {
@@ -601,43 +601,49 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
 
   componentDidMount() {
     if (this.props.apiKey.value) {
-      this.value = this.props.apiKey.value
+      this.value = this.props.apiKey.value;
     }
   }
 
   private async retrieveValue() {
     if (this.value) {
-      return this.value
+      return this.value;
     }
-    const response = await rpcService.service.getApiKey(api_key.GetApiKeyRequest.create({
-      apiKeyId: this.props.apiKey.id,
-    }))
-    this.value = response.apiKey?.value
-    return this.value!
+    const response = await rpcService.service.getApiKey(
+      api_key.GetApiKeyRequest.create({
+        apiKeyId: this.props.apiKey.id,
+      })
+    );
+    this.value = response.apiKey?.value;
+    return this.value!;
   }
 
   // onClick handler function for the copy button
   private handleCopyClick() {
-    this.retrieveValue().then((val) => {
-      copyToClipboard(val);
-      this.setState({isCopied: true}, () => {
-        alert_service.success("Copied API key to clipboard");
-      });
-      clearTimeout(this.copyTimeout);
-      this.copyTimeout = window.setTimeout(() => {
-        this.setState({isCopied: false});
-      }, 4000);
-    }).catch((e) => errorService.handleError(e))
+    this.retrieveValue()
+      .then((val) => {
+        copyToClipboard(val);
+        this.setState({ isCopied: true }, () => {
+          alert_service.success("Copied API key to clipboard");
+        });
+        clearTimeout(this.copyTimeout);
+        this.copyTimeout = window.setTimeout(() => {
+          this.setState({ isCopied: false });
+        }, 4000);
+      })
+      .catch((e) => errorService.handleError(e));
   }
 
   // onClick handler function for the hide/reveal button
   private toggleHideValue() {
-    this.retrieveValue().then((val) => {
-      this.setState({
-        hideValue: !this.state.hideValue,
-        displayValue: this.state.hideValue ? val : ApiKeyFieldDefaultState.displayValue,
-      });
-    }).catch((e) => errorService.handleError(e))
+    this.retrieveValue()
+      .then((val) => {
+        this.setState({
+          hideValue: !this.state.hideValue,
+          displayValue: this.state.hideValue ? val : ApiKeyFieldDefaultState.displayValue,
+        });
+      })
+      .catch((e) => errorService.handleError(e));
   }
 
   render() {
