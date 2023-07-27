@@ -437,9 +437,9 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	return c, nil
 }
 
-// mergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks
+// MergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks
 // into the baseSnapshotPath file or the baseSnapshotStore if non-nil.
-func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *blockio.COWStore, diffSnapshotPath string, concurrency int, bufSize int) error {
+func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *blockio.COWStore, diffSnapshotPath string, concurrency int, bufSize int) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -506,16 +506,16 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 					break
 				}
 				n, err := gin.ReadAt(buf, offset)
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
+				if err != nil && err != io.EOF {
 					return err
 				}
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
 				}
 				offset += int64(n)
+				if err == io.EOF {
+					break
+				}
 			}
 			return nil
 		})
@@ -665,7 +665,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 
 	if snapshotType == diffSnapshotType {
 		mergeStart := time.Now()
-		if err := mergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
+		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
 			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
