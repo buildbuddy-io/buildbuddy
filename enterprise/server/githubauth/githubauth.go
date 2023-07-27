@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
@@ -27,10 +26,6 @@ const (
 	loginPath      = "/login/github/"
 	authPath       = "/auth/github/"
 	jwtDuration    = 24 * 365 * time.Hour
-)
-
-var (
-	jwtKey = flagutil.New("github.jwt_key", "", "The key to use when signing JWT tokens for github auth.", flagutil.SecretTag)
 )
 
 type authenticatedGitHubUser struct {
@@ -49,7 +44,7 @@ func NewGithubAuthenticator(env environment.Env) *githubAuthenticator {
 }
 
 func IsEnabled(env environment.Env) bool {
-	return githubapp.IsEnabled() && *jwtKey != ""
+	return githubapp.IsEnabled() && *github.JwtKey != ""
 }
 
 func (a *githubAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
@@ -308,12 +303,12 @@ func (a *githubAuthenticator) renewToken(ctx context.Context, authToken string) 
 }
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
-	return []byte(*jwtKey), nil
+	return []byte(*github.JwtKey), nil
 }
 
 func assembleJWT(c jwt.Claims) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	tokenString, err := token.SignedString([]byte(*jwtKey))
+	tokenString, err := token.SignedString([]byte(*github.JwtKey))
 	return tokenString, err
 }
 
