@@ -21,8 +21,8 @@ message CreateRepoRequest {
   // execution platform."
   string description = 4;
 
-  // An existing git repository to use as a template for the contents of the new
-  // repo. ex.
+  // An existing git repository to use as a template for the new repo. The
+  // contents of this template repo will be copied into the new repo ex.
   // "https://github.com/buildbuddy-io/go-typescript-starter-template.git"
   string template = 5;
 
@@ -31,7 +31,7 @@ message CreateRepoRequest {
 
   // The platform on which the repo should be hosted. Currently only Github is
   // supported, but in the future we'll likely support more git providers.
-  GitHost host = 7;
+  GitProvider provider = 7;
 
   // The Github app installation id that should be used to create the
   // repository. Only required for repositories that are hosted on Github.
@@ -39,7 +39,7 @@ message CreateRepoRequest {
 }
 
 // The platform on which the repository should be hosted.
-enum GitHost {
+enum GitProvider {
   UNKNOWN_TYPE = 0;
   GITHUB = 1;
 }
