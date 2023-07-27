@@ -605,26 +605,20 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
     }
   }
 
-  private async retrieveValue(fn: (val: string) => void) {
+  private async retrieveValue() {
     if (this.value) {
-      fn(this.value)
-      return
+      return this.value
     }
-    try {
-      const response = await rpcService.service.getApiKey(api_key.GetApiKeyRequest.create({
-        apiKeyId: this.props.apiKey.id,
-      }))
-      this.value = response.apiKey?.value
-      fn(this.value!)
-      return
-    } catch (e) {
-      errorService.handleError(e)
-    }
+    const response = await rpcService.service.getApiKey(api_key.GetApiKeyRequest.create({
+      apiKeyId: this.props.apiKey.id,
+    }))
+    this.value = response.apiKey?.value
+    return this.value!
   }
 
   // onClick handler function for the copy button
   private handleCopyClick() {
-    this.retrieveValue((val: string) => {
+    this.retrieveValue().then((val) => {
       copyToClipboard(val);
       this.setState({isCopied: true}, () => {
         alert_service.success("Copied API key to clipboard");
@@ -633,17 +627,17 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
       this.copyTimeout = window.setTimeout(() => {
         this.setState({isCopied: false});
       }, 4000);
-    })
+    }).catch((e) => errorService.handleError(e))
   }
 
   // onClick handler function for the hide/reveal button
   private toggleHideValue() {
-    this.retrieveValue((val: string) => {
+    this.retrieveValue().then((val) => {
       this.setState({
         hideValue: !this.state.hideValue,
         displayValue: this.state.hideValue ? val : ApiKeyFieldDefaultState.displayValue,
       });
-    })
+    }).catch((e) => errorService.handleError(e))
   }
 
   render() {
