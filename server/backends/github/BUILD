@@ -11,6 +11,7 @@ go_library(
         "//server/http/interceptors",
         "//server/tables",
         "//server/util/authutil",
+        "//server/util/cookie",
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/perms",
