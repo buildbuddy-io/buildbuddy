@@ -1319,8 +1319,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_docker_distribution",
         importpath = "github.com/docker/distribution",
-        sum = "h1:T3de5rq0dB1j30rp0sA2rER+m322EBzniBPB6ZIzuh8=",
-        version = "v2.8.2+incompatible",
+        replace = "github.com/tempoz/distribution",
+        sum = "h1:u+HuASfKtcPdRDs27vlOxTgk1+YojzEQjK8kqQp2Zj4=",
+        version = "v2.9.1+incompatible",
     )
     go_repository(
         name = "com_github_docker_docker",
