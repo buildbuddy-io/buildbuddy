@@ -448,6 +448,7 @@ proto_library(
         ":group_proto",
         ":invocation_proto",
         ":quota_proto",
+        ":repo_proto",
         ":resource_proto",
         ":runner_proto",
         ":scheduler_proto",
@@ -470,6 +471,14 @@ proto_library(
 proto_library(
     name = "sidecar_proto",
     srcs = ["sidecar.proto"],
+)
+
+proto_library(
+    name = "repo_proto",
+    srcs = ["repo.proto"],
+    deps = [
+        ":context_proto",
+    ],
 )
 
 proto_library(
@@ -979,6 +988,7 @@ go_proto_library(
         ":group_go_proto",
         ":invocation_go_proto",
         ":quota_go_proto",
+        ":repo_go_proto",
         ":resource_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
@@ -1120,6 +1130,15 @@ go_proto_library(
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+go_proto_library(
+    name = "repo_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/repo",
+    proto = ":repo_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 
@@ -1597,6 +1616,7 @@ ts_proto_library(
         ":group_ts_proto",
         ":invocation_ts_proto",
         ":quota_ts_proto",
+        ":repo_ts_proto",
         ":runner_ts_proto",
         ":scheduler_ts_proto",
         ":secrets_ts_proto",
@@ -1607,6 +1627,14 @@ ts_proto_library(
         ":user_ts_proto",
         ":workflow_ts_proto",
         ":zip_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "repo_ts_proto",
+    proto = ":repo_proto",
+    deps = [
+        ":context_ts_proto",
     ],
 )
 
