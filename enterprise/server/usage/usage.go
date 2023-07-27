@@ -68,9 +68,8 @@ const (
 	//
 	// This lock is purely to reduce load on the DB. Flush jobs should be
 	// able to run concurrently (without needing this lock) and still write the
-	// correct usage data. The atomicity of DB writes, combined with the
-	// fact that we write usage data in monotonically increasing order of
-	// timestamp, is really what prevents usage data from being overcounted.
+	// correct usage data. The atomicity of DB writes is really what prevents
+	// usage data from being overcounted.
 	redisUsageLockKey = "lock.usage"
 
 	// How long any given job can hold the usage lock for, before it expires
