@@ -782,7 +782,6 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 	stdio := &container.Stdio{}
 	if *podmanPullLogLevel != "" {
 		stdio = &container.Stdio{
-			Stdin:  nil,
 			Stdout: log.Writer("[podman pull] "),
 			Stderr: log.Writer("[podman pull] "),
 		}
