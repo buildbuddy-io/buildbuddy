@@ -89,6 +89,7 @@ message Entry {
     github.UnlinkRepoRequest unlink_repo = 10;
     workflow.ExecuteWorkflowRequest execute_workflow = 11;
     secrets.UpdateSecretRequest update_secret = 12;
+    api_key.GetApiKeyRequest get_api_key = 13;
   }
   message Request {
     APIRequest api_request = 1;
