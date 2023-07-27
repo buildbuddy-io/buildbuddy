@@ -196,6 +196,5 @@ service BuildBuddyService {
       returns (auditlog.GetAuditLogsResponse);
 
   // Repo API.
-  rpc CreateRepo(repo.CreateRepoRequest)
-      returns (repo.CreateRepoResponse);
+  rpc CreateRepo(repo.CreateRepoRequest) returns (repo.CreateRepoResponse);
 }
