@@ -68,9 +68,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     const { bazelConfigResponse: response, selectedCredentialIndex: index } = this.state;
     if (!response?.credential) return null;
 
-    const creds = response.credential[index];
-
-    return creds || null;
+    return response.credential[index] || null;
   }
 
   handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
