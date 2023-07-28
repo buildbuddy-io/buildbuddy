@@ -65,3 +65,19 @@ func tempDir() string {
 func CreateTemp(pattern string) (*os.File, error) {
 	return os.CreateTemp(tempDir(), pattern)
 }
+
+// MkdirTemp has the same semantics as os.MkdirTemp, with the parent directory
+// set to the configured scratch directory.
+// The caller is responsible for deleting the directory once it is no longer needed.
+//
+// Example usage:
+//
+//	dir, err := scratchspace.MkdirTemp("dirname-*")
+//	if err != nil {
+//	    return err
+//	}
+//
+// defer os.RemoveAll(dir) // clean up
+func MkdirTemp(pattern string) (string, error) {
+	return os.MkdirTemp(tempDir(), pattern)
+}

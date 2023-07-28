@@ -1439,7 +1439,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 func (s *BuildBuddyServer) SetEncryptionConfig(ctx context.Context, request *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error) {
 	crypter := s.env.GetCrypter()
 	if crypter == nil {
-		return nil, status.FailedPreconditionError("encryption not enabled in the server")
+		return nil, status.UnimplementedError("Encryption not configured")
 	}
 	rsp, err := crypter.SetEncryptionConfig(ctx, request)
 	if err != nil {
@@ -1454,7 +1454,7 @@ func (s *BuildBuddyServer) SetEncryptionConfig(ctx context.Context, request *enp
 func (s *BuildBuddyServer) GetEncryptionConfig(ctx context.Context, request *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {
 	crypter := s.env.GetCrypter()
 	if crypter == nil {
-		return nil, status.FailedPreconditionError("encryption not enabled in the server")
+		return nil, status.UnimplementedError("Encryption not configured")
 	}
 	return crypter.GetEncryptionConfig(ctx, request)
 }
@@ -1462,11 +1462,15 @@ func (s *BuildBuddyServer) GetEncryptionConfig(ctx context.Context, request *enp
 func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
 	al := s.env.GetAuditLogger()
 	if al == nil {
-		return nil, status.FailedPreconditionError("audit logs not enabled in the server")
+		return nil, status.UnimplementedError("Audit logger not configured")
 	}
 	return al.GetLogs(ctx, request)
 }
 
 func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	gh := s.env.GetGitHubApp()
+	if gh == nil {
+		return nil, status.UnimplementedError("Github service not configured")
+	}
+	return gh.CreateRepo(ctx, request)
 }
