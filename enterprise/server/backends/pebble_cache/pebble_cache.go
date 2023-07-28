@@ -1896,6 +1896,8 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 		if err := cdcw.writeChunkWhenMultiple(cdcw.firstChunk); err != nil {
 			return err
 		}
+		// We no longer need the first chunk anymore.
+		cdcw.firstChunk = nil
 	}
 	// we need to copy the data because once the chunker calls Next, chunkData
 	// will be invalidated.
@@ -1955,7 +1957,7 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	}
 
 	// We use cdcw.writtenChunks for the file-level metadata, and this needs to
-	// be in the orther. Otherwise, when we read the file, the chunks will be
+	// be in order. Otherwise, when we read the file, the chunks will be
 	// read out of order.
 	cdcw.writtenChunks = append(cdcw.writtenChunks, rn)
 
@@ -2956,6 +2958,8 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore
 	case storageMetadata.GetInlineMetadata() != nil:
 		break
 	case storageMetadata.GetChunkedMetadata() != nil:
+		// We should not update partition size b/c we only deleted a file-level
+		// entry and not the actual chunks.
 		break
 	default:
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
