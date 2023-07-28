@@ -1873,6 +1873,26 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheCompressedBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_compressed_bytes",
+		Help:      "Number of uncompressed bytes that had to be compressed because client did not enable compression.",
+	}, []string{
+		GroupID,
+		CacheNameLabel,
+	})
+
+	PebbleCacheDecompressedBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_decompressed_bytes",
+		Help:      "Number of decompressed bytes that had to be decompressed because client did not enable compression.",
+	}, []string{
+		GroupID,
+		CacheNameLabel,
+	})
+
 	PebbleCacheEvictionEvictLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",

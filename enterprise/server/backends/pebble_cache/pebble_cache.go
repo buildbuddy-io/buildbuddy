@@ -1793,9 +1793,44 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	return pebble.ReadCloserWithFunc(rc, db.Close), nil
 }
 
+type zstdDecompressor struct {
+	d io.ReadCloser
+
+	cacheName            string
+	groupID              string
+	numDecompressedBytes int64
+}
+
+func newZstdDecompressor(cacheName string, groupID string, r io.Reader) (io.ReadCloser, error) {
+	d, err := compression.NewZstdDecompressingReader(r)
+	if err != nil {
+		return nil, err
+	}
+	return &zstdDecompressor{
+		d:         d,
+		cacheName: cacheName,
+		groupID:   groupID,
+	}, nil
+}
+
+func (z *zstdDecompressor) Read(p []byte) (int, error) {
+	n, err := z.d.Read(p)
+	if err != nil {
+		return n, err
+	}
+	z.numDecompressedBytes += int64(n)
+	return n, nil
+}
+
+func (z *zstdDecompressor) Close() error {
+	metrics.PebbleCacheDecompressedBytesCount.With(prometheus.Labels{metrics.GroupID: z.groupID, metrics.CacheNameLabel: z.cacheName}).Add(float64(z.numDecompressedBytes))
+	return z.d.Close()
+}
+
 // zstdCompressor compresses bytes before writing them to the nested writer
 type zstdCompressor struct {
 	cacheName string
+	groupID   string
 
 	interfaces.CommittedWriteCloser
 	compressBuf []byte
@@ -1805,10 +1840,11 @@ type zstdCompressor struct {
 	numCompressedBytes   int
 }
 
-func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
+func NewZstdCompressor(cacheName string, groupID string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
 	compressBuf := bp.Get(digestSize)
 	return &zstdCompressor{
 		cacheName:            cacheName,
+		groupID:              groupID,
 		CommittedWriteCloser: wc,
 		compressBuf:          compressBuf,
 		bufferPool:           bp,
@@ -1834,6 +1870,7 @@ func (z *zstdCompressor) Close() error {
 	metrics.CompressionRatio.
 		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
 		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
+	metrics.PebbleCacheCompressedBytesCount.With(prometheus.Labels{metrics.GroupID: z.groupID, metrics.CacheNameLabel: z.cacheName}).Add(float64(z.numDecompressedBytes))
 
 	z.bufferPool.Put(z.compressBuf)
 	return z.CommittedWriteCloser.Close()
@@ -1930,7 +1967,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.Metad
 	}
 
 	if shouldCompress {
-		return NewZstdCompressor(p.name, wc, p.bufferPool, fileRecord.GetDigest().GetSizeBytes()), nil
+		return NewZstdCompressor(p.name, p.userGroupID(ctx), wc, p.bufferPool, fileRecord.GetDigest().GetSizeBytes()), nil
 	}
 	return wc, nil
 }
@@ -3064,7 +3101,7 @@ func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.
 			reader = d
 		}
 		if cachedCompression == repb.Compressor_ZSTD && requestedCompression == repb.Compressor_IDENTITY {
-			dr, err := compression.NewZstdDecompressingReader(reader)
+			dr, err := newZstdDecompressor(p.name, p.userGroupID(ctx), reader)
 			if err != nil {
 				return nil, err
 			}
