@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/docker/pkg/stdcopy"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -135,8 +136,19 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		result.Error = wrapDockerErr(err, "failed to create docker container")
 		return result
 	}
-
 	cid := createResponse.ID
+
+	hijackedResp, err := r.client.ContainerAttach(ctx, cid, dockertypes.ContainerAttachOptions{
+		Stream: true,
+		Stdout: true,
+		Stderr: true,
+	})
+	if err != nil {
+		result.Error = wrapDockerErr(err, "failed to attach to docker container")
+		return result
+	}
+	defer hijackedResp.Close()
+
 	err = r.client.ContainerStart(ctx, cid, dockertypes.ContainerStartOptions{})
 	if err != nil {
 		result.Error = wrapDockerErr(err, "failed to start docker container")
@@ -160,48 +172,33 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		}()
 	}()
 
-	r.copyContainerLogs(ctx, cid, result)
-	if result.Error != nil {
-		return result
-	}
-
-	// The container should not be running at this point since we're done copying
-	// logs, but we need to call ContainerWait to get the exit code.
-	statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
-
-	select {
-	case err := <-errCh:
-		result.Error = wrapDockerErr(err, "container did not exit cleanly")
-	case s := <-statusCh:
-		exitedCleanly = true
-		if s.Error != nil {
-			result.Error = wrapDockerErr(status.UnknownError(s.Error.Message), "failed to get container status")
-			return result
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		var stdout, stderr bytes.Buffer
+		_, err := stdcopy.StdCopy(&stdout, &stderr, hijackedResp.Reader)
+		result.Stdout = stdout.Bytes()
+		result.Stderr = stderr.Bytes()
+		return wrapDockerErr(err, "failed to copy docker container output")
+	})
+	eg.Go(func() error {
+		statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
+		select {
+		case err := <-errCh:
+			return wrapDockerErr(err, "container did not exit cleanly")
+		case s := <-statusCh:
+			exitedCleanly = true
+			if s.Error != nil {
+				return wrapDockerErr(status.UnknownError(s.Error.Message), "failed to get container status")
+			}
+			result.ExitCode = int(s.StatusCode)
+			return nil
 		}
-		result.ExitCode = int(s.StatusCode)
+	})
+	if err := eg.Wait(); err != nil {
+		result.Error = err
 	}
-	return result
-}
 
-func (r *dockerCommandContainer) copyContainerLogs(ctx context.Context, cid string, result *interfaces.CommandResult) {
-	logOptions := dockertypes.ContainerLogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Follow:     true,
-	}
-	logs, err := r.client.ContainerLogs(ctx, cid, logOptions)
-	if err != nil {
-		result.Error = wrapDockerErr(err, "failed to get docker container logs")
-		return
-	}
-	err = copyOutputs(logs, result, &container.Stdio{})
-	if closeErr := logs.Close(); closeErr != nil {
-		log.Warningf("Failed to close docker logs: %s", closeErr)
-	}
-	if err != nil {
-		result.Error = wrapDockerErr(err, "failed to read docker container logs")
-		return
-	}
+	return result
 }
 
 func wrapDockerErr(err error, contextMsg string) error {
@@ -299,7 +296,7 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 		Resources: dockercontainer.Resources{
 			Devices: devices,
 			Ulimits: []*units.Ulimit{
-				&units.Ulimit{Name: "nofile", Soft: defaultDockerUlimit, Hard: defaultDockerUlimit},
+				{Name: "nofile", Soft: defaultDockerUlimit, Hard: defaultDockerUlimit},
 			},
 		},
 	}
