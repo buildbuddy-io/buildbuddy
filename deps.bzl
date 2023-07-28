@@ -4148,6 +4148,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:KUppIJq7/+SVif2QVs3tOP0zanoHgBEVAwHxUSIzRqU=",
         version = "v0.0.0-20190716064945-2f068394615f",
     )
+    go_repository(
+        name = "com_github_mwitkow_grpc_proxy",
+        importpath = "github.com/mwitkow/grpc-proxy",
+        sum = "h1:62uLwA3l2JMH84liO4ZhnjTH5PjFyCYxbHLgXPaJMtI=",
+        version = "v0.0.0-20230212185441-f345521cb9c9",
+    )
 
     go_repository(
         name = "com_github_mxk_go_flowrate",
