@@ -1,25 +1,24 @@
 load("//rules/typescript:index.bzl", "ts_library")
 
-exports_files(["auditlogs.css"])
+exports_files(glob(["*.css"]))
 
 ts_library(
-    name = "auditlogs",
-    srcs = ["auditlogs.tsx"],
+    name = "repo",
+    srcs = ["repo.tsx"],
     deps = [
-        "//app/auth:user",
-        "//app/components/button",
-        "//app/components/popup",
+        "//app/auth:auth_service",
         "//app/components/spinner",
         "//app/errors:error_service",
-        "//app/format",
         "//app/service:rpc_service",
-        "//app/util:proto",
-        "//proto:auditlog_ts_proto",
+        "//proto:github_ts_proto",
+        "//proto:repo_ts_proto",
+        "//proto:workflow_ts_proto",
+        "@npm//@octokit/rest",
+        "@npm//@types/long",
         "@npm//@types/react",
-        "@npm//@types/react-date-range",
+        "@npm//long",
         "@npm//lucide-react",
         "@npm//react",
-        "@npm//react-date-range",
         "@npm//tslib",
     ],
 )

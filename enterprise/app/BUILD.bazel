@@ -52,6 +52,7 @@ genrule(
         "//enterprise/app/org:org.css",
         "//enterprise/app/settings:settings.css",
         "//enterprise/app/quota:quota.css",
+        "//enterprise/app/repo:repo.css",
         "//enterprise/app/secrets:secrets.css",
         "//enterprise/app/workflows:workflows.css",
         "//enterprise/app/sidebar:sidebar.css",

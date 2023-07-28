@@ -98,6 +98,7 @@ var (
 		"/executors/",
 		"/code/",
 		"/audit-logs/",
+		"/repo/",
 	}
 )
 

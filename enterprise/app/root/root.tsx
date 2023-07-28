@@ -15,6 +15,7 @@ import HistoryComponent from "../history/history";
 import LoginComponent from "../login/login";
 import CreateOrgComponent from "../org/create_org";
 import JoinOrgComponent from "../org/join_org";
+import RepoComponent from "../repo/repo";
 import SettingsComponent from "../settings/settings";
 import SidebarComponent from "../sidebar/sidebar";
 import ShortcutsComponent from "../shortcuts/shortcuts";
@@ -136,6 +137,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let tests = this.state.user && this.state.path.startsWith("/tests");
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
     let code = this.state.user && this.state.path.startsWith("/code");
+    let repo = this.state.path.startsWith("/repo");
     let fallback =
       !code &&
       !workflows &&
@@ -153,15 +155,16 @@ export default class EnterpriseRootComponent extends React.Component {
       !historyRepo &&
       !historyBranch &&
       !historyCommit &&
-      !auditLogs;
+      !auditLogs &&
+      !repo;
 
     let setup =
       (this.state.path.startsWith("/docs/setup") && (this.state.user || capabilities.anonymous)) ||
       (fallback && !capabilities.auth);
-    let login = fallback && !setup && !this.state.loading && !this.state.user;
+    let login = fallback && !setup && !repo && !this.state.loading && !this.state.user;
     let home = fallback && !setup && !this.state.loading && this.state.user;
-    let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code;
-    let menu = !sidebar && !code && !this.state.loading;
+    let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo;
+    let menu = !sidebar && !repo && !code && !this.state.loading;
 
     return (
       <>
@@ -293,6 +296,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
+                  {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
                   {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent
