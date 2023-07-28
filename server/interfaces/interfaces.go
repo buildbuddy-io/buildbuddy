@@ -401,6 +401,7 @@ type UserDB interface {
 	// valid authenticator is present in the environment and will return
 	// a UserToken given the provided context.
 	GetUser(ctx context.Context) (*tables.User, error)
+	GetUserByID(ctx context.Context, id string) (*tables.User, error)
 	// GetImpersonatedUser will return the authenticated user's information
 	// with a single group membership corresponding to the group they are trying
 	// to impersonate. It requires that the authenticated user has impersonation
@@ -962,26 +963,26 @@ type XcodeLocator interface {
 }
 
 // LRU implements a Least Recently Used cache.
-type LRU interface {
+type LRU[V any] interface {
 	// Inserts a value into the LRU. A boolean is returned that indicates
 	// if the value was successfully added.
-	Add(key, value interface{}) bool
+	Add(key string, value V) bool
 
 	// Inserts a value into the back of the LRU. A boolean is returned that
 	// indicates if the value was successfully added.
-	PushBack(key, value interface{}) bool
+	PushBack(key string, value V) bool
 
 	// Gets a value from the LRU, returns a boolean indicating if the value
 	// was present.
-	Get(key interface{}) (interface{}, bool)
+	Get(key string) (V, bool)
 
 	// Returns a boolean indicating if the value is present in the LRU.
-	Contains(key interface{}) bool
+	Contains(key string) bool
 
 	// Removes a value from the LRU, releasing resources associated with
 	// that value. Returns a boolean indicating if the value was sucessfully
 	// removed.
-	Remove(key interface{}) bool
+	Remove(key string) bool
 
 	// Purge Remove()s all items in the LRU.
 	Purge()
@@ -993,7 +994,7 @@ type LRU interface {
 	Len() int
 
 	// Remove()s the oldest value in the LRU. (See Remove() above).
-	RemoveOldest() (interface{}, bool)
+	RemoveOldest() (V, bool)
 
 	// Returns metrics about the status of the LRU.
 	Metrics() string
@@ -1101,7 +1102,7 @@ type KMS interface {
 type SecretService interface {
 	GetPublicKey(ctx context.Context, req *skpb.GetPublicKeyRequest) (*skpb.GetPublicKeyResponse, error)
 	ListSecrets(ctx context.Context, req *skpb.ListSecretsRequest) (*skpb.ListSecretsResponse, error)
-	UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, error)
+	UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, bool, error)
 	DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error)
 
 	// Internal use only -- fetches decoded secrets for use in running a command.

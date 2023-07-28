@@ -29,8 +29,12 @@ proto_library(
         ":acl_proto",
         ":api_key_proto",
         ":context_proto",
+        ":encryption_proto",
+        ":github_proto",
         ":group_proto",
         ":invocation_proto",
+        ":secrets_proto",
+        ":workflow_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
@@ -444,6 +448,7 @@ proto_library(
         ":group_proto",
         ":invocation_proto",
         ":quota_proto",
+        ":repo_proto",
         ":resource_proto",
         ":runner_proto",
         ":scheduler_proto",
@@ -466,6 +471,14 @@ proto_library(
 proto_library(
     name = "sidecar_proto",
     srcs = ["sidecar.proto"],
+)
+
+proto_library(
+    name = "repo_proto",
+    srcs = ["repo.proto"],
+    deps = [
+        ":context_proto",
+    ],
 )
 
 proto_library(
@@ -623,8 +636,12 @@ go_proto_library(
         ":acl_go_proto",
         ":api_key_go_proto",
         ":context_go_proto",
+        ":encryption_go_proto",
+        ":github_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
+        ":secrets_go_proto",
+        ":workflow_go_proto",
     ],
 )
 
@@ -971,6 +988,7 @@ go_proto_library(
         ":group_go_proto",
         ":invocation_go_proto",
         ":quota_go_proto",
+        ":repo_go_proto",
         ":resource_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
@@ -1116,6 +1134,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "repo_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/repo",
+    proto = ":repo_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "telemetry_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/telemetry",
@@ -1221,9 +1248,13 @@ ts_proto_library(
         ":acl_ts_proto",
         ":api_key_ts_proto",
         ":context_ts_proto",
+        ":encryption_ts_proto",
+        ":github_ts_proto",
         ":group_ts_proto",
         ":invocation_ts_proto",
+        ":secrets_ts_proto",
         ":timestamp_ts_proto",
+        ":workflow_ts_proto",
     ],
 )
 
@@ -1585,6 +1616,7 @@ ts_proto_library(
         ":group_ts_proto",
         ":invocation_ts_proto",
         ":quota_ts_proto",
+        ":repo_ts_proto",
         ":runner_ts_proto",
         ":scheduler_ts_proto",
         ":secrets_ts_proto",
@@ -1595,6 +1627,14 @@ ts_proto_library(
         ":user_ts_proto",
         ":workflow_ts_proto",
         ":zip_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "repo_ts_proto",
+    proto = ":repo_proto",
+    deps = [
+        ":context_ts_proto",
     ],
 )
 

@@ -18,6 +18,7 @@ import "proto/scheduler.proto";
 import "proto/usage.proto";
 import "proto/github.proto";
 import "proto/quota.proto";
+import "proto/repo.proto";
 import "proto/secrets.proto";
 import "proto/suggestion.proto";
 import "proto/zip.proto";
@@ -193,4 +194,7 @@ service BuildBuddyService {
   // Audit log API.
   rpc GetAuditLogs(auditlog.GetAuditLogsRequest)
       returns (auditlog.GetAuditLogsResponse);
+
+  // Repo API.
+  rpc CreateRepo(repo.CreateRepoRequest) returns (repo.CreateRepoResponse);
 }

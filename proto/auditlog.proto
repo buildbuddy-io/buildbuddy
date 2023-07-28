@@ -5,8 +5,12 @@ package auditlog;
 import "proto/acl.proto";
 import "proto/api_key.proto";
 import "proto/context.proto";
+import "proto/encryption.proto";
+import "proto/github.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
+import "proto/secrets.proto";
+import "proto/workflow.proto";
 import "google/protobuf/timestamp.proto";
 
 message AuthenticatedAPIKey {
@@ -47,6 +51,10 @@ enum Action {
   DELETE = 3;
   LIST = 4;
   UPDATE_MEMBERSHIP = 5;
+  UPDATE_ENCRYPTION_CONFIG = 6;
+  LINK_GITHUB_REPO = 7;
+  UNLINK_GITHUB_REPO = 8;
+  EXECUTE_CLEAN_WORKFLOW = 9;
 }
 
 message ResourceID {
@@ -65,9 +73,9 @@ message Entry {
   // Operation performed on resource.
   Action action = 4;
 
-  // Additional metadata describing the change performed.
-  // Only one field will be populated depending on the event type.
-  message ResourceRequest {
+  // The API request associated with the audit log event.
+  // Only one field will be populated depending on the request type.
+  message APIRequest {
     api_key.CreateApiKeyRequest create_api_key = 1;
     api_key.GetApiKeysRequest get_api_keys = 2;
     api_key.UpdateApiKeyRequest update_api_key = 3;
@@ -75,8 +83,27 @@ message Entry {
     grp.UpdateGroupRequest update_group = 5;
     grp.UpdateGroupUsersRequest update_group_users = 6;
     invocation.UpdateInvocationRequest update_invocation = 7;
+    encryption.SetEncryptionConfigRequest set_encryption_config = 8;
+    github.LinkRepoRequest link_repo = 9;
+    github.UnlinkRepoRequest unlink_repo = 10;
+    workflow.ExecuteWorkflowRequest execute_workflow = 11;
+    secrets.UpdateSecretRequest update_secret = 12;
   }
-  ResourceRequest request = 5;
+  message Request {
+    APIRequest api_request = 1;
+
+    message IDDescriptor {
+      // Resource identifier (e.g. GR1234567)
+      string id = 1;
+      // Display name (e.g. "ACME Corp.")
+      string value = 2;
+    }
+    // IDDescriptor contains metadata about IDs in the request
+    // proto at the time of the event. This metadata may be displayed
+    // by clients to provide more information about the event.
+    repeated IDDescriptor id_descriptors = 6;
+  }
+  Request request = 5;
 }
 
 message GetAuditLogsRequest {

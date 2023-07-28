@@ -1,6 +1,7 @@
 package firecracker_test
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -1272,6 +1273,44 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 
 		err = pool.Shutdown(ctx)
 		require.NoError(t, err)
+	}
+}
+
+func TestMergeDiffSnapshot(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+	for i := 0; i < 100; i++ {
+		ctx := context.Background()
+		snapSize := 1e6 + rand.Int63n(1e6)
+		// Create an empty base snapshot
+		basePath := filepath.Join(tmp, fmt.Sprintf("%d.base", i))
+		b := make([]byte, snapSize)
+		err := os.WriteFile(basePath, b, 0644)
+		require.NoError(t, err)
+		// Write some random diffs to the diff snapshot
+		diffPath := filepath.Join(tmp, fmt.Sprintf("%d.diff", i))
+		df, err := os.Create(diffPath)
+		require.NoError(t, err)
+		err = df.Truncate(snapSize)
+		require.NoError(t, err)
+		nDiffs := rand.Int63n(5)
+		for i := 0; i < int(nDiffs); i++ {
+			diffOffset := rand.Int63n(snapSize)
+			diffLen := rand.Int63n(snapSize - diffOffset + 1)
+			for off := diffOffset; off < diffOffset+diffLen; off++ {
+				b[off] = byte(rand.Intn(128))
+			}
+			_, err := df.WriteAt(b[diffOffset:diffOffset+diffLen], diffOffset)
+			require.NoError(t, err)
+		}
+		_ = df.Close()
+		err = firecracker.MergeDiffSnapshot(ctx, basePath, nil /*=COWStore*/, diffPath, 4 /*=concurrency*/, 4096 /*=bufSize*/)
+		require.NoError(t, err)
+
+		merged, err := os.ReadFile(basePath)
+		require.NoError(t, err)
+		if !bytes.Equal(merged, b) {
+			require.FailNowf(t, "Merged bytes not equal to expected bytes", "")
+		}
 	}
 }
 

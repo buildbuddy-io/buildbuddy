@@ -12,7 +12,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -67,7 +66,7 @@ const (
 type fileCache struct {
 	rootDir     string
 	lock        sync.RWMutex
-	l           interfaces.LRU
+	l           interfaces.LRU[*entry]
 	dirScanDone chan struct{}
 }
 
@@ -83,20 +82,11 @@ type entry struct {
 	value string
 }
 
-func sizeFn(value interface{}) int64 {
-	if v, ok := value.(*entry); ok {
-		return v.sizeBytes
-	}
-	return 0
+func sizeFn(v *entry) int64 {
+	return v.sizeBytes
 }
 
-func evictFn(value interface{}, reason lru.EvictionReason) {
-	v, ok := value.(*entry)
-	if !ok {
-		alert.UnexpectedEvent("filecache", "Unexpected filecache entry type %T", value)
-		return
-	}
-
+func evictFn(v *entry, reason lru.EvictionReason) {
 	if err := syscall.Unlink(v.value); err != nil {
 		log.Errorf("Failed to unlink filecache entry %q: %s", v.value, err)
 	}
@@ -121,7 +111,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
-	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
+	l, err := lru.NewLRU[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
@@ -221,11 +211,7 @@ func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) (hit bo
 			Inc()
 	}()
 
-	e, ok := c.l.Get(key(node))
-	if !ok {
-		return false
-	}
-	v, ok := e.(*entry)
+	v, ok := c.l.Get(key(node))
 	if !ok {
 		return false
 	}

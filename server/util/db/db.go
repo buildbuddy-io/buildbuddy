@@ -49,8 +49,6 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	rdsauth "github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	gomysql "github.com/go-sql-driver/mysql"
-	gopostgres "github.com/jackc/pgx/v5/stdlib"
-	gosqlite "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -543,15 +541,8 @@ func openDB(ctx context.Context, fileResolver fs.FS, dataSource string, advanced
 		return nil, "", err
 	}
 
-	var drv driver.Driver
-	switch ds.DriverName() {
-	case sqliteDriver:
-		drv = &gosqlite.SQLiteDriver{}
-	case mysqlDriver:
-		drv = &gomysql.MySQLDriver{}
-	case postgresDriver:
-		drv = &gopostgres.Driver{}
-	default:
+	drv, err := getDriver(ds)
+	if err != nil {
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
 
@@ -987,20 +978,6 @@ func (h *DBHandle) SelectForUpdateModifier() string {
 
 func (h *DBHandle) SetNowFunc(now func() time.Time) {
 	h.db.Config.NowFunc = now
-}
-
-func (h *DBHandle) IsDuplicateKeyError(err error) bool {
-	var mysqlErr *gomysql.MySQLError
-	// Defined at https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_dup_entry
-	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-		return true
-	}
-	var sqliteErr gosqlite.Error
-	// Defined at https://www.sqlite.org/rescode.html#constraint_unique
-	if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == 2067 {
-		return true
-	}
-	return false
 }
 
 func (h *DBHandle) IsDeadlockError(err error) bool {

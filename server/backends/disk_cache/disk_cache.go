@@ -488,7 +488,7 @@ type partition struct {
 	rootDir          string
 	maxSizeBytes     int64
 	targetSizeBytes  int64
-	lru              interfaces.LRU
+	lru              interfaces.LRU[*fileRecord]
 	fileChannel      chan *fileRecord
 	diskIsMapped     bool
 	doneAsyncLoading chan struct{}
@@ -509,7 +509,7 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		internedStrings:  make(map[string]string, 0),
 		doneAsyncLoading: make(chan struct{}),
 	}
-	config := &lru.Config{
+	config := &lru.Config[*fileRecord]{
 		MaxSize: maxSizeBytes,
 		OnEvict: p.evictFn,
 		SizeFn:  sizeFn,
@@ -517,7 +517,7 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		// file (via evictFn).
 		UpdateInPlace: true,
 	}
-	l, err := lru.NewLRU(config)
+	l, err := lru.NewLRU[*fileRecord](config)
 	if err != nil {
 		return nil, err
 	}
@@ -549,12 +549,8 @@ func (fr *fileRecord) FullPath() string {
 	return fr.key.FullPath()
 }
 
-func sizeFn(value interface{}) int64 {
-	size := int64(0)
-	if v, ok := value.(*fileRecord); ok {
-		size += v.sizeOnDiskBytes
-	}
-	return size
+func sizeFn(value *fileRecord) int64 {
+	return value.sizeOnDiskBytes
 }
 
 func getLastUseNanos(info os.FileInfo) int64 {
@@ -606,24 +602,22 @@ func makeRecordFromInfo(key *fileKey, info fs.FileInfo) *fileRecord {
 	}
 }
 
-func (p *partition) evictFn(value interface{}, reason lru.EvictionReason) {
-	if v, ok := value.(*fileRecord); ok {
-		i, err := os.Stat(v.FullPath())
-		if err == nil {
-			lastUse := time.Unix(0, getLastUseNanos(i))
-			age := time.Since(lastUse)
-			// Only update metrics if the value was evicted because of capacity
-			// constraints (and not because of a manual deletion).
-			if reason == lru.SizeEviction {
-				lbls := prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}
-				metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
-				metrics.DiskCacheNumEvictions.With(lbls).Inc()
-				metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
-			}
+func (p *partition) evictFn(v *fileRecord, reason lru.EvictionReason) {
+	i, err := os.Stat(v.FullPath())
+	if err == nil {
+		lastUse := time.Unix(0, getLastUseNanos(i))
+		age := time.Since(lastUse)
+		// Only update metrics if the value was evicted because of capacity
+		// constraints (and not because of a manual deletion).
+		if reason == lru.SizeEviction {
+			lbls := prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}
+			metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+			metrics.DiskCacheNumEvictions.With(lbls).Inc()
+			metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
 		}
-		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
-			log.Warningf("Could not delete evicted file: %s", err)
-		}
+	}
+	if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
+		log.Warningf("Could not delete evicted file: %s", err)
 	}
 }
 
@@ -684,13 +678,11 @@ func (p *partition) reduceCacheSize() bool {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	value, ok := p.lru.RemoveOldest()
+	fr, ok := p.lru.RemoveOldest()
 	if !ok {
 		return false // should never happen
 	}
-	if fr, ok := value.(*fileRecord); ok {
-		log.Debugf("Delete thread removed item from cache with key %v.", fr.key)
-	}
+	log.Debugf("Delete thread removed item from cache with key %v.", fr.key)
 	p.lastGCTime = time.Now()
 	return true
 }
@@ -1018,11 +1010,7 @@ func (p *partition) lruGet(ctx context.Context, rn *rspb.ResourceName) (*fileRec
 	defer p.mu.Unlock()
 	v, ok := p.lru.Get(k.FullPath())
 	if ok {
-		vr, ok := v.(*fileRecord)
-		if !ok {
-			return nil, status.InternalErrorf("not a *fileRecord")
-		}
-		return vr, nil
+		return v, nil
 	}
 	if !p.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded

@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"gorm.io/gorm"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
@@ -116,32 +117,32 @@ func (s *SecretService) ListSecrets(ctx context.Context, req *skpb.ListSecretsRe
 	return rsp, nil
 }
 
-func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, error) {
+func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, bool, error) {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	dbHandle := s.env.GetDBHandle()
 	if err != nil {
-		return nil, status.FailedPreconditionError("A database is required")
+		return nil, false, status.FailedPreconditionError("A database is required")
 	}
 
 	if req.GetSecret().GetName() == "" {
-		return nil, status.InvalidArgumentError("A non-empty secret name is required")
+		return nil, false, status.InvalidArgumentError("A non-empty secret name is required")
 	}
 	if req.GetSecret().GetValue() == "" {
-		return nil, status.InvalidArgumentError("A non-empty secret value is required")
+		return nil, false, status.InvalidArgumentError("A non-empty secret value is required")
 	}
 	if !secretNameRegexp.MatchString(req.GetSecret().GetName()) {
-		return nil, status.InvalidArgumentError("Secret names may only contain: [a-zA-Z0-9_]")
+		return nil, false, status.InvalidArgumentError("Secret names may only contain: [a-zA-Z0-9_]")
 	}
 	udb := s.env.GetUserDB()
 	if udb == nil {
-		return nil, status.FailedPreconditionError("No UserDB configured")
+		return nil, false, status.FailedPreconditionError("No UserDB configured")
 	}
 	grp, err := udb.GetGroupByID(ctx, u.GetGroupID())
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	secretPerms := perms.GroupAuthPermissions(u.GetGroupID())
@@ -150,15 +151,45 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 	// the secret box using this group's public key.
 	_, err = keystore.OpenAnonymousSealedBox(s.env, grp.PublicKey, grp.EncryptedPrivateKey, req.GetSecret().GetValue())
 	if err != nil {
-		return nil, err
-	}
-	err = dbHandle.DB(ctx).Exec(`REPLACE INTO "Secrets" (user_id, group_id, name, value, perms) VALUES (?, ?, ?, ?, ?)`,
-		u.GetUserID(), u.GetGroupID(), req.GetSecret().GetName(), req.GetSecret().GetValue(), secretPerms.Perms).Error
-	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return &skpb.UpdateSecretResponse{}, nil
+	newSecret := false
+	err = dbHandle.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, err := tx.Raw(`
+			SELECT * 
+			FROM "Secrets" 
+			WHERE group_id = ? AND name = ?
+			`+dbHandle.SelectForUpdateModifier(), u.GetGroupID(), req.GetSecret().GetName()).Rows()
+		if err != nil {
+			return err
+		}
+		existingSecret := rows.Next()
+		_ = rows.Close()
+		if existingSecret {
+			err = tx.Exec(`
+				UPDATE "Secrets"
+				SET value = ?
+				WHERE group_id = ? AND name = ?`,
+				req.GetSecret().GetValue(), u.GetGroupID(), req.GetSecret().GetName()).Error
+			if err != nil {
+				return err
+			}
+		} else {
+			err = tx.Exec(`INSERT INTO "Secrets" (user_id, group_id, name, value, perms) VALUES(?, ?, ?, ?, ?)`,
+				u.GetUserID(), u.GetGroupID(), req.GetSecret().GetName(), req.GetSecret().GetValue(), secretPerms.Perms).Error
+			if err != nil {
+				return err
+			}
+			newSecret = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &skpb.UpdateSecretResponse{}, newSecret, nil
 }
 
 func (s *SecretService) DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error) {

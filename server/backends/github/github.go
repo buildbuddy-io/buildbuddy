@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -32,6 +33,7 @@ import (
 
 var (
 	statusNameSuffix = flag.String("github.status_name_suffix", "", "Suffix to be appended to all reported GitHub status names. Useful for differentiating BuildBuddy deployments. For example: '(dev)' ** Enterprise only **")
+	JwtKey           = flagutil.New("github.jwt_key", "", "The key to use when signing JWT tokens for github auth.", flagutil.SecretTag)
 
 	// TODO: Mark these deprecated once the new GitHub app is implemented.
 
@@ -51,10 +53,9 @@ const (
 	FailureState State = "failure"
 	SuccessState State = "success"
 
-	stateCookieName    = "Github-State-Token"
-	redirectCookieName = "Github-Redirect-Url"
-	groupIDCookieName  = "Github-Linked-Group-ID"
-	userIDCookieName   = "Github-Linked-User-ID"
+	stateCookieName   = "Github-State-Token"
+	groupIDCookieName = "Github-Linked-Group-ID"
+	userIDCookieName  = "Github-Linked-User-ID"
 )
 
 // State represents a status value that GitHub's statuses API understands.
@@ -223,7 +224,7 @@ func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, red
 	setCookie(w, stateCookieName, state)
 	setCookie(w, userIDCookieName, userID)
 	setCookie(w, groupIDCookieName, groupID)
-	setCookie(w, redirectCookieName, redirectURL)
+	setCookie(w, cookie.RedirCookie, redirectURL)
 
 	var authURL string
 	if r.FormValue("install") == "true" && c.InstallURL != "" {
@@ -244,9 +245,11 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, err := perms.AuthenticatedUser(r.Context(), c.env)
 	if err != nil {
 		// If not logged in to the app (e.g. when installing directly from
-		// GitHub), log in first, then come back here to complete the
-		// installation.
-		loginURL := fmt.Sprintf("/?redirect_url=%s", url.QueryEscape(r.URL.String()))
+		// GitHub), redirect to the account creation flow.
+		loginURL := fmt.Sprintf("/auth/github/?" + r.URL.RawQuery)
+		if *JwtKey == "" {
+			loginURL = fmt.Sprintf("/?redirect_url=%s", url.QueryEscape(r.URL.String()))
+		}
 		http.Redirect(w, r, loginURL, http.StatusTemporaryRedirect)
 		return
 	}
@@ -292,7 +295,7 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	appRedirectURL := getState(r, redirectCookieName)
+	appRedirectURL := getState(r, cookie.RedirCookie)
 	if appRedirectURL == "" {
 		appRedirectURL = "/"
 	}
@@ -603,7 +606,7 @@ func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 	redirectURL := &url.URL{Path: "/"}
 	// Respect the original redirect_url parameter that was set when initiating
 	// the flow.
-	if s := getState(r, redirectCookieName); s != "" {
+	if s := getState(r, cookie.RedirCookie); s != "" {
 		if u, err := url.Parse(s); err == nil {
 			redirectURL = u
 		}

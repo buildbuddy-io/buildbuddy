@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package repo;
+
+message CreateRepoRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The name of the repo, i.e. "buildbuddy".
+  string name = 2;
+
+  // The organization that the repo should be created under ex. "buildbuddy-io".
+  // If this is empty, the repo will be created under the authenticated Github
+  // User's account.
+  string organization = 3;
+
+  // A short description of the repo, ex. "BuildBuddy is an open source Bazel
+  // build event viewer, result store, remote caching, and remote build
+  // execution platform."
+  string description = 4;
+
+  // An existing git repository to use as a template for the new repo. The
+  // contents of this template repo will be copied into the new repo ex.
+  // "https://github.com/buildbuddy-io/go-typescript-starter-template.git"
+  string template = 5;
+
+  // If true, the repository will be created as a private repo.
+  bool private = 6;
+
+  // The platform on which the repo should be hosted. Currently only Github is
+  // supported, but in the future we'll likely support more git providers.
+  GitProvider provider = 7;
+
+  // The Github app installation id that should be used to create the
+  // repository. Only required for repositories that are hosted on Github.
+  int64 installation_id = 8;
+}
+
+// The platform on which the repository should be hosted.
+enum GitProvider {
+  UNKNOWN_TYPE = 0;
+  GITHUB = 1;
+}
+
+message CreateRepoResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The url of the newly created repository.
+  string repo_url = 2;
+}

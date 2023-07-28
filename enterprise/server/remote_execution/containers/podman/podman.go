@@ -48,6 +48,9 @@ import (
 )
 
 var (
+	// TODO(#2523): remove this flag.
+	podmanPullLogLevel = flag.String("executor.podman.pull_log_level", "", "Level at which to log `podman pull` command output. Should be one of the standard log levels, all lowercase.")
+
 	// Note: to get these cgroup paths, run a podman container like
 	//     podman run --rm --name sleepy busybox sleep infinity
 	// then look at the output of
@@ -58,7 +61,8 @@ var (
 
 	// TODO(iain): delete executor.podman.run_soci_snapshotter flag once
 	// the snapshotter doesn't need root permissions to run.
-	runSociSnapshotter           = flag.Bool("executor.podman.run_soci_snapshotter", true, "If true, runs the soci snapshotter locally if needed for image streaming.")
+	sociStoreLogLevel            = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
+	runSociStoreLocally          = flag.Bool("executor.podman.run_soci_store", true, "If true, runs the soci store locally if needed for image streaming.")
 	imageStreamingEnabled        = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all public (non-authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 
@@ -123,7 +127,12 @@ type Provider struct {
 func runSociStore(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
-		cmd := exec.CommandContext(ctx, "soci-store", "--local_keychain_port", strconv.Itoa(*sociStoreKeychainPort), sociStorePath)
+		args := []string{fmt.Sprintf("--local_keychain_port=%d", *sociStoreKeychainPort)}
+		if *sociStoreLogLevel != "" {
+			args = append(args, fmt.Sprintf("--log-level=%s", *sociStoreLogLevel))
+		}
+		args = append(args, sociStorePath)
+		cmd := exec.CommandContext(ctx, "soci-store", args...)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
@@ -142,7 +151,7 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
 	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
 	if *imageStreamingEnabled {
-		if *runSociSnapshotter {
+		if *runSociStoreLocally {
 			go runSociStore(env.GetServerContext())
 		}
 
@@ -765,13 +774,25 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 			creds.Password,
 		))
 	}
+
+	if *podmanPullLogLevel != "" {
+		podmanArgs = append(podmanArgs, fmt.Sprintf("--log-level=%s", *podmanPullLogLevel))
+	}
+
 	podmanArgs = append(podmanArgs, c.image)
 	// Use server context instead of ctx to make sure that "podman pull" is not killed when the context
 	// is cancelled. If "podman pull" is killed when copying a parent layer, it will result in
 	// corrupted storage.  More details see https://github.com/containers/storage/issues/1136.
 	pullCtx, cancel := context.WithTimeout(c.env.GetServerContext(), *pullTimeout)
 	defer cancel()
-	pullResult := runPodman(pullCtx, "pull", &container.Stdio{}, podmanArgs...)
+	stdio := &container.Stdio{}
+	if *podmanPullLogLevel != "" {
+		stdio = &container.Stdio{
+			Stdout: log.Writer("[podman pull] "),
+			Stderr: log.Writer("[podman pull] "),
+		}
+	}
+	pullResult := runPodman(pullCtx, "pull", stdio, podmanArgs...)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}

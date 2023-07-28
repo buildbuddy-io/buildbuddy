@@ -48,6 +48,7 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
@@ -134,6 +135,9 @@ func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.Updat
 	db := s.env.GetInvocationDB()
 	if err := db.UpdateInvocationACL(ctx, &authenticatedUser, req.GetInvocationId(), req.GetAcl()); err != nil {
 		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.Log(ctx, auditlog.InvocationResourceID(req.GetInvocationId()), alpb.Action_UPDATE, req)
 	}
 	return &inpb.UpdateInvocationResponse{}, nil
 }
@@ -481,7 +485,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 		})
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(""), alpb.Action_LIST, req)
+		al.Log(ctx, &alpb.ResourceID{Type: alpb.ResourceType_GROUP_API_KEY}, alpb.Action_LIST, req)
 	}
 	return rsp, nil
 }
@@ -498,7 +502,12 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(k.APIKeyID), alpb.Action_CREATE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_GROUP_API_KEY,
+			Id:   k.APIKeyID,
+			Name: k.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_CREATE, req)
 	}
 	return &akpb.CreateApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
@@ -535,6 +544,10 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	existingKey, err := authDB.GetAPIKey(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	tk := &tables.APIKey{
 		APIKeyID:            req.GetId(),
 		Label:               req.GetLabel(),
@@ -545,7 +558,12 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(req.GetId()), alpb.Action_UPDATE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_GROUP_API_KEY,
+			Id:   req.GetId(),
+			Name: existingKey.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_UPDATE, req)
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
 }
@@ -555,11 +573,20 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	existingKey, err := authDB.GetAPIKey(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	if err := authDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupAPIKeyResourceID(req.GetId()), alpb.Action_DELETE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_GROUP_API_KEY,
+			Id:   req.GetId(),
+			Name: existingKey.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_DELETE, req)
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
@@ -599,7 +626,12 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(k.APIKeyID), alpb.Action_CREATE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_USER_API_KEY,
+			Id:   k.APIKeyID,
+			Name: k.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_CREATE, req)
 	}
 	return &akpb.CreateApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
@@ -618,6 +650,10 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	existingKey, err := authDB.GetAPIKey(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	updates := &tables.APIKey{
 		APIKeyID:            req.GetId(),
 		Label:               req.GetLabel(),
@@ -628,7 +664,12 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(req.GetId()), alpb.Action_UPDATE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_USER_API_KEY,
+			Id:   req.GetId(),
+			Name: existingKey.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_UPDATE, req)
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
 }
@@ -638,11 +679,20 @@ func (s *BuildBuddyServer) DeleteUserApiKey(ctx context.Context, req *akpb.Delet
 	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	existingKey, err := authDB.GetAPIKey(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
 	if err := authDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.UserAPIKeyResourceID(req.GetId()), alpb.Action_DELETE, req)
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_USER_API_KEY,
+			Id:   req.GetId(),
+			Name: existingKey.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_DELETE, req)
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
@@ -939,6 +989,9 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
+		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
+			al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_EXECUTE_CLEAN_WORKFLOW, req)
+		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
@@ -1041,14 +1094,28 @@ func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRep
 	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	return a.LinkGitHubRepo(ctx, req)
+	rsp, err := a.LinkGitHubRepo(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GroupId), alpb.Action_LINK_GITHUB_REPO, req)
+	}
+	return rsp, nil
 }
 func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
 	a := s.env.GetGitHubApp()
 	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	return a.UnlinkGitHubRepo(ctx, req)
+	rsp, err := a.UnlinkGitHubRepo(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GroupId), alpb.Action_UNLINK_GITHUB_REPO, req)
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
@@ -1138,7 +1205,18 @@ func (s *BuildBuddyServer) ListSecrets(ctx context.Context, req *skpb.ListSecret
 }
 func (s *BuildBuddyServer) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, error) {
 	if secretService := s.env.GetSecretService(); secretService != nil {
-		return secretService.UpdateSecret(ctx, req)
+		rsp, newSecret, err := secretService.UpdateSecret(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if al := s.env.GetAuditLogger(); al != nil {
+			action := alpb.Action_UPDATE
+			if newSecret {
+				action = alpb.Action_CREATE
+			}
+			al.Log(ctx, auditlog.SecretResourceID(req.GetSecret().GetName()), action, req)
+		}
+		return rsp, err
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
@@ -1363,7 +1441,14 @@ func (s *BuildBuddyServer) SetEncryptionConfig(ctx context.Context, request *enp
 	if crypter == nil {
 		return nil, status.FailedPreconditionError("encryption not enabled in the server")
 	}
-	return crypter.SetEncryptionConfig(ctx, request)
+	rsp, err := crypter.SetEncryptionConfig(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(request.GetRequestContext().GetGroupId()), alpb.Action_UPDATE_ENCRYPTION_CONFIG, request)
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) GetEncryptionConfig(ctx context.Context, request *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {
@@ -1380,4 +1465,8 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 		return nil, status.FailedPreconditionError("audit logs not enabled in the server")
 	}
 	return al.GetLogs(ctx, request)
+}
+
+func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
 }

@@ -3,6 +3,7 @@ package aws
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/smithy-go"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	s3manager "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 var (
@@ -54,13 +55,6 @@ type AwsS3BlobStore struct {
 	bucket     *string
 	downloader *s3manager.Downloader
 	uploader   *s3manager.Uploader
-}
-
-func unwrap(err error) error {
-	for unwrappable, ok := err.(interface{ Unwrap() error }); ok; unwrappable, ok = unwrappable.Unwrap().(interface{ Unwrap() error }) {
-		err = unwrappable.Unwrap()
-	}
-	return err
 }
 
 func UseAwsS3BlobStore() bool {
@@ -152,10 +146,8 @@ func (a *AwsS3BlobStore) bucketExists(ctx context.Context, bucketName string) (b
 	if err == nil {
 		return true, nil
 	}
-	aerr, ok := unwrap(err).(smithy.APIError)
-	// AWS returns codes as strings
-	// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
-	if ok && aerr.ErrorCode() != "NotFound" {
+	var nf *s3types.NotFound
+	if errors.As(err, &nf) {
 		return false, err
 	}
 	return false, nil
@@ -202,10 +194,9 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 	spn.End()
 
 	if err != nil {
-		if aerr, ok := unwrap(err).(smithy.APIError); ok {
-			if aerr.ErrorCode() == "NoSuchKey" {
-				return nil, status.NotFoundError(err.Error())
-			}
+		var nsk *s3types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return nil, status.NotFoundError(err.Error())
 		}
 	}
 
@@ -276,7 +267,8 @@ func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 	defer spn.End()
 	_, err := a.client.HeadObject(ctx, params)
 	if err != nil {
-		if aerr, ok := unwrap(err).(smithy.APIError); ok && aerr.ErrorCode() == "NotFound" {
+		var nf *s3types.NotFound
+		if errors.As(err, &nf) {
 			return false, nil
 		}
 		return false, err

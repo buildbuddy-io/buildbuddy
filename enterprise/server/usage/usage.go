@@ -26,7 +26,7 @@ import (
 var region = flag.String("app.region", "", "The region in which the app is running.")
 
 const (
-	// collectionPeriodDuration determines the length of time for usage data
+	// periodDuration determines the length of time for usage data
 	// buckets in Redis. This directly affects the minimum period at which we
 	// can flush data to the DB, since we only flush buckets for past time
 	// periods.
@@ -37,23 +37,23 @@ const (
 	// decide to change this value while the usage tracker is running in production,
 	// we need to be careful not to overcount usage when transitioning to the new
 	// value.
-	collectionPeriodDuration = 1 * time.Minute
+	periodDuration = 1 * time.Minute
 
-	// collectionPeriodSettlingTime is the max length of time that we expect
-	// usage data to be written to a collection period bucket in Redis after the
-	// collection period has ended. This accounts for differences in clocks across
+	// periodSettlingTime is the max length of time that we expect
+	// usage data to be written to a usage period bucket in Redis after the
+	// period has ended. This accounts for differences in clocks across
 	// apps, Redis buffer flush delay (see redisutil.CommandBuffer), and latency
 	// to Redis itself.
-	collectionPeriodSettlingTime = 10 * time.Second
+	periodSettlingTime = 10 * time.Second
 
 	// redisKeyTTL defines how long usage keys have to live before they are
 	// deleted automatically by Redis.
 	//
-	// Keys should live for at least 2 collection periods since collection periods
+	// Keys should live for at least 2 usage periods since periods
 	// aren't finalized until the period is past, plus some wiggle room for Redis
-	// latency. We add a few more collection periods on top of that, in case
+	// latency. We add a few more periods on top of that, in case
 	// flushing fails due to transient errors.
-	redisKeyTTL = 5 * collectionPeriodDuration
+	redisKeyTTL = 5 * periodDuration
 
 	redisUsageKeyPrefix  = "usage/"
 	redisGroupsKeyPrefix = redisUsageKeyPrefix + "groups/"
@@ -68,9 +68,8 @@ const (
 	//
 	// This lock is purely to reduce load on the DB. Flush jobs should be
 	// able to run concurrently (without needing this lock) and still write the
-	// correct usage data. The atomicity of DB writes, combined with the
-	// fact that we write usage data in monotonically increasing order of
-	// timestamp, is really what prevents usage data from being overcounted.
+	// correct usage data. The atomicity of DB writes is really what prevents
+	// usage data from being overcounted.
 	redisUsageLockKey = "lock.usage"
 
 	// How long any given job can hold the usage lock for, before it expires
@@ -78,11 +77,11 @@ const (
 	redisUsageLockExpiry = 45 * time.Second
 
 	// How often to wake up and attempt to flush usage data from Redis to the DB.
-	flushInterval = collectionPeriodDuration
+	flushInterval = periodDuration
 )
 
 var (
-	collectionPeriodZeroValue = collectionPeriodStartingAt(time.Unix(0, 0))
+	periodZeroValue = periodStartingAt(time.Unix(0, 0))
 )
 
 // NewFlushLock returns a distributed lock that can be used with NewTracker
@@ -160,7 +159,7 @@ func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error 
 		return nil
 	}
 
-	t := ut.currentCollectionPeriod()
+	t := ut.currentPeriod()
 
 	// Add the group ID to the set of groups with usage
 	groupsCollectionPeriodKey := groupsRedisKey(t)
@@ -199,7 +198,7 @@ func (ut *tracker) StopDBFlush() {
 	ut.stopFlush <- struct{}{}
 }
 
-// FlushToDB flushes usage metrics from any finalized collection periods to the
+// FlushToDB flushes usage metrics from any finalized usage periods to the
 // DB.
 //
 // Public for testing only; the server should call StartDBFlush to periodically
@@ -229,12 +228,12 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, redisUsageLockExpiry)
 	defer cancel()
 
-	// Loop through collection periods starting from the oldest collection period
+	// Loop through usage periods starting from the oldest period
 	// that may exist in Redis (based on key expiration time) and looping up until
-	// we hit a collection period which is not yet "settled".
-	for c := ut.oldestWritableCollectionPeriod(); ut.isSettled(c); c = c.Next() {
+	// we hit a period which is not yet "settled".
+	for p := ut.oldestWritablePeriod(); ut.isSettled(p); p = p.Next() {
 		// Read groups
-		gk := groupsRedisKey(c)
+		gk := groupsRedisKey(p)
 		groupIDs, err := ut.rdb.SMembers(ctx, gk).Result()
 		if err != nil {
 			return err
@@ -242,7 +241,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 
 		for _, groupID := range groupIDs {
 			// Read usage counts from Redis
-			ck := countsRedisKey(groupID, c)
+			ck := countsRedisKey(groupID, p)
 			h, err := ut.rdb.HGetAll(ctx, ck).Result()
 			if err != nil {
 				return err
@@ -252,7 +251,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				return err
 			}
 			// Update counts in the DB
-			if err := ut.flushCounts(ctx, groupID, c, counts); err != nil {
+			if err := ut.flushCounts(ctx, groupID, p, counts); err != nil {
 				return err
 			}
 			// Clean up the counts from Redis
@@ -269,19 +268,19 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	return nil
 }
 
-func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collectionPeriod, counts *tables.UsageCounts) error {
+func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, counts *tables.UsageCounts) error {
 	pk := &tables.Usage{
 		GroupID:         groupID,
-		PeriodStartUsec: c.UsagePeriod().Start().UnixMicro(),
+		PeriodStartUsec: p.Start().UnixMicro(),
 		Region:          ut.region,
 	}
 	dbh := ut.env.GetDBHandle()
-	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_usage"), func(tx *db.DB) error {
+	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("insert_usage"), func(tx *db.DB) error {
 		log.Debugf("Flushing usage counts for key %+v", pk)
 
 		// First check whether the row already exists. Make sure to select for
 		// update in order to lock the row.
-		rows, err := tx.Raw(`
+		err := tx.Raw(`
 			SELECT *
 			FROM "Usages"
 			WHERE
@@ -292,200 +291,97 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			pk.Region,
 			pk.GroupID,
 			pk.PeriodStartUsec,
-		).Rows()
-		if err != nil {
+		).Take(&tables.Usage{}).Error
+		if err != nil && !db.IsRecordNotFound(err) {
 			return err
 		}
-
-		schema, err := db.TableSchema(tx, &tables.Usage{})
-		if err != nil {
-			return status.WrapError(err, "failed to get usage table schema")
+		if err == nil {
+			alert.UnexpectedEvent("usage_update_skipped", "Usage flush skipped since the row already exists; this may indicate that redis locking is failing.")
+			return nil
 		}
-
-		existingRowCount := 0
-		for rows.Next() {
-			existingRowCount++
-			fields := map[string]any{}
-			if err := tx.ScanRows(rows, &fields); err != nil {
-				return err
-			}
-
-			unsupportedField := ""
-			var unsupportedFieldValue any
-			for f, v := range fields {
-				if v == nil || v == "" {
-					continue
-				}
-				if _, ok := schema.FieldsByDBName[f]; !ok {
-					unsupportedField = f
-					unsupportedFieldValue = v
-					break
-				}
-			}
-			if unsupportedField != "" {
-				alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since existing usage row contains unsupported column %q = %q (key = %+v)", unsupportedField, unsupportedFieldValue, pk)
-				return nil
-			}
-		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-
-		tu := &tables.Usage{
+		// Row doesn't exist yet; create.
+		return tx.Create(&tables.Usage{
 			GroupID:         pk.GroupID,
 			PeriodStartUsec: pk.PeriodStartUsec,
 			Region:          pk.Region,
-			FinalBeforeUsec: c.End().UnixMicro(),
 			UsageCounts:     *counts,
-		}
-		if existingRowCount == 0 {
-			log.Debugf("Creating new usage row for key %+v", pk)
-			return tx.Create(tu).Error
-		}
-		if existingRowCount > 1 {
-			// Drop the usage update and alert about it, but there's not much we
-			// can do to recover in this case so don't roll back the transaction
-			// (since that would cause the flush to keep being retried).
-			alert.UnexpectedEvent("usage_update_dropped", "Usage update transaction aborted since it would affect more than one row (key = %+v)", pk)
-			return nil
-		}
-
-		// Update the usage row, but only if collection period data has not already
-		// been written (for example, if the previous flush failed to delete the
-		// data from Redis).
-		log.Debugf("Updating existing usage row for key %+v", pk)
-		res := tx.Exec(`
-			UPDATE "Usages"
-			SET
-				final_before_usec = ?,
-				invocations = invocations + ?,
-				cas_cache_hits = cas_cache_hits + ?,
-				action_cache_hits = action_cache_hits + ?,
-				total_download_size_bytes = total_download_size_bytes + ?,
-				linux_execution_duration_usec = linux_execution_duration_usec + ?,
-				mac_execution_duration_usec = mac_execution_duration_usec + ?,
-				total_upload_size_bytes = total_upload_size_bytes + ?,
-				total_cached_action_exec_usec = total_cached_action_exec_usec + ?
-			WHERE
-				group_id = ?
-				AND period_start_usec = ?
-				AND region = ?
-				AND final_before_usec <= ?
-		`,
-			c.End().UnixMicro(),
-			tu.Invocations,
-			tu.CASCacheHits,
-			tu.ActionCacheHits,
-			tu.TotalDownloadSizeBytes,
-			tu.LinuxExecutionDurationUsec,
-			tu.MacExecutionDurationUsec,
-			tu.TotalUploadSizeBytes,
-			tu.TotalCachedActionExecUsec,
-			tu.GroupID,
-			tu.PeriodStartUsec,
-			tu.Region,
-			c.Start().UnixMicro(),
-		)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected > 1 {
-			// Note: this should never happen since we should be first querying
-			// the rows to update above, and only applying the update if the
-			// number of selected rows was 1.
-			alert.UnexpectedEvent("usage_update_logic_error", "Usage update transaction rolled back due to unexpected affected row count %d (key = %+v)", res.RowsAffected, pk)
-			// Note: returning an error here causes the transaction to be rolled
-			// back.
-			return status.InternalErrorf("unexpected number of rows affected (%d)", res.RowsAffected)
-		}
-		return nil
+			// While we're migrating to INSERT-only flushing, we still need to
+			// write FinalBeforeUsec to be compatible with old apps that still
+			// rely on it to know whether the collection period data has been
+			// written. Note that this only matters if a new app happens to
+			// write a collection period starting at the beginning of an hour.
+			//
+			// TODO(bduffany): remove this once all apps are migrated to flush
+			// at 1 minute granularity.
+			FinalBeforeUsec: p.Start().Add(periodDuration).UnixMicro(),
+		}).Error
 	})
 }
 
-func (ut *tracker) currentCollectionPeriod() collectionPeriod {
-	return collectionPeriodStartingAt(ut.clock.Now())
+func (ut *tracker) currentPeriod() period {
+	return periodStartingAt(ut.clock.Now())
 }
 
-func (ut *tracker) oldestWritableCollectionPeriod() collectionPeriod {
-	return collectionPeriodStartingAt(ut.clock.Now().Add(-redisKeyTTL))
+func (ut *tracker) oldestWritablePeriod() period {
+	return periodStartingAt(ut.clock.Now().Add(-redisKeyTTL))
 }
 
-func (ut *tracker) lastSettledCollectionPeriod() collectionPeriod {
-	return collectionPeriodStartingAt(ut.clock.Now().Add(-(collectionPeriodDuration + collectionPeriodSettlingTime)))
+func (ut *tracker) lastSettledPeriod() period {
+	return periodStartingAt(ut.clock.Now().Add(-(periodDuration + periodSettlingTime)))
 }
 
-// isSettled returns whether the given collection period will no longer have
+// isSettled returns whether the given period will no longer have
 // usage data written to it and is therefore safe to flush to the DB.
-func (ut *tracker) isSettled(c collectionPeriod) bool {
-	return !time.Time(c).After(time.Time(ut.lastSettledCollectionPeriod()))
+func (ut *tracker) isSettled(c period) bool {
+	return !time.Time(c).After(time.Time(ut.lastSettledPeriod()))
 }
 
-// collectionPeriod is an interval of time starting at the beginning of a minute
-// in UTC time and lasting one minute. Usage data is bucketed by collection
-// period in Redis.
-type collectionPeriod time.Time
+// period is an interval of time starting at the beginning of a minute
+// in UTC time and lasting one minute. Usage data is stored at this granularity
+// both in Redis and the DB.
+type period time.Time
 
-func collectionPeriodStartingAt(t time.Time) collectionPeriod {
+func periodStartingAt(t time.Time) period {
 	utc := t.UTC()
-	return collectionPeriod(time.Date(
+	return period(time.Date(
 		utc.Year(), utc.Month(), utc.Day(),
 		utc.Hour(), utc.Minute(), 0, 0,
 		utc.Location()))
 }
 
-func parseCollectionPeriod(s string) (collectionPeriod, error) {
+func parseCollectionPeriod(s string) (period, error) {
 	usec, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return collectionPeriodZeroValue, err
+		return periodZeroValue, err
 	}
 	t := time.UnixMicro(usec)
-	return collectionPeriodStartingAt(t), nil
+	return periodStartingAt(t), nil
 }
 
-func (c collectionPeriod) Start() time.Time {
+func (c period) Start() time.Time {
 	return time.Time(c)
 }
 
-func (c collectionPeriod) End() time.Time {
-	return c.Start().Add(collectionPeriodDuration)
+func (c period) End() time.Time {
+	return c.Start().Add(periodDuration)
 }
 
-// Next returns the next collection period after this one.
-func (c collectionPeriod) Next() collectionPeriod {
-	return collectionPeriod(c.End())
+// Next returns the next period after this one.
+func (c period) Next() period {
+	return period(c.End())
 }
 
-// UsagePeriod returns the usage period that this collection period is contained
-// within. A usage period corresponds to the coarse-level time range of usage
-// rows in the DB (1 hour), while a collection period corresponds to the more
-// fine-grained time ranges of Redis keys (1 minute).
-func (c collectionPeriod) UsagePeriod() usagePeriod {
-	t := c.Start()
-	return usagePeriod(time.Date(
-		t.Year(), t.Month(), t.Day(),
-		t.Hour(), 0, 0, 0,
-		t.Location()))
-}
-
-// String returns a string uniquely identifying this collection period. It can
-// later be reconstructed with parseCollectionPeriod.
-func (c collectionPeriod) String() string {
+// String returns a string uniquely identifying this usage period. It can
+// later be reconstructed with parsePeriod.
+func (c period) String() string {
 	return c.Start().Format(redisTimeKeyFormat)
 }
 
-// usagePeriod is an interval of time starting at the beginning of each UTC hour
-// and ending at the start of the following hour.
-type usagePeriod time.Time
-
-func (u usagePeriod) Start() time.Time {
-	return time.Time(u)
-}
-
-func groupsRedisKey(c collectionPeriod) string {
+func groupsRedisKey(c period) string {
 	return fmt.Sprintf("%s%s", redisGroupsKeyPrefix, c)
 }
 
-func countsRedisKey(groupID string, c collectionPeriod) string {
+func countsRedisKey(groupID string, c period) string {
 	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, groupID, c)
 }
 

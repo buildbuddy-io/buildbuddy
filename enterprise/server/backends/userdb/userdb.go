@@ -714,6 +714,19 @@ func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 	})
 }
 
+func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, error) {
+	var user *tables.User
+	err := d.h.Transaction(ctx, func(tx *db.DB) error {
+		u, err := d.getUser(tx, id)
+		if err != nil {
+			return err
+		}
+		user = u
+		return err
+	})
+	return user, err
+}
+
 func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	auth := d.env.GetAuthenticator()
 	if auth == nil {
