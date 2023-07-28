@@ -625,8 +625,8 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 
 	// If we have a template, copy the template contents to the new repo
 	if req.Template != "" {
-		tmpDir := fmt.Sprintf("%s/template-repo/%d/%s/", scratchspace.TempDir(), req.InstallationId, req.Name)
-		err := cloneTemplate(tmpDir, token, req.Template, *repo.CloneURL)
+		tmpDirName := fmt.Sprintf("template-repo-%d-%s-*", req.InstallationId, req.Name)
+		err = cloneTemplate(tmpDirName, token, req.Template, *repo.CloneURL)
 		if err != nil {
 			return nil, err
 		}
@@ -651,24 +651,20 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 }
 
 // TODO(siggisim): consider moving template cloning to a remote action if it causes us troubles doing this on apps.
-func cloneTemplate(tmpDir, token, srcURL, destURL string) error {
+func cloneTemplate(tmpDirName, token, srcURL, destURL string) error {
 	// Make a temporary directory for the template
-	err := os.MkdirAll(tmpDir, os.ModePerm)
+	tmpDir, err := scratchspace.MkdirTemp(tmpDirName)
 	if err != nil {
 		return err
 	}
-	dir, err := os.MkdirTemp(tmpDir, "repo")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(tmpDir)
 
 	// Clone the template into the directory
 	auth := &githttp.BasicAuth{
 		Username: "github",
 		Password: token,
 	}
-	gitRepo, err := git.PlainClone(dir, false, &git.CloneOptions{
+	gitRepo, err := git.PlainClone(tmpDir, false, &git.CloneOptions{
 		URL:  srcURL,
 		Auth: auth,
 	})

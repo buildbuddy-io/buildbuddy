@@ -27,10 +27,10 @@ const (
 // files. Calling this function is required before using any other functions in
 // this package.
 func Init() error {
-	if err := os.RemoveAll(TempDir()); err != nil {
+	if err := os.RemoveAll(tempDir()); err != nil {
 		return status.InvalidArgumentErrorf("failed to clear scratch directory: %s", err)
 	}
-	if err := os.MkdirAll(TempDir(), 0755); err != nil {
+	if err := os.MkdirAll(tempDir(), 0755); err != nil {
 		return status.InvalidArgumentErrorf("failed to create scratch directory: %s", err)
 	}
 	return nil
@@ -44,7 +44,7 @@ func defaultTempDir() string {
 }
 
 // tempDir returns the directory where scratch files are written.
-func TempDir() string {
+func tempDir() string {
 	return filepath.Join(*tempDir_doNotUseDirectly, tempSubDir)
 }
 
@@ -63,5 +63,21 @@ func TempDir() string {
 //	    os.Remove(f.Name())
 //	}()
 func CreateTemp(pattern string) (*os.File, error) {
-	return os.CreateTemp(TempDir(), pattern)
+	return os.CreateTemp(tempDir(), pattern)
+}
+
+// MkdirTemp has the same semantics as os.MkdirTemp, with the parent directory
+// set to the configured scratch directory.
+// The caller is responsible for deleting the directory once it is no longer needed.
+//
+// Example usage:
+//
+//	dir, err := scratchspace.MkdirTemp("dirname-*")
+//	if err != nil {
+//	    return err
+//	}
+//
+// defer os.RemoveAll(dir) // clean up
+func MkdirTemp(pattern string) (string, error) {
+	return os.MkdirTemp(tempDir(), pattern)
 }
