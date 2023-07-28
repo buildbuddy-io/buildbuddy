@@ -23,6 +23,7 @@ go_library(
         "//server/util/perms",
         "//server/util/retry",
         "//server/util/role",
+        "//server/util/scratchspace",
         "//server/util/status",
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//config",

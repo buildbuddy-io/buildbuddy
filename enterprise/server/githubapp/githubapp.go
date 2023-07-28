@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -24,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -33,7 +33,7 @@ import (
 
 	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
+	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	gh_oauth "github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -592,7 +592,7 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 	return &ghpb.GetAccessibleReposResponse{RepoUrls: urls}, nil
 }
 
-func (a *GitHubApp) CreateRepo(ctx context.Context, req *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
+func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -622,8 +622,11 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *repb.CreateRepoRequest)
 
 	// If we have a template, copy the template contents to the new repo
 	if req.Template != "" {
-		tmpDir := fmt.Sprintf("%s/template-repo/%d/%s/", os.TempDir(), req.InstallationId, req.Name)
-		cloneTemplate(tmpDir, token, req.Template, *repo.CloneURL)
+		tmpDir := fmt.Sprintf("%s/template-repo/%d/%s/", scratchspace.TempDir(), req.InstallationId, req.Name)
+		err := cloneTemplate(tmpDir, token, req.Template, *repo.CloneURL)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Link new repository to enable workflows
@@ -639,7 +642,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *repb.CreateRepoRequest)
 		return nil, err
 	}
 
-	return &repb.CreateRepoResponse{
+	return &rppb.CreateRepoResponse{
 		RepoUrl: *repo.HTMLURL,
 	}, nil
 }
@@ -650,7 +653,7 @@ func cloneTemplate(tmpDir, token, srcURL, destURL string) error {
 	if err != nil {
 		return err
 	}
-	dir, err := ioutil.TempDir(tmpDir, "repo")
+	dir, err := os.MkdirTemp(tmpDir, "repo")
 	if err != nil {
 		return err
 	}
