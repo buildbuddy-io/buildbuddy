@@ -52,6 +52,15 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 	}
 	cdcOpts := fastcdc.Options{
 		AverageSize: averageSize,
+
+		// Use the library default for MinSize and MaxSize. We explictly specified
+		// the default here to avoid accident change of the values by the library.
+		MinSize: averageSize / 4,
+		MaxSize: averageSize * 4,
+
+		// We want to keep the rolling hash the same to ensure that given the same
+		// file, the library will chunk the file in the same way.
+		Seed: 0,
 	}
 
 	chunker, err := fastcdc.NewChunker(pr, cdcOpts)
