@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -155,6 +156,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	stage := &stagedGauge{}
 	defer stage.End()
 
+	actionMetrics := &ActionMetrics{}
+	defer func() {
+		actionMetrics.Error = err
+		actionMetrics.Report(ctx)
+	}()
+
 	task := st.ExecutionTask
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
@@ -195,6 +202,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 				return true, err
 			}
 			log.CtxInfof(ctx, "Found existing result in action cache, all done.")
+			actionMetrics.Result = actionResult
+			actionMetrics.CachedResult = true
 			return false, nil
 		}
 	}
@@ -204,6 +213,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
+	actionMetrics.Isolation = r.GetIsolationType()
 	finishedCleanly := false
 	defer func() {
 		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
@@ -276,8 +286,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}
 
-	md.UsageStats = cmdResult.UsageStats
-
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful
 	// for debugging.
@@ -285,11 +293,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
 	defer cancel()
 
+	md.UsageStats = cmdResult.UsageStats
 	md.ExecutionCompletedTimestamp = timestamppb.Now()
 	md.OutputUploadStartTimestamp = timestamppb.Now()
 
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
+	actionMetrics.Result = actionResult
 
 	log.CtxInfof(ctx, "Uploading outputs.")
 	stage.Set("output_upload")
@@ -314,30 +324,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 	}
 
-	metrics.RemoteExecutionCount.With(prometheus.Labels{
-		metrics.ExitCodeLabel:            fmt.Sprintf("%d", actionResult.ExitCode),
-		metrics.StatusHumanReadableLabel: status.MetricsLabel(cmdResult.Error),
-		metrics.IsolationTypeLabel:       r.GetIsolationType(),
-	}).Inc()
-	metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
-	metrics.FileDownloadSizeBytes.Observe(float64(md.IoStats.FileDownloadSizeBytes))
-	metrics.FileDownloadDurationUsec.Observe(float64(md.IoStats.FileDownloadDurationUsec))
-	metrics.FileUploadCount.Observe(float64(md.IoStats.FileUploadCount))
-	metrics.FileUploadSizeBytes.Observe(float64(md.IoStats.FileUploadSizeBytes))
-	metrics.FileUploadDurationUsec.Observe(float64(md.IoStats.FileUploadDurationUsec))
-
-	groupID := interfaces.AuthAnonymousUser
-	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
-		groupID = u.GetGroupID()
-	}
-
-	observeStageDuration(groupID, "queued", md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
-	observeStageDuration(groupID, "pull_image", md.GetWorkerStartTimestamp(), md.GetInputFetchStartTimestamp())
-	observeStageDuration(groupID, "input_fetch", md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
-	observeStageDuration(groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-	observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
-	observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
-
 	// If there's an error that we know the client won't retry, return an error
 	// so that the scheduler can retry it.
 	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
@@ -354,6 +340,52 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		finishedCleanly = true
 	}
 	return false, nil
+}
+
+type ActionMetrics struct {
+	Isolation    string
+	CachedResult bool
+	// Error is any abnormal error that occurred while executing the action.
+	Error error
+	// Result is the action execution result.
+	Result *repb.ActionResult
+}
+
+func (m *ActionMetrics) Report(ctx context.Context) {
+	if m.CachedResult {
+		// Don't report metrics for cached actions for now.
+		return
+	}
+	groupID := interfaces.AuthAnonymousUser
+	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
+		groupID = u.GetGroupID()
+	}
+	exitCode := commandutil.NoExitCode
+	if m.Result != nil {
+		exitCode = int(m.Result.ExitCode)
+	}
+	metrics.RemoteExecutionCount.With(prometheus.Labels{
+		metrics.ExitCodeLabel:            fmt.Sprintf("%d", exitCode),
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(m.Error),
+		metrics.IsolationTypeLabel:       m.Isolation,
+	}).Inc()
+	md := m.Result.GetExecutionMetadata()
+	if md != nil {
+		observeStageDuration(groupID, "queued", md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
+		observeStageDuration(groupID, "pull_image", md.GetWorkerStartTimestamp(), md.GetInputFetchStartTimestamp())
+		observeStageDuration(groupID, "input_fetch", md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
+		observeStageDuration(groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
+		observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
+		observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
+	}
+	if md.GetIoStats() != nil {
+		metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
+		metrics.FileDownloadSizeBytes.Observe(float64(md.IoStats.FileDownloadSizeBytes))
+		metrics.FileDownloadDurationUsec.Observe(float64(md.IoStats.FileDownloadDurationUsec))
+		metrics.FileUploadCount.Observe(float64(md.IoStats.FileUploadCount))
+		metrics.FileUploadSizeBytes.Observe(float64(md.IoStats.FileUploadSizeBytes))
+		metrics.FileUploadDurationUsec.Observe(float64(md.IoStats.FileUploadDurationUsec))
+	}
 }
 
 func incompleteExecutionError(ctx context.Context, exitCode int, err error) error {
