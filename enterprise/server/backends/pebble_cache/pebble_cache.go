@@ -97,7 +97,7 @@ var (
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
 
 	// Chunking related flags
-	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes", 0, "Average size of chunks that's stored in the cache")
+	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes", 0, "Average size of chunks that's stored in the cache. Disabled if 0.")
 )
 
 var (
@@ -1804,8 +1804,8 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	return pebble.ReadCloserWithFunc(rc, db.Close), nil
 }
 
-// A writer that will chunk the raw content using Content-Define Chunking,
-// and then encrypt and compress when needed
+// A writer that will chunk bytes written to it using Content-Defined Chunking,
+// and then, if configured, encrypt and compress the chunked bytes.
 type cdcWriter struct {
 	ctx        context.Context
 	pc         *PebbleCache
@@ -1830,10 +1830,6 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		return nil, err
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(10)
 	cdcw := &cdcWriter{
@@ -1848,6 +1844,9 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 	}
 
 	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
+	if err != nil {
+		return nil, err
+	}
 	cdcw.chunker = chunker
 
 	cwc := ioutil.NewCustomCommitWriteCloser(cdcw)
@@ -1860,6 +1859,10 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			return err
 		}
 		if cdcw.numChunks == 1 {
+			// When there is only one single chunk, we want to store the original file
+			// record with the original key instead of computed digest from the
+			// chunkData. This is because the chunkData can be compressed or encrypted,
+			// so the digest computed from it will be different from the original digest.
 			return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, cdcw.firstChunk)
 		}
 		now := p.clock.Now().UnixMicro()
@@ -1880,6 +1883,10 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 	cdcw.numChunks++
 
 	if cdcw.numChunks == 1 {
+		// We will wait to write the first chunk until either cdcw.Commit() is
+		// called or the second chunk is encountered.
+		// In the former case, there is only one chunk, we don't want to write a
+		// file-level metadata entry and a chunk entry into pebble.
 		cdcw.firstChunk = make([]byte, len(chunkData))
 		copy(cdcw.firstChunk, chunkData)
 		return nil
@@ -1918,14 +1925,6 @@ func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.
 	return nil
 }
 
-func (cdcw *cdcWriter) writeChunkWhenSingle(chunkData []byte) error {
-	// When there is only one single chunk, we want to store the original file
-	// record with the original key instead of computed digest from the
-	// chunkData. This is because the chunkData can be compressed or encrypted,
-	// so the digest computed from it will be different from the original digest.
-	return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, chunkData)
-}
-
 func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	ctx := cdcw.ctx
 	p := cdcw.pc
@@ -1958,6 +1957,10 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	if err != nil {
 		return err
 	}
+
+	// We use cdcw.writtenChunks for the file-level metadata, and this needs to
+	// be in the orther. Otherwise, when we read the file, the chunks will be
+	// read out of order.
 	cdcw.writtenChunks = append(cdcw.writtenChunks, r)
 
 	cdcw.eg.Go(func() error {
@@ -3209,7 +3212,7 @@ type readCloser struct {
 }
 
 // newChunkedReader returns a reader to read chunked content.
-// When shouldDecompress is true, the content readed is decompressed.
+// When shouldDecompress is true, the content read is decompressed.
 func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *rfpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error) {
 	missing, err := p.FindMissing(ctx, chunkedMD.GetResource())
 	if err != nil {
