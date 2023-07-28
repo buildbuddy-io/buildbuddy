@@ -58,3 +58,11 @@
 .audit-logs .request pre {
   margin: 0;
 }
+
+.audit-logs .icon-text-button > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.audit-logs .empty-state {
+  margin-top: 16px;
+}

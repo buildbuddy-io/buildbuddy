@@ -24,6 +24,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   View,
+  ActivitySquare,
+  Fingerprint,
 } from "lucide-react";
 import React from "react";
 import authService, { User } from "../../../app/auth/auth_service";
@@ -221,7 +223,8 @@ export default class SidebarComponent extends React.Component<Props, State> {
           )}
           {router.canAccessAuditLogsPage(this.props.user) && capabilities.config.auditLogsUiEnabled && (
             <SidebarLink selected={this.isAuditLogsSelected()} href={Path.auditLogsPath}>
-              <View className="icon" /> Audit Logs
+              <Fingerprint className="icon" />
+              <span className="sidebar-item-text">Audit logs</span>
             </SidebarLink>
           )}
           <a className="sidebar-item" href="https://www.buildbuddy.io/docs/" target="_blank" title="Docs">
