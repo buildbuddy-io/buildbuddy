@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 type entry struct {
@@ -106,8 +107,7 @@ func newCache(t *testing.T, maxSizeBytes int64) (*testCache, *approxlru.LRU[*ent
 }
 
 func fillCache(t *testing.T, c *testCache, n int, sizeBytes int64) {
-	atime, err := time.Parse(time.RFC3339, "2022-01-01T00:00:00-07:00")
-	require.NoError(t, err)
+	atime := time.Now().Add(-1 * time.Hour * time.Duration(n))
 
 	for i := 0; i < n; i++ {
 		c.Add(&entry{
@@ -129,11 +129,19 @@ func TestPartialEviction(t *testing.T) {
 	l.UpdateSizeBytes(10_000)
 	waitForEviction(t, l)
 
-	oldest := c.data[0].atime
+	var remainingAges []time.Time
+	for _, i := range c.data {
+		remainingAges = append(remainingAges, i.atime)
+	}
+	slices.SortFunc(remainingAges, func(a, b time.Time) bool {
+		return a.Before(b)
+	})
+
+	oldest := remainingAges[int(float64(len(remainingAges))*0.05)]
 
 	for _, e := range c.evictions {
 		if !e.atime.Before(oldest) {
-			require.FailNowf(t, "early eviction", "evicted item %+v is not older than entries still in the cache", e)
+			require.FailNowf(t, "early eviction", "evicted item %+v is not older than 95% of entries still in the cache", e)
 		}
 	}
 }

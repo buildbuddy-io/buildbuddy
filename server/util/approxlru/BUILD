@@ -20,5 +20,6 @@ go_test(
         ":approxlru",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_exp//slices",
     ],
 )

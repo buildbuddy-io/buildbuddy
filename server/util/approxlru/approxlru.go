@@ -311,8 +311,13 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 	// Resample every time we evict keys.
 	// N.B. We might end up evicting less than deletesPerEviction keys below
 	// but sampling extra keys is harmless.
+	numToSample := l.deletesPerEviction
+	// Fill the pool if it's empty.
+	if len(l.samplePool) == 0 {
+		numToSample = l.samplePoolSize
+	}
 	start := time.Now()
-	if err := l.resampleK(l.deletesPerEviction); err != nil {
+	if err := l.resampleK(numToSample); err != nil {
 		return nil, err
 	}
 	if l.evictionResampleLatencyUsec != nil {
