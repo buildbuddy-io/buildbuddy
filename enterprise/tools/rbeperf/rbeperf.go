@@ -621,19 +621,28 @@ func (g *runner) run(ctx context.Context) error {
 
 	log.Infof("Perf run completed, calculating metrics.")
 
-	histogramOpts := histogram.Options{BucketLabelFormatter: func(min int64, max int64) string {
+	timeHistogramOpts := histogram.Options{BucketLabelFormatter: func(min int64, max int64) string {
 		return fmt.Sprintf("%d - %d ms", min, max)
 	}}
+	memHistogramOpts := histogram.Options{BucketLabelFormatter: func(min int64, max int64) string {
+		return fmt.Sprintf("%d - %d bytes", min, max)
+	}}
+	cpuHistogramOpts := histogram.Options{BucketLabelFormatter: func(min int64, max int64) string {
+		return fmt.Sprintf("%d - %d ns", min, max)
+	}}
 
-	clientReqHist := histogram.NewWithOptions(histogramOpts)
-	clientAcceptHist := histogram.NewWithOptions(histogramOpts)
-	clientAcceptToFinishHist := histogram.NewWithOptions(histogramOpts)
-	clientTotalHist := histogram.NewWithOptions(histogramOpts)
+	clientReqHist := histogram.NewWithOptions(timeHistogramOpts)
+	clientAcceptHist := histogram.NewWithOptions(timeHistogramOpts)
+	clientAcceptToFinishHist := histogram.NewWithOptions(timeHistogramOpts)
+	clientTotalHist := histogram.NewWithOptions(timeHistogramOpts)
 
-	remoteInputFetchHist := histogram.NewWithOptions(histogramOpts)
-	remoteExecHist := histogram.NewWithOptions(histogramOpts)
-	remoteOutputUploadHist := histogram.NewWithOptions(histogramOpts)
-	remoteTotalHist := histogram.NewWithOptions(histogramOpts)
+	remoteInputFetchHist := histogram.NewWithOptions(timeHistogramOpts)
+	remoteExecHist := histogram.NewWithOptions(timeHistogramOpts)
+	remoteOutputUploadHist := histogram.NewWithOptions(timeHistogramOpts)
+	remoteTotalHist := histogram.NewWithOptions(timeHistogramOpts)
+
+	peakMemHist := histogram.NewWithOptions(memHistogramOpts)
+	cpuHist := histogram.NewWithOptions(cpuHistogramOpts)
 
 	var resultsWriter *rawResultsWriter
 	if *rawResultsDir != "" {
@@ -692,6 +701,9 @@ func (g *runner) run(ctx context.Context) error {
 		remoteExecHist.Add(remoteStats.executeDuration.Milliseconds())
 		remoteOutputUploadHist.Add(remoteStats.uploadOutputsDuration.Milliseconds())
 		remoteTotalHist.Add(remoteStats.totalDuration.Milliseconds())
+
+		peakMemHist.Add(res.RemoteStats.UsageStats.PeakMemoryBytes)
+		cpuHist.Add(res.RemoteStats.UsageStats.CpuNanos)
 	}
 
 	if *summary {
@@ -707,6 +719,8 @@ func (g *runner) run(ctx context.Context) error {
 		fmt.Printf("Execution time:\n%s\n", remoteExecHist.String())
 		fmt.Printf("Output upload time:\n%s\n", remoteOutputUploadHist.String())
 		fmt.Printf("Total time:\n%s\n", remoteTotalHist.String())
+		fmt.Printf("Peak memory usage:\n%s\n", peakMemHist.String())
+		fmt.Printf("CPU usage:\n%s\n", cpuHist.String())
 	}
 
 	fillMetric := func(g *prometheus.GaugeVec, h *histogram.Histogram, stage string) {
