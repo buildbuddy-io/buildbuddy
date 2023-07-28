@@ -1062,6 +1062,8 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	}
 	numCancelled := 0
 	for _, id := range ids {
+		ctx := log.EnrichContext(ctx, log.ExecutionIDKey, id)
+		log.CtxInfof(ctx, "Cancelling execution %q due to user request for invocation %q", id, invocationID)
 		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, id)
 		if cancelled {
 			numCancelled++

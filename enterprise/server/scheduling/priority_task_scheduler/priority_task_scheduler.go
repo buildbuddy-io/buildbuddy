@@ -183,9 +183,6 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 	}
 
 	rootContext, rootCancel := context.WithCancel(context.Background())
-	rootContext = log.EnrichContext(rootContext, "executor_host_id", exec.HostID())
-	rootContext = log.EnrichContext(rootContext, "executor_id", exec.ID())
-
 	qes := &PriorityTaskScheduler{
 		env:                     env,
 		q:                       newTaskQueue(),
@@ -200,9 +197,16 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		cpuMillisCapacity:       cpuMillisCapacity,
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
+	qes.rootContext = qes.enrichContext(qes.rootContext)
 
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
 	return qes
+}
+
+func (q *PriorityTaskScheduler) enrichContext(ctx context.Context) context.Context {
+	ctx = log.EnrichContext(ctx, "executor_host_id", q.exec.HostID())
+	ctx = log.EnrichContext(ctx, "executor_id", q.exec.ID())
+	return ctx
 }
 
 // Shutdown ensures that we don't attempt to claim work that was enqueued but
@@ -211,7 +215,8 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 // receive a shutdown signal, but permit in-progress work to continue, up until
 // just before the shutdown timeout, at which point we hard-cancel it.
 func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
-	log.Debug("PriorityTaskScheduler received shutdown signal")
+	ctx = q.enrichContext(ctx)
+	log.CtxDebug(ctx, "PriorityTaskScheduler received shutdown signal")
 	q.mu.Lock()
 	q.shuttingDown = true
 	q.mu.Unlock()
@@ -238,9 +243,9 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 	go func() {
 		select {
 		case <-ctx.Done():
-			log.Infof("Graceful stop of executor succeeded.")
+			log.CtxInfof(ctx, "Graceful stop of executor succeeded.")
 		case <-time.After(delay):
-			log.Warningf("Hard-stopping executor!")
+			log.CtxWarningf(ctx, "Hard-stopping executor!")
 			q.rootCancel()
 		}
 	}()
