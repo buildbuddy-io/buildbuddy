@@ -22,35 +22,7 @@ import (
 */
 import "C"
 
-/*
-To perform UFFD operations, you make an IOCTL syscall with the address of a macro defined in the
-linux header file userfaultfd.h
-These macros aren't imported correctly from the C package, so you can manually compute their address
-
-Example to get the address of the UFFDIO_COPY macro:
-1. Find the definition of UFFDIO_COPY in linux/userfaultfd.h
-```
-#define UFFDIO_COPY             _IOWR(UFFDIO, _UFFDIO_COPY, struct uffdio_copy)
-```
-
-2. Copy the definition to the following C script address.c
-```
-#include <stdio.h>
-#include <linux/ioctl.h>
-#include <linux/userfaultfd.h>
-
-	int main() {
-		printf("(hex)%x\n", _IOWR(UFFDIO, _UFFDIO_COPY, struct uffdio_copy));
-	}
-
-```
-
-3. Run the script:
-```
-gcc -o address address.c
-./address
-```
-*/
+// UFFD macros - see README for more info
 const UFFDIO_COPY = 0xc028aa03
 
 // uffdMsg is a notification from the userfaultfd object about a change in the virtual memory layout of the
@@ -80,15 +52,13 @@ type uffdioCopy struct {
 	Copy int64  // After the syscall has completed, contains the number of bytes copied, or a negative errno to indicate failure
 }
 
-/*
-GuestRegionUFFDMapping represents the mapping between a VM memory address to the offset in the corresponding
-memory snapshot file.
-
-# This data is sent by firecracker to tell the UFFD handler how to handle page faults
-
-Ex. If the VM tries to read memory at `BaseHostVirtAddr` and triggers a page fault, the UFFD handler can populate it
-by copying `size` bytes from `offset` in the memory snapshot file.
-*/
+// GuestRegionUFFDMapping represents the mapping between a VM memory address to the offset in the corresponding
+// memory snapshot file.
+//
+// # This data is sent by firecracker to tell the UFFD handler how to handle page faults
+//
+// Ex. If the VM tries to read memory at `BaseHostVirtAddr` and triggers a page fault, the UFFD handler can populate it
+// by copying `size` bytes from `offset` in the memory snapshot file.
 type GuestRegionUFFDMapping struct {
 	BaseHostVirtAddr uintptr `json:"base_host_virt_addr"`
 	Size             uintptr `json:"size"`
@@ -106,10 +76,7 @@ type setupMessage struct {
 }
 
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
-// Rather than the VM accessing the snapshot file directly, this handler will use a blockio.COWStore
-// to manage the file - allowing it to be served remotely, compressed, etc.
-//
-// To initialize, set `Uffd` as the memory backend type when loading a firecracker memory snapshot
+// This handler uses a blockio.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
 	lis net.Listener
 }
@@ -221,7 +188,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		}
 
 		// Receive a page fault notification
-		guestFaultingAddr, err := getFaultingAddress(uffd)
+		guestFaultingAddr, err := readFaultingAddress(uffd)
 		if err != nil {
 			return err
 		}
@@ -248,8 +215,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		if err != nil {
 			return err
 		}
-
-		log.Debugf("UFFDIO_COPY completed successfully")
 	}
 }
 
@@ -277,9 +242,9 @@ func resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint
 	return int64(copyData.Copy), nil
 }
 
-// getFaultingAddress reads a notification from the uffd object and returns the faulting address
+// readFaultingAddress reads a notification from the uffd object and returns the faulting address
 // (i.e. the memory location the VM tried to access that triggered the page fault)
-func getFaultingAddress(uffd uintptr) (uint64, error) {
+func readFaultingAddress(uffd uintptr) (uint64, error) {
 	var event uffdMsg
 	_, _, errno := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 	if errno != 0 {
