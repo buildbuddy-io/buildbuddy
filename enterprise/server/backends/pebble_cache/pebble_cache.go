@@ -1933,22 +1933,18 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	if err != nil {
 		return err
 	}
-	r := &rspb.ResourceName{
-		Digest:         d,
-		InstanceName:   cdcw.fileRecord.GetIsolation().GetRemoteInstanceName(),
-		CacheType:      cdcw.fileRecord.GetIsolation().GetCacheType(),
-		DigestFunction: cdcw.fileRecord.GetDigestFunction(),
-		Compressor:     cdcw.fileRecord.GetCompressor(),
-	}
-	if cdcw.shouldCompress && r.Compressor == repb.Compressor_IDENTITY {
+
+	r := digest.NewResourceName(d, cdcw.fileRecord.GetIsolation().GetRemoteInstanceName(), cdcw.fileRecord.GetIsolation().GetCacheType(), cdcw.fileRecord.GetDigestFunction())
+	if cdcw.shouldCompress && cdcw.fileRecord.GetCompressor() == repb.Compressor_IDENTITY {
 		// we need to compress the chunk, but this data hasn't been compressed yet.
 		// so we need to set the resource name to identity to signal to the nested
 		// writer to compress it.
-		r.Compressor = repb.Compressor_IDENTITY
+		r.SetCompressor(repb.Compressor_IDENTITY)
 	} else {
-		r.Compressor = repb.Compressor_ZSTD
+		r.SetCompressor(repb.Compressor_ZSTD)
 	}
-	fileRecord, err := p.makeFileRecord(ctx, r)
+	rn := r.ToProto()
+	fileRecord, err := p.makeFileRecord(ctx, rn)
 
 	if err != nil {
 		return err
@@ -1961,7 +1957,7 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	// We use cdcw.writtenChunks for the file-level metadata, and this needs to
 	// be in the orther. Otherwise, when we read the file, the chunks will be
 	// read out of order.
-	cdcw.writtenChunks = append(cdcw.writtenChunks, r)
+	cdcw.writtenChunks = append(cdcw.writtenChunks, rn)
 
 	cdcw.eg.Go(func() error {
 		return cdcw.writeRawChunk(fileRecord, key, chunkData)
@@ -2074,6 +2070,13 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	}
 
 	if p.averageChunkSizeBytes > 0 {
+		if r.GetDigest().GetSizeBytes() < int64(p.averageChunkSizeBytes) {
+			// Files smaller than averageChunkSizeBytes are highly like to only
+			// have one chunk. We write them directly inline to avoid unnecessary
+			// processing.
+			wcm := p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
+			return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress)
+		}
 		// we enabled cdc chunking
 		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
 	}
