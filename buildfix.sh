@@ -62,11 +62,8 @@ fi
 
 if ((GAZELLE)); then
   echo "Fixing BUILD deps with gazelle..."
-  CLI_LATEST_VERSION=$(
-    curl -fsSL https://api.github.com/repos/buildbuddy-io/bazel/releases/latest |
-      perl -nle 'if (/"tag_name": "(.*?)"/){ print $1 }'
-  )
-  USE_BAZEL_VERSION="buildbuddy-io/$CLI_LATEST_VERSION" bazel fix
+  CLI_VERSION="5.0.20" # keep in sync with checkstyle.yaml
+  USE_BAZEL_VERSION="buildbuddy-io/$CLI_VERSION" bazel fix
 fi
 
 echo 'All done!'
