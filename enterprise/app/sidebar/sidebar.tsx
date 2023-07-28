@@ -23,8 +23,6 @@ import {
   Terminal,
   PanelLeftClose,
   PanelLeftOpen,
-  View,
-  ActivitySquare,
   Fingerprint,
 } from "lucide-react";
 import React from "react";
