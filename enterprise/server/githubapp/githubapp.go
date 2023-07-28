@@ -545,7 +545,7 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 	if err != nil {
 		return nil, err
 	}
-	userClient, _, err := a.newAuthenticatedClient(ctx, tu.GithubToken)
+	userClient, err := a.newAuthenticatedClient(ctx, tu.GithubToken)
 	if err != nil {
 		return nil, err
 	}
@@ -602,8 +602,11 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	}
 
 	// Pick the right client based on the request (organization or user).
-	githubClient, token, err := a.newAuthenticatedClient(ctx, tu.GithubToken)
-	if req.Organization != "" {
+	var githubClient *github.Client
+	var token = tu.GithubToken
+	if req.Organization == "" {
+		githubClient, err = a.newAuthenticatedClient(ctx, token)
+	} else {
 		githubClient, token, err = a.newInstallationClient(ctx, req.InstallationId)
 	}
 	if err != nil {
@@ -647,6 +650,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	}, nil
 }
 
+// TODO(siggisim): consider moving template cloning to a remote action if it causes us troubles doing this on apps.
 func cloneTemplate(tmpDir, token, srcURL, destURL string) error {
 	// Make a temporary directory for the template
 	err := os.MkdirAll(tmpDir, os.ModePerm)
@@ -716,7 +720,7 @@ func (a *GitHubApp) findUserRepo(ctx context.Context, userToken string, installa
 	}
 	// Fetch the associated installation to confirm whether the repository
 	// is actually installed.
-	appClient, _, err := a.newAppClient(ctx)
+	appClient, err := a.newAppClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -732,7 +736,7 @@ func (a *GitHubApp) findUserRepo(ctx context.Context, userToken string, installa
 }
 
 func (a *GitHubApp) getInstallation(ctx context.Context, id int64) (*github.Installation, error) {
-	client, _, err := a.newAppClient(ctx)
+	client, err := a.newAppClient(ctx)
 	if err != nil {
 		return nil, status.WrapError(err, "failed to get installation")
 	}
@@ -744,7 +748,7 @@ func (a *GitHubApp) getInstallation(ctx context.Context, id int64) (*github.Inst
 }
 
 func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID int64) (*github.InstallationToken, error) {
-	client, _, err := a.newAppClient(ctx)
+	client, err := a.newAppClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -759,7 +763,7 @@ func (a *GitHubApp) authorizeUserInstallationAccess(ctx context.Context, userTok
 	const installTimeout = 10 * time.Second
 	ctx, cancel := context.WithTimeout(ctx, installTimeout)
 	defer cancel()
-	client, _, err := a.newAuthenticatedClient(ctx, userToken)
+	client, err := a.newAuthenticatedClient(ctx, userToken)
 	if err != nil {
 		return err
 	}
@@ -820,7 +824,7 @@ func (a *GitHubApp) waitForInstallation(ctx context.Context, installationID int6
 }
 
 // newAppClient returns a GitHub client authenticated as the app.
-func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, string, error) {
+func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, error) {
 	// Create and sign JWT
 	t := jwt.New(jwt.GetSigningMethod("RS256"))
 	t.Claims = &jwt.StandardClaims{
@@ -831,7 +835,7 @@ func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, string, e
 	jwtStr, err := t.SignedString(a.privateKey)
 	if err != nil {
 		log.Errorf("Failed to sign JWT: %s", err)
-		return nil, "", status.InternalErrorf("failed to sign JWT")
+		return nil, status.InternalErrorf("failed to sign JWT")
 	}
 	return a.newAuthenticatedClient(ctx, jwtStr)
 }
@@ -841,18 +845,19 @@ func (a *GitHubApp) newInstallationClient(ctx context.Context, installationID in
 	if err != nil {
 		return nil, "", err
 	}
-	return a.newAuthenticatedClient(ctx, token.GetToken())
+	client, err := a.newAuthenticatedClient(ctx, token.GetToken())
+	return client, token.GetToken(), err
 }
 
 // newAuthenticatedClient returns a GitHub client authenticated with the given
 // access token.
-func (a *GitHubApp) newAuthenticatedClient(ctx context.Context, accessToken string) (*github.Client, string, error) {
+func (a *GitHubApp) newAuthenticatedClient(ctx context.Context, accessToken string) (*github.Client, error) {
 	if accessToken == "" {
-		return nil, "", status.UnauthenticatedError("missing user access token")
+		return nil, status.UnauthenticatedError("missing user access token")
 	}
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 	tc := oauth2.NewClient(ctx, ts)
-	return github.NewClient(tc), accessToken, nil
+	return github.NewClient(tc), nil
 }
 
 // decodePrivateKey decodes a PEM-format RSA private key.
