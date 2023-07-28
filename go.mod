@@ -77,6 +77,7 @@ require (
 	github.com/jackc/pgx/v5 v5.4.1
 	github.com/jhump/protoreflect v1.15.1
 	github.com/jonboulle/clockwork v0.4.0
+	github.com/jotfs/fastcdc-go v0.2.0
 	github.com/jsimonetti/rtnetlink v1.3.3
 	github.com/klauspost/compress v1.16.6
 	github.com/lestrrat-go/jwx v1.2.26

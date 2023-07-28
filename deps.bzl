@@ -3221,6 +3221,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:uuaP0hAbW7Y4l0ZRQ6C9zfb7Mg1mbFKry/xzDAfmtLA=",
         version = "v1.1.0",
     )
+    go_repository(
+        name = "com_github_jotfs_fastcdc_go",
+        importpath = "github.com/jotfs/fastcdc-go",
+        patch_args = ["-p1"],
+        patch_tool = "patch",
+        patches = ["//buildpatches:fastcdc.patch"],
+        sum = "h1:WHYIGk3k9NumGWfp4YMsemEcx/s4JKpGAa6tpCpHJOo=",
+        version = "v0.2.0",
+    )
 
     go_repository(
         name = "com_github_jpillora_backoff",
