@@ -289,7 +289,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     </Suspense>
                   )}
                   {usage && this.state.user && <UsageComponent user={this.state.user} />}
-                  {auditLogs && this.state.user && <AuditLogsComponent />}
+                  {auditLogs && this.state.user && <AuditLogsComponent user={this.state.user} />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}

@@ -11,7 +11,11 @@ import { DateRangePicker, OnChangeProps, RangeWithKey } from "react-date-range";
 import error_service from "../../../app/errors/error_service";
 import Spinner from "../../../app/components/spinner/spinner";
 import Action = auditlog.Action;
+import { User } from "../../../app/auth/user";
 
+interface AuditLogsComponentProps {
+  user: User;
+}
 interface State {
   loading: boolean;
   entries: auditlog.Entry[];
@@ -20,7 +24,7 @@ interface State {
   dateRange: RangeWithKey;
 }
 
-export default class AuditLogsComponent extends React.Component<{}, State> {
+export default class AuditLogsComponent extends React.Component<AuditLogsComponentProps, State> {
   state: State = {
     loading: false,
     entries: [],
@@ -102,7 +106,7 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
     return (
       <>
         <div>{user}</div>
-        <div>{authInfo?.clientIp}</div>
+        <div>IP: {authInfo?.clientIp}</div>
       </>
     );
   }
@@ -214,7 +218,7 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
         <div className="shelf">
           <div className="container">
             <div className="breadcrumbs">
-              <span>Audit Logs</span>
+              <span>{this.props.user.selectedGroupName()}</span>
             </div>
             <div className="title">Audit logs</div>
           </div>
@@ -246,7 +250,9 @@ export default class AuditLogsComponent extends React.Component<{}, State> {
                 />
               </Popup>
             </div>
-            {this.state.entries.length == 0 && <div>There are no logs in the specified time range.</div>}
+            {this.state.entries.length == 0 && (
+              <div className="empty-state">There are no audit logs in the specified time range.</div>
+            )}
             {this.state.entries.length > 0 && (
               <div className="audit-logs-header">
                 <div className="timestamp">Time</div>
