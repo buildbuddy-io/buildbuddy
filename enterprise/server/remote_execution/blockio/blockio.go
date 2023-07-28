@@ -53,6 +53,7 @@ func (f *File) SizeBytes() (int64, error) {
 // Mmap implements the Store interface using a memory-mapped file. This allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
 type Mmap struct {
+	mu     sync.RWMutex
 	data   []byte
 	mapped bool
 	closed bool
@@ -90,14 +91,39 @@ func NewMmapFd(fd, size int) (*Mmap, error) {
 	return &Mmap{data: data, mapped: true}, nil
 }
 
-func (m *Mmap) initMap() error {
-	if m.closed {
+func (m *Mmap) Closed() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
+}
+
+func (m *Mmap) Mapped() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.mapped
+}
+
+func (m *Mmap) Path() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.path
+}
+
+func (m *Mmap) DataLen() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.data)
+}
+
+func (m *Mmap) initIfNotMapped() error {
+	if m.Closed() {
 		return status.InternalError("store is closed")
 	}
-	if m.mapped {
-		return status.InternalError("already mapped")
+	if m.Mapped() {
+		// Already mapped - return early
+		return nil
 	}
-	if m.path == "" {
+	if m.Path() == "" {
 		return status.InternalError("missing file path")
 	}
 	f, err := os.OpenFile(m.path, os.O_RDWR, 0)
@@ -113,71 +139,80 @@ func (m *Mmap) initMap() error {
 	if err != nil {
 		return status.InternalErrorf("mmap: %s", err)
 	}
+
+	m.mu.Lock()
 	m.data = data
 	m.mapped = true
 	m.path = ""
+	m.mu.Unlock()
+
 	return nil
 }
 
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
+	if err := m.initIfNotMapped(); err != nil {
+		return 0, err
 	}
-	if off < 0 || int(off)+len(p) > len(m.data) {
+	if off < 0 || int(off)+len(p) > m.DataLen() {
 		return 0, status.InvalidArgumentErrorf("invalid read at offset 0x%x length 0x%x", off, len(p))
 	}
-	copy(p, m.data[int(off):int(off)+len(p)])
+	m.mu.RLock()
+	data := m.data[int(off) : int(off)+len(p)]
+	m.mu.RUnlock()
+	copy(p, data)
 	return len(p), nil
 }
 
 func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
+	if err := m.initIfNotMapped(); err != nil {
+		return 0, err
 	}
-	if off < 0 || int(off)+len(p) > len(m.data) {
+	if off < 0 || int(off)+len(p) > m.DataLen() {
 		return 0, status.InvalidArgumentErrorf("invalid write at offset 0x%x length 0x%x", off, len(p))
 	}
+	m.mu.Lock()
 	copy(m.data[int(off):int(off)+len(p)], p)
+	m.mu.Unlock()
 	return len(p), nil
 }
 
 func (m *Mmap) Sync() error {
-	if !m.mapped {
+	if !m.Mapped() {
 		return nil
 	}
 	return unix.Msync(m.data, unix.MS_SYNC)
 }
 
 func (m *Mmap) Close() error {
+	m.mu.Lock()
 	m.closed = true
-	if !m.mapped {
+	m.mu.Unlock()
+
+	if !m.Mapped() {
 		return nil
 	}
+	m.mu.Lock()
 	m.mapped = false
+	m.mu.Unlock()
+
 	return syscall.Munmap(m.data)
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
+	if err := m.initIfNotMapped(); err != nil {
+		return 0, err
 	}
-	return int64(len(m.data)), nil
+	return int64(m.DataLen()), nil
 }
 
 // StartAddress returns the address of the first mapped byte. If this is a lazy
 // mmap, calling this func will force an mmap if not already mapped.
 func (m *Mmap) StartAddress() (uintptr, error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
+	if err := m.initIfNotMapped(); err != nil {
+		return 0, err
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return memoryAddress(m.data), nil
 }
 
