@@ -48,7 +48,8 @@ const (
 	// These are an extra safeguard against overscheduling, and help account
 	// for task overhead that is not measured explicitly (e.g. task setup).
 
-	MinimumMilliCPU = int64(250)
+	MinimumMilliCPU    = int64(250)
+	MinimumMemoryBytes = int64(6_000_000)
 
 	// Additional resources needed depending on task characteristics
 
@@ -378,6 +379,9 @@ func applyMinimums(size *scpb.TaskSize) *scpb.TaskSize {
 	clone := proto.Clone(size).(*scpb.TaskSize)
 	if clone.EstimatedMilliCpu < MinimumMilliCPU {
 		clone.EstimatedMilliCpu = MinimumMilliCPU
+	}
+	if clone.EstimatedMemoryBytes < MinimumMemoryBytes {
+		clone.EstimatedMemoryBytes = MinimumMemoryBytes
 	}
 	return clone
 }

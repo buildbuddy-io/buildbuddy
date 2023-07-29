@@ -164,7 +164,7 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
-func TestEstimate_RespectsMinimumSize(t *testing.T) {
+func TestEstimate_RespectsMinimumCpuSize(t *testing.T) {
 	sz := tasksize.Estimate(&repb.ExecutionTask{
 		Command: &repb.Command{Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{{
@@ -173,6 +173,17 @@ func TestEstimate_RespectsMinimumSize(t *testing.T) {
 		}},
 	})
 	require.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
+}
+
+func TestEstimate_RespectsMinimumMemorySize(t *testing.T) {
+	sz := tasksize.Estimate(&repb.ExecutionTask{
+		Command: &repb.Command{Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{{
+				Name: "EstimatedMemory", Value: "1e3",
+			}},
+		}},
+	})
+	require.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
 }
 
 func TestSizer_RespectsMinimumSize(t *testing.T) {
@@ -209,4 +220,5 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 
 	ts := sizer.Get(ctx, task)
 	assert.Equal(t, tasksize.MinimumMilliCPU, ts.GetEstimatedMilliCpu())
+	assert.Equal(t, tasksize.MinimumMemoryBytes, ts.GetEstimatedMemoryBytes())
 }
