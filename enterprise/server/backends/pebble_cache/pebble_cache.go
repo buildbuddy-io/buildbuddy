@@ -1736,13 +1736,14 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 		// Already deleted; see comment above.
 		break
 	case storageMetadata.GetChunkedMetadata() != nil:
-		// need to clean up the remaining chunks.
 		break
 	default:
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	p.sendSizeUpdate(partitionID, key.CacheType(), -1*md.GetStoredSizeBytes())
+	if md.GetStoredSizeBytes() > 0 {
+		p.sendSizeUpdate(partitionID, key.CacheType(), -1*md.GetStoredSizeBytes())
+	}
 	return nil
 }
 
@@ -1870,7 +1871,10 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: cdcw.Metadata(),
-			StoredSizeBytes: bytesWritten,
+			// The chunks the file record pointed are stored seperately and are
+			// not evicted when this entry is evicted. Therefore, the stored
+			// size bytes should be zero to avoid double counting.
+			StoredSizeBytes: 0,
 			LastAccessUsec:  now,
 			LastModifyUsec:  now,
 		}
@@ -2173,7 +2177,9 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
 			return err
 		}
-		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*oldMD.GetStoredSizeBytes())
+		if oldMD.GetStoredSizeBytes() > 0 {
+			p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*oldMD.GetStoredSizeBytes())
+		}
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
@@ -2182,7 +2188,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	}
 
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
-		if md.GetStorageMetadata().GetChunkedMetadata() == nil {
+		if md.GetStoredSizeBytes() > 0 {
 			partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
 			p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
@@ -2962,14 +2968,14 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore
 	case storageMetadata.GetInlineMetadata() != nil:
 		break
 	case storageMetadata.GetChunkedMetadata() != nil:
-		// We should not update partition size b/c we only deleted a file-level
-		// entry and not the actual chunks.
 		break
 	default:
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	e.updateSize(key.CacheType(), -1*storedSizeBytes)
+	if storedSizeBytes > 0 {
+		e.updateSize(key.CacheType(), -1*storedSizeBytes)
+	}
 	return nil
 }
 
