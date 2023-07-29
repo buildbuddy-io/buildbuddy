@@ -1650,6 +1650,17 @@ var (
 		ServerName,
 	})
 
+	ServerUncompressedUploadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "server",
+		Name:      "uncompressed_upload_bytes_count",
+		Help:      "Number of uncompressed bytes uploaded to the server.",
+	}, []string{
+		CacheTypeLabel,
+		ServerName,
+		GroupID,
+	})
+
 	ServerDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "server",
@@ -1659,6 +1670,17 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+	})
+
+	ServerUncompressedDownloadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "server",
+		Name:      "uncompressed_download_bytes_count",
+		Help:      "Number of uncompressed bytes downloaded from the server.",
+	}, []string{
+		CacheTypeLabel,
+		ServerName,
+		GroupID,
 	})
 
 	DigestUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
