@@ -197,8 +197,8 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
 
 	assert.True(
-		t, status.IsDeadlineExceededError(res.Error),
-		"expected DeadlineExceeded error, got: %s", res.Error)
+		t, status.IsUnavailableError(res.Error),
+		"expected UnavailableError error, got: %s", res.Error)
 	assert.Less(
 		t, res.ExitCode, 0,
 		"if timed out, exit code should be < 0 (unset)")

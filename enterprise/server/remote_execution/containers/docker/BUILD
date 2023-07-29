@@ -23,6 +23,7 @@ go_library(
         "@com_github_docker_go_units//:go-units",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
