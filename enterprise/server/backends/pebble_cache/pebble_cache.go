@@ -1401,22 +1401,6 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterat
 	return md, err
 }
 
-func (p *PebbleCache) lookupLastAccessTime(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (int64, error) {
-	ctx, spn := tracing.StartSpan(ctx)
-	defer spn.End()
-
-	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
-		keyBytes, err := key.Bytes(version)
-		if err != nil {
-			return 0, err
-		}
-		if iter.SeekGE(keyBytes) && bytes.Equal(iter.Key(), keyBytes) {
-			return getLastAccessUsec(iter.Value()), nil
-		}
-	}
-	return 0, status.NotFoundErrorf("key %q not found", key)
-}
-
 // getLastAccessUsec processes the FileMetadata as a sequence of (tag,value)
 // pairs. It loops through the pairs until hitting the tag for last_acess_usec,
 // then it returns the value. This lets us avoid a full parse of FileMetadata.
