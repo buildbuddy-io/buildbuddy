@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -78,11 +79,16 @@ type setupMessage struct {
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a blockio.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
-	lis net.Listener
+	lis      net.Listener
+	wg       sync.WaitGroup
+	quitChan chan struct{}
 }
 
 func NewHandler() (*Handler, error) {
-	return &Handler{}, nil
+	return &Handler{
+		wg:       sync.WaitGroup{},
+		quitChan: make(chan struct{}, 0),
+	}, nil
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
@@ -101,9 +107,10 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 		return status.WrapError(err, "set socket permissions")
 	}
 
+	h.wg.Add(1)
 	go func() {
 		if err := h.handle(ctx, memoryStore); err != nil {
-			log.CtxErrorf(ctx, "Failed to accept firecracker connection: %s", err)
+			log.CtxErrorf(ctx, "Failed to handle firecracker memory requests: %s", err)
 		}
 	}()
 	return nil
@@ -113,6 +120,8 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 // the UFFD handler over a unix socket. It also sends GuestRegionUFFDMapping data so the handler knows
 // how to resolve the page faults
 func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
+	defer h.lis.Close()
+
 	log.CtxDebugf(ctx, "Waiting for firecracker to connect to uffd socket")
 	conn, err := h.lis.Accept()
 	if err != nil {
@@ -177,6 +186,13 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 
 	for {
+		select {
+		case <-h.quitChan:
+			h.wg.Done()
+			return nil
+		default:
+		}
+
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
 		if pollErr != nil {
@@ -268,7 +284,9 @@ func pageStartAddress(addr uint64, pageSize int) uintptr {
 }
 
 func (h *Handler) Stop() {
-	h.lis.Close()
+	log.Info("UFFD handler beginning shut down")
+	close(h.quitChan)
+	h.wg.Wait()
 }
 
 // Translate the faulting memory address in the guest to a persisted store offset
