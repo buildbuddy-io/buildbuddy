@@ -126,8 +126,7 @@ go_test(
     srcs = ["firecracker_test.go"],
     args = [
         "--executor.firecracker_enable_nbd=true",
-        # TODO: enable UFFD once it's implemented
-        # "--executor.firecracker_enable_uffd=true",
+        "--executor.firecracker_enable_uffd=true",
     ],
     exec_properties = {
         "test.Pool": "bare",
