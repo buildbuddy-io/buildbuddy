@@ -8,9 +8,9 @@ import (
 	"fmt"
 
 	gomysql "github.com/go-sql-driver/mysql"
-	gopostgres "github.com/jackc/pgx/v5/stdlib"
 	gopostgreserr "github.com/jackc/pgerrcode"
 	gopostgresconn "github.com/jackc/pgx/v5/pgconn"
+	gopostgres "github.com/jackc/pgx/v5/stdlib"
 	gosqlite "github.com/mattn/go-sqlite3"
 )
 

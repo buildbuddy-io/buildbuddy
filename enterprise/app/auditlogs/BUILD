@@ -6,6 +6,7 @@ ts_library(
     name = "auditlogs",
     srcs = ["auditlogs.tsx"],
     deps = [
+        "//app/auth:user",
         "//app/components/button",
         "//app/components/popup",
         "//app/components/spinner",
