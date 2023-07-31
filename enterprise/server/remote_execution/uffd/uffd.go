@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -86,7 +87,10 @@ type Handler struct {
 }
 
 func NewHandler() (*Handler, error) {
-	return &Handler{}, nil
+	return &Handler{
+		wg:       sync.WaitGroup{},
+		quitChan: make(chan struct{}, 0),
+	}, nil
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
@@ -201,6 +205,13 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 
 	for {
+		select {
+		case <-h.quitChan:
+			h.wg.Done()
+			return nil
+		default:
+		}
+
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
 		if pollErr != nil {
