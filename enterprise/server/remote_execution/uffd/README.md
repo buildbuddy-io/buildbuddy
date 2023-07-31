@@ -4,9 +4,9 @@ When loading a firecracker memory snapshot, this userfaultfd handler can be used
 
 ## Overview of Virtual Memory
 
-When a process first starts up, the kernel allocates *virtual memory* to it. The process will treat it like memory, but
+When a process first starts up, the kernel allocates _virtual memory_ to it. The process will treat it like memory, but
 there is no actual physical memory on the machine allocated to it. The first time the process tries to access a virtual
-memory address, it will trigger a *page fault*.
+memory address, it will trigger a _page fault_.
 
 A page fault pauses the initial memory access, and typically transfers control to the kernel. The kernel prepares
 physical memory, creates a mapping between virtual -> physical memory, then resumes the request. Now that the
@@ -41,12 +41,15 @@ linux header file userfaultfd.h
 These macros aren't imported correctly from the C package, so you can manually compute their address to use them.
 
 Example to get the address of the UFFDIO_COPY macro:
+
 1. Find the definition of UFFDIO_COPY in linux/userfaultfd.h
+
 ```
 #define UFFDIO_COPY             _IOWR(UFFDIO, _UFFDIO_COPY, struct uffdio_copy)
 ```
 
 2. Copy the definition to the following C script address.c
+
 ```
 #include <stdio.h>
 #include <linux/ioctl.h>
@@ -57,6 +60,7 @@ Example to get the address of the UFFDIO_COPY macro:
 ```
 
 3. Run the script:
+
 ```
 gcc -o address address.c
 ./address

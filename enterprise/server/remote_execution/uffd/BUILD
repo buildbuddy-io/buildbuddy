@@ -5,10 +5,10 @@ go_library(
     srcs = ["uffd.go"],
     cgo = True,
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd",
-    visibility = ["//visibility:public"],
     target_compatible_with = [
         "@platforms//os:linux",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/blockio",
         "//server/util/log",
