@@ -2965,6 +2965,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.14.0",
     )
     go_repository(
+        name = "com_github_jackc_pgerrcode",
+        importpath = "github.com/jackc/pgerrcode",
+        sum = "h1:s+4MhCQ6YrzisK6hFJUX53drDT4UsSW3DEhKn0ifuHw=",
+        version = "v0.0.0-20220416144525-469b46aa5efa",
+    )
+
+    go_repository(
         name = "com_github_jackc_pgio",
         importpath = "github.com/jackc/pgio",
         sum = "h1:g12B9UwVnzGhueNavwioyEEpAmqMe1E/BN9ES+8ovkE=",
