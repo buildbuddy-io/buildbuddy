@@ -1860,10 +1860,11 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			return err
 		}
 		if cdcw.numChunks == 1 {
-			// When there is only one single chunk, we want to store the original file
-			// record with the original key instead of computed digest from the
-			// chunkData. This is because the chunkData can be compressed or encrypted,
-			// so the digest computed from it will be different from the original digest.
+			// When there is only one single chunk, we want to store the original
+			// file record with the original key instead of computed digest from
+			// the chunkData. This is because the chunkData can be compressed or
+			// encrypted, so the digest computed from it will be different from
+			// the original digest.
 			return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, cdcw.firstChunk)
 		}
 		now := p.clock.Now().UnixMicro()
