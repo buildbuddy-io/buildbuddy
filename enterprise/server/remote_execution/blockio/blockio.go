@@ -496,9 +496,7 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	}
 	// Once we've created a copy, we no longer need the source chunk.
 	defer func() {
-		if src != nil {
-			src.Close()
-		}
+		src.Close()
 	}()
 
 	b := s.copyBufPool.Get().(*[]byte)
