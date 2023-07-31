@@ -713,7 +713,7 @@ func TestMetadata(t *testing.T) {
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
-	withChunking := []bool{true, false}
+	averageChunkSizeBytesParam := []int{0, 64 * 4}
 
 	testCases := []struct {
 		name       string
@@ -745,15 +745,13 @@ func TestMetadata(t *testing.T) {
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
-	for _, chunkingOn := range withChunking {
+	for _, averageChunkSizeBytes := range averageChunkSizeBytesParam {
 		options := &pebble_cache.Options{
 			RootDirectory:               testfs.MakeTempDir(t),
 			MaxSizeBytes:                maxSizeBytes,
 			MaxInlineFileSizeBytes:      100,
 			MinBytesAutoZstdCompression: math.MaxInt64, // Turn off automatic compression
-		}
-		if chunkingOn {
-			options.AverageChunkSizeBytes = 64 * 4
+			AverageChunkSizeBytes:       averageChunkSizeBytes,
 		}
 		pc, err := pebble_cache.NewPebbleCache(te, options)
 		require.NoError(t, err)
@@ -762,7 +760,7 @@ func TestMetadata(t *testing.T) {
 		defer pc.Stop()
 		for _, tc := range testCases {
 			for _, testSize := range testSizes {
-				desc := fmt.Sprintf("testSize: %d %s (chunkingOn=%t)", testSize, tc.name, chunkingOn)
+				desc := fmt.Sprintf("testSize: %d %s (averageChunkSizeBytes=%d)", testSize, tc.name, averageChunkSizeBytes)
 				t.Run(desc, func(t *testing.T) {
 					r, buf := testdigest.RandomCASResourceBuf(t, testSize)
 					r.CacheType = tc.cacheType
@@ -783,7 +781,12 @@ func TestMetadata(t *testing.T) {
 
 					md, err := pc.Metadata(ctx, rWrongSize)
 					require.NoError(t, err, tc.name)
-					require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+					chunkingOn := averageChunkSizeBytes > 0 && len(dataToWrite) > averageChunkSizeBytes
+					if chunkingOn {
+						require.Equal(t, int64(0), md.StoredSizeBytes, tc.name)
+					} else {
+						require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+					}
 					require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
 					lastAccessTime1 := md.LastAccessTimeUsec
 					lastModifyTime1 := md.LastModifyTimeUsec
@@ -793,7 +796,12 @@ func TestMetadata(t *testing.T) {
 					// Last access time should not update since last call to Metadata()
 					md, err = pc.Metadata(ctx, rWrongSize)
 					require.NoError(t, err, tc.name)
-					require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+					if chunkingOn {
+						require.Equal(t, int64(0), md.StoredSizeBytes, tc.name)
+					} else {
+						require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+					}
+
 					require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
 					lastAccessTime2 := md.LastAccessTimeUsec
 					lastModifyTime2 := md.LastModifyTimeUsec
@@ -804,7 +812,12 @@ func TestMetadata(t *testing.T) {
 					err = pc.Set(ctx, r, dataToWrite)
 					md, err = pc.Metadata(ctx, rWrongSize)
 					require.NoError(t, err, tc.name)
-					require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+					if chunkingOn {
+						require.Equal(t, int64(0), md.StoredSizeBytes, tc.name)
+					} else {
+						require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+					}
+
 					require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
 					lastAccessTime3 := md.LastAccessTimeUsec
 					lastModifyTime3 := md.LastModifyTimeUsec
