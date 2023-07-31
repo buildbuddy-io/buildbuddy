@@ -201,13 +201,12 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	for {
 		select {
 		case <-h.quitChan:
-			h.wg.Done()
 			return nil
 		default:
 		}
 
 		// Poll UFFD for messages
-		_, pollErr := unix.Poll(pollFDs, -1)
+		_, pollErr := unix.Poll(pollFDs, 500 /* timeout in ms */)
 		if pollErr != nil {
 			if pollErr == unix.EINTR {
 				// Poll call was interrupted by another signal - retry
