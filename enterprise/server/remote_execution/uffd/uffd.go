@@ -107,7 +107,6 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 		return status.WrapError(err, "set socket permissions")
 	}
 
-	h.wg.Add(1)
 	go func() {
 		if err := h.handle(ctx, memoryStore); err != nil {
 			log.CtxErrorf(ctx, "Failed to handle firecracker memory requests: %s", err)
@@ -171,6 +170,9 @@ func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
 }
 
 func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) error {
+	h.wg.Add(1)
+	defer h.wg.Done()
+
 	setup, err := h.receiveSetupMsg(ctx)
 	if err != nil {
 		return status.WrapError(err, "receive setup message from firecracker")
@@ -188,13 +190,12 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	for {
 		select {
 		case <-h.quitChan:
-			h.wg.Done()
 			return nil
 		default:
 		}
 
 		// Poll UFFD for messages
-		_, pollErr := unix.Poll(pollFDs, -1)
+		_, pollErr := unix.Poll(pollFDs, 500 /* timeout in ms */)
 		if pollErr != nil {
 			if pollErr == unix.EINTR {
 				// Poll call was interrupted by another signal - retry
@@ -206,7 +207,11 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		// Receive a page fault notification
 		guestFaultingAddr, err := readFaultingAddress(uffd)
 		if err != nil {
-			return err
+			if err == unix.EAGAIN {
+				// Try again code
+				continue
+			}
+			return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
 		}
 		guestPageAddr := pageStartAddress(guestFaultingAddr, pageSize)
 
@@ -264,7 +269,7 @@ func readFaultingAddress(uffd uintptr) (uint64, error) {
 	var event uffdMsg
 	_, _, errno := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 	if errno != 0 {
-		return 0, status.InternalErrorf("read event from uffd failed with errno(%d)", errno)
+		return 0, errno
 	}
 
 	if event.Event != C.UFFD_EVENT_PAGEFAULT {
