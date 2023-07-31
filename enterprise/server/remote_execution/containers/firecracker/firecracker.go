@@ -469,7 +469,11 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 	eg, ctx := errgroup.WithContext(ctx)
 
 	perThreadBytes := int64(math.Ceil(float64(inInfo.Size()) / float64(concurrency)))
-	perThreadBytes = ((perThreadBytes + int64(bufSize)) / int64(bufSize)) * int64(bufSize)
+	perThreadBytes = alignToMultiple(perThreadBytes, int64(bufSize))
+	if *enableUFFD {
+		// Ensure goroutines don't cross chunk boundaries and cause race conditions when writing
+		perThreadBytes = alignToMultiple(perThreadBytes, cowChunkSizeBytes)
+	}
 	for i := 0; i < concurrency; i++ {
 		i := i
 		offset := perThreadBytes * int64(i)
@@ -522,6 +526,19 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 	}
 
 	return eg.Wait()
+}
+
+// alignToMultiple aligns the value n to a multiple of `multiple`
+// It will round up if necessary
+func alignToMultiple(n int64, multiple int64) int64 {
+	remainder := n % multiple
+
+	// If remainder is zero, n is already aligned
+	if remainder == 0 {
+		return n
+	}
+	// Otherwise, adjust n to the next multiple of size
+	return n + multiple - remainder
 }
 
 // State returns the container state to be persisted to disk so that this

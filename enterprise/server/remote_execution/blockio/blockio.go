@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -200,7 +201,11 @@ type Chunk struct {
 //
 // A COWStore can be created either by splitting a file into chunks, or loading
 // chunks from a directory containing artifacts exported by a COWStore instance.
+//
+// A COWStore supports concurrent reads/writes, as long as they are to different chunks
 type COWStore struct {
+	mu sync.RWMutex // Protects chunks and dirty
+
 	// Chunks is a mapping of chunk offset to Store implementation.
 	chunks map[int64]*Chunk
 	// Indexes of chunks which have been copied from the original chunks due to
@@ -223,8 +228,8 @@ type COWStore struct {
 	// This is used to serve memory page requests for holes.
 	zeroBuf []byte
 
-	// Scratch buffer used for copying chunks.
-	copyBuf []byte
+	// Concurrency-safe pool of buffers that can be used for copying chunks
+	copyBufPool sync.Pool
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -239,11 +244,17 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
 	}
+
 	return &COWStore{
-		chunks:         chunkMap,
-		dirty:          make(map[int64]bool, 0),
-		dataDir:        dataDir,
-		copyBuf:        make([]byte, chunkSizeBytes),
+		chunks:  chunkMap,
+		dirty:   make(map[int64]bool, 0),
+		dataDir: dataDir,
+		copyBufPool: sync.Pool{
+			New: func() any {
+				b := make([]byte, chunkSizeBytes)
+				return &b
+			},
+		},
 		zeroBuf:        make([]byte, chunkSizeBytes),
 		chunkSizeBytes: chunkSizeBytes,
 		totalSizeBytes: totalSizeBytes,
@@ -264,17 +275,21 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
-	if write && !c.dirty[chunkStartOffset] {
-		if err := c.copyChunk(chunkStartOffset); err != nil {
+	if write {
+		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
 			return 0, status.WrapError(err, "copy chunk")
 		}
 	}
+
+	c.mu.RLock()
 	chunk := c.chunks[chunkStartOffset]
+	c.mu.RUnlock()
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
-		// can only happen for reads, since for writes we call copyChunk above.
+		// can only happen for reads, since for writes we call copyChunkIfNotDirty above.
 		return memoryAddress(c.zeroBuf) + chunkRelativeAddress, nil
 	}
+
 	// Non-empty chunk; initialize the lazy mmap (if applicable) and return
 	// the offset relative to the memory start address.
 	mm, ok := chunk.Store.(*Mmap)
@@ -290,7 +305,10 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 // Chunks returns all chunks sorted by offset.
 func (c *COWStore) Chunks() []*Chunk {
+	c.mu.RLock()
 	chunks := maps.Values(c.chunks)
+	c.mu.RUnlock()
+
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].Offset < chunks[j].Offset
 	})
@@ -312,7 +330,9 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		if readSize > len(p) {
 			readSize = len(p)
 		}
+		c.mu.RLock()
 		chunk := c.chunks[chunkOffset]
+		c.mu.RUnlock()
 		if chunk == nil {
 			// No chunk at this index yet; write all 0s.
 			for i := range p[:readSize] {
@@ -337,18 +357,19 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
-		if !c.dirty[chunkOffset] {
-			// If we're newly dirtying a chunk, copy.
-			if err := c.copyChunk(chunkOffset); err != nil {
-				return 0, status.WrapError(err, "failed to copy chunk")
-			}
+		if err := c.copyChunkIfNotDirty(chunkOffset); err != nil {
+			return 0, status.WrapError(err, "failed to copy chunk")
 		}
+
 		chunkRelativeOffset := (off + int64(n)) % c.chunkSizeBytes
 		writeSize := int(c.chunkSizeBytes - chunkRelativeOffset)
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
-		nw, err := c.chunks[chunkOffset].WriteAt(p[:writeSize], chunkRelativeOffset)
+		c.mu.RLock()
+		chunk := c.chunks[chunkOffset]
+		c.mu.RUnlock()
+		nw, err := chunk.WriteAt(p[:writeSize], chunkRelativeOffset)
 		n += nw
 		if err != nil {
 			return n, err
@@ -366,7 +387,7 @@ func (c *COWStore) Sync() error {
 	var lastErr error
 	// TODO: maybe parallelize
 	for offset, chunk := range c.chunks {
-		if !c.dirty[offset] {
+		if !c.Dirty(offset) {
 			continue
 		}
 		if err := chunk.Sync(); err != nil {
@@ -393,6 +414,8 @@ func (s *COWStore) SizeBytes() (int64, error) {
 
 // Dirty returns whether the chunk at the given offset is dirty.
 func (s *COWStore) Dirty(chunkOffset int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.dirty[chunkOffset]
 }
 
@@ -423,14 +446,18 @@ func (s *COWStore) WriteFile(path string) error {
 	if err := f.Truncate(s.totalSizeBytes); err != nil {
 		return status.WrapError(err, "truncate")
 	}
+
+	b := s.copyBufPool.Get().(*[]byte)
+	defer s.copyBufPool.Put(b)
+
 	for off, c := range s.chunks {
 		size := s.calculateChunkSize(off)
-		b := s.copyBuf[:size]
+		copyBuf := (*b)[:size]
 		// TODO: skip sparse regions in the chunk?
-		if _, err := readFullAt(c, b, 0); err != nil {
+		if _, err := readFullAt(c, copyBuf, 0); err != nil {
 			return status.WrapError(err, "read chunk")
 		}
-		if _, err := f.WriteAt(b, off); err != nil {
+		if _, err := f.WriteAt(copyBuf, off); err != nil {
 			return status.WrapError(err, "write chunk")
 		}
 	}
@@ -445,33 +472,41 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 	return size
 }
 
-func (s *COWStore) copyChunk(chunkStartOffset int64) (err error) {
-	src := s.chunks[chunkStartOffset]
-	// Once we've created a copy, we no longer need the source chunk.
-	defer func() {
-		if src != nil {
-			src.Close()
-		}
-	}()
+func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
+	if s.Dirty(chunkStartOffset) {
+		// Chunk is already dirty - no need to copy
+		return nil
+	}
 
 	size := s.calculateChunkSize(chunkStartOffset)
 	dst, err := s.initDirtyChunk(chunkStartOffset, size)
 	if err != nil {
 		return status.WrapError(err, "initialize dirty chunk")
 	}
+
+	s.mu.Lock()
+	src := s.chunks[chunkStartOffset]
 	s.chunks[chunkStartOffset] = dst
 	s.dirty[chunkStartOffset] = true
+	s.mu.Unlock()
 
 	if src == nil {
 		// We had no data at this offset; nothing to copy.
 		return nil
 	}
+	// Once we've created a copy, we no longer need the source chunk.
+	defer func() {
+		src.Close()
+	}()
 
-	b := s.copyBuf[:size]
+	b := s.copyBufPool.Get().(*[]byte)
+	defer s.copyBufPool.Put(b)
+	copyBuf := (*b)[:size]
+
 	// TODO: avoid a full read here in the case where the chunk contains holes.
 	// Can achieve this by having the Mmap keep around the underlying file
 	// descriptor and use fseek (SEEK_DATA) on it.
-	if _, err := readFullAt(src, b, 0); err != nil {
+	if _, err := readFullAt(src, copyBuf, 0); err != nil {
 		return status.WrapError(err, "read chunk for copy")
 	}
 	// Copy to the mmap but skip holes to avoid materializing them as blocks.
@@ -480,7 +515,7 @@ func (s *COWStore) copyChunk(chunkStartOffset int64) (err error) {
 		if remainder := size - off; blockSize > remainder {
 			blockSize = remainder
 		}
-		dataBlock := b[off : off+blockSize]
+		dataBlock := copyBuf[off : off+blockSize]
 		if IsEmptyOrAllZero(dataBlock) {
 			continue
 		}
