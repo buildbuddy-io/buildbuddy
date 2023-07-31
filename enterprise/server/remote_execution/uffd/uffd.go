@@ -199,6 +199,13 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 
 	for {
+		select {
+		case <-h.quitChan:
+			h.wg.Done()
+			return nil
+		default:
+		}
+
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
 		if pollErr != nil {
