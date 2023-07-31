@@ -2581,6 +2581,9 @@ func (e *partitionEvictor) sampleGroup() {
 	}
 
 	groupID, err := e.randomGroupForEvictionSampling()
+	if status.IsNotFoundError(err) {
+		return
+	}
 	if err != nil {
 		log.Warningf("could not sample group in partition %q: %s", e.part.ID, err)
 		return
@@ -2618,7 +2621,7 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 			if err == nil {
 				cacheType = rspb.CacheType_AC
 				groupID = gid
-			} else {
+			} else if !status.IsNotFoundError(err) {
 				log.Warningf("no groups to sample for %q: %s", e.part.ID, err)
 			}
 		}
