@@ -49,6 +49,8 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	rdsauth "github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	gomysql "github.com/go-sql-driver/mysql"
+	gopostgreserr "github.com/jackc/pgerrcode"
+	gopostgresconn "github.com/jackc/pgx/v5/pgconn"
 )
 
 const (
@@ -984,6 +986,10 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 	var mysqlErr *gomysql.MySQLError
 	// Defined at https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_lock_deadlock
 	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1213 {
+		return true
+	}
+	var postgresqlErr *gopostgresconn.PgError
+	if errors.As(err, &postgresqlErr) && postgresqlErr.SQLState() == gopostgreserr.DeadlockDetected {
 		return true
 	}
 	return false

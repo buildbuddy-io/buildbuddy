@@ -9,6 +9,8 @@ import (
 
 	gomysql "github.com/go-sql-driver/mysql"
 	gopostgres "github.com/jackc/pgx/v5/stdlib"
+	gopostgreserr "github.com/jackc/pgerrcode"
+	gopostgresconn "github.com/jackc/pgx/v5/pgconn"
 	gosqlite "github.com/mattn/go-sqlite3"
 )
 
@@ -34,6 +36,10 @@ func (h *DBHandle) IsDuplicateKeyError(err error) bool {
 	var sqliteErr gosqlite.Error
 	// Defined at https://www.sqlite.org/rescode.html#constraint_unique
 	if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == 2067 {
+		return true
+	}
+	var postgresqlErr *gopostgresconn.PgError
+	if errors.As(err, &postgresqlErr) && postgresqlErr.SQLState() == gopostgreserr.UniqueViolation {
 		return true
 	}
 	return false
