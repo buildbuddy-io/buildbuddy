@@ -15,7 +15,7 @@ for i in $(seq 1 "${#MODULES[@]}"); do
   idx=$((i - 1))
   {
     printf '%d:\n' "$i"
-    printf '\tgo mod -race download %s\n\n' "${MODULES[$idx]}"
+    printf '\tgo mod download -race %s\n\n' "${MODULES[$idx]}"
   } >>Makefile
 done
 {
