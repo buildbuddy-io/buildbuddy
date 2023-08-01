@@ -306,6 +306,7 @@ func (h *Handler) Stop() error {
 	}
 
 	log.Info("UFFD handler beginning shut down")
+
 	_, err := h.earlyTerminationWriter.Write([]byte{0})
 	if err != nil {
 		return status.WrapError(err, "write to early terminator")
@@ -317,6 +318,8 @@ func (h *Handler) Stop() error {
 
 	h.earlyTerminationReader.Close()
 	h.earlyTerminationWriter.Close()
+	h.earlyTerminationReader = nil
+	h.earlyTerminationWriter = nil
 	return nil
 }
 
