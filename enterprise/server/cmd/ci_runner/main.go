@@ -1638,6 +1638,10 @@ func writeBazelrc(path, invocationID string) error {
 		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)
 		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
+	if origin := os.Getenv("BB_GRPC_CLIENT_ORIGIN"); origin != "" {
+		lines = append(lines, "build --remote_header=x-buildbuddy-origin="+origin)
+		lines = append(lines, "build --bes_header=x-buildbuddy-origin="+origin)
+	}
 
 	// Primitive configs pointing to BB endpoints. These are purposely very
 	// fine-grained and do not include any options other than the backend

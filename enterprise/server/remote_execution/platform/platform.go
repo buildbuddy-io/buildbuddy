@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -442,6 +443,15 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  name,
 			Value: value,
+		})
+	}
+
+	// TODO: find a cleaner way to set the origin header, other than by
+	// forwarding an env var to the runner.
+	if platformProps.WorkflowID != "" {
+		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+			Name:  "BB_GRPC_CLIENT_ORIGIN",
+			Value: interceptors.ClientOrigin(),
 		})
 	}
 

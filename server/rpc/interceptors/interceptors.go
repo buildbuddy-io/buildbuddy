@@ -37,6 +37,7 @@ var (
 	once              sync.Once
 
 	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", false, "If enabled, grpc metrics by group ID will be recorded")
+	origin                     = flag.String("grpc_client_origin_header", "", "Header value to set for x-buildbuddy-origin.")
 )
 
 func init() {
@@ -44,6 +45,12 @@ func init() {
 		"x-buildbuddy-jwt": "x-buildbuddy-jwt",
 		"build.bazel.remote.execution.v2.requestmetadata-bin": "build.bazel.remote.execution.v2.requestmetadata-bin",
 	}
+}
+
+// ClientOrigin returns the configured value of x-buildbuddy-origin that will be
+// set on *outgoing* gRPC requests.
+func ClientOrigin() string {
+	return *origin
 }
 
 type wrappedServerStreamWithContext struct {
@@ -134,6 +141,9 @@ func setHeadersFromContext(ctx context.Context) context.Context {
 		if contextVal, ok := ctx.Value(contextKey).(string); ok {
 			ctx = metadata.AppendToOutgoingContext(ctx, headerName, contextVal)
 		}
+	}
+	if *origin != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-origin", *origin)
 	}
 	return ctx
 }
