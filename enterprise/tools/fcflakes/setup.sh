@@ -37,7 +37,7 @@ GOPATH=/home/$USER/go
 git clone https://github.com/containers/skopeo $GOPATH/src/github.com/containers/skopeo
 
 cd $GOPATH/src/github.com/containers/skopeo && make bin/skopeo
-mkdir -p ~/go/bin
+[ -d ~/go/bin ] || mkdir ~/go/bin
 cp bin/skopeo ~/go/bin/
 
 sudo apt-get install redis
