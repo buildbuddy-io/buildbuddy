@@ -21,8 +21,6 @@ var (
 	zooPath                = flag.String("olap_database.zoo_path", "/clickhouse/{installation}/{cluster}/tables/{shard}/{database}/{table}", "The path to the table name in zookeeper, used to set up data replication")
 	replicaName            = flag.String("olap_database.replica_name", "{replica}", "The replica name of the table in zookeeper")
 	clusterName            = flag.String("olap_database.cluster_name", "{cluster}", "The cluster name of the database")
-	// Temporary flag until schema is finalized.
-	createAuditLogTable = flag.Bool("olap_database.create_audit_log_table", false, "Whether to create the audit log table schema.")
 )
 
 const (
@@ -48,9 +46,7 @@ func getAllTables() []Table {
 		&Invocation{},
 		&Execution{},
 		&TestTargetStatus{},
-	}
-	if *createAuditLogTable {
-		tbls = append(tbls, &AuditLog{})
+		&AuditLog{},
 	}
 	return tbls
 }
