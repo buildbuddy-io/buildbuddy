@@ -9,6 +9,9 @@ import Spinner from "../../../app/components/spinner/spinner";
 import { ChevronRightSquare, Github, User } from "lucide-react";
 import auth_service from "../../../app/auth/auth_service";
 import { workflow } from "../../../proto/workflow_ts_proto";
+import Select from "../../../app/components/select/select";
+import Checkbox from "../../../app/components/checkbox/checkbox";
+import TextInput from "../../../app/components/input/input";
 
 export interface RepoComponentProps {
   path: string;
@@ -170,14 +173,16 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   render() {
     if (this.state.githubInstallationsLoading) {
       return (
-        <div className="repo-loading">
-          <Spinner />
+        <div className="create-repo-page">
+          <div className="repo-loading">
+            <Spinner />
+          </div>
         </div>
       );
     }
 
     return (
-      <div className="repo">
+      <div className="create-repo-page">
         {!this.props.user && (
           <div className="repo-block card login-buttons">
             <div className="repo-title">Get started</div>
@@ -222,7 +227,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             <div>
               <div>Git scope</div>
               <div>
-                <select
+                <Select
                   onChange={this.handleInstallationPicked.bind(this)}
                   value={this.state.selectedInstallationIndex}>
                   {this.state.githubInstallationsResponse?.data?.installations.map((i: any, index: number) => (
@@ -232,20 +237,20 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                     <option value={-1}>Pick a git scope...</option>
                   )}
                   <option value={-1}>+ Add Github Account</option>
-                </select>
+                </Select>
               </div>
             </div>
             <div>
               <div>Repository name</div>
               <div>
-                <input value={this.state.repoName} onChange={this.handleRepoChanged.bind(this)} />
+                <TextInput value={this.state.repoName} onChange={this.handleRepoChanged.bind(this)} />
               </div>
             </div>
           </div>
-          <div className="repo-private">
-            <input type="checkbox" checked={this.state.private} onChange={this.handlePrivateChanged.bind(this)} />
+          <label className="repo-private">
+            <Checkbox checked={this.state.private} onChange={this.handlePrivateChanged.bind(this)} />
             Create private git repository
-          </div>
+          </label>
           {!this.hasPermissions() && (
             <button className="permissions-button" onClick={this.handlePermissionsClicked.bind(this)}>
               Grant permissions

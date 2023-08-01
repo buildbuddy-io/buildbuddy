@@ -1,4 +1,4 @@
-.repo {
+.create-repo-page {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6,55 +6,56 @@
   min-height: 100%;
 }
 
-.repo .repo-block {
+.create-repo-page .repo-block {
   flex-direction: column;
   width: 50vw;
   max-width: 600px;
   margin: 32px 0 0 0;
 }
 
-.repo .repo-create {
+.create-repo-page .repo-create {
   gap: 16px;
 }
 
-.repo .repo-picker {
+.create-repo-page .repo-picker {
   display: flex;
 }
 
-.repo .login-buttons {
+.create-repo-page .login-buttons {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.repo-picker {
+.create-repo-page .repo-picker {
   width: 100%;
   gap: 16px;
 }
 
-.repo-picker > div {
+.create-repo-page .repo-picker > div {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.repo-picker > div:last-of-type {
+.create-repo-page .repo-picker > div:last-of-type {
   flex-grow: 1;
 }
 
-.repo-picker input,
-.repo-picker select {
+.create-repo-page .repo-picker input,
+.create-repo-page .repo-picker select {
   padding: 12px;
   width: 100%;
   border-radius: 8px;
   border: 1px solid #eee;
   font-family: inherit;
   font-size: 1.2em;
+  height: initial;
 }
 
-.repo .create-button,
-.repo .permissions-button,
-.repo .view-button {
+.create-repo-page .create-button,
+.create-repo-page .permissions-button,
+.create-repo-page .view-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -73,27 +74,28 @@
   box-sizing: border-box;
 }
 
-.repo .permissions-button {
+.create-repo-page .permissions-button {
   margin-bottom: 0;
 }
 
-.repo .view-button {
+.create-repo-page .view-button {
   background-color: #4caf50;
 }
 
-.repo .create-button:disabled {
+.create-repo-page .create-button:disabled {
   background-color: #aaa;
   cursor: default;
 }
 
-.repo-private {
+.create-repo-page .repo-private {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 1.2em;
+  cursor: pointer;
 }
 
-.repo-title {
+.create-repo-page .repo-title {
   font-size: 2em;
   border-bottom: 1px solid #eee;
   width: 100%;
@@ -102,16 +104,16 @@
   font-weight: 600;
 }
 
-.login-buttons .repo-title {
+.create-repo-page .login-buttons .repo-title {
   margin-bottom: 24px;
 }
 
-.repo-block.disabled {
+.create-repo-page .repo-block.disabled {
   opacity: 0.5;
   pointer-events: none;
 }
 
-.repo-loading {
+.create-repo-page .repo-loading {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -119,15 +121,15 @@
   height: 100%;
 }
 
-.repo .running-actions {
+.create-repo-page .running-actions {
   font-weight: 600;
 }
 
-.repo .running-actions a {
+.create-repo-page .running-actions a {
   display: flex;
   align-items: center;
 }
 
-.repo .running-actions svg {
+.create-repo-page .running-actions svg {
   margin-right: 8px;
 }
