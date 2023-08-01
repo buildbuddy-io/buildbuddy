@@ -81,6 +81,20 @@ message GetApiKeysResponse {
   repeated ApiKey api_key = 2;
 }
 
+message GetApiKeyRequest {
+  context.RequestContext request_context = 1;
+
+  // The ID of the API key to retrieve.
+  // ex: "AK123456789"
+  string api_key_id = 2;
+}
+
+message GetApiKeyResponse {
+  context.ResponseContext response_context = 1;
+
+  ApiKey api_key = 2;
+}
+
 message UpdateApiKeyRequest {
   context.RequestContext request_context = 1;
 

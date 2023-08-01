@@ -490,6 +490,34 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	return rsp, nil
 }
 
+func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyRequest) (*akpb.GetApiKeyResponse, error) {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	key, err := authDB.GetAPIKey(ctx, req.GetApiKeyId())
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_GROUP_API_KEY,
+			Id:   req.GetApiKeyId(),
+			Name: key.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_ACCESS, req)
+	}
+	return &akpb.GetApiKeyResponse{
+		ApiKey: &akpb.ApiKey{
+			Id:                  key.APIKeyID,
+			Value:               key.Value,
+			Label:               key.Label,
+			Capability:          capabilities.FromInt(key.Capabilities),
+			VisibleToDevelopers: key.VisibleToDevelopers,
+		},
+	}, nil
+}
+
 func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
@@ -614,6 +642,34 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 		})
 	}
 	return rsp, nil
+}
+
+func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKeyRequest) (*akpb.GetApiKeyResponse, error) {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	key, err := authDB.GetAPIKey(ctx, req.GetApiKeyId())
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		rid := &alpb.ResourceID{
+			Type: alpb.ResourceType_USER_API_KEY,
+			Id:   req.GetApiKeyId(),
+			Name: key.Label,
+		}
+		al.Log(ctx, rid, alpb.Action_ACCESS, req)
+	}
+	return &akpb.GetApiKeyResponse{
+		ApiKey: &akpb.ApiKey{
+			Id:                  key.APIKeyID,
+			Value:               key.Value,
+			Label:               key.Label,
+			Capability:          capabilities.FromInt(key.Capabilities),
+			VisibleToDevelopers: key.VisibleToDevelopers,
+		},
+	}, nil
 }
 
 func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {

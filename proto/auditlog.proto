@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package auditlog;
 
-import "proto/acl.proto";
 import "proto/api_key.proto";
 import "proto/context.proto";
 import "proto/encryption.proto";
@@ -47,14 +46,16 @@ enum ResourceType {
 enum Action {
   ACTION_UNKNOWN = 0;
   CREATE = 1;
-  UPDATE = 2;
-  DELETE = 3;
-  LIST = 4;
-  UPDATE_MEMBERSHIP = 5;
-  UPDATE_ENCRYPTION_CONFIG = 6;
-  LINK_GITHUB_REPO = 7;
-  UNLINK_GITHUB_REPO = 8;
-  EXECUTE_CLEAN_WORKFLOW = 9;
+  GET = 2;
+  ACCESS = 3;
+  UPDATE = 4;
+  DELETE = 5;
+  LIST = 6;
+  UPDATE_MEMBERSHIP = 7;
+  UPDATE_ENCRYPTION_CONFIG = 8;
+  LINK_GITHUB_REPO = 9;
+  UNLINK_GITHUB_REPO = 10;
+  EXECUTE_CLEAN_WORKFLOW = 11;
 }
 
 message ResourceID {
@@ -88,6 +89,7 @@ message Entry {
     github.UnlinkRepoRequest unlink_repo = 10;
     workflow.ExecuteWorkflowRequest execute_workflow = 11;
     secrets.UpdateSecretRequest update_secret = 12;
+    api_key.GetApiKeyRequest get_api_key = 13;
   }
   message Request {
     APIRequest api_request = 1;

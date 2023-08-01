@@ -630,7 +630,20 @@ func (d *AuthDB) getAPIKey(tx *db.DB, apiKeyID string) (*tables.APIKey, error) {
 }
 
 func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error) {
-	return d.getAPIKey(d.h.DB(ctx), apiKeyID)
+	user, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return nil, err
+	}
+
+	key, err := d.getAPIKey(d.h.DB(ctx), apiKeyID)
+	if err != nil {
+		return nil, err
+	}
+	acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
+	if err := perms.AuthorizeRead(&user, acl); err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 // GetAPIKeyForInternalUseOnly returns any API key for the group. It is only to
