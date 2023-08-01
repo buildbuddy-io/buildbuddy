@@ -31,7 +31,7 @@ const (
 	// ensures that our stored data has a uniform format, which allows
 	// eviction to work correctly. This value should not ever need to
 	// change, but there is little harm in changing it.
-	anonGroupID = "GR74042147050500190371"
+	AnonGroupID = "GR74042147050500190371"
 )
 
 // returns partitionID, groupID, isolation, remote_instance_name, hash
@@ -143,13 +143,13 @@ func (pmk PebbleKey) GroupID() string {
 
 func remapANONToFixedGroupID(groupID string) string {
 	if groupID == "ANON" {
-		return anonGroupID
+		return AnonGroupID
 	}
 	return groupID
 }
 
 func remapFixedToANONGroupID(groupID string) string {
-	if groupID == anonGroupID {
+	if groupID == AnonGroupID {
 		return "ANON"
 	}
 	return groupID

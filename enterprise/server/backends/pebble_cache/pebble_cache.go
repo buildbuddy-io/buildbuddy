@@ -2186,6 +2186,12 @@ func (e *partitionEvictor) sampleGroupID() (string, error) {
 		return "", status.NotFoundErrorf("did not find key")
 	}
 
+	// For sampling purposes, we need to use the real group ID used in the
+	// pebble database, not the logical "ANON" group ID.
+	if key.GroupID() == interfaces.AuthAnonymousUser {
+		return filestore.AnonGroupID, nil
+	}
+
 	return key.GroupID(), nil
 }
 
