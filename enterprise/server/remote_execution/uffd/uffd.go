@@ -189,10 +189,9 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	uffd := setup.Uffd
 	mappings := setup.Mappings
 
-	earlyTerminationFd := unix.PollFd{Fd: int32(h.earlyTerminationReader), Events: C.POLLIN}
 	pollFDs := []unix.PollFd{
 		{Fd: int32(uffd), Events: C.POLLIN},
-		earlyTerminationFd,
+		{Fd: int32(h.earlyTerminationReader.Fd()), Events: C.POLLIN},
 	}
 	pageSize := os.Getpagesize()
 	storeLength, err := memoryStore.SizeBytes()
@@ -212,6 +211,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		}
 
 		// Check for an early termination message
+		earlyTerminationFd := pollFDs[1]
 		if earlyTerminationFd.Revents&C.POLLIN != 0 {
 			return nil
 		}
@@ -300,12 +300,16 @@ func pageStartAddress(addr uint64, pageSize int) uintptr {
 	return uintptr(addr & ^(uint64(pageSize) - 1))
 }
 
-func (h *Handler) Stop() {
+func (h *Handler) Stop() error {
 	log.Info("UFFD handler beginning shut down")
-	h.earlyTerminationWriter.Write([]byte{0})
+	_, err := h.earlyTerminationWriter.Write([]byte{0})
+	if err != nil {
+		return status.WrapError(err, "write to early terminator")
+	}
 	h.wg.Wait()
 	h.earlyTerminationReader.Close()
 	h.earlyTerminationWriter.Close()
+	return nil
 }
 
 // Translate the faulting memory address in the guest to a persisted store offset
