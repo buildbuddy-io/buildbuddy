@@ -30,7 +30,11 @@ echo   "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/doc
 sudo apt-get update
 sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo systemctl start docker
-sudo ./firecracker/tools/devtool build
+
+curl -L https://github.com/firecracker-microvm/firecracker/releases/download/v1.4.0/firecracker-v1.4.0-x86_64.tgz --output firecracker.tgz
+tar xvzf firecracker.tgz
+sudo cp ./release-v1.4.0-x86_64/firecracker-v1.4.0-x86_64 /usr/sbin/firecracker
+sudo cp ./release-v1.4.0-x86_64/jailer-v1.4.0-x86_64 /usr/sbin/jailer
 
 PATH=$PATH:~/go/bin
 
@@ -49,9 +53,6 @@ sudo apt-get install redis
 sudo apt install acl
 sudo apt install net-tools
 sudo apt-get install umoci
-
-sudo cp /home/jim/firecracker/firecracker/build/cargo_target/x86_64-unknown-linux-musl/debug/jailer /usr/sbin
-sudo cp /home/jim/firecracker/firecracker/build/cargo_target/x86_64-unknown-linux-musl/debug/firecracker /usr/sbin
 
 sudo tools/enable_local_firecracker.sh
 
