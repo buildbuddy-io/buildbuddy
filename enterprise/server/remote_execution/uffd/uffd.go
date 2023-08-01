@@ -88,8 +88,7 @@ type Handler struct {
 
 func NewHandler() (*Handler, error) {
 	return &Handler{
-		wg:       sync.WaitGroup{},
-		quitChan: make(chan struct{}, 0),
+		wg: sync.WaitGroup{},
 	}, nil
 }
 
@@ -205,16 +204,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 
 	for {
-		select {
-		case <-h.quitChan:
-			return nil
-		default:
-		}
-
 		// Poll UFFD for messages
-		// Poll blocks until a message is ready to be read. A timeout is necessary so that if the handler receives
-		// a shutdown message on quitChan while Poll is waiting, Poll will exit and restart the loop to check quitChan
-		_, pollErr := unix.Poll(pollFDs, 500 /* timeout in ms */)
+		_, pollErr := unix.Poll(pollFDs, -1)
 		if pollErr != nil {
 			if pollErr == unix.EINTR {
 				// Poll call was interrupted by another signal - retry
