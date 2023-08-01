@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -ex
 
+cd ~/
 sudo snap install go --classic
 go install github.com/mattn/goreman@latest
 curl -fsSL install.buildbuddy.io | bash
@@ -38,6 +39,7 @@ git clone https://github.com/containers/skopeo $GOPATH/src/github.com/containers
 
 cd $GOPATH/src/github.com/containers/skopeo && make bin/skopeo
 cp bin/skopeo ~/go/bin/
+cd ~/
 
 sudo apt-get install redis
 sudo apt install acl
