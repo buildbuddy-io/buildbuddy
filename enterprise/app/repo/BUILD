@@ -7,6 +7,9 @@ ts_library(
     srcs = ["repo.tsx"],
     deps = [
         "//app/auth:auth_service",
+        "//app/components/checkbox",
+        "//app/components/input",
+        "//app/components/select",
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
