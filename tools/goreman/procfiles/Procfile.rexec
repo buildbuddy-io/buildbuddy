@@ -1,2 +1,2 @@
 app: bazel run enterprise/server -- --config_file=enterprise/config/buildbuddy.local.yaml
-exec: bazel run enterprise/server/cmd/executor:executor -- --monitoring_port=9091 --executor.docker_socket="" --executor.enable_firecracker=false
+exec: bazel run enterprise/server/cmd/executor:executor -- --monitoring_port=9091 --executor.docker_socket="" --executor.enable_firecracker=true

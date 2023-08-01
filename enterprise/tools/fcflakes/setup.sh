@@ -44,11 +44,11 @@ sudo apt install acl
 sudo apt install net-tools
 sudo apt-get install umoci
 
-sudo tools/enable_local_firecracker.sh
+sudo buildbuddy/tools/enable_local_firecracker.sh
 
 # Update /etc/containers/policy.json
 # Update path.
-echo "PATH=$PATH:~/go/bin" >> ~/.bashrc 
+echo 'PATH=$PATH:~/go/bin' >> ~/.bashrc 
 echo 'Update /etc/containers/policy.json!'
 echo 'Update Procfile.rexec to use firecracker!'
 echo 'Then run goreman -f tools/goreman/procfiles/Procfile.rexec start'
