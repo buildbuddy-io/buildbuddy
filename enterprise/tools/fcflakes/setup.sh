@@ -4,7 +4,7 @@ set -ex
 sudo snap install go --classic
 sudo go install github.com/mattn/goreman@latest
 curl -fsSL install.buildbuddy.io | bash
-
+sudo apt install acl
 sudo snap install emacs --classic
 sudo apt-get update
 sudo apt install build-essential
