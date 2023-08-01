@@ -79,15 +79,15 @@ type setupMessage struct {
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a blockio.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
-	lis      net.Listener
-	wg       sync.WaitGroup
-	quitChan chan struct{}
+	lis                    net.Listener
+	wg                     sync.WaitGroup
+	earlyTerminationReader *os.File
+	earlyTerminationWriter *os.File
 }
 
 func NewHandler() (*Handler, error) {
 	return &Handler{
-		wg:       sync.WaitGroup{},
-		quitChan: make(chan struct{}, 0),
+		wg: sync.WaitGroup{},
 	}, nil
 }
 
@@ -106,6 +106,14 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 	if err := os.Chmod(socketPath, 0777); err != nil {
 		return status.WrapError(err, "set socket permissions")
 	}
+
+	// Create a FD that can be used to terminate Poll early
+	pipeRead, pipeWrite, err := os.Pipe()
+	if err != nil {
+		return status.WrapError(err, "create early-termination fd")
+	}
+	h.earlyTerminationReader = pipeRead
+	h.earlyTerminationWriter = pipeWrite
 
 	go func() {
 		if err := h.handle(ctx, memoryStore); err != nil {
@@ -173,6 +181,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	h.wg.Add(1)
 	defer h.wg.Done()
 
+	// Get uffd sent from firecracker
 	setup, err := h.receiveSetupMsg(ctx)
 	if err != nil {
 		return status.WrapError(err, "receive setup message from firecracker")
@@ -180,7 +189,11 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	uffd := setup.Uffd
 	mappings := setup.Mappings
 
-	pollFDs := []unix.PollFd{{Fd: int32(uffd), Events: C.POLLIN}}
+	earlyTerminationFd := unix.PollFd{Fd: int32(h.earlyTerminationReader), Events: C.POLLIN}
+	pollFDs := []unix.PollFd{
+		{Fd: int32(uffd), Events: C.POLLIN},
+		earlyTerminationFd,
+	}
 	pageSize := os.Getpagesize()
 	storeLength, err := memoryStore.SizeBytes()
 	if err != nil {
@@ -188,22 +201,19 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 
 	for {
-		select {
-		case <-h.quitChan:
-			return nil
-		default:
-		}
-
 		// Poll UFFD for messages
-		// Poll blocks until a message is ready to be read. A timeout is necessary so that if the handler receives
-		// a shutdown message on quitChan while Poll is waiting, Poll will exit and restart the loop to check quitChan
-		_, pollErr := unix.Poll(pollFDs, 500 /* timeout in ms */)
+		_, pollErr := unix.Poll(pollFDs, -1)
 		if pollErr != nil {
 			if pollErr == unix.EINTR {
 				// Poll call was interrupted by another signal - retry
 				continue
 			}
 			return status.WrapError(pollErr, "poll uffd")
+		}
+
+		// Check for an early termination message
+		if earlyTerminationFd.Revents&C.POLLIN != 0 {
+			return nil
 		}
 
 		// Receive a page fault notification
@@ -292,8 +302,10 @@ func pageStartAddress(addr uint64, pageSize int) uintptr {
 
 func (h *Handler) Stop() {
 	log.Info("UFFD handler beginning shut down")
-	close(h.quitChan)
+	h.earlyTerminationWriter.Write([]byte{0})
 	h.wg.Wait()
+	h.earlyTerminationReader.Close()
+	h.earlyTerminationWriter.Close()
 }
 
 // Translate the faulting memory address in the guest to a persisted store offset
