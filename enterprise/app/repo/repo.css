@@ -1,0 +1,135 @@
+.create-repo-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.create-repo-page .repo-block {
+  flex-direction: column;
+  width: 50vw;
+  max-width: 600px;
+  margin: 32px 0 0 0;
+}
+
+.create-repo-page .repo-create {
+  gap: 16px;
+}
+
+.create-repo-page .repo-picker {
+  display: flex;
+}
+
+.create-repo-page .login-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-repo-page .repo-picker {
+  width: 100%;
+  gap: 16px;
+}
+
+.create-repo-page .repo-picker > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.create-repo-page .repo-picker > div:last-of-type {
+  flex-grow: 1;
+}
+
+.create-repo-page .repo-picker input,
+.create-repo-page .repo-picker select {
+  padding: 12px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  font-family: inherit;
+  font-size: 1.2em;
+  height: initial;
+}
+
+.create-repo-page .create-button,
+.create-repo-page .permissions-button,
+.create-repo-page .view-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 16px 32px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 100px;
+  margin-bottom: 12px;
+  font-size: 18px;
+  cursor: pointer;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  background-color: #000;
+  color: #fff;
+  transition: 300ms ease-in-out;
+  box-sizing: border-box;
+}
+
+.create-repo-page .permissions-button {
+  margin-bottom: 0;
+}
+
+.create-repo-page .view-button {
+  background-color: #4caf50;
+}
+
+.create-repo-page .create-button:disabled {
+  background-color: #aaa;
+  cursor: default;
+}
+
+.create-repo-page .repo-private {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.2em;
+  cursor: pointer;
+}
+
+.create-repo-page .repo-title {
+  font-size: 2em;
+  border-bottom: 1px solid #eee;
+  width: 100%;
+  padding-bottom: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.create-repo-page .login-buttons .repo-title {
+  margin-bottom: 24px;
+}
+
+.create-repo-page .repo-block.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.create-repo-page .repo-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.create-repo-page .running-actions {
+  font-weight: 600;
+}
+
+.create-repo-page .running-actions a {
+  display: flex;
+  align-items: center;
+}
+
+.create-repo-page .running-actions svg {
+  margin-right: 8px;
+}

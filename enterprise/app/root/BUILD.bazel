@@ -32,6 +32,7 @@ ts_library(
         "//enterprise/app/login",
         "//enterprise/app/org:create_org",
         "//enterprise/app/org:join_org",
+        "//enterprise/app/repo",
         "//enterprise/app/settings",
         "//enterprise/app/shortcuts",
         "//enterprise/app/sidebar",

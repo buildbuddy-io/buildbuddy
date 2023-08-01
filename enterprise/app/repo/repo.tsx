@@ -1,0 +1,295 @@
+import React from "react";
+import error_service from "../../../app/errors/error_service";
+import rpc_service from "../../../app/service/rpc_service";
+import { github } from "../../../proto/github_ts_proto";
+import { repo } from "../../../proto/repo_ts_proto";
+import { Octokit } from "@octokit/rest";
+import Long from "long";
+import Spinner from "../../../app/components/spinner/spinner";
+import { ChevronRightSquare, Github, User } from "lucide-react";
+import auth_service from "../../../app/auth/auth_service";
+import { workflow } from "../../../proto/workflow_ts_proto";
+import Select from "../../../app/components/select/select";
+import Checkbox from "../../../app/components/checkbox/checkbox";
+import TextInput from "../../../app/components/input/input";
+
+export interface RepoComponentProps {
+  path: string;
+  search: URLSearchParams;
+  user: any;
+}
+
+interface RepoComponentState {
+  selectedInstallationIndex: number;
+  githubInstallationsLoading: boolean;
+  githubInstallationsResponse: any;
+  isCreating: boolean;
+
+  repoName: string;
+  template: string;
+  private: boolean;
+
+  repoResponse: repo.CreateRepoResponse | null;
+  workflowResponse: workflow.ExecuteWorkflowResponse | null;
+}
+
+export default class RepoComponent extends React.Component<RepoComponentProps, RepoComponentState> {
+  state: RepoComponentState = {
+    selectedInstallationIndex: 0,
+    githubInstallationsLoading: true,
+    githubInstallationsResponse: null,
+    isCreating: false,
+
+    template: this.props.search.get("template") || "",
+    repoName: this.props.search.get("name") || "",
+    private: true,
+
+    repoResponse: null,
+    workflowResponse: null,
+  };
+
+  fetchGithubInstallations() {
+    if (!this.props.user || !this.props.user.githubToken) {
+      this.setState({ githubInstallationsLoading: false });
+      return;
+    }
+    new Octokit({ auth: this.props.user.githubToken })
+      .request(`GET /user/installations`)
+      .then((response) => {
+        console.log(response);
+        this.setState({ githubInstallationsResponse: response });
+      })
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ githubInstallationsLoading: false }));
+  }
+
+  componentDidMount() {
+    this.fetchGithubInstallations();
+  }
+
+  handleInstallationPicked(e: React.ChangeEvent<HTMLSelectElement>) {
+    if (e.target.value == "-1") {
+      window.location.href = `/auth/github/app/link/?${new URLSearchParams({
+        group_id: this.props.user.selectedGroup.id,
+        user_id: this.props.user.displayUser.userId?.id || "",
+        redirect_url: window.location.href,
+        install: "true",
+      })}`;
+    }
+
+    let index = Number(e.target.value);
+    this.setState({ selectedInstallationIndex: index });
+  }
+
+  hasPermissions() {
+    let selectedInstallation = this.state.githubInstallationsResponse?.data.installations[
+      this.state.selectedInstallationIndex
+    ];
+    if (!selectedInstallation) {
+      return true;
+    }
+    return (
+      selectedInstallation.permissions.administration == "write" &&
+      selectedInstallation.permissions.repository_hooks == "write"
+    );
+  }
+
+  handleRepoChanged(e: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ repoName: e.target.value });
+  }
+
+  handleTemplateChanged(e: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ template: e.target.value });
+  }
+
+  handlePrivateChanged(e: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ private: e.target.checked });
+  }
+
+  linkInstallation() {
+    let selectedInstallation = this.state.githubInstallationsResponse?.data.installations[
+      this.state.selectedInstallationIndex
+    ];
+    rpc_service.service
+      .linkGitHubAppInstallation(
+        github.LinkAppInstallationRequest.create({
+          installationId: Long.fromInt(selectedInstallation.id || 0),
+        })
+      )
+      .catch((e) => error_service.handleError(e));
+  }
+
+  createRepo() {
+    let selectedInstallation = this.state.githubInstallationsResponse?.data.installations[
+      this.state.selectedInstallationIndex
+    ];
+    let r = new repo.CreateRepoRequest();
+    r.name = this.state.repoName;
+    r.private = this.state.private;
+    r.template = this.state.template;
+
+    if (selectedInstallation.target_type == "Organization") {
+      r.installationId = selectedInstallation.id;
+      r.organization = selectedInstallation.account.login;
+    }
+    return rpc_service.service.createRepo(r);
+  }
+
+  runWorkflow(repo: string) {
+    return rpc_service.service.executeWorkflow(
+      new workflow.ExecuteWorkflowRequest({
+        pushedRepoUrl: repo,
+        pushedBranch: "main",
+        targetRepoUrl: repo,
+        targetBranch: "main",
+        clean: false,
+        visibility: "",
+        async: true,
+      })
+    );
+  }
+
+  async handleCreateClicked() {
+    this.setState({ isCreating: true });
+    try {
+      await this.linkInstallation();
+      let repoResponse = await this.createRepo();
+      this.setState({ repoResponse: repoResponse });
+      let workflowResponse = await this.runWorkflow(repoResponse.repoUrl);
+      this.setState({ isCreating: false, workflowResponse: workflowResponse });
+    } catch (e) {
+      error_service.handleError(e);
+      this.setState({ isCreating: false });
+    }
+  }
+
+  handlePermissionsClicked() {
+    let selectedInstallation = this.state.githubInstallationsResponse?.data.installations[
+      this.state.selectedInstallationIndex
+    ];
+    window.location.href = selectedInstallation.html_url + `/permissions/update`;
+  }
+
+  render() {
+    if (this.state.githubInstallationsLoading) {
+      return (
+        <div className="create-repo-page">
+          <div className="repo-loading">
+            <Spinner />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="create-repo-page">
+        {!this.props.user && (
+          <div className="repo-block card login-buttons">
+            <div className="repo-title">Get started</div>
+            <button
+              className="github-button"
+              onClick={() =>
+                (window.location.href = `/login/github/?${new URLSearchParams({
+                  redirect_url: window.location.href,
+                  link: "true",
+                })}`)
+              }>
+              <Github /> Continue with Github
+            </button>
+            <button className="google-button" onClick={() => auth_service.login()}>
+              <User /> Continue with Google
+            </button>
+          </div>
+        )}
+        {this.props.user && !this.state.githubInstallationsResponse?.data?.installations && (
+          <div className="repo-block card login-buttons">
+            <div className="repo-title">Get started</div>
+            <button
+              className="github-button"
+              onClick={() =>
+                (window.location.href = `/auth/github/app/link/?${new URLSearchParams({
+                  user_id: this.props.user?.displayUser?.userId?.id || "",
+                  group_id: this.props.user?.selectedGroup?.id || "",
+                  redirect_url: window.location.href,
+                  install: "true",
+                })}`)
+              }>
+              <Github /> Link Github
+            </button>
+          </div>
+        )}
+        <div
+          className={`repo-block card repo-create ${
+            this.props.user && this.state.githubInstallationsResponse?.data?.installations ? "" : "disabled"
+          }`}>
+          <div className="repo-title">Create Git Repository</div>
+          <div className="repo-picker">
+            <div>
+              <div>Git scope</div>
+              <div>
+                <Select
+                  onChange={this.handleInstallationPicked.bind(this)}
+                  value={this.state.selectedInstallationIndex}>
+                  {this.state.githubInstallationsResponse?.data?.installations.map((i: any, index: number) => (
+                    <option value={index}>{`${i.account.login}`}</option>
+                  ))}
+                  {!this.state.githubInstallationsResponse?.data?.installations && (
+                    <option value={-1}>Pick a git scope...</option>
+                  )}
+                  <option value={-1}>+ Add Github Account</option>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <div>Repository name</div>
+              <div>
+                <TextInput value={this.state.repoName} onChange={this.handleRepoChanged.bind(this)} />
+              </div>
+            </div>
+          </div>
+          <label className="repo-private">
+            <Checkbox checked={this.state.private} onChange={this.handlePrivateChanged.bind(this)} />
+            Create private git repository
+          </label>
+          {!this.hasPermissions() && (
+            <button className="permissions-button" onClick={this.handlePermissionsClicked.bind(this)}>
+              Grant permissions
+            </button>
+          )}
+          {!this.state.repoResponse && (
+            <button
+              disabled={
+                !this.state.githubInstallationsResponse?.data.installations ||
+                !this.hasPermissions() ||
+                this.state.isCreating
+              }
+              className="create-button"
+              onClick={this.handleCreateClicked.bind(this)}>
+              {this.state.isCreating ? "Creating..." : "Create repository"}
+            </button>
+          )}
+          {this.state.repoResponse && (
+            <a className="view-button" href={this.state.repoResponse.repoUrl} target="_blank">
+              View repository
+            </a>
+          )}
+        </div>
+        {this.state.workflowResponse && (
+          <div
+            className={`repo-block card repo-create ${
+              this.props.user && this.state.githubInstallationsResponse?.data?.installations ? "" : "disabled"
+            }`}>
+            <div className="repo-title">Workflows</div>
+            <div className="running-actions">
+              {this.state.workflowResponse.actionStatuses.map((s) => (
+                <a href={`/invocation/${s.invocationId}`} target="_blank">
+                  <ChevronRightSquare /> {s.actionName}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+}
