@@ -11,14 +11,6 @@ sudo apt install build-essential
 
 [ $(stat -c "%G" /dev/kvm) = kvm ] && sudo usermod -aG kvm ${USER} && echo "Access granted."
 sudo setfacl -m u:${USER}:rw /dev/kvm
-mkdir firecracker
-cd firecracker
-ARCH="$(uname -m)"
-wget https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/${ARCH}/kernels/vmlinux.bin
-wget https://s3.amazonaws.com/spec.ccfc.min/ci-artifacts/disks/${ARCH}/ubuntu-18.04.ext4
-wget https://s3.amazonaws.com/spec.ccfc.min/ci-artifacts/disks/${ARCH}/ubuntu-18.04.id_rsa
-chmod 400 ./ubuntu-18.04.id_rsa
-git clone https://github.com/firecracker-microvm/firecracker
 
 sudo apt-get install ca-certificates curl gnupg
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -37,8 +29,6 @@ sudo cp ./release-v1.4.0-x86_64/firecracker-v1.4.0-x86_64 /usr/sbin/firecracker
 sudo cp ./release-v1.4.0-x86_64/jailer-v1.4.0-x86_64 /usr/sbin/jailer
 
 PATH=$PATH:~/go/bin
-
-cd ..
 
 sudo apt install zlib1g-dev
 sudo apt install libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config
