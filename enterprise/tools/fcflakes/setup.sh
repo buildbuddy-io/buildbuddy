@@ -7,7 +7,7 @@ curl -fsSL install.buildbuddy.io | bash
 
 sudo snap install emacs --classic
 
-apt install build-essential
+sudo apt install build-essential
 
 [ $(stat -c "%G" /dev/kvm) = kvm ] && sudo usermod -aG kvm ${USER} && echo "Access granted."
 mkdir firecracker
