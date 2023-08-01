@@ -1401,22 +1401,6 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterat
 	return md, err
 }
 
-func (p *PebbleCache) lookupLastAccessTime(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (int64, error) {
-	ctx, spn := tracing.StartSpan(ctx)
-	defer spn.End()
-
-	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
-		keyBytes, err := key.Bytes(version)
-		if err != nil {
-			return 0, err
-		}
-		if iter.SeekGE(keyBytes) && bytes.Equal(iter.Key(), keyBytes) {
-			return getLastAccessUsec(iter.Value()), nil
-		}
-	}
-	return 0, status.NotFoundErrorf("key %q not found", key)
-}
-
 // getLastAccessUsec processes the FileMetadata as a sequence of (tag,value)
 // pairs. It loops through the pairs until hitting the tag for last_acess_usec,
 // then it returns the value. This lets us avoid a full parse of FileMetadata.
@@ -1479,31 +1463,11 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	db, err := p.leaser.DB()
+	missing, err := p.FindMissing(ctx, []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
-	defer db.Close()
-
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	fileRecord, err := p.makeFileRecord(ctx, r)
-	if err != nil {
-		return false, err
-	}
-	key, err := p.fileStorer.PebbleKey(fileRecord)
-	if err != nil {
-		return false, err
-	}
-	unlockFn := p.locker.RLock(key.LockID())
-	defer unlockFn()
-
-	found, err := p.iterHasKey(iter, key)
-	if err != nil {
-		return false, err
-	}
-	return found, nil
+	return len(missing) == 0, nil
 }
 
 func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
@@ -1553,25 +1517,39 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 
 	var missing []*repb.Digest
 	for _, r := range resources {
-		fileRecord, err := p.makeFileRecord(ctx, r)
-		if err != nil {
-			return nil, err
-		}
-		key, err := p.fileStorer.PebbleKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-
-		unlockFn := p.locker.RLock(key.LockID())
-		lastAccessUsec, err := p.lookupLastAccessTime(ctx, iter, key)
+		err = p.findMissing(ctx, iter, r)
 		if err != nil {
 			missing = append(missing, r.GetDigest())
-		} else {
-			p.sendAtimeUpdate(key, lastAccessUsec)
 		}
-		unlockFn()
 	}
 	return missing, nil
+}
+
+func (p *PebbleCache) findMissing(ctx context.Context, iter pebble.Iterator, r *rspb.ResourceName) error {
+	fileRecord, err := p.makeFileRecord(ctx, r)
+	if err != nil {
+		return err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return err
+	}
+
+	unlockFn := p.locker.RLock(key.LockID())
+	defer unlockFn()
+	md, err := p.lookupFileMetadata(ctx, iter, key)
+	if err != nil {
+		return err
+	}
+	chunkedMD := md.GetStorageMetadata().GetChunkedMetadata()
+	for _, chunked := range chunkedMD.GetResource() {
+		err = p.findMissing(ctx, iter, chunked)
+		if err != nil {
+			return err
+		}
+	}
+	p.sendAtimeUpdate(key, md.GetLastAccessUsec())
+	return nil
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
