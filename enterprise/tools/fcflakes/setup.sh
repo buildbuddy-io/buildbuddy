@@ -10,6 +10,7 @@ sudo apt-get update
 sudo apt install build-essential
 
 [ $(stat -c "%G" /dev/kvm) = kvm ] && sudo usermod -aG kvm ${USER} && echo "Access granted."
+sudo setfacl -m u:${USER}:rw /dev/kvm
 mkdir firecracker
 cd firecracker
 ARCH="$(uname -m)"
