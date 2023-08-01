@@ -14,21 +14,46 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// StreamDirector decides how to connect a client request to a backend.
-type StreamDirector func(ctx context.Context, fullMethodName string) (ctxOut context.Context, conn *grpc.ClientConn, err error)
-
 // Proxy is a basic in-process gRPC L7 proxy for use in tests.
+//
+// A proxy must be configured with a Director, which is just a function that
+// decides how to connect RPCs to backends. You can use RandomDialer to load
+// balance randomly (similar to a "real" LB), or define a custom function. A
+// custom function is useful for unit testing specific connectivity scenarios.
+//
+// For example, if you want to test that a client automatically retries broken
+// stream connections, you can write a director function which ensures that any
+// requests to "MyStreamingRPC" are connected to app1, then start a streaming
+// RPC, then atomically (1) shut down app1 and (2) signal the director to start
+// directing new "MyStreamingRPC" requests to app2.
+//
+// Example usage:
+//
+//	// Start some apps
+//	app1 := buildbuddy.Run(t)
+//	app2 := buildbuddy.Run(t)
+//	// Define a director
+//	director := testgrpc.RandomDialer(app1.GRPCAddress(), app2.GRPCAddress())
+//	// Start the proxy server
+//	proxy := testgrpc.StartProxy(t, director)
+//	// Connect to the proxy and make an RPC
+//	conn := proxy.Dial()
+//	client := examplepb.NewExampleClient(conn)
+//	client.SomeRPCMethod(/* ... */)
 type Proxy struct {
 	t        *testing.T
 	Addr     net.Addr
-	Director StreamDirector
+	Director Director
 	Conn     *grpc.ClientConn
 }
+
+// Director decides how to connect a client request to a backend.
+type Director func(ctx context.Context, fullMethodName string) (ctxOut context.Context, conn *grpc.ClientConn, err error)
 
 // StartProxy runs a test-scoped gRPC proxy. The given director func decides how
 // to connect a client request to a backend. If needed, the func can be nil
 // initially and reconfigured later by setting Director on the returned proxy.
-func StartProxy(t *testing.T, director StreamDirector) *Proxy {
+func StartProxy(t *testing.T, director Director) *Proxy {
 	lis, err := net.Listen("tcp", "0.0.0.0:0")
 	require.NoError(t, err)
 	p := &Proxy{
@@ -57,9 +82,8 @@ func (p *Proxy) Dial() *grpc.ClientConn {
 	return conn
 }
 
-// RandomDialer returns a StreamDirector that dials a random backend from the
-// given list.
-func RandomDialer(targets ...string) proxy.StreamDirector {
+// RandomDialer returns a Director that randomly picks one of the given targets.
+func RandomDialer(targets ...string) Director {
 	return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
 		var cc *grpc.ClientConn
 		var err error
