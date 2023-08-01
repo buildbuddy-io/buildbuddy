@@ -3,7 +3,7 @@ set -e
 
 # Run remote (dev) by default.
 # Set LOCAL=1 to run locally
-: "${LOCAL:=0}"
+: "${LOCAL:=1}"
 
 ARGS=()
 if ((LOCAL)); then
