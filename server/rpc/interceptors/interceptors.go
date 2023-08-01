@@ -47,6 +47,8 @@ func init() {
 	}
 }
 
+// ClientOrigin returns the configured value of x-buildbuddy-origin that will be
+// set on *outgoing* gRPC requests.
 func ClientOrigin() string {
 	return *origin
 }
