@@ -6,7 +6,7 @@ sudo go install github.com/mattn/goreman@latest
 curl -fsSL install.buildbuddy.io | bash
 
 sudo snap install emacs --classic
-
+sudo apt-get update
 sudo apt install build-essential
 
 [ $(stat -c "%G" /dev/kvm) = kvm ] && sudo usermod -aG kvm ${USER} && echo "Access granted."
