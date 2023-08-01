@@ -18,7 +18,7 @@ else
   )
 fi
 
-exec bazel test //enterprise/tools/fcflakes:repro \
+exec bb test //enterprise/tools/fcflakes:repro \
   --runs_per_test=1000 \
   --test_keep_going \
   --test_output=errors \
