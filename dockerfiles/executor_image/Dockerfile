@@ -3,6 +3,10 @@ FROM gcr.io/cloud-marketplace/google/debian11@sha256:69e2789c9f3d28c6a0f13b25062
 RUN apt-get update && apt-get install -y \
   rpm curl apt-transport-https ca-certificates gnupg-agent software-properties-common fuse
 
+RUN curl https://github.com/krallin/tini/releases/download/v0.19.0/tini -o /tini -s -L && \
+    echo "93dcc18adc78c65a028a84799ecf8ad40c936fdfc5f2a57b1acda5a8117fa82c tini" | sha256sum -c && \
+    chmod +x /tini
+
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
     apt-key fingerprint 0EBFCD88 && \
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" && \
