@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package auditlog;
 
-import "proto/acl.proto";
 import "proto/api_key.proto";
 import "proto/context.proto";
 import "proto/encryption.proto";
