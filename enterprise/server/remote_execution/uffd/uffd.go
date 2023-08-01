@@ -105,17 +105,15 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 	h.earlyTerminationReader = pipeRead
 	h.earlyTerminationWriter = pipeWrite
 
+	// Get uffd sent from firecracker
 	go func() {
-		if h.uffd == 0 {
-			// Get uffd sent from firecracker
-			err = h.receiveSetupMsg(ctx, socketPath)
-			if err != nil {
-				log.CtxErrorf(ctx, "Failed to receive setup message from firecracker: %s", err)
-				return
-			}
+		// TODO: Do I need this? In head but not in working	if h.uffd == 0 {
+		err = h.receiveSetupMsg(ctx, socketPath)
+		if err != nil {
+			log.CtxErrorf(ctx, "receive setup message from firecracker: %s", err)
 		}
 
-		if err = h.handle(ctx, memoryStore); err != nil {
+		if err := h.handle(ctx, memoryStore, socketPath); err != nil {
 			log.CtxErrorf(ctx, "Failed to handle firecracker memory requests: %s", err)
 		}
 	}()
@@ -184,7 +182,7 @@ func (h *Handler) receiveSetupMsg(ctx context.Context, socketPath string) error 
 	return nil
 }
 
-func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) error {
+func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore, socketPath string) error {
 	h.wg.Add(1)
 	defer h.wg.Done()
 
