@@ -586,6 +586,13 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
 		return err
 	}
+
+	if c.uffdHandler != nil {
+		if err := c.uffdHandler.Stop(); err != nil {
+			return status.WrapError(err, "failed to stop uffd handler")
+		}
+	}
+
 	// Now that we've paused the VM, it's a good time to Sync the NBD backing
 	// files. This is particularly important when the files are backed with an
 	// mmap. The File backing the mmap may differ from the in-memory contents
@@ -599,6 +606,20 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 		if err := c.scratchStore.Sync(); err != nil {
 			return status.WrapError(err, "failed to sync scratchfs device store")
 		}
+	}
+	return nil
+}
+
+func (c *FirecrackerContainer) resumeVM(ctx context.Context) error {
+	if c.uffdHandler != nil {
+		sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
+		if err := c.uffdHandler.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
+			return status.WrapError(err, "failed to start uffd handler")
+		}
+	}
+
+	if err := c.machine.ResumeVM(ctx); err != nil {
+		return status.InternalErrorf("error resuming VM: %s", err)
 	}
 	return nil
 }
@@ -859,7 +880,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	c.machine = machine
 
-	if err := c.machine.ResumeVM(ctx); err != nil {
+	if err := c.resumeVM(ctx); err != nil {
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
 
