@@ -1909,7 +1909,10 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.scratchStore = nil
 	}
 	if c.uffdHandler != nil {
-		c.uffdHandler.Stop()
+		if err := c.uffdHandler.Stop(); err != nil {
+			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
+			lastErr = err
+		}
 		c.uffdHandler = nil
 	}
 	if c.memoryStore != nil {
