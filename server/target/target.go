@@ -35,7 +35,7 @@ const (
 	testCommand     = "test"
 	coverageCommand = "coverage"
 
-	// The number of distinct commits returned in GetTargetResponse.
+	// The number of distinct commits returned in GetTargetHistoryResponse.
 	targetPageSize = 20
 )
 
@@ -64,7 +64,7 @@ func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
 	}
 }
 
-func NewTokenFromRequest(req *trpb.GetTargetRequest) (*tppb.PaginationToken, error) {
+func NewTokenFromRequest(req *trpb.GetTargetHistoryRequest) (*tppb.PaginationToken, error) {
 	strToken := req.GetPageToken()
 	if strToken == "" {
 		return nil, nil
@@ -98,7 +98,7 @@ func ApplyToQuery(timestampField string, t *tppb.PaginationToken, q *query_build
 	q = q.AddWhereClause("("+orQuery+")", orArgs...)
 }
 
-func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
+func GetTargetHistory(ctx context.Context, env environment.Env, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
 	auth := env.GetAuthenticator()
 	if auth == nil {
 		return nil, status.UnimplementedError("Not Implemented")
@@ -114,11 +114,11 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 	return readPaginatedTargetsFromPrimaryDB(ctx, env, req)
 }
 
-func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string, groupID string) (*trpb.GetTargetResponse, error) {
+func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string, groupID string) (*trpb.GetTargetHistoryResponse, error) {
 	qStr, qArgs := q.Build()
 
 	seenTargets := make(map[string]struct{}, 0)
-	targets := make([]*trpb.Target, 0)
+	targets := make([]*trpb.TargetMetadata, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
 	var nextPageToken *tppb.PaginationToken
 
@@ -150,7 +150,7 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 		}
 		if _, ok := seenTargets[row.Label]; !ok {
 			seenTargets[row.Label] = struct{}{}
-			targets = append(targets, &trpb.Target{
+			targets = append(targets, &trpb.TargetMetadata{
 				Label:      row.Label,
 				RuleType:   row.RuleType,
 				TargetType: cmpb.TargetType(row.TargetType),
@@ -196,7 +196,7 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 			RepoUrl:      repoURL,
 		})
 	}
-	resp := &trpb.GetTargetResponse{
+	resp := &trpb.GetTargetHistoryResponse{
 		InvocationTargets: targetHistories,
 	}
 	if nextPageToken != nil {
@@ -209,11 +209,11 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 	return resp, nil
 }
 
-func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string) (*trpb.GetTargetResponse, error) {
+func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string) (*trpb.GetTargetHistoryResponse, error) {
 	queryStr, args := q.Build()
 
 	seenTargets := make(map[string]struct{}, 0)
-	targets := make([]*trpb.Target, 0)
+	targets := make([]*trpb.TargetMetadata, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
 	var nextPageToken *tppb.PaginationToken
 
@@ -245,7 +245,7 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 			targetID := fmt.Sprintf("%d", row.TargetID)
 			if _, ok := seenTargets[targetID]; !ok {
 				seenTargets[targetID] = struct{}{}
-				targets = append(targets, &trpb.Target{
+				targets = append(targets, &trpb.TargetMetadata{
 					Id:         targetID,
 					Label:      row.Label,
 					RuleType:   row.RuleType,
@@ -289,7 +289,7 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 			RepoUrl:      repoURL,
 		})
 	}
-	resp := &trpb.GetTargetResponse{
+	resp := &trpb.GetTargetHistoryResponse{
 		InvocationTargets: targetHistories,
 	}
 	if nextPageToken != nil {
@@ -302,7 +302,7 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 	return resp, nil
 }
 
-func getRepoURL(req *trpb.GetTargetRequest) (string, error) {
+func getRepoURL(req *trpb.GetTargetHistoryRequest) (string, error) {
 	repo := req.GetQuery().GetRepoUrl()
 	if repo == "" {
 		return repo, nil
@@ -313,7 +313,7 @@ func getRepoURL(req *trpb.GetTargetRequest) (string, error) {
 	return "", status.InvalidArgumentErrorf("Invalid repo_url: %q", repo)
 }
 
-func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
+func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
 	if env.GetOLAPDBHandle() == nil {
 		return nil, status.FailedPreconditionError("OLAP database not configured")
 	}
@@ -382,7 +382,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	return fetchTargetsFromOLAPDB(ctx, env, q, repo, groupID)
 }
 
-func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
+func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}

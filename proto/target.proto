@@ -143,25 +143,39 @@ message Artifact {
   string bytestream_url = 2;
 }
 
+// Target details along with optional artifacts associated with the target.
 message Target {
-  optional TargetMetadata = 1;
-  repeated Artifact = 2;
-  optional TargetStatus = 3;
-  api.v1.Timing timing = 4;
+  // Target metadata.
+  TargetMetadata metadata = 1;
+
+  // Target status.
+  api.v1.Status status = 2;
+
+  // Target timing.
+  api.v1.Timing timing = 3;
+
+  // Artifacts associated with the target.
+  repeated Artifact artifacts = 4;
 }
 
 message TargetGroup {
-  optional Target target = 1;
+  // Status of all targets in the group.
+  api.v1.Status status = 1;
 
-  api.v1.Status status = 2;
+  // Targets in the group. If this is empty but next_page_token is set, this
+  // means that the invocation is still in progress and that more targets may be
+  // fetched later.
+  repeated Target target = 2;
 
+  // Page token for fetching the next target group.
   string next_page_token = 3;
 
-  int total_count = 4;
+  // Total target count in this group across all pages.
+  int64 total_count = 4;
 }
 
 message GetTargetRequest {
-  // Optional, if set only targets with this label will be returned. 
+  // Optional, if set only targets with this label will be returned.
   // If not set, all targets will be returned.
   string target_label = 1;
 
