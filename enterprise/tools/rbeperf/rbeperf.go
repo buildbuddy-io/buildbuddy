@@ -702,14 +702,12 @@ func (g *runner) run(ctx context.Context) error {
 		remoteOutputUploadHist.Add(remoteStats.uploadOutputsDuration.Milliseconds())
 		remoteTotalHist.Add(remoteStats.totalDuration.Milliseconds())
 
-		if res.RemoteStats.UsageStats == nil {
-			log.Warningf("Missing remote usage stats for %q", res.CommandName)
-			numErrors++
-			continue
+		if res.RemoteStats.UsageStats != nil {
+			peakMemHist.Add(res.RemoteStats.UsageStats.PeakMemoryBytes)
+			cpuHist.Add(res.RemoteStats.UsageStats.CpuNanos)
+		} else {
+			log.Debugf("Missing remote usage stats for %q -- ignoring", res.CommandName)
 		}
-
-		peakMemHist.Add(res.RemoteStats.UsageStats.PeakMemoryBytes)
-		cpuHist.Add(res.RemoteStats.UsageStats.CpuNanos)
 	}
 
 	if *summary {
