@@ -204,7 +204,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
 
   fetchAPIKeyValue(bazelConfigResponse: bazel_config.IGetBazelConfigResponse, selectedIndex: number) {
     const creds = bazelConfigResponse.credential;
-    if (!creds) {
+    if (!creds?.length) {
       return;
     }
 
