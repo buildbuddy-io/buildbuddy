@@ -33,6 +33,7 @@ var (
 		"GetCacheScoreCard",
 		"GetCacheMetadata",
 		"GetTarget",
+		"GetTargetHistory",
 		"GetExecution",
 		"GetZipManifest",
 		// Users do not need any particular role within their current group to be

@@ -990,8 +990,12 @@ func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.Search
 	return searcher.SearchExecutions(ctx, req)
 }
 
+func (s *BuildBuddyServer) GetTargetHistory(ctx context.Context, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
+	return target.GetTargetHistory(ctx, s.env, req)
+}
+
 func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
-	return target.GetTarget(ctx, s.env, req)
+	return nil, status.UnimplementedError("not implemented")
 }
 
 func (s *BuildBuddyServer) GetEventLogChunk(ctx context.Context, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {

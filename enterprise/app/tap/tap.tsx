@@ -179,11 +179,11 @@ export default class TapComponent extends React.Component<Props, State> {
 
     const repoUrl = this.selectedRepo();
     if (!repoUrl) {
-      this.updateState(new target.GetTargetResponse(), initial);
+      this.updateState(new target.GetTargetHistoryResponse(), initial);
       return;
     }
 
-    let request = new target.GetTargetRequest();
+    let request = new target.GetTargetHistoryRequest();
 
     request.startTimeUsec = Long.fromNumber(moment().subtract(DAYS_OF_DATA_TO_FETCH, "day").utc().valueOf() * 1000);
     request.endTimeUsec = Long.fromNumber(moment().utc().valueOf() * 1000);
@@ -195,15 +195,15 @@ export default class TapComponent extends React.Component<Props, State> {
 
     this.setState({ loading: true });
     this.targetsRPC = rpcService.service
-      .getTarget(request)
-      .then((response: target.GetTargetResponse) => {
+      .getTargetHistory(request)
+      .then((response) => {
         this.updateState(response, initial);
       })
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
 
-  updateState(response: target.GetTargetResponse, initial: boolean) {
+  updateState(response: target.GetTargetHistoryResponse, initial: boolean) {
     this.state.stats.clear();
 
     let histories = response.invocationTargets;

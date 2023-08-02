@@ -6,7 +6,7 @@ import "proto/api/v1/common.proto";
 package target;
 
 // A single "Target" that is part of a build.
-message Target {
+message TargetMetadata {
   // The id of this target.
   // For example: "TS12345".
   // DEPRECATED: Use repo_url and label to identify a target.
@@ -53,7 +53,7 @@ message TargetStatus {
 
 message TargetHistory {
   // The target that was run.
-  Target target = 1;
+  TargetMetadata target = 1;
 
   // The git repo the build was for.
   // For example: "buildbuddy-io/buildbuddy"
@@ -97,7 +97,7 @@ message TargetQuery {
   string branch_name = 7;
 }
 
-message GetTargetRequest {
+message GetTargetHistoryRequest {
   // The request context.
   context.RequestContext request_context = 1;
 
@@ -121,7 +121,7 @@ message GetTargetRequest {
   string page_token = 6;
 }
 
-message GetTargetResponse {
+message GetTargetHistoryResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
@@ -136,4 +136,56 @@ message GetTargetResponse {
 
   // The pagination token to retrieve the next page of results.
   string next_page_token = 4;
+}
+
+message Artifact {
+  string name = 1;
+  string bytestream_url = 2;
+}
+
+// Target details along with optional artifacts associated with the target.
+message Target {
+  // Target metadata.
+  TargetMetadata metadata = 1;
+
+  // Target status.
+  api.v1.Status status = 2;
+
+  // Target timing.
+  api.v1.Timing timing = 3;
+
+  // Artifacts associated with the target.
+  repeated Artifact artifacts = 4;
+}
+
+message TargetGroup {
+  // Status of all targets in the group.
+  api.v1.Status status = 1;
+
+  // Targets in the group. If this is empty but next_page_token is set, this
+  // means that the invocation is still in progress and that more targets may be
+  // fetched later.
+  repeated Target target = 2;
+
+  // Page token for fetching the next target group.
+  string next_page_token = 3;
+
+  // Total target count in this group across all pages.
+  int64 total_count = 4;
+}
+
+message GetTargetRequest {
+  // Optional, if set only targets with this label will be returned.
+  // If not set, all targets will be returned.
+  string target_label = 1;
+
+  // Optional, if set only targets with this status will be returned.
+  // If not set, all targets will be returned.
+  api.v1.Status status = 2;
+
+  string pagination_token = 4;
+}
+
+message GetTargetResponse {
+  repeated TargetGroup target_group = 1;
 }

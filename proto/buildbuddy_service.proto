@@ -111,8 +111,10 @@ service BuildBuddyService {
   rpc GetCacheMetadata(cache.GetCacheMetadataRequest)
       returns (cache.GetCacheMetadataResponse);
 
-  // Target API
+  // Targets API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
+  rpc GetTargetHistory(target.GetTargetHistoryRequest)
+      returns (target.GetTargetHistoryResponse);
 
   // Workflow API
   rpc CreateWorkflow(workflow.CreateWorkflowRequest)
