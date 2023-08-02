@@ -245,6 +245,9 @@ export function formatDateRange(startDate: Date, endDate: Date, { now = new Date
 
   // Special cases for date range picker default options
   if (isSameDay(now, endDate)) {
+    if (isSameDay(now, startDate)) {
+      return "Today";
+    }
     if (isSameDay(startDate, LOCAL_EPOCH)) {
       return "All time";
     }
