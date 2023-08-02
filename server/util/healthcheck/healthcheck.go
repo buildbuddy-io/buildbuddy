@@ -30,6 +30,7 @@ var (
 	maxShutdownDuration           = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
 	shutdownLameduckDuration      = flag.Duration("shutdown_lameduck_duration", 0, "If set, the server will be marked unready but not run shutdown functions until this period passes.")
 	logGoroutineProfileOnShutdown = flag.Bool("log_goroutine_profile_on_shutdown", false, "Whether to log all goroutine stack traces on shutdown.")
+	reportNotReady                = flag.Bool("report_not_ready", false, "If set to true, the app will always report as being unready.")
 )
 
 const (
@@ -250,7 +251,7 @@ func (h *HealthChecker) ReadinessHandler() http.Handler {
 		reqServerType := serverType(r)
 		if reqServerType == h.serverType {
 			h.mu.RLock()
-			ready := h.readyToServe
+			ready := h.readyToServe && !*reportNotReady
 			h.mu.RUnlock()
 
 			if ready {
