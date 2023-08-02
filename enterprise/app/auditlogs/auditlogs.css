@@ -8,51 +8,14 @@
   margin-top: 32px;
 }
 
-.audit-log-entry {
-  display: flex;
+.audit-logs .audit-logs-header {
+  background-color: #fafafa;
+  white-space: nowrap;
 }
 
-.audit-logs-header {
-  display: flex;
-}
-
-.audit-logs-header div {
-  background-color: #eee;
-  border: 1px solid #f1f3f4;
-  padding: 8px;
-}
-
-.audit-log-entry > div {
-  border: 1px solid #f1f3f4;
-  padding: 8px;
-}
-
-.audit-logs .timestamp {
-  width: 250px;
-}
-
-.audit-logs .user {
-  width: 200px;
-}
-
-.audit-logs .user div {
-  margin-bottom: 8px;
-}
-
-.audit-logs .resource {
-  width: 250px;
-}
-
+.audit-logs .user div,
 .audit-logs .resource div {
   margin-bottom: 8px;
-}
-
-.audit-logs .method {
-  width: 200px;
-}
-
-.audit-logs .request {
-  width: 600px;
 }
 
 .audit-logs .request pre {
@@ -65,4 +28,19 @@
 
 .audit-logs .empty-state {
   margin-top: 16px;
+}
+
+.audit-logs .audit-logs-table {
+  display: table;
+  border-collapse: collapse;
+}
+
+.audit-logs :is(.audit-logs-header, .audit-log-entry) {
+  display: table-row;
+}
+
+.audit-logs :is(.audit-logs-header, .audit-log-entry) > * {
+  border: 1px solid #eee;
+  display: table-cell;
+  padding: 8px;
 }

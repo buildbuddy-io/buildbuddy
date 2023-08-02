@@ -258,27 +258,29 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
               <div className="empty-state">There are no audit logs in the specified time range.</div>
             )}
             {this.state.entries.length > 0 && (
-              <div className="audit-logs-header">
-                <div className="timestamp">Time</div>
-                <div className="user">User</div>
-                <div className="resource">Resource</div>
-                <div className="method">Method</div>
-                <div className="request">Request</div>
+              <div className="audit-logs-table">
+                <div className="audit-logs-header">
+                  <div className="timestamp">Time</div>
+                  <div className="user">User</div>
+                  <div className="resource">Resource</div>
+                  <div className="method">Method</div>
+                  <div className="request">Request</div>
+                </div>
+                {this.state.entries.map((entry) => {
+                  return (
+                    <div className="audit-log-entry">
+                      <div className="timestamp">{format.formatDate(proto.timestampToDate(entry.eventTime || {}))}</div>
+                      <div className="user">{this.renderUser(entry.authenticationInfo!)}</div>
+                      <div className="resource">{this.renderResource(entry.resource!)}</div>
+                      <div className="method">{this.renderAction(entry.action)}</div>
+                      <div className="request">
+                        <pre>{this.renderRequest(entry.request)}</pre>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-            {this.state.entries.map((entry) => {
-              return (
-                <div className="audit-log-entry">
-                  <div className="timestamp">{format.formatDate(proto.timestampToDate(entry.eventTime || {}))}</div>
-                  <div className="user">{this.renderUser(entry.authenticationInfo!)}</div>
-                  <div className="resource">{this.renderResource(entry.resource!)}</div>
-                  <div className="method">{this.renderAction(entry.action)}</div>
-                  <div className="request">
-                    <pre>{this.renderRequest(entry.request)}</pre>
-                  </div>
-                </div>
-              );
-            })}
             {this.state.nextPageToken && (
               <Button
                 className="load-more-button"
