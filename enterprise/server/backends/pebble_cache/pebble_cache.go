@@ -425,7 +425,7 @@ func ensureDefaultPartitionExists(opts *Options) {
 func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 	// These values Borrowed from CockroachDB.
 	return &pebble.Options{
-		MaxConcurrentCompactions: 3,
+		MaxConcurrentCompactions: 10,
 		MemTableSize:             64 << 20, // 64 MB
 		EventListener: pebble.EventListener{
 			WriteStallBegin: el.WriteStallBegin,
