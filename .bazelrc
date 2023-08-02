@@ -90,6 +90,7 @@ build:untrusted-ci --disk_cache=
 build:untrusted-ci --flaky_test_attempts=2
 
 # Configuration used for all BuildBuddy workflows
+build:workflows --experimental_remote_cache_compression
 build:workflows --build_metadata=ROLE=CI
 build:workflows --build_metadata=VISIBILITY=PUBLIC
 build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
