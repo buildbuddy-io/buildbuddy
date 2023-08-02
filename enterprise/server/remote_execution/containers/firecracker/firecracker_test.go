@@ -804,6 +804,7 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 			EnableNetworking:  true,
 			InitDockerd:       true,
 			ScratchDiskSizeMb: 100,
+			EnableDockerdTcp:  true,
 		},
 		JailerRoot: tempJailerRoot(t),
 	}
