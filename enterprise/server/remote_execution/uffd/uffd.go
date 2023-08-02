@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-	"sync"
 	"syscall"
 	"unsafe"
 
@@ -79,16 +78,15 @@ type setupMessage struct {
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a blockio.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
-	lis                    net.Listener
-	wg                     sync.WaitGroup
+	lis      net.Listener
+	quitChan chan struct{}
+
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
 }
 
 func NewHandler() (*Handler, error) {
-	return &Handler{
-		wg: sync.WaitGroup{},
-	}, nil
+	return &Handler{}, nil
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
@@ -106,6 +104,10 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 	if err := os.Chmod(socketPath, 0777); err != nil {
 		return status.WrapError(err, "set socket permissions")
 	}
+
+	// Initialize quitChan. Stop() will wait until this is closed to verify the handler has completed handling
+	// open requests
+	h.quitChan = make(chan struct{}, 0)
 
 	// Create a FD that can be used to terminate Poll early
 	pipeRead, pipeWrite, err := os.Pipe()
@@ -178,8 +180,7 @@ func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
 }
 
 func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) error {
-	h.wg.Add(1)
-	defer h.wg.Done()
+	defer close(h.quitChan)
 
 	// Get uffd sent from firecracker
 	setup, err := h.receiveSetupMsg(ctx)
@@ -301,12 +302,20 @@ func pageStartAddress(addr uint64, pageSize int) uintptr {
 }
 
 func (h *Handler) Stop() error {
+	if h.earlyTerminationWriter == nil && h.earlyTerminationReader == nil && h.quitChan == nil {
+		log.Warning("UFFD handler was already stopped when Stop() was called")
+		return nil
+	}
+
 	log.Info("UFFD handler beginning shut down")
 	_, err := h.earlyTerminationWriter.Write([]byte{0})
 	if err != nil {
 		return status.WrapError(err, "write to early terminator")
 	}
-	h.wg.Wait()
+
+	// Wait for handle() to finish processing open requests
+	<-h.quitChan
+
 	h.earlyTerminationReader.Close()
 	h.earlyTerminationWriter.Close()
 	return nil
