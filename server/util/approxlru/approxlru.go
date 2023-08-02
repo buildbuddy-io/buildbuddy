@@ -244,6 +244,9 @@ func (l *LRU[T]) resampleK(k int) error {
 }
 
 func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
+	if err := l.limiter.Wait(l.ctx); err != nil {
+		return nil, err
+	}
 	for i := len(l.samplePool) - 1; i >= 0; i-- {
 		sample := l.samplePool[i]
 
@@ -379,10 +382,6 @@ func (l *LRU[T]) ttl() error {
 			return nil
 		default:
 			break
-		}
-
-		if err := l.limiter.Wait(l.ctx); err != nil {
-			return err
 		}
 
 		lastEvicted, err := l.evict()
