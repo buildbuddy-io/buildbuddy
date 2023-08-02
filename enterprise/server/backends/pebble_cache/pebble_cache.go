@@ -2066,10 +2066,6 @@ type partitionEvictor struct {
 	// item count.
 	groupIDApproxCounts []groupIDApproxCount
 
-	// A random pseudo group ID we assign for ANON data so that we can sample
-	// it like any other group ID.
-	anonPseudoGroupID string
-
 	atimeBufferSize int
 	minEvictionAge  time.Duration
 }
@@ -2080,20 +2076,19 @@ type versionGetter interface {
 
 func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:                &sync.Mutex{},
-		part:              part,
-		fileStorer:        fileStorer,
-		blobDir:           blobDir,
-		dbGetter:          dbg,
-		locker:            locker,
-		versionGetter:     vg,
-		accesses:          accesses,
-		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
-		clock:             clock,
-		atimeBufferSize:   atimeBufferSize,
-		minEvictionAge:    minEvictionAge,
-		cacheName:         cacheName,
-		anonPseudoGroupID: fmt.Sprintf("GR%020d", random.RandUint64()),
+		mu:              &sync.Mutex{},
+		part:            part,
+		fileStorer:      fileStorer,
+		blobDir:         blobDir,
+		dbGetter:        dbg,
+		locker:          locker,
+		versionGetter:   vg,
+		accesses:        accesses,
+		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:           clock,
+		atimeBufferSize: atimeBufferSize,
+		minEvictionAge:  minEvictionAge,
+		cacheName:       cacheName,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
@@ -2135,8 +2130,8 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 
 	// Sample some random groups at startup so that eviction has something to
 	// work with.
-	// AC eviction requires version 2 or higher.
-	if vg.minDatabaseVersion() >= filestore.Version2 && (*groupIDSamplingEnabled || *acEvictionEnabled) {
+	// AC eviction requires version 4 or higher.
+	if vg.minDatabaseVersion() >= filestore.Version4 && (*groupIDSamplingEnabled || *acEvictionEnabled) {
 		for i := 0; i < *groupIDSamplesOnStartup; i++ {
 			pe.updateGroupIDApproxCounts()
 		}
@@ -2147,8 +2142,8 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 }
 
 func (e *partitionEvictor) sampleGroupID() (string, error) {
-	if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
-		return "", status.FailedPreconditionErrorf("AC eviction requires at least version 2")
+	if e.versionGetter.minDatabaseVersion() < filestore.Version4 {
+		return "", status.FailedPreconditionErrorf("AC eviction requires at least version 4")
 	}
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -2171,14 +2166,6 @@ func (e *partitionEvictor) sampleGroupID() (string, error) {
 	var key filestore.PebbleKey
 	if _, err := key.FromBytes(iter.Key()); err != nil {
 		return "", err
-	}
-
-	// The special ANON group doesn't follow the regular group key format, so it
-	// won't be found through regular sampling. To get around this, we make up
-	// a random group ID for it and pretend it exists in the keyspace so that
-	// it can be sampled like any other group.
-	if randomGroupID < e.anonPseudoGroupID && (key.GroupID() == "" || key.GroupID() > e.anonPseudoGroupID) {
-		return interfaces.AuthAnonymousUser, nil
 	}
 
 	// We hit a key without a group ID (i.e. a CAS entry).
@@ -2217,8 +2204,8 @@ func keyToBigInt(key filestore.PebbleKey) (*big.Int, error) {
 // approximates the number of items in a group by measuring the distance
 // between adjacent keys over n keys and then taking the median value.
 func (e *partitionEvictor) approxGroupItemCount(groupID string) (int64, error) {
-	if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
-		return 0, status.FailedPreconditionErrorf("AC eviction requires at least version 2")
+	if e.versionGetter.minDatabaseVersion() < filestore.Version4 {
+		return 0, status.FailedPreconditionErrorf("AC eviction requires at least version 4")
 	}
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -2840,7 +2827,7 @@ func (e *partitionEvictor) updateGroupIDApproxCounts() {
 }
 
 func (e *partitionEvictor) startGroupIDSampler(quitChan chan struct{}) {
-	if *activeKeyVersion < int64(filestore.Version2) {
+	if *activeKeyVersion < int64(filestore.Version4) {
 		return
 	}
 
@@ -2852,7 +2839,7 @@ func (e *partitionEvictor) startGroupIDSampler(quitChan chan struct{}) {
 			case <-quitChan:
 				return
 			case <-time.After(*groupIDSampleFrequency):
-				if e.versionGetter.minDatabaseVersion() < filestore.Version2 {
+				if e.versionGetter.minDatabaseVersion() < filestore.Version4 {
 					continue
 				}
 				e.updateGroupIDApproxCounts()
