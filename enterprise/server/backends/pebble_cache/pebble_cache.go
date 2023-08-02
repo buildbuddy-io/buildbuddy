@@ -2143,7 +2143,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 
 func (e *partitionEvictor) sampleGroupID() (string, error) {
 	if e.versionGetter.minDatabaseVersion() < filestore.Version4 {
-		return "", status.FailedPreconditionErrorf("AC eviction requires at least version 2")
+		return "", status.FailedPreconditionErrorf("AC eviction requires at least version 4")
 	}
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -2199,7 +2199,7 @@ func keyToBigInt(key filestore.PebbleKey) (*big.Int, error) {
 // between adjacent keys over n keys and then taking the median value.
 func (e *partitionEvictor) approxGroupItemCount(groupID string) (int64, error) {
 	if e.versionGetter.minDatabaseVersion() < filestore.Version4 {
-		return 0, status.FailedPreconditionErrorf("AC eviction requires at least version 2")
+		return 0, status.FailedPreconditionErrorf("AC eviction requires at least version 4")
 	}
 	db, err := e.dbGetter.DB()
 	if err != nil {
