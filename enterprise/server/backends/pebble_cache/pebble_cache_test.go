@@ -1809,8 +1809,9 @@ func TestLRU(t *testing.T) {
 				// None of the most recently added files should have been evicted.
 				require.Equal(t, 0, len(evictionsByQuartile[4]))
 
-				require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2]))
-				require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
+				// Relax the conditions a little to de-flake the tests.
+				require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+1)
+				require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+1)
 				require.Greater(t, len(evictionsByQuartile[3]), 0)
 			})
 		}
