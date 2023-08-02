@@ -318,6 +318,8 @@ func (h *Handler) Stop() error {
 
 	h.earlyTerminationReader.Close()
 	h.earlyTerminationWriter.Close()
+	h.earlyTerminationReader = nil
+	h.earlyTerminationWriter = nil
 	return nil
 }
 
