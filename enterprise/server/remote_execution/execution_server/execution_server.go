@@ -440,6 +440,9 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
 
 	invocationID := bazel_request.GetInvocationID(ctx)
+	if invocationID == "" {
+		log.CtxInfof(ctx, "Execution %q is missing invocation ID metadata. Request metadata: %+v", executionID, bazel_request.GetRequestMetadata(ctx))
+	}
 
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
 		return "", err
