@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-	"sync"
 	"syscall"
 	"unsafe"
 
@@ -87,9 +86,7 @@ type Handler struct {
 }
 
 func NewHandler() (*Handler, error) {
-	return &Handler{
-		wg: sync.WaitGroup{},
-	}, nil
+	return &Handler{}, nil
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
