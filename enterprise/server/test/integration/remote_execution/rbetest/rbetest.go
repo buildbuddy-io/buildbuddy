@@ -753,8 +753,15 @@ func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
 
 func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
-	env.SetRemoteExecutionClient(repb.NewExecutionClient(r.appProxyConn))
-	env.SetSchedulerClient(scpb.NewSchedulerClient(r.appProxyConn))
+
+	clientConn := r.appProxyConn
+	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
+	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
+	env.SetActionCacheClient(repb.NewActionCacheClient(clientConn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
+	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
+	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
+
 	env.SetAuthenticator(r.testEnv.GetAuthenticator())
 	xl := xcode.NewXcodeLocator()
 	env.SetXcodeLocator(xl)
@@ -808,7 +815,6 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	executor := &Executor{
 		env:                env,
 		id:                 executorID,
-		grpcServer:         executorGRPCServer,
 		cancelRegistration: cancel,
 		taskScheduler:      taskScheduler,
 	}
