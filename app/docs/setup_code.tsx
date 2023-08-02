@@ -6,6 +6,8 @@ import LinkButton from "../components/button/link_button";
 import Select, { Option } from "../components/select/select";
 import rpcService from "../service/rpc_service";
 import Banner from "../components/banner/banner";
+import { api_key } from "../../proto/api_key_ts_proto";
+import error_service from "../errors/error_service";
 
 interface Props {
   bazelConfigResponse?: bazel_config.IGetBazelConfigResponse;
@@ -58,6 +60,9 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   }
 
   setConfigResponse(response?: bazel_config.IGetBazelConfigResponse) {
+    if (response) {
+      this.fetchAPIKeyValue(response, 0);
+    }
     this.setState({ bazelConfigResponse: response, selectedCredentialIndex: 0 });
   }
 
@@ -197,8 +202,32 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     event.target.innerText = "Copied!";
   }
 
+  fetchAPIKeyValue(bazelConfigResponse: bazel_config.IGetBazelConfigResponse, selectedIndex: number) {
+    const creds = bazelConfigResponse.credential;
+    if (!creds?.length) {
+      return;
+    }
+
+    const selectedCreds = creds[selectedIndex];
+    if (selectedCreds.apiKey && !selectedCreds.apiKey.value) {
+      rpcService.service
+        .getApiKey(
+          api_key.GetApiKeyRequest.create({
+            apiKeyId: selectedCreds.apiKey.id,
+          })
+        )
+        .then((getApiKeyResp) => {
+          selectedCreds.apiKey!.value = getApiKeyResp.apiKey!.value;
+          this.setState({ bazelConfigResponse: this.state.bazelConfigResponse });
+        })
+        .catch((e) => error_service.handleError(e));
+    }
+  }
+
   onChangeCredential(e: React.ChangeEvent<HTMLSelectElement>) {
-    this.setState({ selectedCredentialIndex: Number(e.target.value) });
+    const selectedIndex = Number(e.target.value);
+    this.fetchAPIKeyValue(this.state.bazelConfigResponse!, selectedIndex);
+    this.setState({ selectedCredentialIndex: selectedIndex });
   }
 
   private getCreateApiKeyLink(): string | null {
