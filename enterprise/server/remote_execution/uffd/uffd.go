@@ -78,7 +78,7 @@ type setupMessage struct {
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a blockio.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
-	wg sync.WaitGroup
+	quitChan chan struct{}
 
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
