@@ -1587,12 +1587,9 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 		return resources[i].GetDigest().GetHash() < resources[j].GetDigest().GetHash()
 	})
 
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
 	buf := &bytes.Buffer{}
 	for _, r := range resources {
-		rc, err := p.reader(ctx, iter, r, 0, 0)
+		rc, err := p.reader(ctx, db, r, 0, 0)
 		if err != nil {
 			if status.IsNotFoundError(err) || os.IsNotExist(err) {
 				continue
@@ -1776,10 +1773,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	}
 	defer db.Close()
 
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	rc, err := p.reader(ctx, iter, r, uncompressedOffset, limit)
+	rc, err := p.reader(ctx, db, r, uncompressedOffset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1944,11 +1938,11 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		return err
 	}
 
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
 	unlockFn := p.locker.Lock(key.LockID())
 	defer unlockFn()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
 
 	if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
 		oldKeyBytes, err := key.Bytes(version)
@@ -2993,7 +2987,7 @@ type readCloser struct {
 	io.Closer
 }
 
-func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -3004,6 +2998,8 @@ func (p *PebbleCache) reader(ctx context.Context, iter pebble.Iterator, r *rspb.
 	}
 
 	unlockFn := p.locker.RLock(key.LockID())
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
 	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
 	unlockFn()
 	if err != nil {
