@@ -424,6 +424,14 @@ func (s *BuildBuddyServer) start() {
 	go grpcServerRunFunc()
 }
 
+func (s *BuildBuddyServer) Shutdown() {
+	s.env.GetHealthChecker().Shutdown()
+}
+
+func (s *BuildBuddyServer) Stop() {
+	s.grpcServer.Stop()
+}
+
 func (s *BuildBuddyServer) GRPCPort() int {
 	return s.port
 }
@@ -1075,6 +1083,9 @@ func (c *ControlledCommand) WaitDisconnected() {
 
 type ExecuteControlledOpts struct {
 	InvocationID string
+	// AllowReconnect indicates whether the command should auto-reconnect
+	// using WaitExecution if the Execute request gets interrupted.
+	AllowReconnect bool
 }
 
 // ExecuteControlledCommand anonymously executes a special test command binary
@@ -1099,6 +1110,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not prepare command %q", name), err.Error())
 	}
+	cmd.AllowReconnect = opts.AllowReconnect
 
 	err = cmd.Start(ctx, &rbeclient.StartOpts{SkipCacheLookup: true})
 	if err != nil {

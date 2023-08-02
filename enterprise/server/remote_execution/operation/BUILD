@@ -11,6 +11,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/flagutil",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
