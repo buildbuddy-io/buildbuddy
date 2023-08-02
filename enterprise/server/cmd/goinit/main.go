@@ -47,7 +47,7 @@ var (
 	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
 	initDockerd             = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
-	enabledDockerdTCP       = flag.Bool("enabled_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
+	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
@@ -159,7 +159,7 @@ func startDockerd(ctx context.Context, enableTCP bool) error {
 
 	args := []string{}
 	if enableTCP {
-		args = append(args, "-H", "fd://", "-H", "tcp://0.0.0.0:2375")
+		args = append(args, "-H", "unix:///var/run/docker.sock", "-H", "tcp://0.0.0.0:2375")
 	}
 
 	cmd := exec.CommandContext(ctx, "dockerd", args...)
@@ -394,7 +394,7 @@ func main() {
 	}
 
 	if *initDockerd {
-		die(startDockerd(ctx, *enabledDockerdTCP))
+		die(startDockerd(ctx, *enableDockerdTCP))
 	}
 	eg.Go(func() error {
 		// Run the vmexec server as a child process so that when we call wait()
