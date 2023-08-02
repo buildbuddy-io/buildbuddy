@@ -114,6 +114,8 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 				log.CtxErrorf(ctx, "Failed to receive setup message from firecracker: %s", err)
 				return
 			}
+		} else {
+			log.Warningf("Restarting from old UFFD")
 		}
 
 		if err = h.handle(ctx, memoryStore); err != nil {
@@ -200,7 +202,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 
 	for {
 		// Poll UFFD for messages
-		_, pollErr := unix.Poll(pollFDs, -1)
+		_, pollErr := unix.Poll(pollFDs, 400)
 		if pollErr != nil {
 			if pollErr == unix.EINTR {
 				// Poll call was interrupted by another signal - retry
@@ -247,6 +249,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		if err != nil {
 			return err
 		}
+		log.Warningf("UFFDIO_COPY")
 	}
 }
 

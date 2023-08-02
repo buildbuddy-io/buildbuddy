@@ -578,6 +578,7 @@ func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, 
 }
 
 func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
+	log.Warningf("Top of pauseVM")
 	if c.machine == nil {
 		return status.InternalError("failed to pause VM: machine is not started")
 	}
@@ -587,11 +588,13 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 		return err
 	}
 
-	if c.uffdHandler != nil {
-		if err := c.uffdHandler.Stop(); err != nil {
-			return status.WrapError(err, "failed to stop uffd handler")
-		}
-	}
+//	log.Warningf("Before uffd.Stop")
+//	if c.uffdHandler != nil {
+//		if err := c.uffdHandler.Stop(); err != nil {
+//			return status.WrapError(err, "failed to stop uffd handler")
+//}
+//}
+//log.Warningf("After uffd.Stop")
 
 	// Now that we've paused the VM, it's a good time to Sync the NBD backing
 	// files. This is particularly important when the files are backed with an
@@ -607,20 +610,23 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 			return status.WrapError(err, "failed to sync scratchfs device store")
 		}
 	}
+	log.Warningf("Bottom of pauseVM")
 	return nil
 }
 
 func (c *FirecrackerContainer) resumeVM(ctx context.Context) error {
-	if c.uffdHandler != nil {
-		sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
-		if err := c.uffdHandler.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
-			return status.WrapError(err, "failed to start uffd handler")
-		}
-	}
+	log.Warningf("Top of resumeVM")
+//	if c.uffdHandler != nil {
+//		sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
+//		if err := c.uffdHandler.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
+//			return status.WrapError(err, "failed to start uffd handler")
+//		}
+//	}
 
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
+	log.Warningf("Bottom of resumeVM")
 	return nil
 }
 
@@ -675,6 +681,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		}
 	}
 
+	log.Warningf("Calling pauseVM from createSnapshot")
 	if err := c.pauseVM(ctx); err != nil {
 		return err
 	}
@@ -694,6 +701,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
 		params.Body.SnapshotType = snapshotType
 	}
+	log.Warningf("Before CreateSnapshot")
 	if err := c.machine.CreateSnapshot(ctx, memSnapshotFile, vmStateSnapshotName, snapshotTypeOpt); err != nil {
 		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
 		return err
@@ -749,6 +757,11 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		return status.WrapError(err, "add snapshot to cache")
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
+	if c.uffdHandler != nil {
+		if err := c.uffdHandler.Stop(); err != nil {
+			return status.WrapError(err, "failed to stop uffd handler")
+		}
+	}
 	return nil
 }
 
@@ -1798,6 +1811,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	if c.fsLayout == nil {
 		// Command was successful, let's unpack the files back to our
 		// workspace directory now.
+		log.Warningf("Calling pauseVM from Exec")
 		if err := c.pauseVM(ctx); err != nil {
 			result.Error = status.InternalErrorf("error pausing VM: %s", err)
 			return result
