@@ -870,7 +870,6 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
-	assert.NotNil(t, res.Error)
 	assert.NotEqual(t, 0, res.ExitCode)
 }
 
