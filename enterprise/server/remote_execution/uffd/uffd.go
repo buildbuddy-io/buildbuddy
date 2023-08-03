@@ -302,7 +302,7 @@ func pageStartAddress(addr uint64, pageSize int) uintptr {
 }
 
 func (h *Handler) Stop() error {
-	if h.earlyTerminationWriter == nil && h.earlyTerminationReader == nil && h.quitChan == nil {
+	if h.earlyTerminationWriter == nil || h.earlyTerminationReader == nil || h.quitChan == nil {
 		log.Info("UFFD handler was already stopped when Stop() was called")
 		return nil
 	}
