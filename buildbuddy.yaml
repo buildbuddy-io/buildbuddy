@@ -77,7 +77,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare
+      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare --test_filter=TestFirecrackerExec_Timeout_DebugOutputIsAvailable
   - name: Private Image Tests
     triggers:
       push:
