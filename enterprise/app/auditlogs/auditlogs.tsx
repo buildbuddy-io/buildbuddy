@@ -99,7 +99,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     } else if (authInfo?.user?.userId) {
       user = authInfo.user.userId;
     } else if (authInfo?.apiKey?.label) {
-      user = authInfo.apiKey.label;
+      user = `API Key "${authInfo.apiKey.label}"`;
     } else if (authInfo?.apiKey?.id) {
       user = authInfo.apiKey.id;
     }

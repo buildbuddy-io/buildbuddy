@@ -53,6 +53,7 @@ type TestUser struct {
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 }
 
+func (c *TestUser) GetAPIKeyID() string                                { return "" }
 func (c *TestUser) GetUserID() string                                  { return c.UserID }
 func (c *TestUser) GetGroupID() string                                 { return c.GroupID }
 func (c *TestUser) GetAllowedGroups() []string                         { return c.AllowedGroups }

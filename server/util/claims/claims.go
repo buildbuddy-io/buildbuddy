@@ -38,6 +38,7 @@ var (
 
 type Claims struct {
 	jwt.StandardClaims
+	APIKeyID      string `json:"api_key_id,omitempty"`
 	UserID        string `json:"user_id"`
 	GroupID       string `json:"group_id"`
 	Impersonating bool   `json:"impersonating"`
@@ -47,6 +48,10 @@ type Claims struct {
 	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
+}
+
+func (c *Claims) GetAPIKeyID() string {
+	return c.APIKeyID
 }
 
 func (c *Claims) GetUserID() string {
@@ -110,6 +115,7 @@ func ParseClaims(token string) (*Claims, error) {
 
 func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 	return &Claims{
+		APIKeyID:      akg.GetAPIKeyID(),
 		UserID:        akg.GetUserID(),
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},

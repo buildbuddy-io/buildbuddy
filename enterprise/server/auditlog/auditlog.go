@@ -113,14 +113,6 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 	if err != nil {
 		return status.WrapError(err, "auth failed")
 	}
-	if u.GetUserID() == "" {
-		return nil
-	}
-
-	ui, err := l.env.GetUserDB().GetUser(ctx)
-	if err != nil {
-		return status.WrapError(err, "could not lookup user")
-	}
 
 	request = clearRequestContext(request)
 
@@ -145,11 +137,28 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 		GroupID:       u.GetGroupID(),
 		EventTimeUsec: time.Now().UnixMicro(),
 		ClientIP:      clientip.Get(ctx),
-		AuthUserID:    u.GetUserID(),
-		AuthUserEmail: ui.Email,
 		Action:        uint8(action),
 		Request:       string(requestBytes),
 	}
+
+	if u.GetUserID() != "" {
+		ui, err := l.env.GetUserDB().GetUser(ctx)
+		if err != nil {
+			return status.WrapError(err, "could not lookup user")
+		}
+		entry.AuthUserID = u.GetUserID()
+		entry.AuthUserEmail = ui.Email
+	}
+
+	if u.GetAPIKeyID() != "" {
+		ak, err := l.env.GetAuthDB().GetAPIKey(ctx, u.GetAPIKeyID())
+		if err != nil {
+			return status.WrapError(err, "could not lookup API key")
+		}
+		entry.AuthAPIKeyID = u.GetAPIKeyID()
+		entry.AuthAPIKeyLabel = ak.Label
+	}
+
 	if resource.GetType() != alpb.ResourceType_GROUP {
 		entry.ResourceType = uint8(resource.Type)
 		entry.ResourceID = resource.Id
@@ -163,8 +172,6 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 	return nil
 }
 
-// TODO(vadim): support API key auth
-// TODO(vadim): populate client IP
 func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, request proto.Message) {
 	if err := l.insertLog(ctx, resource, action, request); err != nil {
 		log.Warningf("could not insert audit log: %s", err)
@@ -283,13 +290,9 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 			resourceType = alpb.ResourceType_GROUP
 		}
 
-		resp.Entries = append(resp.Entries, &alpb.Entry{
+		entry := &alpb.Entry{
 			EventTime: timestamppb.New(time.UnixMicro(e.EventTimeUsec)),
 			AuthenticationInfo: &alpb.AuthenticationInfo{
-				User: &alpb.AuthenticatedUser{
-					UserId:    e.AuthUserID,
-					UserEmail: e.AuthUserEmail,
-				},
 				ClientIp: e.ClientIP,
 			},
 			Resource: &alpb.ResourceID{
@@ -299,7 +302,21 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 			},
 			Action:  alpb.Action(e.Action),
 			Request: cleanRequest(request),
-		})
+		}
+		if e.AuthUserID != "" {
+			entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
+				UserId:    e.AuthUserID,
+				UserEmail: e.AuthUserEmail,
+			}
+		}
+		if e.AuthAPIKeyID != "" {
+			entry.AuthenticationInfo.ApiKey = &alpb.AuthenticatedAPIKey{
+				Id:    e.AuthAPIKeyID,
+				Label: e.AuthAPIKeyLabel,
+			}
+		}
+
+		resp.Entries = append(resp.Entries, entry)
 	}
 
 	return resp, nil

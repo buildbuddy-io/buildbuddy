@@ -77,6 +77,11 @@ type GroupMembership struct {
 type UserInfo interface {
 	jwt.Claims
 
+	// ID of the API Key used to authenticate the request or empty if an API
+	// key was not used.
+	GetAPIKeyID() string
+	// ID of the authenticated user. Empty if authenticated using an Org API
+	// key.
 	GetUserID() string
 	GetGroupID() string
 	// IsImpersonating returns whether the group ID is being impersonated by the
@@ -329,6 +334,7 @@ type InvocationDB interface {
 
 type APIKeyGroup interface {
 	GetCapabilities() int32
+	GetAPIKeyID() string
 	GetUserID() string
 	GetGroupID() string
 	GetUseGroupOwnedExecutors() bool
