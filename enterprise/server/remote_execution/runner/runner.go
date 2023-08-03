@@ -1135,6 +1135,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 				ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 				EnableNetworking:  true,
 				InitDockerd:       props.InitDockerd,
+				EnableDockerdTcp:  props.EnableDockerdTCP,
 			}
 		} else {
 			vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()

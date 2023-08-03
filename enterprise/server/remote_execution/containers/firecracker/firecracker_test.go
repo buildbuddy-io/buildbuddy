@@ -769,6 +769,110 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
 }
 
+func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
+	if *skipDockerTests {
+		t.Skip()
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	path := filepath.Join(workDir, "world.txt")
+	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			set -e
+			# Discard pull output to make the output deterministic
+			docker -H tcp://127.0.0.1:2375 pull ` + busyboxImage + ` &>/dev/null
+
+			# Try running a few commands
+			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo Hello
+			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo world
+		`},
+	}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  true,
+			InitDockerd:       true,
+			ScratchDiskSizeMb: 100,
+			EnableDockerdTcp:  true,
+		},
+		JailerRoot: tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "Hello\nworld\n", string(res.Stdout), "stdout should contain pwd output")
+	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+}
+
+func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
+	if *skipDockerTests {
+		t.Skip()
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	path := filepath.Join(workDir, "world.txt")
+	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			set -e
+			# Discard pull output to make the output deterministic
+			docker -H tcp://127.0.0.1:2375 pull ` + busyboxImage + ` &>/dev/null
+
+			# Try running a few commands
+			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo Hello
+			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo world
+		`},
+	}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  true,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	assert.NotEqual(t, 0, res.ExitCode)
+}
+
 func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)

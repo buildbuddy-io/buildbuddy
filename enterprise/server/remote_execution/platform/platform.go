@@ -73,6 +73,7 @@ const (
 	WorkflowIDPropertyName               = "workflow-id"
 	workloadIsolationPropertyName        = "workload-isolation-type"
 	initDockerdPropertyName              = "init-dockerd"
+	enableDockerdTCPPropertyName         = "enable-dockerd-tcp"
 	enableVFSPropertyName                = "enable-vfs"
 	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
@@ -145,6 +146,10 @@ type Properties struct {
 	// containers to be spawned by actions. Only available with
 	// `workload-isolation-type=firecracker`.
 	InitDockerd bool
+
+	// EnableDockerdTCP specifies whether the dockerd initialized by InitDockerd
+	// is started with support for connections over TCP.
+	EnableDockerdTCP bool
 
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
@@ -234,6 +239,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		ContainerRegistryPassword:  stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:      stringProp(m, workloadIsolationPropertyName, ""),
 		InitDockerd:                boolProp(m, initDockerdPropertyName, false),
+		EnableDockerdTCP:           boolProp(m, enableDockerdTCPPropertyName, false),
 		DockerForceRoot:            boolProp(m, dockerRunAsRootPropertyName, false),
 		DockerInit:                 boolProp(m, DockerInitPropertyName, false),
 		DockerUser:                 stringProp(m, DockerUserPropertyName, ""),

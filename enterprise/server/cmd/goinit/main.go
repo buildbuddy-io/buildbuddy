@@ -47,6 +47,7 @@ var (
 	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
 	initDockerd             = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
+	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
@@ -156,7 +157,12 @@ func startDockerd(ctx context.Context) error {
 
 	log.Infof("Starting dockerd")
 
-	cmd := exec.CommandContext(ctx, "dockerd")
+	args := []string{}
+	if *enableDockerdTCP {
+		args = append(args, "--host=tcp://0.0.0.0:2375", "--tls=false")
+	}
+
+	cmd := exec.CommandContext(ctx, "dockerd", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Start()
@@ -167,11 +173,16 @@ func waitForDockerd(ctx context.Context) error {
 	defer cancel()
 	r := retry.New(ctx, &retry.Options{
 		InitialBackoff: 10 * time.Microsecond,
-		MaxBackoff:     10 * time.Millisecond,
+		MaxBackoff:     100 * time.Millisecond,
 		Multiplier:     1.5,
 	})
 	for r.Next() {
-		err := exec.CommandContext(ctx, "docker", "ps").Run()
+		args := []string{}
+		if *enableDockerdTCP {
+			args = append(args, "--host=tcp://127.0.0.1:2375")
+		}
+		args = append(args, "ps")
+		err := exec.CommandContext(ctx, "docker", args...).Run()
 		if err == nil {
 			log.Infof("dockerd is ready")
 			return nil

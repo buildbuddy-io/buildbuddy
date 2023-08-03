@@ -1075,6 +1075,9 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 	if c.vmConfig.InitDockerd {
 		bootArgs = "-init_dockerd " + bootArgs
 	}
+	if c.vmConfig.EnableDockerdTcp {
+		bootArgs = "-enable_dockerd_tcp " + bootArgs
+	}
 	if *enableNBD {
 		bootArgs = "-enable_nbd " + bootArgs
 	}

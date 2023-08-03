@@ -18,6 +18,7 @@ message VMConfiguration {
   bool enable_networking = 4;
   bool init_dockerd = 5;
   bool debug_mode = 6;
+  bool enable_dockerd_tcp = 7;
 
   // TODO: add container_image here?
 }
