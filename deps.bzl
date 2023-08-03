@@ -3233,7 +3233,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/jotfs/fastcdc-go",
         patch_args = ["-p1"],
         patch_tool = "patch",
-        patches = ["//buildpatches:fastcdc.patch"],
+        patches = ["@{}//buildpatches:fastcdc.patch".format(workspace_name)],
         sum = "h1:WHYIGk3k9NumGWfp4YMsemEcx/s4JKpGAa6tpCpHJOo=",
         version = "v0.2.0",
     )
