@@ -787,11 +787,11 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker -H tcp://0.0.0.0:2375 pull ` + busyboxImage + ` &>/dev/null
+			docker -H tcp://127.0.0.1:2375 pull ` + busyboxImage + ` &>/dev/null
 
 			# Try running a few commands
-			docker -H tcp://0.0.0.0:2375 run --rm ` + busyboxImage + ` echo Hello
-			docker -H tcp://0.0.0.0:2375 run --rm ` + busyboxImage + ` echo world
+			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo Hello
+			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo world
 		`},
 	}
 
@@ -843,11 +843,11 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker -H tcp://0.0.0.0:2375 pull ` + busyboxImage + ` &>/dev/null
+			docker -H tcp://127.0.0.1:2375 pull ` + busyboxImage + ` &>/dev/null
 
 			# Try running a few commands
-			docker -H tcp://0.0.0.0:2375 run --rm ` + busyboxImage + ` echo Hello
-			docker -H tcp://0.0.0.0:2375 run --rm ` + busyboxImage + ` echo world
+			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo Hello
+			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo world
 		`},
 	}
 

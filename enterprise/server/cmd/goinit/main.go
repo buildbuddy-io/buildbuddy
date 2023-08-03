@@ -146,7 +146,7 @@ func copyFile(src, dest string, mode os.FileMode) error {
 	return nil
 }
 
-func startDockerd(ctx context.Context, enableTCP bool) error {
+func startDockerd(ctx context.Context) error {
 	// Make sure we can locate both docker and dockerd.
 	if _, err := exec.LookPath("docker"); err != nil {
 		return err
@@ -158,8 +158,8 @@ func startDockerd(ctx context.Context, enableTCP bool) error {
 	log.Infof("Starting dockerd")
 
 	args := []string{}
-	if enableTCP {
-		args = append(args, "--host=unix:///var/run/docker.sock", "--host=tcp://0.0.0.0:2375")
+	if *enableDockerdTCP {
+		args = append(args, "--host=tcp://0.0.0.0:2375")
 	}
 
 	cmd := exec.CommandContext(ctx, "dockerd", args...)
@@ -177,7 +177,12 @@ func waitForDockerd(ctx context.Context) error {
 		Multiplier:     1.5,
 	})
 	for r.Next() {
-		err := exec.CommandContext(ctx, "docker", "ps").Run()
+		args := []string{}
+		if *enableDockerdTCP {
+			args = append(args, "--host=tcp://127.0.0.1:2375")
+		}
+		args = append(args, "ps")
+		err := exec.CommandContext(ctx, "docker", args...).Run()
 		if err == nil {
 			log.Infof("dockerd is ready")
 			return nil
@@ -394,7 +399,7 @@ func main() {
 	}
 
 	if *initDockerd {
-		die(startDockerd(ctx, *enableDockerdTCP))
+		die(startDockerd(ctx))
 	}
 	eg.Go(func() error {
 		// Run the vmexec server as a child process so that when we call wait()
