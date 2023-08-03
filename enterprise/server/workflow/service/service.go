@@ -549,17 +549,17 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	for actionName, action := range actions {
 		action := action
 		actionName := actionName
-		wg.Add(1)
+		actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
+			ActionName: actionName,
+		}
+		actionStatuses = append(actionStatuses, actionStatus)
 
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
 
 			var invocationID string
 			var statusErr error
-			actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
-				ActionName: actionName,
-			}
-			actionStatuses = append(actionStatuses, actionStatus)
 			defer func() {
 				actionStatus.InvocationId = invocationID
 				actionStatus.Status = gstatus.Convert(statusErr).Proto()
