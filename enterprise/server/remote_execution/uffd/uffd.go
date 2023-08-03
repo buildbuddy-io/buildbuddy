@@ -78,7 +78,11 @@ type setupMessage struct {
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a blockio.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
-	lis net.Listener
+	lis      net.Listener
+	quitChan chan struct{}
+
+	earlyTerminationReader *os.File
+	earlyTerminationWriter *os.File
 }
 
 func NewHandler() (*Handler, error) {
@@ -101,9 +105,21 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 		return status.WrapError(err, "set socket permissions")
 	}
 
+	// Initialize quitChan. Stop() will wait until this is closed to verify the handler has completed handling
+	// open requests
+	h.quitChan = make(chan struct{}, 0)
+
+	// Create a FD that can be used to terminate Poll early
+	pipeRead, pipeWrite, err := os.Pipe()
+	if err != nil {
+		return status.WrapError(err, "create early-termination fd")
+	}
+	h.earlyTerminationReader = pipeRead
+	h.earlyTerminationWriter = pipeWrite
+
 	go func() {
 		if err := h.handle(ctx, memoryStore); err != nil {
-			log.CtxErrorf(ctx, "Failed to accept firecracker connection: %s", err)
+			log.CtxErrorf(ctx, "Failed to handle firecracker memory requests: %s", err)
 		}
 	}()
 	return nil
@@ -113,6 +129,8 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 // the UFFD handler over a unix socket. It also sends GuestRegionUFFDMapping data so the handler knows
 // how to resolve the page faults
 func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
+	defer h.lis.Close()
+
 	log.CtxDebugf(ctx, "Waiting for firecracker to connect to uffd socket")
 	conn, err := h.lis.Accept()
 	if err != nil {
@@ -162,6 +180,9 @@ func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
 }
 
 func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) error {
+	defer close(h.quitChan)
+
+	// Get uffd sent from firecracker
 	setup, err := h.receiveSetupMsg(ctx)
 	if err != nil {
 		return status.WrapError(err, "receive setup message from firecracker")
@@ -169,7 +190,10 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	uffd := setup.Uffd
 	mappings := setup.Mappings
 
-	pollFDs := []unix.PollFd{{Fd: int32(uffd), Events: C.POLLIN}}
+	pollFDs := []unix.PollFd{
+		{Fd: int32(uffd), Events: C.POLLIN},
+		{Fd: int32(h.earlyTerminationReader.Fd()), Events: C.POLLIN},
+	}
 	pageSize := os.Getpagesize()
 	storeLength, err := memoryStore.SizeBytes()
 	if err != nil {
@@ -187,10 +211,20 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 			return status.WrapError(pollErr, "poll uffd")
 		}
 
+		// Check for an early termination message
+		earlyTerminationFd := pollFDs[1]
+		if earlyTerminationFd.Revents&C.POLLIN != 0 {
+			return nil
+		}
+
 		// Receive a page fault notification
 		guestFaultingAddr, err := readFaultingAddress(uffd)
 		if err != nil {
-			return err
+			if err == unix.EAGAIN {
+				// Try again code
+				continue
+			}
+			return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
 		}
 		guestPageAddr := pageStartAddress(guestFaultingAddr, pageSize)
 
@@ -248,7 +282,7 @@ func readFaultingAddress(uffd uintptr) (uint64, error) {
 	var event uffdMsg
 	_, _, errno := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 	if errno != 0 {
-		return 0, status.InternalErrorf("read event from uffd failed with errno(%d)", errno)
+		return 0, errno
 	}
 
 	if event.Event != C.UFFD_EVENT_PAGEFAULT {
@@ -267,8 +301,27 @@ func pageStartAddress(addr uint64, pageSize int) uintptr {
 	return uintptr(addr & ^(uint64(pageSize) - 1))
 }
 
-func (h *Handler) Stop() {
-	h.lis.Close()
+func (h *Handler) Stop() error {
+	if h.earlyTerminationWriter == nil || h.earlyTerminationReader == nil || h.quitChan == nil {
+		log.Info("UFFD handler was already stopped when Stop() was called")
+		return nil
+	}
+
+	log.Info("UFFD handler beginning shut down")
+	_, err := h.earlyTerminationWriter.Write([]byte{0})
+	if err != nil {
+		return status.WrapError(err, "write to early terminator")
+	}
+
+	// Wait for handle() to finish processing open requests
+	<-h.quitChan
+	h.quitChan = nil
+
+	h.earlyTerminationReader.Close()
+	h.earlyTerminationWriter.Close()
+	h.earlyTerminationReader = nil
+	h.earlyTerminationWriter = nil
+	return nil
 }
 
 // Translate the faulting memory address in the guest to a persisted store offset

@@ -69,6 +69,7 @@ var (
 	backgroundRepairFrequency = flag.Duration("cache.pebble.background_repair_frequency", 1*24*time.Hour, "How frequently to run period background repair tasks.")
 	backgroundRepairQPSLimit  = flag.Int("cache.pebble.background_repair_qps_limit", 100, "QPS limit for background repair modifications.")
 	deleteACEntriesOlderThan  = flag.Duration("cache.pebble.delete_ac_entries_older_than", 0, "If set, the background repair will delete AC entries older than this time.")
+	scanForMissingFiles       = flag.Bool("cache.pebble.scan_for_missing_files", true, "If set, scan all keys and check if external files are missing on disk. Deletes keys with missing files.")
 	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
@@ -1076,10 +1077,15 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 }
 
 func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
-	fixMissingFiles := true
+	fixMissingFiles := *scanForMissingFiles
 	fixOLDACEntries := *deleteACEntriesOlderThan != 0
 
 	for {
+		// Nothing to do?
+		if !fixMissingFiles && !fixOLDACEntries {
+			return nil
+		}
+
 		opts := &repairOpts{
 			deleteEntriesWithMissingFiles: fixMissingFiles,
 			deleteACEntriesOlderThan:      *deleteACEntriesOlderThan,
@@ -1092,11 +1098,6 @@ func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
 				close(p.brokenFilesDone)
 				fixMissingFiles = false
 			}
-		}
-
-		// Nothing else to do?
-		if !fixMissingFiles && !fixOLDACEntries {
-			return nil
 		}
 
 		select {
@@ -1648,12 +1649,6 @@ func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec in
 }
 
 func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.PebbleKey) error {
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return err
-	}
-
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -1664,7 +1659,12 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+	fileMetadata, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
+	if err != nil {
+		return err
+	}
+
+	fileMetadataKey, err := key.Bytes(version)
 	if err != nil {
 		return err
 	}

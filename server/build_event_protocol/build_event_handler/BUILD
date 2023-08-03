@@ -43,6 +43,7 @@ go_library(
         "//server/util/redact",
         "//server/util/status",
         "//server/util/terminal",
+        "//server/util/usageutil",
         "//server/util/uuid",
         "@com_github_google_shlex//:shlex",
         "@com_github_prometheus_client_golang//prometheus",

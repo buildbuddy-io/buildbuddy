@@ -15,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
@@ -440,7 +442,7 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		metrics.CacheTypeLabel: ct,
 	}).Observe(float64(dur.Microseconds()))
 
-	if err := h.recordCacheUsage(t.d, t.actionCounter); err != nil {
+	if err := h.recordCacheUsage(t.h.ctx, t.d, t.actionCounter); err != nil {
 		return err
 	}
 
@@ -531,7 +533,7 @@ func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	}
 }
 
-func (h *HitTracker) recordCacheUsage(d *repb.Digest, actionCounter counterType) error {
+func (h *HitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actionCounter counterType) error {
 	if h.usage == nil {
 		return nil
 	}
@@ -554,7 +556,11 @@ func (h *HitTracker) recordCacheUsage(d *repb.Digest, actionCounter counterType)
 	} else {
 		return nil
 	}
-	return h.usage.Increment(h.ctx, c)
+	labels, err := usageutil.Labels(ctx)
+	if err != nil {
+		return status.WrapError(err, "get usage labels")
+	}
+	return h.usage.Increment(h.ctx, labels, c)
 }
 
 func computeThroughputBytesPerSecond(sizeBytes, durationUsec int64) int64 {

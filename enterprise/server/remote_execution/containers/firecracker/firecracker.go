@@ -1390,11 +1390,11 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "create uffd handler")
 	}
-	c.uffdHandler = h
 	sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
 	if err := h.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
 		return status.WrapError(err, "start uffd handler")
 	}
+	c.uffdHandler = h
 	return nil
 }
 
@@ -1909,7 +1909,10 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.scratchStore = nil
 	}
 	if c.uffdHandler != nil {
-		c.uffdHandler.Stop()
+		if err := c.uffdHandler.Stop(); err != nil {
+			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
+			lastErr = err
+		}
 		c.uffdHandler = nil
 	}
 	if c.memoryStore != nil {

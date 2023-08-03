@@ -679,7 +679,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 					log.Warningf("Error setting treeCache blob: %s", err)
 				}
 			} else {
-				log.Warningf("Not caching incomplete tree cache")
+				log.Debugf("Not caching incomplete tree cache")
 			}
 		}
 		return allDescendents, nil
@@ -726,7 +726,7 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 		}
 		for _, dirNode := range child.GetDirectory().GetDirectories() {
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
-				log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
+				log.Debugf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
 				return false
 			}
 		}
