@@ -8,11 +8,6 @@
   margin-top: 32px;
 }
 
-.audit-logs .audit-logs-header {
-  background-color: #fafafa;
-  white-space: nowrap;
-}
-
 .audit-logs .user div,
 .audit-logs .resource div {
   margin-bottom: 8px;
@@ -20,6 +15,8 @@
 
 .audit-logs .request pre {
   margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .audit-logs .icon-text-button > :not(:last-child) {
@@ -31,16 +28,35 @@
 }
 
 .audit-logs .audit-logs-table {
-  display: table;
-  border-collapse: collapse;
+  display: grid;
+  grid-template-columns:
+    minmax(100px, max-content) /*timestamp*/
+    minmax(100px, max-content) /*user*/
+    minmax(100px, max-content) /*resource*/
+    minmax(100px, max-content) /*method*/
+    minmax(300px, max-content) /*request*/;
+  max-width: fit-content;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eee;
+  gap: 1px;
 }
 
 .audit-logs :is(.audit-logs-header, .audit-log-entry) {
-  display: table-row;
+  display: contents;
 }
 
 .audit-logs :is(.audit-logs-header, .audit-log-entry) > * {
-  border: 1px solid #eee;
-  display: table-cell;
   padding: 8px;
+  box-sizing: border-box;
+}
+
+.audit-logs .audit-logs-header > * {
+  background: #fafafa;
+  white-space: nowrap;
+}
+
+.audit-logs .audit-log-entry > * {
+  background: white;
 }
