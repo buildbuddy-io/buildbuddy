@@ -1392,7 +1392,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			return http.StatusNotFound, status.NotFoundErrorf("Invocation %s does not exist.", iid)
 		} else {
 			log.Errorf("Error looking up invocation %s for build log fetch: %s", iid, err)
-			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
+			return http.StatusInternalServerError, status.InternalErrorf("Internal server error")
 		}
 	}
 	switch artifact := params.Get("artifact"); artifact {
@@ -1425,7 +1425,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "cache", lookup.URL.Path))
 		if err != nil {
 			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", lookup.Filename, iid, err)
-			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
+			return http.StatusInternalServerError, status.InternalErrorf("Internal server error")
 		}
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 		w.Header().Set("Content-Type", "application/octet-stream")
