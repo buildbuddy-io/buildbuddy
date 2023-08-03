@@ -238,9 +238,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		if err != nil {
 			return status.WrapError(err, "translate to store offset")
 		}
-
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-
 		hostAddr, allocatedLen, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
 		if err != nil {
 			return status.WrapError(err, "get backing page address")
