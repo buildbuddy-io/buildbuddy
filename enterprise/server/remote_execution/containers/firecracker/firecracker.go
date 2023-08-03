@@ -126,7 +126,7 @@ const (
 	minScratchDiskSizeBytes = 64e6
 
 	// Chunk size to use when creating COW images from files.
-	cowChunkSizeBytes = 512 * 1024
+	cowChunkSizeInPages = 1000
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
@@ -472,7 +472,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 	perThreadBytes = alignToMultiple(perThreadBytes, int64(bufSize))
 	if *enableUFFD {
 		// Ensure goroutines don't cross chunk boundaries and cause race conditions when writing
-		perThreadBytes = alignToMultiple(perThreadBytes, cowChunkSizeBytes)
+		perThreadBytes = alignToMultiple(perThreadBytes, cowChunkSizeBytes())
 	}
 	for i := 0; i < concurrency; i++ {
 		i := i
@@ -891,7 +891,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
-	cow, err := blockio.ConvertFileToCOW(filePath, cowChunkSizeBytes, chunkDir)
+	cow, err := blockio.ConvertFileToCOW(filePath, cowChunkSizeBytes(), chunkDir)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
@@ -903,6 +903,10 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	size, _ := cow.SizeBytes()
 	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
 	return cow, nil
+}
+
+func cowChunkSizeBytes() int64 {
+	return int64(os.Getpagesize() * cowChunkSizeInPages)
 }
 
 // hotSwapWorkspace unmounts the workspace drive from a running firecracker
