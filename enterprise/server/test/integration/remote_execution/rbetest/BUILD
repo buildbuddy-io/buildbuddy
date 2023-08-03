@@ -49,6 +49,7 @@ go_library(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/testutil/testgrpc",
         "//server/testutil/testmetrics",
         "//server/testutil/testolapdb",
         "//server/testutil/testport",
