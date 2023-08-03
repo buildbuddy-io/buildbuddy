@@ -2807,14 +2807,13 @@ func TestSampling(t *testing.T) {
 			averageChunkSizeBytes: 64 * 4,
 		},
 		{
-			desc:                  "chunking_on",
+			desc:                  "chunking_off",
 			averageChunkSizeBytes: 0,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-
 			rootDir := testfs.MakeTempDir(t)
 			minEvictionAge := 1 * time.Hour
 			clock := clockwork.NewFakeClock()
