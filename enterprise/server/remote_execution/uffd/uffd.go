@@ -93,6 +93,8 @@ func NewHandler() (*Handler, error) {
 
 // Start fulfills UFFD requests using the given memory store. If the UFFD object has not already
 // been initialized, it will also listen on the given socket path for Firecracker's UFFD initialization message
+//
+// This method is idempotent. If the handler is already running, it will not do anything
 func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blockio.COWStore) error {
 	if h.quitChan != nil {
 		log.Info("UFFD handler was already running when Start() was called")
@@ -304,6 +306,10 @@ func pageStartAddress(addr uint64, pageSize int) uintptr {
 	return uintptr(addr & ^(uint64(pageSize) - 1))
 }
 
+// Stops the background thread listening for page fault notifications. The UFFD object is saved on the handler
+// after it is initialized, so the handler can be restarted by calling Start() again
+//
+// This method is idempotent. If the handler is already stopped, it will not do anything
 func (h *Handler) Stop() error {
 	if h.earlyTerminationWriter == nil || h.earlyTerminationReader == nil || h.quitChan == nil {
 		log.Info("UFFD handler was already stopped when Stop() was called")
