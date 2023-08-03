@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -175,6 +176,7 @@ func waitForDockerd(ctx context.Context) error {
 		InitialBackoff: 10 * time.Microsecond,
 		MaxBackoff:     100 * time.Millisecond,
 		Multiplier:     1.5,
+		MaxRetries:     math.MaxInt, // retry until context deadline
 	})
 	for r.Next() {
 		args := []string{}
