@@ -39,6 +39,7 @@ var (
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
 	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
+	extraNodes                   = flagutil.New("cache.distributed_cache.extra_nodes", []string{}, "The hardcoded list of extra nodes to add data too. Useful for migrations. ** Enterprise only **")
 )
 
 const (
@@ -53,6 +54,7 @@ type CacheConfig struct {
 	ListenAddr                   string
 	GroupName                    string
 	Nodes                        []string
+	ExtraNodes                   []string
 	ReplicationFactor            int
 	ClusterSize                  int
 	RPCHeartbeatInterval         time.Duration
@@ -88,6 +90,7 @@ type Cache struct {
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
 	cacheProxy           *cacheproxy.CacheProxy
 	consistentHash       *consistent_hash.ConsistentHash
+	extraConsistentHash  *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
 	heartbeatMu          *sync.Mutex
 	shutdownMu           *sync.RWMutex
@@ -109,6 +112,7 @@ func Register(env environment.Env) error {
 		GroupName:                    *groupName,
 		ReplicationFactor:            *replicationFactor,
 		Nodes:                        *nodes,
+		ExtraNodes:                   *extraNodes,
 		ClusterSize:                  *clusterSize,
 		EnableLocalWrites:            *enableLocalWrites,
 		EnableLocalCompressionLookup: *enableLocalCompressionLookup,
@@ -138,16 +142,22 @@ func Register(env environment.Env) error {
 //
 // be stored across unique caches.
 func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
+	// Check Preconditions: if extraNodes are enabled, node list must have been manually specified.
+	if len(config.ExtraNodes) > 0 && len(config.Nodes) == 0 {
+		return nil, status.FailedPreconditionError("extra nodes may only be specified when all nodes are hardcoded.")
+	}
 	chash := consistent_hash.NewConsistentHash()
+	extraCHash := consistent_hash.NewConsistentHash()
 	if config.RPCHeartbeatInterval == 0 {
 		config.RPCHeartbeatInterval = 1 * time.Second
 	}
 	dc := &Cache{
-		local:          c,
-		log:            log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
-		config:         config,
-		cacheProxy:     cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
-		consistentHash: chash,
+		local:               c,
+		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
+		config:              config,
+		cacheProxy:          cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
+		consistentHash:      chash,
+		extraConsistentHash: extraCHash,
 
 		heartbeatMu:      &sync.Mutex{},
 		shutdownMu:       &sync.RWMutex{},
@@ -169,6 +179,13 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	if len(config.Nodes) > 0 {
 		// Nodes are hardcoded. Set them once and be done with it.
 		chash.Set(config.Nodes...)
+
+		if len(config.ExtraNodes) > 0 {
+			extendedNodeList := make([]string, len(config.Nodes))
+			copy(extendedNodeList, config.Nodes)
+			extendedNodeList = append(extendedNodeList, config.ExtraNodes...)
+			extraCHash.Set(extendedNodeList...)
+		}
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
 		heartbeatConfig := &heartbeat.Config{
@@ -193,6 +210,13 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 }
 
 func (c *Cache) Check(ctx context.Context) error {
+	// If the distributed layer was configured with a hardcoded node list,
+	// then it's not necessary to wait for any heartbeats and this cache
+	// will report healthy immediately.
+	if len(c.config.Nodes) > 0 {
+		return nil
+	}
+
 	// First check that the number of nodes in our chash
 	// matches the cluster size. If not, we can return early.
 	nodesAvailable := len(c.consistentHash.GetItems())
@@ -341,18 +365,51 @@ func (c *Cache) peerZone(peer string) (string, bool) {
 
 // peers returns the ordered slice of replicationFactor peers responsible for
 // this key. They should be tried in order.
-func (c *Cache) peers(d *repb.Digest) *peerset.PeerSet {
+func (c *Cache) writePeers(d *repb.Digest) *peerset.PeerSet {
 	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
+	if len(c.config.ExtraNodes) > 0 {
+		allPeers = c.extraConsistentHash.GetAllReplicas(d.GetHash())
+	}
 	return peerset.New(allPeers[:c.config.ReplicationFactor], allPeers[c.config.ReplicationFactor:])
+}
+
+func dedupe(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0)
+	for _, s := range in {
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		out = append(out, s)
+		seen[s] = struct{}{}
+	}
+	return out
 }
 
 // readPeers returns a slice of peers responsible for this key. If this peer is
 // a member of the set, it is returned first. Other
 // peers are returned in random order.
 func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
-	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
-	primaryPeers := allPeers[:c.config.ReplicationFactor]
-	secondaryPeers := allPeers[c.config.ReplicationFactor:]
+	peers := c.consistentHash.GetAllReplicas(d.GetHash())
+	primaryPeers := peers[:c.config.ReplicationFactor]
+	secondaryPeers := peers[c.config.ReplicationFactor:]
+
+	if len(c.config.ExtraNodes) > 0 {
+		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
+		allPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
+		allSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
+
+		// If extraNodes is set, we want to additionally attempt reads
+		// on the nodes where the data ~would~ be if the extra nodes
+		// were included in the full peer set.
+		//
+		// These extra reads allow us to move data to the new nodes
+		// and read it immediately, while falling back to the old data
+		// location if it's not found and backfilling to the new
+		// nodes.
+		primaryPeers = dedupe(append(allPrimaryPeers, primaryPeers...))
+		secondaryPeers = dedupe(append(allSecondaryPeers, secondaryPeers...))
+	}
 
 	sortVal := func(peer string) int {
 		if peer == c.config.ListenAddr {
@@ -915,7 +972,7 @@ func (mc *multiWriteCloser) Close() error {
 //
 // This is like setting WRITE_CONSISTENCY = QUORUM.
 func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	ps := c.peers(r.GetDigest())
+	ps := c.writePeers(r.GetDigest())
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
