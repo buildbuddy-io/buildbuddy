@@ -248,6 +248,7 @@ proto_library(
         "target.proto",
     ],
     deps = [
+        ":build_event_stream_proto",
         ":context_proto",
         "//proto/api/v1:common_proto",
     ],
@@ -374,6 +375,7 @@ proto_library(
         ":context_proto",
         ":invocation_status_proto",
         ":stat_filter_proto",
+        ":target_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
@@ -812,6 +814,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/target",
     proto = ":target_proto",
     deps = [
+        ":build_event_stream_go_proto",
         ":context_go_proto",
         "//proto/api/v1:common_go_proto",
     ],
@@ -943,6 +946,7 @@ go_proto_library(
         ":context_go_proto",
         ":invocation_status_go_proto",
         ":stat_filter_go_proto",
+        ":target_go_proto",
     ],
 )
 
@@ -1402,6 +1406,7 @@ ts_proto_library(
     name = "target_ts_proto",
     proto = ":target_proto",
     deps = [
+        ":build_event_stream_ts_proto",
         ":context_ts_proto",
         "//proto/api/v1:common_ts_proto",
     ],
@@ -1465,6 +1470,7 @@ ts_proto_library(
         ":duration_ts_proto",
         ":invocation_status_ts_proto",
         ":stat_filter_ts_proto",
+        ":target_ts_proto",
         ":timestamp_ts_proto",
     ],
 )

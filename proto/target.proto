@@ -1,7 +1,8 @@
 syntax = "proto3";
 
-import "proto/context.proto";
 import "proto/api/v1/common.proto";
+import "proto/context.proto";
+import "proto/build_event_stream.proto";
 
 package target;
 
@@ -138,11 +139,6 @@ message GetTargetHistoryResponse {
   string next_page_token = 4;
 }
 
-message Artifact {
-  string name = 1;
-  string bytestream_url = 2;
-}
-
 // Target details along with optional artifacts associated with the target.
 message Target {
   // Target metadata.
@@ -154,8 +150,15 @@ message Target {
   // Target timing.
   api.v1.Timing timing = 3;
 
-  // Artifacts associated with the target.
-  repeated Artifact artifacts = 4;
+  // If the build failed, whether this target is one of the root cause targets.
+  bool root_cause = 4;
+
+  // Files associated with the target.
+  repeated build_event_stream.File files = 5;
+
+  // Test results associated with the target. The whole event is included
+  // because the ID contains useful info, such as configuration.
+  repeated build_event_stream.BuildEvent test_result_events = 6;
 }
 
 message TargetGroup {
@@ -165,7 +168,7 @@ message TargetGroup {
   // Targets in the group. If this is empty but next_page_token is set, this
   // means that the invocation is still in progress and that more targets may be
   // fetched later.
-  repeated Target target = 2;
+  repeated Target targets = 2;
 
   // Page token for fetching the next target group.
   string next_page_token = 3;
@@ -175,17 +178,20 @@ message TargetGroup {
 }
 
 message GetTargetRequest {
+  // Invocation ID to fetch targets for.
+  string invocation_id = 1;
+
   // Optional, if set only targets with this label will be returned.
   // If not set, all targets will be returned.
-  string target_label = 1;
+  string target_label = 2;
 
   // Optional, if set only targets with this status will be returned.
   // If not set, all targets will be returned.
-  api.v1.Status status = 2;
+  api.v1.Status status = 3;
 
-  string pagination_token = 4;
+  string page_token = 4;
 }
 
 message GetTargetResponse {
-  repeated TargetGroup target_group = 1;
+  repeated TargetGroup target_groups = 1;
 }

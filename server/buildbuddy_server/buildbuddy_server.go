@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
@@ -66,7 +67,8 @@ import (
 )
 
 var (
-	disableCertConfig = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	paginateInvocations = flag.Bool("app.paginate_invocations", false, "If true, paginate invocations returned to the UI.")
 )
 
 const (
@@ -105,7 +107,34 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 		return nil, err
 	}
 
+	if *paginateInvocations {
+		// TODO: stream events directly into the event index instead of
+		// buffering into the invocation proto.
+		idx := event_index.Build(inv)
+		inv.Event = idx.TopLevelEvents
+		tr, err := target.GetTarget(ctx, s.env, inv, idx, &trpb.GetTargetRequest{})
+		if err != nil {
+			return nil, err
+		}
+		inv.TargetGroups = tr.TargetGroups
+	}
+
 	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
+}
+
+func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
+	if req.GetInvocationId() == "" {
+		return nil, status.InvalidArgumentErrorf("request is missing invocation_id field")
+	}
+	// TODO: stream events directly into the event index instead of
+	// buffering into the invocation proto.
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+	idx := event_index.Build(inv)
+	inv.Event = nil
+	return target.GetTarget(ctx, s.env, inv, idx, &trpb.GetTargetRequest{})
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
@@ -991,10 +1020,6 @@ func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.Search
 
 func (s *BuildBuddyServer) GetTargetHistory(ctx context.Context, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
 	return target.GetTargetHistory(ctx, s.env, req)
-}
-
-func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
-	return nil, status.UnimplementedError("not implemented")
 }
 
 func (s *BuildBuddyServer) GetEventLogChunk(ctx context.Context, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
