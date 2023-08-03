@@ -315,6 +315,7 @@ func (h *Handler) Stop() error {
 
 	// Wait for handle() to finish processing open requests
 	<-h.quitChan
+	h.quitChan = nil
 
 	h.earlyTerminationReader.Close()
 	h.earlyTerminationWriter.Close()
