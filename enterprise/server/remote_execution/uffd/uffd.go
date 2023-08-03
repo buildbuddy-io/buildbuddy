@@ -94,34 +94,37 @@ func NewHandler() (*Handler, error) {
 // Start fulfills UFFD requests using the given memory store. If the UFFD object has not already
 // been initialized, it will also listen on the given socket path for Firecracker's UFFD initialization message
 func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blockio.COWStore) error {
-	if h.quitChan == nil {
-		// Create a FD that can be used to terminate Poll early
-		pipeRead, pipeWrite, err := os.Pipe()
-		if err != nil {
-			return status.WrapError(err, "create early-termination fd")
-		}
-		h.earlyTerminationReader = pipeRead
-		h.earlyTerminationWriter = pipeWrite
-
-		// Initialize quitChan. Stop() will wait until this is closed to verify the handler has completed handling
-		// open requests
-		h.quitChan = make(chan struct{}, 0)
-
-		go func() {
-			if h.uffd == 0 {
-				// Get uffd sent from firecracker
-				err = h.receiveSetupMsg(ctx, socketPath)
-				if err != nil {
-					log.CtxErrorf(ctx, "Failed to receive setup message from firecracker: %s", err)
-					return
-				}
-			}
-
-			if err = h.handle(ctx, memoryStore); err != nil {
-				log.CtxErrorf(ctx, "Failed to handle firecracker memory requests: %s", err)
-			}
-		}()
+	if h.quitChan != nil {
+		log.Info("UFFD handler was already running when Start() was called")
+		return nil
 	}
+
+	// Create a FD that can be used to terminate Poll early
+	pipeRead, pipeWrite, err := os.Pipe()
+	if err != nil {
+		return status.WrapError(err, "create early-termination fd")
+	}
+	h.earlyTerminationReader = pipeRead
+	h.earlyTerminationWriter = pipeWrite
+
+	// Initialize quitChan. Stop() will wait until this is closed to verify the handler has completed handling
+	// open requests
+	h.quitChan = make(chan struct{}, 0)
+
+	go func() {
+		if h.uffd == 0 {
+			// Get uffd sent from firecracker
+			err = h.receiveSetupMsg(ctx, socketPath)
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to receive setup message from firecracker: %s", err)
+				return
+			}
+		}
+
+		if err = h.handle(ctx, memoryStore); err != nil {
+			log.CtxErrorf(ctx, "Failed to handle firecracker memory requests: %s", err)
+		}
+	}()
 	return nil
 }
 

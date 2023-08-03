@@ -587,6 +587,8 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 		return err
 	}
 
+	// Stop UFFD handler so the background goroutine listening for page faults isn't wasting resources
+	// while the VM is paused
 	if c.uffdHandler != nil {
 		if err := c.uffdHandler.Stop(); err != nil {
 			return status.WrapError(err, "failed to stop uffd handler")
@@ -621,6 +623,33 @@ func (c *FirecrackerContainer) resumeVM(ctx context.Context) error {
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
+	return nil
+}
+
+func (c *FirecrackerContainer) createSnapshot(ctx context.Context, memSnapshotFile string, snapshotType string) error {
+	// Make sure UFFD handler is running before trying to create a snapshot, bc the VM needs to access its memory
+	// to create the snapshot
+	if c.uffdHandler != nil {
+		sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
+		if err := c.uffdHandler.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
+			return status.WrapError(err, "failed to start uffd handler")
+		}
+	}
+
+	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
+		params.Body.SnapshotType = snapshotType
+	}
+	if err := c.machine.CreateSnapshot(ctx, memSnapshotFile, vmStateSnapshotName, snapshotTypeOpt); err != nil {
+		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
+		return err
+	}
+
+	if c.uffdHandler != nil {
+		if err := c.uffdHandler.Stop(); err != nil {
+			return status.WrapError(err, "failed to stop uffd handler")
+		}
+	}
+
 	return nil
 }
 
@@ -691,26 +720,11 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	}
 
 	machineStart := time.Now()
-	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
-		params.Body.SnapshotType = snapshotType
-	}
 
-	if c.uffdHandler != nil {
-		sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
-		if err := c.uffdHandler.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
-			return status.WrapError(err, "failed to start uffd handler")
-		}
-	}
-	if err := c.machine.CreateSnapshot(ctx, memSnapshotFile, vmStateSnapshotName, snapshotTypeOpt); err != nil {
+	if err := c.createSnapshot(ctx, memSnapshotFile, snapshotType); err != nil {
 		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
 		return err
 	}
-	if c.uffdHandler != nil {
-		if err := c.uffdHandler.Stop(); err != nil {
-			return status.WrapError(err, "failed to stop uffd handler")
-		}
-	}
-
 	log.CtxDebugf(ctx, "VMM CreateSnapshot %s took %s", snapshotType, time.Since(machineStart))
 
 	if snapshotType == diffSnapshotType {
@@ -1819,7 +1833,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 
 		copyOutputsErr := c.copyOutputsToWorkspace(ctx)
-		if err := c.machine.ResumeVM(ctx); err != nil {
+		if err := c.resumeVM(ctx); err != nil {
 			result.Error = status.InternalErrorf("error resuming VM: %s", err)
 			return result
 		}
