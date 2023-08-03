@@ -19,13 +19,15 @@ interface Props {
 }
 
 export default class InvocationExecutionTable extends React.Component<Props> {
-  getActionPageLink(execution: execution_stats.Execution, digest: build.bazel.remote.execution.v2.Digest) {
+  getActionPageLink(
+    execution: execution_stats.Execution,
+    digest: build.bazel.remote.execution.v2.Digest,
+    resultDigest: build.bazel.remote.execution.v2.Digest
+  ) {
     const search = new URLSearchParams({
       actionDigest: `${digest.hash}/${digest.sizeBytes}`,
+      actionResultDigest: `${resultDigest.hash}/${resultDigest.sizeBytes}`,
     });
-    if (digest) {
-      search.set("actionResultDigest", `${digest.hash}/${digest.sizeBytes}`);
-    }
     return `/invocation/${this.props.invocationIdProvider(execution)}?${search}#action`;
   }
 
@@ -41,7 +43,11 @@ export default class InvocationExecutionTable extends React.Component<Props> {
             <Link
               key={index}
               className="invocation-execution-row"
-              href={this.getActionPageLink(execution, execution.actionDigest)}>
+              href={this.getActionPageLink(
+                execution,
+                execution.actionDigest,
+                execution.actionResultDigest ?? execution.actionDigest
+              )}>
               <div className="invocation-execution-row-image">{status.icon}</div>
               <div>
                 <div className="invocation-execution-row-header">
