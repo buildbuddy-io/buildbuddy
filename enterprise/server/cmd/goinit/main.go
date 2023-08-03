@@ -159,7 +159,7 @@ func startDockerd(ctx context.Context) error {
 
 	args := []string{}
 	if *enableDockerdTCP {
-		args = append(args, "--host=tcp://0.0.0.0:2375")
+		args = append(args, "--host=tcp://0.0.0.0:2375", "--tls=false")
 	}
 
 	cmd := exec.CommandContext(ctx, "dockerd", args...)
@@ -173,7 +173,7 @@ func waitForDockerd(ctx context.Context) error {
 	defer cancel()
 	r := retry.New(ctx, &retry.Options{
 		InitialBackoff: 10 * time.Microsecond,
-		MaxBackoff:     1000 * time.Millisecond,
+		MaxBackoff:     100 * time.Millisecond,
 		Multiplier:     1.5,
 	})
 	for r.Next() {
