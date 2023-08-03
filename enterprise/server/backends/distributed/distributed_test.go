@@ -64,6 +64,13 @@ func waitForReady(t *testing.T, addr string) {
 	}
 	conn.Close()
 }
+
+func waitForShutdown(c *Cache) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), maxShutdownDuration)
+	c.Shutdown(shutdownCtx)
+	cancel()
+}
+
 func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCache interfaces.Cache) *Cache {
 	c, err := NewDistributedCache(te, baseCache, config, te.GetHealthChecker())
 	if err != nil {
@@ -71,9 +78,7 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 	}
 	c.StartListening()
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), maxShutdownDuration)
-		c.Shutdown(shutdownCtx)
-		cancel()
+		waitForShutdown(c)
 	})
 	return c
 }
@@ -1218,4 +1223,168 @@ func TestSupportsCompressor(t *testing.T) {
 			require.Equal(t, tc.expected, sc)
 		}
 	}
+}
+
+func TestExtraNodes(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	numDigestsToWrite := 20
+
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1, err := NewDistributedCache(env, memoryCache1, config1, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc1.StartListening()
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2, err := NewDistributedCache(env, memoryCache2, config2, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc2.StartListening()
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3, err := NewDistributedCache(env, memoryCache3, config3, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc3.StartListening()
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	written := make([]*rspb.ResourceName, 0)
+	for i := 0; i < numDigestsToWrite; i++ {
+		// Do a write - should be written to all nodes
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		if err := dc1.Set(ctx, rn, buf); err != nil {
+			require.NoError(t, err)
+		}
+		written = append(written, rn)
+
+		c, err := dc3.Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, c)
+	}
+
+	waitForShutdown(dc1)
+	waitForShutdown(dc2)
+	waitForShutdown(dc3)
+
+	// These nodes will be added in as "extra nodes", then the test
+	// will check that old data is still readable and new data is writeable.
+	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer5 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer6 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+	baseConfig = CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		ExtraNodes:         []string{peer4, peer5, peer6},
+		DisableLocalLookup: true,
+	}
+
+	config1 = baseConfig
+	config1.ListenAddr = peer1
+	dc1, err = NewDistributedCache(env, memoryCache1, config1, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc1.StartListening()
+
+	config2 = baseConfig
+	config2.ListenAddr = peer2
+	dc2, err = NewDistributedCache(env, memoryCache2, config2, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc2.StartListening()
+
+	config3 = baseConfig
+	config3.ListenAddr = peer3
+	dc3, err = NewDistributedCache(env, memoryCache3, config3, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc3.StartListening()
+
+	// Now bring up the new nodes
+	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	config4 := baseConfig
+	config4.ListenAddr = peer4
+	dc4, err := NewDistributedCache(env, memoryCache4, config4, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc4.StartListening()
+
+	memoryCache5 := newMemoryCache(t, singleCacheSizeBytes)
+	config5 := baseConfig
+	config5.ListenAddr = peer5
+	dc5, err := NewDistributedCache(env, memoryCache5, config5, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc5.StartListening()
+
+	memoryCache6 := newMemoryCache(t, singleCacheSizeBytes)
+	config6 := baseConfig
+	config6.ListenAddr = peer6
+	dc6, err := NewDistributedCache(env, memoryCache6, config6, env.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc6.StartListening()
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+	waitForReady(t, config4.ListenAddr)
+	waitForReady(t, config5.ListenAddr)
+	waitForReady(t, config6.ListenAddr)
+
+	for i := 0; i < numDigestsToWrite; i++ {
+		// Do a write - should be written to all nodes
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		if err := dc6.Set(ctx, rn, buf); err != nil {
+			require.NoError(t, err)
+		}
+		written = append(written, rn)
+	}
+
+	for _, rn := range written {
+		c, err := dc1.Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, c)
+
+		c, err = dc6.Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, c)
+	}
+
+	waitForShutdown(dc1)
+	waitForShutdown(dc2)
+	waitForShutdown(dc3)
+	waitForShutdown(dc4)
+	waitForShutdown(dc5)
+	waitForShutdown(dc6)
 }
