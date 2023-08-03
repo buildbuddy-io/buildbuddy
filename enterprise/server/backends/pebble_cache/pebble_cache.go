@@ -1665,12 +1665,6 @@ func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec in
 }
 
 func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.PebbleKey) error {
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return err
-	}
-
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -1681,7 +1675,12 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+	fileMetadata, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
+	if err != nil {
+		return err
+	}
+
+	fileMetadataKey, err := key.Bytes(version)
 	if err != nil {
 		return err
 	}
