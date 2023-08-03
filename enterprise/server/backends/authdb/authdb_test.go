@@ -461,11 +461,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		}
 		_, err = env.GetBuildBuddyServer().GetApiKeys(adminCtx, req)
 		require.NoError(t, err)
-		require.Len(t, al.GetAllEntries(), 1)
-		e := al.GetAllEntries()[0]
-		require.Equal(t, alpb.ResourceType_GROUP_API_KEY, e.Resource.GetType())
-		require.Equal(t, alpb.Action_LIST, e.Action)
-		require.Equal(t, req, e.Request)
+		require.Empty(t, al.GetAllEntries())
 	}
 
 	// Update Org API key.
