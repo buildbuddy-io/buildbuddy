@@ -476,16 +476,13 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
 	}
 	for _, k := range tableKeys {
+		// API Key value must be retrieved via GetAPIKey API.
 		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
 			Id:                  k.APIKeyID,
-			Value:               k.Value,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
 		})
-	}
-	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, &alpb.ResourceID{Type: alpb.ResourceType_GROUP_API_KEY}, alpb.Action_LIST, req)
 	}
 	return rsp, nil
 }
@@ -633,9 +630,9 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
 	}
 	for _, k := range tableKeys {
+		// API Key value must be retrieved via GetAPIKey API.
 		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
 			Id:                  k.APIKeyID,
-			Value:               k.Value,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
@@ -904,6 +901,8 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 
 	credentials := make([]*bzpb.Credentials, len(groupAPIKeys))
 	for i, apiKey := range groupAPIKeys {
+		// API Key value must be retrieved via GetAPIKey API.
+		apiKey.Value = ""
 		credentials[i] = &bzpb.Credentials{
 			ApiKey: apiKey,
 		}
