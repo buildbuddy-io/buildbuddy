@@ -119,6 +119,7 @@ build:mac-workflows --config=workflows
 build:release-shared -c opt
 build:release-shared --stamp
 build:release-shared --define release=true
+build:release-shared --strip=always
 
 # Configuration used for Linux releases
 build:release --config=release-shared
