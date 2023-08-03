@@ -694,9 +694,21 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
 		params.Body.SnapshotType = snapshotType
 	}
+
+	if c.uffdHandler != nil {
+		sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
+		if err := c.uffdHandler.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
+			return status.WrapError(err, "failed to start uffd handler")
+		}
+	}
 	if err := c.machine.CreateSnapshot(ctx, memSnapshotFile, vmStateSnapshotName, snapshotTypeOpt); err != nil {
 		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
 		return err
+	}
+	if c.uffdHandler != nil {
+		if err := c.uffdHandler.Stop(); err != nil {
+			return status.WrapError(err, "failed to stop uffd handler")
+		}
 	}
 
 	log.CtxDebugf(ctx, "VMM CreateSnapshot %s took %s", snapshotType, time.Since(machineStart))
