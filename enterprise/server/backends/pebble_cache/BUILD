@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
+        "//enterprise/server/util/chunker",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
@@ -47,7 +48,7 @@ go_library(
 
 go_test(
     name = "pebble_cache_test",
-    size = "small",
+    size = "medium",
     srcs = ["pebble_cache_test.go"],
     shard_count = 8,
     deps = [

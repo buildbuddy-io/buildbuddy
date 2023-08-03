@@ -62,6 +62,11 @@ message StorageMetadata {
   }
   InlineMetadata inline_metadata = 3;
 
+  message ChunkedMetadata {
+    repeated resource.ResourceName resource = 1;
+  }
+  ChunkedMetadata chunked_metadata = 4;
+
   // Insert other storage types (gcs, etc) here.
   // Upon read, the server will first read this record and then serve the
   // contents of the the specified location.
