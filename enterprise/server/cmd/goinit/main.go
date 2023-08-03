@@ -173,7 +173,7 @@ func waitForDockerd(ctx context.Context) error {
 	defer cancel()
 	r := retry.New(ctx, &retry.Options{
 		InitialBackoff: 10 * time.Microsecond,
-		MaxBackoff:     100 * time.Millisecond,
+		MaxBackoff:     10 * time.Millisecond,
 		Multiplier:     1.5,
 	})
 	for r.Next() {
