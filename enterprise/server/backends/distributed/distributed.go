@@ -210,6 +210,13 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 }
 
 func (c *Cache) Check(ctx context.Context) error {
+	// If the distributed layer was configured with a hardcoded node list,
+	// then it's not necessary to wait for any heartbeats and this cache
+	// will report healthy immediately.
+	if len(c.config.Nodes) > 0 {
+		return nil
+	}
+
 	// First check that the number of nodes in our chash
 	// matches the cluster size. If not, we can return early.
 	nodesAvailable := len(c.consistentHash.GetItems())
