@@ -630,7 +630,7 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
 	}
 	for _, k := range tableKeys {
-		// API Key value must be retrieved via GetAPIKey API.
+		// API Key value must be retrieved via GetUserAPIKey API.
 		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
 			Id:                  k.APIKeyID,
 			Label:               k.Label,
