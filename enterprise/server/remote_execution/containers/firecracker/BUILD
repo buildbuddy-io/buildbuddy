@@ -42,6 +42,7 @@ go_library(
             "//enterprise/server/util/ext4",
             "//enterprise/server/util/vfs_server",
             "//enterprise/server/util/vsock",
+            "//enterprise/vmsupport:bundle",
             "//proto:remote_execution_go_proto",
             "//proto:vmexec_go_proto",
             "//proto:vmvfs_go_proto",
@@ -88,7 +89,6 @@ go_test(
     ],
     deps = [
         ":firecracker",
-        "//enterprise:bundle",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/platform",
@@ -108,7 +108,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/disk",
-        "//server/util/fileresolver",
         "//server/util/log",
         "//server/util/status",
         "//server/util/testing/flags",

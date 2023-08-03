@@ -81,7 +81,6 @@ type RealEnv struct {
 	buildEventProxyClients           []pepb.PublishBuildEventClient
 	webhooks                         []interfaces.Webhook
 	xcodeLocator                     interfaces.XcodeLocator
-	fileResolver                     fs.FS
 	internalHTTPMux                  interfaces.HttpServeMux
 	mux                              interfaces.HttpServeMux
 	httpServerWaitGroup              *sync.WaitGroup
@@ -412,14 +411,6 @@ func (r *RealEnv) SetRemoteExecutionRedisPubSubClient(client redis.UniversalClie
 
 func (r *RealEnv) GetRemoteExecutionRedisPubSubClient() redis.UniversalClient {
 	return r.remoteExecutionRedisPubSubClient
-}
-
-func (r *RealEnv) GetFileResolver() fs.FS {
-	return r.fileResolver
-}
-
-func (r *RealEnv) SetFileResolver(fr fs.FS) {
-	r.fileResolver = fr
 }
 
 func (r *RealEnv) GetMux() interfaces.HttpServeMux {

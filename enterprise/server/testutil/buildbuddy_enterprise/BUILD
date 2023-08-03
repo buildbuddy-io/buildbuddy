@@ -7,7 +7,7 @@ go_library(
     testonly = 1,
     srcs = ["buildbuddy_enterprise.go"],
     data = [
-        "//enterprise:config_files",
+        "//enterprise/config:config_files",
         "//enterprise/server/cmd/server:buildbuddy",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise",

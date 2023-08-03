@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"io/fs"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
@@ -51,17 +50,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
-	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
-	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
+	enterprise_app_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/app"
 	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
@@ -69,43 +65,6 @@ import (
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
-
-func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
-	// Ensure we always override the app filesystem because the enterprise
-	// binary bundles a different app than the OS one does.
-	// The static filesystem is the same, however, so we set it if the flag
-	// is set, but we do not fall back to an embedded staticFS.
-	realEnv.SetAppFilesystem(nil)
-	if staticDirectory, err := flagutil.GetDereferencedValue[string]("static_directory"); err == nil && staticDirectory != "" {
-		staticFS, err := static.FSFromRelPath(staticDirectory)
-		if err != nil {
-			log.Fatalf("Error getting static FS from relPath: %q: %s", staticDirectory, err)
-		}
-		realEnv.SetStaticFilesystem(staticFS)
-	}
-	if appDirectory, err := flagutil.GetDereferencedValue[string]("app_directory"); err == nil && appDirectory != "" {
-		appFS, err := static.FSFromRelPath(appDirectory)
-		if err != nil {
-			log.Fatalf("Error getting app FS from relPath: %q: %s", appDirectory, err)
-		}
-		realEnv.SetAppFilesystem(appFS)
-	}
-	bundleFS, err := bundle.Get()
-	if err != nil {
-		log.Fatalf("Error getting bundle FS: %s", err)
-	}
-	realEnv.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
-	if realEnv.GetAppFilesystem() == nil {
-		if realEnv.GetAppFilesystem() == nil {
-			appFS, err := fs.Sub(bundleFS, "app")
-			if err != nil {
-				log.Fatalf("Error getting app FS from bundle: %s", err)
-			}
-			log.Debug("Using bundled enterprise app filesystem.")
-			realEnv.SetAppFilesystem(appFS)
-		}
-	}
-}
 
 // NB: Most of the logic you'd typically find in a main.go file is in
 // libmain.go. We put it there to reduce the duplicated code between the open
@@ -117,7 +76,6 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		log.Fatalf("Could not setup auth DB: %s", err)
 	}
 	env.SetAuthDB(db)
-	configureFilesystemsOrDie(env)
 
 	if err := auth.Register(ctx, env); err != nil {
 		if err := auth.RegisterNullAuth(env); err != nil {
@@ -185,7 +143,11 @@ func main() {
 	config.ReloadOnSIGHUP()
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	realEnv := libmain.GetConfiguredEnvironmentOrDie(healthChecker)
+	enterpriseAppFS, err := enterprise_app_bundle.GetAppFS()
+	if err != nil {
+		log.Fatalf("Error getting enterprise app FS from bundle: %s", err)
+	}
+	realEnv := libmain.GetConfiguredEnvironmentOrDie(healthChecker, enterpriseAppFS)
 	if err := tracing.Configure(realEnv); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}

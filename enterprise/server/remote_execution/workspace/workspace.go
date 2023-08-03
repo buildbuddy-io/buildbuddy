@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
+	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -187,7 +188,7 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
 	// The CI runner binary may be on a different device than the runner workspace
 	// so we'd have to put it somewhere on the same device before fastcopying.
-	srcFile, err := ws.env.GetFileResolver().Open("enterprise/server/cmd/ci_runner/buildbuddy_ci_runner")
+	srcFile, err := ci_runner_bundle.Get().Open("enterprise/server/cmd/ci_runner/buildbuddy_ci_runner")
 	if err != nil {
 		return err
 	}

@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/libmain",
     visibility = ["//visibility:public"],
     deps = [
-        "//:bundle",
         "//proto:buildbuddy_service_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_asset_go_proto",
@@ -45,7 +44,6 @@ go_library(
         "//server/ssl",
         "//server/static",
         "//server/util/db",
-        "//server/util/fileresolver",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
@@ -55,6 +53,7 @@ go_library(
         "//server/util/scratchspace",
         "//server/util/status",
         "//server/util/tracing",
+        "//static:bundle",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",

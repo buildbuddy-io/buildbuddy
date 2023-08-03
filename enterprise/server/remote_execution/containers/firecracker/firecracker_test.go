@@ -31,14 +31,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -105,10 +103,6 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	tmp := testfs.MakeTempDir(t)
 	err := os.Setenv("REGISTRY_AUTH_FILE", filepath.Join(tmp, "auth.json"))
 	require.NoError(t, err)
-
-	b, err := bundle.Get()
-	require.NoError(t, err)
-	env.SetFileResolver(fileresolver.New(b, "enterprise"))
 
 	testRootDir := testfs.MakeTempDir(t)
 	dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: testRootDir}, diskCacheSize)
@@ -1289,9 +1283,6 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 		flags.Set(t, "executor.enable_firecracker", true)
 		// Jailer root dir needs to be < 38 chars
 		flags.Set(t, "executor.root_directory", testRoot)
-		b, err := bundle.Get()
-		require.NoError(t, err)
-		env.SetFileResolver(fileresolver.New(b, "enterprise"))
 		ta = testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
 		env.SetAuthenticator(ta)
 		fc, err = filecache.NewFileCache(filecacheRoot, fileCacheSize)

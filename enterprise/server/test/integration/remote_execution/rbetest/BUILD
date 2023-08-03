@@ -8,7 +8,6 @@ go_library(
     srcs = ["rbetest.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest",
     deps = [
-        "//enterprise:bundle",
         "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/executor",
@@ -53,7 +52,6 @@ go_library(
         "//server/testutil/testmetrics",
         "//server/testutil/testolapdb",
         "//server/testutil/testport",
-        "//server/util/fileresolver",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/log",

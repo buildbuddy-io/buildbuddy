@@ -5,7 +5,7 @@ go_library(
     testonly = 1,
     srcs = ["buildbuddy.go"],
     data = [
-        "//:config/buildbuddy.local.yaml",
+        "//config:buildbuddy.local.yaml",
         "//server/cmd/buildbuddy",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy",
