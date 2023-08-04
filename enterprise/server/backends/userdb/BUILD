@@ -19,7 +19,6 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/query_builder",
-        "//server/util/random",
         "//server/util/role",
         "//server/util/status",
     ],

@@ -53,9 +53,9 @@ jobs:
       - name: gazelle
         run: |
           # Invoke gazelle via bb fix for TypeScript support
-          cli/install.sh tags/5.0.20  # keep in sync with buildfix.sh
+          cli/install.sh tags/5.0.21  # keep in sync with buildfix.sh
           bb version
-          bb fix -mode diff > gazelle-diff.txt || true
+          bb fix -mode diff &> gazelle-diff.txt || true
           echo "gazelle diff:"
           cat gazelle-diff.txt
 
