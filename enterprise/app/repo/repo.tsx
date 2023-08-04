@@ -12,6 +12,8 @@ import { workflow } from "../../../proto/workflow_ts_proto";
 import Select from "../../../app/components/select/select";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import TextInput from "../../../app/components/input/input";
+import { secrets } from "../../../proto/secrets_ts_proto";
+import { encryptAndUpdate } from "../secrets/secret_util";
 
 export interface RepoComponentProps {
   path: string;
@@ -24,10 +26,12 @@ interface RepoComponentState {
   githubInstallationsLoading: boolean;
   githubInstallationsResponse: any;
   isCreating: boolean;
+  isDeploying: boolean;
 
   repoName: string;
   template: string;
   private: boolean;
+  secrets: Map<string, string>;
 
   repoResponse: repo.CreateRepoResponse | null;
   workflowResponse: workflow.ExecuteWorkflowResponse | null;
@@ -39,10 +43,12 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     githubInstallationsLoading: true,
     githubInstallationsResponse: null,
     isCreating: false,
+    isDeploying: false,
 
     template: this.props.search.get("template") || "",
     repoName: this.props.search.get("name") || "",
     private: true,
+    secrets: new Map<string, string>(),
 
     repoResponse: null,
     workflowResponse: null,
@@ -149,17 +155,41 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     );
   }
 
+  getSecrets() {
+    let s = this.props.search.get("secret") || this.props.search.get("secrets") || "";
+    return s.split(",");
+  }
+
   async handleCreateClicked() {
     this.setState({ isCreating: true });
     try {
       await this.linkInstallation();
       let repoResponse = await this.createRepo();
       this.setState({ repoResponse: repoResponse });
-      let workflowResponse = await this.runWorkflow(repoResponse.repoUrl);
-      this.setState({ isCreating: false, workflowResponse: workflowResponse });
+      if (!this.getSecrets()) {
+        this.handleDeployClicked(repoResponse);
+      }
     } catch (e) {
       error_service.handleError(e);
       this.setState({ isCreating: false });
+    }
+  }
+
+  async saveSecrets() {
+    await this.getSecrets().map((s) => encryptAndUpdate(s, this.state.secrets.get(s) || ""));
+  }
+
+  async handleDeployClicked(repoResponse: any) {
+    this.setState({ isDeploying: true });
+    try {
+      if (this.getSecrets()) {
+        await this.saveSecrets();
+      }
+      let workflowResponse = await this.runWorkflow(repoResponse.repoUrl);
+      this.setState({ isDeploying: false, workflowResponse: workflowResponse });
+    } catch (e) {
+      error_service.handleError(e);
+      this.setState({ isDeploying: false });
     }
   }
 
@@ -222,7 +252,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
           className={`repo-block card repo-create ${
             this.props.user && this.state.githubInstallationsResponse?.data?.installations ? "" : "disabled"
           }`}>
-          <div className="repo-title">Create Git Repository</div>
+          <div className="repo-title">Create git repository</div>
           <div className="repo-picker">
             <div>
               <div>Git scope</div>
@@ -274,6 +304,41 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             </a>
           )}
         </div>
+        {this.getSecrets() && (
+          <div
+            className={`repo-block card repo-create ${this.props.user && this.state.repoResponse ? "" : "disabled"}`}>
+            <div className="repo-title">Configure deployment</div>
+            <div className="deployment-configs">
+              {this.getSecrets().map((s) => (
+                <div className="deployment-config">
+                  <div>{s}</div>
+                  <div>
+                    <TextInput
+                      type="password"
+                      placeholder={s}
+                      value={this.state.secrets.get(s)}
+                      onChange={(e) => {
+                        this.state.secrets.set(s, e.target.value), this.forceUpdate();
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {!this.state.workflowResponse && (
+              <button
+                disabled={
+                  !this.state.githubInstallationsResponse?.data.installations ||
+                  !this.hasPermissions() ||
+                  this.state.isDeploying
+                }
+                className="create-button"
+                onClick={() => this.handleDeployClicked(this.state.repoResponse)}>
+                {this.state.isDeploying ? "Deploying..." : "Deploy"}
+              </button>
+            )}
+          </div>
+        )}
         {this.state.workflowResponse && (
           <div
             className={`repo-block card repo-create ${

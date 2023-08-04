@@ -43,11 +43,12 @@
 }
 
 .create-repo-page .repo-picker input,
-.create-repo-page .repo-picker select {
+.create-repo-page .repo-picker select,
+.create-repo-page .deployment-config input {
   padding: 12px;
   width: 100%;
   border-radius: 8px;
-  border: 1px solid #eee;
+  border: 1px solid #aaa;
   font-family: inherit;
   font-size: 1.2em;
   height: initial;
@@ -132,4 +133,27 @@
 
 .create-repo-page .running-actions svg {
   margin-right: 8px;
+}
+
+.deployment-configs {
+  display: table;
+  border-spacing: 16px;
+  width: 100%;
+}
+
+.deployment-config {
+  display: table-row;
+  align-items: center;
+  gap: 16px;
+}
+
+.deployment-config div {
+  display: table-cell;
+}
+
+.deployment-config div:first-of-type {
+  font-family: monospace;
+}
+
+.deployment-config div:last-of-type {
 }
