@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -72,20 +71,10 @@ func singleUserGroup(u *tables.User) (*tables.Group, error) {
 	}
 
 	return &tables.Group{
-		GroupID:    strings.Replace(u.UserID, "US", "GR", 1),
-		UserID:     u.UserID,
-		Name:       name,
-		WriteToken: randomToken(10),
+		GroupID: strings.Replace(u.UserID, "US", "GR", 1),
+		UserID:  u.UserID,
+		Name:    name,
 	}, nil
-}
-
-func randomToken(length int) string {
-	// NB: Keep in sync with BuildBuddyServer#redactAPIKeys, which relies on this exact impl.
-	token, err := random.RandomString(length)
-	if err != nil {
-		token = "bUiLdBuDdy"
-	}
-	return token
 }
 
 type UserDB struct {
@@ -237,7 +226,6 @@ func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *t
 		return "", err
 	}
 	newGroup.GroupID = groupID
-	newGroup.WriteToken = randomToken(10)
 
 	if err := tx.Create(&newGroup).Error; err != nil {
 		return "", err
@@ -569,9 +557,6 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 		if err := tx.Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
 				g := d.getDefaultGroupConfig()
-				if g.WriteToken == "" {
-					g.WriteToken = randomToken(10)
-				}
 				if err := tx.Create(g).Error; err != nil {
 					return err
 				}
