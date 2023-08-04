@@ -24,8 +24,8 @@ func TestDecodeAndEncodeOffsetLimit(t *testing.T) {
 
 func TestDecodeEmptyStringToEmptyProto(t *testing.T) {
 	page, err := paging.DecodeOffsetLimit("")
-
 	require.NoError(t, err)
+
 	assert.Equal(t, int64(0), page.Offset)
 	assert.Equal(t, int64(0), page.Limit)
 }

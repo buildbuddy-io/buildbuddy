@@ -101,24 +101,29 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	if req.GetLookup().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
 	}
-
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
-	if err != nil {
-		return nil, err
-	}
-
 	if *paginateInvocations {
-		// TODO: stream events directly into the event index instead of
-		// buffering into the invocation proto.
-		idx := event_index.Build(inv)
-		inv.Event = idx.TopLevelEvents
+		idx := event_index.New()
+		callback := func(event *inpb.InvocationEvent) error {
+			idx.Add(event)
+			return nil
+		}
+		inv, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetLookup().GetInvocationId(), callback)
+		if err != nil {
+			return nil, err
+		}
+		idx.Finalize()
 		tr, err := target.GetTarget(ctx, s.env, inv, idx, &trpb.GetTargetRequest{})
 		if err != nil {
 			return nil, err
 		}
+		inv.Event = idx.TopLevelEvents
 		inv.TargetGroups = tr.TargetGroups
+		return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
 	}
-
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
 	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
 }
 
@@ -126,14 +131,16 @@ func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetReq
 	if req.GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("request is missing invocation_id field")
 	}
-	// TODO: stream events directly into the event index instead of
-	// buffering into the invocation proto.
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetInvocationId())
+	idx := event_index.New()
+	callback := func(event *inpb.InvocationEvent) error {
+		idx.Add(event)
+		return nil
+	}
+	inv, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetInvocationId(), callback)
 	if err != nil {
 		return nil, err
 	}
-	idx := event_index.Build(inv)
-	inv.Event = nil
+	idx.Finalize()
 	return target.GetTarget(ctx, s.env, inv, idx, &trpb.GetTargetRequest{})
 }
 

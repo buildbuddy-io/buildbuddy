@@ -45,7 +45,7 @@ const (
 	// The number of distinct commits returned in GetTargetHistoryResponse.
 	targetHistoryPageSize = 20
 
-	// The number of targets returned in the GetTarget response.
+	// The max number of targets returned in each TargetGroup page.
 	targetPageSize = 12
 
 	// When returning a paginated list of all targets in an invocation with

@@ -27,8 +27,8 @@ type Index struct {
 	rootCauseLabels map[string]bool
 }
 
-func Build(in *inpb.Invocation) *Index {
-	idx := &Index{
+func New() *Index {
+	return &Index{
 		BuildTargetByLabel:         map[string]*trpb.Target{},
 		TestTargetByLabel:          map[string]*trpb.Target{},
 		TargetCompleteEventByLabel: map[string]*bespb.TargetComplete{},
@@ -37,36 +37,11 @@ func Build(in *inpb.Invocation) *Index {
 		NamedSetOfFilesByID:        map[string]*bespb.NamedSetOfFiles{},
 		rootCauseLabels:            map[string]bool{},
 	}
-	for _, e := range in.GetEvent() {
-		idx.add(e)
-	}
-	// Sort target labels.
-	sort.Strings(idx.AllTargetLabels)
-	// Apply rootCauseLabels to targets, and discard.
-	for label := range idx.rootCauseLabels {
-		if t := idx.BuildTargetByLabel[label]; t != nil {
-			t.RootCause = true
-		}
-	}
-	idx.rootCauseLabels = nil
-
-	// Build TargetsByStatus index now that we know all the statuses.
-	for _, t := range idx.BuildTargetByLabel {
-		idx.TargetsByStatus[t.Status] = append(idx.TargetsByStatus[t.Status], t)
-	}
-	for _, t := range idx.TestTargetByLabel {
-		idx.TargetsByStatus[t.Status] = append(idx.TargetsByStatus[t.Status], t)
-	}
-	// Sort TargetsByStatus list values.
-	for _, targets := range idx.TargetsByStatus {
-		sort.Slice(targets, func(i, j int) bool {
-			return targets[i].GetMetadata().GetLabel() < targets[j].GetMetadata().GetLabel()
-		})
-	}
-	return idx
 }
 
-func (idx *Index) add(event *inpb.InvocationEvent) {
+// Add adds a single event to the index.
+// Don't forget to call Finalize once all events are added.
+func (idx *Index) Add(event *inpb.InvocationEvent) {
 	switch p := event.GetBuildEvent().GetPayload().(type) {
 	case *bespb.BuildEvent_NamedSetOfFiles:
 		nsid := event.GetBuildEvent().GetId().GetNamedSet().GetId()
@@ -123,5 +98,30 @@ func (idx *Index) add(event *inpb.InvocationEvent) {
 		return
 	default:
 		idx.TopLevelEvents = append(idx.TopLevelEvents, event)
+	}
+}
+
+func (idx *Index) Finalize() {
+	// Sort target labels.
+	sort.Strings(idx.AllTargetLabels)
+	// Apply rootCauseLabels to targets, and discard.
+	for label := range idx.rootCauseLabels {
+		if t := idx.BuildTargetByLabel[label]; t != nil {
+			t.RootCause = true
+		}
+	}
+	idx.rootCauseLabels = nil
+	// Build TargetsByStatus index now that we know all the statuses.
+	for _, t := range idx.BuildTargetByLabel {
+		idx.TargetsByStatus[t.Status] = append(idx.TargetsByStatus[t.Status], t)
+	}
+	for _, t := range idx.TestTargetByLabel {
+		idx.TargetsByStatus[t.Status] = append(idx.TargetsByStatus[t.Status], t)
+	}
+	// Sort TargetsByStatus list values.
+	for _, targets := range idx.TargetsByStatus {
+		sort.Slice(targets, func(i, j int) bool {
+			return targets[i].GetMetadata().GetLabel() < targets[j].GetMetadata().GetLabel()
+		})
 	}
 }
