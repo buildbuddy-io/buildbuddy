@@ -40,13 +40,37 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     githubInstallationsResponse: null,
     isCreating: false,
 
-    template: this.props.search.get("template") || "",
-    repoName: this.props.search.get("name") || "",
+    template: this.getTemplate(),
+    repoName: this.getRepoName(),
     private: true,
 
     repoResponse: null,
     workflowResponse: null,
   };
+
+  getTemplate() {
+    let paramTemplate = this.props.search.get("template");
+    if (paramTemplate) {
+      return paramTemplate;
+    }
+    let referrer = document.referrer;
+    if (referrer.startsWith("https://github.com/")) {
+      return referrer;
+    }
+    return "";
+  }
+
+  getRepoName() {
+    let paramRepoName = this.props.search.get("name");
+    if (paramRepoName) {
+      return paramRepoName;
+    }
+    let lastTemplatePath = this.getTemplate().replace(/\/$/, "").split("/").pop();
+    if (lastTemplatePath) {
+      return lastTemplatePath;
+    }
+    return "";
+  }
 
   fetchGithubInstallations() {
     if (!this.props.user || !this.props.user.githubToken) {
