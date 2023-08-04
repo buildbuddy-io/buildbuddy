@@ -295,6 +295,15 @@ func TestTerminalOutput(t *testing.T) {
 	require.Contains(t, term.Render(), "\x1b[32mINFO")
 }
 
+func TestFix(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+
+	cmd := testcli.Command(t, ws, "fix", "-mode", "diff")
+	b, err := testcli.CombinedOutput(cmd)
+
+	require.NoError(t, err, "output:\n%s", string(b))
+}
+
 func retryUntilSuccess(t *testing.T, f func() error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
