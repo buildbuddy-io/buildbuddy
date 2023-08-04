@@ -22,6 +22,9 @@ import (
 */
 import "C"
 
+// Number of memory pages the handler should copy each time it resolves a page fault
+const uffdCopySizePages = 1000
+
 // UFFD macros - see README for more info
 const UFFDIO_COPY = 0xc028aa03
 
@@ -96,6 +99,13 @@ func NewHandler() (*Handler, error) {
 //
 // This method is idempotent. If the handler is already running, it will not do anything
 func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blockio.COWStore) error {
+	if h.copySizeBytes() < memoryStore.ChunkSizeBytes() {
+		// The copy size should be less than the chunk size because it would be inefficient
+		// to fetch multiple chunks from the cache to serve a page fault for a single memory page
+		return status.InvalidArgumentErrorf("uffd copy size %d must be less than cow store chunk size %d",
+			h.copySizeBytes(), memoryStore.ChunkSizeBytes())
+	}
+
 	if h.quitChan != nil {
 		log.Info("UFFD handler was already running when Start() was called")
 		return nil
@@ -239,7 +249,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 			return status.WrapError(err, "translate to store offset")
 		}
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-		hostAddr, allocatedLen, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
+		hostAddr, err := memoryStore.GetChunkStartAddress(uintptr(faultStoreOffset), false /*write*/)
 		if err != nil {
 			return status.WrapError(err, "get backing page address")
 		}
@@ -251,24 +261,24 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 		}
 
 		destAddr := uint64(guestPageAddr - relOffset)
-		_, err = h.resolvePageFault(destAddr, uint64(hostAddr), uint64(allocatedLen))
+		_, err = h.resolvePageFault(destAddr, uint64(hostAddr))
 		if err != nil {
 			return err
 		}
 	}
 }
 
-// resolvePageFault copies `size` bytes of memory from a `Src` address to the faulting region `Dst`
+// resolvePageFault copies memory from a `Src` address to the faulting region `Dst`
 //
 // When complete, the UFFDIO_COPY call wakes up the process that triggered the page fault (When a process
 // attempts to access unallocated memory, it triggers a page fault and hangs until it has been resolved)
 //
 // Returns the number of bytes copied
-func (h *Handler) resolvePageFault(faultingRegion uint64, src uint64, size uint64) (int64, error) {
+func (h *Handler) resolvePageFault(faultingRegion uint64, src uint64) (int64, error) {
 	copyData := uffdioCopy{
 		Dst: faultingRegion,
 		Src: src,
-		Len: uint64(size),
+		Len: uint64(h.copySizeBytes()),
 	}
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, h.uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 	if errno != 0 {
@@ -346,4 +356,10 @@ func guestMemoryAddrToStoreOffset(addr uintptr, mappings []GuestRegionUFFDMappin
 		return m.Offset + relativeOffset, nil
 	}
 	return 0, status.InternalErrorf("page address 0x%x not found in guest region UFFD mappings", addr)
+}
+
+// Number of bytes the handler should copy each time it resolves a page fault
+// This should be a multiple of the page size
+func copySizeBytes() int64 {
+	return int64(os.Getpagesize() * uffdCopySizePages)
 }
