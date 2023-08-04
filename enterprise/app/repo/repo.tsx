@@ -157,7 +157,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
 
   getSecrets() {
     let s = this.props.search.get("secret") || this.props.search.get("secrets") || "";
-    return s.split(",");
+    return s ? s.split(",") : [];
   }
 
   async handleCreateClicked() {
