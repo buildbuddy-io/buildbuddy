@@ -373,6 +373,12 @@ func CanonicalizeArgs(args []string) ([]string, error) {
 }
 
 func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool) ([]string, error) {
+	bazelCommand, _ := GetBazelCommandAndIndex(args)
+	if bazelCommand == "" {
+		// Not a bazel command; no startup args to canonicalize.
+		return args, nil
+	}
+
 	args, execArgs := arg.SplitExecutableArgs(args)
 	schema, err := getCommandLineSchema(args, help, onlyStartupOptions)
 	if err != nil {
