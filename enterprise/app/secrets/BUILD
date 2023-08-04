@@ -44,12 +44,20 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/router",
+        "//enterprise/app/secrets:secret_util",
+        "@npm//@types/react",
+        "@npm//path-browserify",  # keep
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "secret_util",
+    srcs = ["secret_util.ts"],
+    deps = [
         "//app/service:rpc_service",
         "//proto:secrets_ts_proto",
         "@npm//@types/libsodium-wrappers",
-        "@npm//@types/react",
         "@npm//libsodium-wrappers",
-        "@npm//path-browserify",  # keep
-        "@npm//react",
     ],
 )

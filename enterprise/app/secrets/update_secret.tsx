@@ -3,12 +3,10 @@ import FilledButton from "../../../app/components/button/button";
 import TextInput from "../../../app/components/input/input";
 import { TextLink } from "../../../app/components/link/link";
 import Spinner from "../../../app/components/spinner/spinner";
-import { secrets } from "../../../proto/secrets_ts_proto";
-import rpc_service from "../../../app/service/rpc_service";
 import error_service from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import alert_service from "../../../app/alert/alert_service";
-import sodium from "libsodium-wrappers";
+import { encryptAndUpdate } from "./secret_util";
 
 export interface UpdateSecretProps {
   name?: string;
@@ -31,52 +29,15 @@ export default class UpdateSecretComponent extends React.Component<UpdateSecretP
     const name = this.props.name || this.state.name || "";
     const value = this.state.value || "";
 
-    sodium.ready
-      .then(() => {
-        this.encryptAndUpdate(name!, value!);
-      })
-      .catch((e) => {
-        error_service.handleError(e);
-        this.setState({ loading: false });
-      });
-  }
-
-  private encryptAndUpdate(name: string, value: string) {
-    rpc_service.service
-      .getPublicKey(secrets.GetPublicKeyRequest.create({}))
-      .then((response) => {
-        const typedResponse = response as secrets.GetPublicKeyResponse;
-        if (!typedResponse.publicKey) {
-          throw new Error("Server did not return public key.");
-        }
-        const secret = this.encrypt(typedResponse.publicKey, name, value.trim());
-        this.updateSecret(secret);
-      })
-      .catch((e) => {
-        error_service.handleError(e);
-        this.setState({ loading: false });
-      });
-  }
-
-  private encrypt(publicKey: secrets.PublicKey, name: string, value: string): secrets.ISecret {
-    // See https://docs.github.com/en/rest/actions/secrets#example-encrypting-a-secret-using-nodejs
-    const binkey = sodium.from_base64(publicKey.value, sodium.base64_variants.ORIGINAL);
-    const binsec = sodium.from_string(value);
-    const encBytes = sodium.crypto_box_seal(binsec, binkey);
-    const output = sodium.to_base64(encBytes, sodium.base64_variants.ORIGINAL);
-
-    return { name, value: output };
-  }
-
-  private updateSecret(secret: secrets.ISecret) {
-    rpc_service.service
-      .updateSecret(secrets.UpdateSecretRequest.create({ secret: secrets.Secret.create(secret) }))
+    encryptAndUpdate(name, value)
       .then(() => {
         alert_service.success("Successfully encrypted and saved secret.");
         router.navigateTo("/settings/org/secrets");
       })
-      .catch((e) => error_service.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+      .catch((e) => {
+        error_service.handleError(e);
+        this.setState({ loading: false });
+      });
   }
 
   private onChangeSecretName(e: React.ChangeEvent<HTMLInputElement>) {
