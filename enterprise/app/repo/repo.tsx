@@ -176,7 +176,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   async saveSecrets() {
-    await this.getSecrets().map((s) => encryptAndUpdate(s, this.state.secrets.get(s) || ""));
+    await Promise.all(this.getSecrets().map((s) => encryptAndUpdate(s, this.state.secrets.get(s) || "")));
   }
 
   async handleDeployClicked(repoResponse: any) {
