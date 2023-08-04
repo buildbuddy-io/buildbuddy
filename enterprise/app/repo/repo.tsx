@@ -371,7 +371,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             <div className="repo-title">Workflows</div>
             <div className="running-actions">
               {this.state.workflowResponse.actionStatuses.map((s) => (
-                <a href={`/invocation/${s.invocationId}`} target="_blank">
+                <a href={`/invocation/${s.invocationId}?queued=true`} target="_blank">
                   <ChevronRightSquare /> {s.actionName}
                 </a>
               ))}
