@@ -9,12 +9,15 @@ go_library(
         "@platforms//os:linux",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//enterprise/server/remote_execution/blockio",
-        "//server/util/log",
-        "//server/util/status",
-        "@org_golang_x_sys//unix",
-    ],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/blockio",
+            "//server/util/log",
+            "//server/util/status",
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 package(default_visibility = ["//enterprise:__subpackages__"])
