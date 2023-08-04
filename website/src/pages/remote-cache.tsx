@@ -19,7 +19,7 @@ function Component() {
         />
         <Hero
           title="Globally distributed"
-          subtitle="BuildBuddy Cloud cache has 61 points of presence around the world to minimize ping and maximize throughput."
+          subtitle="BuildBuddy Cloud cache has over 100 points of presence around the world to minimize ping and maximize throughput."
           image={require("../../static/img/ping.png")}
           bigImage={true}
         />
