@@ -764,7 +764,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	xl := xcode.NewXcodeLocator()
 	env.SetXcodeLocator(xl)
 
-	err = resources.Configure()
+	err := resources.Configure()
 	require.NoError(r.t, err)
 
 	flags.Set(t, "executor.pool", options.Pool)
