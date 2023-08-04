@@ -76,7 +76,7 @@ const (
 	firecrackerSocketWaitTimeout = 3 * time.Second
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 30 * time.Second
+	vSocketDialTimeout = 50 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
