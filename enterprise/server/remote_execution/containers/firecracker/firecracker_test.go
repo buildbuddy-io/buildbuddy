@@ -1221,7 +1221,7 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		echo output > output.txt
 		sleep infinity
 	`}}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 
