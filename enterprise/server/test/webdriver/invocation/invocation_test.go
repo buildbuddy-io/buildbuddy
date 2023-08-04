@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,7 +172,15 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 		wt.Find(`.dialog-wrapper button[type="submit"]`).Click()
 	}
 	wt.Find(`.api-key-value-hide`).Click()
-	apiKey := wt.Find(".api-key-value").Text()
+	apiKey := ""
+	for i := 0; i < 5; i++ {
+		apiKey = wt.Find(".api-key-value").Text()
+		if !strings.Contains(apiKey, "••••") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.NotContains(t, apiKey, "••••")
 
 	// Get the build flags for BES + cache, using the personal API key
 	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(
