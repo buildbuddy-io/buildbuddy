@@ -272,15 +272,14 @@ func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
 	return chunkRelativeAddress
 }
 
-// GetChunkStartAddressAndSize returns the start address of the chunk containing the input offset,
-// and the chunk size
-func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
+// GetChunkStartAddress returns the start address of the chunk containing the input offset.
+func (c *COWStore) GetChunkStartAddress(offset uintptr, write bool) (uintptr, error) {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkStartAddress, err := c.GetPageAddress(uintptr(chunkStartOffset), write)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	return chunkStartAddress, c.chunkSizeBytes, nil
+	return chunkStartAddress, nil
 }
 
 // GetPageAddress returns the memory address for the given byte offset into the store.
