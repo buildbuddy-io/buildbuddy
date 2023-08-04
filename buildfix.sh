@@ -62,7 +62,7 @@ fi
 
 if ((GAZELLE)); then
   echo "Fixing BUILD deps with gazelle..."
-  CLI_VERSION="5.0.20" # keep in sync with checkstyle.yaml
+  CLI_VERSION="5.0.21" # keep in sync with checkstyle.yaml
   USE_BAZEL_VERSION="buildbuddy-io/$CLI_VERSION" bazel fix
 fi
 
