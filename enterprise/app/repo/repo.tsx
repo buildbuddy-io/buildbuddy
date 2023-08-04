@@ -182,7 +182,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   async handleDeployClicked(repoResponse: any) {
     this.setState({ isDeploying: true });
     try {
-      if (this.getSecrets()) {
+      if (this.getSecrets().length) {
         await this.saveSecrets();
       }
       let workflowResponse = await this.runWorkflow(repoResponse.repoUrl);
