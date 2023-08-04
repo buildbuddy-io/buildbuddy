@@ -597,23 +597,7 @@ func (a *OpenIDAuthenticator) claimsFromAPIKeyID(ctx context.Context, apiKeyID s
 	return claims.APIKeyGroupClaims(akg), nil
 }
 
-func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pass string) (*claims.Claims, error) {
-	authDB := a.env.GetAuthDB()
-	if authDB == nil {
-		return nil, status.FailedPreconditionError("AuthDB not configured")
-	}
-	akg, err := authDB.GetAPIKeyGroupFromBasicAuth(ctx, login, pass)
-	if err != nil {
-		return nil, err
-	}
-	return claims.APIKeyGroupClaims(akg), nil
-}
-
 func (a *OpenIDAuthenticator) claimsFromAuthorityString(ctx context.Context, authority string) (*claims.Claims, error) {
-	loginPass := strings.SplitN(authority, ":", 2)
-	if len(loginPass) == 2 {
-		return a.claimsFromBasicAuth(ctx, loginPass[0], loginPass[1])
-	}
 	return a.claimsFromAPIKey(ctx, authority)
 }
 

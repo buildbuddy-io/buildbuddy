@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -317,28 +316,6 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		}
 		return nil, err
 	}
-	return akg, nil
-}
-
-func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (interfaces.APIKeyGroup, error) {
-	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		// User-owned keys are disallowed here, since the group-level write
-		// token should not grant access to user-level keys.
-		qb := d.newAPIKeyGroupQuery(false /*=allowUserOwnedKeys*/)
-		qb.AddWhereClause(`g.group_id = ?`, login)
-		qb.AddWhereClause(`g.write_token = ?`, pass)
-		q, args := qb.Build()
-		existingRow := tx.Raw(q, args...)
-		return existingRow.Take(akg).Error
-	})
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:*** not found", login)
-		}
-		return nil, err
-	}
-	log.Infof("Group %q successfully authed using write_token", login)
 	return akg, nil
 }
 

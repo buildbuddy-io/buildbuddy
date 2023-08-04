@@ -341,7 +341,6 @@ type AuthDB interface {
 	ClearSession(ctx context.Context, sessionID string) error
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
-	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
 	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 
 	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
