@@ -166,7 +166,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       await this.linkInstallation();
       let repoResponse = await this.createRepo();
       this.setState({ repoResponse: repoResponse });
-      if (!this.getSecrets()) {
+      if (!this.getSecrets().length) {
         this.handleDeployClicked(repoResponse);
       }
     } catch (e) {
