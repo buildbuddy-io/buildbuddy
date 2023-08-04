@@ -135,25 +135,22 @@
   margin-right: 8px;
 }
 
-.deployment-configs {
+.create-repo-page .deployment-configs {
   display: table;
   border-spacing: 16px;
   width: 100%;
 }
 
-.deployment-config {
+.create-repo-page .deployment-config {
   display: table-row;
   align-items: center;
   gap: 16px;
 }
 
-.deployment-config div {
+.create-repo-page .deployment-config div {
   display: table-cell;
 }
 
-.deployment-config div:first-of-type {
+.create-repo-page .deployment-config div:first-of-type {
   font-family: monospace;
-}
-
-.deployment-config div:last-of-type {
 }
