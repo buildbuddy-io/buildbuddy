@@ -1295,17 +1295,17 @@ func getOptionValues(options []string, optionName string) []string {
 type invocationEventCB func(*inpb.InvocationEvent) error
 
 func streamRawInvocationEvents(env environment.Env, ctx context.Context, streamID string, callback invocationEventCB) error {
-	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
+	eventAllocator := func() proto.Message { return &inpb.InvocationEvent{} }
+	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID, eventAllocator)
 	for {
-		event := &inpb.InvocationEvent{}
-		err := pr.ReadProto(ctx, event)
+		event, err := pr.ReadProto(ctx)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return err
 		}
-		if err := callback(event); err != nil {
+		if err := callback(event.(*inpb.InvocationEvent)); err != nil {
 			return err
 		}
 	}

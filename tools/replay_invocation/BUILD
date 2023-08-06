@@ -19,6 +19,7 @@ go_library(
         "//server/util/protofile",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/anypb",
     ],
 )
