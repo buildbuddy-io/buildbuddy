@@ -752,6 +752,10 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if err != nil {
 		return err
 	}
+	metrics.PebbleCacheAtimeUpdateCount.With(prometheus.Labels{
+		metrics.CacheNameLabel: p.name,
+		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
+	}).Inc()
 	return db.Set(keyBytes, protoBytes, pebble.NoSync)
 }
 
