@@ -38,6 +38,7 @@ ts_library(
         "//enterprise/app/sidebar",
         "//enterprise/app/tap",
         "//enterprise/app/trends",
+        "//enterprise/app/trends:new_trends",
         "//enterprise/app/usage",
         "//enterprise/app/workflows",
         "@npm//@types/react",
