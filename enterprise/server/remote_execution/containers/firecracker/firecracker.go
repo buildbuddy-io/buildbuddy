@@ -603,17 +603,7 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 	return nil
 }
 
-// SaveSnapshot pauses the VM and takes a snapshot, saving the snapshot to
-// cache.
-//
-// If the VM is resumed after this point, the VM state and memory snapshots
-// immediately become invalid and another call to SaveSnapshot is required. This
-// is because we don't save a copy of the disk when taking a snapshot, and
-// instead reuse the same disk image across snapshots (for performance reasons).
-// Resuming the VM may change the disk state, causing the original VM state to
-// become invalid (e.g., the kernel's page cache may no longer be in sync with
-// the disk, which can cause all sorts of issues).
-func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
+func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotType string, baseMemSnapshotPath string, memSnapshotPath string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -621,64 +611,6 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	defer func() {
 		log.CtxDebugf(ctx, "SaveSnapshot took %s", time.Since(start))
 	}()
-
-	snapshotType := fullSnapshotType
-	memSnapshotFile := fullMemSnapshotName
-	baseMemSnapshotPath := ""
-
-	if *enableUFFD {
-		if c.memoryStore != nil {
-			snapshotType = diffSnapshotType
-			memSnapshotFile = diffMemSnapshotName
-		}
-	} else {
-		// If a snapshot already exists, get a reference to the memory snapshot so
-		// that we can perform a diff snapshot and merge the modified pages on top
-		// of the existing memory snapshot.
-		baseSnapshotUnpackDir, err := c.unpackBaseSnapshot(ctx)
-		if err != nil {
-			// Ignore Unavailable errors since it just means there's no base
-			// snapshot yet (which will happen on the first task executed), or the
-			// snapshot was evicted from cache. When this happens, just fall back to
-			// taking a full snapshot.
-			if !status.IsUnavailableError(err) {
-				return err
-			}
-		} else {
-			// Once we've merged the base snapshot and linked it to filecache, we
-			// don't need the unpack dir anymore and can unlink.
-			defer os.RemoveAll(baseSnapshotUnpackDir)
-			baseMemSnapshotPath = filepath.Join(baseSnapshotUnpackDir, fullMemSnapshotName)
-			snapshotType = diffSnapshotType
-			memSnapshotFile = diffMemSnapshotName
-		}
-	}
-
-	if err := c.pauseVM(ctx); err != nil {
-		return err
-	}
-
-	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
-	vmStateSnapshotPath := filepath.Join(c.getChroot(), vmStateSnapshotName)
-
-	// If an older snapshot is present -- nuke it since we're writing a new one.
-	if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
-		return status.WrapError(err, "failed to remove existing memory snapshot")
-	}
-	if err := disk.RemoveIfExists(vmStateSnapshotPath); err != nil {
-		return status.WrapError(err, "failed to remove existing VM state snapshot")
-	}
-
-	machineStart := time.Now()
-	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
-		params.Body.SnapshotType = snapshotType
-	}
-	if err := c.machine.CreateSnapshot(ctx, memSnapshotFile, vmStateSnapshotName, snapshotTypeOpt); err != nil {
-		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
-		return err
-	}
-
-	log.CtxDebugf(ctx, "VMM CreateSnapshot %s took %s", snapshotType, time.Since(machineStart))
 
 	if snapshotType == diffSnapshotType {
 		mergeStart := time.Now()
@@ -702,6 +634,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		c.memoryStore = memoryStore
 	}
 
+	vmStateSnapshotPath := filepath.Join(c.getChroot(), vmStateSnapshotName)
 	opts := &snaploader.CacheSnapshotOptions{
 		VMConfiguration:     c.vmConfig,
 		VMStateSnapshotPath: vmStateSnapshotPath,
@@ -1869,6 +1802,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 
 	var lastErr error
 
+	// TODO: Verify this completes
 	if c.machine != nil {
 		// Note: we don't attempt any kind of clean shutdown here, because at this
 		// point either (a) the VM should be paused and we should have already taken
@@ -1926,6 +1860,15 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 }
 
 // Pause freezes a container so that it no longer consumes CPU resources.
+// It pauses the VM, takes a snapshot, and saves the snapshot to cache
+//
+// If the VM is resumed after this point, the VM state and memory snapshots
+// immediately become invalid and another call to SaveSnapshot is required. This
+// is because we don't save a copy of the disk when taking a snapshot, and
+// instead reuse the same disk image across snapshots (for performance reasons).
+// Resuming the VM may change the disk state, causing the original VM state to
+// become invalid (e.g., the kernel's page cache may no longer be in sync with
+// the disk, which can cause all sorts of issues).
 func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -1934,14 +1877,94 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	defer func() {
 		log.CtxDebugf(ctx, "Pause took %s", time.Since(start))
 	}()
-	if err := c.SaveSnapshot(ctx); err != nil {
-		log.CtxErrorf(ctx, "Error saving snapshot: %s", err)
+
+	snapshotType, memSnapshotFile, baseSnapshotUnpackDir, err := c.getSnapshotInfo(ctx)
+	if err != nil {
 		return err
 	}
 
+	if err := c.pauseVM(ctx); err != nil {
+		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
+		return err
+	}
+
+	// If an older snapshot is present -- nuke it since we're writing a new one.
+	if err := c.cleanupOldSnapshots(memSnapshotFile); err != nil {
+		log.CtxErrorf(ctx, "Error cleaning up old snapshot: %s", err)
+		return err
+	}
+
+	if err := c.createSnapshot(ctx, snapshotType, memSnapshotFile); err != nil {
+		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
+		return err
+	}
+
+	// Ensure VM is stopped to ensure nothing (like the UFFD page fault handler)
+	// is modifying the snapshot files when we save them
 	if err := c.Remove(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error cleaning up after pause: %s", err)
 		return err
+	}
+
+	baseMemSnapshotPath := filepath.Join(baseSnapshotUnpackDir, fullMemSnapshotName)
+	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
+	if err := c.saveSnapshot(ctx, snapshotType, baseMemSnapshotPath, memSnapshotPath); err != nil {
+		log.CtxErrorf(ctx, "Error saving snapshot: %s", err)
+		return err
+	}
+	// Once we've merged the base snapshot and linked it to filecache, we
+	// don't need the unpack dir anymore and can unlink.
+	defer os.RemoveAll(baseSnapshotUnpackDir)
+
+	return nil
+}
+
+func (c *FirecrackerContainer) getSnapshotInfo(ctx context.Context) (snapshotType string, memSnapshotFile string, baseSnapshotUnpackDir string, err error) {
+	if *enableUFFD && c.memoryStore != nil {
+		return diffSnapshotType, diffMemSnapshotName, "", nil
+	}
+
+	// If a snapshot already exists, get a reference to the memory snapshot so
+	// that we can perform a diff snapshot and merge the modified pages on top
+	// of the existing memory snapshot.
+	baseSnapshotUnpackDir, err = c.unpackBaseSnapshot(ctx)
+	if err != nil {
+		// Ignore Unavailable errors since it just means there's no base
+		// snapshot yet (which will happen on the first task executed), or the
+		// snapshot was evicted from cache. When this happens, just fall back to
+		// taking a full snapshot.
+		if status.IsUnavailableError(err) {
+			return fullSnapshotType, fullMemSnapshotName, "", nil
+		}
+		return "", "", "", err
+	}
+
+	return diffSnapshotType, diffMemSnapshotName, baseSnapshotUnpackDir, nil
+}
+
+func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotType string, memSnapshotFile string) error {
+	machineStart := time.Now()
+	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
+		params.Body.SnapshotType = snapshotType
+	}
+	if err := c.machine.CreateSnapshot(ctx, memSnapshotFile, vmStateSnapshotName, snapshotTypeOpt); err != nil {
+		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
+		return err
+	}
+
+	log.CtxDebugf(ctx, "VMM CreateSnapshot %s took %s", snapshotType, time.Since(machineStart))
+	return nil
+}
+
+func (c *FirecrackerContainer) cleanupOldSnapshots(memSnapshotFile string) error {
+	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
+	vmStateSnapshotPath := filepath.Join(c.getChroot(), vmStateSnapshotName)
+
+	if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
+		return status.WrapError(err, "failed to remove existing memory snapshot")
+	}
+	if err := disk.RemoveIfExists(vmStateSnapshotPath); err != nil {
+		return status.WrapError(err, "failed to remove existing VM state snapshot")
 	}
 	return nil
 }
