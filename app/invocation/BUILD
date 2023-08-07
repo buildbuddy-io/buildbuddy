@@ -246,6 +246,7 @@ ts_library(
     srcs = ["invocation_details_card.tsx"],
     deps = [
         "//app/alert:alert_service",
+        "//app/components/banner",
         "//app/invocation:invocation_model",
         "//app/util:clipboard",
         "//proto:command_line_ts_proto",

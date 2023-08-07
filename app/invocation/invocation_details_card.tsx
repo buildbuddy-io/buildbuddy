@@ -5,6 +5,7 @@ import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import { command_line } from "../../proto/command_line_ts_proto";
 import shlex from "shlex";
+import Banner from "../components/banner/banner";
 
 interface Props {
   model: InvocationModel;
@@ -275,6 +276,9 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                       onClick={this.handleCopyClicked.bind(this, this.explicitCommandLine())}
                     />
                   </div>
+                  {this.props.model.invocation.patternsTruncated && (
+                    <Banner type="warning">Patterns have been truncated due to size limitations.</Banner>
+                  )}
                   <div className="invocation-section">
                     <code className="wrap">{this.explicitCommandLine()}</code>
                   </div>
@@ -291,6 +295,9 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                       )}
                     />
                   </div>
+                  {this.props.model.invocation.patternsTruncated && (
+                    <Banner type="warning">Patterns have been truncated due to size limitations.</Banner>
+                  )}
                   <div className="invocation-section">
                     <code className="wrap">
                       {this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.cmdLine ?? [])}

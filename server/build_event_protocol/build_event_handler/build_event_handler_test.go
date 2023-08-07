@@ -1157,3 +1157,84 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, exists)
 }
+
+func TestTruncateStringSlice(t *testing.T) {
+	for _, test := range []struct {
+		Strings   []string
+		Limit     int
+		Expected  []string
+		Truncated bool
+	}{
+		{
+			Strings:   nil,
+			Limit:     0,
+			Expected:  nil,
+			Truncated: false,
+		},
+		{
+			Strings:   []string{""},
+			Limit:     0,
+			Expected:  []string{""},
+			Truncated: false,
+		},
+		{
+			Strings:   []string{"a"},
+			Limit:     0,
+			Expected:  nil,
+			Truncated: true,
+		},
+		{
+			Strings:   []string{"ツ"}, // note: len("ツ") is 3
+			Limit:     1,
+			Expected:  nil,
+			Truncated: true,
+		},
+		{
+			Strings:   []string{"a"},
+			Limit:     1,
+			Expected:  []string{"a"},
+			Truncated: false,
+		},
+		{
+			Strings:   []string{"ab"},
+			Limit:     1,
+			Expected:  nil,
+			Truncated: true,
+		},
+		{
+			Strings:   []string{"a", "b"},
+			Limit:     1,
+			Expected:  []string{"a"},
+			Truncated: true,
+		},
+		{
+			Strings:   []string{"a", "b"},
+			Limit:     2,
+			Expected:  []string{"a"},
+			Truncated: true,
+		},
+		{
+			Strings:   []string{"a", "b"},
+			Limit:     3,
+			Expected:  []string{"a", "b"},
+			Truncated: false,
+		},
+		{
+			Strings:   []string{"a", "bc"},
+			Limit:     3,
+			Expected:  []string{"a"},
+			Truncated: true,
+		},
+	} {
+		t.Run(fmt.Sprintf("%s/%d", test.Strings, test.Limit), func(t *testing.T) {
+			out, truncated := build_event_handler.TruncateStringSlice(test.Strings, test.Limit)
+
+			if len(out) == 0 {
+				out = nil
+			}
+
+			assert.Equal(t, test.Expected, out)
+			assert.Equal(t, test.Truncated, truncated, "truncated should be %t", test.Truncated)
+		})
+	}
+}

@@ -137,6 +137,10 @@ message Invocation {
   // Target groups, containing initial data pages for target listings. The
   // target group with status unspecified will have artifacts expanded.
   repeated target.TargetGroup target_groups = 32;
+
+  // Whether the pattern expanded event was truncated due to the total pattern
+  // length being too large.
+  bool patterns_truncated = 33;
 }
 
 message InvocationEvent {
