@@ -289,11 +289,11 @@ export default class EnterpriseRootComponent extends React.Component {
                   )}
                   {trends && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
-                      {true && (
+                      {capabilities.config.newTrendsUiEnabled && (
                         <NewTrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
                       )}
-                      {false && (
-                        <TrendsComponent user={this.state.user!} search={this.state.search} tab={this.state.tab} />
+                      {!capabilities.config.newTrendsUiEnabled && (
+                        <TrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
                       )}
                     </Suspense>
                   )}

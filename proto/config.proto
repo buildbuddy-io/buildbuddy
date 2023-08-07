@@ -113,4 +113,7 @@ message FrontendConfig {
 
   // Whether to show the Audit Logs option in the sidebar.
   bool audit_logs_ui_enabled = 37;
+
+  // Whether to show the new, more split-out trends UI.
+  bool new_trends_ui_enabled = 38;
 }
