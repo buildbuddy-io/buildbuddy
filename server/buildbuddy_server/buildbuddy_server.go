@@ -1305,6 +1305,7 @@ func (s *BuildBuddyServer) UpdateSecret(ctx context.Context, req *skpb.UpdateSec
 			if newSecret {
 				action = alpb.Action_CREATE
 			}
+			req.GetSecret().Value = ""
 			al.Log(ctx, auditlog.SecretResourceID(req.GetSecret().GetName()), action, req)
 		}
 		return rsp, err
