@@ -22,9 +22,6 @@ import (
 */
 import "C"
 
-// Number of memory pages the handler should copy each time it resolves a page fault
-const uffdCopySizePages = 1000
-
 // UFFD macros - see README for more info
 const UFFDIO_COPY = 0xc028aa03
 
@@ -238,7 +235,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 			return status.WrapError(err, "translate to store offset")
 		}
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-		hostAddr, err := memoryStore.GetChunkStartAddress(uintptr(faultStoreOffset), false /*write*/)
+		hostAddr, allocatedLen, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
 		if err != nil {
 			return status.WrapError(err, "get backing page address")
 		}
@@ -257,7 +254,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 }
 
-// resolvePageFault copies memory from a `Src` address to the faulting region `Dst`
+// resolvePageFault copies `size` bytes of memory from a `Src` address to the faulting region `Dst`
 //
 // When complete, the UFFDIO_COPY call wakes up the process that triggered the page fault (When a process
 // attempts to access unallocated memory, it triggers a page fault and hangs until it has been resolved)
@@ -267,7 +264,7 @@ func resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint
 	copyData := uffdioCopy{
 		Dst: faultingRegion,
 		Src: src,
-		Len: uint64(copySizeBytes()),
+		Len: uint64(size),
 	}
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 	if errno != 0 {
@@ -340,10 +337,4 @@ func guestMemoryAddrToStoreOffset(addr uintptr, mappings []GuestRegionUFFDMappin
 		return m.Offset + relativeOffset, nil
 	}
 	return 0, status.InternalErrorf("page address 0x%x not found in guest region UFFD mappings", addr)
-}
-
-// Number of bytes the handler should copy each time it resolves a page fault
-// This should be a multiple of the page size
-func copySizeBytes() int64 {
-	return int64(os.Getpagesize() * uffdCopySizePages)
 }
