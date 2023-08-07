@@ -34,7 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
+	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -1120,7 +1120,7 @@ func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string
 
 	locateBinariesOnce, _ := locateBinariesOnceMap.LoadOrStore(workingDir, &sync.Once{})
 	locateBinariesOnce.(*sync.Once).Do(func() {
-		fsys := vmsupport.Get()
+		fsys := vmsupport_bundle.Get()
 		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, fsys, "enterprise/vmsupport/bin/initrd.cpio", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
