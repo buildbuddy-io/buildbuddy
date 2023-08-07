@@ -21,3 +21,11 @@ func TestDecodeAndEncodeOffsetLimit(t *testing.T) {
 	assert.Equal(t, in.Offset, out.Offset, "unexpected Offset")
 	assert.Equal(t, in.Limit, out.Limit, "unexpected Limit")
 }
+
+func TestDecodeEmptyStringToEmptyProto(t *testing.T) {
+	page, err := paging.DecodeOffsetLimit("")
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(0), page.Offset)
+	assert.Equal(t, int64(0), page.Limit)
+}

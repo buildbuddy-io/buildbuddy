@@ -8,6 +8,7 @@ import "proto/command_line.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
 import "proto/stat_filter.proto";
+import "proto/target.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
@@ -132,6 +133,10 @@ message Invocation {
     string name = 1;
   }
   repeated Tag tags = 31;
+
+  // Target groups, containing initial data pages for target listings. The
+  // target group with status unspecified will have artifacts expanded.
+  repeated target.TargetGroup target_groups = 32;
 }
 
 message InvocationEvent {

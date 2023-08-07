@@ -103,7 +103,7 @@ func FillActionOutputFilesFromBuildEvent(event *bespb.BuildEvent, action *apipb.
 	return nil
 }
 
-func testStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
+func TestStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
 	switch testStatus {
 	case bespb.TestStatus_PASSED:
 		return cmnpb.Status_PASSED
@@ -158,14 +158,18 @@ func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 	case *bespb.BuildEvent_TestSummary:
 		{
 			target := tm[event.GetId().GetTestSummary().GetLabel()]
-			target.Status = testStatusToStatus(p.TestSummary.OverallStatus)
-			startTime := timeutil.GetTimeWithFallback(p.TestSummary.FirstStartTime, p.TestSummary.FirstStartTimeMillis)
-			duration := timeutil.GetDurationWithFallback(p.TestSummary.TotalRunDuration, p.TestSummary.TotalRunDurationMillis)
-			target.Timing = &cmnpb.Timing{
-				StartTime: timestamppb.New(startTime),
-				Duration:  durationpb.New(duration),
-			}
+			target.Status = TestStatusToStatus(p.TestSummary.OverallStatus)
+			target.Timing = TestTimingFromSummary(p.TestSummary)
 		}
+	}
+}
+
+func TestTimingFromSummary(testSummary *bespb.TestSummary) *cmnpb.Timing {
+	startTime := timeutil.GetTimeWithFallback(testSummary.FirstStartTime, testSummary.FirstStartTimeMillis)
+	duration := timeutil.GetDurationWithFallback(testSummary.TotalRunDuration, testSummary.TotalRunDurationMillis)
+	return &cmnpb.Timing{
+		StartTime: timestamppb.New(startTime),
+		Duration:  durationpb.New(duration),
 	}
 }
 

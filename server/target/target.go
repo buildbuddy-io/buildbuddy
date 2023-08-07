@@ -5,12 +5,16 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -20,6 +24,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	tppb "github.com/buildbuddy-io/buildbuddy/proto/target_pagination"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -36,7 +43,18 @@ const (
 	coverageCommand = "coverage"
 
 	// The number of distinct commits returned in GetTargetHistoryResponse.
-	targetPageSize = 20
+	targetHistoryPageSize = 20
+
+	// The max number of targets returned in each TargetGroup page.
+	targetPageSize = 12
+
+	// When returning a paginated list of all targets in an invocation with
+	// files expanded, stop returning targets after this many files have been
+	// expanded. This is a "soft" limit because the file list is not truncated,
+	// only the target list. So for example if a target contains 101 files, all
+	// 101 files will be returned, but only that target will be returned in the
+	// target page.
+	targetFilesSoftLimit = 100
 )
 
 func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
@@ -112,6 +130,152 @@ func GetTargetHistory(ctx context.Context, env environment.Env, req *trpb.GetTar
 		return readPaginatedTargetsFromOLAPDB(ctx, env, req)
 	}
 	return readPaginatedTargetsFromPrimaryDB(ctx, env, req)
+}
+
+func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, idx *event_index.Index, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
+	page, err := paging.DecodeOffsetLimit(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	if req.GetTargetLabel() != "" && req.GetStatus() == 0 {
+		return nil, status.InvalidArgumentError("status is required when fetching a single target label")
+	}
+
+	var statuses []cmpb.Status
+	if req.GetTargetLabel() == "" && req.GetStatus() == 0 {
+		// Requesting a general target listing; fetch initial data pages for
+		// status 0 (for the top-level target+files listing), plus each status
+		// appearing in the build (just metadata).
+		statuses = append(statuses, 0)
+		for s := range idx.TargetsByStatus {
+			statuses = append(statuses, s)
+		}
+	} else {
+		// Requesting a specific target status.
+		statuses = []cmpb.Status{req.GetStatus()}
+	}
+
+	// Build up the TargetGroup for each status.
+	res := &trpb.GetTargetResponse{
+		TargetGroups: make([]*trpb.TargetGroup, 0, len(statuses)),
+	}
+	for _, s := range statuses {
+		g := &trpb.TargetGroup{Status: s}
+		res.TargetGroups = append(res.TargetGroups, g)
+
+		var labels []string
+		if req.GetTargetLabel() != "" {
+			labels = append(labels, req.GetTargetLabel())
+		} else if s == 0 {
+			labels = idx.AllTargetLabels
+		} else {
+			targets := idx.TargetsByStatus[s]
+			for _, t := range targets {
+				labels = append(labels, t.GetMetadata().GetLabel())
+			}
+		}
+		// Set TotalCount based on the length of the label list *before* slicing
+		// based on the page token.
+		g.TotalCount = int64(len(labels))
+
+		// Note, using > and not >= here since the offset is allowed to be
+		// exactly equal to the length, meaning that the invocation is still in
+		// progress and the client should try to fetch the next page starting
+		// with the last available offset.
+		if page.Offset > int64(len(labels)) {
+			return nil, status.InvalidArgumentErrorf("invalid page offset (offset %d, max %d)", page.Offset, len(labels))
+		}
+		labels = labels[page.Offset:]
+		if page.Limit == 0 || page.Limit > targetPageSize {
+			page.Limit = targetPageSize
+		}
+		if int64(len(labels)) > page.Limit {
+			labels = labels[:page.Limit]
+		}
+
+		totalFileCount := 0
+		nextOffset := page.Offset
+		for i, label := range labels {
+			var target *trpb.Target
+			isTestStatus := false
+			switch s {
+			case 0:
+				target = &trpb.Target{Metadata: &trpb.TargetMetadata{Label: label}}
+			case cmpb.Status_BUILDING, cmpb.Status_BUILT, cmpb.Status_FAILED_TO_BUILD:
+				target = idx.BuildTargetByLabel[label]
+			default:
+				target = idx.TestTargetByLabel[label]
+				isTestStatus = true
+			}
+			if target == nil {
+				return nil, status.InternalErrorf("missing required events for target label = %q, status = %d", label, s)
+			}
+			// Clone to avoid messing with the indexed target.
+			target = proto.Clone(target).(*trpb.Target)
+
+			// Expand files only if requesting a single target label in the
+			// request, or when fetching the TargetGroup with status unset (i.e.
+			// the "general" target listing used for the Artifacts card).
+			if s == 0 || req.GetTargetLabel() != "" {
+				target.Files = filesForLabel(idx, label)
+				totalFileCount += len(target.Files)
+			}
+			// Expand TestResult events only when fetching a single label and
+			// if requesting the test status.
+			if req.GetTargetLabel() != "" && isTestStatus {
+				target.TestResultEvents = idx.TestResultEventsByLabel[label]
+			}
+
+			g.Targets = append(g.Targets, target)
+			nextOffset = page.Offset + int64(i) + 1
+
+			if totalFileCount > targetFilesSoftLimit {
+				break
+			}
+		}
+		// When fetching multiple targets (and not just a single target), set
+		// the next page token if there are more targets to fetch or if the
+		// invocation is in progress (since there may be more targets available
+		// on the next fetch).
+		if req.GetTargetLabel() == "" && (nextOffset < g.TotalCount || inv.InvocationStatus == ispb.InvocationStatus_PARTIAL_INVOCATION_STATUS) {
+			tok, err := paging.EncodeOffsetLimit(&pgpb.OffsetLimit{
+				Offset: nextOffset,
+				Limit:  page.Limit,
+			})
+			if err != nil {
+				return nil, err
+			}
+			g.NextPageToken = tok
+		}
+	}
+	return res, nil
+}
+
+func filesForLabel(idx *event_index.Index, label string) []*build_event_stream.File {
+	completed := idx.TargetCompleteEventByLabel[label]
+	if completed == nil {
+		return nil
+	}
+	var out []*build_event_stream.File
+	fullPath := map[*build_event_stream.File]string{}
+	for _, g := range completed.GetOutputGroup() {
+		for _, s := range g.GetFileSets() {
+			for _, f := range idx.NamedSetOfFilesByID[s.GetId()].GetFiles() {
+				if f.GetUri() == "" {
+					// Ignore inlined file contents and symlinks for now.
+					continue
+				}
+				path := append([]string{}, f.GetPathPrefix()...)
+				path = append(path, f.GetName())
+				fullPath[f] = strings.Join(path, "/")
+				out = append(out, f)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return fullPath[out[i]] < fullPath[out[j]]
+	})
+	return out
 }
 
 func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string, groupID string) (*trpb.GetTargetHistoryResponse, error) {
@@ -368,7 +532,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	if paginationToken != nil {
 		ApplyToQuery("latest_created_at_usec", paginationToken, outerCommitQuery)
 	}
-	outerCommitQuery.SetLimit(targetPageSize)
+	outerCommitQuery.SetLimit(targetHistoryPageSize)
 
 	q := query_builder.NewQuery(`
 		SELECT label, rule_type, target_type, test_size, status,
@@ -413,7 +577,7 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 
 	commitQuery.SetGroupBy("commit_sha")
 	commitQuery.SetOrderBy("latest_created_at_usec DESC, commit_sha", true /*=ascending*/)
-	commitQuery.SetLimit(targetPageSize)
+	commitQuery.SetLimit(targetHistoryPageSize)
 
 	// Build the subquery to select columns from Invocations Table
 	joinQuery := query_builder.NewQuery(`
