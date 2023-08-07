@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -38,7 +39,7 @@ type BufferedProtoWriter struct {
 // streamID, because it may still be written to from another goroutine.
 type BufferedProtoReader struct {
 	bs       interfaces.Blobstore
-	q        *blobQueue
+	fetcher  *fetcher
 	readBuf  *bytes.Buffer
 	streamID string
 }
@@ -47,7 +48,7 @@ func NewBufferedProtoReader(bs interfaces.Blobstore, streamID string) *BufferedP
 	return &BufferedProtoReader{
 		streamID: streamID,
 		bs:       bs,
-		q:        newBlobQueue(bs, streamID),
+		fetcher:  newFetcher(bs, streamID),
 	}
 }
 
@@ -142,78 +143,92 @@ func (w *BufferedProtoWriter) WriteProtoToStream(ctx context.Context, msg proto.
 	return nil
 }
 
-type blobReadResult struct {
-	err  error
-	data []byte
+type fetchRequest struct {
+	Index        int
+	ResponseChan chan *fetchResponse
 }
 
-type blobFuture chan blobReadResult
-
-type blobQueue struct {
-	blobstore      interfaces.Blobstore
-	streamID       string
-	futures        []blobFuture
-	maxConnections int
-	numPopped      int
-	done           bool
+type fetchResponse struct {
+	Data  []byte
+	Error error
 }
 
-func newBlobQueue(blobstore interfaces.Blobstore, streamID string) *blobQueue {
-	return &blobQueue{
-		blobstore:      blobstore,
-		streamID:       streamID,
-		maxConnections: 16,
-		futures:        make([]blobFuture, 0),
-		numPopped:      0,
-		done:           false,
+// fetcher fetches a sequence of blobs concurrently.
+type fetcher struct {
+	blobstore interfaces.Blobstore
+	streamID  string
+
+	requests chan *fetchRequest
+	stop     func()
+	// Whether the fetcher has stopped fetching due to an error being returned
+	// from Next().
+	stopped bool
+}
+
+func newFetcher(blobstore interfaces.Blobstore, streamID string) *fetcher {
+	fetcher := &fetcher{
+		blobstore: blobstore,
+		streamID:  streamID,
 	}
+	return fetcher
 }
 
-func newBlobFuture() blobFuture {
-	return make(blobFuture, 1)
-}
-
-func (q *blobQueue) pushNewFuture(ctx context.Context) {
-	future := newBlobFuture()
-	sequenceNumber := len(q.futures)
-	q.futures = append(q.futures, future)
+// Starts a background goroutine to spawn fetches until either the context is
+// done or a request returns an error that is surfaced in Next().
+func (f *fetcher) start(ctx context.Context) {
+	concurrency := runtime.NumCPU()
+	f.requests = make(chan *fetchRequest, concurrency)
+	ctx, cancel := context.WithCancel(ctx)
+	f.stop = func() {
+		cancel()
+		f.stopped = true
+	}
 	go func() {
-		defer close(future)
-
-		tmpFilePath := ChunkName(q.streamID, sequenceNumber)
-		data, err := q.blobstore.ReadBlob(ctx, tmpFilePath)
-		future <- blobReadResult{
-			data: data,
-			err:  err,
+		for i := 0; true; i++ {
+			req := &fetchRequest{
+				Index:        i,
+				ResponseChan: make(chan *fetchResponse, 1),
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case f.requests <- req:
+			}
+			go func() {
+				data, err := f.blobstore.ReadBlob(ctx, ChunkName(f.streamID, req.Index))
+				req.ResponseChan <- &fetchResponse{Data: data, Error: err}
+			}()
 		}
 	}()
 }
 
-func (q *blobQueue) pop(ctx context.Context) ([]byte, error) {
-	if q.done {
-		return nil, status.ResourceExhaustedError("Queue has been exhausted.")
+// Next returns the next blob in the sequence.
+func (f *fetcher) Next(ctx context.Context) ([]byte, error) {
+	// The first time Next() is called, start fetching.
+	if f.requests == nil {
+		f.start(ctx)
 	}
-	// Make sure maxConnections files are downloading
-	numLoading := len(q.futures) - q.numPopped
-	numNewConnections := q.maxConnections - numLoading
-	for numNewConnections > 0 {
-		q.pushNewFuture(ctx)
-		numNewConnections--
+	if f.stopped {
+		return nil, status.ResourceExhaustedError("fetcher has already completed fetching")
 	}
-	result := <-q.futures[q.numPopped]
-	q.numPopped++
-	if result.err != nil {
-		q.done = true
-		return nil, result.err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case req := <-f.requests:
+		res := <-req.ResponseChan
+		if err := res.Error; err != nil {
+			f.stop()
+			return nil, err
+		}
+		return res.Data, nil
 	}
-	return result.data, nil
 }
 
 func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) error {
 	for {
 		if w.readBuf == nil {
 			// Load file
-			fileData, err := w.q.pop(ctx)
+			fileData, err := w.fetcher.Next(ctx)
 			if err != nil {
 				if gstatus.Code(err) == gcodes.NotFound {
 					return io.EOF
