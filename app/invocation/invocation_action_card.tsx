@@ -301,6 +301,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
         let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+        console.log(dir);
         this.state.treeShaToExpanded.set(digestString, true);
         let dirs: InputNode[] = dir.directories.map(
           (child) =>

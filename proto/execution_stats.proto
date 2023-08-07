@@ -128,6 +128,21 @@ message GetExecutionResponse {
   repeated Execution execution = 2;
 }
 
+message GetExecutionInputTreeRequest {
+  context.RequestContext request_context = 1;
+
+  // The invocation ID.  This must be provided for ACL checking.
+  string invocation_id = 2;
+  // The execution ID whose content should be fetched.
+  string execution_id = 3;
+}
+
+message GetExecutionInputTreeResponse {
+  context.ResponseContext response_context = 1;
+
+  build.bazel.remote.execution.v2.Tree tree = 2;
+}
+
 message ExecutionQuery {
   // The unix-user who performed the build.
   string invocation_user = 1;

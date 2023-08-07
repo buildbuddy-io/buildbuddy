@@ -104,6 +104,8 @@ service BuildBuddyService {
       returns (scheduler.GetExecutionNodesResponse);
   rpc SearchExecution(execution_stats.SearchExecutionRequest)
       returns (execution_stats.SearchExecutionResponse);
+  rpc GetExecutionInputTree(execution_stats.GetExecutionInputTreeRequest)
+      returns (execution_stats.GetExecutionInputTreeResponse);
 
   // Cache API
   rpc GetCacheScoreCard(cache.GetCacheScoreCardRequest)

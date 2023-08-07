@@ -1006,6 +1006,13 @@ func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecut
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) GetExecutionInputTree(ctx context.Context, req *espb.GetExecutionInputTreeRequest) (*espb.GetExecutionInputTreeResponse, error) {
+	if es := s.env.GetExecutionService(); es != nil {
+		return es.GetExecutionInputTree(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
 	if ss := s.env.GetSchedulerService(); ss != nil {
 		res, err := ss.GetExecutionNodes(ctx, req)

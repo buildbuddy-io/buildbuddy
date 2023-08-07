@@ -23,7 +23,7 @@ export default class InputNodeComponent extends React.Component<Props, State> {
       this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes
     );
     return (
-      <div className={`input-tree-node`}>
+      <div className="input-tree-node">
         <div
           className={`input-tree-node-name ${expanded ? "input-tree-node-expanded" : ""}`}
           onClick={() => this.props.handleFileClicked(this.props.node)}>
