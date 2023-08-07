@@ -1858,8 +1858,12 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	return lastErr
 }
 
-// Pause freezes a container so that it no longer consumes CPU resources.
-// It pauses the VM, takes a snapshot, and saves the snapshot to cache
+func (c *FirecrackerContainer) Pause(ctx context.Context) error {
+	return c.PauseAndSaveSnapshot(ctx)
+}
+
+// PauseAndSaveSnapshot freezes a container so that it no longer consumes CPU resources.
+// It also takes a snapshot and saves it to the cache
 //
 // If the VM is resumed after this point, the VM state and memory snapshots
 // immediately become invalid and another call to SaveSnapshot is required. This
@@ -1868,7 +1872,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 // Resuming the VM may change the disk state, causing the original VM state to
 // become invalid (e.g., the kernel's page cache may no longer be in sync with
 // the disk, which can cause all sorts of issues).
-func (c *FirecrackerContainer) Pause(ctx context.Context) error {
+func (c *FirecrackerContainer) PauseAndSaveSnapshot(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
