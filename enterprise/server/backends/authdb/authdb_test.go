@@ -221,6 +221,12 @@ func TestGetAPIKeys(t *testing.T) {
 			for _, k := range keys {
 				_, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
 				require.NoError(t, err)
+				// Verify that we can correctly retrieve the API key using
+				// GetAPIKey.
+				ak, err := adb.GetAPIKey(adminCtx, k.APIKeyID)
+				require.NoError(t, err)
+				_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, ak.Value)
+				require.NoError(t, err)
 			}
 		})
 	}
