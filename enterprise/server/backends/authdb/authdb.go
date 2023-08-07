@@ -620,6 +620,9 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	if err := perms.AuthorizeRead(&user, acl); err != nil {
 		return nil, err
 	}
+	if err := d.fillDecryptedAPIKey(key); err != nil {
+		return nil, err
+	}
 	return key, nil
 }
 
