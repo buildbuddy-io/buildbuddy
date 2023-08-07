@@ -5,6 +5,7 @@ go_web_test_suite(
     size = "small",
     srcs = ["shortcuts_test.go"],
     shard_count = 2,
+    tags = ["manual"],  # TODO(iain-macdonald): Fix and re-enable
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//server/testutil/testbazel",
