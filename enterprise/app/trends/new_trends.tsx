@@ -35,8 +35,7 @@ export default class NewTrendsComponent extends React.Component<Props, State> {
 
   getSelectedTab(): TrendsTab {
     const value = Number(this.props.tab.replace("#", ""));
-    if (value && TrendsTab[value]) {
-      // XXX: Drilldowns flag guard.
+    if (value && TrendsTab[value] && (value != TrendsTab.DRILLDOWN || capabilities.config.trendsHeatmapEnabled)) {
       return value;
     }
     return TrendsTab.OVERVIEW;
