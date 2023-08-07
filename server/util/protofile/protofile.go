@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -38,7 +39,7 @@ type BufferedProtoWriter struct {
 // streamID, because it may still be written to from another goroutine.
 type BufferedProtoReader struct {
 	bs       interfaces.Blobstore
-	q        *blobQueue
+	fetcher  *fetcher
 	readBuf  *bytes.Buffer
 	streamID string
 }
@@ -47,7 +48,7 @@ func NewBufferedProtoReader(bs interfaces.Blobstore, streamID string) *BufferedP
 	return &BufferedProtoReader{
 		streamID: streamID,
 		bs:       bs,
-		q:        newBlobQueue(bs, streamID),
+		fetcher:  newFetcher(bs, streamID),
 	}
 }
 
@@ -142,78 +143,105 @@ func (w *BufferedProtoWriter) WriteProtoToStream(ctx context.Context, msg proto.
 	return nil
 }
 
-type blobReadResult struct {
-	err  error
-	data []byte
+type fetchRequest struct {
+	Index        int
+	ResponseChan chan *fetchResponse
 }
 
-type blobFuture chan blobReadResult
-
-type blobQueue struct {
-	blobstore      interfaces.Blobstore
-	streamID       string
-	futures        []blobFuture
-	maxConnections int
-	numPopped      int
-	done           bool
+type fetchResponse struct {
+	Data  []byte
+	Error error
 }
 
-func newBlobQueue(blobstore interfaces.Blobstore, streamID string) *blobQueue {
-	return &blobQueue{
-		blobstore:      blobstore,
-		streamID:       streamID,
-		maxConnections: 16,
-		futures:        make([]blobFuture, 0),
-		numPopped:      0,
-		done:           false,
+// fetcher fetches a sequence of blobs concurrently.
+type fetcher struct {
+	blobstore interfaces.Blobstore
+	streamID  string
+
+	requests chan *fetchRequest
+	// Closed the first time a fetch returns an error that is surfaced
+	// in Next(). This signals all fetch goroutines to stop and causes
+	// further calls to Next() to fail with ResourceExhausted.
+	quit chan struct{}
+}
+
+func newFetcher(blobstore interfaces.Blobstore, streamID string) *fetcher {
+	fetcher := &fetcher{
+		blobstore: blobstore,
+		streamID:  streamID,
 	}
+	return fetcher
 }
 
-func newBlobFuture() blobFuture {
-	return make(blobFuture, 1)
-}
+// Starts a background goroutine to spawn fetches until either the context is
+// done or a request returns an error that is surfaced in Next().
+func (f *fetcher) start(ctx context.Context) {
+	concurrency := runtime.NumCPU()
+	f.requests = make(chan *fetchRequest, concurrency)
+	f.quit = make(chan struct{})
 
-func (q *blobQueue) pushNewFuture(ctx context.Context) {
-	future := newBlobFuture()
-	sequenceNumber := len(q.futures)
-	q.futures = append(q.futures, future)
+	ctx, cancel := context.WithCancel(ctx)
 	go func() {
-		defer close(future)
+		defer cancel()
 
-		tmpFilePath := ChunkName(q.streamID, sequenceNumber)
-		data, err := q.blobstore.ReadBlob(ctx, tmpFilePath)
-		future <- blobReadResult{
-			data: data,
-			err:  err,
+		select {
+		case <-ctx.Done():
+		case <-f.quit:
+		}
+	}()
+	go func() {
+		for i := 0; true; i++ {
+			req := &fetchRequest{
+				Index:        i,
+				ResponseChan: make(chan *fetchResponse, 1),
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case f.requests <- req:
+			}
+			go func() {
+				data, err := f.blobstore.ReadBlob(ctx, ChunkName(f.streamID, req.Index))
+				req.ResponseChan <- &fetchResponse{Data: data, Error: err}
+				// Note, if the read returned an error here, we don't
+				// close(f.quit) just yet, because there may still be a request
+				// with a lower Index which is still in flight, and we don't
+				// want to cancel the context for that request. So we instead
+				// wait for the error to be surfaced in Next() before quitting.
+			}()
 		}
 	}()
 }
 
-func (q *blobQueue) pop(ctx context.Context) ([]byte, error) {
-	if q.done {
-		return nil, status.ResourceExhaustedError("Queue has been exhausted.")
+// Next returns the next blob in the sequence.
+func (q *fetcher) Next(ctx context.Context) ([]byte, error) {
+	// The first time Next() is called, start fetching.
+	if q.requests == nil {
+		q.start(ctx)
 	}
-	// Make sure maxConnections files are downloading
-	numLoading := len(q.futures) - q.numPopped
-	numNewConnections := q.maxConnections - numLoading
-	for numNewConnections > 0 {
-		q.pushNewFuture(ctx)
-		numNewConnections--
+	select {
+	case <-q.quit:
+		return nil, status.ResourceExhaustedError("fetcher has already completed fetching")
+	default:
 	}
-	result := <-q.futures[q.numPopped]
-	q.numPopped++
-	if result.err != nil {
-		q.done = true
-		return nil, result.err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case req := <-q.requests:
+		res := <-req.ResponseChan
+		if err := res.Error; err != nil {
+			close(q.quit)
+			return nil, err
+		}
+		return res.Data, nil
 	}
-	return result.data, nil
 }
 
 func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) error {
 	for {
 		if w.readBuf == nil {
 			// Load file
-			fileData, err := w.q.pop(ctx)
+			fileData, err := w.fetcher.Next(ctx)
 			if err != nil {
 				if gstatus.Code(err) == gcodes.NotFound {
 					return io.EOF
