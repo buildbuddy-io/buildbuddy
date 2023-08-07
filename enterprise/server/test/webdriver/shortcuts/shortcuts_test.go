@@ -2,6 +2,7 @@ package invocation_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
@@ -50,6 +51,9 @@ func TestNavShortcuts(t *testing.T) {
 func TestInvocationNavShortcuts(t *testing.T) {
 	wt, target := newWebTester(t)
 	invocationIDs := []string{addBuild(t, wt, target), addBuild(t, wt, target), addBuild(t, wt, target)}
+	fmt.Println("===== Invocation ID 0: " + invocationIDs[0] + " =====")
+	fmt.Println("===== Invocation ID 1: " + invocationIDs[1] + " =====")
+	fmt.Println("===== Invocation ID 2: " + invocationIDs[2] + " =====")
 
 	enableShortcuts(t, wt)
 
