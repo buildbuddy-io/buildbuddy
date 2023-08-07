@@ -39,7 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
-	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1052,7 +1051,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		// this is the first attempt of this invocation, to guarantee that we
 		// don't increment the usage on invocation retries.
 		if ut := e.env.GetUsageTracker(); ut != nil && ti.Attempt == 1 {
-			incrementInvocationUsage(e.ctx, ut)
+			if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
+				log.CtxWarningf(e.ctx, "Failed to record invocation usage: %s", err)
+			}
 		}
 	} else if !e.hasReceivedEventWithOptions || !e.hasReceivedStartedEvent {
 		e.bufferedEvents = append(e.bufferedEvents, invocationEvent)
@@ -1586,17 +1587,5 @@ func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 		InvocationStatus: inv.InvocationStatus,
 		Success:          inv.Success,
 		Tags:             inv.Tags,
-	}
-}
-
-func incrementInvocationUsage(ctx context.Context, ut interfaces.UsageTracker) {
-	labels, err := usageutil.Labels(ctx)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to compute invocation usage labels: %s", err)
-		return
-	}
-	if err := ut.Increment(ctx, labels, &tables.UsageCounts{Invocations: 1}); err != nil {
-		log.CtxWarningf(ctx, "Failed to increment invocation usage: %s", err)
-		return
 	}
 }
