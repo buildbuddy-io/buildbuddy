@@ -159,10 +159,10 @@ type fetcher struct {
 	streamID  string
 
 	requests chan *fetchRequest
-	// Closed the first time a fetch returns an error that is surfaced
-	// in Next(). This signals all fetch goroutines to stop and causes
-	// further calls to Next() to fail with ResourceExhausted.
-	quit chan struct{}
+	stop     func()
+	// Whether the fetcher has stopped fetching due to an error being returned
+	// from Next().
+	stopped bool
 }
 
 func newFetcher(blobstore interfaces.Blobstore, streamID string) *fetcher {
@@ -178,17 +178,11 @@ func newFetcher(blobstore interfaces.Blobstore, streamID string) *fetcher {
 func (f *fetcher) start(ctx context.Context) {
 	concurrency := runtime.NumCPU()
 	f.requests = make(chan *fetchRequest, concurrency)
-	f.quit = make(chan struct{})
-
 	ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		defer cancel()
-
-		select {
-		case <-ctx.Done():
-		case <-f.quit:
-		}
-	}()
+	f.stop = func() {
+		cancel()
+		f.stopped = true
+	}
 	go func() {
 		for i := 0; true; i++ {
 			req := &fetchRequest{
@@ -203,34 +197,27 @@ func (f *fetcher) start(ctx context.Context) {
 			go func() {
 				data, err := f.blobstore.ReadBlob(ctx, ChunkName(f.streamID, req.Index))
 				req.ResponseChan <- &fetchResponse{Data: data, Error: err}
-				// Note, if the read returned an error here, we don't
-				// close(f.quit) just yet, because there may still be a request
-				// with a lower Index which is still in flight, and we don't
-				// want to cancel the context for that request. So we instead
-				// wait for the error to be surfaced in Next() before quitting.
 			}()
 		}
 	}()
 }
 
 // Next returns the next blob in the sequence.
-func (q *fetcher) Next(ctx context.Context) ([]byte, error) {
+func (f *fetcher) Next(ctx context.Context) ([]byte, error) {
 	// The first time Next() is called, start fetching.
-	if q.requests == nil {
-		q.start(ctx)
+	if f.requests == nil {
+		f.start(ctx)
 	}
-	select {
-	case <-q.quit:
+	if f.stopped {
 		return nil, status.ResourceExhaustedError("fetcher has already completed fetching")
-	default:
 	}
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case req := <-q.requests:
+	case req := <-f.requests:
 		res := <-req.ResponseChan
 		if err := res.Error; err != nil {
-			close(q.quit)
+			f.stop()
 			return nil, err
 		}
 		return res.Data, nil
