@@ -93,6 +93,7 @@ go_library(
     srcs = ["bundle.go"],
     embedsrcs = select({
         "//:fastbuild": [
+            # Serve app from bazel runfiles when developing locally
             ":empty",  # embed fails with no embedsrcs
         ],
         "//conditions:default": [
