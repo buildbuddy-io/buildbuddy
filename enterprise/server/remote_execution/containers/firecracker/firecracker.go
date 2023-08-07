@@ -1802,7 +1802,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 
 	var lastErr error
 
-	// TODO: Verify this completes
 	if c.machine != nil {
 		// Note: we don't attempt any kind of clean shutdown here, because at this
 		// point either (a) the VM should be paused and we should have already taken
@@ -1901,9 +1900,22 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 
 	// Ensure VM is stopped to ensure nothing (like the UFFD page fault handler)
 	// is modifying the snapshot files when we save them
-	if err := c.Remove(ctx); err != nil {
-		log.CtxErrorf(ctx, "Error cleaning up after pause: %s", err)
-		return err
+	// TODO: Verify this completes
+	if c.machine != nil {
+		// Note: we don't attempt any kind of clean shutdown here because we have already taken
+		// a snapshot
+		if err := c.machine.StopVMM(); err != nil {
+			log.CtxErrorf(ctx, "Error stopping VMM: %s", err)
+			return err
+		}
+		c.machine = nil
+	}
+	if c.uffdHandler != nil {
+		if err := c.uffdHandler.Stop(); err != nil {
+			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
+			return err
+		}
+		c.uffdHandler = nil
 	}
 
 	baseMemSnapshotPath := filepath.Join(baseSnapshotUnpackDir, fullMemSnapshotName)
@@ -1915,6 +1927,12 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	// Once we've merged the base snapshot and linked it to filecache, we
 	// don't need the unpack dir anymore and can unlink.
 	defer os.RemoveAll(baseSnapshotUnpackDir)
+
+	// Finish cleaning up VM resources
+	if err := c.Remove(ctx); err != nil {
+		log.CtxErrorf(ctx, "Error cleaning up after pause: %s", err)
+		return err
+	}
 
 	return nil
 }
