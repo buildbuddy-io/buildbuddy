@@ -171,7 +171,7 @@ type fakeUsageTracker struct {
 	Increments []*tables.UsageCounts
 }
 
-func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
+func (ut *fakeUsageTracker) Increment(ctx context.Context, counts *tables.UsageCounts) error {
 	ut.Increments = append(ut.Increments, counts)
 	return nil
 }
