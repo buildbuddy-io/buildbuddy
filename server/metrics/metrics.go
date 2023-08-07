@@ -1884,6 +1884,16 @@ var (
 		Help:      "Age of encrypted keys (i.e. how long it has been since the keys were re-encrypted).",
 	})
 
+	PebbleCacheAtimeUpdateCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_atime_update_count",
+		Help:      "Count of processed atime updates.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	PebbleCacheEvictionResampleLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
