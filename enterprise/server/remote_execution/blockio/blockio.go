@@ -262,18 +262,19 @@ func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir 
 	}, nil
 }
 
-// GetRelativeOffsetFromChunkStart returns the relative offset from the beginning of the chunk
+// GetRelativeOffsetFromChunkStart returns the relative offset from the
+// beginning of the chunk
 //
-// Ex. Let's say there are 100B chunks. For input offset 205, chunkStartOffset would be 200,
-// and this would return 5
+// Ex. Let's say there are 100B chunks. For input offset 205, chunkStartOffset
+// would be 200, and this would return 5
 func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 	return chunkRelativeAddress
 }
 
-// GetChunkStartAddressAndSize returns the start address of the chunk containing the input offset,
-// and the chunk size
+// GetChunkStartAddressAndSize returns the start address of the chunk containing
+// the input offset, and the chunk size
 func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkStartAddress, err := c.GetPageAddress(uintptr(chunkStartOffset), write)
@@ -283,7 +284,8 @@ func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uint
 	return chunkStartAddress, c.chunkSizeBytes, nil
 }
 
-// GetPageAddress returns the memory address for the given byte offset into the store.
+// GetPageAddress returns the memory address for the given byte offset into
+// the store.
 //
 // This memory address can be used to handle a page fault with userfaultfd.
 //
