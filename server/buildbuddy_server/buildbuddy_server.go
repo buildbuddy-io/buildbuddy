@@ -74,6 +74,12 @@ var (
 const (
 	bytestreamProtocolPrefix  = "bytestream://"
 	actioncacheProtocolPrefix = "actioncache://"
+
+	// Max number of events to process in a single GetInvocation request when
+	// serving paginated invocations. Even though we are paginating, this limit
+	// is in place because we currently have to process every event on every
+	// request.
+	paginatedInvocationEventLimit = 2_000_000
 )
 
 type BuildBuddyServer struct {
@@ -107,7 +113,9 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 			idx.Add(event)
 			return nil
 		}
-		inv, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetLookup().GetInvocationId(), callback)
+		inv, err := build_event_handler.LookupInvocationWithCallback(
+			ctx, s.env, req.GetLookup().GetInvocationId(),
+			paginatedInvocationEventLimit, callback)
 		if err != nil {
 			return nil, err
 		}
@@ -136,12 +144,14 @@ func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetReq
 		idx.Add(event)
 		return nil
 	}
-	inv, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetInvocationId(), callback)
+	inv, err := build_event_handler.LookupInvocationWithCallback(
+		ctx, s.env, req.GetInvocationId(),
+		paginatedInvocationEventLimit, callback)
 	if err != nil {
 		return nil, err
 	}
 	idx.Finalize()
-	return target.GetTarget(ctx, s.env, inv, idx, &trpb.GetTargetRequest{})
+	return target.GetTarget(ctx, s.env, inv, idx, req)
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {

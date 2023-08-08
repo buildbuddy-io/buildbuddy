@@ -46,6 +46,8 @@ const (
 	targetHistoryPageSize = 20
 
 	// The max number of targets returned in each TargetGroup page.
+	// TODO(bduffany): let the client set this. We want this to be 100 when on
+	// the Targets tab but 10 when on the overview tab.
 	targetPageSize = 12
 
 	// When returning a paginated list of all targets in an invocation with
@@ -246,6 +248,19 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 				return nil, err
 			}
 			g.NextPageToken = tok
+		}
+
+		// When the invocation is in progress, we usually return a non-empty
+		// page token so that the client knows there may be more results since
+		// the last fetch. However, if the page token offset is within the first
+		// page, then the fetched results will overlap with the initial page of
+		// results that is fetched as part of the full GetInvocation refresh
+		// that the UI does every 3s. The client has to somehow deal with this
+		// overlap, which adds some complexity. So for now, we just return an
+		// empty page token whenever there is less than a single page of data
+		// available.
+		if g.TotalCount < page.Limit {
+			g.NextPageToken = ""
 		}
 	}
 	return res, nil

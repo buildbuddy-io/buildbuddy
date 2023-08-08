@@ -1,0 +1,186 @@
+import React from "react";
+import { target } from "../../proto/target_ts_proto";
+import { api as api_common } from "../../proto/api/v1/common_ts_proto";
+import { CheckCircle, ChevronRight, Clock, Copy, HelpCircle, SkipForward, XCircle } from "lucide-react";
+import { copyToClipboard } from "../util/clipboard";
+import { renderDuration, renderTestSize } from "./target_util";
+import Link from "../components/link/link";
+import rpc_service, { CancelablePromise } from "../service/rpc_service";
+import error_service from "../errors/error_service";
+import Spinner from "../components/spinner/spinner";
+
+export interface TargetGroupCardProps {
+  invocationId: string;
+  group: target.TargetGroup;
+  filter: string;
+}
+
+interface State {
+  loading: boolean;
+  fetchedTargets: target.Target[];
+  nextPageToken: string | null;
+}
+
+const Status = api_common.v1.Status;
+
+/**
+ * Renders a single `target.TargetGroup`, with the ability to fetch more pages
+ * in the group.
+ */
+export default class TargetGroupCard extends React.Component<TargetGroupCardProps, State> {
+  state: State = {
+    loading: false,
+    fetchedTargets: [],
+    nextPageToken: null,
+  };
+
+  private fetchRPC?: CancelablePromise;
+
+  private getTargetURL(target: target.Target) {
+    return `?${new URLSearchParams({
+      target: target.metadata?.label ?? "",
+      status: String(target.status),
+    })}`;
+  }
+
+  private nextPageToken() {
+    return this.state.nextPageToken === null ? this.props.group.nextPageToken : this.state.nextPageToken;
+  }
+
+  private hasMoreTargets() {
+    return Boolean(this.nextPageToken());
+  }
+
+  private loadMore() {
+    this.fetchRPC?.cancel();
+    this.setState({ loading: true });
+    rpc_service.service
+      .getTarget({
+        invocationId: this.props.invocationId,
+        status: this.props.group.status,
+        pageToken: this.nextPageToken(),
+      })
+      .then((response) => {
+        const page = response.targetGroups[0];
+        if (!page) return;
+        this.setState({
+          fetchedTargets: [...this.state.fetchedTargets, ...page.targets],
+          nextPageToken: page.nextPageToken,
+        });
+      })
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ loading: false }));
+  }
+
+  render() {
+    let targets = this.props.group.targets.concat(this.state.fetchedTargets);
+    if (this.props.filter) {
+      // TODO: do filtering server-side to avoid empty pages / make totalCount
+      // reflect the filtered count.
+      targets = targets.filter((target) =>
+        target.metadata?.label.toLowerCase().includes(this.props.filter.toLowerCase())
+      );
+    }
+
+    let className = "";
+    let icon: React.ReactNode = null;
+    let presentVerb = "";
+    let pastVerb = "";
+    switch (this.props.group.status) {
+      case Status.FAILED:
+        className = "card-failure";
+        icon = <XCircle className="icon red" />;
+        presentVerb = `failing ${targets.length === 1 ? "test" : "tests"}`;
+        pastVerb = `${targets.length === 1 ? "test" : "tests"} failed`;
+        break;
+      case Status.FAILED_TO_BUILD:
+        className = "card-failure";
+        icon = <XCircle className="icon red" />;
+        presentVerb = `failing ${targets.length === 1 ? "target" : "targets"}`;
+        pastVerb = `${targets.length === 1 ? "target" : "targets"} failed`;
+        break;
+      case Status.TIMED_OUT:
+        className = "card-timeout";
+        icon = <Clock className="icon" />;
+        presentVerb = `timed out ${targets.length == 1 ? "test" : "tests"}`;
+        pastVerb = `${targets.length == 1 ? "test" : "tests"} timed out`;
+        break;
+      case Status.FLAKY:
+        className = "card-flaky";
+        icon = <HelpCircle className="icon orange" />;
+        presentVerb = `flaky ${targets.length == 1 ? "test" : "tests"}`;
+        pastVerb = `flaky ${targets.length == 1 ? "test" : "tests"}`;
+        break;
+      case Status.PASSED:
+        className = "card-success";
+        icon = <CheckCircle className="icon green" />;
+        presentVerb = `passing ${targets.length == 1 ? "test" : "tests"}`;
+        pastVerb = `${targets.length == 1 ? "test" : "tests"} passed`;
+        break;
+      case Status.BUILT:
+        className = "card-success";
+        icon = <CheckCircle className="icon green" />;
+        presentVerb = `${targets.length == 1 ? "target" : "targets"}`;
+        pastVerb = `${targets.length == 1 ? "target" : "targets"} built successfully`;
+        break;
+      case Status.SKIPPED:
+        className = "card-skipped";
+        icon = <SkipForward className="icon purple" />;
+        presentVerb = `${targets.length == 1 ? "target" : "targets"}`;
+        pastVerb = `${targets.length == 1 ? "target" : "targets"} skipped`;
+        break;
+      default:
+        console.error("Unsupported status", Status[this.props.group.status]);
+        return null;
+    }
+
+    return (
+      <div className={`card ${className} invocation-targets-card target-group-card`}>
+        <div className="icon">{icon}</div>
+        <div className="content">
+          <div className="title">
+            {this.props.filter ? targets.length : this.props.group.totalCount}
+            {this.props.filter ? " matching" : ""} {pastVerb}{" "}
+            <Copy
+              className="copy-icon"
+              onClick={() => copyToClipboard(targets.map((target) => target.metadata?.label ?? "").join(" "))}
+            />
+          </div>
+          <div className="details">
+            <div className="targets-table">
+              {targets.map((target) => (
+                <Link className="target-row" href={this.getTargetURL(target)}>
+                  <div title={targetTitleAttr(target)} className="target">
+                    <span className="target-status-icon">{icon}</span>{" "}
+                    <span className="chevron-icon">
+                      <ChevronRight className="icon" />
+                    </span>
+                    <span className="target-label">{target.metadata?.label}</span>{" "}
+                    {target.rootCause && <span className="root-cause-badge">Root cause</span>}
+                  </div>
+                  <div className="target-duration">
+                    {renderDuration(target.timing ?? new api_common.v1.Timing({ duration: {} }))}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+          {this.hasMoreTargets() && !this.state.loading && (
+            <div className="more" onClick={() => this.loadMore()}>
+              Load more {presentVerb}
+            </div>
+          )}
+          {this.state.loading && (
+            <div className="more-loading">
+              Load more {presentVerb} <Spinner className="small-spinner" />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+}
+
+function targetTitleAttr(target: target.Target) {
+  return [target.metadata?.ruleType ?? "", renderTestSize(target.metadata?.testSize || 0)].filter((x) => x).join(" | ");
+}

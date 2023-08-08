@@ -1321,7 +1321,7 @@ func streamRawInvocationEvents(env environment.Env, ctx context.Context, streamI
 // in memory.
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
 	var events []*inpb.InvocationEvent
-	inv, err := LookupInvocationWithCallback(ctx, env, iid, func(event *inpb.InvocationEvent) error {
+	inv, err := LookupInvocationWithCallback(ctx, env, iid, maxEventCount, func(event *inpb.InvocationEvent) error {
 		events = append(events, event)
 		return nil
 	})
@@ -1336,7 +1336,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 // events instead of buffering events into the events list.
 //
 // TODO: switch to using this API wherever possible.
-func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid string, cb invocationEventCB) (*inpb.Invocation, error) {
+func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid string, limit int, cb invocationEventCB) (*inpb.Invocation, error) {
 	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
 		return nil, err
@@ -1400,7 +1400,7 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 			// number of events coming through, begin dropping non-
 			// important events so that this invocation can be
 			// displayed.
-			if eventCount > maxEventCount {
+			if limit >= 0 && eventCount > limit {
 				if !accumulator.IsImportantEvent(event.BuildEvent) {
 					return nil
 				}

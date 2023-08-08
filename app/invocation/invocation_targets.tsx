@@ -3,16 +3,51 @@ import React from "react";
 import InvocationModel from "./invocation_model";
 import TargetsCardComponent from "./invocation_targets_card";
 import { XCircle, CheckCircle, HelpCircle, Clock, SkipForward } from "lucide-react";
+import { api as api_common } from "../../proto/api/v1/common_ts_proto";
+import { target } from "../../proto/target_ts_proto";
+import TargetGroupCard from "./invocation_target_group_card";
 
 interface Props {
   model: InvocationModel;
   pageSize: number;
   filter: string;
-  mode: string;
+  mode: "passing" | "failing";
 }
 
+const Status = api_common.v1.Status;
+
+const STATUS_ORDERING = [
+  Status.FAILED,
+  Status.FAILED_TO_BUILD,
+  Status.TIMED_OUT,
+  Status.FLAKY,
+  Status.PASSED,
+  Status.BUILT,
+  Status.SKIPPED,
+  // TODO: Render the following status types somewhere?
+  // INCOMPLETE, BUILDING, TESTING, TOOL_FAILED, CANCELLED
+];
+
+const OK_STATUSES = new Set([Status.PASSED, Status.BUILT, Status.SKIPPED]);
+
 export default class TargetsComponent extends React.Component<Props> {
+  private renderTargetGroup(group: target.TargetGroup) {
+    return (
+      <TargetGroupCard invocationId={this.props.model.getInvocationId()} group={group} filter={this.props.filter} />
+    );
+  }
+
   render() {
+    if (this.props.model.invocation.targetGroups.length) {
+      // Paginated invocation; render target groups.
+      return this.props.model.invocation.targetGroups
+        .filter((group) => group.targets.length)
+        .filter((group) => this.props.mode === "failing" || OK_STATUSES.has(group.status))
+        .filter((group) => STATUS_ORDERING.includes(group.status))
+        .sort((a, b) => STATUS_ORDERING.indexOf(a.status) - STATUS_ORDERING.indexOf(b.status))
+        .map((group) => this.renderTargetGroup(group));
+    }
+
     return (
       <div>
         {!!this.props.model.failedTest.length && this.props.mode == "failing" && (

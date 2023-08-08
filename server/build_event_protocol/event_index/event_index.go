@@ -74,7 +74,7 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 			}
 		}
 	case *bespb.BuildEvent_TestSummary:
-		label := event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()
+		label := event.GetBuildEvent().GetId().GetTestSummary().GetLabel()
 		summary := p.TestSummary
 		idx.TestTargetByLabel[label] = &trpb.Target{
 			Metadata: &trpb.TargetMetadata{Label: label},
