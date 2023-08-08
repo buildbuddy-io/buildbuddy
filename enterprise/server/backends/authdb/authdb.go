@@ -121,13 +121,6 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 		}
 	}
 
-	idxName := "api_key_nonce_index"
-	if !dbh.Migrator().HasIndex("APIKeys", idxName) {
-		if err := dbh.Exec(fmt.Sprintf(`CREATE UNIQUE INDEX %s ON "APIKeys" (nonce)`, idxName)).Error; err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
