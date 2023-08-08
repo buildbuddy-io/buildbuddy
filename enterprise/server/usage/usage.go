@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"strconv"
@@ -269,14 +270,18 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 }
 
 func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, counts *tables.UsageCounts) error {
-	pk := &tables.Usage{
-		GroupID:         groupID,
-		PeriodStartUsec: p.Start().UnixMicro(),
-		Region:          ut.region,
-	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("insert_usage"), func(tx *db.DB) error {
-		log.Debugf("Flushing usage counts for key %+v", pk)
+		tu := &tables.Usage{
+			GroupID:         groupID,
+			PeriodStartUsec: p.Start().UnixMicro(),
+			Region:          ut.region,
+			UsageCounts:     *counts,
+		}
+
+		b, _ := json.Marshal(tu)
+		json := string(b)
+		log.Infof("Flushing usage row: %s", json)
 
 		// First check whether the row already exists. Make sure to select for
 		// update in order to lock the row.
@@ -288,33 +293,19 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, co
 				AND group_id = ?
 				AND period_start_usec = ?
 			`+dbh.SelectForUpdateModifier(),
-			pk.Region,
-			pk.GroupID,
-			pk.PeriodStartUsec,
+			tu.Region,
+			tu.GroupID,
+			tu.PeriodStartUsec,
 		).Take(&tables.Usage{}).Error
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err
 		}
 		if err == nil {
-			alert.UnexpectedEvent("usage_update_skipped", "Usage flush skipped since the row already exists; this may indicate that redis locking is failing.")
+			alert.UnexpectedEvent("usage_update_skipped", "Usage flush skipped since the row already exists. Usage row: %s", json)
 			return nil
 		}
 		// Row doesn't exist yet; create.
-		return tx.Create(&tables.Usage{
-			GroupID:         pk.GroupID,
-			PeriodStartUsec: pk.PeriodStartUsec,
-			Region:          pk.Region,
-			UsageCounts:     *counts,
-			// While we're migrating to INSERT-only flushing, we still need to
-			// write FinalBeforeUsec to be compatible with old apps that still
-			// rely on it to know whether the collection period data has been
-			// written. Note that this only matters if a new app happens to
-			// write a collection period starting at the beginning of an hour.
-			//
-			// TODO(bduffany): remove this once all apps are migrated to flush
-			// at 1 minute granularity.
-			FinalBeforeUsec: p.Start().Add(periodDuration).UnixMicro(),
-		}).Error
+		return tx.Create(tu).Error
 	})
 }
 
