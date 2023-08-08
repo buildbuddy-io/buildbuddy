@@ -90,6 +90,10 @@ const (
 	// Skip unimportant events if more than this many are received in a
 	// single build event stream.
 	maxEventCount = 100_000
+
+	// Max total pattern length to include in the Expanded event returned to the
+	// UI.
+	maxPatternLengthBytes = 10_000
 )
 
 var (
@@ -1412,6 +1416,22 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 			}
 
 			switch p := event.BuildEvent.Payload.(type) {
+			case *build_event_stream.BuildEvent_Started:
+				// Drop child pattern expanded events since this list can be
+				// very long and we don't render these currently.
+				event.BuildEvent.Children = nil
+			case *build_event_stream.BuildEvent_Expanded:
+				if len(event.BuildEvent.GetId().GetPattern().GetPattern()) > 0 {
+					pattern, truncated := TruncateStringSlice(event.BuildEvent.GetId().GetPattern().GetPattern(), maxPatternLengthBytes)
+					invocation.PatternsTruncated = truncated
+					event.BuildEvent.GetId().GetPattern().Pattern = pattern
+				}
+				// Don't return child TargetConfigured events to the UI; the UI
+				// only cares about the actual TargetConfigured event payloads.
+				event.BuildEvent.Children = nil
+				// UI doesn't render TestSuiteExpansions yet (though we probably
+				// should at some point?) So don't return these either.
+				p.Expanded.TestSuiteExpansions = nil
 			case *build_event_stream.BuildEvent_Progress:
 				if screenWriter != nil {
 					screenWriter.Write([]byte(p.Progress.Stderr))
@@ -1588,4 +1608,23 @@ func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 		Success:          inv.Success,
 		Tags:             inv.Tags,
 	}
+}
+
+// TruncateStringSlice truncates the given string slice so that when the strings
+// are joined with a space (" "), the total byte length of the resulting string
+// does not exceed the given character limit.
+func TruncateStringSlice(strs []string, charLimit int) (truncatedList []string, truncated bool) {
+	length := 0
+	for i, s := range strs {
+		if i > 0 {
+			// When rendered in the UI, each arg except the first will be
+			// preceded by a space. Count this towards the char limit.
+			length += 1
+		}
+		if length+len(s) > charLimit {
+			return strs[:i], true
+		}
+		length += len(s)
+	}
+	return strs, false
 }
