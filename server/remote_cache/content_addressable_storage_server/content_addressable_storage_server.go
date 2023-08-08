@@ -3,7 +3,6 @@ package content_addressable_storage_server
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"os"
@@ -392,85 +391,6 @@ func zstdDecompress(data []byte, decompressedLength int64) ([]byte, error) {
 		return nil, status.InternalErrorf("Failed to decompress zstd-compressed blob: %s", err)
 	}
 	return out, nil
-}
-
-type dirStack struct {
-	dirSizes map[*repb.Directory]int64
-	dirs     []*repb.Directory
-	lock     sync.Mutex
-}
-
-func NewDirStack(token string) (*dirStack, error) {
-	newDirStack := &dirStack{
-		lock:     sync.Mutex{},
-		dirs:     make([]*repb.Directory, 0),
-		dirSizes: make(map[*repb.Directory]int64, 0),
-	}
-	if token != "" {
-		tree := &repb.TreeToken{}
-		protoBytes, err := base64.StdEncoding.DecodeString(token)
-		if err != nil {
-			return nil, err
-		}
-		if err := proto.Unmarshal(protoBytes, tree); err != nil {
-			return nil, err
-		}
-		for _, sizedDirectory := range tree.GetSizedDirectories() {
-			sd := sizedDirectory
-			newDirStack.dirs = append(newDirStack.dirs, sd.GetDirectory())
-			newDirStack.dirSizes[sd.GetDirectory()] = sizedDirectory.GetSizeBytes()
-		}
-	}
-	return newDirStack, nil
-}
-func (d *dirStack) Empty() bool {
-	d.lock.Lock()
-	empty := len(d.dirs) == 0
-	d.lock.Unlock()
-	return empty
-}
-
-func (d *dirStack) Push(dir *repb.Directory, sizeBytes int64) {
-	d.lock.Lock()
-	d.dirs = append(d.dirs, dir)
-	d.dirSizes[dir] = sizeBytes
-	d.lock.Unlock()
-}
-func (d *dirStack) Pop() (*repb.Directory, int64) {
-	d.lock.Lock()
-	dirsLength := len(d.dirs)
-	if dirsLength == 0 {
-		return nil, 0
-	}
-	lastElementIndex := dirsLength - 1
-	result := d.dirs[lastElementIndex]
-	d.dirs = d.dirs[:lastElementIndex]
-	sizeBytes, ok := d.dirSizes[result]
-	if !ok {
-		return nil, 0
-	}
-	d.lock.Unlock()
-	return result, sizeBytes
-}
-func (d *dirStack) SerializeToToken() (string, error) {
-	tree := &repb.TreeToken{}
-	for _, dir := range d.dirs {
-		sizeBytes, ok := d.dirSizes[dir]
-		if !ok {
-			return "", status.InternalError("Unable to serialize tree token")
-		}
-		tree.SizedDirectories = append(tree.SizedDirectories, &repb.SizedDirectory{
-			Directory: dir,
-			SizeBytes: sizeBytes,
-		})
-	}
-	protoBytes, err := proto.Marshal(tree)
-	if err != nil {
-		return "", err
-	}
-
-	token := base64.StdEncoding.EncodeToString(protoBytes)
-	return token, nil
 }
 
 func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName *digest.ResourceName) (*repb.Directory, error) {
