@@ -179,7 +179,7 @@ var (
 
 	vmIdx    int
 	vmIdxMu  sync.Mutex
-	vmIdxMap map[int]struct{}
+	vmIdxMap := make(map[int]struct{})
 
 	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 )
