@@ -179,7 +179,9 @@ build or fetch these dependencies.
 
 :::
 
-## Linux image configuration
+## Linux configuration
+
+### Docker image
 
 By default, workflows run on an Ubuntu 18.04-based image. You can use
 a newer, Ubuntu 20.04-based image using the `container_image` action
@@ -196,13 +198,31 @@ actions:
 The supported values for `container_image` are `"ubuntu-18.04"` (default)
 or `"ubuntu-20.04"`.
 
+### VM resources
+
+BuildBuddy cloud isolates Linux workflows using
+[Firecracker MicroVMs](./rbe-microvms.md).
+
 By default, workflow VMs have the following resources available:
 
-- 3 CPU
-- 8 GB of RAM
-- 20 GB of disk space
+- 4 CPU cores
+- 16 GB\* of RAM
+- 20 GB\* of disk space
+
+\* These are SI units: 1 GB = 10^9 bytes.
 
 These values are configurable using [resource requests](#resourcerequests).
+For example, the default resource limits would be configured explicitly
+as follows:
+
+```yaml
+actions:
+  - name: Test
+    resource_requests:
+      cpu: 4
+      memory: 16_000_000_000 # bytes
+      disk: 20_000_000_000 # bytes
+```
 
 ## Mac configuration
 

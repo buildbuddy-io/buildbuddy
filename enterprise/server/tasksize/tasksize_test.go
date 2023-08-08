@@ -95,7 +95,7 @@ func TestEstimate_BCUPlatformProps_ConvertsBCUToTaskSize(t *testing.T) {
 		},
 	})
 
-	assert.Equal(t, int64(2*2.5*1e9), ts.EstimatedMemoryBytes)
+	assert.Equal(t, int64(2*4*1e9), ts.EstimatedMemoryBytes)
 	assert.Equal(t, int64(2*1000), ts.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.DefaultFreeDiskEstimate, ts.EstimatedFreeDiskBytes)
 }

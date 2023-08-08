@@ -69,7 +69,7 @@ var (
 	workflowsDefaultImage         = flag.String("remote_execution.workflows_default_image", platform.DockerPrefix+platform.Ubuntu18_04WorkflowsImage, "The default container-image property to use for workflows. Must include docker:// prefix if applicable.")
 	workflowsCIRunnerDebug        = flag.Bool("remote_execution.workflows_ci_runner_debug", false, "Whether to run the CI runner in debug mode.")
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
-	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
+	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 4, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)

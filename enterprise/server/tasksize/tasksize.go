@@ -34,8 +34,8 @@ const (
 
 	// Definitions for BCU ("BuildBuddy Compute Unit")
 
-	ComputeUnitsToMilliCPU = 1000      // 1 BCU = 1000 milli-CPU
-	ComputeUnitsToRAMBytes = 2.5 * 1e9 // 1 BCU = 2.5GB of memory
+	ComputeUnitsToMilliCPU = 1000    // 1 BCU = 1000 milli-CPU
+	ComputeUnitsToRAMBytes = 4 * 1e9 // 1 BCU = 4GB of memory
 
 	// Default resource estimates
 
