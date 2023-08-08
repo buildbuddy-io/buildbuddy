@@ -189,6 +189,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) err
 	}
 	uffd := setup.Uffd
 	mappings := setup.Mappings
+	defer syscall.Close(int(uffd))
 
 	pollFDs := []unix.PollFd{
 		{Fd: int32(uffd), Events: C.POLLIN},
