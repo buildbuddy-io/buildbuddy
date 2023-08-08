@@ -1520,6 +1520,8 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		if err := c.Create(ctx, actionWorkingDir); err != nil {
 			return nonCmdExit(ctx, err)
 		}
+	} else {
+		log.Warningf("OH MAN, ALREADY CREATED...")
 	}
 
 	// TODO(bduffany): Remove in the background so that we don't unnecessarily
