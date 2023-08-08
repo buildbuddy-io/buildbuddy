@@ -167,7 +167,7 @@ func main() {
 		for {
 			<-sigc
 			log.Errorf("Capturing snapshot...")
-			if err := c.SaveSnapshot(ctx); err != nil {
+			if err := c.Pause(ctx); err != nil {
 				log.Fatalf("Error dumping snapshot: %s", err)
 			}
 			log.Printf("Saved snapshot")
