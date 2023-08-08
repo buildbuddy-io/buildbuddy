@@ -350,7 +350,7 @@ type APIKey struct {
 	// The API key token used for authentication.
 	Value          string `gorm:"default:NULL;uniqueIndex:api_key_value_composite_index;index:api_key_unencrypted_value_index;"`
 	EncryptedValue string `gorm:"default:'';uniqueIndex:api_key_value_composite_index;index:api_key_encrypted_value_index;"`
-	Nonce          string `gorm:"default:NULL;"`
+	Nonce          string `gorm:"default:NULL"`
 	Perms          int32  `gorm:"default:NULL"`
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
