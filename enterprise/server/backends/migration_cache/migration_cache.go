@@ -149,6 +149,7 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 		AtimeUpdateThreshold:        cfg.AtimeUpdateThreshold,
 		AtimeBufferSize:             cfg.AtimeBufferSize,
 		MinEvictionAge:              cfg.MinEvictionAge,
+		AverageChunkSizeBytes:       cfg.AverageChunkSizeBytes,
 	}
 	c, err := pebble_cache.NewPebbleCache(env, opts)
 	if err != nil {
