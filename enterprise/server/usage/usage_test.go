@@ -80,9 +80,6 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 		require.NoError(t, err)
 		// Throw out Model timestamps to simplify assertions.
 		tu.Model = tables.Model{}
-		// Clear out FinalBeforeUsec to simplify assertions; this is being
-		// phased out.
-		tu.FinalBeforeUsec = 0
 		usages = append(usages, tu)
 	}
 	return usages
