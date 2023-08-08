@@ -177,8 +177,9 @@ var (
 	firecrackerBinPath string
 	jailerBinPath      string
 
-	vmIdx   int
-	vmIdxMu sync.Mutex
+	vmIdx    int
+	vmIdxMu  sync.Mutex
+	vmIdxMap map[int]struct{}
 
 	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 )
@@ -1006,13 +1007,21 @@ func (c *FirecrackerContainer) newID(ctx context.Context) error {
 		return err
 	}
 	vmIdx += 1
+	foundValue := -1
+	for i := 0; i < maxVMSPerHost; i++ {
+		if !vmIdxMap[(i+vmIdx)%maxVMSPerHost] {
+			foundValue = (i + vmIdx) % maxVMSPerHost
+			break
+		}
+	}
+	if foundValue == -1 {
+		return status.UnavailableError("Space for new VMs is exhausted.")
+	}
+	vmIdx = foundValue
+	vmIdxMap[vmIdx] = struct{}{}
 	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
 	c.id = u.String()
 	c.vmIdx = vmIdx
-
-	if vmIdx > maxVMSPerHost {
-		vmIdx = 0
-	}
 
 	return nil
 }
@@ -1471,6 +1480,11 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	}
 	if err := networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx); err != nil {
 		lastErr = err
+	}
+	if lastErr == nil {
+		vmIdxMu.Lock()
+		defer vmIdxMu.Unlock()
+		delete(vmIdxMap, c.vmIdx)
 	}
 	return lastErr
 }
