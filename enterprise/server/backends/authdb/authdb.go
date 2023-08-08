@@ -132,11 +132,16 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 }
 
 type apiKeyGroup struct {
+	APIKeyID               string
 	UserID                 string
 	GroupID                string
 	Capabilities           int32
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
+}
+
+func (g *apiKeyGroup) GetAPIKeyID() string {
+	return g.APIKeyID
 }
 
 func (g *apiKeyGroup) GetUserID() string {
@@ -383,6 +388,7 @@ func (d *AuthDB) newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Que
 	qb := query_builder.NewQuery(`
 		SELECT
 			ak.capabilities,
+			ak.api_key_id,
 			ak.user_id,
 			g.group_id,
 			g.use_group_owned_executors,
