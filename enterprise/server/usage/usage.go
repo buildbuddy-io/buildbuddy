@@ -277,15 +277,6 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, co
 			PeriodStartUsec: p.Start().UnixMicro(),
 			Region:          ut.region,
 			UsageCounts:     *counts,
-			// While we're migrating to INSERT-only flushing, we still need to
-			// write FinalBeforeUsec to be compatible with old apps that still
-			// rely on it to know whether the collection period data has been
-			// written. Note that this only matters if a new app happens to
-			// write a collection period starting at the beginning of an hour.
-			//
-			// TODO(bduffany): remove this once all apps are migrated to flush
-			// at 1 minute granularity.
-			FinalBeforeUsec: p.Start().Add(periodDuration).UnixMicro(),
 		}
 
 		b, _ := json.Marshal(tu)
