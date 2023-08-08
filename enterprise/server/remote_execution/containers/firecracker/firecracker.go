@@ -1017,6 +1017,7 @@ func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	if foundValue == -1 {
 		return status.UnavailableError("Space for new VMs is exhausted.")
 	}
+	log.Warningf("\n\nUSING VALUE... %d\n\n", foundValue)
 	vmIdx = foundValue
 	vmIdxMap[vmIdx] = struct{}{}
 	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
