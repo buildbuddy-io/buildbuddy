@@ -275,6 +275,7 @@ func resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint
 		}
 		return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
 	}
+	log.Debug("UFFDIO_COPY")
 	return int64(copyData.Copy), nil
 }
 

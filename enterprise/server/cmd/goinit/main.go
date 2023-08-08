@@ -461,5 +461,6 @@ func runVMExecServer(ctx context.Context) error {
 		}
 	}
 
+	log.Infof("Just about to start listening for vm exec calls")
 	return server.Serve(listener)
 }
