@@ -1876,20 +1876,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		}
 		c.machine = nil
 	}
-	if err := c.cleanupNetworking(ctx); err != nil {
-		log.CtxErrorf(ctx, "Error cleaning up networking: %s", err)
-		lastErr = err
-	}
-	if c.tempDir != "" {
-		if err := os.RemoveAll(c.tempDir); err != nil {
-			log.CtxErrorf(ctx, "Error removing workspace fs: %s", err)
-			lastErr = err
-		}
-	}
-	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
-		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
-		lastErr = err
-	}
 	if c.vfsServer != nil {
 		c.vfsServer.Stop()
 		c.vfsServer = nil
@@ -1913,6 +1899,20 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if c.memoryStore != nil {
 		c.memoryStore.Close()
 		c.memoryStore = nil
+	}
+	if err := c.cleanupNetworking(ctx); err != nil {
+		log.CtxErrorf(ctx, "Error cleaning up networking: %s", err)
+		lastErr = err
+	}
+	if c.tempDir != "" {
+		if err := os.RemoveAll(c.tempDir); err != nil {
+			log.CtxErrorf(ctx, "Error removing workspace fs: %s", err)
+			lastErr = err
+		}
+	}
+	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
+		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
+		lastErr = err
 	}
 	return lastErr
 }
