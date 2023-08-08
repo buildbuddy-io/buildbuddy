@@ -7,16 +7,17 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
+)
 
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
+const (
+	// Max number of goroutines to use for fetching blobs in a single stream.
+	fetcherConcurrency = 10
 )
 
 // BufferedProtoWriter chunks together and writes protos to blobstore after
@@ -32,23 +33,26 @@ type BufferedProtoWriter struct {
 	writeMutex          sync.Mutex // protects(writeBuf), protects(writeSequenceNumber), protects(lastWriteTime)
 }
 
+// MessageAllocator returns a new, empty proto message of a fixed type.
+type MessageAllocator func() proto.Message
+
 // BufferedProtoReader reads the chunks written by BufferedProtoWriter. Callers
 // should call ReadProto until it returns io.EOF, at which point the stream
 // has been exhausted.
-// N.B. This *DOES NOT* guarantee that a caller has read all data for a
-// streamID, because it may still be written to from another goroutine.
 type BufferedProtoReader struct {
 	bs       interfaces.Blobstore
 	fetcher  *fetcher
 	readBuf  *bytes.Buffer
 	streamID string
+	// Buffered messages that have been fetched and unmarshaled.
+	buffer []proto.Message
 }
 
-func NewBufferedProtoReader(bs interfaces.Blobstore, streamID string) *BufferedProtoReader {
+func NewBufferedProtoReader(bs interfaces.Blobstore, streamID string, allocator MessageAllocator) *BufferedProtoReader {
 	return &BufferedProtoReader{
 		streamID: streamID,
 		bs:       bs,
-		fetcher:  newFetcher(bs, streamID),
+		fetcher:  newFetcher(bs, streamID, allocator),
 	}
 }
 
@@ -149,14 +153,15 @@ type fetchRequest struct {
 }
 
 type fetchResponse struct {
-	Data  []byte
-	Error error
+	Messages []proto.Message
+	Error    error
 }
 
-// fetcher fetches a sequence of blobs concurrently.
+// fetcher fetches and unmarshals a sequence of blobs concurrently.
 type fetcher struct {
 	blobstore interfaces.Blobstore
 	streamID  string
+	allocator MessageAllocator
 
 	requests chan *fetchRequest
 	stop     func()
@@ -165,10 +170,11 @@ type fetcher struct {
 	stopped bool
 }
 
-func newFetcher(blobstore interfaces.Blobstore, streamID string) *fetcher {
+func newFetcher(blobstore interfaces.Blobstore, streamID string, allocator MessageAllocator) *fetcher {
 	fetcher := &fetcher{
 		blobstore: blobstore,
 		streamID:  streamID,
+		allocator: allocator,
 	}
 	return fetcher
 }
@@ -176,8 +182,7 @@ func newFetcher(blobstore interfaces.Blobstore, streamID string) *fetcher {
 // Starts a background goroutine to spawn fetches until either the context is
 // done or a request returns an error that is surfaced in Next().
 func (f *fetcher) start(ctx context.Context) {
-	concurrency := runtime.NumCPU()
-	f.requests = make(chan *fetchRequest, concurrency)
+	f.requests = make(chan *fetchRequest, fetcherConcurrency)
 	ctx, cancel := context.WithCancel(ctx)
 	f.stop = func() {
 		cancel()
@@ -196,14 +201,40 @@ func (f *fetcher) start(ctx context.Context) {
 			}
 			go func() {
 				data, err := f.blobstore.ReadBlob(ctx, ChunkName(f.streamID, req.Index))
-				req.ResponseChan <- &fetchResponse{Data: data, Error: err}
+				if err != nil {
+					req.ResponseChan <- &fetchResponse{Error: err}
+					return
+				}
+				messages, err := f.unmarshalBlob(data)
+				req.ResponseChan <- &fetchResponse{
+					Messages: messages,
+					Error:    err,
+				}
 			}()
 		}
 	}()
 }
 
+func (f *fetcher) unmarshalBlob(b []byte) ([]proto.Message, error) {
+	buf := bytes.NewBuffer(b)
+	var messages []proto.Message
+	for buf.Len() > 0 {
+		recordLength, err := binary.ReadVarint(buf)
+		if err != nil {
+			return nil, err
+		}
+		recordContent := buf.Next(int(recordLength))
+		msg := f.allocator()
+		if err := proto.Unmarshal(recordContent, msg); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
 // Next returns the next blob in the sequence.
-func (f *fetcher) Next(ctx context.Context) ([]byte, error) {
+func (f *fetcher) Next(ctx context.Context) ([]proto.Message, error) {
 	// The first time Next() is called, start fetching.
 	if f.requests == nil {
 		f.start(ctx)
@@ -220,34 +251,23 @@ func (f *fetcher) Next(ctx context.Context) ([]byte, error) {
 			f.stop()
 			return nil, err
 		}
-		return res.Data, nil
+		return res.Messages, nil
 	}
 }
 
-func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) error {
-	for {
-		if w.readBuf == nil {
-			// Load file
-			fileData, err := w.fetcher.Next(ctx)
-			if err != nil {
-				if gstatus.Code(err) == gcodes.NotFound {
-					return io.EOF
-				}
-				return err
-			}
-			w.readBuf = bytes.NewBuffer(fileData)
-		}
-		// read proto from buf
-		count, err := binary.ReadVarint(w.readBuf)
+func (w *BufferedProtoReader) ReadProto(ctx context.Context) (proto.Message, error) {
+	for len(w.buffer) == 0 {
+		// Wait for next blob in the sequence to be fetched and unmarshaled.
+		messages, err := w.fetcher.Next(ctx)
 		if err != nil {
-			w.readBuf = nil
-			continue
+			if status.IsNotFoundError(err) {
+				return nil, io.EOF
+			}
+			return nil, err
 		}
-		protoBytes := make([]byte, count)
-		w.readBuf.Read(protoBytes)
-		if err := proto.Unmarshal(protoBytes, msg); err != nil {
-			return err
-		}
-		return nil
+		w.buffer = messages
 	}
+	next := w.buffer[0]
+	w.buffer = w.buffer[1:]
+	return next, nil
 }

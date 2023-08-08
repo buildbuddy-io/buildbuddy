@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -97,7 +98,8 @@ func main() {
 		log.Fatalf("Error opening stream: %s", err.Error())
 	}
 	protoStreamID := build_event_handler.GetStreamIdFromInvocationIdAndAttempt(*invocationID, uint64(*attemptNumber))
-	pr := protofile.NewBufferedProtoReader(bs, protoStreamID)
+	eventAllocator := func() proto.Message { return &inpb.InvocationEvent{} }
+	pr := protofile.NewBufferedProtoReader(bs, protoStreamID, eventAllocator)
 	sequenceNum := int64(0)
 	streamID := &bepb.StreamId{
 		InvocationId: getUUID(),
@@ -105,8 +107,7 @@ func main() {
 	}
 	log.Infof("Replaying events...")
 	for {
-		ie := &inpb.InvocationEvent{}
-		err := pr.ReadProto(ctx, ie)
+		msg, err := pr.ReadProto(ctx)
 		if err != nil {
 			if err == io.EOF {
 				if sequenceNum == 0 {
@@ -123,6 +124,7 @@ func main() {
 			log.Fatalf("Error reading invocation event from stream: %s", err.Error())
 		}
 		sequenceNum += 1
+		ie := msg.(*inpb.InvocationEvent)
 		buildEvent := ie.GetBuildEvent()
 		switch p := buildEvent.Payload.(type) {
 		case *espb.BuildEvent_Started:
