@@ -125,7 +125,7 @@ go_test(
     timeout = "long",
     srcs = ["firecracker_test.go"],
     args = [
-        "--executor.firecracker_enable_nbd=true",
+        "--executor.firecracker_enable_nbd=false",
         "--executor.firecracker_enable_uffd=true",
     ],
     exec_properties = {
