@@ -1009,7 +1009,7 @@ func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	vmIdx += 1
 	foundValue := -1
 	for i := 0; i < maxVMSPerHost; i++ {
-		if !vmIdxMap[(i+vmIdx)%maxVMSPerHost] {
+		if _, ok := vmIdxMap[(i+vmIdx)%maxVMSPerHost]; ok {
 			foundValue = (i + vmIdx) % maxVMSPerHost
 			break
 		}
