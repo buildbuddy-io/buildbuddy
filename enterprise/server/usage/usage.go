@@ -2,10 +2,10 @@ package usage
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -61,12 +61,12 @@ const (
 
 	// Redis storage layout for buffered usage counts (V2):
 	//
-	// "usage/collections/{period}" points to a set of "collection" JSON objects
-	// where each is a serialized `Collection` struct. The Collection struct is
+	// "usage/collections/{period}" points to a set of "collection" objects
+	// where each is an encoded `Collection` struct. The Collection struct is
 	// effectively the usage row "key": group ID + label values.
 	//
-	// "usage/counts/{period}/{sha256(collection_json)}" holds the usage counts
-	// for the collection during the collection period.
+	// "usage/counts/{period}/{encode(collection)}" holds the usage counts for
+	// the collection during the collection period.
 	//
 	// To do a flush, apps look at the N most recent collection periods which
 	// are "settled" (i.e. no more data will be collected, and therefore ready
@@ -184,17 +184,14 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		GroupID:     groupID,
 		UsageLabels: *labels,
 	}
-	collectionJSON, err := json.Marshal(collection)
-	if err != nil {
-		return status.WrapError(err, "marshal collection")
-	}
 	// Increment the hash values
-	countsKey := countsRedisKey(t, collectionJSON)
+	encodedCollection := encodeCollection(collection)
+	countsKey := countsRedisKey(t, encodedCollection)
 	if err := ut.env.GetMetricsCollector().IncrementCountsWithExpiry(ctx, countsKey, counts, redisKeyTTL); err != nil {
 		return status.WrapError(err, "increment counts in redis")
 	}
 	// Add the collection hash to the set of collections with usage
-	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsRedisKey(t), redisKeyTTL, string(collectionJSON)); err != nil {
+	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsRedisKey(t), redisKeyTTL, encodedCollection); err != nil {
 		return status.WrapError(err, "add collection hash to set in redis")
 	}
 
@@ -260,34 +257,34 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	for p := ut.oldestWritablePeriod(); ut.isSettled(p); p = p.Next() {
 		// Read collections (JSON-serialized Collection structs)
 		gk := collectionsRedisKey(p)
-		collectionJSONs, err := ut.rdb.SMembers(ctx, gk).Result()
+		encodedCollections, err := ut.rdb.SMembers(ctx, gk).Result()
 		if err != nil {
 			return err
 		}
-		if len(collectionJSONs) == 0 {
+		if len(encodedCollections) == 0 {
 			continue
 		}
 
-		for _, collectionJSON := range collectionJSONs {
-			ok, err := ut.supportsCollection(ctx, collectionJSON)
+		for _, encodedCollection := range encodedCollections {
+			ok, err := ut.supportsCollection(ctx, encodedCollection)
 			if err != nil {
 				return status.WrapError(err, "check DB schema supports collection")
 			}
 			if !ok {
-				// Collection JSON contains a new column; let a newer app flush
+				// Collection contains a new column; let a newer app flush
 				// instead.
-				log.Infof("Usage collection JSON %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", collectionJSON, p)
+				log.Infof("Usage collection %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", encodedCollection, p)
 				return nil
 			}
 		}
 
-		for _, collectionJSON := range collectionJSONs {
-			collection := &Collection{}
-			if err := json.Unmarshal([]byte(collectionJSON), collection); err != nil {
-				return status.WrapError(err, "unmarshal collection json")
+		for _, encodedCollection := range encodedCollections {
+			collection, _, err := decodeCollection(encodedCollection)
+			if err != nil {
+				return status.WrapError(err, "decode collection")
 			}
 			// Read usage counts from Redis
-			ck := countsRedisKey(p, []byte(collectionJSON))
+			ck := countsRedisKey(p, encodedCollection)
 			h, err := ut.rdb.HGetAll(ctx, ck).Result()
 			if err != nil {
 				return err
@@ -382,16 +379,22 @@ func (ut *tracker) isSettled(c period) bool {
 // Returns whether the given JSON representing a Collection struct contains
 // only fields that are supported by this app; i.e. it returns false if the
 // Collection was written by a newer app.
-func (ut *tracker) supportsCollection(ctx context.Context, collectionJSON string) (bool, error) {
-	fields := map[string]any{}
-	if err := json.Unmarshal([]byte(collectionJSON), &fields); err != nil {
-		return false, err
+func (ut *tracker) supportsCollection(ctx context.Context, encodedCollection string) (bool, error) {
+	_, vals, err := decodeCollection(encodedCollection)
+	if err != nil {
+		return false, nil
 	}
 	schema, err := db.TableSchema(ut.env.GetDBHandle().DB(ctx), &tables.Usage{})
 	if err != nil {
 		return false, err
 	}
-	for f := range fields {
+	for f, v := range vals {
+		// If the field is empty, the app is setting the field but to an empty
+		// value; we can tolerate this because the inserted usage row will
+		// have an empty value by default.
+		if len(v) == 0 || (len(v) == 1 && v[0] == "") {
+			continue
+		}
 		if _, ok := schema.FieldsByDBName[f]; !ok {
 			return false, nil
 		}
@@ -442,17 +445,49 @@ func (c period) String() string {
 
 type Collection struct {
 	// TODO: maybe make GroupID a field of tables.UsageLabels.
-	GroupID string `json:"group_id,omitempty"`
+	GroupID string
 	tables.UsageLabels
+}
+
+// encodeCollection encodes the collection to a human readable format.
+func encodeCollection(c *Collection) string {
+	// Using a handwritten encoding scheme for performance reasons (this
+	// runs on every cache request).
+	s := "group_id=" + c.GroupID
+	if c.UsageLabels.Origin != "" {
+		s += "&origin=" + url.QueryEscape(c.UsageLabels.Origin)
+	}
+	if c.UsageLabels.Client != "" {
+		s += "&client=" + url.QueryEscape(c.UsageLabels.Client)
+	}
+	return s
+}
+
+// decodeCollection decodes a string encoded using encodeCollection.
+// It returns the raw url.Values so that apps can detect collections encoded
+// by newer apps.
+func decodeCollection(s string) (*Collection, url.Values, error) {
+	q, err := url.ParseQuery(s)
+	if err != nil {
+		return nil, nil, err
+	}
+	c := &Collection{
+		GroupID: q.Get("group_id"),
+		UsageLabels: tables.UsageLabels{
+			// Note: these need to match the DB field names.
+			Origin: q.Get("origin"),
+			Client: q.Get("client"),
+		},
+	}
+	return c, q, nil
 }
 
 func collectionsRedisKey(c period) string {
 	return fmt.Sprintf("%s%s", redisCollectionsKeyPrefix, c)
 }
 
-func countsRedisKey(c period, collectionJSON []byte) string {
-	jsonHash := sha256.Sum256(collectionJSON)
-	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, c, fmt.Sprintf("%x", jsonHash))
+func countsRedisKey(c period, encodedCollection string) string {
+	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, c, encodedCollection)
 }
 
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {

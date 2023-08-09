@@ -2,8 +2,6 @@ package usage_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -127,13 +125,8 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	ut.Increment(ctx1, labels, &tables.UsageCounts{CASCacheHits: 1})
 	ut.Increment(ctx2, labels, &tables.UsageCounts{CASCacheHits: 10})
 
-	collection1 := &usage.Collection{GroupID: "GR1", UsageLabels: *labels}
-	json1 := collectionJSON(t, collection1)
-	hash1 := collectionHash(t, collection1)
-
-	collection2 := &usage.Collection{GroupID: "GR2", UsageLabels: *labels}
-	json2 := collectionJSON(t, collection2)
-	hash2 := collectionHash(t, collection2)
+	encodedCollection1 := "group_id=GR1&origin=internal&client=bazel"
+	encodedCollection2 := "group_id=GR2&origin=internal&client=bazel"
 
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
@@ -143,8 +136,8 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	require.NoError(t, err)
 
 	collectionsKey := "usage/collections/" + timeStr(period1Start)
-	countsKey1 := "usage/counts/" + timeStr(period1Start) + "/" + hash1
-	countsKey2 := "usage/counts/" + timeStr(period1Start) + "/" + hash2
+	countsKey1 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection1
+	countsKey2 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection2
 	require.ElementsMatch(
 		t, []string{countsKey1, countsKey2, collectionsKey}, keys,
 		"redis keys should match expected format")
@@ -161,9 +154,12 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 		"cas_cache_hits": "10",
 	}, counts2, "counts should match what we observed")
 
-	collectionJSONs, err := rdb.SMembers(ctx, collectionsKey).Result()
+	encodedCollections, err := rdb.SMembers(ctx, collectionsKey).Result()
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{json1, json2}, collectionJSONs, "collection hashes should match the groups/labels with usage data")
+	assert.ElementsMatch(
+		t,
+		[]string{encodedCollection1, encodedCollection2}, encodedCollections,
+		"encoded collections should match the groups/labels with usage data")
 
 	// Set clock so that the written periods are finalized.
 	clock.Set(clock.Now().Add(2 * periodDuration))
@@ -622,18 +618,16 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 	require.NoError(t, err)
 	ctx := context.Background()
 
-	supportedJSON := `{"group_id":"GR1", "origin": "internal"}`
-	unsupportedJSON := `{"group_id": "GR1", "origin": "internal", "unsupported_new_label": "foo"}`
-	supportedHash := sha256String(supportedJSON)
-	unsupportedHash := sha256String(unsupportedJSON)
+	supportedCollection := `group_id=GR1&origin=internal&unsupported_but_empty_label_should_be_ok=`
+	unsupportedCollection := `group_id=GR1&origin=internal&unsupported_new_label=foo`
 	mc := te.GetMetricsCollector()
-	err = mc.SetAdd(ctx, "usage/collections/"+timeStr(period1Start), supportedJSON)
+	err = mc.SetAdd(ctx, "usage/collections/"+timeStr(period1Start), supportedCollection)
 	require.NoError(t, err)
-	err = mc.IncrementCounts(ctx, fmt.Sprintf("usage/counts/%s/%s", timeStr(period1Start), supportedHash), map[string]int64{"invocations": 1})
+	err = mc.IncrementCounts(ctx, fmt.Sprintf("usage/counts/%s/%s", timeStr(period1Start), supportedCollection), map[string]int64{"invocations": 1})
 	require.NoError(t, err)
-	err = mc.SetAdd(ctx, "usage/collections/"+timeStr(period2Start), unsupportedJSON)
+	err = mc.SetAdd(ctx, "usage/collections/"+timeStr(period2Start), unsupportedCollection)
 	require.NoError(t, err)
-	err = mc.IncrementCounts(ctx, fmt.Sprintf("usage/counts/%s/%s", timeStr(period2Start), unsupportedHash), map[string]int64{"invocations": 1})
+	err = mc.IncrementCounts(ctx, fmt.Sprintf("usage/counts/%s/%s", timeStr(period2Start), unsupportedCollection), map[string]int64{"invocations": 1})
 	require.NoError(t, err)
 	err = mc.Flush(ctx)
 	require.NoError(t, err)
@@ -689,20 +683,6 @@ func newFlushLock(t *testing.T, te *testenv.TestEnv) interfaces.DistributedLock 
 	lock, err := usage.NewFlushLock(te)
 	require.NoError(t, err)
 	return lock
-}
-
-func collectionJSON(t *testing.T, c *usage.Collection) string {
-	b, err := json.Marshal(c)
-	require.NoError(t, err)
-	return string(b)
-}
-
-func collectionHash(t *testing.T, c *usage.Collection) string {
-	return sha256String(collectionJSON(t, c))
-}
-
-func sha256String(s string) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(s)))
 }
 
 // Randomly returns either an empty mapping or a label mapping with just one

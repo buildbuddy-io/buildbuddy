@@ -13,6 +13,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/bazel_request",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/monitoring",

@@ -616,11 +616,11 @@ type UsageCounts struct {
 
 type UsageLabels struct {
 	// Origin identifies the network/location of the usage.
-	Origin string `json:"origin,omitempty" gorm:"not null;default:''"`
+	Origin string `gorm:"not null;default:''"`
 
 	// Client describes the type of client responsible for the usage, such as
 	// "bazel" or "executor".
-	Client string `json:"client,omitempty" gorm:"not null;default:''"`
+	Client string `gorm:"not null;default:''"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.
