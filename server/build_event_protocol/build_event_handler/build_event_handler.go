@@ -1321,7 +1321,15 @@ func streamRawInvocationEvents(env environment.Env, ctx context.Context, streamI
 // in memory.
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
 	var events []*inpb.InvocationEvent
-	inv, err := LookupInvocationWithCallback(ctx, env, iid, maxEventCount, func(event *inpb.InvocationEvent) error {
+	inv, err := LookupInvocationWithCallback(ctx, env, iid, func(event *inpb.InvocationEvent) error {
+		// Certain buggy rulesets will mark intermediate output files as
+		// important-outputs. This can result in very large BES streams which
+		// use a ton of memory and are not displayable by the browser. If we
+		// detect a large number of events coming through, begin dropping non-
+		// important events so that this invocation can be displayed.
+		if len(events) >= maxEventCount && !accumulator.IsImportantEvent(event.BuildEvent) {
+			return nil
+		}
 		events = append(events, event)
 		return nil
 	})
@@ -1336,7 +1344,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 // events instead of buffering events into the events list.
 //
 // TODO: switch to using this API wherever possible.
-func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid string, limit int, cb invocationEventCB) (*inpb.Invocation, error) {
+func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid string, cb invocationEventCB) (*inpb.Invocation, error) {
 	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
 		return nil, err
@@ -1389,22 +1397,7 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 		beValues := accumulator.NewBEValues(invocation)
 		events := []*inpb.InvocationEvent{}
 		structuredCommandLines := []*command_line.CommandLine{}
-
-		eventCount := 0
 		err := streamRawInvocationEvents(env, ctx, streamID, func(event *inpb.InvocationEvent) error {
-			eventCount += 1
-			// Certain buggy rulesets will mark intermediate output
-			// files as important-outputs. This can result in very
-			// large BES streams which use a ton of memory and are
-			// not displayable by the browser. If we detect a large
-			// number of events coming through, begin dropping non-
-			// important events so that this invocation can be
-			// displayed.
-			if limit >= 0 && eventCount > limit {
-				if !accumulator.IsImportantEvent(event.BuildEvent) {
-					return nil
-				}
-			}
 			if redactor != nil {
 				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
 					return err
