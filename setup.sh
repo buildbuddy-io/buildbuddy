@@ -27,17 +27,22 @@ sudo curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/rel
 sudo chmod +x /usr/local/bin/bazelisk
 sudo cp /usr/local/bin/bazelisk /usr/local/bin/bazel
 cd buildbuddy
-git checkout uffd_linux_test
 sudo apt-get install -y --no-install-recommends       build-essential
 
 # Install firecracker
-release_url="https://github.com/firecracker-microvm/firecracker/releases"
-latest=$(basename $(curl -fsSLI -o /dev/null -w  %{url_effective} ${release_url}/latest))
-arch=`uname -m`
-curl -L ${release_url}/download/${latest}/firecracker-${latest}-${arch}.tgz | tar -xz
-mv release-${latest}-$(uname -m)/firecracker-${latest}-$(uname -m) firecracker
-sudo mv release-${latest}-$(uname -m)/jailer-${latest}-$(uname -m) /usr/bin/jailer
-sudo cp firecracker /usr/bin/
+#release_url="https://github.com/firecracker-microvm/firecracker/releases"
+#latest=$(basename $(curl -fsSLI -o /dev/null -w  %{url_effective} ${release_url}/latest))
+#arch=`uname -m`
+#curl -L ${release_url}/download/${latest}/firecracker-${latest}-${arch}.tgz | tar -xz
+#mv release-${latest}-$(uname -m)/firecracker-${latest}-$(uname -m) firecracker
+#sudo mv release-${latest}-$(uname -m)/jailer-${latest}-$(uname -m) /usr/bin/jailer
+#sudo cp firecracker /usr/bin/
+
+# Install patched firecracker
+wget -c https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.4.0-20230720-cf5f56f.tgz
+tar -xzf firecracker-v1.4.0-20230720-cf5f56f.tgz
+sudo cp firecracker-v1.4.0-20230720-cf5f56f /usr/bin/firecracker
+sudo cp jailer-v1.4.0-20230720-cf5f56f /usr/bin/jailer
 
 # Install skopeo
 echo 'deb https://downloadcontent.opensuse.org/repositories/home:/alvistack/Debian_11/ /' | sudo tee -a /etc/apt/sources.list.d/home:alvistack.list
