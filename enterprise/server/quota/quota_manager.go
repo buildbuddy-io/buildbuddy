@@ -261,6 +261,9 @@ type QuotaManager struct {
 	namespaces    sync.Map // map of string namespace name -> *namespace
 	bucketCreator bucketCreatorFn
 	ps            interfaces.PubSub
+	// Streams an event after each successful reload.
+	// For testing only.
+	reloaded chan struct{}
 }
 
 func NewQuotaManager(env environment.Env, ps interfaces.PubSub) (*QuotaManager, error) {
@@ -273,13 +276,14 @@ func newQuotaManager(env environment.Env, ps interfaces.PubSub, bucketCreator bu
 		namespaces:    sync.Map{},
 		bucketCreator: bucketCreator,
 		ps:            ps,
+		reloaded:      make(chan struct{}, 1),
 	}
 	err := qm.reloadNamespaces()
 	if err != nil {
 		return nil, err
 	}
 
-	go qm.listenForUpdates(env.GetServerContext())
+	qm.listenForUpdates(env.GetServerContext())
 
 	return qm, nil
 }
@@ -553,16 +557,25 @@ func (qm *QuotaManager) reloadNamespaces() error {
 	return nil
 }
 
+// listenForUpdates sets up a subscription to quota bucket updates, and then
+// starts a background goroutine to reload namespaces on each update.
 func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 	subscriber := qm.ps.Subscribe(ctx, pubSubChannelName)
 	defer subscriber.Close()
 	pubsubChan := subscriber.Chan()
-	for range pubsubChan {
-		err := qm.reloadNamespaces()
-		if err != nil {
-			alert.UnexpectedEvent("quota-cannot-reload", " quota manager failed to reload configs: %s", err)
+	go func() {
+		for range pubsubChan {
+			err := qm.reloadNamespaces()
+			if err != nil {
+				alert.UnexpectedEvent("quota-cannot-reload", " quota manager failed to reload configs: %s", err)
+				continue
+			}
+			select {
+			case qm.reloaded <- struct{}{}:
+			default:
+			}
 		}
-	}
+	}()
 }
 
 func (qm *QuotaManager) notifyListeners() {
