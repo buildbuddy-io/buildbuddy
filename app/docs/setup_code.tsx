@@ -5,12 +5,16 @@ import capabilities from "../capabilities/capabilities";
 import LinkButton from "../components/button/link_button";
 import Select, { Option } from "../components/select/select";
 import rpcService from "../service/rpc_service";
-import Banner from "../components/banner/banner";
 import { api_key } from "../../proto/api_key_ts_proto";
 import error_service from "../errors/error_service";
+import Banner from "../components/banner/banner";
 
 interface Props {
   bazelConfigResponse?: bazel_config.IGetBazelConfigResponse;
+  /** Whether to require the cache to be enabled. */
+  requireCacheEnabled?: boolean;
+  /** Optional instructions to display above the setup code. */
+  instructionsHeader?: React.ReactNode;
 }
 
 interface State {
@@ -38,6 +42,8 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   };
 
   componentWillMount() {
+    if (this.props.requireCacheEnabled) this.setState({ cacheChecked: true });
+
     authService.userStream.subscribe({
       next: (user?: User) => this.setState({ user }),
     });
@@ -277,8 +283,20 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
       return <div className="setup">{this.renderMissingApiKeysNotice()}</div>;
     }
 
+    if (
+      this.props.requireCacheEnabled &&
+      !this.state.bazelConfigResponse?.configOption?.some((option) => option.flagName === "remote_cache")
+    ) {
+      return (
+        <div className="setup">
+          <Banner type="info">Remote caching is not enabled for this BuildBuddy instance.</Banner>
+        </div>
+      );
+    }
+
     return (
       <div className="setup">
+        {this.props.instructionsHeader && <div className="setup-instructions">{this.props.instructionsHeader}</div>}
         <div className="setup-step-header">Select options</div>
         <div className="setup-controls">
           {this.isAuthEnabled() && (
@@ -366,6 +384,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
                   onChange={this.handleCheckboxChange.bind(this)}
                   name="cacheChecked"
                   type="checkbox"
+                  disabled={this.props.requireCacheEnabled}
                 />
                 <label htmlFor="cache">
                   <span>Enable cache</span>
