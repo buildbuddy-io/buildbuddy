@@ -47,6 +47,7 @@ func clearARPCache() error {
 	if err != nil {
 		return err
 	}
+	defer handle.Close()
 	links, err := netlink.LinkList()
 	if err != nil {
 		return err
