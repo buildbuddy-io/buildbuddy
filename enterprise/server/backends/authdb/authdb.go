@@ -102,15 +102,15 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 
 		rowsUpdated := 0
 		for _, apk := range keysToUpdate {
-			encrypted, nonce, err := d.encryptAPIKey(apk.Value)
+			encrypted, err := d.encryptAPIKey(apk.Value)
 			if err != nil {
 				return err
 			}
 			if err := dbh.Exec(`
 				UPDATE "APIKeys"
-				SET encrypted_value = ?, nonce = ?
+				SET encrypted_value = ?
 				WHERE api_key_id = ?`,
-				encrypted, nonce, apk.APIKeyID,
+				encrypted, apk.APIKeyID,
 			).Error; err != nil {
 				return err
 			}
@@ -118,13 +118,6 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 		}
 		if rowsUpdated == 0 {
 			break
-		}
-	}
-
-	idxName := "api_key_nonce_index"
-	if !dbh.Migrator().HasIndex("APIKeys", idxName) {
-		if err := dbh.Exec(fmt.Sprintf(`CREATE UNIQUE INDEX %s ON "APIKeys" (nonce)`, idxName)).Error; err != nil {
-			return err
 		}
 	}
 
@@ -207,12 +200,12 @@ func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 // key, encoded into a hex string. The result is prefixed with
 // apiKeyEncryptedValuePrefix to make it possible to differentiate encrypted
 // and non-encrypted values in the database.
-func (d *AuthDB) encryptAPIKey(apiKey string) (string, string, error) {
+func (d *AuthDB) encryptAPIKey(apiKey string) (string, error) {
 	if len(apiKey) != apiKeyLength {
-		return "", "", status.FailedPreconditionErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
+		return "", status.FailedPreconditionErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 	}
 	if d.apiKeyEncryptionKey == nil {
-		return "", "", status.FailedPreconditionError("API key encryption is not enabled")
+		return "", status.FailedPreconditionError("API key encryption is not enabled")
 	}
 
 	nonce := apiKey[:apiKeyNonceLength]
@@ -220,13 +213,13 @@ func (d *AuthDB) encryptAPIKey(apiKey string) (string, string, error) {
 	copy(paddedNonce, nonce)
 	ciph, err := chacha20.NewUnauthenticatedCipher(d.apiKeyEncryptionKey, paddedNonce)
 	if err != nil {
-		return "", "", status.InternalErrorf("could not create API key cipher: %s", err)
+		return "", status.InternalErrorf("could not create API key cipher: %s", err)
 	}
 
 	data := []byte(apiKey[apiKeyNonceLength:])
 	ciph.XORKeyStream(data, data)
 	data = append([]byte(apiKey[:apiKeyNonceLength]), data...)
-	return hex.EncodeToString(data), nonce, nil
+	return hex.EncodeToString(data), nil
 }
 
 // decryptAPIKey retrieves the plaintext representation of the API key. It is
@@ -285,7 +278,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 			keyClauses.AddOr("ak.value = ?", apiKey)
 		}
 		if d.apiKeyEncryptionKey != nil {
-			encryptedAPIKey, _, err := d.encryptAPIKey(apiKey)
+			encryptedAPIKey, err := d.encryptAPIKey(apiKey)
 			if err != nil {
 				return err
 			}
@@ -428,6 +421,7 @@ func (d *AuthDB) createAPIKey(db *db.DB, userID, groupID, label string, caps []a
 	if err != nil {
 		return nil, err
 	}
+	nonce := key[:apiKeyNonceLength]
 
 	pk, err := tables.PrimaryKeyForTable("APIKeys")
 	if err != nil {
@@ -441,13 +435,12 @@ func (d *AuthDB) createAPIKey(db *db.DB, userID, groupID, label string, caps []a
 	}
 
 	value := key
-	var nonce, encryptedValue string
+	var encryptedValue string
 	if d.apiKeyEncryptionKey != nil && *encryptNewKeys {
-		ek, n, err := d.encryptAPIKey(key)
+		ek, err := d.encryptAPIKey(key)
 		if err != nil {
 			return nil, err
 		}
-		nonce = n
 		encryptedValue = ek
 		value = ""
 	}

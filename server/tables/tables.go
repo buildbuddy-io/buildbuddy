@@ -350,7 +350,7 @@ type APIKey struct {
 	// The API key token used for authentication.
 	Value          string `gorm:"default:NULL;uniqueIndex:api_key_value_composite_index;index:api_key_unencrypted_value_index;"`
 	EncryptedValue string `gorm:"default:'';uniqueIndex:api_key_value_composite_index;index:api_key_encrypted_value_index;"`
-	Nonce          string `gorm:"default:NULL;"`
+	Nonce          string `gorm:"default:NULL;uniqueIndex:api_key_nonce_index"`
 	Perms          int32  `gorm:"default:NULL"`
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
@@ -834,6 +834,26 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			return nil
 		})
 	}
+
+	if m.HasTable("APIKeys") {
+		// Add nonce column w/o unique index so that we can backfill it before
+		// gorm adds the unique index.
+		if !m.HasColumn(&APIKey{}, "nonce") {
+			stmt := `ALTER TABLE "APIKeys" ADD COLUMN "nonce" varchar(255) DEFAULT NULL`
+			if err := db.Exec(stmt).Error; err != nil {
+				return nil, err
+			}
+		}
+		backfill := `
+			UPDATE "APIKeys"
+			SET nonce = SUBSTR(value, 1, 6)
+			WHERE nonce is NULL or nonce = ''
+		`
+		if err := db.Exec(backfill).Error; err != nil {
+			return nil, err
+		}
+	}
+
 	return postMigrate, nil
 }
 
