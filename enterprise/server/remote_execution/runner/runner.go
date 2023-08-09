@@ -1185,8 +1185,13 @@ func (p *pool) String() string {
 	return runnerSlice(p.runners).String()
 }
 
+// takeWithRetry attempts to take (unpause) a runner from the pool. If the
+// unpause fails, it retries up to 5 times. For any given attempt, if there
+// are no runners available to unpause, this will return nil. If an unpause
+// operation fails on a given attempt, the runner is removed from the pool.
 func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
 	for i := 1; i <= maxUnpauseAttempts; i++ {
+		// Note: take returns (nil, nil) if there are no available runners.
 		r, err := p.take(ctx, key)
 		if err == nil {
 			return r
