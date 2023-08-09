@@ -1,6 +1,9 @@
 package digest
 
 import (
+	"bytes"
+	"crypto/rand"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -228,5 +231,21 @@ func TestRandomGenerator(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, size, d.SizeBytes)
 		assert.InDelta(t, int(float64(size)*expectedCompression), len(cb), float64(size)*0.20, "should get approximately 0.3 compression ratio")
+	}
+}
+
+func BenchmarkDigestCompute(b *testing.B) {
+	for _, size := range []int64{1, 10, 100, 1000, 10_000, 100_000} {
+		for _, df := range []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3} {
+			b.Run(fmt.Sprintf("%s/%d", repb.DigestFunction_Value_name[int32(df)], size), func(b *testing.B) {
+				buf := make([]byte, size)
+				_, err := rand.Read(buf)
+				require.NoError(b, err)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					Compute(bytes.NewReader(buf), df)
+				}
+			})
+		}
 	}
 }
