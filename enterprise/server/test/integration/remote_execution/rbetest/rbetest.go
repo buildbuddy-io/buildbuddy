@@ -55,7 +55,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testolapdb"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -71,7 +70,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
 
-	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -766,10 +764,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	xl := xcode.NewXcodeLocator()
 	env.SetXcodeLocator(xl)
 
-	bundleFS, err := bundle.Get()
-	require.NoError(r.t, err)
-	env.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
-	err = resources.Configure()
+	err := resources.Configure()
 	require.NoError(r.t, err)
 
 	flags.Set(t, "executor.pool", options.Pool)

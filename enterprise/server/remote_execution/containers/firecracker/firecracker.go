@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
+	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -183,15 +184,15 @@ var (
 	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 )
 
-func openFile(ctx context.Context, env environment.Env, fileName string) (io.ReadCloser, error) {
+func openFile(ctx context.Context, fsys fs.FS, fileName string) (io.ReadCloser, error) {
 	// If the file exists on the filesystem, use that.
 	if path, err := exec.LookPath(fileName); err == nil {
 		log.CtxDebugf(ctx, "Located %q at %s", fileName, path)
 		return os.Open(path)
 	}
 
-	// Otherwise try to find it in the bundle or runfiles.
-	return env.GetFileResolver().Open(fileName)
+	// Otherwise try to find it in the provided fs
+	return fsys.Open(fileName)
 }
 
 // Returns the cgroup version available on this machine, which is returned from
@@ -225,8 +226,8 @@ func getCgroupVersion() (string, error) {
 // and returns a path to the file in the new location. Files are written in
 // a content-addressable-storage-based location, so when files are updated they
 // will be put into new paths.
-func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir string, mode fs.FileMode) (string, error) {
-	f, err := openFile(ctx, env, fileName)
+func putFileIntoDir(ctx context.Context, fsys fs.FS, fileName, destDir string, mode fs.FileMode) (string, error) {
+	f, err := openFile(ctx, fsys, fileName)
 	if err != nil {
 		return "", err
 	}
@@ -252,7 +253,7 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 		return casPath, nil
 	}
 	// Write the file to the new location if it does not exist there already.
-	f, err = openFile(ctx, env, fileName)
+	f, err = openFile(ctx, fsys, fileName)
 	if err != nil {
 		return "", err
 	}
@@ -1119,11 +1120,12 @@ func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string
 
 	locateBinariesOnce, _ := locateBinariesOnceMap.LoadOrStore(workingDir, &sync.Once{})
 	locateBinariesOnce.(*sync.Once).Do(func() {
-		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, env, "enterprise/vmsupport/bin/initrd.cpio", workingDir, 0755)
+		fsys := vmsupport_bundle.Get()
+		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, fsys, "enterprise/vmsupport/bin/initrd.cpio", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
 		}
-		kernelImagePath, locateBinariesError = putFileIntoDir(ctx, env, "enterprise/vmsupport/bin/vmlinux", workingDir, 0755)
+		kernelImagePath, locateBinariesError = putFileIntoDir(ctx, fsys, "enterprise/vmsupport/bin/vmlinux", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
 		}

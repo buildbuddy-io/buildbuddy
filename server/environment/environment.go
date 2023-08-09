@@ -105,12 +105,6 @@ type Env interface {
 	GetXcodeLocator() interfaces.XcodeLocator
 	SetQuotaManager(interfaces.QuotaManager)
 	GetQuotaManager() interfaces.QuotaManager
-	// GetFileResolver returns an FS that can be used to read server-side
-	// resources that aren't intended to be directly served to end users. It first
-	// consults the bundle and falls back to runfiles.
-	//
-	// See server/util/fileresolver/fileresolver.go
-	GetFileResolver() fs.FS
 	GetMux() interfaces.HttpServeMux
 	SetMux(interfaces.HttpServeMux)
 	GetHTTPServerWaitGroup() *sync.WaitGroup

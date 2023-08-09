@@ -1,7 +1,7 @@
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "staticcheck_analyzers")
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
+load("@io_bazel_rules_go//go:def.bzl", "nogo")
 load("@npm//@bazel/typescript:index.bzl", "ts_config")
 load("//rules/go:index.bzl", "go_sdk_tool")
 
@@ -198,12 +198,11 @@ ts_config(
     src = ":tsconfig.json",
 )
 
-filegroup(
-    name = "config_files",
-    srcs = select({
-        ":release_build": ["config/buildbuddy.release.yaml"],
-        "//conditions:default": glob(["config/**"]),
-    }),
+config_setting(
+    name = "fastbuild",
+    values = {
+        "compilation_mode": "fastbuild",
+    },
 )
 
 config_setting(
@@ -232,49 +231,6 @@ package_group(
     name = "enterprise",
     packages = [
         "//enterprise/...",
-    ],
-)
-
-config_setting(
-    name = "fastbuild",
-    values = {"compilation_mode": "fastbuild"},
-)
-
-# Synthesize a copy of the file in the current package so it can be embedded.
-genrule(
-    name = "aws_rds_certs",
-    srcs = ["@aws_rds_certs//file:rds-combined-ca-bundle.pem"],
-    outs = ["rds-combined-ca-bundle.pem"],
-    cmd_bash = "cp $(SRCS) $@",
-)
-
-# Certs that are distributed with the server binary.
-filegroup(
-    name = "embedded_certs",
-    srcs = [":rds-combined-ca-bundle.pem"],
-)
-
-# N.B. this is ignored by gazelle so must be updated by hand.
-# It must live at the repo root to be able to bundle other files using
-# "go:embed".
-go_library(
-    name = "bundle",
-    srcs = ["bundle.go"],
-    embedsrcs = [
-        "//:config_files",
-        "//:embedded_certs",
-        "//static",
-    ] + select({
-        ":fastbuild": [],
-        "//conditions:default": [
-            "//app:app_bundle",
-            "//app:style.css",
-            "//app:sha",
-        ],
-    }),
-    importpath = "github.com/buildbuddy-io/buildbuddy",
-    deps = [
-        "//server/util/fileresolver",
     ],
 )
 

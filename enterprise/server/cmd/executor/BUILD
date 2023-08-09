@@ -14,7 +14,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise:bundle",
         "//enterprise/server/auth",
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/gcs_cache",
@@ -36,7 +35,6 @@ go_library(
         "//server/real_environment",
         "//server/resources",
         "//server/ssl",
-        "//server/util/fileresolver",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
@@ -67,8 +65,8 @@ go_binary(
         "--max_shutdown_duration=3s",
     ],
     data = [
-        "//enterprise:config_files",
         "//enterprise:licenses",
+        "//enterprise/config:config_files",
     ],
     embed = [":executor_lib"],
 )

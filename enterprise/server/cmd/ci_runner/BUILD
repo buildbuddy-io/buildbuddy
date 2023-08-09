@@ -1,6 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
+# gazelle:default_visibility //enterprise:__subpackages__
 package(
     default_visibility = [
         "//enterprise:__subpackages__",
@@ -54,7 +55,7 @@ go_binary(
 )
 
 genrule(
-    name = "embedsrcs_compatible_ci_runner",
+    name = "data_compatible_ci_runner",
     srcs = [":ci_runner"],
     outs = ["buildbuddy_ci_runner"],
     cmd_bash = "cp $(SRCS) $@",

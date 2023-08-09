@@ -10,6 +10,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/db",
     visibility = ["//visibility:public"],
     deps = [
+        "//aws_rds_certs:bundle",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",

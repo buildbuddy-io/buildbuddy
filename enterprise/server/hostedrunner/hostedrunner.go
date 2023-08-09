@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
 
+	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -43,7 +44,7 @@ type runnerService struct {
 }
 
 func New(env environment.Env) (*runnerService, error) {
-	f, err := env.GetFileResolver().Open(runnerPath)
+	f, err := ci_runner_bundle.Get().Open(runnerPath)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not open runner binary runfile: %s", err)
 	}
@@ -94,7 +95,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	binaryBlob, err := fs.ReadFile(r.env.GetFileResolver(), runnerPath)
+	binaryBlob, err := fs.ReadFile(ci_runner_bundle.Get(), runnerPath)
 	if err != nil {
 		return nil, err
 	}

@@ -1,13 +1,10 @@
 load("//rules/typescript:index.bzl", "ts_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild", "esbuild_config")
 load("//rules/sha:index.bzl", "sha")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+# gazelle:default_visibility //enterprise:__subpackages__
 package(default_visibility = ["//enterprise:__subpackages__"])
-
-config_setting(
-    name = "fastbuild",
-    values = {"compilation_mode": "fastbuild"},
-)
 
 esbuild_config(
     name = "esbuild_config",
@@ -33,7 +30,7 @@ esbuild(
     ],
     metafile = False,
     minify = select({
-        ":fastbuild": False,
+        "//:fastbuild": False,
         "//conditions:default": True,
     }),
     visibility = ["//visibility:public"],
@@ -97,5 +94,32 @@ ts_library(
         "@npm//@types/react-dom",
         "@npm//react",
         "@npm//react-dom",
+    ],
+)
+
+genrule(
+    name = "empty_for_embedsrcs",
+    outs = ["empty"],
+    cmd_bash = "touch $@",
+)
+
+# gazelle:ignore
+go_library(
+    name = "bundle",
+    srcs = ["bundle.go"],
+    embedsrcs = select({
+        "//:fastbuild": [
+            # Serve app from bazel runfiles when developing locally
+            ":empty",  # embed fails with no embedsrcs
+        ],
+        "//conditions:default": [
+            ":app_bundle",
+            ":style",
+            ":sha",
+        ],
+    }),
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/app",
+    deps = [
+        "//server/util/fileresolver",
     ],
 )

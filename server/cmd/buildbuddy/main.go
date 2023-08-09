@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
+
+	app_bundle "github.com/buildbuddy-io/buildbuddy/app"
 )
 
 var (
@@ -32,7 +34,11 @@ func main() {
 	config.ReloadOnSIGHUP()
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	env := libmain.GetConfiguredEnvironmentOrDie(healthChecker)
+	appFS, err := app_bundle.GetAppFS()
+	if err != nil {
+		log.Fatalf("Error getting app FS from bundle: %s", err)
+	}
+	env := libmain.GetConfiguredEnvironmentOrDie(healthChecker, appFS)
 
 	telemetryClient := telemetry.NewTelemetryClient(env)
 	telemetryClient.Start()

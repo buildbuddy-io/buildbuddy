@@ -13,10 +13,10 @@ go_binary(
         "--app_directory=/app",
     ],
     data = [
-        "//:config_files",
         "//app:app_bundle",
         "//app:sha",
         "//app:style.css",
+        "//config:config_files",
         "//static",
     ],
     embed = [":buildbuddy_lib"],
@@ -54,6 +54,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cmd/buildbuddy",
     visibility = [":__subpackages__"],
     deps = [
+        "//app:bundle",
         "//server/config",
         "//server/janitor",
         "//server/libmain",

@@ -19,6 +19,7 @@ import (
 
 	golog "log"
 
+	"github.com/buildbuddy-io/buildbuddy/aws_rds_certs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
@@ -537,8 +538,8 @@ func (c *connector) Driver() driver.Driver {
 	return c.d
 }
 
-func openDB(ctx context.Context, fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
-	ds, err := ParseDatasource(ctx, fileResolver, dataSource, advancedConfig)
+func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
+	ds, err := ParseDatasource(ctx, dataSource, advancedConfig)
 	if err != nil {
 		return nil, "", err
 	}
@@ -641,7 +642,7 @@ func (aid *awsIAMDataSource) DSN() (string, error) {
 
 func loadAWSRDSCACerts(fileResolver fs.FS) (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
-	f, err := fileResolver.Open("rds-combined-ca-bundle.pem")
+	f, err := fileResolver.Open("aws_rds_certs/rds-combined-ca-bundle.pem")
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not open RDS CA bundle: %s", err)
 	}
@@ -656,7 +657,7 @@ func loadAWSRDSCACerts(fileResolver fs.FS) (*x509.CertPool, error) {
 	return certPool, nil
 }
 
-func ParseDatasource(ctx context.Context, fileResolver fs.FS, datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
+func ParseDatasource(ctx context.Context, datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
 	if *advancedConfig != (AdvancedConfig{}) {
 		ac := advancedConfig
 		dsn, err := newDSNFormatter(ac)
@@ -681,7 +682,7 @@ func ParseDatasource(ctx context.Context, fileResolver fs.FS, datasource string,
 			}
 
 			if ac.Driver == mysqlDriver {
-				certPool, err := loadAWSRDSCACerts(fileResolver)
+				certPool, err := loadAWSRDSCACerts(aws_rds_certs.Get())
 				if err != nil {
 					return nil, err
 				}
@@ -833,16 +834,14 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 
 	tables.RegisterTables()
 
-	if env.GetFileResolver() != nil {
-		// Verify that the AWS RDS certs are properly packaged.
-		// They won't actually be used unless the AWS IAM feature is enabled.
-		_, err := loadAWSRDSCACerts(env.GetFileResolver())
-		if err != nil {
-			return nil, err
-		}
+	// Verify that the AWS RDS certs are properly packaged.
+	// They won't actually be used unless the AWS IAM feature is enabled.
+	_, err := loadAWSRDSCACerts(aws_rds_certs.Get())
+	if err != nil {
+		return nil, err
 	}
 
-	primaryDB, driverName, err := openDB(ctx, env.GetFileResolver(), *dataSource, advDataSource)
+	primaryDB, driverName, err := openDB(ctx, *dataSource, advDataSource)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
@@ -895,7 +894,7 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
-		replicaDB, readDialect, err := openDB(ctx, env.GetFileResolver(), *readReplica, advReadReplica)
+		replicaDB, readDialect, err := openDB(ctx, *readReplica, advReadReplica)
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("could not configure read replica database: %s", err)
 		}

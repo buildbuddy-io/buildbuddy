@@ -39,7 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -52,7 +51,6 @@ import (
 
 	"google.golang.org/grpc"
 
-	bundle "github.com/buildbuddy-io/buildbuddy"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -61,6 +59,7 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 
 	// Force this package to be a direct dependency in `go.mod` so that
@@ -106,7 +105,7 @@ func init() {
 	grpc.EnableTracing = false
 }
 
-func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
+func configureFilesystemsOrDie(realEnv *real_environment.RealEnv, appBundleFS fs.FS) {
 	if err := scratchspace.Init(); err != nil {
 		log.Fatalf("Failed to initialize temp storage directory: %s", err)
 	}
@@ -124,28 +123,17 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 		}
 		realEnv.SetAppFilesystem(appFS)
 	}
-	bundleFS, err := bundle.Get()
-	if err != nil {
-		log.Fatalf("Error getting bundle FS: %s", err)
+	if realEnv.GetStaticFilesystem() == nil {
+		staticFS, err := static_bundle.GetStaticFS()
+		if err != nil {
+			log.Fatalf("Error getting static FS from bundle: %s", err)
+		}
+		log.Debug("Using bundled static filesystem.")
+		realEnv.SetStaticFilesystem(staticFS)
 	}
-	realEnv.SetFileResolver(fileresolver.New(bundleFS, ""))
-	if realEnv.GetStaticFilesystem() == nil || realEnv.GetAppFilesystem() == nil {
-		if realEnv.GetStaticFilesystem() == nil {
-			staticFS, err := fs.Sub(bundleFS, "static")
-			if err != nil {
-				log.Fatalf("Error getting static FS from bundle: %s", err)
-			}
-			log.Debug("Using bundled static filesystem.")
-			realEnv.SetStaticFilesystem(staticFS)
-		}
-		if realEnv.GetAppFilesystem() == nil {
-			appFS, err := fs.Sub(bundleFS, "app")
-			if err != nil {
-				log.Fatalf("Error getting app FS from bundle: %s", err)
-			}
-			log.Debug("Using bundled app filesystem.")
-			realEnv.SetAppFilesystem(appFS)
-		}
+	if realEnv.GetAppFilesystem() == nil {
+		log.Debug("Using bundled app filesystem.")
+		realEnv.SetAppFilesystem(appBundleFS)
 	}
 }
 
@@ -153,7 +141,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
-func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, appBundleFS fs.FS) *real_environment.RealEnv {
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
@@ -162,7 +150,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	realEnv.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	realEnv.SetInternalHTTPMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
-	configureFilesystemsOrDie(realEnv)
+	configureFilesystemsOrDie(realEnv, appBundleFS)
 
 	dbHandle, err := db.GetConfiguredDatabase(context.Background(), realEnv)
 	if err != nil {
