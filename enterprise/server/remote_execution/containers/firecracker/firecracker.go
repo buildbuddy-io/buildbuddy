@@ -1002,7 +1002,7 @@ func (c *FirecrackerContainer) getChroot() string {
 // they will be hardlinked to the chroot when starting the machine (see
 // NaiveChrootStrategy).
 func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
-	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux=1 tsc=reliable ipv6.disable=1"
+	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd tsc=reliable ipv6.disable=1"
 	var netNS string
 
 	if c.vmConfig.EnableNetworking {
