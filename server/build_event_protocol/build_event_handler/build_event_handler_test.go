@@ -187,7 +187,7 @@ type FakeUsageTracker struct {
 	invocations int64
 }
 
-func (t *FakeUsageTracker) Increment(ctx context.Context, usage *tables.UsageCounts) error {
+func (t *FakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, usage *tables.UsageCounts) error {
 	t.invocations += usage.Invocations
 	return nil
 }

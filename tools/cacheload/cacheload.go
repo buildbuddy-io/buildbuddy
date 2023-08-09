@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
@@ -33,7 +34,7 @@ import (
 )
 
 var (
-	cacheTarget  = flag.String("cache_target", "localhost:1985", "Cache target to connect to.")
+	cacheTarget  = flag.String("cache_target", "grpc://localhost:1985", "Cache target to connect to.")
 	writeQPS     = flag.Uint("write_qps", 100, "How many queries per second to attempt to write.")
 	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
@@ -47,6 +48,8 @@ var (
 	keepGoing       = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
 	listen          = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	monitoringPort  = flag.Int("monitoring_port", 0, "The port to listen for monitoring traffic on")
+
+	setRequestMetadata = flag.Bool("set_request_metadata", false, "Whether to set a simulated bazel request metadata header.")
 )
 
 const (
@@ -189,7 +192,22 @@ func main() {
 	log.Printf("Connected to target: %q", *cacheTarget)
 
 	bsClient := bspb.NewByteStreamClient(conn)
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	if *apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	}
+	if *setRequestMetadata {
+		var err error
+		ctx, err = bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+			ToolInvocationId: "0fa77149-7bbc-404a-94b6-71a326999893",
+			ToolDetails: &repb.ToolDetails{
+				ToolName:    "bazel",
+				ToolVersion: "6.3.1",
+			},
+		})
+		if err != nil {
+			log.Fatalf("Failed to set request metadata: %s", err.Error())
+		}
+	}
 	eg, gctx := errgroup.WithContext(ctx)
 
 	numWriters := int(1 + (*writeQPS / 100))

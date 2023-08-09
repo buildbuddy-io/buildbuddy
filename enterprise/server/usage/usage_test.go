@@ -2,6 +2,8 @@ package usage_test
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"reflect"
 	"testing"
 	"time"
@@ -53,6 +55,9 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	))
 	te.SetAuthenticator(auth)
 
+	flags.Set(t, "app.usage_tracking_enabled", true)
+	flags.Set(t, "app.region", "us-west1")
+
 	return te
 }
 
@@ -70,7 +75,7 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	dbh := te.GetDBHandle()
 	rows, err := dbh.DB(ctx).Raw(`
 		SELECT * From "Usages"
-		ORDER BY group_id, period_start_usec, region ASC;
+		ORDER BY group_id, period_start_usec, region, client, origin ASC;
 	`).Rows()
 	require.NoError(t, err)
 
@@ -109,16 +114,19 @@ func (*nopDistributedLock) Unlock(context context.Context) error { return nil }
 func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.T) {
 	clock := testclock.StartingAt(period1Start)
 	te := setupEnv(t)
-	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
-	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
+	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+
 	// Increment for group 1, then group 2
-	ut.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
-	ut.Increment(ctx2, &tables.UsageCounts{CASCacheHits: 10})
+	ut.Increment(ctx1, labels, &tables.UsageCounts{CASCacheHits: 1})
+	ut.Increment(ctx2, labels, &tables.UsageCounts{CASCacheHits: 10})
+
+	encodedCollection1 := "group_id=GR1&origin=internal&client=bazel"
+	encodedCollection2 := "group_id=GR2&origin=internal&client=bazel"
 
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
@@ -126,11 +134,12 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	ctx := context.Background()
 	keys, err := rdb.Keys(ctx, "usage/*").Result()
 	require.NoError(t, err)
-	countsKey1 := "usage/counts/GR1/" + timeStr(period1Start)
-	countsKey2 := "usage/counts/GR2/" + timeStr(period1Start)
-	groupsKey := "usage/groups/" + timeStr(period1Start)
+
+	collectionsKey := "usage/collections/" + timeStr(period1Start)
+	countsKey1 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection1
+	countsKey2 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection2
 	require.ElementsMatch(
-		t, []string{countsKey1, countsKey2, groupsKey}, keys,
+		t, []string{countsKey1, countsKey2, collectionsKey}, keys,
 		"redis keys should match expected format")
 
 	counts1, err := rdb.HGetAll(ctx, countsKey1).Result()
@@ -145,9 +154,12 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 		"cas_cache_hits": "10",
 	}, counts2, "counts should match what we observed")
 
-	groupIDs, err := rdb.SMembers(ctx, groupsKey).Result()
+	encodedCollections, err := rdb.SMembers(ctx, collectionsKey).Result()
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"GR1", "GR2"}, groupIDs, "groups should equal the groups with usage data")
+	assert.ElementsMatch(
+		t,
+		[]string{encodedCollection1, encodedCollection2}, encodedCollections,
+		"encoded collections should match the groups/labels with usage data")
 
 	// Set clock so that the written periods are finalized.
 	clock.Set(clock.Now().Add(2 * periodDuration))
@@ -158,7 +170,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	usages := queryAllUsages(t, te)
 	// We only flushed one period worth of data for both groups, so usage rows
 	// should be finalized up to the second period.
-	assert.ElementsMatch(t, []*tables.Usage{
+	assert.Equal(t, []*tables.Usage{
 		{
 			PeriodStartUsec: period1Start.UnixMicro(),
 			GroupID:         "GR1",
@@ -166,6 +178,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			UsageCounts: tables.UsageCounts{
 				CASCacheHits: 1,
 			},
+			UsageLabels: *labels,
 		},
 		{
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -174,6 +187,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			UsageCounts: tables.UsageCounts{
 				CASCacheHits: 10,
 			},
+			UsageLabels: *labels,
 		},
 	}, usages, "data flushed to DB should match expected values")
 }
@@ -181,19 +195,19 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {
 	clock := testclock.StartingAt(period1Start)
 	te := setupEnv(t)
-	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
-	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+
+	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	clock.Set(period2Start)
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 10})
+	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 10})
 	require.NoError(t, err)
 	clock.Set(period3Start)
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 100})
+	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 100})
 	require.NoError(t, err)
 
 	// Note: we're at the start of the 3rd collection period when flushing.
@@ -216,6 +230,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 			UsageCounts: tables.UsageCounts{
 				CASCacheHits: 1,
 			},
+			UsageLabels: *labels,
 		},
 	}, usages)
 }
@@ -229,7 +244,9 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+
+	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 
 	err = te.GetMetricsCollector().Flush(context.Background())
@@ -252,18 +269,18 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	clock := testclock.StartingAt(period1Start)
 	te := setupEnv(t)
-	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
 
-	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
+	labels := randomEmptyOrSingleLabel()
+
 	// Write 2 collection periods worth of data.
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(periodDuration))
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1000})
+	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1000})
 	require.NoError(t, err)
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
@@ -301,12 +318,14 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 			Region:          "us-west1",
 			PeriodStartUsec: period1Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{CASCacheHits: 1},
+			UsageLabels:     *labels,
 		},
 		{
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period2Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{CASCacheHits: 1000},
+			UsageLabels:     *labels,
 		},
 	}, usages)
 }
@@ -316,7 +335,6 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	// Redis instances should be different.
 	te1 := setupEnv(t)
 	te2 := setupEnv(t)
-	flags.Set(t, "app.usage_tracking_enabled", true)
 	te2.SetDBHandle(te1.GetDBHandle())
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")
@@ -328,10 +346,12 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	ut2, err := usage.NewTracker(te2, clock, newFlushLock(t, te2))
 	require.NoError(t, err)
 
+	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+
 	// Record and flush usage in 2 different regions.
-	err = ut1.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
+	err = ut1.Increment(ctx1, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
-	err = ut2.Increment(ctx2, &tables.UsageCounts{CASCacheHits: 100})
+	err = ut2.Increment(ctx2, labels, &tables.UsageCounts{CASCacheHits: 100})
 	err = te1.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	err = te2.GetMetricsCollector().Flush(context.Background())
@@ -350,18 +370,19 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 			Region:          "europe-north1",
 			PeriodStartUsec: period1Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{CASCacheHits: 100},
+			UsageLabels:     *labels,
 		},
 		{
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period1Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{CASCacheHits: 1},
+			UsageLabels:     *labels,
 		},
 	}, usages)
 }
 
 func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
-	counts := increasingCountsStartingAt(100)
 	te := setupEnv(t)
 	flags.Set(t, "app.usage_tracking_enabled", true)
 	clock := testclock.StartingAt(period1Start)
@@ -370,7 +391,9 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
 	require.NoError(t, err)
 
-	err = ut.Increment(ctx, counts)
+	labels := &tables.UsageLabels{Origin: "", Client: "bazel"}
+	counts := increasingCountsStartingAt(100)
+	err = ut.Increment(ctx, labels, counts)
 	require.NoError(t, err)
 
 	err = te.GetMetricsCollector().Flush(context.Background())
@@ -383,9 +406,246 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	require.Equal(t, []*tables.Usage{{
 		PeriodStartUsec: period1Start.UnixMicro(),
 		GroupID:         "GR1",
+		UsageLabels:     *labels,
 		UsageCounts:     *counts,
 		Region:          "us-west1",
 	}}, usages)
+}
+
+func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
+	te := setupEnv(t)
+	clock := testclock.StartingAt(period1Start)
+	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
+	require.NoError(t, err)
+	ctx := context.Background()
+	ctx1 := authContext(te, "US1")
+
+	observedLabels1 := []tables.UsageLabels{
+		{},
+		{Client: "bazel"},
+		{Client: "bazel"},
+		{Client: "executor", Origin: "internal"},
+	}
+	for _, labels := range observedLabels1 {
+		err := ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
+		require.NoError(t, err)
+	}
+	// Advance to the next collection period and flush the one we just
+	// populated.
+	clock.Set(clock.Now().Add(2 * periodDuration))
+	err = te.GetMetricsCollector().Flush(ctx)
+	require.NoError(t, err)
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	usages := queryAllUsages(t, te)
+	require.Equal(t, []*tables.Usage{
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 2},
+			UsageLabels:     tables.UsageLabels{Client: "bazel"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Client: "executor", Origin: "internal"},
+		},
+	}, usages)
+
+	// Now observe some previously observed labels, and some new ones.
+	observedLabels2 := []tables.UsageLabels{
+		{Client: "bazel"},
+		{Client: "executor"},
+	}
+	for _, labels := range observedLabels2 {
+		err := ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
+		require.NoError(t, err)
+	}
+	// Advance to the next collection period and flush the one we just
+	// populated.
+	clock.Set(clock.Now().Add(2 * periodDuration))
+	err = te.GetMetricsCollector().Flush(ctx)
+	require.NoError(t, err)
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	usages = queryAllUsages(t, te)
+	require.Equal(t, []*tables.Usage{
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 2},
+			UsageLabels:     tables.UsageLabels{Client: "bazel"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Client: "executor", Origin: "internal"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period3Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Client: "bazel"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period3Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Client: "executor"},
+		},
+	}, usages)
+}
+
+func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
+	// This test makes sure the SELECT query is updated in flushCounts each time
+	// we add a new usage label.
+
+	labelsToTest := []tables.UsageLabels{}
+	lbls := reflect.ValueOf(tables.UsageLabels{})
+	for i := 0; i < lbls.NumField(); i++ {
+		l := &tables.UsageLabels{}
+		// Set field i of UsageLabels to two different values.
+		field := reflect.ValueOf(l).Elem().Field(i)
+		fieldName := reflect.ValueOf(l).Elem().Type().Field(i).Name
+
+		field.Set(reflect.ValueOf(fieldName + "-TestValue1"))
+		labelsToTest = append(labelsToTest, *l)
+		field.Set(reflect.ValueOf(fieldName + "-TestValue2"))
+		labelsToTest = append(labelsToTest, *l)
+	}
+	// Test with all labels empty, too.
+	labelsToTest = append(labelsToTest, tables.UsageLabels{})
+
+	te := setupEnv(t)
+	clock := testclock.StartingAt(period1Start)
+	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
+	require.NoError(t, err)
+	ctx := context.Background()
+	ctx1 := authContext(te, "US1")
+
+	// Simulate two different apps attempting to flush the same collection
+	// period data twice for each label set, as though our WeakLock failed. The
+	// logic in the SQL transaction should guarantee that we don't double-count
+	// in this case.
+	for i := 1; i <= 2; i++ {
+		for _, labels := range labelsToTest {
+			err = ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
+			require.NoError(t, err)
+		}
+		tBefore := clock.Now()
+		clock.Set(tBefore.Add(2 * periodDuration))
+		err = te.GetMetricsCollector().Flush(ctx)
+		require.NoError(t, err)
+		err = ut.FlushToDB(ctx)
+		require.NoError(t, err)
+		clock.Set(tBefore)
+	}
+
+	usages := queryAllUsages(t, te)
+	// There should be only one invocation recorded for each label, even though
+	// we had a faulty double-count attempt.
+	require.Equal(t, []*tables.Usage{
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Origin: "Origin-TestValue1"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Origin: "Origin-TestValue2"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Client: "Client-TestValue1"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Client: "Client-TestValue2"},
+		},
+	}, usages)
+}
+
+func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) {
+	// This test makes sure that if a new app starts writing new labels to Redis
+	// that an older app does not yet support, the older app does not handle the
+	// flush and instead lets the new app flush.
+
+	te := setupEnv(t)
+	clock := testclock.StartingAt(period1Start)
+	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	supportedCollection := `group_id=GR1&origin=internal&unsupported_but_empty_label_should_be_ok=`
+	unsupportedCollection := `group_id=GR1&origin=internal&unsupported_new_label=foo`
+	mc := te.GetMetricsCollector()
+	err = mc.SetAdd(ctx, "usage/collections/"+timeStr(period1Start), supportedCollection)
+	require.NoError(t, err)
+	err = mc.IncrementCounts(ctx, fmt.Sprintf("usage/counts/%s/%s", timeStr(period1Start), supportedCollection), map[string]int64{"invocations": 1})
+	require.NoError(t, err)
+	err = mc.SetAdd(ctx, "usage/collections/"+timeStr(period2Start), unsupportedCollection)
+	require.NoError(t, err)
+	err = mc.IncrementCounts(ctx, fmt.Sprintf("usage/counts/%s/%s", timeStr(period2Start), unsupportedCollection), map[string]int64{"invocations": 1})
+	require.NoError(t, err)
+	err = mc.Flush(ctx)
+	require.NoError(t, err)
+
+	clock.Set(period2Start.Add(2 * periodDuration))
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	usages := queryAllUsages(t, te)
+	require.Equal(t, []*tables.Usage{
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Origin: "internal"},
+		},
+	}, usages)
 }
 
 func increasingCountsStartingAt(value int64) *tables.UsageCounts {
@@ -423,4 +683,20 @@ func newFlushLock(t *testing.T, te *testenv.TestEnv) interfaces.DistributedLock 
 	lock, err := usage.NewFlushLock(te)
 	require.NoError(t, err)
 	return lock
+}
+
+// Randomly returns either an empty mapping or a label mapping with just one
+// label field set.
+func randomEmptyOrSingleLabel() *tables.UsageLabels {
+	labels := &tables.UsageLabels{}
+	labelsVal := reflect.ValueOf(labels).Elem()
+	n := 1 + labelsVal.NumField()
+	r := rand.Intn(n)
+	if r == 0 {
+		return labels
+	}
+	f := r - 1
+	fieldVal := fmt.Sprintf("%d", rand.Intn(100))
+	labelsVal.Field(f).Set(reflect.ValueOf(fieldVal))
+	return labels
 }

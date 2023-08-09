@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
@@ -1025,7 +1026,11 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	} else {
 		return status.InternalErrorf("Unsupported platform %s", plat.OS)
 	}
-	return ut.Increment(ctx, counts)
+	labels, err := usageutil.Labels(ctx)
+	if err != nil {
+		return status.WrapError(err, "compute usage labels")
+	}
+	return ut.Increment(ctx, labels, counts)
 }
 
 func (s *ExecutionServer) fetchCommandForTask(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Command, error) {
