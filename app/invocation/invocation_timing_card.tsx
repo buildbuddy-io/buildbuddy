@@ -223,12 +223,16 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     return (
       <>
-        <p>Profiling isn't enabled for this invocation.</p>
-        <p>
-          To enable profiling you must add gRPC remote caching. You can do so by checking <b>Enable cache</b> below,
-          updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
-        </p>
-        <SetupCodeComponent />
+        <p>Profiling isn't enabled for this invocation. To enable profiling you must add gRPC remote caching.</p>
+        <SetupCodeComponent
+          requireCacheEnabled
+          instructionsHeader={
+            <p>
+              To enable remote caching, check <b>Enable cache</b> below, update your <b>.bazelrc</b> accordingly, and
+              re-run your invocation:
+            </p>
+          }
+        />
       </>
     );
   }

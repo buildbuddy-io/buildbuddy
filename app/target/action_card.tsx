@@ -118,13 +118,17 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                 <>
                   {title}
                   <div className="empty-state">
-                    Log uploading isn't enabled for this invocation.
-                    <br />
-                    <br />
-                    To enable action log uploading you must add GRPC remote caching. You can do so by checking{" "}
-                    <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your
-                    invocation:
-                    <SetupCodeComponent />
+                    Log uploading isn't enabled for this invocation. To enable action log uploading you must add gRPC
+                    remote caching.
+                    <SetupCodeComponent
+                      requireCacheEnabled
+                      instructionsHeader={
+                        <p>
+                          To enable remote cache, check <b>Enable cache</b> below, update your <b>.bazelrc</b>{" "}
+                          accordingly, and re-run your invocation:
+                        </p>
+                      }
+                    />
                   </div>
                 </>
               )}
@@ -148,13 +152,17 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                 <>
                   <div className="title">Log</div>
                   <div className="empty-state">
-                    Log uploading isn't enabled for this invocation.
-                    <br />
-                    <br />
-                    To enable action log uploading you must add GRPC remote caching. You can do so by checking{" "}
-                    <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your
-                    invocation:
-                    <SetupCodeComponent />
+                    Log uploading isn't enabled for this invocation. To enable action log uploading, you must add gRPC
+                    remote caching.
+                    <SetupCodeComponent
+                      requireCacheEnabled
+                      instructionsHeader={
+                        <p>
+                          To enable remote caching, check <b>Enable cache</b> below, update your <b>.bazelrc</b>{" "}
+                          accordingly, and re-run your invocation:
+                        </p>
+                      }
+                    />
                   </div>
                 </>
               )}
