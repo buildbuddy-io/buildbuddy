@@ -83,6 +83,7 @@ var (
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
+	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
 
 	// ac eviction flags
 	acEvictionEnabled       = flag.Bool("cache.pebble.ac_eviction_enabled", false, "Whether AC eviction is enabled.")
@@ -166,6 +167,8 @@ type Options struct {
 	AtimeBufferSize      *int
 	MinEvictionAge       *time.Duration
 
+	IncludeMetadataSize bool
+
 	Clock clockwork.Clock
 }
 
@@ -191,6 +194,8 @@ type PebbleCache struct {
 	blockCacheSizeBytes    int64
 	maxInlineFileSizeBytes int64
 	averageChunkSizeBytes  int
+
+	includeMetadataSize bool
 
 	atimeUpdateThreshold time.Duration
 	atimeBufferSize      int
@@ -336,6 +341,7 @@ func Register(env environment.Env) error {
 		AtimeBufferSize:             atimeBufferSizeFlag,
 		MinEvictionAge:              minEvictionAgeFlag,
 		AverageChunkSizeBytes:       *averageChunkSizeBytes,
+		IncludeMetadataSize:         *includeMetadataSize,
 	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
@@ -499,6 +505,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
 		eventListener:               el,
+		includeMetadataSize:         opts.IncludeMetadataSize,
 	}
 
 	versionMetadata, err := pc.databaseVersionMetadata()
@@ -580,7 +587,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize)
 			if err != nil {
 				return err
 			}
@@ -918,6 +925,7 @@ func (p *PebbleCache) processSizeUpdates() {
 
 	for edit := range p.edits {
 		e := evictors[edit.partID]
+		log.Infof("update size: %d", edit.delta)
 		e.updateSize(edit.cacheType, edit.delta)
 	}
 }
@@ -1676,7 +1684,8 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*fileMetadata.GetStoredSizeBytes())
+	mdSize := int64(proto.Size(fileMetadata))
+	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*mdSize)
 	return nil
 }
 
@@ -1720,10 +1729,22 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	if md.GetStoredSizeBytes() > 0 {
-		p.sendSizeUpdate(partitionID, key.CacheType(), -1*md.GetStoredSizeBytes())
+	delta := md.GetStoredSizeBytes()
+	if p.includeMetadataSize {
+		delta = getTotalSizeBytes(md)
 	}
+	p.sendSizeUpdate(partitionID, key.CacheType(), -1*delta)
 	return nil
+}
+
+func getTotalSizeBytes(md *rfpb.FileMetadata) int64 {
+	mdSize := int64(proto.Size(md))
+	if md.GetStorageMetadata().GetInlineMetadata() != nil {
+		// For inline metadata, the size of the metadata include the stored size
+		// bytes.
+		return mdSize
+	}
+	return mdSize + md.GetStoredSizeBytes()
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
@@ -2154,9 +2175,11 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
 			return err
 		}
-		if oldMD.GetStoredSizeBytes() > 0 {
-			p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*oldMD.GetStoredSizeBytes())
+		delta := oldMD.GetStoredSizeBytes()
+		if p.includeMetadataSize {
+			delta = getTotalSizeBytes(oldMD)
 		}
+		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*delta)
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
@@ -2165,9 +2188,13 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	}
 
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
+		delta := md.GetStoredSizeBytes()
+		if p.includeMetadataSize {
+			delta = getTotalSizeBytes(md)
+		}
+		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
+		p.sendSizeUpdate(partitionID, key.CacheType(), delta)
 		if md.GetStoredSizeBytes() > 0 {
-			partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
-			p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
 		}
 	}
@@ -2268,13 +2295,15 @@ type partitionEvictor struct {
 
 	atimeBufferSize int
 	minEvictionAge  time.Duration
+
+	includeMetadataSize bool
 }
 
 type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:              &sync.Mutex{},
 		part:            part,
@@ -2846,6 +2875,11 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 			age := e.clock.Since(atime)
 
+			sizeBytes := fileMetadata.GetStoredSizeBytes()
+			if e.includeMetadataSize {
+				sizeBytes = getTotalSizeBytes(fileMetadata)
+			}
+
 			if age >= e.minEvictionAge {
 				keyBytes := make([]byte, len(iter.Key()))
 				copy(keyBytes, iter.Key())
@@ -2854,7 +2888,7 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 						bytes:           keyBytes,
 						storageMetadata: fileMetadata.GetStorageMetadata(),
 					},
-					SizeBytes: fileMetadata.GetStoredSizeBytes(),
+					SizeBytes: sizeBytes,
 					Timestamp: atime,
 				}
 				samples = append(samples, sample)
