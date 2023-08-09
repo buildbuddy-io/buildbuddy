@@ -844,13 +844,22 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 				return nil, err
 			}
 		}
-		backfill := `
-			UPDATE "APIKeys"
-			SET nonce = SUBSTR(value, 1, 6)
-			WHERE nonce is NULL or nonce = ''
-		`
-		if err := db.Exec(backfill).Error; err != nil {
+
+		row := &struct{ Count int64 }{}
+		err := db.Raw(`SELECT COUNT(*) AS count FROM "APIKeys" WHERE nonce is NULL or nonce = ''`).Take(row).Error
+		if err != nil {
 			return nil, err
+		}
+
+		if row.Count > 0 {
+			backfill := `
+				UPDATE "APIKeys"
+				SET nonce = SUBSTR(value, 1, 6)
+				WHERE nonce is NULL or nonce = ''
+			`
+			if err := db.Exec(backfill).Error; err != nil {
+				return nil, err
+			}
 		}
 	}
 
