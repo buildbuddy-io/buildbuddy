@@ -118,6 +118,10 @@ const (
 	// default memory estimate for execution tasks.
 	runnerMemUsageEstimateMultiplierBytes = 6.5
 
+	// Maximum number of attempts to take a paused runner from the pool before
+	// giving up and creating a new runner.
+	maxUnpauseAttempts = 5
+
 	// Label assigned to runner pool request count metric for fulfilled requests.
 	hitStatusLabel = "hit"
 	// Label assigned to runner pool request count metric for unfulfilled requests.
@@ -975,10 +979,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
 	}
 	if props.RecycleRunner {
-		r, err := p.take(ctx, key)
-		if err != nil {
-			return nil, err
-		}
+		r := p.takeWithRetry(ctx, key)
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
@@ -1182,6 +1183,17 @@ func keyString(k *rnpb.RunnerKey) string {
 
 func (p *pool) String() string {
 	return runnerSlice(p.runners).String()
+}
+
+func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
+	for i := 1; i <= maxUnpauseAttempts; i++ {
+		r, err := p.take(ctx, key)
+		if err == nil {
+			return r
+		}
+		log.CtxWarningf(ctx, "Take attempt %d failed: %s", i, err)
+	}
+	return nil
 }
 
 // take finds the most recently used runner in the pool that matches the given
