@@ -424,13 +424,12 @@ func TestModifyNamespace_UpdateBucket(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
+				<-qm.reloaded
 			}
 			got := fetchQuotaBuckets(t, env, ctx, tc.req.GetNamespace())
-			require.NoError(t, result.Error)
 			// use sortProtos to ignore orders
 			sortProtos := cmpopts.SortSlices(func(m1, m2 protocmp.Message) bool { return m1.String() < m2.String() })
 			assert.Empty(t, cmp.Diff([]*tables.QuotaBucket{tc.wantBucket}, got, protocmp.Transform(), sortProtos))
-			time.Sleep(500 * time.Millisecond)
 			b := qm.findBucket("remote_execution", "GR123456")
 			config := b.Config()
 			config.Model = tables.Model{}
