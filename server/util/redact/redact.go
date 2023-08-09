@@ -226,12 +226,9 @@ func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
 	}
 	if m, ok := metadata.Metadata[explicitCommandLineName]; ok {
 		var commandLine []string
-		json.Unmarshal([]byte(m), &commandLine)
+		_ = json.Unmarshal([]byte(m), &commandLine)
 		redactCmdLine(commandLine)
-		commandLineJSON, err := json.Marshal(commandLine)
-		if err != nil {
-			metadata.Metadata[explicitCommandLineName] = ""
-		}
+		commandLineJSON, _ := json.Marshal(commandLine)
 		metadata.Metadata[explicitCommandLineName] = string(commandLineJSON)
 	}
 }
