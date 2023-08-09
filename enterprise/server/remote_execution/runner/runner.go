@@ -987,6 +987,9 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			r.PlatformProperties = props
 			p.mu.Unlock()
 			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
+			metrics.RecycleRunnerRequests.With(prometheus.Labels{
+				metrics.RecycleRunnerRequestStatusLabel: hitStatusLabel,
+			}).Inc()
 			return r, nil
 		}
 	}
@@ -997,6 +1000,9 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		DebugId:           debugID,
 		AssignedTaskCount: 1,
 	}
+	metrics.RecycleRunnerRequests.With(prometheus.Labels{
+		metrics.RecycleRunnerRequestStatusLabel: missStatusLabel,
+	}).Inc()
 	return p.newRunner(ctx, props, st, state)
 }
 
@@ -1242,16 +1248,9 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, e
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
-		metrics.RecycleRunnerRequests.With(prometheus.Labels{
-			metrics.RecycleRunnerRequestStatusLabel: hitStatusLabel,
-		}).Inc()
 
 		return r, nil
 	}
-
-	metrics.RecycleRunnerRequests.With(prometheus.Labels{
-		metrics.RecycleRunnerRequestStatusLabel: missStatusLabel,
-	}).Inc()
 
 	return nil, nil
 }
