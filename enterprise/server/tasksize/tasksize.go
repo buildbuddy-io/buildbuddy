@@ -257,7 +257,7 @@ func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string,
 	// For now, associate stats with the exact command, including the full
 	// command line, env vars, and platform.
 	// Note: This doesn't account for platform overrides for now
-	// (--remote_header=x-buildbuddy-platform.NAME=VALUE).
+	// (--remote_exec_header=x-buildbuddy-platform.NAME=VALUE).
 	cmdKey, err := commandKey(cmd)
 	if err != nil {
 		return "", err

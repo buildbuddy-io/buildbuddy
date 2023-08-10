@@ -56,8 +56,8 @@ flags to your `bazel` command (replace `USERNAME` and `ACCESS_TOKEN` with
 the appropriate credentials for the container registry):
 
 ```
---remote_header=x-buildbuddy-platform.container-registry-username=USERNAME
---remote_header=x-buildbuddy-platform.container-registry-password=ACCESS_TOKEN
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=USERNAME
+--remote_exec_header=x-buildbuddy-platform.container-registry-password=ACCESS_TOKEN
 ```
 
 For the value of `ACCESS_TOKEN`, we recommend generating a short-lived
@@ -68,8 +68,8 @@ the username must be `_dcgcloud_token` and the token can be generated with
 `gcloud auth print-access-token`:
 
 ```
---remote_header=x-buildbuddy-platform.container-registry-username=_dcgcloud_token
---remote_header=x-buildbuddy-platform.container-registry-password="$(gcloud auth print-access-token)"
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=_dcgcloud_token
+--remote_exec_header=x-buildbuddy-platform.container-registry-password="$(gcloud auth print-access-token)"
 ```
 
 For Amazon ECR (Elastic Container Registry), the username must be `AWS`
@@ -77,8 +77,8 @@ and a short-lived token can be generated with `aws ecr get-login-password --regi
 (replace `REGION` with the region matching the ECR image URL):
 
 ```
---remote_header=x-buildbuddy-platform.container-registry-username=AWS
---remote_header=x-buildbuddy-platform.container-registry-password="$(aws ecr get-login-password --region REGION)"
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=AWS
+--remote_exec_header=x-buildbuddy-platform.container-registry-password="$(aws ecr get-login-password --region REGION)"
 ```
 
 Some cloud providers may also allow the use of long-lived tokens, which
@@ -89,8 +89,8 @@ as the password. Note that remote headers cannot have newlines;
 the command `tr '\n' ' '` is used in this example to remove them:
 
 ```
---remote_header=x-buildbuddy-platform.container-registry-username=_json_key
---remote_header=x-buildbuddy-platform.container-registry-password="$(cat service-account-keyfile.json | tr '\n' ' ')"
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=_json_key
+--remote_exec_header=x-buildbuddy-platform.container-registry-password="$(cat service-account-keyfile.json | tr '\n' ' ')"
 ```
 
 ## Specifying a custom executor pool
