@@ -2808,26 +2808,21 @@ func (e *partitionEvictor) randomKeyForEvictionSampling() ([]byte, error) {
 	e.lastTypeSampled = sampleType
 	e.mu.Unlock()
 
+	var gid string
+	var err error
+
 	// Attempt AC sampling (but do not error out if it fails, instead fall
 	// through to CAS sampling)
 	if sampleType == rspb.CacheType_AC {
-		gid, err := e.randomGroupForEvictionSampling()
-		if err != nil {
-			if !status.IsNotFoundError(err) {
-				log.Warningf("no groups to sample for %q: %s", e.part.ID, err)
-			}
-		} else {
-			if rk, err := e.randomKey(64, gid, sampleType); err == nil {
-				return rk, nil
-			} else {
-				log.Errorf("Error generating random key: %s", err)
-			}
+		gid, err = e.randomGroupForEvictionSampling()
+		if err != nil && !status.IsNotFoundError(err) {
+			log.Warningf("no groups to sample for %q: %s", e.part.ID, err)
 		}
 	}
 
 	// If this is a CAS sample batch, or if AC sampling has failed above,
 	// then pick a CAS key. Any error at this point will be returned.
-	return e.randomKey(64, "", sampleType)
+	return e.randomKey(64, gid, sampleType)
 }
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
@@ -2864,7 +2859,7 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 			}
 			iter.SeekGE(randomKey)
 		}
-		for iter.Next() {
+		for ; iter.Valid(); iter.Next() {
 			if _, err := key.FromBytes(iter.Key()); err != nil {
 				return nil, err
 			}
