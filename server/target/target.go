@@ -144,7 +144,9 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 	}
 
 	var statuses []cmpb.Status
-	if req.GetTargetLabel() == "" && req.GetStatus() == 0 {
+	// Note: req.Status == nil means the status was unset. req.Status will be
+	// non-nil and set to 0 when explicitly requesting the artifact listing.
+	if req.GetTargetLabel() == "" && req.Status == nil {
 		// Requesting a general target listing; fetch initial data pages for
 		// status 0 (for the top-level target+files listing), plus each status
 		// appearing in the build (just metadata).
@@ -176,6 +178,12 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 				labels = append(labels, t.GetMetadata().GetLabel())
 			}
 		}
+		// When requesting artifacts, filter out target labels that don't have
+		// any artifacts.
+		if s == 0 {
+			labels = labelsWithFiles(idx, labels)
+		}
+
 		// Set TotalCount based on the length of the label list *before* slicing
 		// based on the page token.
 		g.TotalCount = int64(len(labels))
@@ -264,6 +272,37 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 		}
 	}
 	return res, nil
+}
+
+func labelsWithFiles(idx *event_index.Index, labels []string) []string {
+	out := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if hasFiles(idx, label) {
+			out = append(out, label)
+		}
+	}
+	return out
+}
+
+func hasFiles(idx *event_index.Index, label string) bool {
+	completed := idx.TargetCompleteEventByLabel[label]
+	if completed == nil {
+		return false
+	}
+	for _, g := range completed.GetOutputGroup() {
+		for _, s := range g.GetFileSets() {
+			for _, f := range idx.NamedSetOfFilesByID[s.GetId()].GetFiles() {
+				if f.GetUri() == "" {
+					// Ignore inlined file contents and symlinks for now.
+					// TODO: render these in the UI so that we can just
+					// return `len(OutputGroup) > 0` here.
+					continue
+				}
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func filesForLabel(idx *event_index.Index, label string) []*build_event_stream.File {

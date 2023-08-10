@@ -181,13 +181,13 @@ message GetTargetRequest {
   // Invocation ID to fetch targets for.
   string invocation_id = 1;
 
-  // Optional, if set only targets with this label will be returned.
-  // If not set, all targets will be returned.
+  // Optional, if nonempty, only targets with this label will be
+  // returned. If empty or unset, all targets will be returned.
   string target_label = 2;
 
-  // Optional, if set only targets with this status will be returned.
+  // Optional, if set, only targets with this status will be returned.
   // If not set, all targets will be returned.
-  api.v1.Status status = 3;
+  optional api.v1.Status status = 3;
 
   string page_token = 4;
 }
