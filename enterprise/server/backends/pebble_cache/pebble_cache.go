@@ -433,7 +433,7 @@ func ensureDefaultPartitionExists(opts *Options) {
 func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 	// These values Borrowed from CockroachDB.
 	opts := &pebble.Options{
-        // The amount of L0 read-amplification necessary to trigger an L0 compaction.
+		// The amount of L0 read-amplification necessary to trigger an L0 compaction.
 		L0CompactionThreshold:    2,
 		MaxConcurrentCompactions: 12,
 		MemTableSize:             64 << 20, // 64 MB
@@ -448,7 +448,7 @@ func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 	// is enabled (if CompactionDebtConcurrency was not already exceeded).
 	// Every multiple of this value enables another concurrent
 	// compaction up to MaxConcurrentCompactions.
-	opts.Experimental.L0CompactionConcurrency = 2
+	opts.Experimental.L0CompactionConcurrency = 4
 	// CompactionDebtConcurrency controls the threshold of compaction debt
 	// at which additional compaction concurrency slots are added. For every
 	// multiple of this value in compaction debt bytes, an additional
