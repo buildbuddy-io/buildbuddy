@@ -528,7 +528,10 @@ ts_library(
     srcs = ["invocation_targets.tsx"],
     deps = [
         "//app/invocation:invocation_model",
+        "//app/invocation:invocation_target_group_card",
         "//app/invocation:invocation_targets_card",
+        "//proto:target_ts_proto",
+        "//proto/api/v1:common_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
@@ -644,5 +647,34 @@ ts_library(
         "@npm//lucide-react",
         "@npm//react",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "invocation_target_group_card",
+    srcs = ["invocation_target_group_card.tsx"],
+    deps = [
+        "//app/components/link",
+        "//app/components/spinner",
+        "//app/errors:error_service",
+        "//app/invocation:target_util",
+        "//app/service:rpc_service",
+        "//app/util:clipboard",
+        "//proto:duration_ts_proto",
+        "//proto:target_ts_proto",
+        "//proto/api/v1:common_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "target_util",
+    srcs = ["target_util.tsx"],
+    deps = [
+        "//app/util:proto",
+        "//proto/api/v1:common_ts_proto",
     ],
 )

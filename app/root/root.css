@@ -617,6 +617,16 @@ body {
   user-select: none;
 }
 
+.card .more-loading {
+  margin-top: 16px;
+  color: #757575;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  user-select: none;
+}
+
 .card-suggestion-message {
   word-break: normal;
   max-width: 800px;

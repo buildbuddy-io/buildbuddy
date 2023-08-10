@@ -107,7 +107,8 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 			idx.Add(event)
 			return nil
 		}
-		inv, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetLookup().GetInvocationId(), callback)
+		inv, err := build_event_handler.LookupInvocationWithCallback(
+			ctx, s.env, req.GetLookup().GetInvocationId(), callback)
 		if err != nil {
 			return nil, err
 		}
@@ -136,12 +137,13 @@ func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetReq
 		idx.Add(event)
 		return nil
 	}
-	inv, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetInvocationId(), callback)
+	inv, err := build_event_handler.LookupInvocationWithCallback(
+		ctx, s.env, req.GetInvocationId(), callback)
 	if err != nil {
 		return nil, err
 	}
 	idx.Finalize()
-	return target.GetTarget(ctx, s.env, inv, idx, &trpb.GetTargetRequest{})
+	return target.GetTarget(ctx, s.env, inv, idx, req)
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {

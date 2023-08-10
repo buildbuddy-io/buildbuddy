@@ -3,11 +3,19 @@ package event_index
 import (
 	"sort"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+)
+
+const (
+	// Only index up to this many non-important events as a safeguard against
+	// excessive memory / CPU consumption.
+	maxEventCount = 2_000_000
 )
 
 // Index holds a few data structures to make it easier to aggregate data from
@@ -24,6 +32,7 @@ type Index struct {
 	// top-level invocation proto.
 	TopLevelEvents []*inpb.InvocationEvent
 
+	eventCount      int
 	rootCauseLabels map[string]bool
 }
 
@@ -42,6 +51,11 @@ func New() *Index {
 // Add adds a single event to the index.
 // Don't forget to call Finalize once all events are added.
 func (idx *Index) Add(event *inpb.InvocationEvent) {
+	if idx.eventCount >= maxEventCount && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
+		return
+	}
+	idx.eventCount++
+
 	switch p := event.GetBuildEvent().GetPayload().(type) {
 	case *bespb.BuildEvent_NamedSetOfFiles:
 		nsid := event.GetBuildEvent().GetId().GetNamedSet().GetId()
@@ -74,7 +88,7 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 			}
 		}
 	case *bespb.BuildEvent_TestSummary:
-		label := event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()
+		label := event.GetBuildEvent().GetId().GetTestSummary().GetLabel()
 		summary := p.TestSummary
 		idx.TestTargetByLabel[label] = &trpb.Target{
 			Metadata: &trpb.TargetMetadata{Label: label},
