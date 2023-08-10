@@ -561,10 +561,9 @@ func (qm *QuotaManager) reloadNamespaces() error {
 // starts a background goroutine to reload namespaces on each update.
 func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 	subscriber := qm.ps.Subscribe(ctx, pubSubChannelName)
-	defer subscriber.Close()
-	pubsubChan := subscriber.Chan()
 	go func() {
-		for range pubsubChan {
+		defer subscriber.Close()
+		for range subscriber.Chan() {
 			err := qm.reloadNamespaces()
 			if err != nil {
 				alert.UnexpectedEvent("quota-cannot-reload", " quota manager failed to reload configs: %s", err)
