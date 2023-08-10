@@ -237,6 +237,7 @@ type gRPCMux struct {
 }
 
 func (g *gRPCMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Warningf("VVV REQ %q Host %q", r.RequestURI, r.Host)
 	if r.ProtoMajor == 2 && strings.HasPrefix(
 		r.Header.Get("Content-Type"), "application/grpc") {
 		g.grpcServer.ServeHTTP(w, r)
