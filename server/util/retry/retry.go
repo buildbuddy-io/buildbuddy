@@ -11,10 +11,17 @@ import (
 
 // This code was inspired by cocroach's retry util.
 type Options struct {
+	// Max number of retries.
+	//
+	// If unset, the retry will be stopped once either the MaxBackoff has been
+	// reached, or the context is done - whichever comes first.
+	//
+	// To only stop when the context is done, set to MaxInt.
+	MaxRetries int
+
 	InitialBackoff time.Duration   // How long to wait after the first request
 	MaxBackoff     time.Duration   // Max amount of time to wait for a single request
 	Multiplier     float64         // Next backoff is this * previous backoff
-	MaxRetries     int             // Max number of retries; 0 is based on time
 	Clock          clockwork.Clock // Optional clock implementation to use.
 }
 
