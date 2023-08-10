@@ -660,6 +660,7 @@ ts_library(
         "//app/invocation:target_util",
         "//app/service:rpc_service",
         "//app/util:clipboard",
+        "//proto:duration_ts_proto",
         "//proto:target_ts_proto",
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/react",
