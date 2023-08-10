@@ -2820,8 +2820,8 @@ func (e *partitionEvictor) randomKeyForEvictionSampling() ([]byte, error) {
 		}
 	}
 
-	// If this is a CAS sample batch, or if AC sampling has failed above,
-	// then pick a CAS key. Any error at this point will be returned.
+	// If gid was set above (for sampleType == AC); this will return an AC
+	// key; otherwise gid will be "" and a CAS key will be returned.
 	return e.randomKey(64, gid, sampleType)
 }
 
