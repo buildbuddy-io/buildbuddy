@@ -432,8 +432,9 @@ func ensureDefaultPartitionExists(opts *Options) {
 // defaultPebbleOptions returns default pebble config options.
 func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 	// These values Borrowed from CockroachDB.
-	return &pebble.Options{
-		MaxConcurrentCompactions: 6,
+	opts := &pebble.Options{
+		L0CompactionThreshold:    2,
+		MaxConcurrentCompactions: 12,
 		MemTableSize:             64 << 20, // 64 MB
 		EventListener: pebble.EventListener{
 			WriteStallBegin: el.WriteStallBegin,
@@ -441,6 +442,11 @@ func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 			DiskSlow:        el.DiskSlow,
 		},
 	}
+
+	opts.Experimental.L0CompactionConcurrency = 2
+	opts.Experimental.CompactionDebtConcurrency = 10 << 30
+
+	return opts
 }
 
 // NewPebbleCache creates a new cache from the provided env and opts.
