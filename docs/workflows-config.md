@@ -112,7 +112,7 @@ the value of that secret, we can get the secret value using
 ```yaml
 # ...
 bazel_commands:
-  - "test ... --remote_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
+  - "test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
 ```
 
 To access the environment variables within `build` or `test` actions, you
@@ -164,7 +164,7 @@ cd "$BUILD_WORKSPACE_DIRECTORY"
 REGISTRY_PASSWORD=$(some-command)
 # Write the credentials to ci.bazelrc in the workspace root directory:
 echo >ci.bazelrc "
-build --remote_header=x-buildbuddy-platform.container-registry-password=${REGISTRY_PASSWORD}
+build --remote_exec_header=x-buildbuddy-platform.container-registry-password=${REGISTRY_PASSWORD}
 "
 ```
 

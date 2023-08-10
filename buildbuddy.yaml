@@ -87,7 +87,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --host_platform=//:private_workflow_image --remote_header=x-buildbuddy-platform.container-registry-username=_json_key --remote_header=x-buildbuddy-platform.container-registry-password='${GCR_FLAME_PRIVATE_PASSWORD}'
+      - test //... --config=linux-workflows --host_platform=//:private_workflow_image --remote_exec_header=x-buildbuddy-platform.container-registry-username=_json_key --remote_exec_header=x-buildbuddy-platform.container-registry-password='${GCR_FLAME_PRIVATE_PASSWORD}'
 
 plugins:
   - path: cli/plugins/go-deps
