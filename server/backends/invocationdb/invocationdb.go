@@ -16,12 +16,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+)
+
+const (
+	upsertInvocationQueryName = "upsert_invocation"
 )
 
 type InvocationDB struct {
@@ -40,10 +45,42 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 	return perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 }
 
+func upsertInvocationForRegisterInvocationAttempt(d *db.DB, ti *tables.Invocation) (bool, error) {
+	updates, err := db.FillUpdatesForOnConflict(d, ti, map[string]any{
+		"attempt": gorm.Expr(
+			`CASE WHEN "Invocations".attempt = 0 THEN 2 ELSE "Invocations".attempt + 1 END`,
+		),
+	})
+	if err != nil {
+		return false, err
+	}
+	result := d.Clauses(
+		clause.OnConflict{
+			Columns: []clause.Column{{Name: clause.PrimaryKey}},
+			Where: clause.Where{
+				Exprs: []clause.Expression{
+					gorm.Expr(`"Invocations".invocation_status <> ?`, int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)),
+					gorm.Expr(`"Invocations".updated_at_usec > ?`, d.NowFunc().Add(time.Hour*-4).UnixMicro()),
+				},
+			},
+			DoUpdates: updates,
+		},
+		clause.Returning{},
+	).Create(ti)
+	return result.RowsAffected > 0, result.Error
+}
+
 func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	ti.Attempt = 1
+	if d.h.DB(ctx).Dialector.Name() != "mysql" {
+		// mysql doesn't support RETURNING, but postgres and sqlite do
+		return upsertInvocationForRegisterInvocationAttempt(
+			d.h.DBWithOptions(ctx, db.Opts().WithQueryName(upsertInvocationQueryName)),
+			ti,
+		)
+	}
 	created := false
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName(upsertInvocationQueryName), func(tx *db.DB) error {
 		// First, try inserting the invocation. This will work for first attempts.
 		err := tx.Create(ti).Error
 		if err == nil {
@@ -62,7 +99,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 				`+d.h.SelectForUpdateModifier(),
 			ti.InvocationID,
 			int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
-			time.Now().Add(time.Hour*-4).UnixMicro(),
+			tx.NowFunc().Add(time.Hour*-4).UnixMicro(),
 		).Take(ti).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {

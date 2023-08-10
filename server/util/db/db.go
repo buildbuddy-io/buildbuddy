@@ -28,6 +28,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 
@@ -62,7 +63,7 @@ const (
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "buildbuddy:record_metrics"
-	gormQueryNameKey                 = "buildbuddy:query_name"
+	GormQueryNameKey                 = "buildbuddy:query_name"
 
 	gormStmtSpanKey          = "buildbuddy:span"
 	gormStartSpanCallbackKey = "buildbuddy:start_span"
@@ -370,24 +371,24 @@ func (dbh *DBHandle) DB(ctx context.Context) *DB {
 	return dbh.db.WithContext(ctx)
 }
 
-func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOptions) *DB {
+func (dbh *DBHandle) DBWithOptions(ctx context.Context, opts interfaces.DBOptions) *DB {
 	db := dbh.DB(ctx)
 	if opts.ReadOnly() && opts.AllowStaleReads() && dbh.readReplicaDB != nil {
 		db = dbh.readReplicaDB
 	}
 
 	if opts.QueryName() != "" {
-		db = db.Set(gormQueryNameKey, opts.QueryName())
+		db = db.Set(GormQueryNameKey, opts.QueryName())
 	}
 	return db
 }
 
 func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.DBOptions, sql string, values ...interface{}) *gorm.DB {
-	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
+	return dbh.DBWithOptions(ctx, opts).Raw(sql, values...)
 }
 
 func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.TxRunner) error {
-	return dbh.gormHandleForOpts(ctx, opts).Transaction(txn)
+	return dbh.DBWithOptions(ctx, opts).Transaction(txn)
 }
 
 func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.TxRunner) error {
@@ -452,7 +453,7 @@ func recordMetricsAfterFn(db *gorm.DB) {
 	}
 
 	labels := prometheus.Labels{}
-	qv, _ := db.Get(gormQueryNameKey)
+	qv, _ := db.Get(GormQueryNameKey)
 	if queryName, ok := qv.(string); ok {
 		labels[metrics.SQLQueryTemplateLabel] = queryName
 	} else {
@@ -992,6 +993,35 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 		return true
 	}
 	return false
+}
+
+func FillUpdatesForOnConflict(d *DB, value any, assignments map[string]any) (clause.Set, error) {
+	stmt := d.Set(GormQueryNameKey, "fill_updates_for_on_conflict_dry_run").Session(&gorm.Session{DryRun: true}).Clauses(clause.OnConflict{UpdateAll: true}).Create(value).Statement
+	c, ok := stmt.Clauses["ON CONFLICT"]
+	if !ok {
+		return nil, status.InternalErrorf("Failed to get ON CONFLICT clause")
+	}
+	onConflict, ok := c.Expression.(clause.OnConflict)
+	if !ok {
+		return nil, status.InternalErrorf("Failed to convert ON CONFLICT clause")
+	}
+	updates := onConflict.DoUpdates
+	unused := make(map[string]struct{}, len(assignments))
+	for k := range assignments {
+		unused[k] = struct{}{}
+	}
+	for i := range updates {
+		if a, ok := assignments[updates[i].Column.Name]; ok {
+			updates[i].Value = a
+			delete(unused, updates[i].Column.Name)
+		}
+	}
+	additionalAssignments := make(map[string]any, len(unused))
+	for k := range unused {
+		additionalAssignments[k] = assignments[k]
+	}
+	updates = append(updates, clause.Assignments(additionalAssignments)...)
+	return updates, nil
 }
 
 // TableSchema can be used to get the schema for a given table.
