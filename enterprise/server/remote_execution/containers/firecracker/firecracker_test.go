@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -157,7 +158,7 @@ func tempJailerRoot(t *testing.T) string {
 	}
 
 	if *testExecutorRoot != "" {
-		cleanExecutorRoot(t, *testExecutorRoot)
+		//cleanExecutorRoot(t, *testExecutorRoot)
 		return *testExecutorRoot
 	}
 
@@ -366,6 +367,111 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 
 		assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 	}
+}
+
+func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
+	flags.Set(t, "executor.firecracker_enable_nbd", true)
+	flags.Set(t, "executor.firecracker_enable_local_snapshot_sharing", true)
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
+		t.Fatalf("unable to pull image: %s", err)
+	}
+
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+		t.Fatalf("unable to Create container: %s", err)
+	}
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// Returns a task that appends the message to a logfile, then prints the logfile so far
+	appendToLog := func(message string) *repb.Command {
+		return &repb.Command{
+			Arguments: []string{"sh", "-c", `
+				cd /root
+				# Clear the memory page cache to ensure the file is read from disk
+				echo 3 > /proc/sys/vm/drop_caches
+				echo ` + message + ` >> ./log
+				cat ./log
+			`},
+		}
+	}
+
+	// Create a snapshot
+	cmd := appendToLog("Base")
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\n", string(res.Stdout))
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	// Simultaneously load the snapshot from multiple VMs - there should be no
+	// corruption or data transfer from snapshot sharing
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		i := i
+		go func() {
+			defer wg.Done()
+			workDir := testfs.MakeDirAll(t, rootDir, fmt.Sprintf("work-%d", i))
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				JailerRoot: tempJailerRoot(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+			require.NoError(t, err)
+
+			// The VM should start from the Base VM's snapshot
+			err = c.Unpause(ctx)
+			require.NoError(t, err)
+
+			// Write VM-specific data to the log
+			cmd := appendToLog(fmt.Sprintf("Fork-%d", i))
+			res := c.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+			// The log should contain data written from the Base VM and the current
+			// VM, but not any of the other VMs starting from the same Base VM
+			require.Equal(t, fmt.Sprintf("Base\nFork-%d\n", i), string(res.Stdout))
+
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+			err = c.Remove(ctx)
+			require.NoError(t, err)
+		}()
+	}
+	wg.Wait()
 }
 
 func TestFirecrackerComplexFileMapping(t *testing.T) {
