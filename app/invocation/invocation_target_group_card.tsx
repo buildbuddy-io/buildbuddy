@@ -2,13 +2,24 @@ import React from "react";
 import { google as google_duration } from "../../proto/duration_ts_proto";
 import { target } from "../../proto/target_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
-import { CheckCircle, ChevronRight, Clock, Copy, HelpCircle, SkipForward, XCircle } from "lucide-react";
+import {
+  CheckCircle,
+  ChevronRight,
+  Clock,
+  Copy,
+  FileCode,
+  Files,
+  HelpCircle,
+  SkipForward,
+  XCircle,
+} from "lucide-react";
 import { copyToClipboard } from "../util/clipboard";
 import { renderDuration, renderTestSize } from "./target_util";
 import Link from "../components/link/link";
 import rpc_service, { CancelablePromise } from "../service/rpc_service";
 import error_service from "../errors/error_service";
 import Spinner from "../components/spinner/spinner";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
 export interface TargetGroupCardProps {
   invocationId: string;
@@ -73,6 +84,25 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
       .finally(() => this.setState({ loading: false }));
   }
 
+  private onClickFile(event: React.MouseEvent<HTMLAnchorElement>, file: build_event_stream.File) {
+    event.preventDefault();
+    if (!file.uri) return false;
+
+    if (file.uri.startsWith("file://")) {
+      window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", file.uri);
+    } else if (file.uri.startsWith("bytestream://")) {
+      rpc_service.downloadBytestreamFile(file.name, file.uri, this.props.invocationId);
+    }
+  }
+
+  private getCodeURL(file: build_event_stream.File): string {
+    return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams({
+      invocation_id: this.props.invocationId,
+      bytestream_url: file.uri,
+      filename: file.name,
+    })}`;
+  }
+
   render() {
     let targets = this.props.group.targets.concat(this.state.fetchedTargets);
     if (this.props.filter) {
@@ -88,6 +118,13 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     let presentVerb = "";
     let pastVerb = "";
     switch (this.props.group.status) {
+      case 0:
+        // Showing the target listing only.
+        className = "artifacts";
+        icon = <Files className="icon" />;
+        presentVerb = `${targets.length === 1 ? "target" : "targets"} with artifacts`;
+        pastVerb = presentVerb;
+        break;
       case Status.FAILED:
         className = "card-failure";
         icon = <XCircle className="icon red" />;
@@ -148,25 +185,52 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
             />
           </div>
           <div className="details">
-            <div className="targets-table">
-              {targets.map((target) => (
-                <Link className="target-row" href={this.getTargetURL(target)}>
-                  <div title={targetTitleAttr(target)} className="target">
-                    <span className="target-status-icon">{icon}</span>{" "}
-                    <span className="chevron-icon">
-                      <ChevronRight className="icon" />
-                    </span>
-                    <span className="target-label">{target.metadata?.label}</span>{" "}
-                    {target.rootCause && <span className="root-cause-badge">Root cause</span>}
+            {this.props.group.status !== 0 && (
+              <div className="targets-table">
+                {targets.map((target) => (
+                  <Link className="target-row" href={this.getTargetURL(target)}>
+                    <div title={targetTitleAttr(target)} className="target">
+                      <span className="target-status-icon">{icon}</span>{" "}
+                      <span className="chevron-icon">
+                        <ChevronRight className="icon" />
+                      </span>
+                      <span className="target-label">{target.metadata?.label}</span>{" "}
+                      {target.rootCause && <span className="root-cause-badge">Root cause</span>}
+                    </div>
+                    <div className="target-duration">
+                      {renderDuration(
+                        target.timing ?? new api_common.v1.Timing({ duration: new google_duration.protobuf.Duration() })
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+            {this.props.group.status === 0 &&
+              targets.map((target) => (
+                <div>
+                  <div className="artifact-section-title">{target.metadata?.label}</div>
+                  <div className="artifact-list">
+                    {target.files.map((output) => (
+                      <div className="artifact-line">
+                        <a
+                          href={rpc_service.getBytestreamUrl(output.uri, this.props.invocationId, {
+                            filename: output.name,
+                          })}
+                          className="artifact-name"
+                          onClick={(event) => this.onClickFile(event, output)}>
+                          {output.name}
+                        </a>
+                        {output.uri?.startsWith("bytestream://") && (
+                          <a className="artifact-view" href={this.getCodeURL(output)}>
+                            <FileCode className="icon" /> View
+                          </a>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                  <div className="target-duration">
-                    {renderDuration(
-                      target.timing ?? new api_common.v1.Timing({ duration: new google_duration.protobuf.Duration() })
-                    )}
-                  </div>
-                </Link>
+                </div>
               ))}
-            </div>
           </div>
           {this.hasMoreTargets() && !this.state.loading && (
             <div className="more" onClick={() => this.loadMore()}>
