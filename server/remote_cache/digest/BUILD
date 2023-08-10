@@ -35,3 +35,36 @@ go_test(
         "@org_golang_google_grpc//status",
     ],
 )
+
+[
+    go_test(
+        name = "digest_bench_test_{}".format(i),
+        size = "small",
+        srcs = ["digest_test.go"],
+        args = ["-test.bench=."],
+        embed = [":digest"],
+        exec_compatible_with = [
+            "@io_bazel_rules_go//go/constraints/amd64:{}".format(i),
+        ],
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//cpu:x86_64",
+            "@platforms//os:linux",
+        ],
+        deps = [
+            "//proto:remote_execution_go_proto",
+            "//proto:resource_go_proto",
+            "//server/util/compression",
+            "//server/util/status",
+            "@com_github_stretchr_testify//assert",
+            "@com_github_stretchr_testify//require",
+            "@org_golang_google_grpc//status",
+        ],
+    )
+    for i in [
+        "v1",
+        "v2",
+        "v3",
+        "v4",
+    ]
+]

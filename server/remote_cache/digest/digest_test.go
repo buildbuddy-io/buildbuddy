@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"regexp"
+	"runtime"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -237,7 +238,7 @@ func TestRandomGenerator(t *testing.T) {
 func BenchmarkDigestCompute(b *testing.B) {
 	for _, size := range []int64{1, 10, 100, 1000, 10_000, 100_000} {
 		for _, df := range []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3} {
-			b.Run(fmt.Sprintf("%s/%d", repb.DigestFunction_Value_name[int32(df)], size), func(b *testing.B) {
+			b.Run(fmt.Sprintf("%s/%s/%d", runtime.GOARCH, repb.DigestFunction_Value_name[int32(df)], size), func(b *testing.B) {
 				buf := make([]byte, size)
 				_, err := rand.Read(buf)
 				require.NoError(b, err)

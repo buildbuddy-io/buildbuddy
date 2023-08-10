@@ -298,3 +298,21 @@ toolchain(
     toolchain = ":bash_rbe_ubuntu1604",
     toolchain_type = "@bazel_tools//tools/sh:toolchain_type",
 )
+
+[
+    platform(
+        name = "amd64_{}".format(i),
+        constraint_values = [
+            "@io_bazel_rules_go//go/constraints/amd64:{}".format(i),
+        ],
+        parents = [
+            "@buildbuddy_toolchain//:platform_linux",
+        ],
+    )
+    for i in [
+        "v1",
+        "v2",
+        "v3",
+        "v4",
+    ]
+]
