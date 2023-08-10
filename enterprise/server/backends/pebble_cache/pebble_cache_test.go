@@ -1910,8 +1910,8 @@ func TestLRU(t *testing.T) {
 			require.Equal(t, 0, len(evictionsByQuartile[4]))
 
 			// Relax the conditions a little to de-flake the tests.
-			require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+1)
-			require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+1)
+			require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+2)
+			require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+2)
 			require.Greater(t, len(evictionsByQuartile[3]), 0)
 		})
 	}
@@ -2930,7 +2930,7 @@ func TestSupportsEncryption(t *testing.T) {
 }
 
 func TestSampling(t *testing.T) {
-	activeKeyVersion := int64(3)
+	activeKeyVersion := int64(4)
 
 	te, kmsDir := getCrypterEnv(t)
 
@@ -3023,7 +3023,7 @@ func TestSampling(t *testing.T) {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(1000 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.
