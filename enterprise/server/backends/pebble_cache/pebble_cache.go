@@ -2266,6 +2266,10 @@ type partitionEvictor struct {
 	// item count.
 	groupIDApproxCounts []groupIDApproxCount
 
+	// lastTypeSampled represents the last type of item sampled from the cache
+	// for eviction. This should alternate between calls to sample().
+	lastTypeSampled rspb.CacheType
+
 	atimeBufferSize int
 	minEvictionAge  time.Duration
 }
@@ -2289,6 +2293,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		atimeBufferSize: atimeBufferSize,
 		minEvictionAge:  minEvictionAge,
 		cacheName:       cacheName,
+		lastTypeSampled: rspb.CacheType_CAS,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
@@ -2784,6 +2789,47 @@ func (e *partitionEvictor) sampleGroup() {
 	metrics.PebbleCacheGroupIDSampleCount.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 }
 
+func (e *partitionEvictor) randomKeyForEvictionSampling() ([]byte, error) {
+	var sampleType rspb.CacheType
+	e.mu.Lock()
+	switch e.lastTypeSampled {
+	case rspb.CacheType_AC:
+		sampleType = rspb.CacheType_CAS
+	case rspb.CacheType_CAS:
+		sampleType = rspb.CacheType_AC
+	default:
+		sampleType = rspb.CacheType_CAS
+	}
+
+	// Don't allow AC eviction if it's not enabled.
+	if sampleType == rspb.CacheType_AC && !*acEvictionEnabled {
+		sampleType = rspb.CacheType_CAS
+	}
+	e.lastTypeSampled = sampleType
+	e.mu.Unlock()
+
+	// Attempt AC sampling (but do not error out if it fails, instead fall
+	// through to CAS sampling)
+	if sampleType == rspb.CacheType_AC {
+		gid, err := e.randomGroupForEvictionSampling()
+		if err != nil {
+			if !status.IsNotFoundError(err) {
+				log.Warningf("no groups to sample for %q: %s", e.part.ID, err)
+			}
+		} else {
+			if rk, err := e.randomKey(64, gid, sampleType); err == nil {
+				return rk, nil
+			} else {
+				log.Errorf("Error generating random key: %s", err)
+			}
+		}
+	}
+
+	// If this is a CAS sample batch, or if AC sampling has failed above,
+	// then pick a CAS key. Any error at this point will be returned.
+	return e.randomKey(64, "", sampleType)
+}
+
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -2795,46 +2841,34 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 		LowerBound: start,
 		UpperBound: end,
 	})
-	iter.SeekGE(start)
 	defer iter.Close()
 
-	if !*acEvictionEnabled {
-		e.sampleGroup()
-	}
-
+	// Files are kept in random order (because they are keyed by digest), so
+	// instead of doing a new seek for every random sample we will seek once
+	// and just read forward, yielding digests until we've found enough. To
+	// ensure we sample all kinds of items, e.lastSampledType  will be
+	// toggled on every call to sample.
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
+	var key filestore.PebbleKey
 
-	// generate k random digests and for each:
-	//   - seek to the next valid key, and return that file record
+	// Generate k random samples. Attempt this up to k*2 times, to account
+	// for the fact that some files sampled may be younger than
+	// minEvictionAge. We try hard!
 	for i := 0; i < k*2; i++ {
-		groupID := ""
-		cacheType := rspb.CacheType_CAS
-		if i%2 == 1 && *acEvictionEnabled {
-			gid, err := e.randomGroupForEvictionSampling()
-			if err == nil {
-				cacheType = rspb.CacheType_AC
-				groupID = gid
-			} else if !status.IsNotFoundError(err) {
-				log.Warningf("no groups to sample for %q: %s", e.part.ID, err)
+		if !iter.Valid() {
+			// This should only happen once per call to sample(), or
+			// occasionally more if we've exhausted the iter.
+			randomKey, err := e.randomKeyForEvictionSampling()
+			if err != nil {
+				return nil, err
 			}
+			iter.SeekGE(randomKey)
 		}
+		for iter.Next() {
+			if _, err := key.FromBytes(iter.Key()); err != nil {
+				return nil, err
+			}
 
-		randKey, err := e.randomKey(64, groupID, cacheType)
-		if err != nil {
-			log.Errorf("Error generating random key: %s", err)
-			continue
-		}
-		valid := iter.SeekGE(randKey)
-		if !valid {
-			continue
-		}
-
-		var key filestore.PebbleKey
-		if _, err := key.FromBytes(iter.Key()); err != nil {
-			return nil, err
-		}
-
-		for {
 			fileMetadata := &rfpb.FileMetadata{}
 			unlockFn := e.locker.RLock(key.LockID())
 			err = proto.Unmarshal(iter.Value(), fileMetadata)
@@ -2860,34 +2894,9 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 				samples = append(samples, sample)
 			}
 
-			if !iter.Next() {
-				break
+			if len(samples) == k {
+				return samples, nil
 			}
-
-			// Check if the next key is for the same digest in which case
-			// include it as a possible eviction candidate.
-			//
-			// This can happen for example if there are multiple AC entries
-			// with different "remote instance name hash" values:
-			//   PTfoo/GR123/foobar/ac/123
-			//   PTfoo/GR123/foobar/ac/456
-			// We want to consider both keys for eviction, not just the first
-			// one.
-			//
-			// The same situation can occur after enabling or disabling
-			// encryption which can produce multiple keys with the same hash
-			// prefix.
-			var nextKey filestore.PebbleKey
-			if _, err := nextKey.FromBytes(iter.Key()); err != nil {
-				return nil, err
-			}
-			if nextKey.Hash() != key.Hash() {
-				break
-			}
-			key = nextKey
-		}
-		if len(samples) >= k {
-			break
 		}
 	}
 
