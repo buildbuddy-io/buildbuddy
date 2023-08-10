@@ -18,5 +18,9 @@ export function renderTestSize(size: api_common.v1.TestSize): string {
 }
 
 export function renderDuration(timing: api_common.v1.Timing): string {
-  return `${(durationToMillis(timing.duration) / 1000).toFixed(3)} seconds`;
+  let ms = 0;
+  if (timing.duration) {
+    ms = durationToMillis(timing.duration) / 1000;
+  }
+  return `${ms.toFixed(3)} seconds`;
 }

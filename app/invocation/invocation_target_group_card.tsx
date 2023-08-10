@@ -1,4 +1,5 @@
 import React from "react";
+import { google as google_duration } from "../../proto/duration_ts_proto";
 import { target } from "../../proto/target_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { CheckCircle, ChevronRight, Clock, Copy, HelpCircle, SkipForward, XCircle } from "lucide-react";
@@ -159,7 +160,9 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                     {target.rootCause && <span className="root-cause-badge">Root cause</span>}
                   </div>
                   <div className="target-duration">
-                    {renderDuration(target.timing ?? new api_common.v1.Timing({ duration: {} }))}
+                    {renderDuration(
+                      target.timing ?? new api_common.v1.Timing({ duration: new google_duration.protobuf.Duration() })
+                    )}
                   </div>
                 </Link>
               ))}
