@@ -159,6 +159,12 @@ message Target {
   // Test results associated with the target. The whole event is included
   // because the ID contains useful info, such as configuration.
   repeated build_event_stream.BuildEvent test_result_events = 6;
+
+  // Test summary associated with the target.
+  build_event_stream.TestSummary test_summary = 7;
+
+  // ActionCompleted events associated with the target.
+  repeated build_event_stream.BuildEvent action_events = 8;
 }
 
 message TargetGroup {

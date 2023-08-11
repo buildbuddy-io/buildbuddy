@@ -2,7 +2,7 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
-import { invocation_status } from "../../proto/invocation_status_ts_proto";
+import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
 import rpcService from "../service/rpc_service";
@@ -38,6 +38,7 @@ import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import router from "../router/router";
 import rpc_service from "../service/rpc_service";
 import { InvocationBotCard } from "./invocation_bot_card";
+import TargetV2Component from "../target/target_v2";
 
 interface State {
   loading: boolean;
@@ -192,6 +193,57 @@ export default class InvocationComponent extends React.Component<Props, State> {
     return !state.model && props.search.get("queued") === "true";
   }
 
+  renderTargetPage(targetLabel: string, targetStatus: api_common.v1.Status) {
+    if (!this.state.model) return null;
+
+    if (this.state.model.invocation.targetGroups.length) {
+      // Invocation events are paginated; use the new target component to fetch
+      // the target data.
+      return (
+        <TargetV2Component
+          label={targetLabel}
+          status={targetStatus}
+          invocationId={this.props.invocationId}
+          tab={this.props.tab}
+          user={this.props.user}
+          repo={this.state.model.getGithubRepo()}
+          commit={this.state.model.getCommit()}
+          dark={!this.props.preferences.lightTerminalEnabled}
+        />
+      );
+    }
+
+    let completed = this.state.model.completedMap.get(targetLabel);
+    let actionEvents: invocation.InvocationEvent[] =
+      completed?.buildEvent?.children
+        .flatMap((child) =>
+          (this.state.model!.actionMap.get(child?.actionCompleted?.label ?? "") ?? []).filter(
+            (event) =>
+              event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
+              event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
+          )
+        )
+        .filter((event) => !!event) || [];
+    return (
+      <TargetComponent
+        model={this.state.model}
+        invocationId={this.props.invocationId}
+        tab={this.props.tab}
+        files={completed?.buildEvent ? this.state.model.getFiles(completed.buildEvent) ?? [] : []}
+        configuredEvent={this.state.model.configuredMap.get(targetLabel)}
+        skippedEvent={this.state.model.skippedMap.get(targetLabel)}
+        completedEvent={completed}
+        testResultEvents={this.state.model.testResultMap.get(targetLabel) ?? []}
+        testSummaryEvent={this.state.model.testSummaryMap.get(targetLabel)}
+        actionEvents={actionEvents}
+        user={this.props.user}
+        repo={this.state.model.getGithubRepo()}
+        targetLabel={targetLabel}
+        dark={!this.props.preferences.lightTerminalEnabled}
+      />
+    );
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading"></div>;
@@ -222,36 +274,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
     let targetLabel = this.props.search.get("target");
     if (targetLabel) {
-      let completed = this.state.model.completedMap.get(targetLabel);
-      let actionEvents: invocation.InvocationEvent[] =
-        completed?.buildEvent?.children
-          .flatMap((child) =>
-            (this.state.model!.actionMap.get(child?.actionCompleted?.label ?? "") ?? []).filter(
-              (event) =>
-                event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
-                event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
-            )
-          )
-          .filter((event) => !!event) || [];
-
-      return (
-        <TargetComponent
-          model={this.state.model}
-          invocationId={this.props.invocationId}
-          tab={this.props.tab}
-          files={completed?.buildEvent ? this.state.model.getFiles(completed.buildEvent) ?? [] : []}
-          configuredEvent={this.state.model.configuredMap.get(targetLabel)}
-          skippedEvent={this.state.model.skippedMap.get(targetLabel)}
-          completedEvent={completed}
-          testResultEvents={this.state.model.testResultMap.get(targetLabel) ?? []}
-          testSummaryEvent={this.state.model.testSummaryMap.get(targetLabel)}
-          actionEvents={actionEvents}
-          user={this.props.user}
-          repo={this.state.model.getGithubRepo()}
-          targetLabel={targetLabel}
-          dark={!this.props.preferences.lightTerminalEnabled}
-        />
-      );
+      const targetStatus = Number(this.props.search.get("targetStatus") || "0") as api_common.v1.Status;
+      return this.renderTargetPage(targetLabel, targetStatus);
     }
 
     const activeTab = getActiveTab({

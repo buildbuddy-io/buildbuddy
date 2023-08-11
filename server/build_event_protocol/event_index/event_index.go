@@ -24,10 +24,11 @@ type Index struct {
 	AllTargetLabels            []string
 	BuildTargetByLabel         map[string]*trpb.Target
 	TestTargetByLabel          map[string]*trpb.Target
-	TargetCompleteEventByLabel map[string]*bespb.TargetComplete
+	TargetCompleteEventByLabel map[string]*bespb.BuildEvent
 	TestResultEventsByLabel    map[string][]*bespb.BuildEvent
 	TargetsByStatus            map[cmnpb.Status][]*trpb.Target
 	NamedSetOfFilesByID        map[string]*bespb.NamedSetOfFiles
+	ActionEvents               []*bespb.BuildEvent
 	// Events which aren't indexed by target and are instead returned in the
 	// top-level invocation proto.
 	TopLevelEvents []*inpb.InvocationEvent
@@ -40,7 +41,7 @@ func New() *Index {
 	return &Index{
 		BuildTargetByLabel:         map[string]*trpb.Target{},
 		TestTargetByLabel:          map[string]*trpb.Target{},
-		TargetCompleteEventByLabel: map[string]*bespb.TargetComplete{},
+		TargetCompleteEventByLabel: map[string]*bespb.BuildEvent{},
 		TargetsByStatus:            map[cmnpb.Status][]*trpb.Target{},
 		TestResultEventsByLabel:    map[string][]*bespb.BuildEvent{},
 		NamedSetOfFilesByID:        map[string]*bespb.NamedSetOfFiles{},
@@ -69,14 +70,18 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		}
 	case *bespb.BuildEvent_Completed:
 		label := event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()
-		completed := event.GetBuildEvent().GetCompleted()
-		idx.TargetCompleteEventByLabel[label] = completed
+		// TODO: when transitions are used, this will only record a single
+		// Completed event per label, even if the same label was built for
+		// multiple configurations. Figure out how to deal with
+		// multi-configuration builds here.
+		idx.TargetCompleteEventByLabel[label] = event.GetBuildEvent()
 		target := idx.BuildTargetByLabel[label]
 		if target == nil {
 			return
 		}
 		target.Status = cmnpb.Status_BUILT
 		// Check for "root cause" labels.
+		completed := event.GetBuildEvent().GetCompleted()
 		if !completed.GetSuccess() {
 			for _, c := range event.GetBuildEvent().GetChildren() {
 				if label := c.GetActionCompleted().GetLabel(); label != "" {
@@ -91,9 +96,10 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		label := event.GetBuildEvent().GetId().GetTestSummary().GetLabel()
 		summary := p.TestSummary
 		idx.TestTargetByLabel[label] = &trpb.Target{
-			Metadata: &trpb.TargetMetadata{Label: label},
-			Status:   api_common.TestStatusToStatus(summary.GetOverallStatus()),
-			Timing:   api_common.TestTimingFromSummary(summary),
+			Metadata:    &trpb.TargetMetadata{Label: label},
+			Status:      api_common.TestStatusToStatus(summary.GetOverallStatus()),
+			Timing:      api_common.TestTimingFromSummary(summary),
+			TestSummary: summary,
 		}
 	case *bespb.BuildEvent_TestResult:
 		label := event.GetBuildEvent().GetId().GetTestResult().GetLabel()
@@ -107,6 +113,8 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 				Status: cmnpb.Status_TESTING,
 			}
 		}
+	case *bespb.BuildEvent_Action:
+		idx.ActionEvents = append(idx.ActionEvents, event.GetBuildEvent())
 	case *bespb.BuildEvent_Progress:
 		// Drop progress events
 		return
