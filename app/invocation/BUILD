@@ -462,9 +462,12 @@ ts_library(
     name = "invocation_raw_logs_card",
     srcs = ["invocation_raw_logs_card.tsx"],
     deps = [
+        "//app/components/banner",
         "//app/components/button",
+        "//app/components/button:link_button",
         "//app/components/filter_input",
         "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
