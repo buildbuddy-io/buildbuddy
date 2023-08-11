@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -65,8 +66,16 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
 		idx.AllTargetLabels = append(idx.AllTargetLabels, label)
 		idx.BuildTargetByLabel[label] = &trpb.Target{
-			Metadata: &trpb.TargetMetadata{Label: label},
-			Status:   cmnpb.Status_BUILDING,
+			Metadata: &trpb.TargetMetadata{
+				Label:    label,
+				RuleType: p.Configured.GetTargetKind(),
+			},
+			Status: cmnpb.Status_BUILDING,
+			// Note: timing is based on event time, so won't be super accurate.
+			Timing: &cmnpb.Timing{
+				StartTime: event.GetEventTime(),
+				Duration:  &durationpb.Duration{},
+			},
 		}
 	case *bespb.BuildEvent_Completed:
 		label := event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()
@@ -80,6 +89,12 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 			return
 		}
 		target.Status = cmnpb.Status_BUILT
+		// Note: timing is based on event time, so won't be super accurate.
+		target.Timing = &cmnpb.Timing{
+			StartTime: event.GetEventTime(),
+			Duration:  &durationpb.Duration{},
+		}
+
 		// Check for "root cause" labels.
 		completed := event.GetBuildEvent().GetCompleted()
 		if !completed.GetSuccess() {

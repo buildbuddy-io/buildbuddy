@@ -67,3 +67,18 @@ export function durationToMillisWithFallback(
 
   return Number(fallbackMillis);
 }
+
+export function addDurationToTimestamp(
+  timestamp: google_timestamp.protobuf.ITimestamp,
+  duration: google_duration.protobuf.IDuration | null | undefined
+) {
+  if (!duration) return timestamp;
+
+  const startNanos = Long.fromValue(timestamp.seconds).mul(1e9).add(timestamp.nanos);
+  const endNanos = startNanos.add(Long.fromValue(duration.seconds).mul(1e9)).add(timestamp.nanos);
+
+  return new google_timestamp.protobuf.Timestamp({
+    seconds: endNanos.div(1e9),
+    nanos: endNanos.mod(1e9).toNumber(),
+  });
+}
