@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
@@ -1430,6 +1431,11 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		}
 	}
 	switch artifact := params.Get("artifact"); artifact {
+	case "raw_json":
+		if err := s.serveRawEventJSON(ctx, w, iid); err != nil {
+			return http.StatusInternalServerError, err
+		}
+		return http.StatusOK, nil
 	case "buildlog":
 		attempt, err := strconv.ParseUint(params.Get("attempt"), 10, 64)
 		if err != nil {
@@ -1471,6 +1477,45 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		return http.StatusBadRequest, status.FailedPreconditionErrorf("Unrecognized artifact \"%s\" requested.", params.Get("artifact"))
 	}
 	return http.StatusOK, nil
+}
+
+func (s *BuildBuddyServer) serveRawEventJSON(ctx context.Context, w http.ResponseWriter, iid string) (err error) {
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s_raw.json", iid))
+	w.Header().Set("Content-Type", "application/json")
+
+	if _, err := io.WriteString(w, "["); err != nil {
+		return err
+	}
+	n := 0
+	_, err = build_event_handler.LookupInvocationWithCallback(ctx, s.env, iid, func(event *inpb.InvocationEvent) error {
+		prefix := "\n"
+		if n > 0 {
+			prefix = ",\n"
+		}
+		if _, err := io.WriteString(w, prefix); err != nil {
+			return err
+		}
+		b, err := protojson.Marshal(event.GetBuildEvent())
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(b); err != nil {
+			return err
+		}
+		n++
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	end := "\n]"
+	if n == 0 {
+		end = "]"
+	}
+	if _, err := io.WriteString(w, end); err != nil {
+		return err
+	}
+	return err
 }
 
 // serveBytestream handles requests that specify bytestream URLs.

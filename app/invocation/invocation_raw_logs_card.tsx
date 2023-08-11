@@ -4,6 +4,9 @@ import InvocationModel from "./invocation_model";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { FilterInput } from "../components/filter_input/filter_input";
 import Button from "../components/button/button";
+import LinkButton from "../components/button/link_button";
+import rpc_service from "../service/rpc_service";
+import Banner from "../components/banner/banner";
 
 interface Props {
   model: InvocationModel;
@@ -40,15 +43,6 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
     this.setState({ filterString: event.target.value });
   }
 
-  handleDownloadClicked() {
-    const json = JSON.stringify(this.props.model.invocation.event, null, 2);
-    const uri = "data:application/json;base64," + window.btoa(json);
-    const link = document.createElement("a");
-    link.href = uri;
-    link.download = `${this.props.model.invocation.invocationId}_raw.json`;
-    link.click();
-  }
-
   render() {
     let filteredEvents = this.props.model.invocation.event
       .map((event) => {
@@ -73,10 +67,16 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
           <PauseCircle className="icon rotate-90" />
           <div className="content">
             <div className="title">Raw logs</div>
-            <Button className="download-raw-logs-button" onClick={this.handleDownloadClicked.bind(this)}>
+            <LinkButton
+              className="download-raw-logs-button"
+              href={rpc_service.getDownloadUrl({
+                invocation_id: this.props.model.getInvocationId(),
+                artifact: "raw_json",
+              })}
+              target="_blank">
               <span>Download JSON</span>
               <Download className="icon white" />
-            </Button>
+            </LinkButton>
             <div className="details code">
               <div>
                 {filteredEvents
@@ -109,6 +109,14 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
                   </div>
                 </>
               )}
+            {this.props.model.invocation.targetGroups.length && (
+              <p>
+                <Banner type="info">
+                  Some target-level events as well as progress events may be omitted. Click <b>Download JSON</b> to
+                  download all events (some redundant event details may be truncated to reduce payload size).
+                </Banner>
+              </p>
+            )}
           </div>
         </div>
       </>
