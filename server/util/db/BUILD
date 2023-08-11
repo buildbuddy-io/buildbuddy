@@ -34,7 +34,6 @@ go_library(
         "@io_gorm_driver_postgres//:postgres",
         "@io_gorm_driver_sqlite//:sqlite",
         "@io_gorm_gorm//:gorm",
-        "@io_gorm_gorm//clause",
         "@io_gorm_gorm//logger",
         "@io_gorm_gorm//schema",
         "@io_opentelemetry_go_otel//attribute",

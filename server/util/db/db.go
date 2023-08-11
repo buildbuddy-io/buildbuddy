@@ -28,7 +28,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 
@@ -371,7 +370,7 @@ func (dbh *DBHandle) DB(ctx context.Context) *DB {
 	return dbh.db.WithContext(ctx)
 }
 
-func (dbh *DBHandle) DBWithOptions(ctx context.Context, opts interfaces.DBOptions) *DB {
+func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOptions) *DB {
 	db := dbh.DB(ctx)
 	if opts.ReadOnly() && opts.AllowStaleReads() && dbh.readReplicaDB != nil {
 		db = dbh.readReplicaDB
@@ -384,11 +383,11 @@ func (dbh *DBHandle) DBWithOptions(ctx context.Context, opts interfaces.DBOption
 }
 
 func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.DBOptions, sql string, values ...interface{}) *gorm.DB {
-	return dbh.DBWithOptions(ctx, opts).Raw(sql, values...)
+	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
 }
 
 func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.TxRunner) error {
-	return dbh.DBWithOptions(ctx, opts).Transaction(txn)
+	return dbh.gormHandleForOpts(ctx, opts).Transaction(txn)
 }
 
 func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.TxRunner) error {
@@ -993,46 +992,6 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 		return true
 	}
 	return false
-}
-
-// AssignmentsFromUpdateAll returns the Set of Assignments that are generated as
-// a result of running Clauses(clause.OnConflict{UpdateAll: true}).Create(value)
-// on the provided DB.
-func AssignmentsFromUpdateAll(d *DB, value any) clause.Set {
-	stmt := d.Set(gormQueryNameKey, "fill_updates_for_on_conflict_dry_run").Session(&gorm.Session{DryRun: true}).Clauses(clause.OnConflict{UpdateAll: true}).Create(value).Statement
-	c, ok := stmt.Clauses["ON CONFLICT"]
-	if !ok {
-		return nil
-	}
-	onConflict, ok := c.Expression.(clause.OnConflict)
-	if !ok {
-		return nil
-	}
-	return onConflict.DoUpdates
-}
-
-// AmendAssignments replaces the Value of Assignments in the provided Set with
-// the value from the provided map if the Column.Name of the Assignment matches
-// the key in the map. All values in the map that have not been inserted into
-// the Assignment Set after the replacement is complete are passed into
-// clause.Assignments and appended to the existing Set. The return value is the
-// result of that append.
-func AmendAssignments(updates clause.Set, newUpdates map[string]any) clause.Set {
-	unused := make(map[string]struct{}, len(newUpdates))
-	for k := range newUpdates {
-		unused[k] = struct{}{}
-	}
-	for i := range updates {
-		if u, ok := newUpdates[updates[i].Column.Name]; ok {
-			updates[i].Value = u
-			delete(unused, updates[i].Column.Name)
-		}
-	}
-	additionalAssignments := make(map[string]any, len(unused))
-	for k := range unused {
-		additionalAssignments[k] = newUpdates[k]
-	}
-	return append(updates, clause.Assignments(additionalAssignments)...)
 }
 
 // TableSchema can be used to get the schema for a given table.

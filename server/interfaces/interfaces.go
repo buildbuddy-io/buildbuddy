@@ -289,7 +289,6 @@ type DBOptions interface {
 
 type DBHandle interface {
 	DB(ctx context.Context) *gorm.DB
-	DBWithOptions(ctx context.Context, opts DBOptions) *gorm.DB
 	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn TxRunner) error
 	Transaction(ctx context.Context, txn TxRunner) error
