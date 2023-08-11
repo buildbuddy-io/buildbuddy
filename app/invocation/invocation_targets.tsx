@@ -37,13 +37,20 @@ export default class TargetsComponent extends React.Component<Props> {
     );
   }
 
+  private isGroupVisible(group: target.TargetGroup): boolean {
+    if (!group.targets.length || !STATUS_ORDERING.includes(group.status)) {
+      return false;
+    }
+
+    const ok = OK_STATUSES.has(group.status);
+    return this.props.mode === "passing" ? ok : !ok;
+  }
+
   render() {
     if (this.props.model.invocation.targetGroups.length) {
       // Paginated invocation; render target groups.
       return this.props.model.invocation.targetGroups
-        .filter((group) => group.targets.length)
-        .filter((group) => this.props.mode === "failing" || OK_STATUSES.has(group.status))
-        .filter((group) => STATUS_ORDERING.includes(group.status))
+        .filter((group) => this.isGroupVisible(group))
         .sort((a, b) => STATUS_ORDERING.indexOf(a.status) - STATUS_ORDERING.indexOf(b.status))
         .map((group) => this.renderTargetGroup(group));
     }
