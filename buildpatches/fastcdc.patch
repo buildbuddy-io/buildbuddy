@@ -1,8 +1,52 @@
 diff --git a/fastcdc.go b/fastcdc.go
-index 85f8ffd..24e7acc 100644
+index 85f8ffd..0a46f58 100644
 --- a/fastcdc.go
 +++ b/fastcdc.go
-@@ -106,8 +106,10 @@ func NewChunker(rd io.Reader, opts Options) (*Chunker, error) {
+@@ -16,6 +16,43 @@ const (
+ 	defaultNormalization = 2
+ )
+ 
++var (
++	//masks[i] is the mask for i+3 effective bits evenly distributed throughout
++	//the 48 most-significant bits.
++	masks = []uint64{
++		0x8000010000010000,
++		0x8001000100010000,
++		0x8010010010010000,
++		0x8040200804010000,
++		0x8101010101010000,
++		0x8204082040810000,
++		0x8410410410410000,
++		0x8421082108410000,
++		0x8842210884210000,
++		0x8888444422210000,
++		0x9111111111110000,
++		0x9122244889110000,
++		0x9224892248910000,
++		0x9249244924910000,
++		0xa492492492490000,
++		0xa494929252490000,
++		0xa525292949490000,
++		0xa94a5294a5290000,
++		0xa952a54a95290000,
++		0xaa954aa552a90000,
++		0xaaaa5554aaa90000,
++		0xaaaaaaaaaaa90000,
++		0xd555555555550000,
++		0xd555aaab55550000,
++		0xd56ab55aad550000,
++		0xd6ad5ab56ad50000,
++		0xd6b5ad6b5ad50000,
++		0xdadad6d6b6b50000,
++		0xdb6b6d6dadb50000,
++		0xdb6db6db6db50000,
++	}
++)
++
+ // Chunker implements the FastCDC content defined chunking algorithm.
+ // See https://www.usenix.org/system/files/conference/atc16/atc16-paper-xia.pdf.
+ type Chunker struct {
+@@ -106,8 +143,10 @@ func NewChunker(rd io.Reader, opts Options) (*Chunker, error) {
  		return nil, err
  	}
  
@@ -15,3 +59,14 @@ index 85f8ffd..24e7acc 100644
  	}
  
  	normalization := opts.Normalization
+@@ -122,8 +161,8 @@ func NewChunker(rd io.Reader, opts Options) (*Chunker, error) {
+ 		minSize:  opts.MinSize,
+ 		maxSize:  opts.MaxSize,
+ 		normSize: opts.AverageSize,
+-		maskS:    (1 << smallBits) - 1,
+-		maskL:    (1 << largeBits) - 1,
++		maskS:    masks[smallBits-3],
++		maskL:    masks[largeBits-3],
+ 		rd:       rd,
+ 		buf:      make([]byte, opts.BufSize),
+ 		cursor:   opts.BufSize,
