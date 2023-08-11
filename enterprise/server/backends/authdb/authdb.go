@@ -60,13 +60,14 @@ type apiKeyGroupCacheEntry struct {
 	expiresAfter time.Time
 }
 
-// apiKeyGroupCache is a cache for API Key -> Group lookups. A single Bazel invocation
-// can generate large bursts of RPCs, each of which needs to be authed.
+// apiKeyGroupCache is a cache for API Key -> Group lookups. A single Bazel
+// invocation can generate large bursts of RPCs, each of which needs to be
+// authed.
 // There's no need to go to the database for every single request as this data
 // rarely changes.
 type apiKeyGroupCache struct {
-	// Note that even though we base this off an LRU cache, every entry has a hard expiration
-	// time to force a refresh of the underlying data.
+	// Note that even though we base this off an LRU cache, every entry has a
+	// hard expiration time to force a refresh of the underlying data.
 	lru interfaces.LRU[*apiKeyGroupCacheEntry]
 	ttl time.Duration
 	mu  sync.Mutex
@@ -115,7 +116,7 @@ type AuthDB struct {
 
 func NewAuthDB(env environment.Env, h interfaces.DBHandle) (*AuthDB, error) {
 	adb := &AuthDB{env: env, h: h}
-	if *apiKeyGroupCacheTTL != time.Duration(0) {
+	if *apiKeyGroupCacheTTL != 0 {
 		akgCache, err := newAPIKeyGroupCache()
 		if err != nil {
 			return nil, err
@@ -368,6 +369,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
+			if d.apiKeyGroupCache != nil {
+				metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
+			}
 			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 		}
 		return nil, err
@@ -375,8 +379,6 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	if d.apiKeyGroupCache != nil {
 		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
 		d.apiKeyGroupCache.Add(apiKey, akg)
-	} else {
-		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
 	}
 	return akg, nil
 }
