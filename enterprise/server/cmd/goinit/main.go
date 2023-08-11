@@ -160,7 +160,7 @@ func startDockerd(ctx context.Context) error {
 
 	args := []string{}
 	if *enableDockerdTCP {
-		args = append(args, "--host=tcp://0.0.0.0:2375", "--tls=false")
+		args = append(args, "--host=unix:///var/run/docker.sock", "--host=tcp://0.0.0.0:2375", "--tls=false")
 	}
 
 	cmd := exec.CommandContext(ctx, "dockerd", args...)
