@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
@@ -128,6 +129,12 @@ func ClientIP(next http.Handler) http.Handler {
 			clientIP = ip
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientip.ContextKey, clientIP)))
+	})
+}
+
+func Subdomain(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(subdomain.SetHost(r.Context(), r.Host)))
 	})
 }
 
@@ -299,6 +306,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 		LogRequest,
 		RequestID,
 		ClientIP,
+		Subdomain,
 		RecoverAndAlert,
 	})
 }
@@ -312,6 +320,7 @@ func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
 		LogRequest,
 		RequestID,
 		ClientIP,
+		Subdomain,
 		RecoverAndAlert,
 	})
 }
@@ -327,6 +336,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		LogRequest,
 		RequestID,
 		ClientIP,
+		Subdomain,
 		RecoverAndAlert,
 	})
 }
