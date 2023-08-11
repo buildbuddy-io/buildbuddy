@@ -141,6 +141,20 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 	redactor.RedactMetadata(event)
 
 	assert.Empty(t, getCommandLineOptions(event), "--default_override options should be removed")
+
+	// EXPLICIT_COMMAND_LINE flags should be dropped altogether.
+
+	option = &clpb.Option{
+		OptionName:   "build_metadata",
+		OptionValue:  `EXPLICIT_COMMAND_LINE=["secrets"]`,
+		CombinedForm: `--build_metadata=EXPLICIT_COMMAND_LINE=["secrets"]`,
+	}
+	event = structuredCommandLineEvent(option)
+	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: EXPLICIT_COMMAND_LINE should be an option before redacting")
+
+	redactor.RedactMetadata(event)
+
+	assert.Empty(t, getCommandLineOptions(event), "EXPLICIT_COMMAND_LINE should be removed")
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testing.T) {
@@ -154,6 +168,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--bes_header=foo=TOPSECRET",
 			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET@",
 			"--some_other_flag=SUBFLAG=@//foo",
+			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
 			"213wZJyTUyhXkj381312@explicit",
@@ -163,6 +178,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--bes_header=foo=TOPSECRET",
 			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET_EXPLICIT@",
 			"--some_other_flag=SUBFLAG=@//foo",
+			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 	}
 
@@ -180,6 +196,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--bes_header=<REDACTED>",
 			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=",
 			"--some_other_flag=//foo",
+			"",
 		},
 		optionsParsed.CmdLine)
 	assert.Equal(
@@ -192,6 +209,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--bes_header=<REDACTED>",
 			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=",
 			"--some_other_flag=//foo",
+			"",
 		},
 		optionsParsed.ExplicitCmdLine)
 }
@@ -275,9 +293,10 @@ func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{
-			"ALLOW_ENV": "SHELL",
-			"ROLE":      "METADATA_CI",
-			"REPO_URL":  "https://USERNAME:PASSWORD@github.com/buildbuddy-io/metadata_repo_url",
+			"ALLOW_ENV":             "SHELL",
+			"ROLE":                  "METADATA_CI",
+			"REPO_URL":              "https://USERNAME:PASSWORD@github.com/buildbuddy-io/metadata_repo_url",
+			"EXPLICIT_COMMAND_LINE": `["--remote_header=x-buildbuddy-platform.container-registry-password=SECRET", "--foo=SAFE"]`,
 		},
 	}
 
@@ -286,6 +305,7 @@ func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 	})
 
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", buildMetadata.Metadata["REPO_URL"])
+	assert.Equal(t, `["--remote_header=\u003cREDACTED\u003e","--foo=SAFE"]`, buildMetadata.Metadata["EXPLICIT_COMMAND_LINE"])
 }
 
 func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
