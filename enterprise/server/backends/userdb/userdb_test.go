@@ -970,6 +970,8 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 }
 
 func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
 	ctx := context.Background()
 	env := newTestEnv(t)
 	adb := env.GetAuthDB()
@@ -1039,6 +1041,8 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 }
 
 func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
 	ctx := context.Background()
 	env := newTestEnv(t)
 	udb := env.GetUserDB()
