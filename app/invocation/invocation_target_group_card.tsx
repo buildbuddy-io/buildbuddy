@@ -51,7 +51,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
   private getTargetURL(target: target.Target) {
     return `?${new URLSearchParams({
       target: target.metadata?.label ?? "",
-      status: String(target.status),
+      targetStatus: String(target.status),
     })}`;
   }
 

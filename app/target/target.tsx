@@ -291,7 +291,12 @@ export default class TargetComponent extends React.Component<Props> {
                   invocationId={this.props.invocationId}
                   testResult={result}
                 />
-                <TargetTestCoverageCardComponent model={this.props.model} testResult={result} />
+                <TargetTestCoverageCardComponent
+                  invocationId={this.props.model.getInvocationId()}
+                  repo={this.props.model.getRepo()}
+                  commit={this.props.model.getCommit()}
+                  testResult={result}
+                />
               </span>
             ))}
           {actionEvents.map((action) => (

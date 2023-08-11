@@ -235,6 +235,15 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 			if req.GetTargetLabel() != "" && isTestStatus {
 				target.TestResultEvents = idx.TestResultEventsByLabel[label]
 			}
+			// When fetching a single label, expand Action events matching
+			// whichever target configuration we happened to store in the
+			// Completed map.
+			//
+			// TODO: include both label and configuration ID to deal with
+			// transitions.
+			if req.GetTargetLabel() != "" {
+				target.ActionEvents = actionEventsForLabel(idx, label)
+			}
 
 			g.Targets = append(g.Targets, target)
 			nextOffset = page.Offset + int64(i) + 1
@@ -274,6 +283,39 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 	return res, nil
 }
 
+// ActionCompletedId represented as a go struct so it can be used as a map
+// key.
+type actionKey struct{ label, primaryOutput, configurationID string }
+
+func actionKeyFromProto(protoID *build_event_stream.BuildEventId_ActionCompletedId) actionKey {
+	return actionKey{
+		label:           protoID.GetLabel(),
+		primaryOutput:   protoID.GetPrimaryOutput(),
+		configurationID: protoID.GetConfiguration().GetId(),
+	}
+}
+
+func actionEventsForLabel(idx *event_index.Index, label string) []*build_event_stream.BuildEvent {
+	// The Completed event will declare child Action events that it expects to
+	// see later in the stream. Collect these Action IDs and then filter
+	// idx.ActionEvents to just the ones matching these IDs.
+	completed := idx.TargetCompleteEventByLabel[label]
+	targetActionKeys := map[actionKey]struct{}{}
+	for _, c := range completed.GetChildren() {
+		if protoID := c.GetActionCompleted(); protoID != nil {
+			targetActionKeys[actionKeyFromProto(protoID)] = struct{}{}
+		}
+	}
+	var out []*build_event_stream.BuildEvent
+	for _, event := range idx.ActionEvents {
+		key := actionKeyFromProto(event.GetId().GetActionCompleted())
+		if _, ok := targetActionKeys[key]; ok {
+			out = append(out, event)
+		}
+	}
+	return out
+}
+
 func labelsWithFiles(idx *event_index.Index, labels []string) []string {
 	out := make([]string, 0, len(labels))
 	for _, label := range labels {
@@ -285,11 +327,11 @@ func labelsWithFiles(idx *event_index.Index, labels []string) []string {
 }
 
 func hasFiles(idx *event_index.Index, label string) bool {
-	completed := idx.TargetCompleteEventByLabel[label]
-	if completed == nil {
+	completedEvent := idx.TargetCompleteEventByLabel[label]
+	if completedEvent == nil {
 		return false
 	}
-	for _, g := range completed.GetOutputGroup() {
+	for _, g := range completedEvent.GetCompleted().GetOutputGroup() {
 		for _, s := range g.GetFileSets() {
 			for _, f := range idx.NamedSetOfFilesByID[s.GetId()].GetFiles() {
 				if f.GetUri() == "" {
@@ -306,13 +348,13 @@ func hasFiles(idx *event_index.Index, label string) bool {
 }
 
 func filesForLabel(idx *event_index.Index, label string) []*build_event_stream.File {
-	completed := idx.TargetCompleteEventByLabel[label]
-	if completed == nil {
+	completedEvent := idx.TargetCompleteEventByLabel[label]
+	if completedEvent == nil {
 		return nil
 	}
 	var out []*build_event_stream.File
 	fullPath := map[*build_event_stream.File]string{}
-	for _, g := range completed.GetOutputGroup() {
+	for _, g := range completedEvent.GetCompleted().GetOutputGroup() {
 		for _, s := range g.GetFileSets() {
 			for _, f := range idx.NamedSetOfFilesByID[s.GetId()].GetFiles() {
 				if f.GetUri() == "" {
