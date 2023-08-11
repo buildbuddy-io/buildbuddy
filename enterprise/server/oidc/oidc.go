@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -23,11 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
-	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -40,7 +37,6 @@ import (
 var (
 	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
 	oauthProviders       = flagutil.New("auth.oauth_providers", []OauthProvider{}, "The list of oauth providers to use to authenticate.")
-	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
 	claimsCacheTTL       = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
 	forceApproval        = flag.Bool("auth.force_approval", false, "If true, when a user doesn't have a session (first time logging in, or manually logged out) force the auth provider to show the consent screen allowing the user to select an account if they have multiple. This isn't supported by all auth providers.")
@@ -228,53 +224,9 @@ type apiKeyGroupCacheEntry struct {
 	expiresAfter time.Time
 }
 
-// apiKeyGroupCache is a cache for API Key -> Group lookups. A single Bazel invocation
-// can generate large bursts of RPCs, each of which needs to be authed.
-// There's no need to go to the database for every single request as this data
-// rarely changes.
-type apiKeyGroupCache struct {
-	// Note that even though we base this off an LRU cache, every entry has a hard expiration
-	// time to force a refresh of the underlying data.
-	lru interfaces.LRU[*apiKeyGroupCacheEntry]
-	ttl time.Duration
-	mu  sync.Mutex
-}
-
-func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
-	config := &lru.Config[*apiKeyGroupCacheEntry]{
-		MaxSize: apiKeyGroupCacheSize,
-		SizeFn:  func(v *apiKeyGroupCacheEntry) int64 { return 1 },
-	}
-	lru, err := lru.NewLRU[*apiKeyGroupCacheEntry](config)
-	if err != nil {
-		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
-	}
-	return &apiKeyGroupCache{lru: lru, ttl: *apiKeyGroupCacheTTL}, nil
-}
-
-func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
-	c.mu.Lock()
-	entry, ok := c.lru.Get(apiKey)
-	c.mu.Unlock()
-	if !ok {
-		return nil, ok
-	}
-	if time.Now().After(entry.expiresAfter) {
-		return nil, false
-	}
-	return entry.data, true
-}
-
-func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
-	c.mu.Lock()
-	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
-	c.mu.Unlock()
-}
-
 type OpenIDAuthenticator struct {
 	env                  environment.Env
 	myURL                *url.URL
-	apiKeyGroupCache     *apiKeyGroupCache
 	parseClaims          func(token string) (*claims.Claims, error)
 	authenticators       []authenticator
 	enableAnonymousUsage bool
@@ -355,15 +307,6 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		return nil, err
 	}
 
-	// Initialize API Key -> Group cache unless it's disabled by config.
-	var akgCache *apiKeyGroupCache
-	if *apiKeyGroupCacheTTL != time.Duration(0) {
-		akgCache, err = newAPIKeyGroupCache()
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	claimsFunc := claims.ParseClaims
 	if *claimsCacheTTL > 0 {
 		claimsCache, err := claims.NewClaimsCache(ctx, *claimsCacheTTL)
@@ -377,7 +320,6 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		env:                  env,
 		myURL:                build_buddy_url.WithPath(""),
 		authenticators:       authenticators,
-		apiKeyGroupCache:     akgCache,
 		parseClaims:          claimsFunc,
 		enableAnonymousUsage: AnonymousUsageEnabled(),
 		adminGroupID:         adminGroupID,
@@ -501,46 +443,22 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	if apiKey == "" {
 		return nil, status.UnauthenticatedError("missing API key")
 	}
-	if a.apiKeyGroupCache != nil {
-		d, ok := a.apiKeyGroupCache.Get(apiKey)
-		if ok {
-			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
-			return d, nil
-		}
-	}
 	authDB := a.env.GetAuthDB()
 	if authDB == nil {
 		return nil, status.FailedPreconditionError("AuthDB not configured")
 	}
-	apkg, err := authDB.GetAPIKeyGroupFromAPIKey(ctx, apiKey)
-	if err == nil && a.apiKeyGroupCache != nil {
-		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
-		a.apiKeyGroupCache.Add(apiKey, apkg)
-	} else {
-		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
-	}
-	return apkg, err
+	return authDB.GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 }
 
 func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
 	if apiKeyID == "" {
 		return nil, status.UnauthenticatedError("missing API key ID")
 	}
-	if a.apiKeyGroupCache != nil {
-		d, ok := a.apiKeyGroupCache.Get(apiKeyID)
-		if ok {
-			return d, nil
-		}
-	}
 	authDB := a.env.GetAuthDB()
 	if authDB == nil {
 		return nil, status.FailedPreconditionError("AuthDB not configured")
 	}
-	apkg, err := authDB.GetAPIKeyGroupFromAPIKeyID(ctx, apiKeyID)
-	if err == nil && a.apiKeyGroupCache != nil {
-		a.apiKeyGroupCache.Add(apiKeyID, apkg)
-	}
-	return apkg, err
+	return authDB.GetAPIKeyGroupFromAPIKeyID(ctx, apiKeyID)
 }
 
 func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
