@@ -63,7 +63,7 @@ const (
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "buildbuddy:record_metrics"
-	GormQueryNameKey                 = "buildbuddy:query_name"
+	gormQueryNameKey                 = "buildbuddy:query_name"
 
 	gormStmtSpanKey          = "buildbuddy:span"
 	gormStartSpanCallbackKey = "buildbuddy:start_span"
@@ -378,7 +378,7 @@ func (dbh *DBHandle) DBWithOptions(ctx context.Context, opts interfaces.DBOption
 	}
 
 	if opts.QueryName() != "" {
-		db = db.Set(GormQueryNameKey, opts.QueryName())
+		db = db.Set(gormQueryNameKey, opts.QueryName())
 	}
 	return db
 }
@@ -453,7 +453,7 @@ func recordMetricsAfterFn(db *gorm.DB) {
 	}
 
 	labels := prometheus.Labels{}
-	qv, _ := db.Get(GormQueryNameKey)
+	qv, _ := db.Get(gormQueryNameKey)
 	if queryName, ok := qv.(string); ok {
 		labels[metrics.SQLQueryTemplateLabel] = queryName
 	} else {
@@ -995,33 +995,44 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 	return false
 }
 
-func FillUpdatesForOnConflict(d *DB, value any, assignments map[string]any) (clause.Set, error) {
-	stmt := d.Set(GormQueryNameKey, "fill_updates_for_on_conflict_dry_run").Session(&gorm.Session{DryRun: true}).Clauses(clause.OnConflict{UpdateAll: true}).Create(value).Statement
+// AssignmentsFromUpdateAll returns the Set of Assignments that are generated as
+// a result of running Clauses(clause.OnConflict{UpdateAll: true}).Create(value)
+// on the provided DB.
+func AssignmentsFromUpdateAll(d *DB, value any) clause.Set {
+	stmt := d.Set(gormQueryNameKey, "fill_updates_for_on_conflict_dry_run").Session(&gorm.Session{DryRun: true}).Clauses(clause.OnConflict{UpdateAll: true}).Create(value).Statement
 	c, ok := stmt.Clauses["ON CONFLICT"]
 	if !ok {
-		return nil, status.InternalErrorf("Failed to get ON CONFLICT clause")
+		return nil
 	}
 	onConflict, ok := c.Expression.(clause.OnConflict)
 	if !ok {
-		return nil, status.InternalErrorf("Failed to convert ON CONFLICT clause")
+		return nil
 	}
-	updates := onConflict.DoUpdates
-	unused := make(map[string]struct{}, len(assignments))
-	for k := range assignments {
+	return onConflict.DoUpdates
+}
+
+// AmendAssignments replaces the Value of Assignments in the provided Set with
+// the value from the provided map if the Column.Name of the Assignment matches
+// the key in the map. All values in the map that have not been inserted into
+// the Assignment Set after the replacement is complete are passed into
+// clause.Assignments and appended to the existing Set. The return value is the
+// result of that append.
+func AmendAssignments(updates clause.Set, newUpdates map[string]any) clause.Set {
+	unused := make(map[string]struct{}, len(newUpdates))
+	for k := range newUpdates {
 		unused[k] = struct{}{}
 	}
 	for i := range updates {
-		if a, ok := assignments[updates[i].Column.Name]; ok {
-			updates[i].Value = a
+		if u, ok := newUpdates[updates[i].Column.Name]; ok {
+			updates[i].Value = u
 			delete(unused, updates[i].Column.Name)
 		}
 	}
 	additionalAssignments := make(map[string]any, len(unused))
 	for k := range unused {
-		additionalAssignments[k] = assignments[k]
+		additionalAssignments[k] = newUpdates[k]
 	}
-	updates = append(updates, clause.Assignments(additionalAssignments)...)
-	return updates, nil
+	return append(updates, clause.Assignments(additionalAssignments)...)
 }
 
 // TableSchema can be used to get the schema for a given table.

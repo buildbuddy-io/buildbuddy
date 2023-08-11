@@ -45,39 +45,57 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 	return perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 }
 
-func upsertInvocationForRegisterInvocationAttempt(d *db.DB, ti *tables.Invocation) (bool, error) {
-	updates, err := db.FillUpdatesForOnConflict(d, ti, map[string]any{
-		"attempt": gorm.Expr(
-			`CASE WHEN "Invocations".attempt = 0 THEN 2 ELSE "Invocations".attempt + 1 END`,
-		),
-	})
-	if err != nil {
-		return false, err
-	}
-	result := d.Clauses(
+func upsertInvocationForRegisterInvocationAttempt(d *db.DB, ti *tables.Invocation) *db.DB {
+	// The following GORM clauses generate an upsert query which returns the
+	// fields updated, if any.  The query will be of the form:
+	//
+	// INSERT INTO "Invocations" (columns...) -- All columns in the table
+	//
+	// VALUES (values...) -- All values from the tables.Invocation struct
+	//
+	// ON CONFLICT "invocation_id" -- The primary key
+	//
+	// DO UPDATE SET ... -- All values from original INSERT except "attempt",
+	//                   -- which instead either increments the current attempt or
+	//                   -- set it to 2 if it's currently 0, as can be seen below.
+	//
+	// WHERE "Invocations".invocation_status <> ? -- Status is not
+	//                                            -- COMPLETE_INVOCATION_STATUS.
+	//
+	// AND "Invocations".updated_at_usec > ? -- Invocation was last updated less
+	//                                       -- than four hours ago.
+	//
+	// RETURNING *; -- If a row is updated, the contents of the updated row will
+	//              -- be returned and propagated into the provided
+	//              -- tables.Invocation struct.
+	return d.Clauses(
 		clause.OnConflict{
 			Columns: []clause.Column{{Name: clause.PrimaryKey}},
 			Where: clause.Where{
 				Exprs: []clause.Expression{
-					gorm.Expr(`"Invocations".invocation_status <> ?`, int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)),
-					gorm.Expr(`"Invocations".updated_at_usec > ?`, d.NowFunc().Add(time.Hour*-4).UnixMicro()),
+					gorm.Expr(`"Invocations"."invocation_status" <> ?`, int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)),
+					gorm.Expr(`"Invocations"."updated_at_usec" > ?`, d.NowFunc().Add(time.Hour*-4).UnixMicro()),
 				},
 			},
-			DoUpdates: updates,
+			DoUpdates: db.AmendAssignments(db.AssignmentsFromUpdateAll(d, ti), map[string]any{
+				"attempt": gorm.Expr(
+					`CASE WHEN "Invocations"."attempt" = 0 THEN 2 ELSE "Invocations"."attempt" + 1 END`,
+				),
+			}),
 		},
 		clause.Returning{},
 	).Create(ti)
-	return result.RowsAffected > 0, result.Error
 }
 
 func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	ti.Attempt = 1
 	if d.h.DB(ctx).Dialector.Name() != "mysql" {
 		// mysql doesn't support RETURNING, but postgres and sqlite do
-		return upsertInvocationForRegisterInvocationAttempt(
+		result := upsertInvocationForRegisterInvocationAttempt(
 			d.h.DBWithOptions(ctx, db.Opts().WithQueryName(upsertInvocationQueryName)),
 			ti,
 		)
+		return result.RowsAffected > 0, result.Error
 	}
 	created := false
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName(upsertInvocationQueryName), func(tx *db.DB) error {
