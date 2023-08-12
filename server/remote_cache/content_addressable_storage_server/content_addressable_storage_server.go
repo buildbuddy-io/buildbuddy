@@ -645,8 +645,12 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 			return false
 		}
 		for _, dirNode := range child.GetDirectory().GetDirectories() {
+			grn := digest.NewResourceName(dirNode.GetDigest(), "", rspb.CacheType_CAS, rn.GetDigestFunction())
+			if grn.IsEmpty() {
+				continue
+			}
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
-				log.Debugf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
+				log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
 				return false
 			}
 		}
