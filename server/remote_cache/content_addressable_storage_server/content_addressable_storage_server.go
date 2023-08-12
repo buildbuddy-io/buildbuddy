@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -19,6 +20,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
@@ -545,11 +548,14 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				treeCache := &capb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
 					if isComplete(treeCache.GetChildren()) {
+						metrics.TreeCacheLookupCount.With(prometheus.Labels{metrics.TreeCacheLookupStatus: "hit"}).Inc()
 						return treeCache.GetChildren(), nil
 					} else {
-						log.Warningf("Ignoring incomplete treeCache entry")
+						metrics.TreeCacheLookupCount.With(prometheus.Labels{metrics.TreeCacheLookupStatus: "invalid_entry"}).Inc()
 					}
 				}
+			} else if status.IsNotFoundError(err) {
+				metrics.TreeCacheLookupCount.With(prometheus.Labels{metrics.TreeCacheLookupStatus: "miss"}).Inc()
 			}
 		}
 
@@ -595,7 +601,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 					return nil, err
 				}
 				treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
-				if err := s.cache.Set(ctx, treeCacheRN, buf); err != nil {
+				if err := s.cache.Set(ctx, treeCacheRN, buf); err == nil {
+					metrics.TreeCacheSetCount.Inc()
+				} else {
 					log.Warningf("Error setting treeCache blob: %s", err)
 				}
 			} else {
