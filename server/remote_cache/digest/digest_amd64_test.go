@@ -15,13 +15,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var server = sha256simd.NewAvx512Server()
+
 func hasherWithServer() hash.Hash {
-	server := sha256simd.NewAvx512Server()
 	return sha256simd.NewAvx512(server)
 }
 
 func BenchmarkSIMDDigestCompute(b *testing.B) {
-	for _, size := range []int{1, 10, 100, 1000, 10_000, 100_000, 1_000_000} {
+	for _, size := range []int{
+		// 1 MB
+		1_000_000,
+		// 10 MB
+		10_000_000,
+		// 100 MB
+		100_000_000,
+		// 1 GB
+		1_000_000_000,
+		// 10 GB
+		10_000_000_000,
+	} {
+		buf := make([]byte, size)
+		_, err := rand.Read(buf)
+		require.NoError(b, err)
+
 		for _, tc := range []struct {
 			newHasher func() hash.Hash
 			name      string
@@ -31,17 +47,8 @@ func BenchmarkSIMDDigestCompute(b *testing.B) {
 			{hasherWithServer, "with_SIMD_with_server"},
 		} {
 			b.Run(fmt.Sprintf("%s/%d", tc.name, size), func(b *testing.B) {
-				buf := make([]byte, size)
-				_, err := rand.Read(buf)
-				require.NoError(b, err)
-
-				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					h := tc.newHasher()
-
-					_, err := io.Copy(h, bytes.NewReader(buf))
-					require.NoError(b, err)
-					h.Sum([]byte{})
+					tc.newHasher().Sum(buf)
 				}
 			})
 		}
