@@ -6,9 +6,24 @@ interface Props {
   tab: string;
   search: URLSearchParams;
   placeholder?: string;
+  debounceMillis?: number;
 }
 
-export default class InvocationFilterComponent extends React.Component<Props> {
+interface State {
+  value: string;
+}
+
+export default class InvocationFilterComponent extends React.Component<Props, State> {
+  state: State = {
+    value: "",
+  };
+
+  private timeout?: number;
+
+  componentDidMount() {
+    this.setState({ value: this.props.search.get(this.filterType()) ?? "" });
+  }
+
   handleFilterChange(event: any) {
     let value = event.target.value;
     let params = {};
@@ -23,7 +38,14 @@ export default class InvocationFilterComponent extends React.Component<Props> {
         params = { executionFilter: value };
         break;
     }
-    router.replaceParams(params);
+    this.setState({ value: value });
+
+    // Wait a little while to apply the URL params to avoid triggering excessive
+    // RPCs.
+    window.clearTimeout(this.timeout);
+    this.timeout = window.setTimeout(() => {
+      router.replaceParams(params);
+    }, this.props.debounceMillis || 0);
   }
 
   filterType() {
@@ -43,7 +65,7 @@ export default class InvocationFilterComponent extends React.Component<Props> {
     return (
       <FilterInput
         className="invocation-filter"
-        value={this.props.search.get(this.filterType()) ?? ""}
+        value={this.state.value}
         placeholder={this.props.placeholder ? this.props.placeholder : "Filter..."}
         onChange={this.handleFilterChange.bind(this)}
       />

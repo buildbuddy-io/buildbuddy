@@ -1,7 +1,8 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
-import rpcService from "../service/rpc_service";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { target } from "../../proto/target_ts_proto";
 import { ArrowDownCircle, FileCode } from "lucide-react";
 import TargetGroupCard from "./invocation_target_group_card";
 
@@ -13,12 +14,47 @@ interface Props {
 
 interface State {
   numPages: number;
+
+  searchLoading: boolean;
+  searchResponse?: target.GetTargetResponse;
 }
 
 export default class ArtifactsCardComponent extends React.Component<Props, State> {
   state: State = {
     numPages: 1,
+    searchLoading: false,
   };
+
+  componentDidMount() {
+    if (this.props.filter) {
+      this.search();
+    }
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.props.filter !== prevProps.filter) {
+      this.search();
+    }
+  }
+
+  private searchRPC?: CancelablePromise;
+
+  private search() {
+    this.searchRPC?.cancel();
+    this.setState({ searchLoading: true });
+    if (!this.props.filter) {
+      this.setState({ searchLoading: false, searchResponse: undefined });
+      return;
+    }
+    this.searchRPC = rpcService.service
+      .getTarget({
+        status: 0, // only fetch the top-level artifact listing
+        invocationId: this.props.model.getInvocationId(),
+        labelFilter: this.props.filter,
+      })
+      .then((response) => this.setState({ searchResponse: response }))
+      .finally(() => this.setState({ searchLoading: false }));
+  }
 
   handleArtifactClicked(outputUri: string, outputFilename: string, event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
@@ -39,12 +75,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     if (this.props.model.invocation.targetGroups.length) {
       const artifactListingGroup = this.props.model.invocation.targetGroups.find((group) => group.status === 0);
       if (!artifactListingGroup) return null;
+
+      if (this.state.searchLoading) {
+        return <div className="loading" />;
+      }
+
+      const group = this.state.searchResponse?.targetGroups[0] ?? artifactListingGroup;
       return (
-        <TargetGroupCard
-          invocationId={this.props.model.getInvocationId()}
-          group={artifactListingGroup}
-          filter={this.props.filter}
-        />
+        <TargetGroupCard invocationId={this.props.model.getInvocationId()} group={group} filter={this.props.filter} />
       );
     }
 

@@ -196,6 +196,9 @@ message GetTargetRequest {
   optional api.v1.Status status = 3;
 
   string page_token = 4;
+
+  // Only return targets whose labels contain this substring (case-insensitive).
+  string label_filter = 5;
 }
 
 message GetTargetResponse {

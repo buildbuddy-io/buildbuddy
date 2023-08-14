@@ -183,6 +183,8 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 		if s == 0 {
 			labels = labelsWithFiles(idx, labels)
 		}
+		// Restrict labels to those matching the search filter.
+		labels = labelsMatching(labels, req.GetLabelFilter())
 
 		// Set TotalCount based on the length of the label list *before* slicing
 		// based on the page token.
@@ -320,6 +322,20 @@ func labelsWithFiles(idx *event_index.Index, labels []string) []string {
 	out := make([]string, 0, len(labels))
 	for _, label := range labels {
 		if hasFiles(idx, label) {
+			out = append(out, label)
+		}
+	}
+	return out
+}
+
+func labelsMatching(labels []string, filter string) []string {
+	if filter == "" {
+		return labels
+	}
+	var out []string
+	filterLower := strings.ToLower(filter)
+	for _, label := range labels {
+		if strings.Contains(strings.ToLower(label), filterLower) {
 			out = append(out, label)
 		}
 	}
