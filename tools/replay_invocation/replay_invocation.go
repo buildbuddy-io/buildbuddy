@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"io"
 	"os"
@@ -62,10 +63,6 @@ func getUUID() string {
 	return u.String()
 }
 
-func printURL(iid string) {
-	log.Infof("Re-Streaming build results to invocation %s%s", *besResultsURL, iid)
-}
-
 func main() {
 	flag.Parse()
 
@@ -79,6 +76,13 @@ func main() {
 
 	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker(""))
 	ctx := env.GetServerContext()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	env.GetHealthChecker().RegisterShutdownFunction(func(_ context.Context) error {
+		cancel()
+		return nil
+	})
+
 	bs, err := blobstore.GetConfiguredBlobstore(env)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err.Error())
@@ -105,7 +109,8 @@ func main() {
 		InvocationId: getUUID(),
 		BuildId:      getUUID(),
 	}
-	log.Infof("Replaying events...")
+	invocationURL := *besResultsURL + streamID.GetInvocationId()
+	log.Infof("Replaying invocation; results will be available at %s", invocationURL)
 	for {
 		msg, err := pr.ReadProto(ctx)
 		if err != nil {
@@ -124,6 +129,9 @@ func main() {
 			log.Fatalf("Error reading invocation event from stream: %s", err.Error())
 		}
 		sequenceNum += 1
+		if sequenceNum%10_000 == 0 {
+			log.Infof("Progress: replaying event %d", sequenceNum)
+		}
 		ie := msg.(*inpb.InvocationEvent)
 		buildEvent := ie.GetBuildEvent()
 		switch p := buildEvent.Payload.(type) {
@@ -173,5 +181,5 @@ func main() {
 			break
 		}
 	}
-	printURL(streamID.GetInvocationId())
+	log.Infof("Done! Results should be visible at %s", invocationURL)
 }
