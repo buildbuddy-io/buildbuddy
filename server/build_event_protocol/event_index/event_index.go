@@ -30,6 +30,7 @@ type Index struct {
 	TargetsByStatus            map[cmnpb.Status][]*trpb.Target
 	NamedSetOfFilesByID        map[string]*bespb.NamedSetOfFiles
 	ActionEvents               []*bespb.BuildEvent
+	ConfiguredCount            int64
 	// Events which aren't indexed by target and are instead returned in the
 	// top-level invocation proto.
 	TopLevelEvents []*inpb.InvocationEvent
@@ -63,6 +64,7 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		nsid := event.GetBuildEvent().GetId().GetNamedSet().GetId()
 		idx.NamedSetOfFilesByID[nsid] = p.NamedSetOfFiles
 	case *bespb.BuildEvent_Configured:
+		idx.ConfiguredCount++
 		label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
 		idx.AllTargetLabels = append(idx.AllTargetLabels, label)
 		idx.BuildTargetByLabel[label] = &trpb.Target{

@@ -2,6 +2,7 @@ import { HelpCircle, PlayCircle, XCircle, CheckCircle } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
+import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { api_key } from "../../proto/api_key_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
@@ -301,6 +302,43 @@ export default class InvocationModel {
 
   isCacheCompressionEnabled() {
     return this.optionsMap.get("experimental_remote_cache_compression") === "1";
+  }
+
+  getTargetConfiguredCount() {
+    return Number(this.invocation.targetConfiguredCount) || this.targets.length;
+  }
+
+  getFailedToBuildCount() {
+    return this.invocation.targetGroups.length
+      ? this.targetCountForStatus(api_common.v1.Status.FAILED_TO_BUILD)
+      : this.brokenTest.length;
+  }
+
+  getFailedCount() {
+    return this.invocation.targetGroups.length
+      ? this.targetCountForStatus(api_common.v1.Status.FAILED)
+      : this.failedTest.length;
+  }
+
+  getBuiltCount() {
+    return this.invocation.targetGroups.length
+      ? this.targetCountForStatus(api_common.v1.Status.BUILT)
+      : this.succeeded.length;
+  }
+
+  getFlakyCount() {
+    return this.invocation.targetGroups.length
+      ? this.targetCountForStatus(api_common.v1.Status.FLAKY)
+      : this.flakyTest.length;
+  }
+
+  private targetCountForStatus(status: api_common.v1.Status): number {
+    for (const group of this.invocation.targetGroups) {
+      if (group.status === status) {
+        return Number(group.totalCount);
+      }
+    }
+    return 0;
   }
 
   getCache() {

@@ -38,7 +38,8 @@ export default class DenseInvocationOverviewComponent extends React.Component<Pr
             <div>
               {isBazelInvocation ? (
                 <>
-                  {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
+                  {this.props.model.getTargetConfiguredCount()}{" "}
+                  {this.props.model.getTargetConfiguredCount() == 1 ? "target" : "targets"}
                 </>
               ) : (
                 <>1 action</>
@@ -70,27 +71,25 @@ export default class DenseInvocationOverviewComponent extends React.Component<Pr
             <>
               <div className="dense-invocation-overview-grid-chunk">
                 <div className="dense-invocation-overview-grid-title">Targets affected</div>
-                <div className="dense-invocation-overview-grid-value">{this.props.model.targets.length}</div>
+                <div className="dense-invocation-overview-grid-value">
+                  {this.props.model.getTargetConfiguredCount()}
+                </div>
               </div>
               <div className="dense-invocation-overview-grid-chunk">
                 <div className="dense-invocation-overview-grid-title">Broken</div>
-                <div className="dense-invocation-overview-grid-value">{this.props.model.brokenTest.length}</div>
+                <div className="dense-invocation-overview-grid-value">{this.props.model.getFailedToBuildCount()}</div>
               </div>
               <div className="dense-invocation-overview-grid-chunk">
                 <div className="dense-invocation-overview-grid-title">Failed</div>
-                <div className="dense-invocation-overview-grid-value">
-                  {this.props.model.failed.length + this.props.model.failedTest.length}
-                </div>
+                <div className="dense-invocation-overview-grid-value">{this.props.model.getFailedCount()}</div>
               </div>
               <div className="dense-invocation-overview-grid-chunk">
                 <div className="dense-invocation-overview-grid-title">Flaky</div>
-                <div className="dense-invocation-overview-grid-value">{this.props.model.flakyTest.length}</div>
+                <div className="dense-invocation-overview-grid-value">{this.props.model.getFlakyCount()}</div>
               </div>
               <div className="dense-invocation-overview-grid-chunk">
                 <div className="dense-invocation-overview-grid-title">Successful</div>
-                <div className="dense-invocation-overview-grid-value">
-                  {this.props.model.succeeded.length - this.props.model.failedTest.length}
-                </div>
+                <div className="dense-invocation-overview-grid-value">{this.props.model.getBuiltCount()}</div>
               </div>
             </>
           )}

@@ -166,7 +166,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="invocation-section">
                   <div className="invocation-section-title">Targets</div>
                   <div>
-                    {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
+                    {this.props.model.getTargetConfiguredCount()}{" "}
+                    {this.props.model.getTargetConfiguredCount() == 1 ? "target" : "targets"}
                     {!!this.props.model.buildMetrics?.targetMetrics?.targetsConfigured && (
                       <span> ({this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured)</span>
                     )}
