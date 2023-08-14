@@ -378,36 +378,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	jailerRoot := tempJailerRoot(t)
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-			EnableNetworking:  false,
-			ScratchDiskSizeMb: 100,
-		},
-		JailerRoot: jailerRoot,
-	}
-	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
-		t.Fatalf("unable to pull image: %s", err)
-	}
-
-	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-		t.Fatalf("unable to Create container: %s", err)
-	}
-	t.Cleanup(func() {
-		if err := c.Remove(ctx); err != nil {
-			t.Fatal(err)
-		}
-	})
 
 	// Returns a task that appends the message to a logfile, then prints the logfile so far
 	appendToLog := func(message string) *repb.Command {
@@ -422,7 +393,31 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		}
 	}
 
-	// Create a snapshot
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: jailerRoot,
+	}
+	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Create a snapshot. Data written to this snapshot should persist
+	// when other VMs reuse the snapshot
 	cmd := appendToLog("Base")
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
@@ -453,7 +448,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 			c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 			require.NoError(t, err)
 
-			// The VM should start from the Base VM's snapshot
+			// The new VM should reuse the Base VM's snapshot
 			err = c.Unpause(ctx)
 			require.NoError(t, err)
 
@@ -461,10 +456,12 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 			cmd := appendToLog(fmt.Sprintf("Fork-%d", i))
 			res := c.Exec(ctx, cmd, nil /*=stdio*/)
 			require.NoError(t, res.Error)
-			// The log should contain data written from the Base VM and the current
-			// VM, but not any of the other VMs starting from the same Base VM
+			// The log should contain data written to the original snapshot
+			// and the current VM, but not from any of the other VMs sharing
+			// the same original snapshot
 			require.Equal(t, fmt.Sprintf("Base\nFork-%d\n", i), string(res.Stdout))
 
+			// Each new VM shouldn't have trouble saving snapshots themselves
 			err = c.Pause(ctx)
 			require.NoError(t, err)
 			err = c.Remove(ctx)
@@ -472,6 +469,37 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+
+	// Test that new VMs always use the newest snapshot
+	workDir = testfs.MakeDirAll(t, rootDir, "work-last")
+	opts = firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: jailerRoot,
+	}
+	c, err = firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	// This VM should use one of the snapshots saved by one of the forks
+	// created in a goroutine, because they are newer than the Base snapshot
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+	cmd = appendToLog("Last")
+	res = c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Contains(t, string(res.Stdout), "Base")
+	require.Contains(t, string(res.Stdout), "Fork")
+	require.Contains(t, string(res.Stdout), "Last")
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+	err = c.Remove(ctx)
+	require.NoError(t, err)
 }
 
 func TestFirecrackerComplexFileMapping(t *testing.T) {
