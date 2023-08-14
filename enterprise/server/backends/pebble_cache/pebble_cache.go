@@ -83,7 +83,7 @@ var (
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
-	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
+	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", true, "If true, include metadata size")
 
 	// ac eviction flags
 	acEvictionEnabled       = flag.Bool("cache.pebble.ac_eviction_enabled", false, "Whether AC eviction is enabled.")
@@ -146,6 +146,13 @@ const (
 	// Maximum amount of time to wait for a pebble Sync. A warning will be
 	// logged if a sync takes longer than this.
 	maxSyncDuration = 10 * time.Second
+)
+
+type sizeUpdateOp int
+
+const (
+	addSizeOp = iota
+	deleteSizeOp
 )
 
 // Options is a struct containing the pebble cache configuration options.
@@ -925,7 +932,6 @@ func (p *PebbleCache) processSizeUpdates() {
 
 	for edit := range p.edits {
 		e := evictors[edit.partID]
-		log.Infof("update size: %d", edit.delta)
 		e.updateSize(edit.cacheType, edit.delta)
 	}
 }
@@ -1628,7 +1634,15 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 	return nil
 }
 
-func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, delta int64) {
+func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *rfpb.FileMetadata) {
+	delta := md.GetStoredSizeBytes()
+	if p.includeMetadataSize {
+		delta = getTotalSizeBytes(md)
+	}
+
+	if op == deleteSizeOp {
+		delta = -1 * delta
+	}
 	up := &sizeUpdate{
 		partID:    partID,
 		cacheType: cacheType,
@@ -1684,8 +1698,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
-	mdSize := int64(proto.Size(fileMetadata))
-	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*mdSize)
+	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, fileMetadata)
 	return nil
 }
 
@@ -1729,11 +1742,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	delta := md.GetStoredSizeBytes()
-	if p.includeMetadataSize {
-		delta = getTotalSizeBytes(md)
-	}
-	p.sendSizeUpdate(partitionID, key.CacheType(), -1*delta)
+	p.sendSizeUpdate(partitionID, key.CacheType(), deleteSizeOp, md)
 	return nil
 }
 
@@ -2175,11 +2184,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
 			return err
 		}
-		delta := oldMD.GetStoredSizeBytes()
-		if p.includeMetadataSize {
-			delta = getTotalSizeBytes(oldMD)
-		}
-		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*delta)
+		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD)
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
@@ -2188,12 +2193,8 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	}
 
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
-		delta := md.GetStoredSizeBytes()
-		if p.includeMetadataSize {
-			delta = getTotalSizeBytes(md)
-		}
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
-		p.sendSizeUpdate(partitionID, key.CacheType(), delta)
+		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md)
 		if md.GetStoredSizeBytes() > 0 {
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
 		}
