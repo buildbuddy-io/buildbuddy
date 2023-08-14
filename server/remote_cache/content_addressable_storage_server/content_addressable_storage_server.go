@@ -44,6 +44,7 @@ var (
 	treeCacheSeed           = flag.String("cache.tree_cache_seed", "treecache-03011023", "If set, hash this with digests before caching / reading from tree cache")
 	minTreeCacheLevel       = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
 	minTreeCacheDescendents = flag.Int("cache.tree_cache_min_descendents", 10, "The min number of descendents a node must parent in order to be cached")
+	maxTreeCacheSetDuration = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 )
 
 type ContentAddressableStorageServer struct {
@@ -526,6 +527,35 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
+	cacheCtx, cacheCancel := context.WithCancel(ctx)
+	defer cacheCancel()
+	eg, gCtx := errgroup.WithContext(cacheCtx)
+	cacheTreeNode := func(d *repb.Digest, descendents []*capb.DirectoryWithDigest) {
+		treeCache := &capb.TreeCache{
+			Children: make([]*capb.DirectoryWithDigest, len(descendents)),
+		}
+		copy(treeCache.Children, descendents)
+		treeCacheDigest := proto.Clone(d).(*repb.Digest)
+
+		eg.Go(func() error {
+			if !isComplete(treeCache.GetChildren()) {
+				// incomplete tree cache error will be logged by `isComplete`.
+				return nil
+			}
+			buf, err := proto.Marshal(treeCache)
+			if err != nil {
+				return err
+			}
+			treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
+			if err := s.cache.Set(gCtx, treeCacheRN, buf); err == nil {
+				metrics.TreeCacheSetCount.Inc()
+			} else {
+				log.Warningf("Error setting treeCache blob: %s", err)
+			}
+			return nil
+		})
+	}
+
 	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, error)
 	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, error) {
 		if len(dirWithDigest.Directory.Directories) == 0 {
@@ -586,23 +616,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}
 
 		if level > *minTreeCacheLevel && len(allDescendents) > *minTreeCacheDescendents && *enableTreeCaching {
-			treeCache := &capb.TreeCache{
-				Children: allDescendents,
-			}
-			if isComplete(treeCache.GetChildren()) {
-				buf, err := proto.Marshal(treeCache)
-				if err != nil {
-					return nil, err
-				}
-				treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
-				if err := s.cache.Set(ctx, treeCacheRN, buf); err == nil {
-					metrics.TreeCacheSetCount.Inc()
-				} else {
-					log.Warningf("Error setting treeCache blob: %s", err)
-				}
-			} else {
-				log.Debugf("Not caching incomplete tree cache")
-			}
+			cacheTreeNode(treeCacheDigest, allDescendents)
 		}
 		return allDescendents, nil
 	}
@@ -619,10 +633,18 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return err
 		}
 	}
-
 	log.Debugf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)
+	}
+
+	// Finalize tree cache sets; but don't wait forever.
+	go func() {
+		<-time.After(*maxTreeCacheSetDuration)
+		cacheCancel()
+	}()
+	if err := eg.Wait(); err != nil {
+		log.Warningf("Error populating tree cache: %s", err)
 	}
 	return nil
 }
