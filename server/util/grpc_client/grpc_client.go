@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/keepalive"
@@ -78,6 +79,10 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 
 			// If true, client sends keepalive pings even with no active RPCs.
 			PermitWithoutStream: true,
+
+			PingCallback: func(connectionID uint64) {
+				log.Debugf("Sending keepalive ping for connection %d", connectionID)
+			},
 		}),
 	}
 }
