@@ -384,8 +384,11 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	appendToLog := func(message string) *repb.Command {
 		return &repb.Command{
 			Arguments: []string{"sh", "-c", `
+				# Write to the scratchfs, which should be persisted in the snapshot
 				cd /root
 				# Clear the memory page cache to ensure the file is read from disk
+				# NBD has unlocked immutable disk snapshots, which is what we
+				# want to test here
 				echo 3 > /proc/sys/vm/drop_caches
 				echo ` + message + ` >> ./log
 				cat ./log
