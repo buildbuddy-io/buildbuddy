@@ -12,13 +12,13 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
-import { timestampToDateWithFallback } from "../util/proto";
+import { addDurationToTimestamp, timestampToDateWithFallback } from "../util/proto";
 import { OutlinedLinkButton } from "../components/button/link_button";
 import { target } from "../../proto/target_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import rpc_service from "../service/rpc_service";
 import error_service from "../errors/error_service";
-import { getEndTimestamp, renderTestSize } from "../invocation/target_util";
+import { renderTestSize } from "../invocation/target_util";
 
 const Status = api_common.v1.Status;
 
@@ -179,10 +179,8 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
       return format.formatDate(lastStopDate);
     }
     if (!this.state.target?.timing?.startTime) return "";
-    if (!this.state.target.timing.duration) return format.formatTimestamp(this.state.target.timing.startTime);
-    const end = getEndTimestamp(this.state.target.timing);
-    if (!end) return "";
-    return format.formatTimestamp(end);
+    const endTime = addDurationToTimestamp(this.state.target.timing.startTime, this.state.target.timing.duration);
+    return format.formatTimestamp(endTime);
   }
 
   handleCopyClicked(label: string) {

@@ -134,8 +134,8 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
       case Status.FAILED_TO_BUILD:
         className = "card-failure";
         icon = <XCircle className="icon red" />;
-        presentVerb = `failing ${targets.length === 1 ? "target" : "targets"}`;
-        pastVerb = `${targets.length === 1 ? "target" : "targets"} failed`;
+        presentVerb = `${targets.length === 1 ? "target" : "targets"} failed to build`;
+        pastVerb = `${targets.length === 1 ? "target" : "targets"} failed to build`;
         break;
       case Status.TIMED_OUT:
         className = "card-timeout";
@@ -197,11 +197,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                       <span className="target-label">{target.metadata?.label}</span>{" "}
                       {target.rootCause && <span className="root-cause-badge">Root cause</span>}
                     </div>
-                    <div className="target-duration">
-                      {renderDuration(
-                        target.timing ?? new api_common.v1.Timing({ duration: new google_duration.protobuf.Duration() })
-                      )}
-                    </div>
+                    <div className="target-duration">{!!target.timing?.duration && renderDuration(target.timing)}</div>
                   </Link>
                 ))}
               </div>

@@ -681,9 +681,6 @@ ts_library(
     srcs = ["target_util.tsx"],
     deps = [
         "//app/util:proto",
-        "//proto:timestamp_ts_proto",
         "//proto/api/v1:common_ts_proto",
-        "@npm//@types/long",
-        "@npm//long",
     ],
 )
