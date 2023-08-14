@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 )
 
 const (
@@ -23,10 +26,19 @@ var (
 	httpsOnlyCookies = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
 )
 
+func cookieDomain() string {
+	domain := ""
+	if subdomain.Enabled() {
+		domain = build_buddy_url.Domain()
+	}
+	return domain
+}
+
 func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time, httpOnly bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
+		Domain:   cookieDomain(),
 		Expires:  expiry,
 		HttpOnly: httpOnly,
 		SameSite: http.SameSiteLaxMode,

@@ -2,6 +2,7 @@ package build_buddy_url
 
 import (
 	"net/url"
+	"strings"
 
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
@@ -14,4 +15,13 @@ func WithPath(path string) *url.URL {
 
 func String() string {
 	return buildBuddyURL.String()
+}
+
+func Domain() string {
+	hostname := buildBuddyURL.Hostname()
+	pts := strings.Split(hostname, ".")
+	if len(pts) < 2 {
+		return hostname
+	}
+	return strings.Join(pts[len(pts)-2:], ".")
 }
