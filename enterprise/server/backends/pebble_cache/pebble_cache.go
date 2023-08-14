@@ -1634,10 +1634,10 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 	return nil
 }
 
-func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *rfpb.FileMetadata) {
+func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *rfpb.FileMetadata, keySize int) {
 	delta := md.GetStoredSizeBytes()
 	if p.includeMetadataSize {
-		delta = getTotalSizeBytes(md)
+		delta = getTotalSizeBytes(md) + int64(keySize)
 	}
 
 	if op == deleteSizeOp {
@@ -1698,7 +1698,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, fileMetadata)
+	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, fileMetadata, len(fileMetadataKey))
 	return nil
 }
 
@@ -1742,7 +1742,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	p.sendSizeUpdate(partitionID, key.CacheType(), deleteSizeOp, md)
+	p.sendSizeUpdate(partitionID, key.CacheType(), deleteSizeOp, md, len(keyBytes))
 	return nil
 }
 
@@ -2184,7 +2184,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
 			return err
 		}
-		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD)
+		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD, len(oldKeyBytes))
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
@@ -2194,7 +2194,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
-		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md)
+		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md, len(keyBytes))
 		if md.GetStoredSizeBytes() > 0 {
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
 		}
