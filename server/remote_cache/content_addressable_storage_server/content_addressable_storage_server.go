@@ -37,19 +37,13 @@ import (
 
 const (
 	gRPCMaxSize = int64(4194304 - 2000)
-
-	// minTreeCacheLevel is the minimum level at which the tree may be
-	// cached. Level 0 is the root of the tree.
-	minTreeCacheLevel = 1
-
-	// minTreeCacheDescendents is the minimum number of descendents a node
-	// must have in order to be cached.
-	minTreeCacheDescendents = 10
 )
 
 var (
-	enableTreeCaching = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
-	treeCacheSeed     = flag.String("cache.tree_cache_seed", "treecache-03011023", "If set, hash this with digests before caching / reading from tree cache")
+	enableTreeCaching       = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
+	treeCacheSeed           = flag.String("cache.tree_cache_seed", "treecache-03011023", "If set, hash this with digests before caching / reading from tree cache")
+	minTreeCacheLevel       = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
+	minTreeCacheDescendents = flag.Int("cache.tree_cache_min_descendents", 10, "The min number of descendents a node must parent in order to be cached")
 )
 
 type ContentAddressableStorageServer struct {
@@ -591,7 +585,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		if level > minTreeCacheLevel && len(allDescendents) > minTreeCacheDescendents && *enableTreeCaching {
+		if level > *minTreeCacheLevel && len(allDescendents) > *minTreeCacheDescendents && *enableTreeCaching {
 			treeCache := &capb.TreeCache{
 				Children: allDescendents,
 			}
