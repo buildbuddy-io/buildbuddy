@@ -158,7 +158,7 @@ func tempJailerRoot(t *testing.T) string {
 	}
 
 	if *testExecutorRoot != "" {
-		//cleanExecutorRoot(t, *testExecutorRoot)
+		cleanExecutorRoot(t, *testExecutorRoot)
 		return *testExecutorRoot
 	}
 
@@ -379,7 +379,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
+	jailerRoot := tempJailerRoot(t)
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
@@ -389,7 +389,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
-		JailerRoot: tempJailerRoot(t),
+		JailerRoot: jailerRoot,
 	}
 	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 	if err != nil {
@@ -448,7 +448,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 					EnableNetworking:  false,
 					ScratchDiskSizeMb: 100,
 				},
-				JailerRoot: tempJailerRoot(t),
+				JailerRoot: jailerRoot,
 			}
 			c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 			require.NoError(t, err)
