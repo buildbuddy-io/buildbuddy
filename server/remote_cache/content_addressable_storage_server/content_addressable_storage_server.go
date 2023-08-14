@@ -532,7 +532,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	eg, gCtx := errgroup.WithContext(cacheCtx)
 	cacheTreeNode := func(d *repb.Digest, descendents []*capb.DirectoryWithDigest) {
 		treeCache := &capb.TreeCache{
-			Children: make([]*capb.DirectoryWithDigest, 0, len(descendents)),
+			Children: make([]*capb.DirectoryWithDigest, len(descendents)),
 		}
 		copy(treeCache.Children, descendents)
 		treeCacheDigest := proto.Clone(d).(*repb.Digest)
