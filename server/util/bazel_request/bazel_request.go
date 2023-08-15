@@ -1,3 +1,5 @@
+// TODO: rename to requestmetadata since both bazel and the executor use
+// RequestMetadata.
 package bazel_request
 
 import (
@@ -21,7 +23,7 @@ var (
 
 const RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
 
-func getRequestMetadataBytes(ctx context.Context) []byte {
+func GetRequestMetadataBytes(ctx context.Context) []byte {
 	vals := metadata.ValueFromIncomingContext(ctx, RequestMetadataKey)
 	if len(vals) == 0 {
 		return nil
@@ -30,7 +32,7 @@ func getRequestMetadataBytes(ctx context.Context) []byte {
 }
 
 func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
-	b := getRequestMetadataBytes(ctx)
+	b := GetRequestMetadataBytes(ctx)
 	if len(b) == 0 {
 		return nil
 	}
@@ -43,7 +45,7 @@ func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 
 func GetInvocationID(ctx context.Context) string {
 	const toolInvocationIDFieldNumber = 3
-	b := getRequestMetadataBytes(ctx)
+	b := GetRequestMetadataBytes(ctx)
 	value, _ := pbwireutil.ConsumeFirstString(b, toolInvocationIDFieldNumber)
 	return value
 }
