@@ -23,3 +23,7 @@
 .spinner.white:before {
   background-image: url("/image/loader-white.svg");
 }
+
+.spinner.small-spinner {
+  --size: 16px;
+}

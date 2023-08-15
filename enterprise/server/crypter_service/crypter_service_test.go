@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
@@ -684,9 +685,9 @@ func TestKeyCaching(t *testing.T) {
 }
 
 func TestConfigAPI(t *testing.T) {
-	env, kms := getEnv(t)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 
-	//groupKeyID := "EK123"
+	env, kms := getEnv(t)
 
 	auther := enterprise_testauth.Configure(t, env)
 	users := enterprise_testauth.CreateRandomGroups(t, env)

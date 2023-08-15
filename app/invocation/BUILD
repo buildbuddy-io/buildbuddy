@@ -41,9 +41,10 @@ ts_library(
         "//app/service:rpc_service",
         "//app/shortcuts",
         "//app/target",
+        "//app/target:target_v2",
         "//app/util:errors",
-        "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
+        "//proto/api/v1:common_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//moment",
@@ -146,6 +147,7 @@ ts_library(
     srcs = ["invocation_artifacts_card.tsx"],
     deps = [
         "//app/invocation:invocation_model",
+        "//app/invocation:invocation_target_group_card",
         "//app/service:rpc_service",
         "//proto:build_event_stream_ts_proto",
         "@npm//@types/react",
@@ -461,9 +463,12 @@ ts_library(
     name = "invocation_raw_logs_card",
     srcs = ["invocation_raw_logs_card.tsx"],
     deps = [
+        "//app/components/banner",
         "//app/components/button",
+        "//app/components/button:link_button",
         "//app/components/filter_input",
         "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
@@ -528,7 +533,10 @@ ts_library(
     srcs = ["invocation_targets.tsx"],
     deps = [
         "//app/invocation:invocation_model",
+        "//app/invocation:invocation_target_group_card",
         "//app/invocation:invocation_targets_card",
+        "//proto:target_ts_proto",
+        "//proto/api/v1:common_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
@@ -644,5 +652,35 @@ ts_library(
         "@npm//lucide-react",
         "@npm//react",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "invocation_target_group_card",
+    srcs = ["invocation_target_group_card.tsx"],
+    deps = [
+        "//app/components/link",
+        "//app/components/spinner",
+        "//app/errors:error_service",
+        "//app/invocation:target_util",
+        "//app/service:rpc_service",
+        "//app/util:clipboard",
+        "//proto:build_event_stream_ts_proto",
+        "//proto:duration_ts_proto",
+        "//proto:target_ts_proto",
+        "//proto/api/v1:common_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "target_util",
+    srcs = ["target_util.tsx"],
+    deps = [
+        "//app/util:proto",
+        "//proto/api/v1:common_ts_proto",
     ],
 )

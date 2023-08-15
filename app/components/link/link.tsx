@@ -17,8 +17,8 @@ export type LinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement>;
  * handler, navigation is canceled, as is the case for normal `<a>` elements.
  */
 export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAnchorElement>) => {
-  const { className, href, onClick, ...rest } = props;
-  const isExternal = Boolean(href && (href.startsWith("http://") || href.startsWith("https://")));
+  const { className, href, target, onClick, ...rest } = props;
+  const isExternal = Boolean(target) || Boolean(href && (href.startsWith("http://") || href.startsWith("https://")));
   const onClickWrapped = isExternal
     ? onClick
     : (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
@@ -32,14 +32,13 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
         e.preventDefault();
         if (href) router.navigateTo(href);
       };
-  const externalProps: React.HTMLProps<HTMLAnchorElement> = isExternal ? { target: "_blank" } : {};
   return (
     <a
       ref={ref}
       className={`link-wrapper ${className || ""}`}
       onClick={onClickWrapped}
       href={href}
-      {...externalProps}
+      target={target ?? (isExternal ? "_blank" : undefined)}
       {...rest}
     />
   );

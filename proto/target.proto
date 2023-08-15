@@ -159,6 +159,12 @@ message Target {
   // Test results associated with the target. The whole event is included
   // because the ID contains useful info, such as configuration.
   repeated build_event_stream.BuildEvent test_result_events = 6;
+
+  // Test summary associated with the target.
+  build_event_stream.TestSummary test_summary = 7;
+
+  // ActionCompleted events associated with the target.
+  repeated build_event_stream.BuildEvent action_events = 8;
 }
 
 message TargetGroup {
@@ -181,13 +187,13 @@ message GetTargetRequest {
   // Invocation ID to fetch targets for.
   string invocation_id = 1;
 
-  // Optional, if set only targets with this label will be returned.
-  // If not set, all targets will be returned.
+  // Optional, if nonempty, only targets with this label will be
+  // returned. If empty or unset, all targets will be returned.
   string target_label = 2;
 
-  // Optional, if set only targets with this status will be returned.
+  // Optional, if set, only targets with this status will be returned.
   // If not set, all targets will be returned.
-  api.v1.Status status = 3;
+  optional api.v1.Status status = 3;
 
   string page_token = 4;
 }

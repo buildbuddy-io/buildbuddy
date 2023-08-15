@@ -3,14 +3,15 @@ import React from "react";
 
 import { invocation } from "../../proto/invocation_ts_proto";
 import format from "../format/format";
-import InvocationModel from "../invocation/invocation_model";
 import rpcService from "../service/rpc_service";
 import { percentageColor } from "../util/color";
 import { parseLcov } from "../util/lcov";
 
 interface Props {
+  invocationId: string;
+  repo: string;
+  commit: string;
   testResult: invocation.InvocationEvent;
-  model: InvocationModel;
 }
 
 interface State {
@@ -37,7 +38,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
-    if (!testCoverageUrl || !this.props.model.getInvocationId()) {
+    if (!testCoverageUrl || !this.props.invocationId) {
       this.setState({ lcov: null });
       return;
     }
@@ -47,7 +48,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       return;
     }
 
-    const invocationId = this.props.model.getInvocationId();
+    const invocationId = this.props.invocationId;
     if (!invocationId) {
       this.setState({ lcov: null });
       return;
@@ -87,8 +88,8 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
     }
 
     let repoPath = "";
-    if (this.props.model.getRepo()?.includes("github.com")) {
-      repoPath = `/code/${format.formatGitUrl(this.props.model.getRepo())}/`;
+    if (this.props.repo?.includes("github.com")) {
+      repoPath = `/code/${format.formatGitUrl(this.props.repo)}/`;
     }
 
     return (
@@ -110,9 +111,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
                       <a
                         href={
                           repoPath
-                            ? `${repoPath}${
-                                record.sourceFile
-                              }?lcov=${testCoverageUrl}&invocation_id=${this.props.model.getInvocationId()}&commit=${this.props.model.getCommit()}`
+                            ? `${repoPath}${record.sourceFile}?lcov=${testCoverageUrl}&invocation_id=${this.props.invocationId}&commit=${this.props.commit}`
                             : "#"
                         }>
                         <span className="coverage-source">{record.sourceFile}</span>:{" "}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -19,6 +20,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
@@ -34,19 +37,14 @@ import (
 
 const (
 	gRPCMaxSize = int64(4194304 - 2000)
-
-	// minTreeCacheLevel is the minimum level at which the tree may be
-	// cached. Level 0 is the root of the tree.
-	minTreeCacheLevel = 1
-
-	// minTreeCacheDescendents is the minimum number of descendents a node
-	// must have in order to be cached.
-	minTreeCacheDescendents = 10
 )
 
 var (
-	enableTreeCaching = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
-	treeCacheSeed     = flag.String("cache.tree_cache_seed", "treecache-03011023", "If set, hash this with digests before caching / reading from tree cache")
+	enableTreeCaching       = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
+	treeCacheSeed           = flag.String("cache.tree_cache_seed", "treecache-03011023", "If set, hash this with digests before caching / reading from tree cache")
+	minTreeCacheLevel       = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
+	minTreeCacheDescendents = flag.Int("cache.tree_cache_min_descendents", 10, "The min number of descendents a node must parent in order to be cached")
+	maxTreeCacheSetDuration = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 )
 
 type ContentAddressableStorageServer struct {
@@ -529,6 +527,35 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
+	cacheCtx, cacheCancel := context.WithCancel(ctx)
+	defer cacheCancel()
+	eg, gCtx := errgroup.WithContext(cacheCtx)
+	cacheTreeNode := func(d *repb.Digest, descendents []*capb.DirectoryWithDigest) {
+		treeCache := &capb.TreeCache{
+			Children: make([]*capb.DirectoryWithDigest, len(descendents)),
+		}
+		copy(treeCache.Children, descendents)
+		treeCacheDigest := proto.Clone(d).(*repb.Digest)
+
+		eg.Go(func() error {
+			if !isComplete(treeCache.GetChildren()) {
+				// incomplete tree cache error will be logged by `isComplete`.
+				return nil
+			}
+			buf, err := proto.Marshal(treeCache)
+			if err != nil {
+				return err
+			}
+			treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
+			if err := s.cache.Set(gCtx, treeCacheRN, buf); err == nil {
+				metrics.TreeCacheSetCount.Inc()
+			} else {
+				log.Warningf("Error setting treeCache blob: %s", err)
+			}
+			return nil
+		})
+	}
+
 	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, error)
 	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, error) {
 		if len(dirWithDigest.Directory.Directories) == 0 {
@@ -545,11 +572,14 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				treeCache := &capb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
 					if isComplete(treeCache.GetChildren()) {
+						metrics.TreeCacheLookupCount.With(prometheus.Labels{metrics.TreeCacheLookupStatus: "hit"}).Inc()
 						return treeCache.GetChildren(), nil
 					} else {
-						log.Warningf("Ignoring incomplete treeCache entry")
+						metrics.TreeCacheLookupCount.With(prometheus.Labels{metrics.TreeCacheLookupStatus: "invalid_entry"}).Inc()
 					}
 				}
+			} else if status.IsNotFoundError(err) {
+				metrics.TreeCacheLookupCount.With(prometheus.Labels{metrics.TreeCacheLookupStatus: "miss"}).Inc()
 			}
 		}
 
@@ -585,22 +615,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		if level > minTreeCacheLevel && len(allDescendents) > minTreeCacheDescendents && *enableTreeCaching {
-			treeCache := &capb.TreeCache{
-				Children: allDescendents,
-			}
-			if isComplete(treeCache.GetChildren()) {
-				buf, err := proto.Marshal(treeCache)
-				if err != nil {
-					return nil, err
-				}
-				treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
-				if err := s.cache.Set(ctx, treeCacheRN, buf); err != nil {
-					log.Warningf("Error setting treeCache blob: %s", err)
-				}
-			} else {
-				log.Debugf("Not caching incomplete tree cache")
-			}
+		if level > *minTreeCacheLevel && len(allDescendents) > *minTreeCacheDescendents && *enableTreeCaching {
+			cacheTreeNode(treeCacheDigest, allDescendents)
 		}
 		return allDescendents, nil
 	}
@@ -617,10 +633,18 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return err
 		}
 	}
-
 	log.Debugf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)
+	}
+
+	// Finalize tree cache sets; but don't wait forever.
+	go func() {
+		<-time.After(*maxTreeCacheSetDuration)
+		cacheCancel()
+	}()
+	if err := eg.Wait(); err != nil {
+		log.Warningf("Error populating tree cache: %s", err)
 	}
 	return nil
 }
@@ -645,8 +669,12 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 			return false
 		}
 		for _, dirNode := range child.GetDirectory().GetDirectories() {
+			grn := digest.NewResourceName(dirNode.GetDigest(), "", rspb.CacheType_CAS, rn.GetDigestFunction())
+			if grn.IsEmpty() {
+				continue
+			}
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
-				log.Debugf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
+				log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
 				return false
 			}
 		}

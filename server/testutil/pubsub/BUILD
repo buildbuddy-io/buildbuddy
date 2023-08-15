@@ -5,5 +5,8 @@ go_library(
     srcs = ["pubsub.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/pubsub",
     visibility = ["//visibility:public"],
-    deps = ["//server/interfaces"],
+    deps = [
+        "//server/interfaces",
+        "//server/util/log",
+    ],
 )

@@ -3,6 +3,7 @@ import InvocationModel from "./invocation_model";
 import rpcService from "../service/rpc_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { ArrowDownCircle, FileCode } from "lucide-react";
+import TargetGroupCard from "./invocation_target_group_card";
 
 interface Props {
   model: InvocationModel;
@@ -35,6 +36,18 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
   }
 
   render() {
+    if (this.props.model.invocation.targetGroups.length) {
+      const artifactListingGroup = this.props.model.invocation.targetGroups.find((group) => group.status === 0);
+      if (!artifactListingGroup) return null;
+      return (
+        <TargetGroupCard
+          invocationId={this.props.model.getInvocationId()}
+          group={artifactListingGroup}
+          filter={this.props.filter}
+        />
+      );
+    }
+
     type Target = {
       label: string;
       outputs: build_event_stream.File[];

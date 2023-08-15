@@ -165,6 +165,8 @@ const (
 	/// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
 
+	/// Whether or not the API Key lookup hit the in memory
+	/// cache or not: "cache_hit", "cache_miss" or "invalid_key".
 	APIKeyLookupStatus = "status"
 
 	/// Pebble DB compaction type.
@@ -181,6 +183,9 @@ const (
 
 	/// Container image tag.
 	ContainerImageTag = "container_image_tag"
+
+	/// The TreeCache status: hit/miss/invalid_entry.
+	TreeCacheLookupStatus = "status"
 )
 
 const (
@@ -584,6 +589,22 @@ var (
 		Help:      "Number of blobs copied from the source to destination cache during a cache migration.",
 	}, []string{
 		CacheTypeLabel,
+	})
+
+	TreeCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "tree_cache_lookup_count",
+		Help:      "Total number of TreeCache lookups.",
+	}, []string{
+		TreeCacheLookupStatus,
+	})
+
+	TreeCacheSetCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "tree_cache_set_count",
+		Help:      "Total number of TreeCache sets.",
 	})
 
 	/// ## Remote execution metrics

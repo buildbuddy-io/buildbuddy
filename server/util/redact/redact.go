@@ -2,6 +2,7 @@ package redact
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"regexp"
 	"strings"
@@ -38,6 +39,7 @@ const (
 	buildMetadataOptionPrefix = "--build_metadata="
 	allowEnvPrefix            = "ALLOW_ENV="
 	allowEnvListSeparator     = ","
+	explicitCommandLineName   = "EXPLICIT_COMMAND_LINE"
 )
 
 var (
@@ -187,9 +189,18 @@ func stripRemoteHeadersFromCmdLine(tokens []string) {
 	}
 }
 
+func stripExplicitCommandLineFromCmdLine(tokens []string) {
+	for i, token := range tokens {
+		if strings.HasPrefix(token, buildMetadataOptionPrefix+explicitCommandLineName+"=") {
+			tokens[i] = ""
+		}
+	}
+}
+
 func redactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
+	stripExplicitCommandLineFromCmdLine(tokens)
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -212,6 +223,13 @@ func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
 		if val := metadata.Metadata[repoURLKey]; val != "" {
 			metadata.Metadata[repoURLKey] = gitutil.StripRepoURLCredentials(val)
 		}
+	}
+	if m, ok := metadata.Metadata[explicitCommandLineName]; ok {
+		var commandLine []string
+		_ = json.Unmarshal([]byte(m), &commandLine)
+		redactCmdLine(commandLine)
+		commandLineJSON, _ := json.Marshal(commandLine)
+		metadata.Metadata[explicitCommandLineName] = string(commandLineJSON)
 	}
 }
 
@@ -254,6 +272,9 @@ func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
 		// Remove default_overrides for now since we don't have a use for them (yet)
 		// and they may contain sensitive info.
 		if option.OptionName == "default_override" {
+			continue
+		}
+		if option.OptionName == "build_metadata" && strings.HasPrefix(option.OptionValue, explicitCommandLineName) {
 			continue
 		}
 		filtered = append(filtered, option)

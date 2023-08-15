@@ -7,19 +7,24 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/chacha20"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -37,16 +42,73 @@ const (
 	apiKeyEncryptionBackfillBatchSize = 100
 )
 
+const (
+	// Maximum number of entries in API Key -> Group cache.
+	apiKeyGroupCacheSize = 10_000
+)
+
 var (
 	userOwnedKeysEnabled = flag.Bool("app.user_owned_keys_enabled", false, "If true, enable user-owned API keys.")
+	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
 	apiKeyEncryptionKey  = flagutil.New("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flagutil.SecretTag)
 	encryptNewKeys       = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
 )
 
+type apiKeyGroupCacheEntry struct {
+	data         interfaces.APIKeyGroup
+	expiresAfter time.Time
+}
+
+// apiKeyGroupCache is a cache for API Key -> Group lookups. A single Bazel
+// invocation can generate large bursts of RPCs, each of which needs to be
+// authed.
+// There's no need to go to the database for every single request as this data
+// rarely changes.
+type apiKeyGroupCache struct {
+	// Note that even though we base this off an LRU cache, every entry has a
+	// hard expiration time to force a refresh of the underlying data.
+	lru interfaces.LRU[*apiKeyGroupCacheEntry]
+	ttl time.Duration
+	mu  sync.Mutex
+}
+
+func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
+	config := &lru.Config[*apiKeyGroupCacheEntry]{
+		MaxSize: apiKeyGroupCacheSize,
+		SizeFn:  func(v *apiKeyGroupCacheEntry) int64 { return 1 },
+	}
+	lru, err := lru.NewLRU[*apiKeyGroupCacheEntry](config)
+	if err != nil {
+		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
+	}
+	return &apiKeyGroupCache{lru: lru, ttl: *apiKeyGroupCacheTTL}, nil
+}
+
+func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
+	c.mu.Lock()
+	entry, ok := c.lru.Get(apiKey)
+	c.mu.Unlock()
+	if !ok {
+		return nil, ok
+	}
+	if time.Now().After(entry.expiresAfter) {
+		return nil, false
+	}
+	return entry.data, true
+}
+
+func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
+	c.mu.Lock()
+	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
+	c.mu.Unlock()
+}
+
 type AuthDB struct {
 	env environment.Env
 	h   interfaces.DBHandle
+
+	apiKeyGroupCache *apiKeyGroupCache
 
 	// Nil if API key encryption is not enabled.
 	apiKeyEncryptionKey []byte
@@ -54,6 +116,13 @@ type AuthDB struct {
 
 func NewAuthDB(env environment.Env, h interfaces.DBHandle) (*AuthDB, error) {
 	adb := &AuthDB{env: env, h: h}
+	if *apiKeyGroupCacheTTL != 0 {
+		akgCache, err := newAPIKeyGroupCache()
+		if err != nil {
+			return nil, err
+		}
+		adb.apiKeyGroupCache = akgCache
+	}
 	if *apiKeyEncryptionKey != "" {
 		key, err := base64.StdEncoding.DecodeString(*apiKeyEncryptionKey)
 		if err != nil {
@@ -270,6 +339,14 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 	}
 
+	if d.apiKeyGroupCache != nil {
+		d, ok := d.apiKeyGroupCache.Get(apiKey)
+		if ok {
+			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
+			return d, nil
+		}
+	}
+
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
@@ -292,14 +369,27 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
+			if d.apiKeyGroupCache != nil {
+				metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
+			}
 			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 		}
 		return nil, err
+	}
+	if d.apiKeyGroupCache != nil {
+		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
+		d.apiKeyGroupCache.Add(apiKey, akg)
 	}
 	return akg, nil
 }
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
+	if d.apiKeyGroupCache != nil {
+		d, ok := d.apiKeyGroupCache.Get(apiKeyID)
+		if ok {
+			return d, nil
+		}
+	}
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
@@ -313,6 +403,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
 		}
 		return nil, err
+	}
+	if d.apiKeyGroupCache != nil {
+		d.apiKeyGroupCache.Add(apiKeyID, akg)
 	}
 	return akg, nil
 }

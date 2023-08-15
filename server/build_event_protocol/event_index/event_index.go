@@ -3,11 +3,20 @@ package event_index
 import (
 	"sort"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+)
+
+const (
+	// Only index up to this many non-important events as a safeguard against
+	// excessive memory / CPU consumption.
+	maxEventCount = 2_000_000
 )
 
 // Index holds a few data structures to make it easier to aggregate data from
@@ -16,14 +25,16 @@ type Index struct {
 	AllTargetLabels            []string
 	BuildTargetByLabel         map[string]*trpb.Target
 	TestTargetByLabel          map[string]*trpb.Target
-	TargetCompleteEventByLabel map[string]*bespb.TargetComplete
+	TargetCompleteEventByLabel map[string]*bespb.BuildEvent
 	TestResultEventsByLabel    map[string][]*bespb.BuildEvent
 	TargetsByStatus            map[cmnpb.Status][]*trpb.Target
 	NamedSetOfFilesByID        map[string]*bespb.NamedSetOfFiles
+	ActionEvents               []*bespb.BuildEvent
 	// Events which aren't indexed by target and are instead returned in the
 	// top-level invocation proto.
 	TopLevelEvents []*inpb.InvocationEvent
 
+	eventCount      int
 	rootCauseLabels map[string]bool
 }
 
@@ -31,7 +42,7 @@ func New() *Index {
 	return &Index{
 		BuildTargetByLabel:         map[string]*trpb.Target{},
 		TestTargetByLabel:          map[string]*trpb.Target{},
-		TargetCompleteEventByLabel: map[string]*bespb.TargetComplete{},
+		TargetCompleteEventByLabel: map[string]*bespb.BuildEvent{},
 		TargetsByStatus:            map[cmnpb.Status][]*trpb.Target{},
 		TestResultEventsByLabel:    map[string][]*bespb.BuildEvent{},
 		NamedSetOfFilesByID:        map[string]*bespb.NamedSetOfFiles{},
@@ -42,6 +53,11 @@ func New() *Index {
 // Add adds a single event to the index.
 // Don't forget to call Finalize once all events are added.
 func (idx *Index) Add(event *inpb.InvocationEvent) {
+	if idx.eventCount >= maxEventCount && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
+		return
+	}
+	idx.eventCount++
+
 	switch p := event.GetBuildEvent().GetPayload().(type) {
 	case *bespb.BuildEvent_NamedSetOfFiles:
 		nsid := event.GetBuildEvent().GetId().GetNamedSet().GetId()
@@ -50,19 +66,40 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
 		idx.AllTargetLabels = append(idx.AllTargetLabels, label)
 		idx.BuildTargetByLabel[label] = &trpb.Target{
-			Metadata: &trpb.TargetMetadata{Label: label},
-			Status:   cmnpb.Status_BUILDING,
+			Metadata: &trpb.TargetMetadata{
+				Label:    label,
+				RuleType: p.Configured.GetTargetKind(),
+			},
+			Status: cmnpb.Status_BUILDING,
+			// Note: timing is based on event time, so won't be super accurate.
+			Timing: &cmnpb.Timing{
+				StartTime: event.GetEventTime(),
+				Duration:  &durationpb.Duration{},
+			},
 		}
 	case *bespb.BuildEvent_Completed:
 		label := event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()
-		completed := event.GetBuildEvent().GetCompleted()
-		idx.TargetCompleteEventByLabel[label] = completed
+		// TODO: when transitions are used, this will only record a single
+		// Completed event per label, even if the same label was built for
+		// multiple configurations. Figure out how to deal with
+		// multi-configuration builds here.
+		idx.TargetCompleteEventByLabel[label] = event.GetBuildEvent()
 		target := idx.BuildTargetByLabel[label]
 		if target == nil {
 			return
 		}
 		target.Status = cmnpb.Status_BUILT
+		if !p.Completed.GetSuccess() {
+			target.Status = cmnpb.Status_FAILED_TO_BUILD
+		}
+
+		// Note: timing is based on event time, so won't be super accurate.
+		if target.Timing != nil {
+			target.Timing.Duration = durationpb.New(event.EventTime.AsTime().Sub(target.Timing.StartTime.AsTime()))
+		}
+
 		// Check for "root cause" labels.
+		completed := event.GetBuildEvent().GetCompleted()
 		if !completed.GetSuccess() {
 			for _, c := range event.GetBuildEvent().GetChildren() {
 				if label := c.GetActionCompleted().GetLabel(); label != "" {
@@ -74,12 +111,18 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 			}
 		}
 	case *bespb.BuildEvent_TestSummary:
-		label := event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()
+		label := event.GetBuildEvent().GetId().GetTestSummary().GetLabel()
 		summary := p.TestSummary
+		if summary.GetOverallStatus() == 0 {
+			// This is probably a multi-action test that was aborted. Just drop
+			// the TestSummary for now.
+			return
+		}
 		idx.TestTargetByLabel[label] = &trpb.Target{
-			Metadata: &trpb.TargetMetadata{Label: label},
-			Status:   api_common.TestStatusToStatus(summary.GetOverallStatus()),
-			Timing:   api_common.TestTimingFromSummary(summary),
+			Metadata:    &trpb.TargetMetadata{Label: label},
+			Status:      api_common.TestStatusToStatus(summary.GetOverallStatus()),
+			Timing:      api_common.TestTimingFromSummary(summary),
+			TestSummary: summary,
 		}
 	case *bespb.BuildEvent_TestResult:
 		label := event.GetBuildEvent().GetId().GetTestResult().GetLabel()
@@ -93,6 +136,20 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 				Status: cmnpb.Status_TESTING,
 			}
 		}
+	case *bespb.BuildEvent_Action:
+		idx.ActionEvents = append(idx.ActionEvents, event.GetBuildEvent())
+	case *bespb.BuildEvent_Aborted:
+		label := event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()
+		target := idx.BuildTargetByLabel[label]
+		reason := p.Aborted.GetReason()
+		if target != nil && reason == bespb.Aborted_SKIPPED {
+			target.Status = cmnpb.Status_SKIPPED
+		}
+		// TODO: the UI might rely on the Aborted event to render the invocation
+		// pattern in some cases. Remove this dependency and then stop adding
+		// Aborted events to the TopLevelEvents list, since these may appear a
+		// large number of times.
+		idx.TopLevelEvents = append(idx.TopLevelEvents, event)
 	case *bespb.BuildEvent_Progress:
 		// Drop progress events
 		return
@@ -116,6 +173,10 @@ func (idx *Index) Finalize() {
 		idx.TargetsByStatus[t.Status] = append(idx.TargetsByStatus[t.Status], t)
 	}
 	for _, t := range idx.TestTargetByLabel {
+		if t.Status == 0 {
+			// Status is unknown; skip.
+			continue
+		}
 		idx.TargetsByStatus[t.Status] = append(idx.TargetsByStatus[t.Status], t)
 	}
 	// Sort TargetsByStatus list values.

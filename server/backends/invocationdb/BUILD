@@ -22,14 +22,17 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@io_gorm_gorm//:gorm",
+        "@io_gorm_gorm//clause",
     ],
 )
 
 go_test(
     name = "invocationdb_test",
+    size = "small",
     srcs = ["invocationdb_test.go"],
     deps = [
         ":invocationdb",
+        "//proto:invocation_status_go_proto",
         "//server/tables",
         "//server/testutil/testenv",
         "//server/util/db",
@@ -56,6 +59,7 @@ go_test(
     tags = ["docker"],
     deps = [
         ":invocationdb",
+        "//proto:invocation_status_go_proto",
         "//server/tables",
         "//server/testutil/testenv",
         "//server/util/db",
@@ -82,6 +86,7 @@ go_test(
     tags = ["docker"],
     deps = [
         ":invocationdb",
+        "//proto:invocation_status_go_proto",
         "//server/tables",
         "//server/testutil/testenv",
         "//server/util/db",

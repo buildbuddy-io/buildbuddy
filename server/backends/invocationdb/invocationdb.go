@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -45,24 +46,21 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 	created := false
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
 		// First, try inserting the invocation. This will work for first attempts.
-		err := tx.Create(ti).Error
-		if err == nil {
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(ti)
+		if result.Error != nil {
+			return result.Error
+		} else if created = result.RowsAffected > 0; created {
 			// Insert worked; we're done.
-			created = true
 			return nil
 		}
-		if !d.h.IsDuplicateKeyError(err) {
-			return err
-		}
-
 		// Insert failed due to conflict; update the existing row instead.
-		err = tx.Raw(`
+		err := tx.Raw(`
 				SELECT attempt FROM "Invocations"
 				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
 				`+d.h.SelectForUpdateModifier(),
 			ti.InvocationID,
 			int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
-			time.Now().Add(time.Hour*-4).UnixMicro(),
+			tx.NowFunc().Add(time.Hour*-4).UnixMicro(),
 		).Take(ti).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -81,7 +79,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		} else {
 			ti.Attempt += 1
 		}
-		result := tx.Updates(ti)
+		result = tx.Updates(ti)
 		created = result.RowsAffected > 0
 		return result.Error
 	})

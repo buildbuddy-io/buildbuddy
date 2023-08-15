@@ -163,10 +163,10 @@ export default class TargetComponent extends React.Component<Props> {
       const lastStopDate = timestampToDateWithFallback(testSummary?.lastStopTime, testSummary?.lastStopTimeMillis);
       return format.formatDate(lastStopDate);
     }
-    if (this.props.completedEvent?.eventTime?.seconds) {
-      return format.formatTimestampMillis(+this.props.completedEvent?.eventTime.seconds * 1000);
+    if (this.props.completedEvent?.eventTime) {
+      return format.formatTimestamp(this.props.completedEvent.eventTime);
     }
-    return format.formatTimestampMillis(+(this.props.configuredEvent?.eventTime?.seconds ?? 0) * 1000);
+    return format.formatTimestamp(this.props.configuredEvent?.eventTime || {});
   }
 
   handleCopyClicked(label: string) {
@@ -291,7 +291,12 @@ export default class TargetComponent extends React.Component<Props> {
                   invocationId={this.props.invocationId}
                   testResult={result}
                 />
-                <TargetTestCoverageCardComponent model={this.props.model} testResult={result} />
+                <TargetTestCoverageCardComponent
+                  invocationId={this.props.model.getInvocationId()}
+                  repo={this.props.model.getRepo()}
+                  commit={this.props.model.getCommit()}
+                  testResult={result}
+                />
               </span>
             ))}
           {actionEvents.map((action) => (

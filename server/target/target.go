@@ -46,6 +46,8 @@ const (
 	targetHistoryPageSize = 20
 
 	// The max number of targets returned in each TargetGroup page.
+	// TODO(bduffany): let the client set this. We want this to be 100 when on
+	// the Targets tab but 10 when on the overview tab.
 	targetPageSize = 12
 
 	// When returning a paginated list of all targets in an invocation with
@@ -142,7 +144,9 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 	}
 
 	var statuses []cmpb.Status
-	if req.GetTargetLabel() == "" && req.GetStatus() == 0 {
+	// Note: req.Status == nil means the status was unset. req.Status will be
+	// non-nil and set to 0 when explicitly requesting the artifact listing.
+	if req.GetTargetLabel() == "" && req.Status == nil {
 		// Requesting a general target listing; fetch initial data pages for
 		// status 0 (for the top-level target+files listing), plus each status
 		// appearing in the build (just metadata).
@@ -174,6 +178,12 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 				labels = append(labels, t.GetMetadata().GetLabel())
 			}
 		}
+		// When requesting artifacts, filter out target labels that don't have
+		// any artifacts.
+		if s == 0 {
+			labels = labelsWithFiles(idx, labels)
+		}
+
 		// Set TotalCount based on the length of the label list *before* slicing
 		// based on the page token.
 		g.TotalCount = int64(len(labels))
@@ -225,6 +235,15 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 			if req.GetTargetLabel() != "" && isTestStatus {
 				target.TestResultEvents = idx.TestResultEventsByLabel[label]
 			}
+			// When fetching a single label, expand Action events matching
+			// whichever target configuration we happened to store in the
+			// Completed map.
+			//
+			// TODO: include both label and configuration ID to deal with
+			// transitions.
+			if req.GetTargetLabel() != "" {
+				target.ActionEvents = actionEventsForLabel(idx, label)
+			}
 
 			g.Targets = append(g.Targets, target)
 			nextOffset = page.Offset + int64(i) + 1
@@ -247,18 +266,95 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 			}
 			g.NextPageToken = tok
 		}
+
+		// When the invocation is in progress, we usually return a non-empty
+		// page token so that the client knows there may be more results since
+		// the last fetch. However, if the page token offset is within the first
+		// page, then the fetched results will overlap with the initial page of
+		// results that is fetched as part of the full GetInvocation refresh
+		// that the UI does every 3s. The client has to somehow deal with this
+		// overlap, which adds some complexity. So for now, we just return an
+		// empty page token whenever there is less than a single page of data
+		// available.
+		if g.TotalCount < page.Limit {
+			g.NextPageToken = ""
+		}
 	}
 	return res, nil
 }
 
-func filesForLabel(idx *event_index.Index, label string) []*build_event_stream.File {
+// ActionCompletedId represented as a go struct so it can be used as a map
+// key.
+type actionKey struct{ label, primaryOutput, configurationID string }
+
+func actionKeyFromProto(protoID *build_event_stream.BuildEventId_ActionCompletedId) actionKey {
+	return actionKey{
+		label:           protoID.GetLabel(),
+		primaryOutput:   protoID.GetPrimaryOutput(),
+		configurationID: protoID.GetConfiguration().GetId(),
+	}
+}
+
+func actionEventsForLabel(idx *event_index.Index, label string) []*build_event_stream.BuildEvent {
+	// The Completed event will declare child Action events that it expects to
+	// see later in the stream. Collect these Action IDs and then filter
+	// idx.ActionEvents to just the ones matching these IDs.
 	completed := idx.TargetCompleteEventByLabel[label]
-	if completed == nil {
+	targetActionKeys := map[actionKey]struct{}{}
+	for _, c := range completed.GetChildren() {
+		if protoID := c.GetActionCompleted(); protoID != nil {
+			targetActionKeys[actionKeyFromProto(protoID)] = struct{}{}
+		}
+	}
+	var out []*build_event_stream.BuildEvent
+	for _, event := range idx.ActionEvents {
+		key := actionKeyFromProto(event.GetId().GetActionCompleted())
+		if _, ok := targetActionKeys[key]; ok {
+			out = append(out, event)
+		}
+	}
+	return out
+}
+
+func labelsWithFiles(idx *event_index.Index, labels []string) []string {
+	out := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if hasFiles(idx, label) {
+			out = append(out, label)
+		}
+	}
+	return out
+}
+
+func hasFiles(idx *event_index.Index, label string) bool {
+	completedEvent := idx.TargetCompleteEventByLabel[label]
+	if completedEvent == nil {
+		return false
+	}
+	for _, g := range completedEvent.GetCompleted().GetOutputGroup() {
+		for _, s := range g.GetFileSets() {
+			for _, f := range idx.NamedSetOfFilesByID[s.GetId()].GetFiles() {
+				if f.GetUri() == "" {
+					// Ignore inlined file contents and symlinks for now.
+					// TODO: render these in the UI so that we can just
+					// return `len(OutputGroup) > 0` here.
+					continue
+				}
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func filesForLabel(idx *event_index.Index, label string) []*build_event_stream.File {
+	completedEvent := idx.TargetCompleteEventByLabel[label]
+	if completedEvent == nil {
 		return nil
 	}
 	var out []*build_event_stream.File
 	fullPath := map[*build_event_stream.File]string{}
-	for _, g := range completed.GetOutputGroup() {
+	for _, g := range completedEvent.GetCompleted().GetOutputGroup() {
 		for _, s := range g.GetFileSets() {
 			for _, f := range idx.NamedSetOfFilesByID[s.GetId()].GetFiles() {
 				if f.GetUri() == "" {
