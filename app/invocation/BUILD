@@ -669,7 +669,6 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:clipboard",
         "//proto:build_event_stream_ts_proto",
-        "//proto:duration_ts_proto",
         "//proto:target_ts_proto",
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/react",

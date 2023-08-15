@@ -50,7 +50,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
       .getTarget({
         status: 0, // only fetch the top-level artifact listing
         invocationId: this.props.model.getInvocationId(),
-        labelFilter: this.props.filter,
+        filter: this.props.filter,
       })
       .then((response) => this.setState({ searchResponse: response }))
       .finally(() => this.setState({ searchLoading: false }));

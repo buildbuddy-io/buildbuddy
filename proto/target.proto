@@ -198,7 +198,12 @@ message GetTargetRequest {
   string page_token = 4;
 
   // Only return targets whose labels contain this substring (case-insensitive).
-  string label_filter = 5;
+  //
+  // When requesting the artifact listing (status 0), only return targets whose
+  // labels contain this substring or any of their file names contain this
+  // substring (case insensitive), and if any file names are matched then
+  // restrict the file listing to just the matched files.
+  string filter = 5;
 }
 
 message GetTargetResponse {
