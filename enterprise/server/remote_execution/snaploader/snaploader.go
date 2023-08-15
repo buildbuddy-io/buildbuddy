@@ -174,6 +174,10 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 }
 
 func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) (*UnpackedSnapshot, error) {
+	if snapshot == nil {
+		return nil, status.InvalidArgumentErrorf("no snapshot to unpack")
+	}
+
 	for _, fileNode := range snapshot.manifest.Files {
 		if !l.env.GetFileCache().FastLinkFile(fileNode, filepath.Join(outputDirectory, fileNode.GetName())) {
 			return nil, status.UnavailableErrorf("snapshot artifact %q not found in local cache", fileNode.GetName())

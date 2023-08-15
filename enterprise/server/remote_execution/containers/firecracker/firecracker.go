@@ -1973,6 +1973,16 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		}
 	}
 
+	if c.snapshot == nil {
+		// On the first task executed, the VM will not have been created from
+		// a snapshot. Create a full snapshot
+		return &snapshotDetails{
+			snapshotType:        fullSnapshotType,
+			memSnapshotName:     fullMemSnapshotName,
+			vmStateSnapshotName: vmStateSnapshotName,
+		}, nil
+	}
+
 	// If a snapshot already exists, get a reference to the memory snapshot so
 	// that we can perform a diff snapshot and merge the modified pages on top
 	// of the existing memory snapshot.
