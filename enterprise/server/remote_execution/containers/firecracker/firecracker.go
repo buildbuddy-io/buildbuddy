@@ -302,6 +302,9 @@ type FirecrackerContainer struct {
 	vmIdx       int    // the index of this vm on the host machine
 	loader      snaploader.Loader
 	snapshotKey *fcpb.SnapshotKey
+	// If a snapshot was loaded, the corresponding snapshot metadata
+	// We need to save this in case another VM overwrites a shared snapshot manifest
+	snapshot *snaploader.Snapshot
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -569,17 +572,14 @@ func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, 
 	if err := disk.EnsureDirectoryExists(baseDir); err != nil {
 		return "", err
 	}
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
-	if err != nil {
+	if _, err := c.loader.UnpackSnapshot(ctx, c.snapshot, baseDir); err != nil {
 		return "", err
 	}
-	if _, err := c.loader.UnpackSnapshot(ctx, snap, baseDir); err != nil {
-		return "", err
-	}
+
 	// The base snapshot is no longer useful since we're merging on top
 	// of it and replacing the paused VM snapshot with the new merged
 	// snapshot. Delete it to prevent unnecessary filecache evictions.
-	if err := c.loader.DeleteSnapshot(ctx, snap); err != nil {
+	if err := c.loader.DeleteSnapshot(ctx, c.snapshot); err != nil {
 		log.Warningf("Failed to delete snapshot: %s", err)
 	}
 
@@ -668,9 +668,11 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	snaploaderStart := time.Now()
-	if _, err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
+	snap, err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts)
+	if err != nil {
 		return status.WrapError(err, "add snapshot to cache")
 	}
+	c.snapshot = snap
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
 
 	// Once we've merged the base snapshot and linked it to filecache, we
@@ -769,7 +771,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
-	unpacked, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot())
+	c.snapshot = snap
+	unpacked, err := c.loader.UnpackSnapshot(ctx, c.snapshot, c.getChroot())
 	if err != nil {
 		return err
 	}
