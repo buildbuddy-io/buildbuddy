@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -408,72 +407,74 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		},
 		JailerRoot: jailerRoot,
 	}
-	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+	baseVM, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
+	err = container.PullImageIfNecessary(ctx, env, cacheAuth, baseVM, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
-	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	err = baseVM.Create(ctx, opts.ActionWorkingDirectory)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		err = c.Remove(ctx)
+		err = baseVM.Remove(ctx)
 		require.NoError(t, err)
 	})
 
 	// Create a snapshot. Data written to this snapshot should persist
 	// when other VMs reuse the snapshot
 	cmd := appendToLog("Base")
-	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
 	require.Equal(t, "Base\n", string(res.Stdout))
-	err = c.Pause(ctx)
+	err = baseVM.Pause(ctx)
 	require.NoError(t, err)
 
-	var wg sync.WaitGroup
-	// Simultaneously load the snapshot from multiple VMs - there should be no
+	containers := make([]*firecracker.FirecrackerContainer, 0, 3)
+	// Load the same base snapshot from multiple VMs - there should be no
 	// corruption or data transfer from snapshot sharing
-	for i := 1; i <= 3; i++ {
-		wg.Add(1)
-		i := i
-		go func() {
-			defer wg.Done()
-			workDir := testfs.MakeDirAll(t, rootDir, fmt.Sprintf("work-%d", i))
-			opts := firecracker.ContainerOpts{
-				ContainerImage:         busyboxImage,
-				ActionWorkingDirectory: workDir,
-				VMConfiguration: &fcpb.VMConfiguration{
-					NumCpus:           1,
-					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-					EnableNetworking:  false,
-					ScratchDiskSizeMb: 100,
-				},
-				JailerRoot: jailerRoot,
-			}
-			c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
-			require.NoError(t, err)
+	for i := 0; i < 3; i++ {
+		workDir = testfs.MakeDirAll(t, rootDir, fmt.Sprintf("work-%d", i))
+		opts = firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+				EnableNetworking:  false,
+				ScratchDiskSizeMb: 100,
+			},
+			JailerRoot: jailerRoot,
+		}
+		forkedVM, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+		require.NoError(t, err)
+		containers = append(containers, forkedVM)
 
-			// The new VM should reuse the Base VM's snapshot
-			err = c.Unpause(ctx)
-			require.NoError(t, err)
+		// The new VM should reuse the Base VM's snapshot
+		err = forkedVM.Unpause(ctx)
+		require.NoError(t, err)
 
-			// Write VM-specific data to the log
-			cmd := appendToLog(fmt.Sprintf("Fork-%d", i))
-			res := c.Exec(ctx, cmd, nil /*=stdio*/)
-			require.NoError(t, res.Error)
-			// The log should contain data written to the original snapshot
-			// and the current VM, but not from any of the other VMs sharing
-			// the same original snapshot
-			require.Equal(t, fmt.Sprintf("Base\nFork-%d\n", i), string(res.Stdout))
-
-			// Each new VM shouldn't have trouble saving snapshots themselves
-			err = c.Pause(ctx)
-			require.NoError(t, err)
-			err = c.Remove(ctx)
-			require.NoError(t, err)
-		}()
+		// Write VM-specific data to the log
+		cmd = appendToLog(fmt.Sprintf("Fork-%d", i))
+		res = forkedVM.Exec(ctx, cmd, nil /*=stdio*/)
+		require.NoError(t, res.Error)
+		// The log should contain data written to the original snapshot
+		// and the current VM, but not from any of the other VMs sharing
+		// the same original snapshot
+		require.Equal(t, fmt.Sprintf("Base\nFork-%d\n", i), string(res.Stdout))
 	}
-	wg.Wait()
 
-	// Test that new VMs always use the newest snapshot
+	// We want to test having multiple VMs start from the same snapshot. Pausing
+	// overwrites any pre-existing snapshot, so to ensure all the forked VMs
+	// start from the same base snapshot, don't pause them until after all
+	// forked VMs have started from the base snapshot
+	for i := 0; i < 3; i++ {
+		c := containers[i]
+		// Each new VM shouldn't have trouble saving snapshots themselves
+		err = c.Pause(ctx)
+		require.NoError(t, err)
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	}
+
+	// Test that a new VM uses the newest snapshot
 	workDir = testfs.MakeDirAll(t, rootDir, "work-last")
 	opts = firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -486,18 +487,15 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		},
 		JailerRoot: jailerRoot,
 	}
-	c, err = firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
-	// This VM should use one of the snapshots saved by one of the forks
-	// created in a goroutine, because they are newer than the Base snapshot
+	// This VM should load the snapshot saved by the last forked VM to Pause
 	err = c.Unpause(ctx)
 	require.NoError(t, err)
 	cmd = appendToLog("Last")
 	res = c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
-	require.Contains(t, string(res.Stdout), "Base")
-	require.Contains(t, string(res.Stdout), "Fork")
-	require.Contains(t, string(res.Stdout), "Last")
+	require.Equal(t, "Base\nFork-2\nLast", string(res.Stdout))
 
 	err = c.Pause(ctx)
 	require.NoError(t, err)
