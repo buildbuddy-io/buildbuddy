@@ -34,21 +34,35 @@ func cookieDomain() string {
 	return domain
 }
 
-func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time, httpOnly bool) {
-	http.SetCookie(w, &http.Cookie{
+func cookie(name, value, domain string, expiry time.Time, httpOnly bool) *http.Cookie {
+	return &http.Cookie{
 		Name:     name,
 		Value:    value,
-		Domain:   cookieDomain(),
+		Domain:   domain,
 		Expires:  expiry,
 		HttpOnly: httpOnly,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/",
 		Secure:   *httpsOnlyCookies,
-	})
+	}
+}
+
+func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time, httpOnly bool) {
+	cd := cookieDomain()
+	// If we're setting the domain on the cookie, clear out any existing cookie
+	// that didn't have the domain set.
+	if value != "" && cd != "" {
+		clearCookie(w, name, "" /*=domain*/)
+	}
+	http.SetCookie(w, cookie(name, value, cd, expiry, httpOnly))
+}
+
+func clearCookie(w http.ResponseWriter, name, domain string) {
+	http.SetCookie(w, cookie(name, "", domain, time.Now(), true /*=httpOnly*/))
 }
 
 func ClearCookie(w http.ResponseWriter, name string) {
-	SetCookie(w, name, "", time.Now(), true /* httpOnly= */)
+	clearCookie(w, name, cookieDomain())
 }
 
 func GetCookie(r *http.Request, name string) string {
