@@ -647,9 +647,10 @@ export default class TapComponent extends React.Component<Props, State> {
                         );
                       }
 
-                      let destinationUrl = `/invocation/${status.invocationId}?target=${encodeURIComponent(
-                        targetHistory.target?.label || ""
-                      )}`;
+                      let destinationUrl = `/invocation/${status.invocationId}?${new URLSearchParams({
+                        target: targetHistory.target?.label || "",
+                        targetStatus: String(commitStatus.status?.status || 0),
+                      })}`;
                       let title =
                         this.getColorMode() == "timing"
                           ? `${this.durationToNum(status.timing?.duration || undefined).toFixed(2)}s`
