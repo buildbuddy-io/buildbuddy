@@ -2895,7 +2895,7 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 
 			sizeBytes := fileMetadata.GetStoredSizeBytes()
 			if e.includeMetadataSize {
-				sizeBytes = getTotalSizeBytes(fileMetadata)
+				sizeBytes = getTotalSizeBytes(fileMetadata) + int64(len(iter.Key()))
 			}
 
 			if age >= e.minEvictionAge {
