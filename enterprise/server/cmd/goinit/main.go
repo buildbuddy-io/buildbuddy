@@ -220,7 +220,7 @@ func main() {
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
 	die(mkdirp("/dev", 0755))
-	die(mount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5,ptmxmode=666"))
+	die(mount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5"))
 
 	// The following devices are provided by our firecracker implementation:
 	//
