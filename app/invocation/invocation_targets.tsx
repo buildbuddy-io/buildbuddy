@@ -6,12 +6,18 @@ import { XCircle, CheckCircle, HelpCircle, Clock, SkipForward } from "lucide-rea
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { target } from "../../proto/target_ts_proto";
 import TargetGroupCard from "./invocation_target_group_card";
+import rpc_service, { CancelablePromise } from "../service/rpc_service";
 
 interface Props {
   model: InvocationModel;
   pageSize: number;
   filter: string;
   mode: "passing" | "failing";
+}
+
+interface State {
+  searchLoading: boolean;
+  searchResponse?: target.GetTargetResponse;
 }
 
 const Status = api_common.v1.Status;
@@ -30,7 +36,41 @@ const STATUS_ORDERING = [
 
 const OK_STATUSES = new Set([Status.PASSED, Status.BUILT, Status.SKIPPED]);
 
-export default class TargetsComponent extends React.Component<Props> {
+export default class TargetsComponent extends React.Component<Props, State> {
+  state: State = {
+    searchLoading: false,
+  };
+
+  componentDidMount() {
+    if (this.props.filter) {
+      this.search();
+    }
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.props.filter !== prevProps.filter) {
+      this.search();
+    }
+  }
+
+  private searchRPC?: CancelablePromise;
+
+  private search() {
+    this.searchRPC?.cancel();
+    this.setState({ searchLoading: true });
+    if (!this.props.filter) {
+      this.setState({ searchLoading: false, searchResponse: undefined });
+      return;
+    }
+    this.searchRPC = rpc_service.service
+      .getTarget({
+        invocationId: this.props.model.getInvocationId(),
+        labelFilter: this.props.filter,
+      })
+      .then((response) => this.setState({ searchResponse: response }))
+      .finally(() => this.setState({ searchLoading: false }));
+  }
+
   private renderTargetGroup(group: target.TargetGroup) {
     return (
       <TargetGroupCard invocationId={this.props.model.getInvocationId()} group={group} filter={this.props.filter} />
@@ -47,9 +87,14 @@ export default class TargetsComponent extends React.Component<Props> {
   }
 
   render() {
+    if (this.state.searchLoading) {
+      return <div className="loading" />;
+    }
+
     if (this.props.model.invocation.targetGroups.length) {
       // Paginated invocation; render target groups.
-      return this.props.model.invocation.targetGroups
+      const targetGroups = this.state.searchResponse?.targetGroups || this.props.model.invocation.targetGroups;
+      return targetGroups
         .filter((group) => this.isGroupVisible(group))
         .sort((a, b) => STATUS_ORDERING.indexOf(a.status) - STATUS_ORDERING.indexOf(b.status))
         .map((group) => this.renderTargetGroup(group));

@@ -71,6 +71,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
         invocationId: this.props.invocationId,
         status: this.props.group.status,
         pageToken: this.nextPageToken(),
+        labelFilter: this.props.filter,
       })
       .then((response) => {
         const page = response.targetGroups[0];
@@ -105,14 +106,6 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
 
   render() {
     let targets = this.props.group.targets.concat(this.state.fetchedTargets);
-    if (this.props.filter) {
-      // TODO: do filtering server-side to avoid empty pages / make totalCount
-      // reflect the filtered count.
-      targets = targets.filter((target) =>
-        target.metadata?.label.toLowerCase().includes(this.props.filter.toLowerCase())
-      );
-    }
-
     let className = "";
     let icon: React.ReactNode = null;
     let presentVerb = "";
@@ -177,7 +170,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
         <div className="icon">{icon}</div>
         <div className="content">
           <div className="title">
-            {this.props.filter ? targets.length : this.props.group.totalCount}
+            {this.props.group.totalCount}
             {this.props.filter ? " matching" : ""} {pastVerb}{" "}
             <Copy
               className="copy-icon"
