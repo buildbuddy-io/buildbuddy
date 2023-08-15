@@ -302,9 +302,6 @@ type FirecrackerContainer struct {
 	vmIdx       int    // the index of this vm on the host machine
 	loader      snaploader.Loader
 	snapshotKey *fcpb.SnapshotKey
-	// If a snapshot was loaded, the corresponding snapshot metadata
-	// We need to save this in case another VM overwrites a shared snapshot manifest
-	snapshot *snaploader.Snapshot
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -567,25 +564,6 @@ func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState,
 	return state, nil
 }
 
-func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, error) {
-	baseDir := filepath.Join(c.getChroot(), "base")
-	if err := disk.EnsureDirectoryExists(baseDir); err != nil {
-		return "", err
-	}
-	if _, err := c.loader.UnpackSnapshot(ctx, c.snapshot, baseDir); err != nil {
-		return "", err
-	}
-
-	// The base snapshot is no longer useful since we're merging on top
-	// of it and replacing the paused VM snapshot with the new merged
-	// snapshot. Delete it to prevent unnecessary filecache evictions.
-	if err := c.loader.DeleteSnapshot(ctx, c.snapshot); err != nil {
-		log.Warningf("Failed to delete snapshot: %s", err)
-	}
-
-	return baseDir, nil
-}
-
 func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 	if c.machine == nil {
 		return status.InternalError("failed to pause VM: machine is not started")
@@ -668,11 +646,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	snaploaderStart := time.Now()
-	snap, err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts)
+	_, err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts)
 	if err != nil {
 		return status.WrapError(err, "add snapshot to cache")
 	}
-	c.snapshot = snap
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
 
 	return nil
@@ -767,8 +744,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
-	c.snapshot = snap
-	unpacked, err := c.loader.UnpackSnapshot(ctx, c.snapshot, c.getChroot())
+	unpacked, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot())
 	if err != nil {
 		return err
 	}
@@ -1952,35 +1928,16 @@ type snapshotDetails struct {
 }
 
 func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDetails, error) {
-	if *enableUFFD {
-		if c.memoryStore != nil {
-			return &snapshotDetails{
-				snapshotType:        diffSnapshotType,
-				memSnapshotName:     diffMemSnapshotName,
-				vmStateSnapshotName: vmStateSnapshotName,
-			}, nil
-		} else {
-			return &snapshotDetails{
-				snapshotType:        fullSnapshotType,
-				memSnapshotName:     fullMemSnapshotName,
-				vmStateSnapshotName: vmStateSnapshotName,
-			}, nil
-		}
-	}
-
-	if c.snapshot == nil {
-		// On the first task executed, the VM will not have been created from
-		// a snapshot. Create a full snapshot
+	if c.recycled {
 		return &snapshotDetails{
-			snapshotType:        fullSnapshotType,
-			memSnapshotName:     fullMemSnapshotName,
+			snapshotType:        diffSnapshotType,
+			memSnapshotName:     diffMemSnapshotName,
 			vmStateSnapshotName: vmStateSnapshotName,
 		}, nil
 	}
-
 	return &snapshotDetails{
-		snapshotType:        diffSnapshotType,
-		memSnapshotName:     diffMemSnapshotName,
+		snapshotType:        fullSnapshotType,
+		memSnapshotName:     fullMemSnapshotName,
 		vmStateSnapshotName: vmStateSnapshotName,
 	}, nil
 }
