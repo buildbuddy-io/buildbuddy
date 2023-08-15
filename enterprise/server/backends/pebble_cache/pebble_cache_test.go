@@ -2775,7 +2775,7 @@ func TestSupportsEncryption(t *testing.T) {
 }
 
 func TestSampling(t *testing.T) {
-	flags.Set(t, "cache.pebble.active_key_version", 3)
+	flags.Set(t, "cache.pebble.active_key_version", 4)
 
 	te, kmsDir := getCrypterEnv(t)
 
@@ -2867,7 +2867,7 @@ func TestSampling(t *testing.T) {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(1000 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.
