@@ -3,9 +3,28 @@ set -e
 
 export USER=root
 export HOME=/root
+export GOROOT=/usr/local/go
+export GO_REV=1f9d80e331
+
+
+#cat /proc/meminfo | grep Huge
+#cat /proc/filesystems | grep huge
+#cat /proc/mounts | grep huge
+#cat /sys/kernel/mm/transparent_hugepage/hpage_pmd_size
+#apt-cache rdepends --installed dkms
+#ls /asdfkjsdf/sdfksfd
+
+#rm -rf /usr/local/go
+#curl -fsSL https://storage.googleapis.com/buildbuddy-tools/binaries/golang/go-${GO_REV}.tar | tar --directory /usr/local -xzf -
 
 export PATH="$PATH:/usr/local/go/bin"
 export PATH="$PATH:$(go env GOPATH)/bin"
+ 
+# go env GOROOT=/usr/local/go
+which go;
+go version;
+uname -a;
+#echo never > /sys/kernel/mm/transparent_hugepage/enabled
 
 MODULES=($GO_MODULES)
 
