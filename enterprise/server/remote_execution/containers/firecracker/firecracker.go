@@ -621,7 +621,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		log.CtxDebugf(ctx, "SaveSnapshot took %s", time.Since(start))
 	}()
 
-	baseMemSnapshotPath := filepath.Join(snapshotDetails.baseSnapshotUnpackDir, fullMemSnapshotName)
+	baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 
 	if snapshotDetails.snapshotType == diffSnapshotType {
@@ -674,10 +674,6 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 	c.snapshot = snap
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
-
-	// Once we've merged the base snapshot and linked it to filecache, we
-	// don't need the unpack dir anymore and can unlink.
-	os.RemoveAll(snapshotDetails.baseSnapshotUnpackDir)
 
 	return nil
 }
@@ -1950,10 +1946,9 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 }
 
 type snapshotDetails struct {
-	snapshotType          string
-	memSnapshotName       string
-	vmStateSnapshotName   string
-	baseSnapshotUnpackDir string
+	snapshotType        string
+	memSnapshotName     string
+	vmStateSnapshotName string
 }
 
 func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDetails, error) {
@@ -1983,30 +1978,10 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		}, nil
 	}
 
-	// If a snapshot already exists, get a reference to the memory snapshot so
-	// that we can perform a diff snapshot and merge the modified pages on top
-	// of the existing memory snapshot.
-	baseSnapshotUnpackDir, err := c.unpackBaseSnapshot(ctx)
-	if err != nil {
-		// Ignore Unavailable errors since it just means there's no base
-		// snapshot yet (which will happen on the first task executed), or the
-		// snapshot was evicted from cache. When this happens, just fall back to
-		// taking a full snapshot.
-		if status.IsUnavailableError(err) {
-			return &snapshotDetails{
-				snapshotType:        fullSnapshotType,
-				memSnapshotName:     fullMemSnapshotName,
-				vmStateSnapshotName: vmStateSnapshotName,
-			}, nil
-		}
-		return nil, err
-	}
-
 	return &snapshotDetails{
-		snapshotType:          diffSnapshotType,
-		memSnapshotName:       diffMemSnapshotName,
-		vmStateSnapshotName:   vmStateSnapshotName,
-		baseSnapshotUnpackDir: baseSnapshotUnpackDir,
+		snapshotType:        diffSnapshotType,
+		memSnapshotName:     diffMemSnapshotName,
+		vmStateSnapshotName: vmStateSnapshotName,
 	}, nil
 }
 

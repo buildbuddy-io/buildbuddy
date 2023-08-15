@@ -495,7 +495,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	cmd = appendToLog("Last")
 	res = c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
-	require.Equal(t, "Base\nFork-2\nLast", string(res.Stdout))
+	require.Equal(t, "Base\nFork-2\nLast\n", string(res.Stdout))
 
 	err = c.Pause(ctx)
 	require.NoError(t, err)
