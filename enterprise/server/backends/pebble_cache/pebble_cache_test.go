@@ -1706,7 +1706,7 @@ func TestLRU(t *testing.T) {
 				te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 				ctx := getAnonContext(t, te)
 
-				numDigests := 100
+				numDigests := 1000
 				maxSizeBytes := int64(math.Ceil( // account for integer rounding
 					float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 				rootDir := testfs.MakeTempDir(t)
