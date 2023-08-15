@@ -178,13 +178,11 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 				labels = append(labels, t.GetMetadata().GetLabel())
 			}
 		}
-		// When requesting artifacts, filter out target labels that don't have
-		// any artifacts.
 		if s == 0 {
-			labels = labelsWithFiles(idx, labels)
+			labels = labelsWithFilesAndMatchingFilter(idx, labels, req.GetFilter())
+		} else {
+			labels = labelsMatchingFilter(labels, req.GetFilter())
 		}
-		// Restrict labels to those matching the search filter.
-		labels = labelsMatching(labels, req.GetLabelFilter())
 
 		// Set TotalCount based on the length of the label list *before* slicing
 		// based on the page token.
@@ -229,7 +227,7 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 			// request, or when fetching the TargetGroup with status unset (i.e.
 			// the "general" target listing used for the Artifacts card).
 			if s == 0 || req.GetTargetLabel() != "" {
-				target.Files = filesForLabel(idx, label)
+				target.Files = filesForLabel(idx, label, req.GetFilter())
 				totalFileCount += len(target.Files)
 			}
 			// Expand TestResult events only when fetching a single label and
@@ -318,17 +316,19 @@ func actionEventsForLabel(idx *event_index.Index, label string) []*build_event_s
 	return out
 }
 
-func labelsWithFiles(idx *event_index.Index, labels []string) []string {
+// Returns the labels that have at least one file associated with them, AND
+// either the target label or some file path matches the given filter.
+func labelsWithFilesAndMatchingFilter(idx *event_index.Index, labels []string, filter string) []string {
 	out := make([]string, 0, len(labels))
 	for _, label := range labels {
-		if hasFiles(idx, label) {
+		if hasFilesAndMatchesFilter(idx, label, filter) {
 			out = append(out, label)
 		}
 	}
 	return out
 }
 
-func labelsMatching(labels []string, filter string) []string {
+func labelsMatchingFilter(labels []string, filter string) []string {
 	if filter == "" {
 		return labels
 	}
@@ -342,11 +342,16 @@ func labelsMatching(labels []string, filter string) []string {
 	return out
 }
 
-func hasFiles(idx *event_index.Index, label string) bool {
+// Returns whether either (a) the label has any files whose paths match the
+// given filter, or (b) the label itself matches the filter and it has at least
+// one file.
+func hasFilesAndMatchesFilter(idx *event_index.Index, label, filter string) bool {
 	completedEvent := idx.TargetCompleteEventByLabel[label]
 	if completedEvent == nil {
 		return false
 	}
+	filterLower := strings.ToLower(filter)
+	filterMatchesLabel := strings.Contains(strings.ToLower(label), filterLower)
 	for _, g := range completedEvent.GetCompleted().GetOutputGroup() {
 		for _, s := range g.GetFileSets() {
 			for _, f := range idx.NamedSetOfFilesByID[s.GetId()].GetFiles() {
@@ -356,19 +361,23 @@ func hasFiles(idx *event_index.Index, label string) bool {
 					// return `len(OutputGroup) > 0` here.
 					continue
 				}
-				return true
+				if filterMatchesLabel || strings.Contains(strings.ToLower(filePath(f)), filterLower) {
+					return true
+				}
 			}
 		}
 	}
 	return false
 }
 
-func filesForLabel(idx *event_index.Index, label string) []*build_event_stream.File {
+func filesForLabel(idx *event_index.Index, label, filter string) []*build_event_stream.File {
 	completedEvent := idx.TargetCompleteEventByLabel[label]
 	if completedEvent == nil {
 		return nil
 	}
 	var out []*build_event_stream.File
+	var matched []*build_event_stream.File
+	filterLower := strings.ToLower(filter)
 	fullPath := map[*build_event_stream.File]string{}
 	for _, g := range completedEvent.GetCompleted().GetOutputGroup() {
 		for _, s := range g.GetFileSets() {
@@ -377,17 +386,30 @@ func filesForLabel(idx *event_index.Index, label string) []*build_event_stream.F
 					// Ignore inlined file contents and symlinks for now.
 					continue
 				}
-				path := append([]string{}, f.GetPathPrefix()...)
-				path = append(path, f.GetName())
-				fullPath[f] = strings.Join(path, "/")
+				fullPath[f] = filePath(f)
 				out = append(out, f)
+				if strings.Contains(strings.ToLower(fullPath[f]), filterLower) {
+					matched = append(matched, f)
+				}
 			}
 		}
+	}
+	// If no files matched, then it must have been that only the target label
+	// was matched, so just return all files for the target label. Otherwise,
+	// return just the matching files.
+	if len(matched) > 0 {
+		out = matched
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return fullPath[out[i]] < fullPath[out[j]]
 	})
 	return out
+}
+
+func filePath(f *build_event_stream.File) string {
+	path := append([]string{}, f.GetPathPrefix()...)
+	path = append(path, f.GetName())
+	return strings.Join(path, "/")
 }
 
 func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string, groupID string) (*trpb.GetTargetHistoryResponse, error) {

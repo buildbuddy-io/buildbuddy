@@ -1,14 +1,13 @@
 import React from "react";
-import { google as google_duration } from "../../proto/duration_ts_proto";
 import { target } from "../../proto/target_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import {
+  ArrowDownCircle,
   CheckCircle,
   ChevronRight,
   Clock,
   Copy,
   FileCode,
-  Files,
   HelpCircle,
   SkipForward,
   XCircle,
@@ -71,7 +70,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
         invocationId: this.props.invocationId,
         status: this.props.group.status,
         pageToken: this.nextPageToken(),
-        labelFilter: this.props.filter,
+        filter: this.props.filter,
       })
       .then((response) => {
         const page = response.targetGroups[0];
@@ -114,7 +113,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
       case 0:
         // Showing the target listing only.
         className = "artifacts";
-        icon = <Files className="icon" />;
+        icon = <ArrowDownCircle className="icon brown" />;
         presentVerb = `${targets.length === 1 ? "target" : "targets"} with artifacts`;
         pastVerb = presentVerb;
         break;

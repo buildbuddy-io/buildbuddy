@@ -65,7 +65,7 @@ export default class TargetsComponent extends React.Component<Props, State> {
     this.searchRPC = rpc_service.service
       .getTarget({
         invocationId: this.props.model.getInvocationId(),
-        labelFilter: this.props.filter,
+        filter: this.props.filter,
       })
       .then((response) => this.setState({ searchResponse: response }))
       .finally(() => this.setState({ searchLoading: false }));

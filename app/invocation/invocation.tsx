@@ -332,7 +332,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               placeholder={activeTab == "execution" ? "Filter by digest or command..." : ""}
               // When serving a paginated invocation, debounce since searching
               // is done on the server.
-              debounceMillis={this.state.model.invocation.targetGroups.length ? 300 : 0}
+              debounceMillis={this.state.model.invocation.targetGroups.length ? 200 : 0}
             />
           )}
 
