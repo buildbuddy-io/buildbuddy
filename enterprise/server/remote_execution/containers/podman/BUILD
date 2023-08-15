@@ -24,6 +24,7 @@ go_library(
         "//server/util/disk",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
+        "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/networking",
         "//server/util/prefix",

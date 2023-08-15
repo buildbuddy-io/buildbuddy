@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -785,19 +786,18 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 	// corrupted storage.  More details see https://github.com/containers/storage/issues/1136.
 	pullCtx, cancel := context.WithTimeout(c.env.GetServerContext(), *pullTimeout)
 	defer cancel()
-	stdio := &container.Stdio{}
+	output := lockingbuffer.New()
+	stdio := &container.Stdio{Stderr: output, Stdout: output}
 	if *podmanPullLogLevel != "" {
-		stdio = &container.Stdio{
-			Stdout: log.Writer("[podman pull] "),
-			Stderr: log.Writer("[podman pull] "),
-		}
+		stdio.Stderr = io.MultiWriter(stdio.Stderr, log.CtxWriter(ctx, "[podman pull] "))
+		stdio.Stdout = io.MultiWriter(stdio.Stdout, log.CtxWriter(ctx, "[podman pull] "))
 	}
 	pullResult := runPodman(pullCtx, "pull", stdio, podmanArgs...)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
 	if pullResult.ExitCode != 0 {
-		return status.UnknownErrorf("podman pull failed: exit code %d, stderr: %s", pullResult.ExitCode, string(pullResult.Stderr))
+		return status.UnavailableErrorf("podman pull failed: exit code %d, output: %s", pullResult.ExitCode, output.String())
 	}
 	return nil
 }
