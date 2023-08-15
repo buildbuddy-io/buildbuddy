@@ -120,6 +120,7 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 		}
 		inv.Event = idx.TopLevelEvents
 		inv.TargetGroups = tr.TargetGroups
+		inv.TargetConfiguredCount = idx.ConfiguredCount
 		return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
 	}
 	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())

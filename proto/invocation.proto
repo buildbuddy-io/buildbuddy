@@ -141,6 +141,9 @@ message Invocation {
   // Whether the pattern expanded event was truncated due to the total pattern
   // length being too large.
   bool patterns_truncated = 33;
+
+  // Number of TargetConfigured events seen in the invocation.
+  int64 target_configured_count = 34;
 }
 
 message InvocationEvent {
