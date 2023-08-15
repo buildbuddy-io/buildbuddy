@@ -142,7 +142,8 @@ export default class SidebarComponent extends React.Component<Props, State> {
   render() {
     let expanded =
       (!localStorage[sidebarExpandedKey] && !this.props.dense) ||
-      (localStorage[sidebarExpandedKey] && (this.state.profileExpanded || this.state.sidebarExpanded));
+      this.state.profileExpanded ||
+      (localStorage[sidebarExpandedKey] && this.state.sidebarExpanded);
     return (
       <div className={`sidebar ${expanded ? "expanded" : "collapsed"}`}>
         <div className="sidebar-header">
