@@ -62,7 +62,13 @@ func clearCookie(w http.ResponseWriter, name, domain string) {
 }
 
 func ClearCookie(w http.ResponseWriter, name string) {
-	clearCookie(w, name, cookieDomain())
+	cd := cookieDomain()
+	// If we're setting the domain on cookies, make sure we also clear out
+	// any cookies that didn't have the domain set.
+	if cd != "" {
+		clearCookie(w, name, "" /*=domain*/)
+	}
+	clearCookie(w, name, cd)
 }
 
 func GetCookie(r *http.Request, name string) string {
