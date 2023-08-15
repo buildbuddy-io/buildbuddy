@@ -70,6 +70,7 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		idx.BuildTargetByLabel[label] = &trpb.Target{
 			Metadata: &trpb.TargetMetadata{
 				Label:    label,
+				TestSize: cmnpb.TestSize(p.Configured.GetTestSize()),
 				RuleType: p.Configured.GetTargetKind(),
 			},
 			Status: cmnpb.Status_BUILDING,
@@ -120,8 +121,13 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 			// the TestSummary for now.
 			return
 		}
+		configuredTarget := idx.BuildTargetByLabel[label]
 		idx.TestTargetByLabel[label] = &trpb.Target{
-			Metadata:    &trpb.TargetMetadata{Label: label},
+			Metadata: &trpb.TargetMetadata{
+				Label:    label,
+				TestSize: configuredTarget.GetMetadata().GetTestSize(),
+				RuleType: configuredTarget.GetMetadata().GetRuleType(),
+			},
 			Status:      api_common.TestStatusToStatus(summary.GetOverallStatus()),
 			Timing:      api_common.TestTimingFromSummary(summary),
 			TestSummary: summary,
