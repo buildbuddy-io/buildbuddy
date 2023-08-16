@@ -104,6 +104,7 @@ message GetNamespaceRequest {
 }
 
 message GetNamespaceResponse {
-  context.ResponseContext request_context = 1;
+  context.ResponseContext response_context = 1;
+
   repeated Namespace namespaces = 2;
 }
