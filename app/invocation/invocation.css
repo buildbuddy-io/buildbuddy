@@ -162,6 +162,15 @@
   height: 18px;
 }
 
+.invocation-error-card .error-contents {
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 8px 16px;
+  max-height: 360px;
+  white-space: pre-wrap;
+  overflow-y: scroll;
+}
+
 .file-name {
   display: flex;
   align-items: flex-start;

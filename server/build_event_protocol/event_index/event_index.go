@@ -146,6 +146,11 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		}
 	case *bespb.BuildEvent_Action:
 		idx.ActionEvents = append(idx.ActionEvents, event.GetBuildEvent())
+		// Include failed ActionEvents in the top level events so that they
+		// can be rendered as the reason the invocation failed.
+		if p.Action.GetFailureDetail().GetMessage() != "" {
+			idx.TopLevelEvents = append(idx.TopLevelEvents, event)
+		}
 	case *bespb.BuildEvent_Aborted:
 		label := event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()
 		target := idx.BuildTargetByLabel[label]

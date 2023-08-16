@@ -44,6 +44,7 @@ export default class InvocationModel {
   structuredCommandLine: command_line.CommandLine[] = [];
   finished?: build_event_stream.BuildFinished;
   aborted?: build_event_stream.BuildEvent;
+  failedAction?: build_event_stream.BuildEvent;
   toolLogs?: build_event_stream.BuildToolLogs;
   workflowConfigured?: build_event_stream.WorkflowConfigured;
   childInvocationsConfigured?: build_event_stream.ChildInvocationsConfigured;
@@ -111,6 +112,10 @@ export default class InvocationModel {
         let results = this.actionMap.get(buildEvent.id.actionCompleted.label) || [];
         results.push(event as invocation.InvocationEvent);
         this.actionMap.set(buildEvent.id.actionCompleted.label, results);
+
+        if (buildEvent?.action?.failureDetail?.message && !this.failedAction) {
+          this.failedAction = buildEvent;
+        }
       }
       if (buildEvent.testSummary && buildEvent.id?.testSummary?.label) {
         this.testSummaryMap.set(buildEvent.id.testSummary.label, event as invocation.InvocationEvent);
