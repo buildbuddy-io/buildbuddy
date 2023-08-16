@@ -11,11 +11,6 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-if ! command -v jailer &>/dev/null; then
-    echo "jailer could not be found (install firecracker + jailer?)"
-    exit 1
-fi
-
 if ! command -v ip &>/dev/null; then
     echo "ip could not be found (install iproute2?)"
     exit 1
@@ -23,6 +18,14 @@ fi
 
 if ! command -v iptables &>/dev/null; then
     echo "iptables could not be found"
+    exit 1
+fi
+
+# Install firecracker to make sure the local version matches the one in deps.bzl.
+tools/install_firecracker.sh
+
+if ! command -v jailer &>/dev/null; then
+    echo "jailer could not be found (make sure /usr/local/bin is in PATH)"
     exit 1
 fi
 
