@@ -21,6 +21,7 @@ go_test(
     deps = [
         ":role_filter",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:context_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "@com_github_stretchr_testify//assert",
     ],
