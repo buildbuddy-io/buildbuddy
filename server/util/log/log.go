@@ -485,6 +485,7 @@ func CtxFatalf(ctx context.Context, format string, args ...interface{}) {
 }
 
 type logWriter struct {
+	ctx    context.Context
 	prefix string
 }
 
@@ -494,7 +495,7 @@ func (w *logWriter) Write(b []byte) (int, error) {
 		if line == "" {
 			continue
 		}
-		Infof("%s%s", w.prefix, line)
+		CtxInfof(w.ctx, "%s%s", w.prefix, line)
 	}
 	return len(b), nil
 }
@@ -502,5 +503,12 @@ func (w *logWriter) Write(b []byte) (int, error) {
 // Writer returns a writer that outputs written data to the log with each line
 // prepended with the given prefix.
 func Writer(prefix string) io.Writer {
-	return &logWriter{prefix: prefix}
+	return &logWriter{ctx: context.Background(), prefix: prefix}
+}
+
+// CtxWriter returns a writer that outputs written data to the log with each
+// line prepended with the given prefix. Logs are enriched with information from
+// the context (e.g. invocation_id, request_id).
+func CtxWriter(ctx context.Context, prefix string) io.Writer {
+	return &logWriter{ctx: ctx, prefix: prefix}
 }
