@@ -184,6 +184,8 @@ message TargetGroup {
 }
 
 message GetTargetRequest {
+  context.RequestContext request_context = 6;
+
   // Invocation ID to fetch targets for.
   string invocation_id = 1;
 
@@ -207,5 +209,7 @@ message GetTargetRequest {
 }
 
 message GetTargetResponse {
+  context.ResponseContext response_context = 2;
+
   repeated TargetGroup target_groups = 1;
 }

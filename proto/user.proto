@@ -13,6 +13,8 @@ message GetUserRequest {
 }
 
 message GetUserResponse {
+  context.ResponseContext response_context = 6;
+
   user_id.DisplayUser display_user = 1;
 
   // The groups this user is a member of.
@@ -40,8 +42,12 @@ message CreateUserRequest {
   // UserID (buildbuddy) is generated.
   // Other values (like name, etc) will have initial values that are pulled
   // from the authentication provider response.
+
+  context.RequestContext request_context = 1;
 }
 
 message CreateUserResponse {
+  context.ResponseContext response_context = 2;
+
   user_id.DisplayUser display_user = 1;
 }
