@@ -26,42 +26,41 @@ go_test(
     name = "digest_test",
     size = "small",
     srcs = [
+        "digest_bench_test.go",
         "digest_test.go",
-    ] + select({
-        "@platforms//cpu:x86_64": ["digest_amd64_test.go"],
-        "//conditions:default": [],
-    }),
+    ],
     embed = [":digest"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/util/compression",
         "//server/util/status",
+        "@com_github_klauspost_cpuid_v2//:cpuid",
+        "@com_github_minio_sha256_simd//:sha256-simd",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//status",
-    ] + select({
-        "@io_bazel_rules_go//go/platform:amd64": [
-            "@com_github_minio_sha256_simd//:sha256-simd",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 go_test(
     name = "simd_bench_test",
-    srcs = ["digest_amd64_test.go"],
+    srcs = ["digest_bench_test.go"],
     args = [
-        "-test.bench=BenchmarkSIMDDigestCompute",
+        "-test.bench=.",
+        "-test.benchtime=10000x",
     ],
     embed = [":digest"],
-    exec_compatible_with = ["@platforms//cpu:x86_64"],
-    tags = ["manual"],
+    tags = [
+        "manual",
+        "no-remote-cache",
+    ],
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/util/compression",
         "//server/util/status",
+        "@com_github_klauspost_cpuid_v2//:cpuid",
         "@com_github_minio_sha256_simd//:sha256-simd",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
