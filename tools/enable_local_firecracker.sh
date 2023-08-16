@@ -35,6 +35,10 @@ if [[ ! "$CGROUP2_PATH" ]]; then
     exit 1
 fi
 
+# Set vm.unprivileged_userfaultfd=1, otherwise UFFD cannot be used to handle
+# page faults in VM memory.
+sysctl -w vm.unprivileged_userfaultfd=1
+
 groupadd -f -r cgroups
 usermod -a -G cgroups root
 usermod -a -G cgroups "$SUDO_USER"
