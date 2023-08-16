@@ -550,7 +550,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if err := s.cache.Set(gCtx, treeCacheRN, buf); err == nil {
 				metrics.TreeCacheSetCount.Inc()
 			} else {
-				log.Warningf("Error setting treeCache blob: %s", err)
+				log.Infof("Could not set treeCache blob: %s", err)
 			}
 			return nil
 		})
