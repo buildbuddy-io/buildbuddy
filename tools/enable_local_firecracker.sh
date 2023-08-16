@@ -35,6 +35,13 @@ if [[ ! "$CGROUP2_PATH" ]]; then
     exit 1
 fi
 
+# Set vm.unprivileged_userfaultfd=1, which allows running the UffdPrivileged
+# memory backend as an unprivileged user.
+#
+# See:
+# https://github.com/maggie-lou/firecracker/blob/5747e84568376bbc130b167c2873b30fb46f22a9/src/vmm/src/vmm_config/snapshot.rs#L39-L43
+sysctl -w vm.unprivileged_userfaultfd=1
+
 groupadd -f -r cgroups
 usermod -a -G cgroups root
 usermod -a -G cgroups "$SUDO_USER"
