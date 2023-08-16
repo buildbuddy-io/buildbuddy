@@ -336,9 +336,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted?.description && (
-            <ErrorCardComponent model={this.state.model} />
-          )}
+          {(activeTab === "all" || activeTab == "log") && <ErrorCardComponent model={this.state.model} />}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.botSuggestions.length > 0 && (
             <InvocationBotCard suggestions={this.state.model.botSuggestions} />
