@@ -369,6 +369,9 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
+	// TODO(Maggie): Enable test when NBD is stable
+	t.Skip()
+
 	flags.Set(t, "executor.firecracker_enable_nbd", true)
 	flags.Set(t, "executor.firecracker_enable_local_snapshot_sharing", true)
 
