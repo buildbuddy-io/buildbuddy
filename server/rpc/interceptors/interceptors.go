@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -124,6 +125,18 @@ func addClientIPToContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, clientip.ContextKey, ips[len(ips)-2])
 }
 
+func addSubdomainToContext(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+	hdrs := md.Get(":authority")
+	if len(hdrs) == 0 {
+		return ctx
+	}
+	return subdomain.SetHost(ctx, hdrs[0])
+}
+
 func copyHeadersToContext(ctx context.Context) context.Context {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		for headerName, contextKey := range headerContextKeys {
@@ -208,10 +221,22 @@ func clientIPStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return ContextReplacingStreamServerInterceptor(addClientIPToContext)
 }
 
+// subdomainStreamServerInterceptor adds customer subdomain information to the
+// context.
+func subdomainStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return ContextReplacingStreamServerInterceptor(addSubdomainToContext)
+}
+
 // clientIPUnaryInterceptor is a server interceptor that inserts the client IP
 // into the context.
 func ClientIPUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return ContextReplacingUnaryServerInterceptor(addClientIPToContext)
+}
+
+// subdomainUnaryServerInterceptor adds customer subdomain information to the
+// context.
+func subdomainUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return ContextReplacingUnaryServerInterceptor(addSubdomainToContext)
 }
 
 func addInvocationIdToLog(ctx context.Context) context.Context {
@@ -363,6 +388,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		unaryRecoveryInterceptor(),
 		ClientIPUnaryServerInterceptor(),
+		subdomainUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
 		invocationIDLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
@@ -378,6 +404,7 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
 		streamRecoveryInterceptor(),
 		clientIPStreamServerInterceptor(),
+		subdomainStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),

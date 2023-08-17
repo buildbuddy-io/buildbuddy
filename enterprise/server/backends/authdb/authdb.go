@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/chacha20"
 
@@ -339,8 +340,14 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 	}
 
+	cacheKey := apiKey
+	sd := subdomain.Get(ctx)
+	if sd != "" {
+		cacheKey = sd + "," + apiKey
+	}
+
 	if d.apiKeyGroupCache != nil {
-		d, ok := d.apiKeyGroupCache.Get(apiKey)
+		d, ok := d.apiKeyGroupCache.Get(cacheKey)
 		if ok {
 			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
 			return d, nil
@@ -349,7 +356,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
+		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
 		keyClauses := query_builder.OrClauses{}
 		if !*encryptOldKeys {
 			keyClauses.AddOr("ak.value = ?", apiKey)
@@ -378,21 +385,26 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 	if d.apiKeyGroupCache != nil {
 		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
-		d.apiKeyGroupCache.Add(apiKey, akg)
+		d.apiKeyGroupCache.Add(cacheKey, akg)
 	}
 	return akg, nil
 }
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
+	cacheKey := apiKeyID
+	sd := subdomain.Get(ctx)
+	if sd != "" {
+		cacheKey = sd + "," + apiKeyID
+	}
 	if d.apiKeyGroupCache != nil {
-		d, ok := d.apiKeyGroupCache.Get(apiKeyID)
+		d, ok := d.apiKeyGroupCache.Get(cacheKey)
 		if ok {
 			return d, nil
 		}
 	}
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
+		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
 		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 		q, args := qb.Build()
 		existingRow := tx.Raw(q, args...)
@@ -405,7 +417,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		return nil, err
 	}
 	if d.apiKeyGroupCache != nil {
-		d.apiKeyGroupCache.Add(apiKeyID, akg)
+		d.apiKeyGroupCache.Add(cacheKey, akg)
 	}
 	return akg, nil
 }
@@ -470,7 +482,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 	return user, nil
 }
 
-func (d *AuthDB) newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Query {
+func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) *query_builder.Query {
 	qb := query_builder.NewQuery(`
 		SELECT
 			ak.capabilities,
@@ -483,6 +495,10 @@ func (d *AuthDB) newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Que
 		"APIKeys" AS ak
 	`)
 	qb.AddWhereClause(`ak.group_id = g.group_id`)
+
+	if subDomain != "" {
+		qb.AddWhereClause("url_identifier = ?", subDomain)
+	}
 
 	if *userOwnedKeysEnabled && allowUserOwnedKeys {
 		// Note: the org can disable user-owned keys at any time, and the

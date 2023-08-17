@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -497,6 +498,46 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		require.Equal(t, key.Id, e.Resource.GetId())
 		require.Equal(t, alpb.Action_DELETE, e.Action)
 		require.Equal(t, req, e.Request)
+	}
+}
+
+func TestSubdomainRestrictions(t *testing.T) {
+	flags.Set(t, "app.enable_subdomain_matching", true)
+
+	ctx := context.Background()
+	env := setupEnv(t)
+	adb := env.GetAuthDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if role.Role(u.Groups[0].Role) == role.Admin {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin)
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	keys, err := adb.GetAPIKeys(adminCtx, groupID)
+	require.NoError(t, err)
+
+	for _, k := range keys {
+		_, err := adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+		require.NoError(t, err)
+
+		// Set subdomain that won't match the group.
+		ctx = subdomain.SetHost(ctx, "some-random-host.buildbuddy.dev")
+		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+		require.Truef(t, status.IsUnauthenticatedError(err), "expected unauthenticated error but got %v", err)
+
+		// Use a subdomain that matches the group.
+		ctx = subdomain.SetHost(ctx, *admin.Groups[0].Group.URLIdentifier+".buildbuddy.dev")
+		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
+		require.NoError(t, err)
 	}
 }
 

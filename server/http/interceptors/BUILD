@@ -15,6 +15,7 @@ go_library(
         "//server/util/clientip",
         "//server/util/log",
         "//server/util/request_context",
+        "//server/util/subdomain",
         "//server/util/uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
