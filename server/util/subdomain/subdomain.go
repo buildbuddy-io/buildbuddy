@@ -22,7 +22,7 @@ func SetHost(ctx context.Context, host string) context.Context {
 		return ctx
 	}
 	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
+	if len(parts) < 3 {
 		return ctx
 	}
 	subdomain := parts[0]
