@@ -647,7 +647,13 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 				return err
 			}
 		}
-
+		computedDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
+		if err != nil {
+			return err
+		}
+		if computedDigest.GetHash() != d.GetHash() {
+			return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest.GetHash(), d.GetHash())
+		}
 		ptr := ptrs[0]
 		if err := writeFile(ptr, data); err != nil {
 			return err
