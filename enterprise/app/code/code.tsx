@@ -56,10 +56,6 @@ interface State {
 }
 
 const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
-var repoLoaded: (value: any) => void;
-var repoLoadedPromise = new Promise<any>(function (resolve) {
-  repoLoaded = resolve;
-});
 
 // TODO(siggisim): Add links to the code editor from anywhere we reference a repo
 // TODO(siggisim): Add branch / workspace selection
@@ -99,6 +95,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   octokit?: Octokit;
 
   subscription?: Subscription;
+  fetchedInitialContent = false;
 
   componentWillMount() {
     document.title = `Code | BuildBuddy`;
@@ -126,7 +123,18 @@ export default class CodeComponent extends React.Component<Props, State> {
     return Boolean(this.props.search.get("bytestream_url")) || Boolean(this.props.search.get("lcov"));
   }
 
-  async componentDidMount() {
+  componentDidMount() {
+    if (this.state.repoResponse) {
+      this.fetchInitialContent();
+    }
+  }
+
+  fetchInitialContent() {
+    if (this.fetchedInitialContent) {
+      return;
+    }
+    this.fetchedInitialContent = true;
+
     if (!this.currentRepo() && !this.isSingleFile()) {
       return;
     }
@@ -149,8 +157,6 @@ export default class CodeComponent extends React.Component<Props, State> {
       return;
     }
 
-    let repoResponse = await repoLoadedPromise;
-
     const lcovURL = this.props.search.get("lcov");
     const commit = this.props.search.get("commit");
     if (this.isSingleFile() && lcovURL) {
@@ -158,7 +164,7 @@ export default class CodeComponent extends React.Component<Props, State> {
         owner: this.currentOwner(),
         repo: this.currentRepo(),
         path: this.currentPath(),
-        ref: commit || this.state.commitSHA || repoResponse.data.default_branch,
+        ref: commit || this.state.commitSHA || this.state.repoResponse.data.default_branch,
       }).then((response) => {
         this.navigateToContent(this.currentPath(), (response.data as any).content);
         rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result: any) => {
@@ -196,7 +202,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           owner: this.currentOwner(),
           repo: this.currentRepo(),
           path: this.currentPath(),
-          ref: this.state.commitSHA || repoResponse.data.default_branch,
+          ref: this.state.commitSHA || this.state.repoResponse.data.default_branch,
         }).then((response) => {
           this.navigateToContent(this.currentPath(), (response.data as any).content);
         });
@@ -246,9 +252,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.editor?.dispose();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props, prevState: State) {
     if (this.props.user != prevProps.user) {
       this.updateUser();
+    }
+    if (!prevState.repoResponse && this.state.repoResponse) {
+      this.fetchInitialContent();
     }
   }
 
@@ -273,9 +282,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     const storageValue = localStorage.getItem(this.getStateCacheKey());
     const storedState = storageValue ? (JSON.parse(storageValue, stateReviver) as State) : undefined;
     if (storedState) {
-      this.setState(storedState, () => {
-        repoLoaded(storedState.repoResponse);
-      });
+      this.setState(storedState);
       if (storedState.treeResponse && storedState.commitSHA) {
         return;
       }
@@ -285,7 +292,6 @@ export default class CodeComponent extends React.Component<Props, State> {
     }
 
     let repoResponse = await this.octokit!.request(`GET /repos/${this.currentOwner()}/${this.currentRepo()}`);
-    repoLoaded(repoResponse);
     let commit = this.state.commitSHA || repoResponse.data.default_branch;
     this.octokit!.request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${commit}`).then(
       (treeResponse: any) => {
