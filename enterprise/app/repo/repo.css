@@ -56,7 +56,8 @@
 
 .create-repo-page .create-button,
 .create-repo-page .permissions-button,
-.create-repo-page .view-button {
+.create-repo-page .view-button,
+.create-repo-page .code-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -75,11 +76,30 @@
   box-sizing: border-box;
 }
 
+.create-repo-page .view-buttons .view-button,
+.create-repo-page .view-buttons .code-button {
+  width: initial;
+  flex-grow: 1;
+}
+
+.create-repo-page .view-buttons {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .create-repo-page .permissions-button {
   margin-bottom: 0;
 }
 
 .create-repo-page .view-button {
+  background-color: #fff;
+  color: #000;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.create-repo-page .code-button {
   background-color: #4caf50;
 }
 
@@ -129,6 +149,7 @@
 .create-repo-page .running-actions a {
   display: flex;
   align-items: center;
+  margin-bottom: 8px;
 }
 
 .create-repo-page .running-actions svg {

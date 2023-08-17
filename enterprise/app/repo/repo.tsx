@@ -323,9 +323,17 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             </button>
           )}
           {this.state.repoResponse && (
-            <a className="view-button" href={this.state.repoResponse.repoUrl} target="_blank">
-              View repository
-            </a>
+            <div className="view-buttons">
+              <a className="view-button" href={this.state.repoResponse.repoUrl} target="_blank">
+                View
+              </a>
+              <a
+                className="code-button"
+                href={this.state.repoResponse.repoUrl?.replace("github.com", "bgithub.com")}
+                target="_blank">
+                Code
+              </a>
+            </div>
           )}
         </div>
         {this.getSecrets().length > 0 && (
