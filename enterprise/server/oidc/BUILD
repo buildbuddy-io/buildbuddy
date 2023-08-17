@@ -20,6 +20,7 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/subdomain",
         "//server/util/url",
         "@com_github_coreos_go_oidc//:go-oidc",
         "@com_github_google_uuid//:uuid",

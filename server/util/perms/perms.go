@@ -226,7 +226,7 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 		}
 	}
 
-	if !hasUser && !env.GetAuthenticator().AnonymousUsageEnabled() {
+	if !hasUser && !env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
@@ -303,7 +303,7 @@ func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroup
 
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil || u.GetGroupID() == "" {
-		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
 			return AnonymousUserPermissions(), nil
 		}
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
