@@ -2119,6 +2119,14 @@ var (
 		PebbleOperation,
 	})
 
+	// Total size of cache that pebble allocate mamually from system memory using malloc.
+	PebbleCachePebbleBlockCacheSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_block_cache_size_bytes",
+		Help:      "The total size in pebble's block cache.",
+	})
+
 	// Temporary metric to verify AC sampling behavior.
 	PebbleCacheGroupIDSampleCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
