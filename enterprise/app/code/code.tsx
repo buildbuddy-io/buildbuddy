@@ -437,7 +437,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     let filenames = filteredEntries.map(([key, value]) => key).join(", ");
     this.updateState({
       prTitle: `Update ${filenames}`,
-      prBody: `Update ${filenames}\n\nBuilt with [BuildBuddy Code](https://${window.location.host}/code/)`,
+      prBody: `Update ${filenames}`,
       reviewRequestModalVisible: true,
     });
   }
@@ -553,7 +553,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           files: Object.fromEntries(
             filteredEntries.map(([key, value]) => [key, { content: btoa(value), encoding: "base64" }]) // Convert to base64 for github to support utf-8
           ),
-          commit: `Update of ${filenames} using BuildBuddy Code`,
+          commit: `Update ${filenames}`,
         },
       ],
     }).then(() => {
