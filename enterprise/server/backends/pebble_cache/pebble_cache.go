@@ -1833,7 +1833,6 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 type cdcWriter struct {
 	ctx        context.Context
 	pc         *PebbleCache
-	db         pebble.IPebbleDB
 	fileRecord *rfpb.FileRecord
 	key        filestore.PebbleKey
 
@@ -1860,7 +1859,6 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		ctx:            ctx,
 		eg:             eg,
 		pc:             p,
-		db:             db,
 		key:            key,
 		fileRecord:     fileRecord,
 		shouldCompress: shouldCompress,
@@ -2011,7 +2009,6 @@ func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
 
 func (cdcw *cdcWriter) Close() error {
 	defer cdcw.chunker.Close()
-	defer cdcw.db.Close()
 	return nil
 }
 
