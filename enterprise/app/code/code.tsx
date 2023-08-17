@@ -34,6 +34,7 @@ interface Props {
 interface State {
   commitSHA: string;
   repoResponse: any;
+  treeResponse: any;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, any[]>;
   fullPathToModelMap: Map<string, any>;
@@ -63,6 +64,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   state: State = {
     commitSHA: "",
     repoResponse: undefined,
+    treeResponse: undefined,
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, any[]>(),
     fullPathToModelMap: new Map<string, any>(),
@@ -93,6 +95,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   octokit?: Octokit;
 
   subscription?: Subscription;
+  fetchedInitialContent = false;
 
   componentWillMount() {
     document.title = `Code | BuildBuddy`;
@@ -121,6 +124,17 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   componentDidMount() {
+    if (this.state.repoResponse) {
+      this.fetchInitialContent();
+    }
+  }
+
+  fetchInitialContent() {
+    if (this.fetchedInitialContent) {
+      return;
+    }
+    this.fetchedInitialContent = true;
+
     if (!this.currentRepo() && !this.isSingleFile()) {
       return;
     }
@@ -150,7 +164,7 @@ export default class CodeComponent extends React.Component<Props, State> {
         owner: this.currentOwner(),
         repo: this.currentRepo(),
         path: this.currentPath(),
-        ref: commit || this.state.commitSHA || "master",
+        ref: commit || this.state.commitSHA || this.state.repoResponse.data.default_branch,
       }).then((response) => {
         this.navigateToContent(this.currentPath(), (response.data as any).content);
         rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result: any) => {
@@ -188,7 +202,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           owner: this.currentOwner(),
           repo: this.currentRepo(),
           path: this.currentPath(),
-          ref: this.state.commitSHA || "master",
+          ref: this.state.commitSHA || this.state.repoResponse.data.default_branch,
         }).then((response) => {
           this.navigateToContent(this.currentPath(), (response.data as any).content);
         });
@@ -238,9 +252,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.editor?.dispose();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate(prevProps: Props, prevState: State) {
     if (this.props.user != prevProps.user) {
       this.updateUser();
+    }
+    if (!prevState.repoResponse && this.state.repoResponse) {
+      this.fetchInitialContent();
     }
   }
 
@@ -261,12 +278,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     return this.parsePath().path;
   }
 
-  fetchCode() {
+  async fetchCode() {
     const storageValue = localStorage.getItem(this.getStateCacheKey());
     const storedState = storageValue ? (JSON.parse(storageValue, stateReviver) as State) : undefined;
     if (storedState) {
       this.setState(storedState);
-      if (storedState.repoResponse && storedState.commitSHA) {
+      if (storedState.treeResponse && storedState.commitSHA) {
         return;
       }
     }
@@ -274,11 +291,12 @@ export default class CodeComponent extends React.Component<Props, State> {
       return;
     }
 
-    let commit = this.state.commitSHA || "master";
+    let repoResponse = await this.octokit!.request(`GET /repos/${this.currentOwner()}/${this.currentRepo()}`);
+    let commit = this.state.commitSHA || repoResponse.data.default_branch;
     this.octokit!.request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${commit}`).then(
-      (response: any) => {
-        console.log(response);
-        this.updateState({ repoResponse: response, commitSHA: response.data.sha });
+      (treeResponse: any) => {
+        console.log(treeResponse);
+        this.updateState({ repoResponse: repoResponse, treeResponse: treeResponse, commitSHA: treeResponse.data.sha });
       }
     );
   }
@@ -573,7 +591,9 @@ export default class CodeComponent extends React.Component<Props, State> {
   // If a callback is set, alert messages will not be shown.
   handleUpdateCommitSha(callback?: (conflicts: number) => void) {
     this.octokit!.request(
-      `/repos/${this.currentOwner()}/${this.currentRepo()}/compare/${this.state.commitSHA}...master`
+      `/repos/${this.currentOwner()}/${this.currentRepo()}/compare/${this.state.commitSHA}...${
+        this.state.repoResponse.data.default_branch
+      }`
     ).then((response: any) => {
       console.log(response);
       let newCommits = response.data.ahead_by;
@@ -599,7 +619,7 @@ export default class CodeComponent extends React.Component<Props, State> {
         (response: any) => {
           console.log(response);
           this.updateState(
-            { repoResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
+            { treeResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
             () => {
               if (callback) {
                 callback(conflictCount);
@@ -819,8 +839,8 @@ export default class CodeComponent extends React.Component<Props, State> {
           {!this.isSingleFile() && (
             <div className="code-sidebar">
               <div className="code-sidebar-tree">
-                {this.state.repoResponse &&
-                  this.state.repoResponse.data.tree
+                {this.state.treeResponse &&
+                  this.state.treeResponse.data.tree
                     .sort(compareNodes)
                     .map((node: any) => (
                       <SidebarNodeComponent
