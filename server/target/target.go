@@ -211,7 +211,7 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 			switch s {
 			case 0:
 				target = &trpb.Target{Metadata: &trpb.TargetMetadata{Label: label}}
-			case cmpb.Status_BUILDING, cmpb.Status_BUILT, cmpb.Status_FAILED_TO_BUILD:
+			case cmpb.Status_BUILDING, cmpb.Status_BUILT, cmpb.Status_FAILED_TO_BUILD, cmpb.Status_SKIPPED:
 				target = idx.BuildTargetByLabel[label]
 			default:
 				target = idx.TestTargetByLabel[label]
