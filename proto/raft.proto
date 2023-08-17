@@ -251,6 +251,7 @@ message RequestUnion {
     SplitLeaseRequest split_lease = 11;
     SplitReleaseRequest split_release = 12;
     DeleteRangeRequest delete_range = 14;
+    CloneClusterRequest clone_cluster = 15;
   }
 }
 
@@ -274,6 +275,7 @@ message ResponseUnion {
     SplitLeaseResponse split_lease = 12;
     SplitReleaseResponse split_release = 13;
     DeleteRangeResponse delete_range = 15;
+    CloneClusterResponse clone_cluster = 16;
   }
 }
 

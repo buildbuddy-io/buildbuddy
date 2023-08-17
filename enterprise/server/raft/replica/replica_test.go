@@ -56,6 +56,9 @@ func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	fs.fileReadFn = fn
 	return fs
 }
+func (fs *fakeStore) CloneCluster(ctx context.Context, req *rfpb.CloneClusterRequest) (*rfpb.CloneClusterResponse, error) {
+	return nil, status.UnimplementedError("not yet implemented")
+}
 
 func TestOpenCloseReplica(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)

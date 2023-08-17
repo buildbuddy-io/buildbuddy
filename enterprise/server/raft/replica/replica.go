@@ -65,6 +65,7 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	NotifyUsage(ru *rfpb.ReplicaUsage)
+	CloneCluster(ctx context.Context, req *rfpb.CloneClusterRequest) (*rfpb.CloneClusterResponse, error)
 	Sender() *sender.Sender
 }
 
@@ -1041,6 +1042,13 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion, rsp *r
 			FindSplitPoint: r,
 		}
 		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_CloneCluster:
+		r, err := sm.store.CloneCluster(context.TODO(), value.CloneCluster)
+		rsp.Value = &rfpb.ResponseUnion_CloneCluster{
+			CloneCluster: r,
+		}
+		rsp.Status = statusProto(err)
+
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}

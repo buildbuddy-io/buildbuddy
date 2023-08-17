@@ -94,6 +94,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_DeleteRange{
 			DeleteRange: value,
 		}
+	case *rfpb.CloneClusterRequest:
+		req.Value = &rfpb.RequestUnion_CloneCluster{
+			CloneCluster: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb

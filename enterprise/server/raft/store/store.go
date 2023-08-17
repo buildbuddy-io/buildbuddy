@@ -1753,8 +1753,12 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 
 	s.log.Infof("splitlog: acquired split lease")
 
-	if err := bringup.CloneCluster(ctx, s.apiClient, bootStrapInfo, req.GetRange().GetRangeId(), newIDs.rangeID); err != nil {
-		return nil, status.InternalErrorf("could not clone cluster: %s", err)
+	cloneReq := rbuilder.NewBatchBuilder().Add(&rfpb.CloneClusterRequest{
+		SourceRangeId: req.GetRange().GetRangeId(),
+		DestRangeId:   newIDs.rangeID,
+	}).SetSplitTag(splitTag)
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, cloneReq); err != nil {
+		return nil, status.InternalErrorf("could not obtain split lease: %s", err)
 	}
 
 	s.log.Infof("splitlog: cloned cluster")
