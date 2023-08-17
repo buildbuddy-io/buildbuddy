@@ -154,6 +154,7 @@ export class AuthService {
         )
       ),
       isImpersonating: Boolean(rpcService.requestContext.impersonatingGroupId),
+      subdomainGroupID: response.subdomainGroupId,
     });
   }
 

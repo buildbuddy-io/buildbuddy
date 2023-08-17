@@ -26,7 +26,7 @@ import UsageComponent from "../usage/usage";
 import GroupSearchComponent from "../group_search/group_search";
 import AuditLogsComponent from "../auditlogs/auditlogs";
 import { AlertCircle, LogOut } from "lucide-react";
-import { OutlinedButton } from "../../../app/components/button/button";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -41,6 +41,7 @@ import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 import Modal from "../../../app/components/modal/modal";
 import NewTrendsComponent from "../trends/new_trends";
+import OrgAccessDeniedComponent from "../org/org_access_denied";
 
 interface State {
   user?: User;
@@ -131,6 +132,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let org = this.state.user && this.state.path.startsWith("/org/");
     let orgCreate = this.state.user && this.state.path === Path.createOrgPath;
     let orgJoinAuthenticated = this.state.path.startsWith("/join") && this.state.user;
+    let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
@@ -145,6 +147,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !settings &&
       !org &&
       !orgJoinAuthenticated &&
+      !orgAccessDenied &&
       !trends &&
       !usage &&
       !executors &&
@@ -282,6 +285,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   )}
                   {orgCreate && this.state.user && <CreateOrgComponent user={this.state.user} />}
                   {orgJoinAuthenticated && this.state.user && <JoinOrgComponent user={this.state.user} />}
+                  {orgAccessDenied && this.state.user && <OrgAccessDeniedComponent user={this.state.user} />}
                   {tests && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <TapComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
