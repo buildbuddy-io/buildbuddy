@@ -37,9 +37,10 @@ interface RepoComponentState {
   workflowResponse: workflow.ExecuteWorkflowResponse | null;
 }
 
+const selectedInstallationIndexLocalStorageKey = "repo-selectedInstallationIndex";
 export default class RepoComponent extends React.Component<RepoComponentProps, RepoComponentState> {
   state: RepoComponentState = {
-    selectedInstallationIndex: 0,
+    selectedInstallationIndex: localStorage[selectedInstallationIndexLocalStorageKey] || 0,
     githubInstallationsLoading: true,
     githubInstallationsResponse: null,
     isCreating: false,
@@ -106,8 +107,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
         install: "true",
       })}`;
     }
-
     let index = Number(e.target.value);
+    localStorage[selectedInstallationIndexLocalStorageKey] = index;
     this.setState({ selectedInstallationIndex: index });
   }
 
