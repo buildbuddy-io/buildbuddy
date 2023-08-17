@@ -1758,7 +1758,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		DestRangeId:   newIDs.rangeID,
 	}).SetSplitTag(splitTag)
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, cloneReq); err != nil {
-		return nil, status.InternalErrorf("could not obtain split lease: %s", err)
+		return nil, status.InternalErrorf("could not clone cluster: %s", err)
 	}
 
 	s.log.Infof("splitlog: cloned cluster")
