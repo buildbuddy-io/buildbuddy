@@ -17,6 +17,9 @@ func String() string {
 	return buildBuddyURL.String()
 }
 
+// Domain returns the domain portion of the BuildBuddy URL.
+// e.g. If the URL is "app.buildbuddy.io", the returned domain will be
+// "buildbuddy.io".
 func Domain() string {
 	hostname := buildBuddyURL.Hostname()
 	pts := strings.Split(hostname, ".")

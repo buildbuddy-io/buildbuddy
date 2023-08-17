@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 )
 
 const (
@@ -23,12 +22,13 @@ const (
 )
 
 var (
-	httpsOnlyCookies = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
+	httpsOnlyCookies  = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
+	domainWideCookies = flag.Bool("auth.domain_wide_cookies", false, "If true, cookies will have domain set so that they are accessible on domain and all subdomains.")
 )
 
 func cookieDomain() string {
 	domain := ""
-	if subdomain.Enabled() {
+	if *domainWideCookies {
 		domain = build_buddy_url.Domain()
 	}
 	return domain
