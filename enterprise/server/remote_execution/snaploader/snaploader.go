@@ -1,8 +1,12 @@
 package snaploader
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -18,6 +22,8 @@ import (
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
 
 // NewKey returns the cache key for a snapshot.
 // TODO: include a version number in the key somehow, so that
@@ -41,28 +47,47 @@ func NewKey(task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb
 func manifestFileCacheKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) *repb.FileNode {
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
-	return artifactFileCacheKey(ctx, env, s, ".manifest", 1 /*=arbitrary size*/)
+	//
+	// We always want runners to use the newest manifest (and corresponding
+	// snapshot). That means we don't need unique manifest keys,
+	// even if the snapshot files change, so that we'll always overwrite
+	// and read the manifest with the newest version.
+	// That's why we set fileReader=nil here
+	key, _ := artifactFileCacheKey(ctx, env, nil, s, ".manifest", 1 /*=arbitrary size*/)
+	return key
 }
 
-// artifactFileCacheKey returns the cache key for a particular snapshot
-// artifact.
-func artifactFileCacheKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey, name string, sizeBytes int64) *repb.FileNode {
+// artifactFileCacheKey returns the cache key for a snapshot artifact
+//
+// Because computing digests of large snapshot files is expensive, if you
+// don't need a real digest, pass in a nil fileReader. This will return a
+// hash of the file name and snapshot key instead
+func artifactFileCacheKey(ctx context.Context, env environment.Env, fileReader *io.Reader, s *fcpb.SnapshotKey, name string, sizeBytes int64) (*repb.FileNode, error) {
+	computeDigest := fileReader != nil
+	if computeDigest {
+		// TODO(Maggie): Add metrics for computing snapshot digests
+		d, err := digest.Compute(*fileReader, repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return nil, err
+		}
+		return &repb.FileNode{
+			Digest: d,
+		}, nil
+	}
+	// Note that this only works because filecache doesn't
+	// verify digests. If you want to store these remotely in
+	// CAS, you need to compute the full digest.
 	var groupID string
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err == nil {
 		groupID = u.GetGroupID()
 	}
-
-	// Just hash the file name with the snapshot key digest for now, since it is
-	// too costly to compute the full file digest. Note that this only works
-	// because filecache doesn't verify digests. If we store these remotely in
-	// CAS, then we will need to compute the full digest.
 	return &repb.FileNode{
 		Digest: &repb.Digest{
 			Hash:      hashStrings(groupID, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerId, name),
 			SizeBytes: sizeBytes,
 		},
-	}
+	}, nil
 }
 
 // Snapshot holds a snapshot manifest along with the corresponding cache key.
@@ -217,8 +242,23 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		if err != nil {
 			return nil, err
 		}
+		// If snapshot sharing is disabled, don't compute the digest for the
+		// file because it is costly. Because the runner ID is in the key
+		// when snapshot sharing is disabled,  we don't need to worry about
+		// multiple runners trying to access the same key simultaneously
+		var r *io.Reader
+		if *EnableLocalSnapshotSharing {
+			fileReader, err := readerFromFile(f)
+			if err != nil {
+				return nil, err
+			}
+			r = &fileReader
+		}
 		filename := filepath.Base(f)
-		fileNode := artifactFileCacheKey(ctx, l.env, key, filename, info.Size())
+		fileNode, err := artifactFileCacheKey(ctx, l.env, r, key, filename, info.Size())
+		if err != nil {
+			return nil, err
+		}
 		fileNode.Name = filename
 		l.env.GetFileCache().AddFile(fileNode, f)
 		manifest.Files = append(manifest.Files, fileNode)
@@ -241,6 +281,24 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		return nil, err
 	}
 	return &Snapshot{key: key, manifest: manifest}, nil
+}
+
+func readerFromFile(filePath string) (io.Reader, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	return bufio.NewReader(file), nil
+}
+
+func readerFromBytes(b []byte) (io.Reader, error) {
+	b, err := proto.Marshal(manifest)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(b), nil
 }
 
 func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cow *blockio.COWStore, err error) {
