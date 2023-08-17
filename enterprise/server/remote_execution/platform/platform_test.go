@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"strings"
@@ -430,6 +431,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 func TestEnvAndArgOverrides(t *testing.T) {
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{
 		{Name: "env-overrides", Value: "A=1,B=2,A=3"},
+		{Name: "env-overrides-base64", Value: base64.StdEncoding.EncodeToString([]byte(`C={"some":1,"value":2}`)) + ",D=invalidIgnored"},
 		{Name: "extra-args", Value: "--foo,--bar=baz"},
 	}}
 	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
@@ -453,6 +455,7 @@ func TestEnvAndArgOverrides(t *testing.T) {
 			{Name: "A", Value: "1"},
 			{Name: "B", Value: "2"},
 			{Name: "A", Value: "3"},
+			{Name: "C", Value: `{"some":1,"value":2}`},
 		},
 	}
 
