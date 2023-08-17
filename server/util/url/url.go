@@ -2,6 +2,7 @@ package url
 
 import (
 	"net/url"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -24,9 +25,13 @@ func ValidateRedirect(env environment.Env, redirectURL string) error {
 	if err != nil {
 		return err
 	}
-	myURL := build_buddy_url.WithPath("")
-	if redir.Hostname() != "" && redir.Hostname() != myURL.Hostname() {
-		return status.InvalidArgumentErrorf("Redirect url %q not found on this domain %q", redirectURL, myURL.Host)
+	if redir.Hostname() == "" {
+		return nil
+	}
+
+	myDomain := build_buddy_url.Domain()
+	if redir.Hostname() != myDomain && !strings.HasSuffix(redir.Hostname(), "."+myDomain) {
+		return status.InvalidArgumentErrorf("Redirect url %q not found on this domain %q", redirectURL, myDomain)
 	}
 	return nil
 }

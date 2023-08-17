@@ -40,3 +40,7 @@ func Get(ctx context.Context) string {
 	v, _ := ctx.Value(subdomainKey).(string)
 	return v
 }
+
+func Enabled() bool {
+	return *enableSubdomainMatching
+}

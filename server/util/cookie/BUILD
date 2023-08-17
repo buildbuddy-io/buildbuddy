@@ -5,4 +5,5 @@ go_library(
     srcs = ["cookie.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/cookie",
     visibility = ["//visibility:public"],
+    deps = ["//server/endpoint_urls/build_buddy_url"],
 )

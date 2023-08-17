@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 )
 
 const (
@@ -20,23 +22,53 @@ const (
 )
 
 var (
-	httpsOnlyCookies = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
+	httpsOnlyCookies  = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
+	domainWideCookies = flag.Bool("auth.domain_wide_cookies", false, "If true, cookies will have domain set so that they are accessible on domain and all subdomains.")
 )
 
-func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time, httpOnly bool) {
-	http.SetCookie(w, &http.Cookie{
+func cookieDomain() string {
+	domain := ""
+	if *domainWideCookies {
+		domain = build_buddy_url.Domain()
+	}
+	return domain
+}
+
+func cookie(name, value, domain string, expiry time.Time, httpOnly bool) *http.Cookie {
+	return &http.Cookie{
 		Name:     name,
 		Value:    value,
+		Domain:   domain,
 		Expires:  expiry,
 		HttpOnly: httpOnly,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/",
 		Secure:   *httpsOnlyCookies,
-	})
+	}
+}
+
+func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time, httpOnly bool) {
+	cd := cookieDomain()
+	// If we're setting the domain on the cookie, clear out any existing cookie
+	// that didn't have the domain set.
+	if value != "" && cd != "" {
+		clearCookie(w, name, "" /*=domain*/)
+	}
+	http.SetCookie(w, cookie(name, value, cd, expiry, httpOnly))
+}
+
+func clearCookie(w http.ResponseWriter, name, domain string) {
+	http.SetCookie(w, cookie(name, "", domain, time.Now(), true /*=httpOnly*/))
 }
 
 func ClearCookie(w http.ResponseWriter, name string) {
-	SetCookie(w, name, "", time.Now(), true /* httpOnly= */)
+	cd := cookieDomain()
+	// If we're setting the domain on cookies, make sure we also clear out
+	// any cookies that didn't have the domain set.
+	if cd != "" {
+		clearCookie(w, name, "" /*=domain*/)
+	}
+	clearCookie(w, name, cd)
 }
 
 func GetCookie(r *http.Request, name string) string {
