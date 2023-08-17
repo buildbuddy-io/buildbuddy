@@ -140,7 +140,19 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 		return nil, err
 	}
 	if req.GetTargetLabel() != "" && req.GetStatus() == 0 {
-		return nil, status.InvalidArgumentError("status is required when fetching a single target label")
+		// When fetching a single target label, the status field is optional (to
+		// support old invocation links that didn't require the 'targetStatus'
+		// param). In this case, use the test status if available (which is
+		// usually more interesting); otherwise use the build status.
+		target := idx.TestTargetByLabel[req.GetTargetLabel()]
+		if target == nil {
+			target = idx.BuildTargetByLabel[req.GetTargetLabel()]
+		}
+		if target == nil {
+			return nil, status.NotFoundErrorf("target %q not found for invocation %s", req.GetTargetLabel(), inv.GetInvocationId())
+		}
+		req = proto.Clone(req).(*trpb.GetTargetRequest)
+		req.Status = &target.Status
 	}
 
 	var statuses []cmpb.Status
