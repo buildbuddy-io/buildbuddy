@@ -140,10 +140,12 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 	if n != len(fcConnectString) {
 		return nil, status.InternalErrorf("HostDial failed: wrote %d bytes, expected %d", n, len(fcConnectString))
 	}
+	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	rsp, err := bufio.NewReaderSize(conn, 32).ReadString('\n')
 	if err != nil {
 		return nil, err
 	}
+	conn.SetReadDeadline(time.Time{})
 	if !strings.HasPrefix(rsp, "OK ") {
 		return nil, status.InternalErrorf("HostDial failed: didn't receive 'OK' after CONNECT, got %q", rsp)
 	}
