@@ -3183,6 +3183,9 @@ func (p *PebbleCache) updatePebbleMetrics() error {
 		metrics.PebbleCachePebbleLevelTablesMovedCount.With(lbls).Add(float64(l.TablesMoved - ol.TablesMoved))
 	}
 
+	// Block cache metrics.
+	metrics.PebbleCachePebbleBlockCacheSizeBytes.Set(float64(m.BlockCache.Size))
+
 	p.oldMetrics = *m
 
 	return nil
