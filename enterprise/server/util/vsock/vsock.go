@@ -140,10 +140,16 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 	if n != len(fcConnectString) {
 		return nil, status.InternalErrorf("HostDial failed: wrote %d bytes, expected %d", n, len(fcConnectString))
 	}
+	// Firecracker should normally be listening on v.sock as soon as
+	// the VM is started, but occasionally we might call this function
+	// before firecracker starts listening. Set a short timeout so that
+	// we catch this early and retry instead of hanging.
+	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	rsp, err := bufio.NewReaderSize(conn, 32).ReadString('\n')
 	if err != nil {
 		return nil, err
 	}
+	conn.SetReadDeadline(time.Time{})
 	if !strings.HasPrefix(rsp, "OK ") {
 		return nil, status.InternalErrorf("HostDial failed: didn't receive 'OK' after CONNECT, got %q", rsp)
 	}
