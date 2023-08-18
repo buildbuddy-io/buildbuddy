@@ -50,7 +50,7 @@ ts_library(
         "//enterprise/app/trends:summary_card",
         "//enterprise/app/trends:trends_chart",
         "//enterprise/app/trends:trends_model",
-        "//enterprise/app/trends:trends_request_helper",
+        "//enterprise/app/trends:trends_requests",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//moment",
@@ -70,7 +70,7 @@ ts_library(
         "//enterprise/app/trends:drilldown_page",
         "//enterprise/app/trends:simple_trends_tab",
         "//enterprise/app/trends:trends_model",
-        "//enterprise/app/trends:trends_request_helper",
+        "//enterprise/app/trends:trends_requests",
         "@npm//@types/react",
         "@npm//react",
     ],
@@ -88,8 +88,8 @@ ts_library(
 )
 
 ts_library(
-    name = "trends_request_helper",
-    srcs = ["trends_request_helper.ts"],
+    name = "trends_requests",
+    srcs = ["trends_requests.ts"],
     deps = [
         "//app/capabilities",
         "//app/service:rpc_service",

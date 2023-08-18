@@ -12,6 +12,16 @@ function getDatesBetween(start: Date, end: Date): string[] {
   return formattedDates;
 }
 
+/**
+ * This is a shared model class for "trends" data, which currently just means
+ * whatever data is jammed into GetTrendRequest/Response.  Its primary purpose
+ * is to abstract away a few of the rough edges in the GetTrendResponse.
+ *
+ * Creating a TrendsModel is cheap, so we currently rely on RPC caching and
+ * utility functions to create separate TrendsModel instances for each tab in
+ * the Trends UI.  This makes life easier than coordinating loading state
+ * between the different tabs that use the same RPC request/response pairs.
+ */
 export default class TrendsModel {
   private loading: boolean;
   private error?: string;

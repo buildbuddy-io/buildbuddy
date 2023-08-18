@@ -6,16 +6,16 @@ import TrendsChartComponent from "./trends_chart";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import PercentilesChartComponent from "./percentile_chart";
-import TrendsRequestHelper from "./trends_request_helper";
 import { CancelablePromise } from "../../../app/util/async";
 import TrendsTab from "./common";
 import TrendsSummaryCard from "./summary_card";
 import capabilities from "../../../app/capabilities/capabilities";
 import CacheChartComponent from "./cache_chart";
+import { fetchTrends, TrendsRpcCache } from "./trends_requests";
 
 interface Props {
   search: URLSearchParams;
-  trendsRequestHelper: TrendsRequestHelper;
+  cache: TrendsRpcCache;
   tab: TrendsTab;
 }
 
@@ -48,9 +48,13 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
       this.pendingTrendsRequest.cancel();
       this.pendingTrendsRequest = undefined;
     }
-    this.pendingTrendsRequest = this.props.trendsRequestHelper.fetchTrends(this.props.search, (m) => {
-      this.setState({ trendsModel: m });
-    });
+    this.pendingTrendsRequest = fetchTrends(
+      this.props.search,
+      (m) => {
+        this.setState({ trendsModel: m });
+      },
+      this.props.cache
+    );
   }
 
   formatLongDate(date: any) {
