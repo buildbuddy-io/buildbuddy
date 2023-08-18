@@ -69,7 +69,7 @@ import (
 
 var (
 	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
-	paginateInvocations = flag.Bool("app.paginate_invocations", false, "If true, paginate invocations returned to the UI.")
+	paginateInvocations = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
 )
 
 const (
