@@ -1864,6 +1864,18 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		shouldCompress: shouldCompress,
 		isCompressed:   isCompressed,
 	}
+	var wc, decompressor io.WriteCloser
+	wc = cdcw
+
+	if isCompressed {
+		// If the bytes being written are compressed, we decompress them in
+		// order to generate CDC chunks, then compress those chunks.
+		decompressor, err = compression.NewZstdDecompressor(cdcw)
+		if err != nil {
+			return nil, err
+		}
+		wc = decompressor
+	}
 
 	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
 	if err != nil {
@@ -1871,9 +1883,15 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 	}
 	cdcw.chunker = chunker
 
-	cwc := ioutil.NewCustomCommitWriteCloser(cdcw)
+	cwc := ioutil.NewCustomCommitWriteCloser(wc)
 	cwc.CloseFn = db.Close
 	cwc.CommitFn = func(bytesWritten int64) error {
+		if decompressor != nil {
+			if err := decompressor.Close(); err != nil {
+				return err
+			}
+		}
+
 		if err := cdcw.Close(); err != nil {
 			return err
 		}
@@ -1994,16 +2012,6 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 }
 
 func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
-	// If the bytes being written are compressed, we decompress them in
-	// order to generate CDC chunks, then compress those chunks.
-	if cdcw.isCompressed {
-		decompressed, err := compression.DecompressZstd(nil, buf)
-		if err != nil {
-			return -1, err
-		}
-		_, err = cdcw.chunker.Write(decompressed)
-		return len(buf), err
-	}
 	return cdcw.chunker.Write(buf)
 }
 
