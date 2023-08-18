@@ -387,12 +387,13 @@ export default class CodeComponent extends React.Component<Props, State> {
     request.gitRepo.repoUrl = `https://github.com/${this.currentOwner()}/${this.currentRepo()}.git`;
     request.bazelCommand = `${args} ${this.getBazelFlags()}`;
     request.repoState = this.getRepoState();
+    request.async = true;
 
     this.updateState({ isBuilding: true });
     rpcService.service
       .run(request)
       .then((response: runner.RunResponse) => {
-        window.open(`/invocation/${response.invocationId}`, "_blank");
+        window.open(`/invocation/${response.invocationId}?queued=true`, "_blank");
       })
       .catch((error: any) => {
         alert(error);
@@ -405,6 +406,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   getRepoState() {
     let state = new runner.RunRequest.RepoState();
     state.commitSha = this.state.commitSHA;
+    state.branch = this.state.repoResponse.data.default_branch;
     var enc = new TextEncoder();
     for (let path of this.state.changes.keys()) {
       state.patch.push(
