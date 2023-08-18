@@ -266,11 +266,17 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, err
 	}
+
+	res := &rnpb.RunResponse{InvocationId: invocationID}
+	if req.GetAsync() {
+		return res, nil
+	}
+
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
 		return nil, err
 	}
 
-	return &rnpb.RunResponse{InvocationId: invocationID}, nil
+	return res, nil
 }
 
 // waitUntilInvocationExists waits until the specified invocationID exists or

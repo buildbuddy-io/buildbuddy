@@ -80,6 +80,9 @@ message RunRequest {
 
   // Arch on which to run. Defaults to "amd64".
   string arch = 8;
+
+  // If true, start the runner but do not wait for the action to be scheduled.
+  bool async = 9;
 }
 
 message RunResponse {
