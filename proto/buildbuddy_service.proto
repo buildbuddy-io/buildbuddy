@@ -202,4 +202,40 @@ service BuildBuddyService {
 
   // Repo API.
   rpc CreateRepo(repo.CreateRepoRequest) returns (repo.CreateRepoResponse);
+
+  // GitHub passthrough API.
+  rpc GetGithubUserInstallations(github.GetGithubUserInstallationsRequest)
+      returns (github.GetGithubUserInstallationsResponse);
+  rpc GetGithubUser(github.GetGithubUserRequest)
+      returns (github.GetGithubUserResponse);
+  rpc GetGithubRepo(github.GetGithubRepoRequest)
+      returns (github.GetGithubRepoResponse);
+  rpc GetGithubContent(github.GetGithubContentRequest)
+      returns (github.GetGithubContentResponse);
+  rpc GetGithubTree(github.GetGithubTreeRequest)
+      returns (github.GetGithubTreeResponse);
+  rpc CreateGithubTree(github.CreateGithubTreeRequest)
+      returns (github.CreateGithubTreeResponse);
+  rpc GetGithubBlob(github.GetGithubBlobRequest)
+      returns (github.GetGithubBlobResponse);
+  rpc CreateGithubBlob(github.CreateGithubBlobRequest)
+      returns (github.CreateGithubBlobResponse);
+  rpc CreateGithubPull(github.CreateGithubPullRequest)
+      returns (github.CreateGithubPullResponse);
+  rpc MergeGithubPull(github.MergeGithubPullRequest)
+      returns (github.MergeGithubPullResponse);
+  rpc GetGithubCompare(github.GetGithubCompareRequest)
+      returns (github.GetGithubCompareResponse);
+  rpc GetGithubForks(github.GetGithubForksRequest)
+      returns (github.GetGithubForksResponse);
+  rpc CreateGithubFork(github.CreateGithubForkRequest)
+      returns (github.CreateGithubForkResponse);
+  rpc GetGithubCommits(github.GetGithubCommitsRequest)
+      returns (github.GetGithubCommitsResponse);
+  rpc CreateGithubCommit(github.CreateGithubCommitRequest)
+      returns (github.CreateGithubCommitResponse);
+  rpc UpdateGithubRef(github.UpdateGithubRefRequest)
+      returns (github.UpdateGithubRefResponse);
+  rpc CreateGithubRef(github.CreateGithubRefRequest)
+      returns (github.CreateGithubRefResponse);
 }
