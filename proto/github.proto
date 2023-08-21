@@ -180,3 +180,277 @@ message UnlinkRepoRequest {
 message UnlinkRepoResponse {
   context.ResponseContext response_context = 1;
 }
+
+// GET /user/installations
+message GetGithubUserInstallationsRequest {
+  context.RequestContext request_context = 1;
+}
+
+message UserInstallation {
+  int64 id = 1;
+  string login = 2;
+  string url = 3;
+  string target_type = 4;
+  UserInstallationPermissions permissions = 5;
+}
+
+message UserInstallationPermissions {
+  string administration = 1;
+  string repository_hooks = 2;
+  string pull_requests = 3;
+}
+
+message GetGithubUserInstallationsResponse {
+  context.ResponseContext response_context = 1;
+  repeated UserInstallation installations = 2;
+}
+
+// GET /user
+message GetGithubUserRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetGithubUserResponse {
+  context.ResponseContext response_context = 1;
+  string name = 2;
+  string login = 3;
+  string avatar_url = 4;
+}
+
+// GET /repos/{owner}/{repo}
+message GetGithubRepoRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+}
+
+message GetGithubRepoResponse {
+  context.ResponseContext response_context = 1;
+  string default_branch = 2;
+  RepoPermissions permissions = 4;
+}
+
+message RepoPermissions {
+  bool push = 1;
+}
+
+// GET /repos/{owner}/{repo}/contents/{path}
+message GetGithubContentRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string path = 4;
+  string ref = 5;
+
+  // If true, the request will only check for file existence and not return
+  // contents.
+  bool existence_only = 6;
+}
+
+message GetGithubContentResponse {
+  context.ResponseContext response_context = 1;
+  bytes content = 2;
+}
+
+// GET /repos/{owner}/{repo}/git/trees/{ref}
+message GetGithubTreeRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string ref = 4;
+}
+
+message GetGithubTreeResponse {
+  context.ResponseContext response_context = 1;
+  string sha = 2;
+  repeated TreeNode nodes = 3;
+}
+
+message TreeNode {
+  string path = 1;
+  string sha = 2;
+  string type = 3;
+  string mode = 4;
+  bytes content = 5;
+  int64 size = 6;
+}
+
+// POST /repos/{owner}/{repo}/git/trees
+message CreateGithubTreeRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string base_tree = 4;
+  repeated TreeNode nodes = 5;
+}
+
+message CreateGithubTreeResponse {
+  context.ResponseContext response_context = 1;
+  string sha = 2;
+}
+
+// GET /repos/{owner}/{repo}/git/blobs/{file_sha}
+message GetGithubBlobRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string sha = 4;
+}
+
+message GetGithubBlobResponse {
+  context.ResponseContext response_context = 1;
+  bytes content = 2;
+}
+
+// POST /repos/{owner}/{repo}/git/blobs
+message CreateGithubBlobRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  bytes content = 4;
+}
+
+message CreateGithubBlobResponse {
+  context.ResponseContext response_context = 1;
+  string sha = 5;
+}
+
+// POST /repos/{owner}/{repo}/pulls
+message CreateGithubPullRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string head = 4;
+  string base = 5;
+  string title = 6;
+  string body = 7;
+  bool draft = 8;
+}
+
+message CreateGithubPullResponse {
+  context.ResponseContext response_context = 1;
+  string url = 2;
+  string ref = 4;
+  int64 pull_number = 3;
+}
+
+// PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
+message MergeGithubPullRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  int64 pull_number = 4;
+}
+
+message MergeGithubPullResponse {
+  context.ResponseContext response_context = 1;
+}
+
+// GET /repos/{owner}/{repo}/compare/{basehead}
+message GetGithubCompareRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string base = 4;
+  string head = 5;
+}
+
+message GetGithubCompareResponse {
+  context.ResponseContext response_context = 1;
+  int64 ahead_by = 2;
+  repeated Commit commits = 3;
+  repeated File files = 4;
+}
+
+message Commit {
+  string sha = 1;
+  string tree_sha = 2;
+}
+
+message File {
+  string name = 1;
+  string sha = 2;
+}
+
+// GET /repos/{owner}/{repo}/forks
+message GetGithubForksRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+}
+
+message GetGithubForksResponse {
+  context.ResponseContext response_context = 1;
+  repeated Fork forks = 2;
+}
+
+message Fork {
+  string owner = 1;
+}
+
+// POST /repos/{owner}/{repo}/forks
+message CreateGithubForkRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+}
+
+message CreateGithubForkResponse {
+  context.ResponseContext response_context = 1;
+}
+
+// GET /repos/{owner}/{repo}/commits
+message GetGithubCommitsRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string sha = 4;
+  int64 per_page = 5;
+}
+
+message GetGithubCommitsResponse {
+  context.ResponseContext response_context = 1;
+  repeated Commit commits = 2;
+}
+
+// POST /repos/{owner}/{repo}/git/commits
+message CreateGithubCommitRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string message = 4;
+  string tree = 5;
+  repeated string parents = 6;
+}
+
+message CreateGithubCommitResponse {
+  context.ResponseContext response_context = 1;
+  string sha = 2;
+}
+
+// PATCH /repos/{owner}/{repo}/git/refs/heads/{head}
+message UpdateGithubRefRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string sha = 4;
+  string head = 5;
+  bool force = 6;
+}
+
+message UpdateGithubRefResponse {
+  context.ResponseContext response_context = 1;
+}
+
+// POST /repos/{owner}/{repo}/git/refs
+message CreateGithubRefRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  string sha = 4;
+  string ref = 5;
+}
+
+message CreateGithubRefResponse {
+  context.ResponseContext response_context = 1;
+}

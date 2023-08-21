@@ -633,7 +633,7 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, pref
 			yamlSubmap, ok := yamlMap[k].(map[string]any)
 			if !ok {
 				// this is a value, not a map, and there is no corresponding type
-				alert.UnexpectedEvent("Input YAML contained non-map value %v of type %T at label %s", yamlMap[k], yamlMap[k], strings.Join(label, "."))
+				alert.UnexpectedEvent("invalid_yaml_submap", "Input YAML contained non-map value %v of type %T at label %s", yamlMap[k], yamlMap[k], strings.Join(label, "."))
 				delete(yamlMap, k)
 			}
 			err := RetypeAndFilterYAMLMap(yamlSubmap, t, label)
