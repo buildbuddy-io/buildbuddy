@@ -426,6 +426,9 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 		endTime = startTime
 		startTime = endTime.Add(-duration)
 		newReq := proto.Clone(req).(*stpb.GetTrendRequest)
+		if newReq.Query == nil {
+			newReq.Query = &stpb.TrendQuery{}
+		}
 		newReq.GetQuery().UpdatedBefore = timestamppb.New(endTime)
 		newReq.GetQuery().UpdatedAfter = timestamppb.New(startTime)
 		if rsp.PreviousSummary, err = i.getInvocationSummary(ctx, newReq); err != nil {
