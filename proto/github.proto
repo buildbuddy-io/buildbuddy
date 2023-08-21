@@ -181,7 +181,6 @@ message UnlinkRepoResponse {
   context.ResponseContext response_context = 1;
 }
 
-
 // GET /user/installations
 message GetGithubUserInstallationsRequest {
   context.RequestContext request_context = 1;
@@ -242,7 +241,8 @@ message GetGithubContentRequest {
   string path = 4;
   string ref = 5;
 
-  // If true, the request will only check for file existence and not return contents.
+  // If true, the request will only check for file existence and not return
+  // contents.
   bool existence_only = 6;
 }
 
@@ -287,7 +287,6 @@ message CreateGithubTreeResponse {
   context.ResponseContext response_context = 1;
   string sha = 2;
 }
-
 
 // GET /repos/{owner}/{repo}/git/blobs/{file_sha}
 message GetGithubBlobRequest {
@@ -346,7 +345,6 @@ message MergeGithubPullResponse {
   context.ResponseContext response_context = 1;
 }
 
-
 // GET /repos/{owner}/{repo}/compare/{basehead}
 message GetGithubCompareRequest {
   context.RequestContext request_context = 1;
@@ -377,7 +375,7 @@ message File {
 message GetGithubForksRequest {
   context.RequestContext request_context = 1;
   string owner = 2;
-  string repo = 3; 
+  string repo = 3;
 }
 
 message GetGithubForksResponse {
@@ -393,19 +391,18 @@ message Fork {
 message CreateGithubForkRequest {
   context.RequestContext request_context = 1;
   string owner = 2;
-  string repo = 3; 
+  string repo = 3;
 }
 
 message CreateGithubForkResponse {
   context.ResponseContext response_context = 1;
-  
 }
 
 // GET /repos/{owner}/{repo}/commits
 message GetGithubCommitsRequest {
   context.RequestContext request_context = 1;
   string owner = 2;
-  string repo = 3; 
+  string repo = 3;
   string sha = 4;
   int64 per_page = 5;
 }
@@ -419,7 +416,7 @@ message GetGithubCommitsResponse {
 message CreateGithubCommitRequest {
   context.RequestContext request_context = 1;
   string owner = 2;
-  string repo = 3; 
+  string repo = 3;
   string message = 4;
   string tree = 5;
   repeated string parents = 6;
@@ -434,10 +431,10 @@ message CreateGithubCommitResponse {
 message UpdateGithubRefRequest {
   context.RequestContext request_context = 1;
   string owner = 2;
-  string repo = 3; 
-  string sha = 4; 
-  string head = 5; 
-  bool force = 6; 
+  string repo = 3;
+  string sha = 4;
+  string head = 5;
+  bool force = 6;
 }
 
 message UpdateGithubRefResponse {
@@ -448,9 +445,9 @@ message UpdateGithubRefResponse {
 message CreateGithubRefRequest {
   context.RequestContext request_context = 1;
   string owner = 2;
-  string repo = 3; 
-  string sha = 4; 
-  string ref = 5; 
+  string repo = 3;
+  string sha = 4;
+  string ref = 5;
 }
 
 message CreateGithubRefResponse {
