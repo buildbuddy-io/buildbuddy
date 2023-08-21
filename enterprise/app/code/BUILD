@@ -23,8 +23,8 @@ ts_library(
         "//enterprise/app/code:code_empty",
         "//enterprise/app/code:code_pull_request",
         "//enterprise/app/code:code_sidebar_node",
+        "//proto:github_ts_proto",
         "//proto:runner_ts_proto",
-        "@npm//@octokit/rest",
         "@npm//@types/diff",
         "@npm//@types/react",
         "@npm//diff",
@@ -69,7 +69,8 @@ ts_library(
     name = "code_pull_request",
     srcs = ["code_pull_request.ts"],
     deps = [
-        "@npm//@octokit/rest",
+        "//app/service:rpc_service",
+        "//proto:github_ts_proto",
         "@npm//tslib",
     ],
 )

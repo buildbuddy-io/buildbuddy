@@ -18,7 +18,6 @@ ts_library(
         "//proto:repo_ts_proto",
         "//proto:secrets_ts_proto",
         "//proto:workflow_ts_proto",
-        "@npm//@octokit/rest",
         "@npm//@types/long",
         "@npm//@types/react",
         "@npm//long",
