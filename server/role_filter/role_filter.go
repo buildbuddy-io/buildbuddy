@@ -52,6 +52,24 @@ var (
 		"GetAction",
 		"GetFile",
 		"DeleteFile",
+		// GitHub passthrough endpoints use User's linked GitHub account
+		"GetGithubUserInstallations",
+		"GetGithubUser",
+		"GetGithubRepo",
+		"GetGithubContent",
+		"GetGithubTree",
+		"CreateGithubTree",
+		"GetGithubBlob",
+		"CreateGithubBlob",
+		"CreateGithubPull",
+		"MergeGithubPull",
+		"GetGithubCompare",
+		"GetGithubForks",
+		"CreateGithubFork",
+		"GetGithubCommits",
+		"CreateGithubCommit",
+		"UpdateGithubRef",
+		"CreateGithubRef",
 	}
 
 	// DeveloperRPCs can be called only by developers or admins of the selected
