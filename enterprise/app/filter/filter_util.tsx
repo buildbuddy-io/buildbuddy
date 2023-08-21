@@ -77,12 +77,12 @@ function splitAndTrimTags(param: string | null): string[] {
     .filter((s) => s);
 }
 
-export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams {
+export function getProtoFilterParams(search: URLSearchParams, now?: moment.Moment): ProtoFilterParams {
   const endDate = getEndDate(search);
   return {
     role: parseRoleParam(search.get(ROLE_PARAM_NAME)),
     status: parseStatusParam(search.get(STATUS_PARAM_NAME)),
-    updatedAfter: proto.dateToTimestamp(getStartDate(search)),
+    updatedAfter: proto.dateToTimestamp(getStartDate(search, now)),
     updatedBefore: endDate ? proto.dateToTimestamp(endDate) : undefined,
 
     user: search.get(USER_PARAM_NAME) || undefined,
@@ -101,22 +101,18 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
   };
 }
 
-export function getDefaultStartDate(): Date {
-  return moment()
-    .add(-DEFAULT_LAST_N_DAYS + 1, "days")
-    .toDate();
+export function getDefaultStartDate(now?: moment.Moment): Date {
+  return (now ? moment(now) : moment()).add(-DEFAULT_LAST_N_DAYS + 1, "days").toDate();
 }
 
-export function getStartDate(search: URLSearchParams): Date {
+export function getStartDate(search: URLSearchParams, now?: moment.Moment): Date {
   if (search.get(START_DATE_PARAM_NAME)) {
     return moment(search.get(START_DATE_PARAM_NAME)).toDate();
   }
   if (search.get(LAST_N_DAYS_PARAM_NAME)) {
-    return moment()
-      .add(-Number(search.get(LAST_N_DAYS_PARAM_NAME)) + 1, "days")
-      .toDate();
+    return (now ? moment(now) : moment()).add(-Number(search.get(LAST_N_DAYS_PARAM_NAME)) + 1, "days").toDate();
   }
-  return getDefaultStartDate();
+  return getDefaultStartDate(now);
 }
 
 export function getDisplayDateRange(search: URLSearchParams): { startDate: Date; endDate: Date } {

@@ -40,6 +40,7 @@ const CodeComponent = React.lazy(() => import("../code/code"));
 import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 import Modal from "../../../app/components/modal/modal";
+import NewTrendsComponent from "../trends/new_trends";
 
 interface State {
   user?: User;
@@ -288,7 +289,12 @@ export default class EnterpriseRootComponent extends React.Component {
                   )}
                   {trends && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
-                      <TrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
+                      {capabilities.config.newTrendsUiEnabled && (
+                        <NewTrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
+                      )}
+                      {!capabilities.config.newTrendsUiEnabled && (
+                        <TrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
+                      )}
                     </Suspense>
                   )}
                   {usage && this.state.user && <UsageComponent user={this.state.user} />}

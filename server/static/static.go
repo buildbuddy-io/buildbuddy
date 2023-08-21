@@ -49,6 +49,7 @@ var (
 	timeseriesChartsInTimingProfileEnabled = flag.Bool("app.timeseries_charts_in_timing_profile_enabled", true, "If set, charts with sampled time series data (such as CPU and memory usage) will be shown")
 	workflowHistoryEnabled                 = flag.Bool("app.workflow_history_enabled", false, "If set, information about past action runs for workflows will be shown on the workflows page.")
 	auditLogsUIEnabled                     = flag.Bool("app.audit_logs_ui_enabled", false, "If set, the audit logs UI will be accessible from the sidebar.")
+	newTrendsUIEnabled                     = flag.Bool("app.new_trends_ui_enabled", false, "If set, show a new trends UI with a bit more organization.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -176,6 +177,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,
 		WorkflowHistoryEnabled:                 *workflowHistoryEnabled,
 		AuditLogsUiEnabled:                     *auditLogsUIEnabled,
+		NewTrendsUiEnabled:                     *newTrendsUIEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)
