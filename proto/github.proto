@@ -202,7 +202,7 @@ message UserInstallationPermissions {
 
 message GetGithubUserInstallationsResponse {
   context.ResponseContext response_context = 1;
-  repeated UserInstallation installation = 2;
+  repeated UserInstallation installations = 2;
 }
 
 // GET /user
@@ -263,7 +263,7 @@ message GetGithubTreeRequest {
 message GetGithubTreeResponse {
   context.ResponseContext response_context = 1;
   string sha = 2;
-  repeated TreeNode node = 3;
+  repeated TreeNode nodes = 3;
 }
 
 message TreeNode {
@@ -281,7 +281,7 @@ message CreateGithubTreeRequest {
   string owner = 2;
   string repo = 3;
   string base_tree = 4;
-  repeated TreeNode node = 5;
+  repeated TreeNode nodes = 5;
 }
 
 message CreateGithubTreeResponse {
@@ -358,8 +358,8 @@ message GetGithubCompareRequest {
 message GetGithubCompareResponse {
   context.ResponseContext response_context = 1;
   int64 ahead_by = 2;
-  repeated Commit commit = 3;
-  repeated File file = 4;
+  repeated Commit commits = 3;
+  repeated File files = 4;
 }
 
 message Commit {
@@ -381,7 +381,7 @@ message GetGithubForksRequest {
 
 message GetGithubForksResponse {
   context.ResponseContext response_context = 1;
-  repeated Fork fork = 2;
+  repeated Fork forks = 2;
 }
 
 message Fork {
@@ -410,7 +410,7 @@ message GetGithubCommitsRequest {
 
 message GetGithubCommitsResponse {
   context.ResponseContext response_context = 1;
-  repeated Commit commit = 2;
+  repeated Commit commits = 2;
 }
 
 // POST /repos/{owner}/{repo}/git/commits
