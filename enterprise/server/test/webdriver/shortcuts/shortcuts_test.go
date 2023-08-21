@@ -54,6 +54,8 @@ func TestInvocationNavShortcuts(t *testing.T) {
 	enableShortcuts(t, wt)
 
 	wt.FindBody().SendKeys("ga")
+	require.Equal(t, 3, len(wt.FindAll(".history-invocation-card")))
+
 	wt.FindBody().SendKeys("j")
 	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[2], wt.CurrentURL())
@@ -100,12 +102,15 @@ func enableShortcuts(t *testing.T, wt *webtester.WebTester) {
 }
 
 func addBuild(t *testing.T, wt *webtester.WebTester, target buildbuddy_enterprise.WebTarget) string {
+	// Get the build flags needed for BuildBuddy, including API key, bes results url, bes backend, and remote cache
+	setupPageOpts := []webtester.SetupPageOption{webtester.WithEnableCache}
+	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.HTTPURL(), setupPageOpts...)
+
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
 		"WORKSPACE": "",
 		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
-	// Get the build flags needed for BuildBuddy, including API key, bes results url, bes backend, and remote cache
-	buildArgs := append([]string{"//:a"}, webtester.GetBazelBuildFlags(wt, target.HTTPURL())...)
+	buildArgs := append([]string{"//:a"}, buildbuddyBuildFlags...)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
 	require.NotEmpty(t, result.InvocationID)
 	return result.InvocationID
