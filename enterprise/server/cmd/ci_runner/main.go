@@ -716,17 +716,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
-	if err := ws.setup(ctx); err != nil {
-		return status.WrapError(err, "failed to set up git repo")
-	}
-	action, err := getActionToRun()
-	if err != nil {
-		return status.WrapError(err, "failed to get action to run")
-	}
-
 	wfc := &bespb.WorkflowConfigured{
 		WorkflowId:         *workflowID,
-		ActionName:         action.Name,
+		ActionName:         getActionNameForWorkflowConfiguredEvent(),
 		ActionTriggerEvent: *triggerEvent,
 		PushedRepoUrl:      *pushedRepoURL,
 		PushedBranch:       *pushedBranch,
@@ -735,7 +727,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		TargetBranch:       *targetBranch,
 		Os:                 runtime.GOOS,
 		Arch:               runtime.GOARCH,
-		ContainerImage:     action.ContainerImage,
 	}
 	wfcEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
@@ -745,6 +736,14 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		if err := ar.reporter.Publish(wfcEvent); err != nil {
 			return nil
 		}
+	}
+
+	if err := ws.setup(ctx); err != nil {
+		return status.WrapError(err, "failed to set up git repo")
+	}
+	action, err := getActionToRun()
+	if err != nil {
+		return status.WrapError(err, "failed to get action to run")
 	}
 
 	cic := &bespb.ChildInvocationsConfigured{}
@@ -924,6 +923,18 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 	return nil
+}
+
+// This should only be used for WorkflowConfiguredEvents--it explicitly labels
+// actions with no name so that they can be identified later on.
+func getActionNameForWorkflowConfiguredEvent() string {
+	if *bazelSubCommand != "" {
+		return "run"
+	}
+	if *actionName != "" {
+		return *actionName
+	}
+	return "Unknown action"
 }
 
 func getActionToRun() (*config.Action, error) {

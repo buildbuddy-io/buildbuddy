@@ -1307,8 +1307,9 @@ message WorkflowConfigured {
   // Adheres to the same naming convention as GOARCH in golang.
   string arch = 12;
 
-  // Container image spec for the workflow, if applicable.
-  string container_image = 13;
+  // This formerly held the workflow's configured container image. It was
+  // dropped from protocol so that the event could be published earlier.
+  reserved 13;
 }
 
 // Event describing a workflow command that completed.
