@@ -864,6 +864,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	q := query_builder.NewQuery(`SELECT repo_url,pattern,count(1) AS total_runs, countIf(success) AS successful_runs, toInt64(avg(duration_usec)) AS average_duration FROM Invocations`)
 	q.AddWhereClause("repo_url IN ?", repos)
 	q.AddWhereClause("role = ?", "CI_RUNNER")
+	q.AddWhereClause("notEmpty(pattern)")
 
 	// Clickhouse doesn't have an explicit perms column, so we only do auth
 	// on group ID on this query path.  We don't really have a single-user
