@@ -197,6 +197,7 @@ message UserInstallation {
 message UserInstallationPermissions {
   string administration = 1;
   string repository_hooks = 2;
+  string pull_requests = 3;
 }
 
 message GetGithubUserInstallationsResponse {
