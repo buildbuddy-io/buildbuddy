@@ -255,24 +255,20 @@ func (p *Provider) NewContainer(ctx context.Context, props *platform.Properties,
 		sociStoreKeychainClient: p.sociStoreKeychainClient,
 
 		buildRoot: p.buildRoot,
-		options:   podmanOptions(props),
+		options: &PodmanOptions{
+			ForceRoot:            props.DockerForceRoot,
+			Init:                 props.DockerInit,
+			User:                 props.DockerUser,
+			Network:              props.DockerNetwork,
+			DefaultNetworkMode:   *podmanNetwork,
+			CapAdd:               *podmanCapAdd,
+			Devices:              *podmanDevices,
+			Volumes:              *podmanVolumes,
+			Runtime:              *podmanRuntime,
+			EnableStats:          *podmanEnableStats,
+			EnableImageStreaming: props.EnablePodmanImageStreaming,
+		},
 	}, nil
-}
-
-func podmanOptions(props *platform.Properties) *PodmanOptions {
-	return &PodmanOptions{
-		ForceRoot:            props.DockerForceRoot,
-		Init:                 props.DockerInit,
-		User:                 props.DockerUser,
-		Network:              props.DockerNetwork,
-		DefaultNetworkMode:   *podmanNetwork,
-		CapAdd:               *podmanCapAdd,
-		Devices:              *podmanDevices,
-		Volumes:              *podmanVolumes,
-		Runtime:              *podmanRuntime,
-		EnableStats:          *podmanEnableStats,
-		EnableImageStreaming: props.EnablePodmanImageStreaming,
-	}
 }
 
 type PodmanOptions struct {

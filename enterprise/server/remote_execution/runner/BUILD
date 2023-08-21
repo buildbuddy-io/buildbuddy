@@ -20,7 +20,6 @@ go_library(
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/vfs_server",
-        "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:runner_go_proto",

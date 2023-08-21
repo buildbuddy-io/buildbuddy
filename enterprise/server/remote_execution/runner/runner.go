@@ -53,7 +53,6 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
-	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -76,7 +75,6 @@ var (
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", true, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
-	bareEnableStats           = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
 )
 
 const (
@@ -609,6 +607,9 @@ func (p *pool) initContainerProviders() {
 	if podmanProvider != nil {
 		providers[platform.PodmanContainerType] = podmanProvider
 	}
+	providers[platform.FirecrackerContainerType] = firecracker.NewProvider(p.env, p.imageCacheAuth, *rootDirectory)
+	providers[platform.SandboxContainerType] = &sandbox.Provider{}
+	providers[platform.BareContainerType] = &bare.Provider{}
 
 	p.containerProviders = providers
 }
@@ -1063,10 +1064,6 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 }
 
 func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (*container.TracedCommandContainer, error) {
-	if state.GetContainerState() != nil && props.WorkloadIsolationType != string(platform.FirecrackerContainerType) {
-		return nil, status.UnimplementedErrorf("restoring container state is not implemented for %q isolation", string(props.WorkloadIsolationType))
-	}
-
 	// Overriding in tests.
 	if p.overrideProvider != nil {
 		c, err := p.overrideProvider.NewContainer(ctx, props, task, state, workingDir)
@@ -1076,63 +1073,21 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		return container.NewTracedCommandContainer(c), nil
 	}
 
-	// New way to register container providers.
 	isolationType := platform.ContainerType(props.WorkloadIsolationType)
-	if containerProvider, ok := p.containerProviders[isolationType]; ok {
-		c, err := containerProvider.NewContainer(ctx, props, task, state, workingDir)
-		if err != nil {
-			return nil, err
-		}
-		return container.NewTracedCommandContainer(c), nil
+	if state.GetContainerState() != nil && isolationType != platform.FirecrackerContainerType {
+		return nil, status.UnimplementedErrorf("restoring container state is not implemented for %q isolation", isolationType)
 	}
 
-	// TODO(sluongng): refactor the rest of these to use the new approach above
-	var ctr container.CommandContainer
-	switch platform.ContainerType(props.WorkloadIsolationType) {
-	case platform.FirecrackerContainerType:
-		var vmConfig *fcpb.VMConfiguration
-		savedState := state.GetContainerState().GetFirecrackerState()
-		if savedState == nil {
-			sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
-			vmConfig = &fcpb.VMConfiguration{
-				NumCpus:           int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
-				MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-				ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-				EnableNetworking:  true,
-				InitDockerd:       props.InitDockerd,
-				EnableDockerdTcp:  props.EnableDockerdTCP,
-			}
-		} else {
-			vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
-		}
-		opts := firecracker.ContainerOpts{
-			VMConfiguration: vmConfig,
-			SavedState:      savedState,
-			ContainerImage:  props.ContainerImage,
-			User:            props.DockerUser,
-			// TODO(sluongng): decide whether we should keep this.
-			DockerClient:           nil,
-			ActionWorkingDirectory: workingDir,
-			JailerRoot:             p.buildRoot,
-		}
-		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, task.GetExecutionTask(), opts)
-		if err != nil {
-			return nil, err
-		}
-		ctr = c
-	case platform.SandboxContainerType:
-		opts := &sandbox.Options{
-			Network: props.DockerNetwork,
-		}
-		ctr = sandbox.New(opts)
-	default:
-		opts := &bare.Opts{
-			EnableStats: *bareEnableStats,
-		}
-		ctr = bare.NewBareCommandContainer(opts)
+	containerProvider, ok := p.containerProviders[isolationType]
+	if !ok {
+		return nil, status.UnimplementedErrorf("no container provider registered for %q isolation", isolationType)
 	}
 
-	return container.NewTracedCommandContainer(ctr), nil
+	c, err := containerProvider.NewContainer(ctx, props, task, state, workingDir)
+	if err != nil {
+		return nil, err
+	}
+	return container.NewTracedCommandContainer(c), nil
 }
 
 func keyString(k *rnpb.RunnerKey) string {

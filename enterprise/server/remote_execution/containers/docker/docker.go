@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -66,36 +67,70 @@ type Provider struct {
 	buildRoot      string
 }
 
+var (
+	initDockerClientOnce sync.Once
+	dockerClient         *dockerclient.Client
+	initErr              error
+)
+
+func NewClient() (*dockerclient.Client, error) {
+	initDockerClientOnce.Do(func() {
+		if platform.DockerSocket() == "" {
+			return
+		}
+		_, err := os.Stat(platform.DockerSocket())
+		if os.IsNotExist(err) {
+			initErr = status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
+			return
+		}
+		if err != nil {
+			initErr = status.FailedPreconditionErrorf("Failed to stat docker socket %q: %s", platform.DockerSocket(), err)
+			return
+		}
+
+		dockerSocket := platform.DockerSocket()
+		if !strings.Contains(dockerSocket, "://") {
+			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
+		}
+		dockerClient, initErr = dockerclient.NewClientWithOpts(
+			dockerclient.WithHost(dockerSocket),
+			dockerclient.WithAPIVersionNegotiation(),
+		)
+	})
+
+	return dockerClient, initErr
+}
+
 func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, hostBuildRoot string) (*Provider, error) {
-	if platform.DockerSocket() == "" {
-		return nil, nil
-	}
-	_, err := os.Stat(platform.DockerSocket())
-	if os.IsNotExist(err) {
-		return nil, status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
-	}
-	dockerSocket := platform.DockerSocket()
-	if !strings.Contains(dockerSocket, "://") {
-		dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
-	}
-	dockerClient, err := dockerclient.NewClientWithOpts(
-		dockerclient.WithHost(dockerSocket),
-		dockerclient.WithAPIVersionNegotiation(),
-	)
+	client, err := NewClient()
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
 	}
 
 	return &Provider{
 		env:            env,
-		client:         dockerClient,
+		client:         client,
 		imageCacheAuth: imageCacheAuth,
 		buildRoot:      hostBuildRoot,
 	}, nil
 }
 
 func (p *Provider) NewContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
-	opts := dockerOptions(props)
+	opts := &DockerOptions{
+		ForceRoot:               props.DockerForceRoot,
+		DockerInit:              props.DockerInit,
+		DockerUser:              props.DockerUser,
+		DockerNetwork:           props.DockerNetwork,
+		Socket:                  platform.DockerSocket(),
+		EnableSiblingContainers: *dockerSiblingContainers,
+		UseHostNetwork:          *dockerNetHost,
+		DockerMountMode:         *dockerMountMode,
+		DockerCapAdd:            *dockerCapAdd,
+		DockerDevices:           *dockerDevices,
+		DefaultNetworkMode:      *dockerNetwork,
+		Volumes:                 *dockerVolumes,
+		InheritUserIDs:          *dockerInheritUserIDs,
+	}
 	return NewDockerContainer(p.env, p.imageCacheAuth, p.client, props.ContainerImage, p.buildRoot, opts), nil
 }
 
@@ -113,24 +148,6 @@ type DockerOptions struct {
 	DockerCapAdd            string
 	DockerDevices           []container.DockerDeviceMapping
 	Volumes                 []string
-}
-
-func dockerOptions(props *platform.Properties) *DockerOptions {
-	return &DockerOptions{
-		ForceRoot:               props.DockerForceRoot,
-		DockerInit:              props.DockerInit,
-		DockerUser:              props.DockerUser,
-		DockerNetwork:           props.DockerNetwork,
-		Socket:                  platform.DockerSocket(),
-		EnableSiblingContainers: *dockerSiblingContainers,
-		UseHostNetwork:          *dockerNetHost,
-		DockerMountMode:         *dockerMountMode,
-		DockerCapAdd:            *dockerCapAdd,
-		DockerDevices:           *dockerDevices,
-		DefaultNetworkMode:      *dockerNetwork,
-		Volumes:                 *dockerVolumes,
-		InheritUserIDs:          *dockerInheritUserIDs,
-	}
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.

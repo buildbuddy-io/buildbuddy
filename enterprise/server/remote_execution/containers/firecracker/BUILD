@@ -24,6 +24,7 @@ go_library(
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/remote_execution/platform",
             "//proto:remote_execution_go_proto",
             "//proto:vmvfs_go_proto",
             "//server/environment",
@@ -33,6 +34,7 @@ go_library(
             "//enterprise/server/remote_execution/blockio",
             "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/remote_execution/containers/docker",
             "//enterprise/server/remote_execution/nbd/nbdserver",
             "//enterprise/server/remote_execution/platform",
             "//enterprise/server/remote_execution/snaploader",
