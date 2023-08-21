@@ -42,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -61,24 +60,14 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
-	dockerclient "github.com/docker/docker/client"
 )
 
 var (
-	rootDirectory           = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
-	hostRootDirectory       = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
-	dockerMountMode         = flag.String("executor.docker_mount_mode", "", "Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/")
-	dockerNetHost           = flagutil.New("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.", flagutil.DeprecatedTag("Use --executor.docker_network=host instead."))
-	dockerNetwork           = flag.String("executor.docker_network", "", "If set, set docker/podman --network to this value by default. Can be overridden per-action with the `dockerNetwork` exec property, which accepts values 'off' (--network=none) or 'bridge' (--network=<default>).")
-	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
-	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
-	dockerDevices           = flagutil.New("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
-	dockerVolumes           = flagutil.New("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
-	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
-	podmanRuntime           = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
-	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
-	warmupWorkflowImages    = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
-	maxRunnerCount          = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
+	rootDirectory        = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
+	hostRootDirectory    = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
+	warmupTimeoutSecs    = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
+	warmupWorkflowImages = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
+	maxRunnerCount       = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerDiskSizeBytes = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
@@ -86,7 +75,6 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", true, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
-	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
 	bareEnableStats           = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
 )
@@ -540,22 +528,23 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	return res.Error
 }
 
-type ContainerProvider func(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState, workDir string) (*container.TracedCommandContainer, error)
+type ContainerProvider interface {
+	NewContainer(context.Context, *platform.Properties, *repb.ScheduledTask, *rnpb.RunnerState, string) (container.CommandContainer, error)
+}
 
 type PoolOptions struct {
 	// ContainerProvider is an optional implementation overriding
 	// newContainerImpl.
-	ContainerProvider ContainerProvider
+	CtrProvider ContainerProvider
 }
 
 type pool struct {
-	env            environment.Env
-	imageCacheAuth *container.ImageCacheAuthenticator
-	podID          string
-	buildRoot      string
-	dockerClient   *dockerclient.Client
-	podmanProvider *podman.Provider
-	newContainer   ContainerProvider
+	env                environment.Env
+	imageCacheAuth     *container.ImageCacheAuthenticator
+	podID              string
+	buildRoot          string
+	overrideProvider   ContainerProvider
+	containerProviders map[platform.ContainerType]ContainerProvider
 
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
@@ -580,45 +569,20 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
 
-	var dockerClient *dockerclient.Client
-	if platform.DockerSocket() != "" {
-		_, err := os.Stat(platform.DockerSocket())
-		if os.IsNotExist(err) {
-			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
-		}
-		dockerSocket := platform.DockerSocket()
-		if !strings.Contains(dockerSocket, "://") {
-			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
-		}
-		dockerClient, err = dockerclient.NewClientWithOpts(
-			dockerclient.WithHost(dockerSocket),
-			dockerclient.WithAPIVersionNegotiation(),
-		)
-		if err != nil {
-			return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
-		}
-	}
-
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-
-	podmanProvider, err := podman.NewProvider(env, imageCacheAuth, *rootDirectory)
-	if err != nil {
-		return nil, err
-	}
 
 	p := &pool{
 		env:            env,
 		podID:          podID,
-		dockerClient:   dockerClient,
-		podmanProvider: podmanProvider,
 		buildRoot:      *rootDirectory,
 		imageCacheAuth: imageCacheAuth,
 		runners:        []*commandRunner{},
 	}
-	p.newContainer = p.newContainerImpl
-	if opts.ContainerProvider != nil {
-		p.newContainer = opts.ContainerProvider
+	p.initContainerProviders()
+	if opts.CtrProvider != nil {
+		p.overrideProvider = opts.CtrProvider
 	}
+
 	p.setLimits()
 	hc.RegisterShutdownFunction(p.Shutdown)
 
@@ -627,6 +591,26 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 	}
 
 	return p, nil
+}
+
+func (p *pool) initContainerProviders() {
+	providers := make(map[platform.ContainerType]ContainerProvider)
+	dockerProvider, err := docker.NewProvider(p.env, p.imageCacheAuth, p.hostBuildRoot())
+	if err != nil {
+		log.Warningf("Failed to initialize docker container provider: %s", err)
+	}
+	if dockerProvider != nil {
+		providers[platform.DockerContainerType] = dockerProvider
+	}
+	podmanProvider, err := podman.NewProvider(p.env, p.imageCacheAuth, *rootDirectory)
+	if err != nil {
+		log.Warningf("Failed to initialize podman container provider: %s", err)
+	}
+	if podmanProvider != nil {
+		providers[platform.PodmanContainerType] = podmanProvider
+	}
+
+	p.containerProviders = providers
 }
 
 func (p *pool) GetBuildRoot() string {
@@ -798,20 +782,6 @@ func (p *pool) hostBuildRoot() string {
 	// People might have conventions other than executor-data for the volume name + remotebuilds
 	// for the build root dir.
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
-}
-
-func (p *pool) dockerOptions() *docker.DockerOptions {
-	return &docker.DockerOptions{
-		Socket:                  platform.DockerSocket(),
-		EnableSiblingContainers: *dockerSiblingContainers,
-		UseHostNetwork:          *dockerNetHost,
-		DockerMountMode:         *dockerMountMode,
-		DockerCapAdd:            *dockerCapAdd,
-		DockerDevices:           *dockerDevices,
-		DefaultNetworkMode:      *dockerNetwork,
-		Volumes:                 *dockerVolumes,
-		InheritUserIDs:          *dockerInheritUserIDs,
-	}
 }
 
 func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
@@ -1092,45 +1062,33 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	return r, nil
 }
 
-func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (*container.TracedCommandContainer, error) {
-	if state.GetContainerState() != nil {
-		if props.WorkloadIsolationType != string(platform.FirecrackerContainerType) {
-			return nil, status.UnimplementedErrorf("restoring container state is not implemented for %q isolation", string(props.WorkloadIsolationType))
-		}
+func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (*container.TracedCommandContainer, error) {
+	if state.GetContainerState() != nil && props.WorkloadIsolationType != string(platform.FirecrackerContainerType) {
+		return nil, status.UnimplementedErrorf("restoring container state is not implemented for %q isolation", string(props.WorkloadIsolationType))
 	}
 
-	var ctr container.CommandContainer
-	switch platform.ContainerType(props.WorkloadIsolationType) {
-	case platform.DockerContainerType:
-		opts := p.dockerOptions()
-		opts.ForceRoot = props.DockerForceRoot
-		opts.DockerInit = props.DockerInit
-		opts.DockerUser = props.DockerUser
-		opts.DockerNetwork = props.DockerNetwork
-		ctr = docker.NewDockerContainer(
-			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
-			p.hostBuildRoot(), opts,
-		)
-	case platform.PodmanContainerType:
-		opts := &podman.PodmanOptions{
-			ForceRoot:            props.DockerForceRoot,
-			Init:                 props.DockerInit,
-			User:                 props.DockerUser,
-			Network:              props.DockerNetwork,
-			DefaultNetworkMode:   *dockerNetwork,
-			CapAdd:               *dockerCapAdd,
-			Devices:              *dockerDevices,
-			Volumes:              *dockerVolumes,
-			Runtime:              *podmanRuntime,
-			EnableStats:          *podmanEnableStats,
-			EnableImageStreaming: props.EnablePodmanImageStreaming,
-		}
-		imageIsPublic := props.ContainerRegistryUsername == "" && props.ContainerRegistryPassword == ""
-		c, err := p.podmanProvider.NewContainer(ctx, props.ContainerImage, imageIsPublic, opts)
+	// Overriding in tests.
+	if p.overrideProvider != nil {
+		c, err := p.overrideProvider.NewContainer(ctx, props, task, state, workingDir)
 		if err != nil {
 			return nil, err
 		}
-		ctr = c
+		return container.NewTracedCommandContainer(c), nil
+	}
+
+	// New way to register container providers.
+	isolationType := platform.ContainerType(props.WorkloadIsolationType)
+	if containerProvider, ok := p.containerProviders[isolationType]; ok {
+		c, err := containerProvider.NewContainer(ctx, props, task, state, workingDir)
+		if err != nil {
+			return nil, err
+		}
+		return container.NewTracedCommandContainer(c), nil
+	}
+
+	// TODO(sluongng): refactor the rest of these to use the new approach above
+	var ctr container.CommandContainer
+	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.FirecrackerContainerType:
 		var vmConfig *fcpb.VMConfiguration
 		savedState := state.GetContainerState().GetFirecrackerState()
@@ -1148,11 +1106,12 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
 		}
 		opts := firecracker.ContainerOpts{
-			VMConfiguration:        vmConfig,
-			SavedState:             savedState,
-			ContainerImage:         props.ContainerImage,
-			User:                   props.DockerUser,
-			DockerClient:           p.dockerClient,
+			VMConfiguration: vmConfig,
+			SavedState:      savedState,
+			ContainerImage:  props.ContainerImage,
+			User:            props.DockerUser,
+			// TODO(sluongng): decide whether we should keep this.
+			DockerClient:           nil,
 			ActionWorkingDirectory: workingDir,
 			JailerRoot:             p.buildRoot,
 		}
@@ -1172,6 +1131,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 		}
 		ctr = bare.NewBareCommandContainer(opts)
 	}
+
 	return container.NewTracedCommandContainer(ctr), nil
 }
 
