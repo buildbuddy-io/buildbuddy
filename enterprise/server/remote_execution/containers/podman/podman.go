@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -46,7 +47,6 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	godigest "github.com/opencontainers/go-digest"
 )
 
@@ -73,10 +73,6 @@ var (
 
 	sociArtifactStoreTarget = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
 	sociStoreKeychainPort   = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
-	podmanNetwork           = flagtypes.Alias[string]("executor.docker_network", "executor.podman_network")
-	podmanCapAdd            = flagtypes.Alias[string]("docker_cap_add", "podman_cap_add")
-	podmanDevices           = flagtypes.Alias[[]container.DockerDeviceMapping]("executor.docker_devices", "executor.podman_devices")
-	podmanVolumes           = flagtypes.Alias[[]string]("executor.docker_volumes", "executor.podman_volumes")
 	podmanRuntime           = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanEnableStats       = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 
@@ -245,7 +241,27 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 		if err := disk.WaitUntilExists(context.Background(), sociStorePath, disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("soci-store not available: %s", err)
 		}
+
 	}
+
+	// Re-use docker flags for podman.
+	networkMode, err := flagutil.GetDereferencedValue[string]("executor.docker_network")
+	if err != nil {
+		return nil, err
+	}
+	capAdd, err := flagutil.GetDereferencedValue[string]("docker_cap_add")
+	if err != nil {
+		return nil, err
+	}
+	devices, err := flagutil.GetDereferencedValue[[]container.DockerDeviceMapping]("executor.docker_devices")
+	if err != nil {
+		return nil, err
+	}
+	volumes, err := flagutil.GetDereferencedValue[[]string]("executor.docker_volumes")
+	if err != nil {
+		return nil, err
+	}
+
 	return &podmanCommandContainer{
 		env:                     p.env,
 		imageCacheAuth:          p.imageCacheAuth,
@@ -260,10 +276,10 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 			Init:                 props.DockerInit,
 			User:                 props.DockerUser,
 			Network:              props.DockerNetwork,
-			DefaultNetworkMode:   *podmanNetwork,
-			CapAdd:               *podmanCapAdd,
-			Devices:              *podmanDevices,
-			Volumes:              *podmanVolumes,
+			DefaultNetworkMode:   networkMode,
+			CapAdd:               capAdd,
+			Devices:              devices,
+			Volumes:              volumes,
 			Runtime:              *podmanRuntime,
 			EnableStats:          *podmanEnableStats,
 			EnableImageStreaming: props.EnablePodmanImageStreaming,
