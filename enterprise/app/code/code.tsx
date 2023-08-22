@@ -470,7 +470,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   async handleReviewClicked() {
-    if (!this.props.user.githubToken) {
+    if (!this.props.user.githubLinked) {
       this.handleGitHubClicked();
       return;
     }
@@ -558,7 +558,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   handleUpdatePR() {
-    if (!this.props.user.githubToken) {
+    if (!this.props.user.githubLinked) {
       this.handleGitHubClicked();
       return;
     }
@@ -902,7 +902,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                     ))}
               </div>
               <div className="code-sidebar-actions">
-                {!this.props.user.githubToken && (
+                {!this.props.user.githubLinked && (
                   <button onClick={this.handleGitHubClicked.bind(this)}>
                     <Link className="icon" /> Link GitHub
                   </button>

@@ -85,7 +85,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
       linkedReposLoading: false,
       linkedReposResponse: null,
     });
-    if (!this.props.user.githubToken) return;
+    if (!this.props.user.githubLinked) return;
 
     this.setState({ installationsLoading: true });
     this.fetchInstallationsRPC = rpcService.service
@@ -115,7 +115,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
   private search() {
     this.searchRPC?.cancel();
     this.setState({ accessibleReposLoading: false, accessibleReposResponse: null });
-    if (!this.props.user.githubToken) return;
+    if (!this.props.user.githubLinked) return;
 
     this.setState({ accessibleReposLoading: true });
 
@@ -252,7 +252,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
           </div>
         </div>
         <div className="container content-container">
-          {!this.props.user.githubToken && (
+          {!this.props.user.githubLinked && (
             <Banner type="info" className="install-app-banner">
               <div>To get started, link a GitHub account to your BuildBuddy account.</div>
               <LinkButton className="big-button" href={this.githubLinkURL()}>
@@ -260,7 +260,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
               </LinkButton>
             </Banner>
           )}
-          {this.props.user.githubToken && !this.state.installationsResponse?.installations?.length && (
+          {this.props.user.githubLinked && !this.state.installationsResponse?.installations?.length && (
             <Banner type="info" className="install-app-banner">
               <div>To link a repository, install the BuildBuddy app on GitHub.</div>
               <LinkButton className="big-button" href={this.appInstallURL()}>
