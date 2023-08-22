@@ -4,12 +4,11 @@ import { User } from "../../../app/auth/auth_service";
 import SidebarNodeComponent, { compareNodes } from "./code_sidebar_node";
 import { Subscription } from "rxjs";
 import * as monaco from "monaco-editor";
-import { Octokit } from "@octokit/rest";
 import * as diff from "diff";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { ArrowLeft, ArrowUpCircle, Code, Download, Link, PlusCircle, Send, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, Code, Download, Key, Link, PlusCircle, Send, XCircle } from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
 import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
@@ -24,6 +23,8 @@ import Dialog, {
 } from "../../../app/components/dialog/dialog";
 import Modal from "../../../app/components/modal/modal";
 import { parseLcov } from "../../../app/util/lcov";
+import { github } from "../../../proto/github_ts_proto";
+import Long from "long";
 
 interface Props {
   user: User;
@@ -33,10 +34,11 @@ interface Props {
 }
 interface State {
   commitSHA: string;
-  repoResponse: any;
-  treeResponse: any;
+  repoResponse: github.GetGithubRepoResponse | undefined;
+  treeResponse: github.GetGithubTreeResponse | undefined;
+  installationsResponse: github.GetGithubUserInstallationsResponse | undefined;
   treeShaToExpanded: Map<string, boolean>;
-  treeShaToChildrenMap: Map<string, any[]>;
+  treeShaToChildrenMap: Map<string, github.TreeNode[]>;
   fullPathToModelMap: Map<string, any>;
   fullPathToDiffModelMap: Map<string, any>;
   originalFileContents: Map<string, string>;
@@ -44,7 +46,7 @@ interface State {
   mergeConflicts: Map<string, string>;
   pathToIncludeChanges: Map<string, boolean>;
   prLink: string;
-  prNumber: string;
+  prNumber: Long;
   prBranch: string;
   prTitle: string;
   prBody: string;
@@ -56,6 +58,8 @@ interface State {
 }
 
 const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 
 // TODO(siggisim): Add links to the code editor from anywhere we reference a repo
 // TODO(siggisim): Add branch / workspace selection
@@ -65,6 +69,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     commitSHA: "",
     repoResponse: undefined,
     treeResponse: undefined,
+    installationsResponse: undefined,
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, any[]>(),
     fullPathToModelMap: new Map<string, any>(),
@@ -75,7 +80,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     pathToIncludeChanges: new Map<string, boolean>(),
     prLink: "",
     prBranch: "",
-    prNumber: "",
+    prNumber: new Long(0),
 
     requestingReview: false,
     updatingPR: false,
@@ -92,25 +97,16 @@ export default class CodeComponent extends React.Component<Props, State> {
   codeViewer = React.createRef<HTMLDivElement>();
   diffViewer = React.createRef<HTMLDivElement>();
 
-  octokit?: Octokit;
-
   subscription?: Subscription;
   fetchedInitialContent = false;
 
   componentWillMount() {
     document.title = `Code | BuildBuddy`;
 
-    this.updateUser();
     this.fetchCode();
 
     this.subscription = rpcService.events.subscribe({
       next: (name) => name === "refresh" && this.fetchCode(),
-    });
-  }
-
-  updateUser() {
-    this.octokit = new Octokit({
-      auth: this.props.user.githubToken,
     });
   }
 
@@ -151,7 +147,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     const invocationID = this.props.search.get("invocation_id") || "";
     let filename = this.props.search.get("filename");
     if (this.isSingleFile() && bytestreamURL) {
-      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result: any) => {
+      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result) => {
         this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
       });
       return;
@@ -160,52 +156,60 @@ export default class CodeComponent extends React.Component<Props, State> {
     const lcovURL = this.props.search.get("lcov");
     const commit = this.props.search.get("commit");
     if (this.isSingleFile() && lcovURL) {
-      this.octokit!.rest.repos.getContent({
-        owner: this.currentOwner(),
-        repo: this.currentRepo(),
-        path: this.currentPath(),
-        ref: commit || this.state.commitSHA || this.state.repoResponse.data.default_branch,
-      }).then((response) => {
-        this.navigateToContent(this.currentPath(), (response.data as any).content);
-        rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result: any) => {
-          let records = parseLcov(result);
-          for (let record of records) {
-            if (record.sourceFile == this.currentPath()) {
-              this.editor.deltaDecorations(
-                this.editor.getModel().getAllDecorations(),
-                record.data.map((r) => {
-                  const parts = r.split(",");
-                  const lineNum = parseInt(parts[0]);
-                  const hit = parts[1] == "1";
-                  return {
-                    range: new monaco.Range(lineNum, 0, lineNum, 0),
-                    options: {
-                      isWholeLine: true,
-                      className: hit ? "codeCoverageHit" : "codeCoverageMiss",
-                      marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
-                      minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
-                    },
-                  };
-                })
-              );
+      rpcService.service
+        .getGithubContent(
+          new github.GetGithubContentRequest({
+            owner: this.currentOwner(),
+            repo: this.currentRepo(),
+            path: this.currentPath(),
+            ref: commit || this.state.commitSHA || this.state.repoResponse?.defaultBranch,
+          })
+        )
+        .then((response) => {
+          this.navigateToContent(this.currentPath(), response.content);
+          rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result) => {
+            let records = parseLcov(result);
+            for (let record of records) {
+              if (record.sourceFile == this.currentPath()) {
+                this.editor.deltaDecorations(
+                  this.editor.getModel().getAllDecorations(),
+                  record.data.map((r) => {
+                    const parts = r.split(",");
+                    const lineNum = parseInt(parts[0]);
+                    const hit = parts[1] == "1";
+                    return {
+                      range: new monaco.Range(lineNum, 0, lineNum, 0),
+                      options: {
+                        isWholeLine: true,
+                        className: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                        marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                        minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
+                      },
+                    };
+                  })
+                );
+              }
             }
-          }
-          console.log(result);
+            console.log(result);
+          });
         });
-      });
       return;
     }
 
     if (this.currentPath()) {
       if (!this.state.fullPathToModelMap.has(this.currentPath())) {
-        this.octokit!.rest.repos.getContent({
-          owner: this.currentOwner(),
-          repo: this.currentRepo(),
-          path: this.currentPath(),
-          ref: this.state.commitSHA || this.state.repoResponse.data.default_branch,
-        }).then((response) => {
-          this.navigateToContent(this.currentPath(), (response.data as any).content);
-        });
+        rpcService.service
+          .getGithubContent(
+            new github.GetGithubContentRequest({
+              owner: this.currentOwner(),
+              repo: this.currentRepo(),
+              path: this.currentPath(),
+              ref: this.state.commitSHA || this.state.repoResponse?.defaultBranch,
+            })
+          )
+          .then((response) => {
+            this.navigateToContent(this.currentPath(), response.content);
+          });
       }
 
       if (this.state.mergeConflicts.has(this.currentPath())) {
@@ -253,9 +257,6 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props, prevState: State) {
-    if (this.props.user != prevProps.user) {
-      this.updateUser();
-    }
     if (!prevState.repoResponse && this.state.repoResponse) {
       this.fetchInitialContent();
     }
@@ -291,14 +292,24 @@ export default class CodeComponent extends React.Component<Props, State> {
       return;
     }
 
-    let repoResponse = await this.octokit!.request(`GET /repos/${this.currentOwner()}/${this.currentRepo()}`);
-    let commit = this.state.commitSHA || repoResponse.data.default_branch;
-    this.octokit!.request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${commit}`).then(
-      (treeResponse: any) => {
-        console.log(treeResponse);
-        this.updateState({ repoResponse: repoResponse, treeResponse: treeResponse, commitSHA: treeResponse.data.sha });
-      }
+    let repoResponse = await rpcService.service.getGithubRepo(
+      new github.GetGithubRepoRequest({ owner: this.currentOwner(), repo: this.currentRepo() })
     );
+    console.log(repoResponse);
+    let commit = this.state.commitSHA || repoResponse.defaultBranch;
+
+    rpcService.service
+      .getGithubTree(
+        new github.GetGithubTreeRequest({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          ref: commit,
+        })
+      )
+      .then((treeResponse) => {
+        console.log(treeResponse);
+        this.updateState({ repoResponse: repoResponse, treeResponse: treeResponse, commitSHA: treeResponse.sha });
+      });
   }
 
   // TODO(siggisim): Support deleting files
@@ -315,32 +326,42 @@ export default class CodeComponent extends React.Component<Props, State> {
         return;
       }
 
-      this.octokit!.request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${node.sha}`).then(
-        (response: any) => {
+      rpcService.service
+        .getGithubTree(
+          new github.GetGithubTreeRequest({
+            owner: this.currentOwner(),
+            repo: this.currentRepo(),
+            ref: node.sha,
+          })
+        )
+        .then((response) => {
           this.state.treeShaToExpanded.set(node.sha, true);
-          this.state.treeShaToChildrenMap.set(node.sha, response.data.tree);
+          this.state.treeShaToChildrenMap.set(node.sha, response.nodes);
           this.updateState({
             treeShaToChildrenMap: this.state.treeShaToChildrenMap,
           });
           console.log(response);
-        }
-      );
+        });
       return;
     }
 
-    this.octokit!.rest.git.getBlob({
-      owner: this.currentOwner(),
-      repo: this.currentRepo(),
-      file_sha: node.sha,
-    }).then((response: any) => {
-      console.log(response);
-      this.navigateToContent(fullPath, response.data.content);
-      this.navigateToPath(fullPath);
-    });
+    rpcService.service
+      .getGithubBlob(
+        new github.GetGithubBlobRequest({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          sha: node.sha,
+        })
+      )
+      .then((response) => {
+        console.log(response);
+        this.navigateToContent(fullPath, response.content);
+        this.navigateToPath(fullPath);
+      });
   }
 
-  navigateToContent(fullPath: string, content: string) {
-    let fileContents = atob(content);
+  navigateToContent(fullPath: string, content: Uint8Array) {
+    let fileContents = textDecoder.decode(content);
     this.state.originalFileContents.set(fullPath, fileContents);
     this.updateState({
       originalFileContents: this.state.originalFileContents,
@@ -406,11 +427,10 @@ export default class CodeComponent extends React.Component<Props, State> {
   getRepoState() {
     let state = new runner.RunRequest.RepoState();
     state.commitSha = this.state.commitSHA;
-    state.branch = this.state.repoResponse.data.default_branch;
-    var enc = new TextEncoder();
+    state.branch = this.state.repoResponse?.defaultBranch!;
     for (let path of this.state.changes.keys()) {
       state.patch.push(
-        enc.encode(
+        textEncoder.encode(
           diff.createTwoFilesPatch(
             `a/${path}`,
             `b/${path}`,
@@ -425,6 +445,10 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   async handleShowReviewModalClicked() {
     await new Promise((resolve) => this.handleUpdateCommitSha(resolve));
+
+    let installationResponse = await rpcService.service.getGithubUserInstallations(
+      new github.GetGithubUserInstallationsRequest()
+    );
 
     if (this.state.mergeConflicts.size > 0) {
       alert_service.error(
@@ -441,6 +465,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       prTitle: `Update ${filenames}`,
       prBody: `Update ${filenames}`,
       reviewRequestModalVisible: true,
+      installationsResponse: installationResponse,
     });
   }
 
@@ -456,7 +481,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
     );
 
-    let response = await createPullRequest(this.octokit!, {
+    let response = await createPullRequest({
       owner: this.currentOwner(),
       repo: this.currentRepo(),
       title: this.state.prTitle,
@@ -465,7 +490,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       changes: [
         {
           files: Object.fromEntries(
-            filteredEntries.map(([key, value]) => [key, { content: btoa(value), encoding: "base64" }]) // Convert to base64 for github to support utf-8
+            filteredEntries.map(([key, value]) => [key, { content: textEncoder.encode(value) }])
           ),
           commit: this.state.prBody,
         },
@@ -475,12 +500,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({
       requestingReview: false,
       reviewRequestModalVisible: false,
-      prLink: response.data.html_url,
-      prNumber: response.data.number,
-      prBranch: response.data.head.ref,
+      prLink: response.url,
+      prNumber: response.pullNumber,
+      prBranch: response.ref,
     });
 
-    window.open(response.data.html_url, "_blank");
+    window.open(response.url, "_blank");
 
     console.log(response);
   }
@@ -546,14 +571,14 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     let filenames = filteredEntries.map(([key, value]) => key).join(", ");
 
-    updatePullRequest(this.octokit!, {
+    updatePullRequest({
       owner: this.currentOwner(),
       repo: this.currentRepo(),
       head: this.state.prBranch,
       changes: [
         {
           files: Object.fromEntries(
-            filteredEntries.map(([key, value]) => [key, { content: btoa(value), encoding: "base64" }]) // Convert to base64 for github to support utf-8
+            filteredEntries.map(([key, value]) => [key, { content: textEncoder.encode(value) }])
           ),
           commit: `Update ${filenames}`,
         },
@@ -566,21 +591,25 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   handleClearPRClicked() {
     this.updateState({
-      prNumber: "",
+      prNumber: new Long(0),
       prLink: "",
       prBranch: "",
     });
   }
 
   handleMergePRClicked() {
-    this.octokit!.rest.pulls.merge({
-      owner: this.currentOwner(),
-      repo: this.currentRepo(),
-      pull_number: Number(this.state.prNumber),
-    }).then(() => {
-      window.open(this.state.prLink, "_blank");
-      this.handleClearPRClicked();
-    });
+    rpcService.service
+      .mergeGithubPull(
+        new github.MergeGithubPullRequest({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          pullNumber: this.state.prNumber,
+        })
+      )
+      .then(() => {
+        window.open(this.state.prLink, "_blank");
+        this.handleClearPRClicked();
+      });
   }
 
   handleRevertClicked(path: string, event: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
@@ -592,60 +621,71 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   // If a callback is set, alert messages will not be shown.
   handleUpdateCommitSha(callback?: (conflicts: number) => void) {
-    this.octokit!.request(
-      `/repos/${this.currentOwner()}/${this.currentRepo()}/compare/${this.state.commitSHA}...${
-        this.state.repoResponse.data.default_branch
-      }`
-    ).then((response: any) => {
-      console.log(response);
-      let newCommits = response.data.ahead_by;
-      let newSha = response.data.commits.pop()?.sha;
-      if (newCommits == 0) {
-        if (callback) {
-          callback(0);
-        } else {
-          alert_service.success(`You're already up to date!`);
+    rpcService.service
+      .getGithubCompare(
+        new github.GetGithubCompareRequest({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          base: this.state.commitSHA,
+          head: this.state.repoResponse?.defaultBranch,
+        })
+      )
+      .then((response) => {
+        console.log(response);
+        let newCommits = response.aheadBy;
+        let newSha = response.commits.pop()?.sha;
+        if (newCommits == new Long(0)) {
+          if (callback) {
+            callback(0);
+          } else {
+            alert_service.success(`You're already up to date!`);
+          }
+          return;
         }
-        return;
-      }
 
-      let conflictCount = 0;
-      for (let file of response.data.files) {
-        if (this.state.changes.has(file.filename)) {
-          this.state.mergeConflicts.set(file.filename, file.sha);
-          conflictCount++;
+        let conflictCount = 0;
+        for (let file of response.files) {
+          if (this.state.changes.has(file.name)) {
+            this.state.mergeConflicts.set(file.name, file.sha);
+            conflictCount++;
+          }
         }
-      }
 
-      this.octokit!.request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${newSha}`).then(
-        (response: any) => {
-          console.log(response);
-          this.updateState(
-            { treeResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
-            () => {
-              if (callback) {
-                callback(conflictCount);
-              } else {
-                let message = `You were ${newCommits} commits behind head. You are now up to date!`;
-                if (conflictCount > 0) {
-                  message += ` There are ${conflictCount} conflicts you'll need to resolve below`;
-                  alert_service.error(message);
+        rpcService.service
+          .getGithubTree(
+            new github.GetGithubTreeRequest({
+              owner: this.currentOwner(),
+              repo: this.currentRepo(),
+              ref: newSha,
+            })
+          )
+          .then((response) => {
+            console.log(response);
+            this.updateState(
+              { treeResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
+              () => {
+                if (callback) {
+                  callback(conflictCount);
                 } else {
-                  alert_service.success(message);
+                  let message = `You were ${newCommits} commits behind head. You are now up to date!`;
+                  if (conflictCount > 0) {
+                    message += ` There are ${conflictCount} conflicts you'll need to resolve below`;
+                    alert_service.error(message);
+                  } else {
+                    alert_service.success(message);
+                  }
+                }
+                if (this.state.mergeConflicts.has(this.currentPath())) {
+                  this.handleViewConflictClicked(
+                    this.currentPath(),
+                    this.state.mergeConflicts.get(this.currentPath())!,
+                    undefined
+                  );
                 }
               }
-              if (this.state.mergeConflicts.has(this.currentPath())) {
-                this.handleViewConflictClicked(
-                  this.currentPath(),
-                  this.state.mergeConflicts.get(this.currentPath())!,
-                  undefined
-                );
-              }
-            }
-          );
-        }
-      );
-    });
+            );
+          });
+      });
   }
 
   onTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -672,31 +712,35 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   handleViewConflictClicked(fullPath: string, sha: string, event?: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
     event?.stopPropagation();
-    this.octokit!.rest.git.getBlob({
-      owner: this.currentOwner(),
-      repo: this.currentRepo(),
-      file_sha: sha,
-    }).then((response: any) => {
-      console.log(response);
-      if (!this.diffEditor) {
-        this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
-      }
-      let fileContents = atob(response.data.content);
-      let editedModel = this.state.fullPathToModelMap.get(fullPath);
-      let uri = monaco.Uri.file(`${fullPath}-${sha}`);
-      let latestModel = monaco.editor.getModel(uri);
-      if (!latestModel) {
-        latestModel = monaco.editor.createModel(fileContents, undefined, uri);
-      }
-      let diffModel = { original: latestModel, modified: editedModel };
-      this.diffEditor.setModel(diffModel);
-      this.state.fullPathToDiffModelMap.set(fullPath, diffModel);
+    rpcService.service
+      .getGithubBlob(
+        new github.GetGithubBlobRequest({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          sha: sha,
+        })
+      )
+      .then((response) => {
+        console.log(response);
+        if (!this.diffEditor) {
+          this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
+        }
+        let fileContents = textDecoder.decode(response.content);
+        let editedModel = this.state.fullPathToModelMap.get(fullPath);
+        let uri = monaco.Uri.file(`${fullPath}-${sha}`);
+        let latestModel = monaco.editor.getModel(uri);
+        if (!latestModel) {
+          latestModel = monaco.editor.createModel(fileContents, undefined, uri);
+        }
+        let diffModel = { original: latestModel, modified: editedModel };
+        this.diffEditor.setModel(diffModel);
+        this.state.fullPathToDiffModelMap.set(fullPath, diffModel);
 
-      this.navigateToPath(fullPath);
-      this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
-        this.diffEditor.layout();
+        this.navigateToPath(fullPath);
+        this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+          this.diffEditor.layout();
+        });
       });
-    });
   }
 
   handleCloseReviewModal() {
@@ -725,6 +769,9 @@ export default class CodeComponent extends React.Component<Props, State> {
     }, 0);
 
     let showDiffView = this.state.fullPathToDiffModelMap.has(this.currentPath());
+    let applicableInstallation = this.state.installationsResponse?.installations.find(
+      (i) => i.login == this.currentOwner()
+    );
     return (
       <div className="code-editor">
         <div className="code-menu">
@@ -842,9 +889,9 @@ export default class CodeComponent extends React.Component<Props, State> {
             <div className="code-sidebar">
               <div className="code-sidebar-tree">
                 {this.state.treeResponse &&
-                  this.state.treeResponse.data.tree
+                  this.state.treeResponse.nodes
                     .sort(compareNodes)
-                    .map((node: any) => (
+                    .map((node) => (
                       <SidebarNodeComponent
                         node={node}
                         treeShaToExpanded={this.state.treeShaToExpanded}
@@ -942,8 +989,18 @@ export default class CodeComponent extends React.Component<Props, State> {
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
+                {applicableInstallation?.permissions?.pullRequests == "read" && (
+                  <FilledButton
+                    className="code-request-review-button"
+                    onClick={() =>
+                      window.open(applicableInstallation?.url + `/permissions/update`, "_blank") &&
+                      this.setState({ installationsResponse: undefined })
+                    }>
+                    <Key className="icon white" /> Permissions
+                  </FilledButton>
+                )}
                 <FilledButton
-                  disabled={this.state.requestingReview}
+                  disabled={this.state.requestingReview || applicableInstallation?.permissions?.pullRequests == "read"}
                   className="code-request-review-button"
                   onClick={this.handleReviewClicked.bind(this)}>
                   {this.state.requestingReview ? (

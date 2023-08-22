@@ -293,6 +293,8 @@
   padding: 16px;
   width: 100%;
   justify-content: center;
+  gap: 8px;
+  flex-shrink: 1;
 }
 
 .code-request-review-dialog .code-request-review-button svg {

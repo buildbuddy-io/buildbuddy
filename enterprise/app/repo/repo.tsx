@@ -3,8 +3,6 @@ import error_service from "../../../app/errors/error_service";
 import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { repo } from "../../../proto/repo_ts_proto";
-import { Octokit } from "@octokit/rest";
-import Long from "long";
 import Spinner from "../../../app/components/spinner/spinner";
 import { ChevronRightSquare, Github, User } from "lucide-react";
 import auth_service from "../../../app/auth/auth_service";
@@ -12,9 +10,7 @@ import { workflow } from "../../../proto/workflow_ts_proto";
 import Select from "../../../app/components/select/select";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import TextInput from "../../../app/components/input/input";
-import { secrets } from "../../../proto/secrets_ts_proto";
 import { encryptAndUpdate } from "../secrets/secret_util";
-
 export interface RepoComponentProps {
   path: string;
   search: URLSearchParams;
@@ -24,7 +20,7 @@ export interface RepoComponentProps {
 interface RepoComponentState {
   selectedInstallationIndex: number;
   githubInstallationsLoading: boolean;
-  githubInstallationsResponse: any;
+  githubInstallationsResponse: github.GetGithubUserInstallationsResponse | null;
   isCreating: boolean;
   isDeploying: boolean;
 
@@ -84,8 +80,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       this.setState({ githubInstallationsLoading: false });
       return;
     }
-    new Octokit({ auth: this.props.user.githubToken })
-      .request(`GET /user/installations`)
+    rpc_service.service
+      .getGithubUserInstallations(new github.GetGithubUserInstallationsRequest())
       .then((response) => {
         console.log(response);
         this.setState({ githubInstallationsResponse: response });
@@ -113,15 +109,15 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   hasPermissions() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.data.installations[
+    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
       this.state.selectedInstallationIndex
     ];
     if (!selectedInstallation) {
       return true;
     }
     return (
-      selectedInstallation.permissions.administration == "write" &&
-      selectedInstallation.permissions.repository_hooks == "write"
+      selectedInstallation.permissions?.administration == "write" &&
+      selectedInstallation.permissions?.repositoryHooks == "write"
     );
   }
 
@@ -138,20 +134,20 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   linkInstallation() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.data.installations[
+    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
       this.state.selectedInstallationIndex
     ];
     rpc_service.service
       .linkGitHubAppInstallation(
         github.LinkAppInstallationRequest.create({
-          installationId: Long.fromInt(selectedInstallation.id || 0),
+          installationId: selectedInstallation?.id,
         })
       )
       .catch((e) => error_service.handleError(e));
   }
 
   createRepo() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.data.installations[
+    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
       this.state.selectedInstallationIndex
     ];
     let r = new repo.CreateRepoRequest();
@@ -159,9 +155,9 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     r.private = this.state.private;
     r.template = this.state.template;
 
-    if (selectedInstallation.target_type == "Organization") {
+    if (selectedInstallation?.targetType == "Organization") {
       r.installationId = selectedInstallation.id;
-      r.organization = selectedInstallation.account.login;
+      r.organization = selectedInstallation.login;
     }
     return rpc_service.service.createRepo(r);
   }
@@ -204,7 +200,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     await Promise.all(this.getSecrets().map((s) => encryptAndUpdate(s, this.state.secrets.get(s) || "")));
   }
 
-  async handleDeployClicked(repoResponse: any) {
+  async handleDeployClicked(repoResponse: repo.CreateRepoResponse) {
     this.setState({ isDeploying: true });
     try {
       if (this.getSecrets().length) {
@@ -219,10 +215,10 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   handlePermissionsClicked() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.data.installations[
+    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
       this.state.selectedInstallationIndex
     ];
-    window.location.href = selectedInstallation.html_url + `/permissions/update`;
+    window.location.href = selectedInstallation?.url + `/permissions/update`;
   }
 
   render() {
@@ -256,7 +252,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             </button>
           </div>
         )}
-        {this.props.user && !this.state.githubInstallationsResponse?.data?.installations && (
+        {this.props.user && !this.state.githubInstallationsResponse?.installations && (
           <div className="repo-block card login-buttons">
             <div className="repo-title">Get started</div>
             <button
@@ -275,7 +271,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
         )}
         <div
           className={`repo-block card repo-create ${
-            this.props.user && this.state.githubInstallationsResponse?.data?.installations ? "" : "disabled"
+            this.props.user && this.state.githubInstallationsResponse?.installations ? "" : "disabled"
           }`}>
           <div className="repo-title">Create git repository</div>
           <div className="repo-picker">
@@ -285,10 +281,10 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                 <Select
                   onChange={this.handleInstallationPicked.bind(this)}
                   value={this.state.selectedInstallationIndex}>
-                  {this.state.githubInstallationsResponse?.data?.installations.map((i: any, index: number) => (
-                    <option value={index}>{`${i.account.login}`}</option>
+                  {this.state.githubInstallationsResponse?.installations.map((i, index: number) => (
+                    <option value={index}>{`${i.login}`}</option>
                   ))}
-                  {!this.state.githubInstallationsResponse?.data?.installations && (
+                  {!this.state.githubInstallationsResponse?.installations && (
                     <option value={-1}>Pick a git scope...</option>
                   )}
                   <option value={-1}>+ Add Github Account</option>
@@ -314,7 +310,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
           {!this.state.repoResponse && (
             <button
               disabled={
-                !this.state.githubInstallationsResponse?.data.installations ||
+                !this.state.githubInstallationsResponse?.installations ||
                 !this.hasPermissions() ||
                 this.state.isCreating
               }
@@ -361,12 +357,12 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             {!this.state.workflowResponse && (
               <button
                 disabled={
-                  !this.state.githubInstallationsResponse?.data.installations ||
+                  !this.state.githubInstallationsResponse?.installations ||
                   !this.hasPermissions() ||
                   this.state.isDeploying
                 }
                 className="create-button"
-                onClick={() => this.handleDeployClicked(this.state.repoResponse)}>
+                onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
                 {this.state.isDeploying ? "Deploying..." : "Deploy"}
               </button>
             )}
@@ -375,7 +371,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
         {this.state.workflowResponse && (
           <div
             className={`repo-block card repo-create ${
-              this.props.user && this.state.githubInstallationsResponse?.data?.installations ? "" : "disabled"
+              this.props.user && this.state.githubInstallationsResponse?.installations ? "" : "disabled"
             }`}>
             <div className="repo-title">Workflows</div>
             <div className="running-actions">

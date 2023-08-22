@@ -1,11 +1,20 @@
-import { Octokit } from "@octokit/rest";
+import Long from "long";
+import rpc_service from "../../../app/service/rpc_service";
+import { github } from "../../../proto/github_ts_proto";
 
 // Based on https://github.com/gr2m/octokit-plugin-create-pull-request with added functionality of updating PRs.
-export async function createPullRequest(
-  octokit: Octokit,
-  { owner, repo, title, body, base, head, createWhenEmpty, changes: changesOption, draft = false }: Options
-): Promise<any> {
-  let response = await updatePullRequest(octokit, {
+export async function createPullRequest({
+  owner,
+  repo,
+  title,
+  body,
+  base,
+  head,
+  createWhenEmpty,
+  changes: changesOption,
+  draft = false,
+}: Options): Promise<github.CreateGithubPullResponse> {
+  let response = await updatePullRequest({
     owner,
     repo,
     base,
@@ -16,98 +25,100 @@ export async function createPullRequest(
   });
 
   // https://developer.github.com/v3/pulls/#create-a-pull-request
-  return await octokit.request("POST /repos/{owner}/{repo}/pulls", {
-    owner,
-    repo,
-    head: `${response.fork}:${head}`,
-    base: response.base,
-    title,
-    body,
-    draft,
-  });
+  return await rpc_service.service.createGithubPull(
+    new github.CreateGithubPullRequest({
+      owner,
+      repo,
+      head: `${response.fork}:${head}`,
+      base: response.base,
+      title,
+      body,
+      draft,
+    })
+  );
 }
 
-export async function updatePullRequest(
-  octokit: Octokit,
-  {
-    owner,
-    repo,
-    base,
-    head,
-    createWhenEmpty,
-    changes: changesOption,
-    createRef,
-  }: {
-    owner: string;
-    repo: string;
-    base?: string;
-    head: string;
-    createWhenEmpty?: boolean;
-    createRef?: boolean;
-    changes: Changes | Changes[];
-  }
-): Promise<any> {
-  const state: State = { octokit, owner, repo };
+export async function updatePullRequest({
+  owner,
+  repo,
+  base,
+  head,
+  createWhenEmpty,
+  changes: changesOption,
+  createRef,
+}: {
+  owner: string;
+  repo: string;
+  base?: string;
+  head: string;
+  createWhenEmpty?: boolean;
+  createRef?: boolean;
+  changes: Changes | Changes[];
+}): Promise<any> {
+  const state: State = { owner, repo };
 
   const changes = Array.isArray(changesOption) ? changesOption : [changesOption];
 
-  if (changes.length === 0) throw new Error('[octokit-plugin-create-pull-request] "changes" cannot be an empty array');
+  if (changes.length === 0) throw new Error('[code_pull_request.ts] "changes" cannot be an empty array');
 
   // https://developer.github.com/v3/repos/#get-a-repository
-  const { data: repository, headers } = await octokit.request("GET /repos/{owner}/{repo}", {
-    owner,
-    repo,
-  });
-
-  const isUser = !!headers["x-oauth-scopes"];
+  const repository = await rpc_service.service.getGithubRepo(
+    new github.GetGithubRepoRequest({
+      owner,
+      repo,
+    })
+  );
 
   if (!repository.permissions) {
-    throw new Error("[octokit-plugin-create-pull-request] Missing authentication");
+    throw new Error("[code_pull_request.ts] Missing authentication");
   }
 
   if (!base) {
-    base = repository.default_branch;
+    base = repository.defaultBranch;
   }
 
   state.fork = owner;
 
-  if (isUser && !repository.permissions.push) {
+  if (!repository.permissions.push) {
     // https://developer.github.com/v3/users/#get-the-authenticated-user
-    const user = await octokit.request("GET /user");
+    const user = await rpc_service.service.getGithubUser(new github.GetGithubUserRequest());
 
     // https://developer.github.com/v3/repos/forks/#list-forks
-    const forks = await octokit.request("GET /repos/{owner}/{repo}/forks", {
-      owner,
-      repo,
-    });
-    const hasFork = forks.data.find(
-      /* istanbul ignore next - fork owner can be null, but we don't test that */
-      (fork) => fork.owner && fork.owner.login === user.data.login
+    const forks = await rpc_service.service.getGithubForks(
+      new github.GetGithubForksRequest({
+        owner,
+        repo,
+      })
     );
+    const hasFork = forks.forks.find((fork) => fork.owner && fork.owner === user.login);
 
     if (!hasFork) {
       // https://developer.github.com/v3/repos/forks/#create-a-fork
-      await octokit.request("POST /repos/{owner}/{repo}/forks", {
-        owner,
-        repo,
-      });
+      await rpc_service.service.createGithubFork(
+        new github.CreateGithubForkRequest({
+          owner,
+          repo,
+        })
+      );
     }
 
-    state.fork = user.data.login;
+    state.fork = user.login;
   }
 
   // https://developer.github.com/v3/repos/commits/#list-commits-on-a-repository
   const {
-    data: [latestCommit],
-  } = await octokit.request("GET /repos/{owner}/{repo}/commits", {
-    owner,
-    repo,
-    sha: base,
-    per_page: 1,
-  });
+    commits: [latestCommit],
+  } = await rpc_service.service.getGithubCommits(
+    new github.GetGithubCommitsRequest({
+      owner,
+      repo,
+      sha: base,
+      perPage: new Long(1),
+    })
+  );
   state.latestCommitSha = latestCommit.sha;
-  state.latestCommitTreeSha = latestCommit.commit.tree.sha;
-  const baseCommitTreeSha = latestCommit.commit.tree.sha;
+  state.latestCommitTreeSha = latestCommit.treeSha;
+  const baseCommitTreeSha = latestCommit.treeSha;
 
   for (const change of changes) {
     let treeCreated = false;
@@ -132,30 +143,34 @@ export async function updatePullRequest(
 
   if (!createRef) {
     // https://developer.github.com/v3/git/refs/#update-a-reference
-    await octokit.request("PATCH /repos/{owner}/{repo}/git/refs/heads/{head}", {
-      owner: state.fork,
-      repo,
-      sha: state.latestCommitSha,
-      head: `${head}`,
-      force: true,
-    });
+    await rpc_service.service.updateGithubRef(
+      new github.UpdateGithubRefRequest({
+        owner: state.fork,
+        repo,
+        sha: state.latestCommitSha,
+        head: `${head}`,
+        force: true,
+      })
+    );
 
     return { fork: state.fork, base };
   }
 
   // https://developer.github.com/v3/git/refs/#create-a-reference
-  await octokit.request("POST /repos/{owner}/{repo}/git/refs", {
-    owner: state.fork,
-    repo,
-    sha: state.latestCommitSha,
-    ref: `refs/heads/${head}`,
-  });
+  await rpc_service.service.createGithubRef(
+    new github.CreateGithubRefRequest({
+      owner: state.fork,
+      repo,
+      sha: state.latestCommitSha,
+      ref: `refs/heads/${head}`,
+    })
+  );
 
   return { fork: state.fork, base };
 }
 
 export async function createCommit(state: Required<State>, treeCreated: boolean, changes: Changes): Promise<string> {
-  const { octokit, repo, fork, latestCommitSha } = state;
+  const { repo, fork, latestCommitSha } = state;
 
   const message = treeCreated
     ? changes.commit
@@ -164,19 +179,21 @@ export async function createCommit(state: Required<State>, treeCreated: boolean,
     : changes.commit;
 
   // https://developer.github.com/v3/git/commits/#create-a-commit
-  const { data: latestCommit } = await octokit.request("POST /repos/{owner}/{repo}/git/commits", {
-    owner: fork,
-    repo,
-    message,
-    tree: state.latestCommitTreeSha,
-    parents: [latestCommitSha],
-  });
+  const latestCommit = await rpc_service.service.createGithubCommit(
+    new github.CreateGithubCommitRequest({
+      owner: fork,
+      repo,
+      message,
+      tree: state.latestCommitTreeSha,
+      parents: [latestCommitSha],
+    })
+  );
 
   return latestCommit.sha;
 }
 
 export async function createTree(state: Required<State>, changes: Required<Changes>): Promise<string | null> {
-  const { octokit, owner, repo, fork, latestCommitSha, latestCommitTreeSha } = state;
+  const { owner, repo, fork, latestCommitSha, latestCommitTreeSha } = state;
 
   const tree = (
     await Promise.all(
@@ -188,12 +205,15 @@ export async function createTree(state: Required<State>, changes: Required<Chang
           // so we only attempt to delete the file if it exists.
           try {
             // https://developer.github.com/v3/repos/contents/#get-contents
-            await octokit.request("HEAD /repos/{owner}/{repo}/contents/:path", {
-              owner: fork,
-              repo,
-              ref: latestCommitSha,
-              path,
-            });
+            await rpc_service.service.getGithubContent(
+              new github.GetGithubContentRequest({
+                owner: fork,
+                repo,
+                ref: latestCommitSha,
+                path,
+                existenceOnly: true,
+              })
+            );
 
             return {
               path,
@@ -211,16 +231,21 @@ export async function createTree(state: Required<State>, changes: Required<Chang
           let result;
 
           try {
-            const { data: file } = await octokit.request("GET /repos/{owner}/{repo}/contents/:path", {
-              owner: fork,
-              repo,
-              ref: latestCommitSha,
-              path,
-            });
+            const file = await rpc_service.service.getGithubContent(
+              new github.GetGithubContentRequest({
+                owner: fork,
+                repo,
+                ref: latestCommitSha,
+                path,
+              })
+            );
 
-            result = await value(Object.assign(file, { exists: true }) as UpdateFunctionFile);
+            result = await value({
+              exists: true,
+              size: file.content.byteLength,
+              content: file.content,
+            });
           } catch (error: any) {
-            // istanbul ignore if
             if (error?.status !== 404) throw error;
 
             // @ts-ignore
@@ -228,10 +253,10 @@ export async function createTree(state: Required<State>, changes: Required<Chang
           }
 
           if (result === null || typeof result === "undefined") return;
-          return valueToTreeObject(octokit, owner, repo, path, result);
+          return valueToTreeObject(owner, repo, path, result);
         }
 
-        return valueToTreeObject(octokit, owner, repo, path, value);
+        return valueToTreeObject(owner, repo, path, value);
       })
     )
   ).filter(Boolean) as any;
@@ -241,19 +266,19 @@ export async function createTree(state: Required<State>, changes: Required<Chang
   }
 
   // https://developer.github.com/v3/git/trees/#create-a-tree
-  const {
-    data: { sha: newTreeSha },
-  } = await octokit.request("POST /repos/{owner}/{repo}/git/trees", {
-    owner: fork,
-    repo,
-    base_tree: latestCommitTreeSha,
-    tree,
-  });
+  const { sha: newTreeSha } = await rpc_service.service.createGithubTree(
+    new github.CreateGithubTreeRequest({
+      owner: fork,
+      repo,
+      baseTree: latestCommitTreeSha,
+      nodes: tree,
+    })
+  );
 
   return newTreeSha;
 }
 
-async function valueToTreeObject(octokit: Octokit, owner: string, repo: string, path: string, value: string | File) {
+async function valueToTreeObject(owner: string, repo: string, path: string, value: string | File) {
   let mode = "100644";
   if (value !== null && typeof value !== "string") {
     mode = value.mode || mode;
@@ -270,12 +295,14 @@ async function valueToTreeObject(octokit: Octokit, owner: string, repo: string, 
 
   // Binary files need to be created first using the git blob API,
   // then changed by referencing in the .sha key
-  const { data } = await octokit.request("POST /repos/{owner}/{repo}/git/blobs", {
-    owner,
-    repo,
-    ...value,
-  });
-  const blobSha = data.sha;
+  const response = await rpc_service.service.createGithubBlob(
+    new github.CreateGithubBlobRequest({
+      owner,
+      repo,
+      content: (value as File).content,
+    })
+  );
+  const blobSha = response.sha;
 
   return {
     path,
@@ -306,8 +333,7 @@ export type Changes = {
 
 // https://developer.github.com/v3/git/blobs/#parameters
 export type File = {
-  content: string;
-  encoding: "utf-8" | "base64";
+  content: Uint8Array;
   mode?: string;
 };
 
@@ -315,20 +341,17 @@ export type UpdateFunctionFile =
   | {
       exists: true;
       size: number;
-      encoding: "base64";
-      content: string;
+      content: Uint8Array;
     }
   | {
       exists: false;
       size: never;
-      encoding: never;
       content: never;
     };
 
 export type UpdateFunction = (file: UpdateFunctionFile) => string | File | null;
 
 export type State = {
-  octokit: Octokit;
   owner: string;
   repo: string;
   fork?: string;

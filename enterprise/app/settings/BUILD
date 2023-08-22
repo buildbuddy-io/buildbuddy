@@ -71,7 +71,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
-        "@npm//@octokit/rest",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
