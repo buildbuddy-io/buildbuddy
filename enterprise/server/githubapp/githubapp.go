@@ -991,6 +991,7 @@ func (a *GitHubApp) GetGithubContent(ctx context.Context, req *ghpb.GetGithubCon
 	if err != nil {
 		return nil, err
 	}
+	defer contents.Close()
 
 	if req.ExistenceOnly {
 		return &ghpb.GetGithubContentResponse{}, nil
