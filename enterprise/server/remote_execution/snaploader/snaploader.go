@@ -51,8 +51,8 @@ func manifestFileCacheKey(ctx context.Context, env environment.Env, s *fcpb.Snap
 	// snapshot). That means we don't need unique manifest keys,
 	// even if the snapshot files change, so that we'll always overwrite
 	// and read the manifest with the newest version.
-	// That's why we set fileReader=nil here
-	key, _ := artifactFileCacheKey(ctx, env, nil, s, ".manifest", 1 /*=arbitrary size*/)
+	// That's why we set computeDigest=false here
+	key, _ := artifactFileCacheKey(ctx, env, false, s, ".manifest", 1 /*=arbitrary size*/)
 	return key
 }
 
@@ -63,11 +63,17 @@ func manifestFileCacheKey(ctx context.Context, env environment.Env, s *fcpb.Snap
 // If you don't need a real digest - for example because computing digests
 // of large snapshot files is expensive -  pass in a nil fileReader.
 // This will return a hash of the file name and snapshot key instead
-func artifactFileCacheKey(ctx context.Context, env environment.Env, fileReader *io.Reader, s *fcpb.SnapshotKey, name string, sizeBytes int64) (*repb.FileNode, error) {
-	computeDigest := fileReader != nil
+func artifactFileCacheKey(ctx context.Context, env environment.Env, computeDigest bool, s *fcpb.SnapshotKey, filePath string, sizeBytes int64) (*repb.FileNode, error) {
 	if computeDigest {
 		// TODO(Maggie): Add metrics for computing snapshot digests
-		d, err := digest.Compute(*fileReader, repb.DigestFunction_BLAKE3)
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+
+		fileReader := bufio.NewReader(file)
+		d, err := digest.Compute(fileReader, repb.DigestFunction_BLAKE3)
 		if err != nil {
 			return nil, err
 		}
@@ -83,9 +89,10 @@ func artifactFileCacheKey(ctx context.Context, env environment.Env, fileReader *
 	if err == nil {
 		groupID = u.GetGroupID()
 	}
+	fileName := filepath.Base(filePath)
 	return &repb.FileNode{
 		Digest: &repb.Digest{
-			Hash:      hashStrings(groupID, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerId, name),
+			Hash:      hashStrings(groupID, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerId, fileName),
 			SizeBytes: sizeBytes,
 		},
 	}, nil
@@ -250,20 +257,11 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		// file because it is costly. Because the runner ID is in the key
 		// when snapshot sharing is disabled,  we don't need to worry about
 		// multiple runners trying to access the same key simultaneously
-		var r *io.Reader
-		if *EnableLocalSnapshotSharing {
-			fileReader, err := readerFromFile(f)
-			if err != nil {
-				return nil, err
-			}
-			r = &fileReader
-		}
-		filename := filepath.Base(f)
-		fileNode, err := artifactFileCacheKey(ctx, l.env, r, key, filename, info.Size())
+		fileNode, err := artifactFileCacheKey(ctx, l.env, *EnableLocalSnapshotSharing, key, f, info.Size())
 		if err != nil {
 			return nil, err
 		}
-		fileNode.Name = filename
+		fileNode.Name = filepath.Base(f)
 		l.env.GetFileCache().AddFile(fileNode, f)
 		manifest.Files = append(manifest.Files, fileNode)
 	}
