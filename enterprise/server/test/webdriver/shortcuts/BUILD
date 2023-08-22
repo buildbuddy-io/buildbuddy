@@ -2,7 +2,7 @@ load("//rules/webdriver:index.bzl", "go_web_test_suite")
 
 go_web_test_suite(
     name = "shortcuts_test",
-    size = "small",
+    size = "medium",
     srcs = ["shortcuts_test.go"],
     shard_count = 2,
     tags = ["manual"],  # TODO(iain-macdonald): Fix and re-enable
