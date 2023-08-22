@@ -46,6 +46,7 @@ go_library(
         "//server/role_filter",
         "//server/tables",
         "//server/target",
+        "//server/util/alert",
         "//server/util/capabilities",
         "//server/util/flagutil",
         "//server/util/log",

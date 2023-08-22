@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -918,6 +919,50 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	return toProtoAPIKeys(append(userKeys, groupKeys...)), nil
 }
 
+func (s *BuildBuddyServer) replaceURLSubdomain(ctx context.Context, rawURL string) string {
+	if !subdomain.Enabled() {
+		return rawURL
+	}
+
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return rawURL
+	}
+
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return rawURL
+	}
+
+	if g.URLIdentifier == nil || *g.URLIdentifier == "" {
+		return rawURL
+	}
+
+	pURL, err := url.Parse(rawURL)
+	// Input URLs should already be validated so this is not supposed to happen.
+	if err != nil {
+		alert.UnexpectedEvent("invalid_config_url", rawURL)
+		return rawURL
+	}
+
+	hostname := pURL.Hostname()
+	pts := strings.Split(hostname, ".")
+	var domain string
+	if len(pts) < 2 {
+		domain = hostname
+	} else {
+		domain = strings.Join(pts[len(pts)-2:], ".")
+	}
+
+	newHost := *g.URLIdentifier + "." + domain
+	if pURL.Port() != "" {
+		newHost += ":" + pURL.Port()
+	}
+	pURL.Host = newHost
+
+	return pURL.String()
+}
+
 func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBazelConfigRequest) (*bzpb.GetBazelConfigResponse, error) {
 	configOptions := make([]*bzpb.ConfigOption, 0)
 
@@ -927,7 +972,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		resultsURL = assembleURL(req.Host, req.Protocol, "")
 		resultsURL += "/invocation/"
 	}
-	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", resultsURL))
+	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", s.replaceURLSubdomain(ctx, resultsURL)))
 
 	grpcPort := "1985"
 	if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
@@ -942,14 +987,14 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		return nil, err
 	}
 
-	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
+	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", s.replaceURLSubdomain(ctx, eventsAPIURL)))
 
 	if s.env.GetCache() != nil {
 		cacheAPIURL := cache_api_url.String()
 		if cacheAPIURL == "" {
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
+		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", s.replaceURLSubdomain(ctx, cacheAPIURL)))
 	}
 
 	if remote_execution_config.RemoteExecutionEnabled() {
@@ -957,7 +1002,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if remoteExecutionAPIURL == "" {
 			remoteExecutionAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", remoteExecutionAPIURL))
+		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", s.replaceURLSubdomain(ctx, remoteExecutionAPIURL)))
 	}
 
 	credentials := make([]*bzpb.Credentials, len(groupAPIKeys))
