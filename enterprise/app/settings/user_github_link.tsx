@@ -1,6 +1,5 @@
 import React from "react";
 import { User as UserIcon } from "lucide-react";
-import { Octokit } from "@octokit/rest";
 import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/user";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
@@ -70,21 +69,19 @@ export default class UserGitHubLink extends React.Component<Props, State> {
     }
 
     this.setState({ accountLoading: true });
-    this.accountFetch = new CancelablePromise(
-      new Octokit({ auth: this.props.user.githubToken }).users
-        .getAuthenticated()
-        .then((response) => {
-          this.setState({
-            account: {
-              name: response.data.name || "",
-              login: response.data.login,
-              avatarUrl: response.data.avatar_url,
-            },
-          });
-        })
-        .catch((e) => errorService.handleError(e))
-        .finally(() => this.setState({ accountLoading: false }))
-    );
+    this.accountFetch = rpcService.service
+      .getGithubUser(new github.GetGithubUserRequest())
+      .then((response) => {
+        this.setState({
+          account: {
+            name: response.name || "",
+            login: response.login,
+            avatarUrl: response.avatarUrl,
+          },
+        });
+      })
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ accountLoading: false }));
   }
 
   private onRequestCloseDeleteModal() {
