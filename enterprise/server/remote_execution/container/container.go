@@ -57,6 +57,10 @@ type DockerDeviceMapping struct {
 	CgroupPermissions string `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
 }
 
+type Provider interface {
+	New(context.Context, *platform.Properties, *repb.ScheduledTask, *rnpb.RunnerState, string) (CommandContainer, error)
+}
+
 // ContainerMetrics handles Prometheus metrics accounting for CommandContainer
 // instances.
 type ContainerMetrics struct {

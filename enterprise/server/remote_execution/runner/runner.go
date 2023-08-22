@@ -526,14 +526,10 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	return res.Error
 }
 
-type ContainerProvider interface {
-	NewContainer(context.Context, *platform.Properties, *repb.ScheduledTask, *rnpb.RunnerState, string) (container.CommandContainer, error)
-}
-
 type PoolOptions struct {
 	// ContainerProvider is an optional implementation overriding
 	// newContainerImpl.
-	CtrProvider ContainerProvider
+	ContainerProvider container.Provider
 }
 
 type pool struct {
@@ -541,8 +537,8 @@ type pool struct {
 	imageCacheAuth     *container.ImageCacheAuthenticator
 	podID              string
 	buildRoot          string
-	overrideProvider   ContainerProvider
-	containerProviders map[platform.ContainerType]ContainerProvider
+	overrideProvider   container.Provider
+	containerProviders map[platform.ContainerType]container.Provider
 
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
@@ -577,8 +573,8 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		runners:        []*commandRunner{},
 	}
 	p.initContainerProviders()
-	if opts.CtrProvider != nil {
-		p.overrideProvider = opts.CtrProvider
+	if opts.ContainerProvider != nil {
+		p.overrideProvider = opts.ContainerProvider
 	}
 
 	p.setLimits()
@@ -592,7 +588,7 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 }
 
 func (p *pool) initContainerProviders() {
-	providers := make(map[platform.ContainerType]ContainerProvider)
+	providers := make(map[platform.ContainerType]container.Provider)
 	dockerProvider, err := docker.NewProvider(p.env, p.imageCacheAuth, p.hostBuildRoot())
 	if err != nil {
 		log.Warningf("Failed to initialize docker container provider: %s", err)
@@ -1066,7 +1062,7 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (*container.TracedCommandContainer, error) {
 	// Overriding in tests.
 	if p.overrideProvider != nil {
-		c, err := p.overrideProvider.NewContainer(ctx, props, task, state, workingDir)
+		c, err := p.overrideProvider.New(ctx, props, task, state, workingDir)
 		if err != nil {
 			return nil, err
 		}
@@ -1083,7 +1079,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		return nil, status.UnimplementedErrorf("no container provider registered for %q isolation", isolationType)
 	}
 
-	c, err := containerProvider.NewContainer(ctx, props, task, state, workingDir)
+	c, err := containerProvider.New(ctx, props, task, state, workingDir)
 	if err != nil {
 		return nil, err
 	}

@@ -28,7 +28,7 @@ type Opts struct {
 type Provider struct {
 }
 
-func (p *Provider) NewContainer(ctx context.Context, props *platform.Properties, _ *repb.ScheduledTask, _ *rnpb.RunnerState, _ string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.ScheduledTask, _ *rnpb.RunnerState, _ string) (container.CommandContainer, error) {
 	opts := &Opts{
 		EnableStats: *bareEnableStats,
 	}

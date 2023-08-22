@@ -115,7 +115,7 @@ func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthen
 	}, nil
 }
 
-func (p *Provider) NewContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
 	opts := &DockerOptions{
 		ForceRoot:               props.DockerForceRoot,
 		DockerInit:              props.DockerInit,

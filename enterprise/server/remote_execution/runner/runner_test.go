@@ -420,9 +420,9 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 }
 
 // Returns containers that only consume disk resources when paused (like firecracker).
-type DiskOnlyCtrProvider struct{}
+type DiskOnlyContainerProvider struct{}
 
-func (*DiskOnlyCtrProvider) NewContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
+func (*DiskOnlyContainerProvider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
 	fc := newFakeFirecrackerContainer()
 	return container.NewTracedCommandContainer(fc), nil
 }
@@ -433,7 +433,7 @@ func TestRunnerPool_DiskOnlyContainer_CanAddMultiple(t *testing.T) {
 
 	pool := newRunnerPool(t, env, &RunnerPoolOptions{
 		PoolOptions: &PoolOptions{
-			CtrProvider: &DiskOnlyCtrProvider{},
+			ContainerProvider: &DiskOnlyContainerProvider{},
 		},
 		MaxRunnerCount:         maxRunnerCount,
 		MaxRunnerDiskSizeBytes: unlimited,

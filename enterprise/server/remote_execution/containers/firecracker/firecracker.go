@@ -319,7 +319,7 @@ func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthen
 	}
 }
 
-func (p *Provider) NewContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
 	var vmConfig *fcpb.VMConfiguration
 	savedState := state.GetContainerState().GetFirecrackerState()
 	if savedState == nil {
