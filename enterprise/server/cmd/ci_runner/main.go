@@ -1557,7 +1557,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
-	fetchArgs := append([]string{"fetch", "--filter=blob:none", "--force", remoteName}, branches...)
+	fetchArgs := append([]string{"-c", "credential.helper=", "fetch", "--filter=blob:none", "--force", remoteName}, branches...)
 	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
