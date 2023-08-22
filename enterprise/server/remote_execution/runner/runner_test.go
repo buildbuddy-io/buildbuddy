@@ -419,6 +419,7 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 	assert.Equal(t, 1, pool.PausedRunnerCount())
 }
 
+// Returns containers that only consume disk resources when paused (like firecracker).
 type DiskOnlyCtrProvider struct{}
 
 func (*DiskOnlyCtrProvider) NewContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
