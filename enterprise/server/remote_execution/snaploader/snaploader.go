@@ -2,7 +2,6 @@ package snaploader
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -57,11 +56,13 @@ func manifestFileCacheKey(ctx context.Context, env environment.Env, s *fcpb.Snap
 	return key
 }
 
-// artifactFileCacheKey returns the cache key for a snapshot artifact
+// artifactFileCacheKey returns the cache key for a snapshot artifact.
+// It reads the artifact using fileReader in order to compute a digest
+// of its contents
 //
-// Because computing digests of large snapshot files is expensive, if you
-// don't need a real digest, pass in a nil fileReader. This will return a
-// hash of the file name and snapshot key instead
+// If you don't need a real digest - for example because computing digests
+// of large snapshot files is expensive -  pass in a nil fileReader.
+// This will return a hash of the file name and snapshot key instead
 func artifactFileCacheKey(ctx context.Context, env environment.Env, fileReader *io.Reader, s *fcpb.SnapshotKey, name string, sizeBytes int64) (*repb.FileNode, error) {
 	computeDigest := fileReader != nil
 	if computeDigest {
@@ -222,6 +223,9 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	return unpacked, nil
 }
 
+// TODO(Maggie): Delete this after snapshot sharing is launched. We can't
+// guarantee another runner isn't using the same files, so rely on cache
+// evictions to delete unused artifacts instead
 func (l *FileCacheLoader) DeleteSnapshot(ctx context.Context, snapshot *Snapshot) error {
 	// Manually evict the manifest as well as all referenced files.
 	l.env.GetFileCache().DeleteFile(manifestFileCacheKey(ctx, l.env, snapshot.key))
@@ -291,14 +295,6 @@ func readerFromFile(filePath string) (io.Reader, error) {
 	defer file.Close()
 
 	return bufio.NewReader(file), nil
-}
-
-func readerFromBytes(b []byte) (io.Reader, error) {
-	b, err := proto.Marshal(manifest)
-	if err != nil {
-		return nil, err
-	}
-	return bytes.NewReader(b), nil
 }
 
 func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cow *blockio.COWStore, err error) {
