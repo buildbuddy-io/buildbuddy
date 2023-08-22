@@ -7670,7 +7670,7 @@
             "uid": "prom"
           },
           "editorMode": "code",
-          "expr": "sum(rate(buildbuddy_remote_cache_migration_not_found_error_count{region=\"${region}\", type=\"reader\"}[${window}])) / (sum(rate(buildbuddy_remote_cache_migration_not_found_error_count{region=\"${region}\", type=\"reader\"}[${window}])) + sum(rate(buildbuddy_remote_cache_migration_double_read_hit_count{region=\"${region}\", type=\"reader\"}[${window}])))",
+          "expr": "sum by (type) (rate(buildbuddy_remote_cache_migration_not_found_error_count{region=\"${region}\"}[${window}])) / (sum by (type) (rate(buildbuddy_remote_cache_migration_not_found_error_count{region=\"${region}\"}[${window}])) + sum by (type) (rate(buildbuddy_remote_cache_migration_double_read_hit_count{region=\"${region}\"}[${window}])))",
           "legendFormat": "{{cache_type}}",
           "range": true,
           "refId": "A"
