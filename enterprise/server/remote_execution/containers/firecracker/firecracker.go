@@ -429,7 +429,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		// from the snapshot key
 		runnerID := c.id
 		if *enableNBD && *enableLocalSnapshotSharing {
-			runnerID = "SHARED"
+			runnerID = ""
 		}
 		c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), runnerID)
 		if err != nil {
