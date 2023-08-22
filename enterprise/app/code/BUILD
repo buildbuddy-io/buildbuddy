@@ -26,8 +26,10 @@ ts_library(
         "//proto:github_ts_proto",
         "//proto:runner_ts_proto",
         "@npm//@types/diff",
+        "@npm//@types/long",
         "@npm//@types/react",
         "@npm//diff",
+        "@npm//long",
         "@npm//lucide-react",
         "@npm//monaco-editor",
         "@npm//react",
@@ -71,6 +73,8 @@ ts_library(
     deps = [
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
+        "@npm//@types/long",
+        "@npm//long",
         "@npm//tslib",
     ],
 )
