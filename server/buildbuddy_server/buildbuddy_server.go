@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -340,8 +341,13 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 	if urlIdentifier == "" {
-		return nil, status.InvalidArgumentError("URL identifier is required.")
+		if sd := subdomain.Get(ctx); sd != "" {
+			urlIdentifier = sd
+		} else {
+			return nil, status.InvalidArgumentError("URL identifier is required.")
+		}
 	}
+
 	group, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier)
 	if err != nil {
 		return nil, err
