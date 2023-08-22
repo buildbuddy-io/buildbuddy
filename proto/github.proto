@@ -115,9 +115,6 @@ message UnlinkAppInstallationResponse {
 // BuildBuddy workflows.
 
 // A request to list repos accessible to the given installation ID.
-//
-// Note: This cannot be done from the frontend using Octokit because it
-// authenticates using an installation token.
 message GetAccessibleReposRequest {
   context.RequestContext request_context = 1;
 
