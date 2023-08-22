@@ -646,7 +646,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	}
 
 	return &rppb.CreateRepoResponse{
-		RepoUrl: *repo.HTMLURL,
+		RepoUrl: repo.GetHTMLURL(),
 	}, nil
 }
 
@@ -898,4 +898,402 @@ func checkResponse(res *github.Response, err error) error {
 		return status.UnknownErrorf("GitHub API request failed: unexpected HTTP status %s", res.Status)
 	}
 	return nil
+}
+
+func (a *GitHubApp) getGithubClient(ctx context.Context) (*github.Client, error) {
+	tu, err := a.env.GetUserDB().GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if tu.GithubToken == "" {
+		return nil, status.UnauthenticatedError("github account link is required")
+	}
+	return a.newAuthenticatedClient(ctx, tu.GithubToken)
+}
+
+func (a *GitHubApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	installations, _, err := client.Apps.ListUserInstallations(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &ghpb.GetGithubUserInstallationsResponse{
+		Installations: []*ghpb.UserInstallation{},
+	}
+
+	for _, i := range installations {
+		installation := &ghpb.UserInstallation{
+			Id:         i.GetID(),
+			Login:      i.Account.GetLogin(),
+			Url:        i.GetHTMLURL(),
+			TargetType: i.GetTargetType(),
+			Permissions: &ghpb.UserInstallationPermissions{
+				Administration:  i.GetPermissions().GetAdministration(),
+				RepositoryHooks: i.GetPermissions().GetRepositoryHooks(),
+				PullRequests:    i.GetPermissions().GetPullRequests(),
+			},
+		}
+		res.Installations = append(res.Installations, installation)
+	}
+
+	return res, nil
+}
+
+func (a *GitHubApp) GetGithubUser(ctx context.Context, req *ghpb.GetGithubUserRequest) (*ghpb.GetGithubUserResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	user, _, err := client.Users.Get(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.GetGithubUserResponse{
+		Name:      user.GetName(),
+		Login:     user.GetLogin(),
+		AvatarUrl: user.GetAvatarURL(),
+	}, nil
+}
+
+func (a *GitHubApp) GetGithubRepo(ctx context.Context, req *ghpb.GetGithubRepoRequest) (*ghpb.GetGithubRepoResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	repo, _, err := client.Repositories.Get(ctx, req.Owner, req.Repo)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.GetGithubRepoResponse{
+		DefaultBranch: repo.GetDefaultBranch(),
+		Permissions: &ghpb.RepoPermissions{
+			Push: repo.GetPermissions()["push"],
+		},
+	}, nil
+}
+
+func (a *GitHubApp) GetGithubContent(ctx context.Context, req *ghpb.GetGithubContentRequest) (*ghpb.GetGithubContentResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	contents, _, err := client.Repositories.DownloadContents(ctx, req.Owner, req.Repo, req.Path, &github.RepositoryContentGetOptions{Ref: req.Ref})
+	if err != nil {
+		return nil, err
+	}
+	defer contents.Close()
+
+	if req.ExistenceOnly {
+		return &ghpb.GetGithubContentResponse{}, nil
+	}
+
+	contentBytes, err := io.ReadAll(contents)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.GetGithubContentResponse{
+		Content: contentBytes,
+	}, nil
+}
+
+func (a *GitHubApp) GetGithubTree(ctx context.Context, req *ghpb.GetGithubTreeRequest) (*ghpb.GetGithubTreeResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	tree, _, err := client.Git.GetTree(ctx, req.Owner, req.Repo, req.Ref, false)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &ghpb.GetGithubTreeResponse{
+		Sha: tree.GetSHA(),
+	}
+	for _, entry := range tree.Entries {
+		res.Nodes = append(res.Nodes, githubToProtoTree(entry))
+	}
+	return res, nil
+}
+
+func githubToProtoTree(entry *github.TreeEntry) *ghpb.TreeNode {
+	node := &ghpb.TreeNode{
+		Path:    entry.GetPath(),
+		Sha:     entry.GetSHA(),
+		Type:    entry.GetType(),
+		Mode:    entry.GetMode(),
+		Size:    int64(entry.GetSize()),
+		Content: []byte(entry.GetContent()),
+	}
+	return node
+}
+
+func protoToGithubTree(node *ghpb.TreeNode) *github.TreeEntry {
+	if node.Content != nil {
+		content := string(node.Content)
+		return &github.TreeEntry{
+			Path:    &node.Path,
+			Mode:    &node.Mode,
+			Content: &content,
+		}
+	}
+	return &github.TreeEntry{
+		Path: &node.Path,
+		SHA:  &node.Sha,
+		Mode: &node.Mode,
+	}
+}
+
+func (a *GitHubApp) CreateGithubTree(ctx context.Context, req *ghpb.CreateGithubTreeRequest) (*ghpb.CreateGithubTreeResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	entries := []*github.TreeEntry{}
+	for _, node := range req.Nodes {
+		entries = append(entries, protoToGithubTree(node))
+	}
+	tree, _, err := client.Git.CreateTree(ctx, req.Owner, req.Repo, req.BaseTree, entries)
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.CreateGithubTreeResponse{
+		Sha: tree.GetSHA(),
+	}, nil
+}
+
+func (a *GitHubApp) GetGithubBlob(ctx context.Context, req *ghpb.GetGithubBlobRequest) (*ghpb.GetGithubBlobResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	blob, _, err := client.Git.GetBlobRaw(ctx, req.Owner, req.Repo, req.Sha)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.GetGithubBlobResponse{
+		Content: blob,
+	}, nil
+}
+
+func (a *GitHubApp) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithubBlobRequest) (*ghpb.CreateGithubBlobResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	content := string(req.Content)
+	blob, _, err := client.Git.CreateBlob(ctx, req.Owner, req.Repo, &github.Blob{
+		Content: &content,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.CreateGithubBlobResponse{
+		Sha: blob.GetSHA(),
+	}, nil
+}
+
+func (a *GitHubApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithubPullRequest) (*ghpb.CreateGithubPullResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	pr, _, err := client.PullRequests.Create(ctx, req.Owner, req.Repo, &github.NewPullRequest{
+		Head:  &req.Head,
+		Base:  &req.Base,
+		Title: &req.Title,
+		Body:  &req.Body,
+		Draft: &req.Draft,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.CreateGithubPullResponse{
+		Url:        pr.GetHTMLURL(),
+		PullNumber: int64(pr.GetNumber()),
+		Ref:        pr.GetHead().GetRef(),
+	}, nil
+}
+
+func (a *GitHubApp) MergeGithubPull(ctx context.Context, req *ghpb.MergeGithubPullRequest) (*ghpb.MergeGithubPullResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, err = client.PullRequests.Merge(ctx, req.Owner, req.Repo, int(req.PullNumber), "", &github.PullRequestOptions{MergeMethod: "squash"})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.MergeGithubPullResponse{}, nil
+}
+
+func (a *GitHubApp) GetGithubCompare(ctx context.Context, req *ghpb.GetGithubCompareRequest) (*ghpb.GetGithubCompareResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	comparison, _, err := client.Repositories.CompareCommits(ctx, req.Owner, req.Repo, req.Base, req.Head, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &ghpb.GetGithubCompareResponse{
+		AheadBy: int64(comparison.GetAheadBy()),
+		Files:   []*ghpb.File{},
+		Commits: []*ghpb.Commit{},
+	}
+
+	for _, c := range comparison.Commits {
+		res.Commits = append(res.Commits, &ghpb.Commit{
+			Sha: c.GetSHA(),
+		})
+	}
+
+	for _, f := range comparison.Files {
+		res.Files = append(res.Files, &ghpb.File{
+			Name: f.GetFilename(),
+			Sha:  f.GetSHA(),
+		})
+	}
+
+	return res, nil
+}
+
+func (a *GitHubApp) GetGithubForks(ctx context.Context, req *ghpb.GetGithubForksRequest) (*ghpb.GetGithubForksResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	forks, _, err := client.Repositories.ListForks(ctx, req.Owner, req.Repo, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &ghpb.GetGithubForksResponse{
+		Forks: []*ghpb.Fork{},
+	}
+
+	for _, f := range forks {
+		res.Forks = append(res.Forks, &ghpb.Fork{
+			Owner: f.GetOwner().GetLogin(),
+		})
+	}
+
+	return res, nil
+}
+
+func (a *GitHubApp) CreateGithubFork(ctx context.Context, req *ghpb.CreateGithubForkRequest) (*ghpb.CreateGithubForkResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, err = client.Repositories.CreateFork(ctx, req.Owner, req.Repo, nil)
+	if _, ok := err.(*github.AcceptedError); !ok && err != nil {
+		return nil, err
+	}
+
+	return &ghpb.CreateGithubForkResponse{}, nil
+}
+
+func (a *GitHubApp) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCommitsRequest) (*ghpb.GetGithubCommitsResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	commits, _, err := client.Repositories.ListCommits(ctx, req.Owner, req.Repo, &github.CommitsListOptions{
+		SHA: req.Sha,
+		ListOptions: github.ListOptions{
+			PerPage: int(req.PerPage),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	res := &ghpb.GetGithubCommitsResponse{
+		Commits: []*ghpb.Commit{},
+	}
+
+	for _, c := range commits {
+		commit := &ghpb.Commit{
+			Sha:     c.GetSHA(),
+			TreeSha: c.GetCommit().GetTree().GetSHA(),
+		}
+		res.Commits = append(res.Commits, commit)
+	}
+
+	return res, nil
+}
+
+func (a *GitHubApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGithubCommitRequest) (*ghpb.CreateGithubCommitResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	commit := &github.Commit{
+		Message: &req.Message,
+		Tree:    &github.Tree{SHA: &req.Tree},
+		Parents: []*github.Commit{},
+	}
+	for _, p := range req.Parents {
+		commit.Parents = append(commit.Parents, &github.Commit{SHA: &p})
+	}
+	c, _, err := client.Git.CreateCommit(ctx, req.Owner, req.Repo, commit)
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.CreateGithubCommitResponse{
+		Sha: c.GetSHA(),
+	}, nil
+}
+
+func (a *GitHubApp) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubRefRequest) (*ghpb.UpdateGithubRefResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, err = client.Git.UpdateRef(ctx, req.Owner, req.Repo, &github.Reference{Ref: &req.Head, Object: &github.GitObject{SHA: &req.Sha}}, req.Force)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.UpdateGithubRefResponse{}, nil
+}
+
+func (a *GitHubApp) CreateGithubRef(ctx context.Context, req *ghpb.CreateGithubRefRequest) (*ghpb.CreateGithubRefResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, err = client.Git.CreateRef(ctx, req.Owner, req.Repo, &github.Reference{Ref: &req.Ref, Object: &github.GitObject{SHA: &req.Sha}})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.CreateGithubRefResponse{}, nil
 }
