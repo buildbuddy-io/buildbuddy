@@ -23,7 +23,7 @@ func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthen
 	return &Provider{}
 }
 
-func (p *Provider) NewContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
 	return nil, status.UnimplementedError("Firecracker is unsupported on macOS")
 }
 
