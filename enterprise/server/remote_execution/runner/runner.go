@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,11 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -48,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
@@ -57,7 +50,6 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
@@ -298,27 +290,8 @@ func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStat
 		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
 	}
 
-	if r.PlatformProperties.EnableVFS {
-		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
-		// pass the layout information to the implementation.
-		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
-			fc.SetTaskFileSystemLayout(layout)
-		}
-	}
-
-	if r.VFSServer != nil {
-		p, err := vfs_server.NewCASLazyFileProvider(r.env, ctx, layout.RemoteInstanceName, layout.DigestFunction, layout.Inputs)
-		if err != nil {
-			return err
-		}
-		if err := r.VFSServer.Prepare(p); err != nil {
-			return err
-		}
-	}
-	if r.VFS != nil {
-		if err := r.VFS.PrepareForTask(ctx, r.task.GetExecutionId()); err != nil {
-			return err
-		}
+	if err := r.prepareVFS(ctx, layout); err != nil {
+		return err
 	}
 
 	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
@@ -470,13 +443,8 @@ func (r *commandRunner) Remove(ctx context.Context) error {
 			}
 		}
 	}
-	if r.VFS != nil {
-		if err := r.VFS.Unmount(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if r.VFSServer != nil {
-		r.VFSServer.Stop()
+	if err := r.removeVFS(); err != nil {
+		errs = append(errs, err)
 	}
 	if err := r.Workspace.Remove(ctx); err != nil {
 		errs = append(errs, err)
@@ -572,7 +540,9 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		imageCacheAuth: imageCacheAuth,
 		runners:        []*commandRunner{},
 	}
-	p.initContainerProviders()
+	if err := p.initContainerProviders(); err != nil {
+		return nil, err
+	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
 	}
@@ -585,29 +555,6 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 	}
 
 	return p, nil
-}
-
-func (p *pool) initContainerProviders() {
-	providers := make(map[platform.ContainerType]container.Provider)
-	dockerProvider, err := docker.NewProvider(p.env, p.imageCacheAuth, p.hostBuildRoot())
-	if err != nil {
-		log.Warningf("Failed to initialize docker container provider: %s", err)
-	}
-	if dockerProvider != nil {
-		providers[platform.DockerContainerType] = dockerProvider
-	}
-	podmanProvider, err := podman.NewProvider(p.env, p.imageCacheAuth, *rootDirectory)
-	if err != nil {
-		log.Warningf("Failed to initialize podman container provider: %s", err)
-	}
-	if podmanProvider != nil {
-		providers[platform.PodmanContainerType] = podmanProvider
-	}
-	providers[platform.FirecrackerContainerType] = firecracker.NewProvider(p.env, p.imageCacheAuth, *rootDirectory)
-	providers[platform.SandboxContainerType] = &sandbox.Provider{}
-	providers[platform.BareContainerType] = &bare.Provider{}
-
-	p.containerProviders = providers
 }
 
 func (p *pool) GetBuildRoot() string {
@@ -992,37 +939,6 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	if err != nil {
 		return nil, err
 	}
-	var fs *vfs.VFS
-	var vfsServer *vfs_server.Server
-	enableVFS := props.EnableVFS
-	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
-	if enableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
-		vfsDir := ws.Path() + "_vfs"
-		if err := os.Mkdir(vfsDir, 0755); err != nil {
-			return nil, status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
-		}
-
-		vfsServer = vfs_server.New(p.env, ws.Path())
-		unixSocket := filepath.Join(ws.Path(), "vfs.sock")
-
-		lis, err := net.Listen("unix", unixSocket)
-		if err != nil {
-			return nil, err
-		}
-		if err := vfsServer.Start(lis); err != nil {
-			return nil, err
-		}
-
-		conn, err := grpc.Dial("unix://"+unixSocket, grpc.WithInsecure())
-		if err != nil {
-			return nil, err
-		}
-		vfsClient := vfspb.NewFileSystemClient(conn)
-		fs = vfs.New(vfsClient, vfsDir, &vfs.Options{})
-		if err := fs.Mount(); err != nil {
-			return nil, status.UnavailableErrorf("unable to mount VFS at %q: %s", vfsDir, err)
-		}
-	}
 	r := &commandRunner{
 		env:                p.env,
 		p:                  p,
@@ -1034,8 +950,9 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 		PlatformProperties: props,
 		Container:          ctr,
 		Workspace:          ws,
-		VFS:                fs,
-		VFSServer:          vfsServer,
+	}
+	if err := r.startVFS(); err != nil {
+		return nil, err
 	}
 	// If we restored a paused container from state, the initial state should be
 	// set to "paused" rather than the usual "init".

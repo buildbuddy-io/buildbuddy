@@ -6,6 +6,9 @@ go_library(
     name = "sandbox",
     srcs = ["sandbox.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox",
+    target_compatible_with = [
+        "@platforms//os:macos",
+    ],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
