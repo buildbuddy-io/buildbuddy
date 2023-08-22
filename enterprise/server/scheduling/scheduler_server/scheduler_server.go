@@ -912,7 +912,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 
 	user, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
-		if s.env.GetAuthenticator().AnonymousUsageEnabled() {
+		if s.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
 			if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
 				return nil, status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
 			}

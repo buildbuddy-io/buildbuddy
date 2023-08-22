@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
@@ -369,7 +370,10 @@ func (a *OpenIDAuthenticator) AdminGroupID() string {
 	return a.adminGroupID
 }
 
-func (a *OpenIDAuthenticator) AnonymousUsageEnabled() bool {
+func (a *OpenIDAuthenticator) AnonymousUsageEnabled(ctx context.Context) bool {
+	if sd := subdomain.Get(ctx); sd != "" {
+		return false
+	}
 	if len(*oauthProviders) == 0 && !selfauth.Enabled() {
 		return true
 	}

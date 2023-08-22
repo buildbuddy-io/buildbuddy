@@ -26,7 +26,7 @@ func (a *NullAuthenticator) AdminGroupID() string {
 	return a.adminGroupID
 }
 
-func (a *NullAuthenticator) AnonymousUsageEnabled() bool {
+func (a *NullAuthenticator) AnonymousUsageEnabled(ctx context.Context) bool {
 	return !a.anonymousUsageDisabled
 }
 

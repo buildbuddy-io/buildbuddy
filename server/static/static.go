@@ -110,7 +110,7 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 		}
 
 		if r.URL.Path == "/" {
-			serveIndexTemplate(env, template, version, jsPath, stylePath, w)
+			serveIndexTemplate(r.Context(), env, template, version, jsPath, stylePath, w)
 			return
 		}
 
@@ -139,7 +139,7 @@ type FrontendTemplateData struct {
 	Config template.JS
 }
 
-func serveIndexTemplate(env environment.Env, tpl *template.Template, version, jsPath, stylePath string, w http.ResponseWriter) {
+func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath string, w http.ResponseWriter) {
 	config := cfgpb.FrontendConfig{
 		Version:                                version,
 		ConfiguredIssuers:                      env.GetAuthenticator().PublicIssuers(),
@@ -147,7 +147,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		GithubEnabled:                          github.IsLegacyOAuthAppEnabled(),
 		GithubAppEnabled:                       env.GetGitHubApp() != nil,
 		GithubAuthEnabled:                      githubauth.IsEnabled(env),
-		AnonymousUsageEnabled:                  env.GetAuthenticator().AnonymousUsageEnabled(),
+		AnonymousUsageEnabled:                  env.GetAuthenticator().AnonymousUsageEnabled(ctx),
 		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),
 		UserOwnedExecutorsEnabled:              remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		ExecutorKeyCreationEnabled:             remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,

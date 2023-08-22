@@ -268,7 +268,7 @@ func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string,
 func (s *taskSizer) groupKey(ctx context.Context) (string, error) {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
-		if authutil.IsAnonymousUserError(err) && s.env.GetAuthenticator().AnonymousUsageEnabled() {
+		if authutil.IsAnonymousUserError(err) && s.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
 			return "ANON", nil
 		}
 		return "", err
