@@ -341,7 +341,7 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 		UserGroup:        makeGroups(ctx, tu.Groups),
 		SelectedGroupId:  selectedGroupID,
 		AllowedRpc:       allowedRPCs,
-		GithubLinked:    tu.GithubToken != "",
+		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,
 	}, nil
 }

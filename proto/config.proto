@@ -117,7 +117,10 @@ message FrontendConfig {
   // Whether to show the new, more split-out trends UI.
   bool new_trends_ui_enabled = 38;
 
+  // Whether subdomains feature is enabled.
+  bool subdomains_enabled = 39;
+
   // Whether customer subdomains are enabled and front-end was loaded on a
   // subdomain.
-  bool customer_subdomain = 39;
+  bool customer_subdomain = 40;
 }

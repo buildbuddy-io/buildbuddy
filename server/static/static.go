@@ -179,6 +179,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		WorkflowHistoryEnabled:                 *workflowHistoryEnabled,
 		AuditLogsUiEnabled:                     *auditLogsUIEnabled,
 		NewTrendsUiEnabled:                     *newTrendsUIEnabled,
+		SubdomainsEnabled:                      subdomain.Enabled(),
 		CustomerSubdomain:                      subdomain.Get(ctx) != "",
 	}
 
