@@ -145,7 +145,7 @@ export class AuthService {
       displayUser: response.displayUser as user_id.DisplayUser,
       groups: response.userGroup as grp.Group[],
       selectedGroup: response.userGroup.find((group) => group.id === response.selectedGroupId) as grp.Group,
-      githubToken: response.githubToken,
+      githubLinked: response.githubLinked,
       allowedRpcs: new Set(
         response.allowedRpc.map(
           // Ensure RPC names are lowerCamelCase so that they match the RPC names

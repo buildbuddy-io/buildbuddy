@@ -7,7 +7,7 @@ export class User {
   groups: grp.Group[];
   selectedGroup: grp.Group;
   allowedRpcs: Set<BuildBuddyServiceRpcName>;
-  githubToken: string;
+  githubLinked: boolean;
   /** Whether the user is temporarily acting as a member of the selected group. */
   isImpersonating: boolean;
 
@@ -20,7 +20,7 @@ export class User {
     // page on initial page load if the user is not a part of any groups.
     this.selectedGroup = init.selectedGroup ?? new grp.Group();
     this.allowedRpcs = init.allowedRpcs!;
-    this.githubToken = init.githubToken!;
+    this.githubLinked = init.githubLinked!;
     this.isImpersonating = init.isImpersonating!;
 
     // All props are required, but it's a pain in TS to get a type representing

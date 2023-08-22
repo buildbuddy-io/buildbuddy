@@ -76,7 +76,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   fetchGithubInstallations() {
-    if (!this.props.user || !this.props.user.githubToken) {
+    if (!this.props.user || !this.props.user.githubLinked) {
       this.setState({ githubInstallationsLoading: false });
       return;
     }

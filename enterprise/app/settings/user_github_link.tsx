@@ -63,7 +63,7 @@ export default class UserGitHubLink extends React.Component<Props, State> {
   private fetchGitHubAccount() {
     this.accountFetch?.cancel();
 
-    if (!this.props.user.githubToken) {
+    if (!this.props.user.githubLinked) {
       this.setState({ accountLoading: false, account: null });
       return;
     }
@@ -126,7 +126,7 @@ export default class UserGitHubLink extends React.Component<Props, State> {
             directly in the BuildBuddy UI.
           </p>
         </div>
-        {this.props.user.githubToken ? (
+        {this.props.user.githubLinked ? (
           <div className="linked-github-account-row">
             {this.state.account ? (
               <img src={this.state.account.avatarUrl} alt="" className="avatar" />

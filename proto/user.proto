@@ -13,6 +13,8 @@ message GetUserRequest {
 }
 
 message GetUserResponse {
+  reserved 5;
+
   context.ResponseContext response_context = 6;
 
   user_id.DisplayUser display_user = 1;
@@ -33,8 +35,8 @@ message GetUserResponse {
   // for their currently selected group.
   repeated string allowed_rpc = 4;
 
-  // User-specific Github token (if linked).
-  string github_token = 5;
+  // True if the user has a linked GitHub account.
+  bool github_linked = 7;
 }
 
 message CreateUserRequest {
