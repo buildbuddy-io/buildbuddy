@@ -17,31 +17,35 @@ import (
 )
 
 const (
-	Issuer                      = "https://accounts.google.com"
-	scope                       = "https://www.googleapis.com/auth/cloud-platform"
-	paramName                   = "link_gcp_for_group"
-	cookieName                  = "link-gcp-for-group"
-	cookieDuration              = 1 * time.Hour
+	Issuer         = "https://accounts.google.com"
+	scope          = "https://www.googleapis.com/auth/cloud-platform"
+	linkParamName  = "link_gcp_for_group"
+	linkCookieName = "link-gcp-for-group"
+	cookieDuration = 1 * time.Hour
+	// These can be used to call gcloud auth activate-refresh-token $CLOUDSDK_AUTH_ACCOUNT $CLOUDSDK_AUTH_REFRESH_TOKEN
 	refreshTokenEnvVariableName = "CLOUDSDK_AUTH_REFRESH_TOKEN"
 	authAccountEnvVariableName  = "CLOUDSDK_AUTH_ACCOUNT"
 )
 
+// Returns true if the request contains either a gcp link url param or cookie.
 func IsLinkRequest(r *http.Request) bool {
-	return (r.URL.Query().Get(paramName) != "" && cookie.GetCookie(r, cookie.AuthIssuerCookie) == Issuer) ||
-		cookie.GetCookie(r, cookieName) != ""
+	return (r.URL.Query().Get(linkParamName) != "" && cookie.GetCookie(r, cookie.AuthIssuerCookie) == Issuer) ||
+		cookie.GetCookie(r, linkCookieName) != ""
 }
 
+// Redirects the user to the auth flow with a request for the GCP scope.
 func RequestAccess(w http.ResponseWriter, r *http.Request, authUrl string) {
 	authUrl = strings.ReplaceAll(authUrl, "scope=", fmt.Sprintf("scope=%s+", scope))
-	cookie.SetCookie(w, cookieName, r.URL.Query().Get(paramName), time.Now().Add(cookieDuration), true)
+	cookie.SetCookie(w, linkCookieName, r.URL.Query().Get(linkParamName), time.Now().Add(cookieDuration), true)
 	http.Redirect(w, r, authUrl, http.StatusTemporaryRedirect)
 }
 
+// Accepts the redirect from the auth provider and stores the results as secrets.
 func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, email, refreshToken string) error {
 	rc := &ctxpb.RequestContext{
-		GroupId: cookie.GetCookie(r, cookieName),
+		GroupId: cookie.GetCookie(r, linkCookieName),
 	}
-	cookie.ClearCookie(w, cookieName)
+	cookie.ClearCookie(w, linkCookieName)
 	ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), rc)
 	ctx = env.GetAuthenticator().AuthenticatedHTTPContext(w, r.WithContext(ctx))
 	secretResponse, err := env.GetSecretService().GetPublicKey(ctx, &skpb.GetPublicKeyRequest{
