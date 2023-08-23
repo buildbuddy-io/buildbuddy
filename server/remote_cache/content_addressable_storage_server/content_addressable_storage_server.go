@@ -43,7 +43,7 @@ var (
 	enableTreeCaching       = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed           = flag.String("cache.tree_cache_seed", "treecache-03011023", "If set, hash this with digests before caching / reading from tree cache")
 	minTreeCacheLevel       = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
-	minTreeCacheDescendents = flag.Int("cache.tree_cache_min_descendents", 10, "The min number of descendents a node must parent in order to be cached")
+	minTreeCacheDescendents = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	maxTreeCacheSetDuration = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 )
 
