@@ -63,8 +63,6 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -420,15 +418,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		UseGroupOwnedExecutors: &useGroupOwnedExecutors,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
-
-	if urlIdentifier != "" {
-		if existingGroup, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); existingGroup != nil {
-			return nil, status.InvalidArgumentError("URL is already in use")
-		} else if gstatus.Code(err) != gcodes.NotFound {
-			return nil, err
-		}
-		group.URLIdentifier = &urlIdentifier
-	}
+	group.URLIdentifier = &urlIdentifier
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 
 	groupID, err := userDB.CreateGroup(ctx, group)
