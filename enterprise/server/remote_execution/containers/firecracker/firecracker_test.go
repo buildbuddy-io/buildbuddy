@@ -374,6 +374,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	t.Skip()
 
 	flags.Set(t, "executor.firecracker_enable_nbd", true)
+	flags.Set(t, "executor.firecracker_enable_uffd", true)
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 
 	ctx := context.Background()
@@ -431,10 +432,10 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	err = baseVM.Pause(ctx)
 	require.NoError(t, err)
 
-	containers := make([]*firecracker.FirecrackerContainer, 0, 3)
+	containers := make([]*firecracker.FirecrackerContainer, 0, 4)
 	// Load the same base snapshot from multiple VMs - there should be no
 	// corruption or data transfer from snapshot sharing
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		workDir = testfs.MakeDirAll(t, rootDir, fmt.Sprintf("work-%d", i))
 		opts = firecracker.ContainerOpts{
 			ContainerImage:         busyboxImage,
@@ -469,6 +470,9 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	// overwrites any pre-existing snapshot, so to ensure all the forked VMs
 	// start from the same base snapshot, don't pause them until after all
 	// forked VMs have started from the base snapshot
+	//
+	// Pause multiple VMs simultaneously to test no race conditions / corruption
+	// when writing sharable snapshots
 	var wg sync.WaitGroup
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
@@ -479,13 +483,18 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 			// Each new VM shouldn't have trouble saving snapshots themselves
 			err := c.Pause(ctx)
 			require.NoError(t, err)
-			err = c.Remove(ctx)
-			require.NoError(t, err)
 		}()
 	}
 	wg.Wait()
 
 	// Test that a new VM uses the newest snapshot
+
+	// Create a snapshot from Fork-3
+	c := containers[3]
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	// A new VM should use the snapshot from Fork-3
 	workDir = testfs.MakeDirAll(t, rootDir, "work-last")
 	opts = firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -498,7 +507,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		},
 		JailerRoot: jailerRoot,
 	}
-	c, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+	c, err = firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 	// This VM should load the snapshot saved by the last forked VM to Pause
 	err = c.Unpause(ctx)
@@ -506,7 +515,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	cmd = appendToLog("Last")
 	res = c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
-	require.Equal(t, "Base\nFork-2\nLast\n", string(res.Stdout))
+	require.Equal(t, "Base\nFork-3\nLast\n", string(res.Stdout))
 
 	err = c.Pause(ctx)
 	require.NoError(t, err)
