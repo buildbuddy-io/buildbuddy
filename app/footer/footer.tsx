@@ -19,7 +19,7 @@ export default class FooterComponent extends React.Component {
         <a href="mailto:hello@buildbuddy.io" target="_blank">
           Contact us
         </a>
-        <a href="https://slack.buildbuddy.io" target="_blank">
+        <a href="https://community.buildbuddy.io" target="_blank">
           Slack
         </a>
         <a href="https://twitter.com/buildbuddy_io" target="_blank">

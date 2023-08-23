@@ -10,7 +10,7 @@ We want contributing to BuildBuddy to be fun, enjoyable, and educational for any
 
 ## Not sure where to start?
 
-Not sure how to start contributing? If you are worried or don’t know where to start, join our [BuildBuddy Slack channel](https://slack.buildbuddy.io) to chat with us or ask questions. You can also submit an issue and a maintainer can give you guidance!
+Not sure how to start contributing? If you are worried or don’t know where to start, join our [BuildBuddy Slack channel](https://community.buildbuddy.io) to chat with us or ask questions. You can also submit an issue and a maintainer can give you guidance!
 
 ## How to file an issue
 

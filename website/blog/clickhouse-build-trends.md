@@ -78,5 +78,5 @@ their time. These insights can be used to guide remote execution performance
 optimizations.
 
 We would love to hear your feedback about what stats and graphs you are interested in seeing.
-Join our [Slack channel](https://slack.buildbuddy.io) or email us at
+Join our [Slack channel](https://community.buildbuddy.io) or email us at
 <hello@buildbuddy.io> with any questions, comments, or thoughts.

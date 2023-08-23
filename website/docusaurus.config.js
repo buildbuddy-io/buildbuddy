@@ -212,7 +212,7 @@ module.exports = {
           items: [
             {
               label: "Slack",
-              href: "http://slack.buildbuddy.io/",
+              href: "http://community.buildbuddy.io/",
             },
             {
               label: "Twitter",

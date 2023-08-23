@@ -15,4 +15,4 @@ Here is a list of our available guides:
 
 ## More
 
-Don't see a guide for what you're looking for? Email us at [support@buildbuddy.io](mailto:support@buildbuddy.io) or join our [Slack channel](https://slack.buildbuddy.io) and we'd be happy to help!
+Don't see a guide for what you're looking for? Email us at [support@buildbuddy.io](mailto:support@buildbuddy.io) or join our [Slack channel](https://community.buildbuddy.io) and we'd be happy to help!
