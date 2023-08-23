@@ -7,6 +7,7 @@ go_library(
     srcs = ["oidc.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oidc",
     deps = [
+        "//enterprise/server/gcplink",
         "//enterprise/server/selfauth",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
