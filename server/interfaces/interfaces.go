@@ -676,6 +676,7 @@ type FileCache interface {
 	FastLinkFile(f *repb.FileNode, outputPath string) bool
 	DeleteFile(f *repb.FileNode) bool
 	AddFile(f *repb.FileNode, existingFilePath string)
+	ContainsFile(node *repb.FileNode) bool
 	WaitForDirectoryScanToComplete()
 
 	// TempDir returns a directory that is guaranteed to be on the same device

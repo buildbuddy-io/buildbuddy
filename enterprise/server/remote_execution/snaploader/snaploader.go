@@ -42,15 +42,13 @@ func NewKey(task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb
 
 // manifestFileCacheKey returns the filecache key for the snapshot manifest
 // file.
+//
+// We always want runners to use the newest manifest (and corresponding
+// snapshot), so they should overwrite any existing manifest when saving
+// snapshots so that newer runners will read from the newer version
 func manifestFileCacheKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) *repb.FileNode {
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
-	//
-	// We always want runners to use the newest manifest (and corresponding
-	// snapshot). That means we don't need unique manifest keys,
-	// even if the snapshot files change, so that we'll always overwrite
-	// and read the manifest with the newest version.
-	// That's why we set computeDigest=false here
 	key, _ := artifactFileCacheKey(ctx, env, false, s, ".manifest", 1 /*=arbitrary size*/)
 	return key
 }
@@ -229,9 +227,6 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	return unpacked, nil
 }
 
-// TODO(Maggie): Delete this after snapshot sharing is launched. We can't
-// guarantee another runner isn't using the same files, so rely on cache
-// evictions to delete unused artifacts instead
 func (l *FileCacheLoader) DeleteSnapshot(ctx context.Context, snapshot *Snapshot) error {
 	// Manually evict the manifest as well as all referenced files.
 	l.env.GetFileCache().DeleteFile(manifestFileCacheKey(ctx, l.env, snapshot.key))
@@ -261,8 +256,13 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 			return nil, err
 		}
 		fileNode.Name = filepath.Base(f)
-		l.env.GetFileCache().AddFile(fileNode, f)
 		manifest.Files = append(manifest.Files, fileNode)
+
+		// If EnableLocalSnapshotSharing=true and we're computing real digests,
+		// the files will be immutable. We won't need to re-save them to file cache
+		if !*EnableLocalSnapshotSharing || !l.env.GetFileCache().ContainsFile(fileNode) {
+			l.env.GetFileCache().AddFile(fileNode, f)
+		}
 	}
 	for name, cow := range opts.ChunkedFiles {
 		cf, err := l.cacheCOW(ctx, name, cow)
