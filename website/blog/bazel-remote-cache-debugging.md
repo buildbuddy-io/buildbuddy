@@ -140,5 +140,5 @@ We hope that you find the new cache requests card useful and that you
 enjoyed reading about how it works! We would love to hear your feedback,
 which will help inform how we design the next iteration of our cache
 debugging tools to help make your builds even faster and more scalable.
-Join our [Slack channel](https://slack.buildbuddy.io) or email us at
+Join our [Slack channel](https://community.buildbuddy.io) or email us at
 <hello@buildbuddy.io> with any questions, comments, or thoughts.

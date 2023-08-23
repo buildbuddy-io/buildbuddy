@@ -393,7 +393,7 @@ function Index() {
                 you can <a href="/request-demo">schedule a demo</a>. If you're curious abour pricing, you can{" "}
                 <a href="/request-quote">request a quote</a>. For all other questions, you can either{" "}
                 <a href="mailto:hello@buildbuddy.io">email us</a>, or{" "}
-                <a href="https://slack.buildbuddy.io">chat with us on Slack</a>.
+                <a href="https://community.buildbuddy.io">chat with us on Slack</a>.
               </div>
             </div>
           </div>

@@ -51,5 +51,5 @@ Revocation of either the customer-supplied key or the BuildBuddy-managed key ren
 
 Both the encryption design and source code have been audited by a third party.
 
-If you have any questions or feedback about this feature, please reach out to us on [Slack](https://slack.buildbuddy.io/)
+If you have any questions or feedback about this feature, please reach out to us on [Slack](https://community.buildbuddy.io/)
 or at [security@buildbuddy.io](mailto:security@buildbuddy.io).

@@ -75,6 +75,6 @@ While our focus for v2 has been on RBE performance, we've made plenty of other i
 
 We have several big announcements coming in the next few weeks, so stay tuned for more!
 
-As always, we love your feedback - join our [Slack channel](https://slack.buildbuddy.io) or email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
+As always, we love your feedback - join our [Slack channel](https://community.buildbuddy.io) or email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
 
 Happy Building!

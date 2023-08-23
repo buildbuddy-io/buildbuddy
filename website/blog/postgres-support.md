@@ -33,4 +33,4 @@ The PostgreSQL connection may also be specified via `database.advanced_data_sour
 
 ![](/img/blog/postgres-support.png)
 
-Questions? Comments? Other things you'd like to see in BuildBuddy? You can find us on [Slack](https://slack.buildbuddy.io/) or contact us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io); we'd love to hear from you!
+Questions? Comments? Other things you'd like to see in BuildBuddy? You can find us on [Slack](https://community.buildbuddy.io/) or contact us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io); we'd love to hear from you!

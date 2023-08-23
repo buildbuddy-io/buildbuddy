@@ -28,4 +28,4 @@ Check out our [contributing](contributing.md) docs to find out how to get starte
 
 ## Join the discussion
 
-Join our [BuildBuddy Slack channel](https://slack.buildbuddy.io) to talk to the team, ask questions, discuss BuildBuddy, and get to know us!
+Join our [BuildBuddy Slack channel](https://community.buildbuddy.io) to talk to the team, ask questions, discuss BuildBuddy, and get to know us!

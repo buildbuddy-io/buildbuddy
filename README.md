@@ -4,7 +4,7 @@
   <a href="https://github.com/buildbuddy-io/buildbuddy/blob/master/LICENSE"><img src="https://img.shields.io/badge/Licence-MIT-brightgreen.svg" /></a>
   <a href="https://github.com/buildbuddy-io/buildbuddy/actions"><img src="https://img.shields.io/github/actions/workflow/status/buildbuddy-io/buildbuddy/main.yaml?branch=master" /></a>
   <a href="https://github.com/buildbuddy-io/buildbuddy/releases"><img src="https://img.shields.io/github/v/release/buildbuddy-io/buildbuddy?color=brightgreen" /></a>
-  <a href="https://slack.buildbuddy.io"><img src="https://img.shields.io/badge/slack-join-brightgreen" /></a>
+  <a href="https://community.buildbuddy.io"><img src="https://img.shields.io/badge/slack-join-brightgreen" /></a>
 </p>
 
 # Intro
@@ -36,7 +36,7 @@ Our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs
 
 # Questions?
 
-If you have any questions, join the [BuildBuddy Slack channel](https://slack.buildbuddy.io) or e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io). We’d love to chat!
+If you have any questions, join the [BuildBuddy Slack channel](https://community.buildbuddy.io) or e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io). We’d love to chat!
 
 # Features
 

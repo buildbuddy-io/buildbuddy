@@ -40,7 +40,7 @@ function Contact() {
               <a href="/request-demo">
                 <Calendar /> Schedule a demo
               </a>
-              <a href="https://slack.buildbuddy.io" target="_blank">
+              <a href="https://community.buildbuddy.io" target="_blank">
                 <Slack /> Chat with us on Slack
               </a>
               <a href="https://github.com/buildbuddy-io/buildbuddy/issues/new" target="_blank">

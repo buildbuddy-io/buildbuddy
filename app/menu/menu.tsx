@@ -116,7 +116,7 @@ export default class MenuComponent extends React.Component<Props, State> {
                     <a href="mailto:hello@buildbuddy.io">Contact us</a>
                   </li>
                   <li onClick={this.dismissMenu.bind(this)}>
-                    <a target="_blank" href="https://slack.buildbuddy.io">
+                    <a target="_blank" href="https://community.buildbuddy.io">
                       BuildBuddy Slack
                     </a>
                   </li>

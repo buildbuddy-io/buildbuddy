@@ -240,4 +240,4 @@ For more information on configuring your BuildBuddy Enterprise Helm deploy, chec
 
 - [BuildBuddy Enterprise](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise)
 
-For more information on configuring BuildBuddy, see our [Configuration docs](config.md). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](mailto:setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).
+For more information on configuring BuildBuddy, see our [Configuration docs](config.md). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](mailto:setup@buildbuddy.io) or ping us on our [Slack channel](https://community.buildbuddy.io).
