@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
@@ -293,6 +294,61 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 		}
 	}
 	return true
+}
+
+type Provider struct {
+	env            environment.Env
+	dockerClient   *dockerclient.Client
+	imageCacheAuth *container.ImageCacheAuthenticator
+	buildRoot      string
+}
+
+func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, hostBuildRoot string) *Provider {
+	// Best effort trying to initialize the docker client. If it fails, we'll
+	// simply fall back to use skopeo to download and cache container images.
+	client, err := docker.NewClient()
+	if err != nil {
+		client = nil
+	}
+
+	return &Provider{
+		env:            env,
+		dockerClient:   client,
+		imageCacheAuth: imageCacheAuth,
+		buildRoot:      hostBuildRoot,
+	}
+}
+
+func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+	var vmConfig *fcpb.VMConfiguration
+	savedState := state.GetContainerState().GetFirecrackerState()
+	if savedState == nil {
+		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
+		vmConfig = &fcpb.VMConfiguration{
+			NumCpus:           int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
+			MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+			ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+			EnableNetworking:  true,
+			InitDockerd:       props.InitDockerd,
+			EnableDockerdTcp:  props.EnableDockerdTCP,
+		}
+	} else {
+		vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
+	}
+	opts := ContainerOpts{
+		VMConfiguration:        vmConfig,
+		SavedState:             savedState,
+		ContainerImage:         props.ContainerImage,
+		User:                   props.DockerUser,
+		DockerClient:           p.dockerClient,
+		ActionWorkingDirectory: workingDir,
+		JailerRoot:             p.buildRoot,
+	}
+	c, err := NewContainer(ctx, p.env, p.imageCacheAuth, task.GetExecutionTask(), opts)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // FirecrackerContainer executes commands inside of a firecracker VM.

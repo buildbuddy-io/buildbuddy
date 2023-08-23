@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -22,6 +23,7 @@ go_library(
         "//server/util/alert",
         "//server/util/background",
         "//server/util/disk",
+        "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/lockingbuffer",

@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -260,6 +261,15 @@ func sandboxPrereqs(ctx context.Context) error {
 // Options contains configuration options for the sandbox runner.
 type Options struct {
 	Network string
+}
+
+type Provider struct{}
+
+func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.ScheduledTask, _ *rnpb.RunnerState, _ string) (container.CommandContainer, error) {
+	opts := &Options{
+		Network: props.DockerNetwork,
+	}
+	return New(opts), nil
 }
 
 // sandbox executes commands using /usr/bin/sandbox-exec. This

@@ -7,12 +7,25 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 )
+
+type Provider struct {
+}
+
+func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, hostBuildRoot string) *Provider {
+	return &Provider{}
+}
+
+func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+	return nil, status.UnimplementedError("Firecracker is unsupported on macOS")
+}
 
 type FirecrackerContainer struct {
 	container.CommandContainer

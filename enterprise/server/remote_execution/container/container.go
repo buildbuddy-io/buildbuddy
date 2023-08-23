@@ -57,6 +57,17 @@ type DockerDeviceMapping struct {
 	CgroupPermissions string `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
 }
 
+// Provider constructs new CommandContainer instances
+// for a specific isolation type.
+//
+// This approach is used instead of package-level
+// `New` funcs because it allows the executor to avoid
+// depending directly on platform-specific container
+// implementations.
+type Provider interface {
+	New(context.Context, *platform.Properties, *repb.ScheduledTask, *rnpb.RunnerState, string) (CommandContainer, error)
+}
+
 // ContainerMetrics handles Prometheus metrics accounting for CommandContainer
 // instances.
 type ContainerMetrics struct {

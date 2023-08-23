@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,12 +13,15 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -44,6 +48,91 @@ const (
 	containerFinalizationTimeout = 10 * time.Second
 	defaultDockerUlimit          = int64(65535)
 )
+
+var (
+	dockerMountMode         = flag.String("executor.docker_mount_mode", "", "Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/")
+	dockerNetHost           = flagutil.New("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.", flagutil.DeprecatedTag("Use --executor.docker_network=host instead."))
+	dockerNetwork           = flag.String("executor.docker_network", "", "If set, set docker/podman --network to this value by default. Can be overridden per-action with the `dockerNetwork` exec property, which accepts values 'off' (--network=none) or 'bridge' (--network=<default>).")
+	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
+	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
+	dockerDevices           = flagutil.New("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
+	dockerVolumes           = flagutil.New("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
+	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
+)
+
+type Provider struct {
+	env            environment.Env
+	client         *dockerclient.Client
+	imageCacheAuth *container.ImageCacheAuthenticator
+	buildRoot      string
+}
+
+var (
+	initDockerClientOnce sync.Once
+	dockerClient         *dockerclient.Client
+	initErr              error
+)
+
+func NewClient() (*dockerclient.Client, error) {
+	initDockerClientOnce.Do(func() {
+		if platform.DockerSocket() == "" {
+			return
+		}
+		_, err := os.Stat(platform.DockerSocket())
+		if os.IsNotExist(err) {
+			initErr = status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
+			return
+		}
+		if err != nil {
+			initErr = status.FailedPreconditionErrorf("Failed to stat docker socket %q: %s", platform.DockerSocket(), err)
+			return
+		}
+
+		dockerSocket := platform.DockerSocket()
+		if !strings.Contains(dockerSocket, "://") {
+			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
+		}
+		dockerClient, initErr = dockerclient.NewClientWithOpts(
+			dockerclient.WithHost(dockerSocket),
+			dockerclient.WithAPIVersionNegotiation(),
+		)
+	})
+
+	return dockerClient, initErr
+}
+
+func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, hostBuildRoot string) (*Provider, error) {
+	client, err := NewClient()
+	if err != nil {
+		return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
+	}
+
+	return &Provider{
+		env:            env,
+		client:         client,
+		imageCacheAuth: imageCacheAuth,
+		buildRoot:      hostBuildRoot,
+	}, nil
+}
+
+func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+	opts := &DockerOptions{
+		ForceRoot:               props.DockerForceRoot,
+		DockerInit:              props.DockerInit,
+		DockerUser:              props.DockerUser,
+		DockerNetwork:           props.DockerNetwork,
+		Socket:                  platform.DockerSocket(),
+		EnableSiblingContainers: *dockerSiblingContainers,
+		UseHostNetwork:          *dockerNetHost,
+		DockerMountMode:         *dockerMountMode,
+		DockerCapAdd:            *dockerCapAdd,
+		DockerDevices:           *dockerDevices,
+		DefaultNetworkMode:      *dockerNetwork,
+		Volumes:                 *dockerVolumes,
+		InheritUserIDs:          *dockerInheritUserIDs,
+	}
+	return NewDockerContainer(p.env, p.imageCacheAuth, p.client, props.ContainerImage, p.buildRoot, opts), nil
+}
 
 type DockerOptions struct {
 	Socket                  string

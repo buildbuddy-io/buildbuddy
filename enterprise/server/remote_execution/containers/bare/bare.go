@@ -2,9 +2,11 @@ package bare
 
 import (
 	"context"
+	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -13,10 +15,24 @@ import (
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
+var (
+	bareEnableStats = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
+)
+
 type Opts struct {
 	// EnableStats specifies whether to collect stats while the command is
 	// in progress.
 	EnableStats bool
+}
+
+type Provider struct {
+}
+
+func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.ScheduledTask, _ *rnpb.RunnerState, _ string) (container.CommandContainer, error) {
+	opts := &Opts{
+		EnableStats: *bareEnableStats,
+	}
+	return NewBareCommandContainer(opts), nil
 }
 
 // bareCommandContainer executes commands directly, without any isolation

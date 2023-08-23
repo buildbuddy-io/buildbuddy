@@ -19,6 +19,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -71,6 +73,8 @@ var (
 
 	sociArtifactStoreTarget = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
 	sociStoreKeychainPort   = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
+	podmanRuntime           = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
+	podmanEnableStats       = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -230,23 +234,56 @@ func initializeSociStoreKeychainClient(env environment.Env, target string) (sspb
 	return sspb.NewLocalKeychainClient(conn), nil
 }
 
-func (p *Provider) NewContainer(ctx context.Context, image string, imageIsPublic bool, options *PodmanOptions) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.ScheduledTask, _ *rnpb.RunnerState, _ string) (container.CommandContainer, error) {
+	imageIsPublic := props.ContainerRegistryUsername == "" && props.ContainerRegistryPassword == ""
 	imageIsStreamable := p.imageStreamingEnabled && (imageIsPublic || *privateImageStreamingEnabled)
 	if imageIsStreamable {
 		if err := disk.WaitUntilExists(context.Background(), sociStorePath, disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("soci-store not available: %s", err)
 		}
+
 	}
+
+	// Re-use docker flags for podman.
+	networkMode, err := flagutil.GetDereferencedValue[string]("executor.docker_network")
+	if err != nil {
+		return nil, err
+	}
+	capAdd, err := flagutil.GetDereferencedValue[string]("docker_cap_add")
+	if err != nil {
+		return nil, err
+	}
+	devices, err := flagutil.GetDereferencedValue[[]container.DockerDeviceMapping]("executor.docker_devices")
+	if err != nil {
+		return nil, err
+	}
+	volumes, err := flagutil.GetDereferencedValue[[]string]("executor.docker_volumes")
+	if err != nil {
+		return nil, err
+	}
+
 	return &podmanCommandContainer{
 		env:                     p.env,
 		imageCacheAuth:          p.imageCacheAuth,
-		image:                   image,
+		image:                   props.ContainerImage,
 		imageIsStreamable:       imageIsStreamable,
 		sociArtifactStoreClient: p.sociArtifactStoreClient,
 		sociStoreKeychainClient: p.sociStoreKeychainClient,
 
 		buildRoot: p.buildRoot,
-		options:   options,
+		options: &PodmanOptions{
+			ForceRoot:            props.DockerForceRoot,
+			Init:                 props.DockerInit,
+			User:                 props.DockerUser,
+			Network:              props.DockerNetwork,
+			DefaultNetworkMode:   networkMode,
+			CapAdd:               capAdd,
+			Devices:              devices,
+			Volumes:              volumes,
+			Runtime:              *podmanRuntime,
+			EnableStats:          *podmanEnableStats,
+			EnableImageStreaming: props.EnablePodmanImageStreaming,
+		},
 	}, nil
 }
 
