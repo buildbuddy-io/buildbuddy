@@ -373,7 +373,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	t.Skip()
 
 	flags.Set(t, "executor.firecracker_enable_nbd", true)
-	flags.Set(t, "executor.firecracker_enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
