@@ -327,6 +327,8 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 			if err := stream.Send(&dcpb.ReadResponse{Data: buf[:n]}); err != nil {
 				return err
 			}
+		} else if err != nil {
+			return err
 		} else {
 			if err := stream.Send(&dcpb.ReadResponse{Data: buf}); err != nil {
 				return err
