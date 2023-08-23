@@ -16,6 +16,7 @@ ts_library(
         "//enterprise/app/secrets:secret_util",
         "//proto:github_ts_proto",
         "//proto:repo_ts_proto",
+        "//proto:secrets_ts_proto",
         "//proto:workflow_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
