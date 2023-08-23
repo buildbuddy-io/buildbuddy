@@ -40,7 +40,10 @@ func RequestAccess(w http.ResponseWriter, r *http.Request, authUrl string) {
 }
 
 // Accepts the redirect from the auth provider and stores the results as secrets.
-func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, email, refreshToken string) error {
+func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, refreshToken string) error {
+	if refreshToken == "" {
+		return status.PermissionDeniedErrorf("Empty refresh token")
+	}
 	rc := &ctxpb.RequestContext{
 		GroupId: cookie.GetCookie(r, linkCookieName),
 	}
