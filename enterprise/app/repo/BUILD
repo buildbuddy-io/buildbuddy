@@ -12,6 +12,7 @@ ts_library(
         "//app/components/select",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/router",
         "//app/service:rpc_service",
         "//enterprise/app/secrets:secret_util",
         "//proto:github_ts_proto",

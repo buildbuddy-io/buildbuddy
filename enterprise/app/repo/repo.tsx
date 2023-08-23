@@ -256,7 +256,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     let isGCPDeploy = this.getSecrets().includes(gcpRefreshTokenKey);
     let needsGCPLink =
       isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpRefreshTokenKey);
-    let deployDestination = isGCPDeploy ? " to GCP" : "";
+    let deployDestination = isGCPDeploy ? " to Google Cloud" : "";
     return (
       <div className="create-repo-page">
         {!this.props.user && (
@@ -375,7 +375,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                         placeholder={s}
                         value={this.state.secrets.get(s)}
                         onChange={(e) => {
-                          this.state.secrets.set(s, e.target.value), this.forceUpdate();
+                          this.state.secrets.set(s, e.target.value);
+                          this.forceUpdate();
                         }}
                       />
                     </div>
@@ -393,7 +394,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                     redirect_url: window.location.href,
                   })}`)
                 }>
-                Link GCP
+                Link Google Cloud
               </button>
             )}
             {!this.state.workflowResponse && (
