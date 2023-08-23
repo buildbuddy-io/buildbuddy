@@ -4,23 +4,28 @@ import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { repo } from "../../../proto/repo_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
-import { ChevronRightSquare, Github, User } from "lucide-react";
+import { ChevronRightSquare, Github, UserIcon } from "lucide-react";
 import auth_service from "../../../app/auth/auth_service";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import Select from "../../../app/components/select/select";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import TextInput from "../../../app/components/input/input";
 import { encryptAndUpdate } from "../secrets/secret_util";
+import { User } from "../../../app/auth/auth_service";
+import { secrets } from "../../../proto/secrets_ts_proto";
+import router from "../../../app/router/router";
+
 export interface RepoComponentProps {
   path: string;
   search: URLSearchParams;
-  user: any;
+  user?: User;
 }
 
 interface RepoComponentState {
   selectedInstallationIndex: number;
   githubInstallationsLoading: boolean;
   githubInstallationsResponse: github.GetGithubUserInstallationsResponse | null;
+  secretsResponse: secrets.ListSecretsResponse | null;
   isCreating: boolean;
   isDeploying: boolean;
 
@@ -34,11 +39,14 @@ interface RepoComponentState {
 }
 
 const selectedInstallationIndexLocalStorageKey = "repo-selectedInstallationIndex";
+const gcpAccountKey = "CLOUDSDK_AUTH_ACCOUNT";
+const gcpRefreshTokenKey = "CLOUDSDK_AUTH_REFRESH_TOKEN";
 export default class RepoComponent extends React.Component<RepoComponentProps, RepoComponentState> {
   state: RepoComponentState = {
     selectedInstallationIndex: localStorage[selectedInstallationIndexLocalStorageKey] || 0,
     githubInstallationsLoading: true,
     githubInstallationsResponse: null,
+    secretsResponse: null,
     isCreating: false,
     isDeploying: false,
 
@@ -47,7 +55,9 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     private: true,
     secrets: new Map<string, string>(),
 
-    repoResponse: null,
+    repoResponse: this.props.search.get("created")
+      ? new repo.CreateRepoResponse({ repoUrl: this.props.search.get("created")! })
+      : null,
     workflowResponse: null,
   };
 
@@ -90,15 +100,24 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       .finally(() => this.setState({ githubInstallationsLoading: false }));
   }
 
+  fetchSecrets() {
+    if (!this.props.user) return;
+    rpc_service.service.listSecrets(new secrets.ListSecretsRequest()).then((response) => {
+      console.log(response);
+      this.setState({ secretsResponse: response });
+    });
+  }
+
   componentDidMount() {
     this.fetchGithubInstallations();
+    this.fetchSecrets();
   }
 
   handleInstallationPicked(e: React.ChangeEvent<HTMLSelectElement>) {
     if (e.target.value == "-1") {
       window.location.href = `/auth/github/app/link/?${new URLSearchParams({
-        group_id: this.props.user.selectedGroup.id,
-        user_id: this.props.user.displayUser.userId?.id || "",
+        group_id: this.props.user?.selectedGroup.id || "",
+        user_id: this.props.user?.displayUser.userId?.id || "",
         redirect_url: window.location.href,
         install: "true",
       })}`;
@@ -186,6 +205,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     try {
       await this.linkInstallation();
       let repoResponse = await this.createRepo();
+      router.setQueryParam("created", repoResponse.repoUrl);
+      router.setQueryParam("name", this.state.repoName);
       this.setState({ repoResponse: repoResponse });
       if (!this.getSecrets().length) {
         this.handleDeployClicked(repoResponse);
@@ -232,6 +253,10 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       );
     }
 
+    let isGCPDeploy = this.getSecrets().includes(gcpRefreshTokenKey);
+    let needsGCPLink =
+      isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpRefreshTokenKey);
+    let deployDestination = isGCPDeploy ? " to Google Cloud" : "";
     return (
       <div className="create-repo-page">
         {!this.props.user && (
@@ -248,7 +273,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
               <Github /> Continue with Github
             </button>
             <button className="google-button" onClick={() => auth_service.login()}>
-              <User /> Continue with Google
+              <UserIcon /> Continue with Google
             </button>
           </div>
         )}
@@ -338,32 +363,51 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             className={`repo-block card repo-create ${this.props.user && this.state.repoResponse ? "" : "disabled"}`}>
             <div className="repo-title">Configure deployment</div>
             <div className="deployment-configs">
-              {this.getSecrets().map((s) => (
-                <div className="deployment-config">
-                  <div>{s}</div>
-                  <div>
-                    <TextInput
-                      type="password"
-                      placeholder={s}
-                      value={this.state.secrets.get(s)}
-                      onChange={(e) => {
-                        this.state.secrets.set(s, e.target.value), this.forceUpdate();
-                      }}
-                    />
+              {this.getSecrets()
+                .filter((s) => !this.state.secretsResponse?.secret.map((s) => s.name).includes(s))
+                .filter((s) => ![gcpRefreshTokenKey, gcpAccountKey].includes(s))
+                .map((s) => (
+                  <div className="deployment-config">
+                    <div>{s}</div>
+                    <div>
+                      <TextInput
+                        type="password"
+                        placeholder={s}
+                        value={this.state.secrets.get(s)}
+                        onChange={(e) => {
+                          this.state.secrets.set(s, e.target.value);
+                          this.forceUpdate();
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
+            {needsGCPLink && (
+              <button
+                disabled={!this.state.githubInstallationsResponse?.installations}
+                className="create-button"
+                onClick={() =>
+                  (window.location.href = `/login/?${new URLSearchParams({
+                    issuer_url: "https://accounts.google.com",
+                    link_gcp_for_group: this.props.user?.selectedGroup.id || "",
+                    redirect_url: window.location.href,
+                  })}`)
+                }>
+                Link Google Cloud
+              </button>
+            )}
             {!this.state.workflowResponse && (
               <button
                 disabled={
                   !this.state.githubInstallationsResponse?.installations ||
                   !this.hasPermissions() ||
-                  this.state.isDeploying
+                  this.state.isDeploying ||
+                  needsGCPLink
                 }
                 className="create-button"
                 onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
-                {this.state.isDeploying ? "Deploying..." : "Deploy"}
+                {this.state.isDeploying ? `Deploying${deployDestination}...` : `Deploy${deployDestination}`}
               </button>
             )}
           </div>
