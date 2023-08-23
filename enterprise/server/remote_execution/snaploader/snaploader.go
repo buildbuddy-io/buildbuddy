@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -283,16 +282,6 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		return nil, err
 	}
 	return &Snapshot{key: key, manifest: manifest}, nil
-}
-
-func readerFromFile(filePath string) (io.Reader, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	return bufio.NewReader(file), nil
 }
 
 func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cow *blockio.COWStore, err error) {

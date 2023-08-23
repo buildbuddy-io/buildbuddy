@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -468,14 +469,21 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	// overwrites any pre-existing snapshot, so to ensure all the forked VMs
 	// start from the same base snapshot, don't pause them until after all
 	// forked VMs have started from the base snapshot
+	var wg sync.WaitGroup
 	for i := 0; i < 3; i++ {
-		c := containers[i]
-		// Each new VM shouldn't have trouble saving snapshots themselves
-		err = c.Pause(ctx)
-		require.NoError(t, err)
-		err = c.Remove(ctx)
-		require.NoError(t, err)
+		wg.Add(1)
+		i := i
+		go func() {
+			defer wg.Done()
+			c := containers[i]
+			// Each new VM shouldn't have trouble saving snapshots themselves
+			err := c.Pause(ctx)
+			require.NoError(t, err)
+			err = c.Remove(ctx)
+			require.NoError(t, err)
+		}()
 	}
+	wg.Wait()
 
 	// Test that a new VM uses the newest snapshot
 	workDir = testfs.MakeDirAll(t, rootDir, "work-last")
