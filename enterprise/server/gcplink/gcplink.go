@@ -41,6 +41,7 @@ func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, e
 	rc := &ctxpb.RequestContext{
 		GroupId: cookie.GetCookie(r, cookieName),
 	}
+	cookie.ClearCookie(w, cookieName)
 	ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), rc)
 	ctx = env.GetAuthenticator().AuthenticatedHTTPContext(w, r.WithContext(ctx))
 	secretResponse, err := env.GetSecretService().GetPublicKey(ctx, &skpb.GetPublicKeyRequest{
@@ -77,7 +78,6 @@ func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, e
 	if err != nil {
 		return status.PermissionDeniedErrorf("Error updating secret: %s", err)
 	}
-	cookie.ClearCookie(w, cookieName)
 	http.Redirect(w, r, cookie.GetCookie(r, cookie.RedirCookie), http.StatusTemporaryRedirect)
 	return nil
 }
