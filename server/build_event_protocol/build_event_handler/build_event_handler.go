@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/olapdbconfig"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -440,6 +441,14 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	eg.SetLimit(50) // Max concurrency when copying files from cache->blobstore.
 	for _, uri := range task.persist.URIs {
 		uri := uri
+		rn, err := digest.ParseDownloadResourceName(uri.Path)
+		if err != nil {
+			log.CtxErrorf(ctx, "Unparseable artifact URI: %s", err)
+			continue
+		}
+		if rn.IsEmpty() {
+			continue
+		}
 		eg.Go(func() error {
 			fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
 			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
