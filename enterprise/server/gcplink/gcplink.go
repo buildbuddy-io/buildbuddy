@@ -22,9 +22,8 @@ const (
 	linkParamName  = "link_gcp_for_group"
 	linkCookieName = "link-gcp-for-group"
 	cookieDuration = 1 * time.Hour
-	// These can be used to call gcloud auth activate-refresh-token $CLOUDSDK_AUTH_ACCOUNT $CLOUDSDK_AUTH_REFRESH_TOKEN
+	// These can be used to call gcloud auth activate-refresh-token token $CLOUDSDK_AUTH_REFRESH_TOKEN
 	refreshTokenEnvVariableName = "CLOUDSDK_AUTH_REFRESH_TOKEN"
-	authAccountEnvVariableName  = "CLOUDSDK_AUTH_ACCOUNT"
 )
 
 // Returns true if the request contains either a gcp link url param or cookie.
@@ -62,20 +61,6 @@ func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, e
 		RequestContext: rc,
 		Secret: &skpb.Secret{
 			Name:  refreshTokenEnvVariableName,
-			Value: box,
-		},
-	})
-	if err != nil {
-		return status.PermissionDeniedErrorf("Error updating secret: %s", err)
-	}
-	box, err = keystore.NewAnonymousSealedBox(secretResponse.PublicKey.Value, email)
-	if err != nil {
-		return status.PermissionDeniedErrorf("Error sealing box: %s", err)
-	}
-	_, _, err = env.GetSecretService().UpdateSecret(ctx, &skpb.UpdateSecretRequest{
-		RequestContext: rc,
-		Secret: &skpb.Secret{
-			Name:  authAccountEnvVariableName,
 			Value: box,
 		},
 	})
