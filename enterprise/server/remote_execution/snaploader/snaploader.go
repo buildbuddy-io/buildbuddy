@@ -338,7 +338,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blocki
 				return nil, status.WrapError(err, "sync dirty chunk")
 			}
 		}
-		d, err := digest.Compute(blockio.Reader(c), repb.DigestFunction_SHA256)
+		d, err := digest.Compute(blockio.Reader(c), repb.DigestFunction_BLAKE3)
 		if err != nil {
 			return nil, err
 		}
