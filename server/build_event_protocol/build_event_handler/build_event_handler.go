@@ -477,6 +477,10 @@ func (r *statsRecorder) Stop() {
 }
 
 func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, path string) error {
+	alreadyExists, err := env.GetBlobstore().BlobExists(ctx, path)
+	if err == nil && alreadyExists {
+		return nil
+	}
 	w, err := env.GetBlobstore().Writer(ctx, path)
 	if err != nil {
 		return status.WrapErrorf(
