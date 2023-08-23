@@ -35,7 +35,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -441,28 +440,6 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}, nil
 }
 
-func (s *BuildBuddyServer) validateURLIdentifier(ctx context.Context, req *grpb.UpdateGroupRequest, urlIdentifier string) (bool, error) {
-	if subdomain.Enabled() {
-		for _, sd := range subdomain.DefaultSubdomains() {
-			if urlIdentifier == sd {
-				return false, nil
-			}
-		}
-	}
-
-	existingGroup, err := s.env.GetUserDB().GetGroupByURLIdentifier(ctx, urlIdentifier)
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			return true, nil
-		}
-		return false, err
-	}
-	if existingGroup.GroupID != req.GetRequestContext().GetGroupId() {
-		return false, nil
-	}
-	return true, nil
-}
-
 func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGroupRequest) (*grpb.UpdateGroupResponse, error) {
 	auth := s.env.GetAuthenticator()
 	userDB := s.env.GetUserDB()
@@ -473,15 +450,6 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	var err error
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
-	if urlIdentifier != "" {
-		valid, err := s.validateURLIdentifier(ctx, req, urlIdentifier)
-		if err != nil {
-			return nil, err
-		}
-		if !valid {
-			return nil, status.InvalidArgumentError("URL is already in use")
-		}
-	}
 	if group == nil {
 		if req.GetRequestContext().GetGroupId() == "" {
 			return nil, status.InvalidArgumentError("Missing organization identifier.")

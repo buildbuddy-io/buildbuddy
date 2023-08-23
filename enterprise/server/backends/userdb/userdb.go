@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -199,11 +200,47 @@ func getUserGroup(tx *db.DB, userID string, groupID string) (*tables.UserGroup, 
 	return userGroup, nil
 }
 
+func (d *UserDB) validateURLIdentifier(ctx context.Context, groupID string, urlIdentifier string) (bool, error) {
+	if urlIdentifier == "" {
+		return true, nil
+	}
+
+	if subdomain.Enabled() {
+		for _, sd := range subdomain.DefaultSubdomains() {
+			if urlIdentifier == sd {
+				return false, nil
+			}
+		}
+	}
+
+	existingGroup, err := d.GetGroupByURLIdentifier(ctx, urlIdentifier)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	if existingGroup.GroupID != groupID {
+		return false, nil
+	}
+	return true, nil
+}
+
 func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, error) {
 	u, err := perms.AuthenticatedUser(ctx, d.env)
 	if err != nil {
 		return "", err
 	}
+	if g.URLIdentifier != nil {
+		valid, err := d.validateURLIdentifier(ctx, "", *g.URLIdentifier)
+		if err != nil {
+			return "", err
+		}
+		if !valid {
+			return "", status.InvalidArgumentError("URL is already in use")
+		}
+	}
+
 	groupID := ""
 	err = d.h.Transaction(ctx, func(tx *db.DB) error {
 		gid, err := d.createGroup(ctx, tx, u.GetUserID(), g)
@@ -255,6 +292,15 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 	if match := groupUrlIdentifierPattern.MatchString(*g.URLIdentifier); !match {
 		return "", status.InvalidArgumentError("Invalid organization URL.")
 	}
+
+	valid, err := d.validateURLIdentifier(ctx, g.GroupID, *g.URLIdentifier)
+	if err != nil {
+		return "", err
+	}
+	if !valid {
+		return "", status.InvalidArgumentError("URL is already in use")
+	}
+
 	groupID := ""
 	err = d.h.Transaction(ctx, func(tx *db.DB) error {
 		if g.OwnedDomain != "" {
