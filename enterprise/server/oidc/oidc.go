@@ -874,7 +874,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 		if !ok {
 			return status.PermissionDeniedError("Refresh token not present in auth response")
 		}
-		return gcplink.LinkForGroup(a.env, w, r, ut.Email, refreshToken)
+		return gcplink.LinkForGroup(a.env, w, r, refreshToken)
 	}
 
 	guid, err := uuid.NewRandom()
