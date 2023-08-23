@@ -39,7 +39,6 @@ interface RepoComponentState {
 }
 
 const selectedInstallationIndexLocalStorageKey = "repo-selectedInstallationIndex";
-const gcpAccountKey = "CLOUDSDK_AUTH_ACCOUNT";
 const gcpRefreshTokenKey = "CLOUDSDK_AUTH_REFRESH_TOKEN";
 export default class RepoComponent extends React.Component<RepoComponentProps, RepoComponentState> {
   state: RepoComponentState = {
@@ -365,7 +364,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             <div className="deployment-configs">
               {this.getSecrets()
                 .filter((s) => !this.state.secretsResponse?.secret.map((s) => s.name).includes(s))
-                .filter((s) => ![gcpRefreshTokenKey, gcpAccountKey].includes(s))
+                .filter((s) => gcpRefreshTokenKey != s)
                 .map((s) => (
                   <div className="deployment-config">
                     <div>{s}</div>
