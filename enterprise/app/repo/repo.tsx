@@ -18,7 +18,7 @@ import router from "../../../app/router/router";
 export interface RepoComponentProps {
   path: string;
   search: URLSearchParams;
-  user: User;
+  user?: User;
 }
 
 interface RepoComponentState {
@@ -116,8 +116,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   handleInstallationPicked(e: React.ChangeEvent<HTMLSelectElement>) {
     if (e.target.value == "-1") {
       window.location.href = `/auth/github/app/link/?${new URLSearchParams({
-        group_id: this.props.user.selectedGroup.id,
-        user_id: this.props.user.displayUser.userId?.id || "",
+        group_id: this.props.user?.selectedGroup.id || "",
+        user_id: this.props.user?.displayUser.userId?.id || "",
         redirect_url: window.location.href,
         install: "true",
       })}`;
@@ -390,7 +390,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                 onClick={() =>
                   (window.location.href = `/login/?${new URLSearchParams({
                     issuer_url: "https://accounts.google.com",
-                    link_gcp_for_group: this.props.user?.selectedGroup.id,
+                    link_gcp_for_group: this.props.user?.selectedGroup.id || "",
                     redirect_url: window.location.href,
                   })}`)
                 }>
