@@ -71,7 +71,6 @@ var debugStreamVMLogs = flag.Bool("executor.firecracker_debug_stream_vm_logs", f
 var debugTerminal = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
 var enableNBD = flag.Bool("executor.firecracker_enable_nbd", false, "Enables network block devices for firecracker VMs.")
 var enableUFFD = flag.Bool("executor.firecracker_enable_uffd", false, "Enables userfaultfd for firecracker VMs.")
-var enableLocalSnapshotSharing = flag.Bool("executor.firecracker_enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that firecracker_enable_nbd is true.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 
 const (
@@ -484,7 +483,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		// TODO(Maggie): Once local snapshot sharing is stable, remove runner ID
 		// from the snapshot key
 		runnerID := c.id
-		if *enableNBD && *enableLocalSnapshotSharing {
+		if *enableNBD && *snaploader.EnableLocalSnapshotSharing {
 			runnerID = ""
 		}
 		c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), runnerID)

@@ -247,6 +247,13 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 	c.l.Add(k, e)
 }
 
+func (c *fileCache) ContainsFile(node *repb.FileNode) bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	k := key(node)
+	return c.l.Contains(k)
+}
+
 func (c *fileCache) DeleteFile(node *repb.FileNode) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
