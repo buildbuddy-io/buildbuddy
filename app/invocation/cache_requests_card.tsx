@@ -417,16 +417,16 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     // or if there is an invalid result
     this.state.digestToCacheMetadata.set(digest.hash, null);
 
+    let req = cache.GetCacheMetadataRequest.create({
+      resourceName: resource.ResourceName.create({
+        digest: digest,
+        cacheType: scorecardResult.cacheType,
+        instanceName: remoteInstanceName,
+      }),
+    });
+    console.log(req)
     rpc_service.service
-      .getCacheMetadata(
-        cache.GetCacheMetadataRequest.create({
-          resourceName: resource.ResourceName.create({
-            digest: digest,
-            cacheType: scorecardResult.cacheType,
-            instanceName: remoteInstanceName,
-          }),
-        })
-      )
+      .getCacheMetadata(req)
       .then((response) => {
         this.state.digestToCacheMetadata.set(digest.hash, response);
         this.forceUpdate();
