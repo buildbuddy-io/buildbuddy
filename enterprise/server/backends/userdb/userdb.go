@@ -200,6 +200,9 @@ func getUserGroup(tx *db.DB, userID string, groupID string) (*tables.UserGroup, 
 	return userGroup, nil
 }
 
+// validateURLIdentifier verifies that the proposed urlIdentifier for groupID
+// is not a reserved identifier and is not already used by a different group.
+// Returns true if the identifier may be used.
 func (d *UserDB) validateURLIdentifier(ctx context.Context, groupID string, urlIdentifier string) (bool, error) {
 	if urlIdentifier == "" {
 		return true, nil
