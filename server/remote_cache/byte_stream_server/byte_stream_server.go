@@ -389,6 +389,8 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 			log.Infof("VVV first message %q can write %t", req.ResourceName, canWrite)
 
+			capabilities.IsGranted2(ctx, req.ResourceName, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
+
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
 				err = s.handleAlreadyExists(ctx, ht, stream, req)
