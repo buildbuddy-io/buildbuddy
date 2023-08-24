@@ -41,5 +41,5 @@ func ValidateRedirect(redirectURL string) error {
 // e.g. If the URL is "app.buildbuddy.io", the returned domain will be
 // "buildbuddy.io".
 func Domain() string {
-	return urlutil.GetDomain(buildBuddyURL)
+	return urlutil.GetDomain(buildBuddyURL.Hostname())
 }

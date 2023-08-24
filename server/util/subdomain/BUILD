@@ -5,7 +5,12 @@ go_library(
     srcs = ["subdomain.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/subdomain",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/flagutil"],
+    deps = [
+        "//server/endpoint_urls/build_buddy_url",
+        "//server/util/flagutil",
+        "//server/util/log",
+        "//server/util/urlutil",
+    ],
 )
 
 go_test(
