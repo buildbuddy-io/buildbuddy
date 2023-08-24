@@ -200,12 +200,14 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   getUnsetSecrets() {
-    return this.getSecrets()
-      .filter((s) => !this.state.secretsResponse?.secret.map((s) => s.name).includes(s))
-      // Exclude the GCP refresh token from secrets that need to be set
-      // up manually by the user, since we set this up as part of GCP
-      // account linking.
-      .filter((s) => gcpRefreshTokenKey != s);
+    return (
+      this.getSecrets()
+        .filter((s) => !this.state.secretsResponse?.secret.map((s) => s.name).includes(s))
+        // Exclude the GCP refresh token from secrets that need to be set
+        // up manually by the user, since we set this up as part of GCP
+        // account linking.
+        .filter((s) => gcpRefreshTokenKey != s)
+    );
   }
 
   async handleCreateClicked() {
