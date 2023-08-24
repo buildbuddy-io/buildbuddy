@@ -349,6 +349,7 @@ func (w *writeState) Commit() error {
 	// Verify the checksum. If it does not match, note that the cache writer is
 	// not committed, since that persists the file to cache.
 	if err := w.checksum.Check(w.resourceName); err != nil {
+		log.Infof("VVV %q checksum failed %v", w.resourceNameString, err)
 		return err
 	}
 

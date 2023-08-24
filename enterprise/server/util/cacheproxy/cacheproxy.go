@@ -607,6 +607,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 }
 
 func (wc *streamWriteCloser) Commit() error {
+	log.Infof("VVV streamwrite %q commit", wc.r.GetDigest().GetHash())
 	req := &dcpb.WriteRequest{
 		Isolation:   wc.isolation,
 		Key:         wc.key,
@@ -615,9 +616,13 @@ func (wc *streamWriteCloser) Commit() error {
 		Resource:    wc.r,
 	}
 	if err := wc.stream.Send(req); err != nil {
+		log.Infof("VVV streamwrite %q send err", wc.r.GetDigest().GetHash(), err)
 		return err
 	}
 	_, err := wc.stream.CloseAndRecv()
+	if err != nil {
+		log.Infof("VVV streamwrite %q commit err", wc.r.GetDigest().GetHash(), err)
+	}
 	return err
 }
 
@@ -658,7 +663,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	// are transmitted over the network.
 	if r.GetCacheType() == rspb.CacheType_CAS {
 		if alreadyExists, err := c.RemoteContains(ctx, peer, r); err == nil && alreadyExists {
-			log.Debugf("Skipping duplicate CAS write of %q", r.GetDigest().GetHash())
+			log.Infof("VVV Skipping duplicate CAS write of %q", r.GetDigest().GetHash())
 			return ioutil.DiscardWriteCloser(), nil
 		}
 	}

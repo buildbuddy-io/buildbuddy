@@ -946,6 +946,8 @@ func (mc *multiWriteCloser) Commit() error {
 			peers = append(peers, peer)
 		}
 		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", cacheproxy.ResourceIsolationString(mc.r), peers)
+	} else {
+		log.Warningf("VVV %q distributed commit err %v", cacheproxy.ResourceIsolationString(mc.r), err)
 	}
 	return err
 }
