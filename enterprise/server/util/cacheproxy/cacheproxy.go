@@ -606,6 +606,12 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		Resource:    wc.r,
 	}
 	err := wc.stream.Send(req)
+	if err == io.EOF {
+		_, streamErr := wc.stream.CloseAndRecv()
+		if streamErr != nil {
+			return 0, streamErr
+		}
+	}
 	log.Infof("VVV streamwrite %q write %d err %v", wc.r.GetDigest().GetHash(), len(data), err)
 	return len(data), err
 }

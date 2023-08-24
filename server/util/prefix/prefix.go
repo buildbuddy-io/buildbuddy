@@ -24,6 +24,9 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 	// Note: authenticator can't be nil, even in the OSS version (we use
 	// NullAuthenticator insteadof nil).
 	u, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		log.Warningf("VVV user prefix err %v anon enabled %t", err, auth.AnonymousUsageEnabled(ctx))
+	}
 	if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
 		return addPrefix(interfaces.AuthAnonymousUser, key), nil
 	}
