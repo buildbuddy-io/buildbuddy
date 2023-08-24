@@ -5,7 +5,9 @@ import (
 	"flag"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 )
 
 const subdomainKey = "subdomain"
@@ -25,6 +27,12 @@ func SetHost(ctx context.Context, host string) context.Context {
 	if len(parts) < 3 {
 		return ctx
 	}
+
+	hostDomain := urlutil.GetDomain(host)
+	if build_buddy_url.Domain() != hostDomain {
+		return ctx
+	}
+
 	subdomain := parts[0]
 	for _, ds := range *defaultSubdomains {
 		if ds == subdomain {

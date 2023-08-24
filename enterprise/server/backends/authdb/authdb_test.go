@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand"
+	"net/url"
 	"strconv"
 	"testing"
 	"time"
@@ -503,6 +504,9 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 
 func TestSubdomainRestrictions(t *testing.T) {
 	flags.Set(t, "app.enable_subdomain_matching", true)
+	u, err := url.Parse("https://app.buildbuddy.dev")
+	require.NoError(t, err)
+	flags.Set(t, "app.build_buddy_url", *u)
 
 	ctx := context.Background()
 	env := setupEnv(t)

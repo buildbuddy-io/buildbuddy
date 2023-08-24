@@ -948,7 +948,7 @@ func (s *BuildBuddyServer) replaceURLSubdomain(ctx context.Context, rawURL strin
 		return rawURL
 	}
 
-	domain := urlutil.GetDomain(pURL)
+	domain := urlutil.GetDomain(pURL.Hostname())
 	newHost := *g.URLIdentifier + "." + domain
 	if pURL.Port() != "" {
 		newHost += ":" + pURL.Port()
