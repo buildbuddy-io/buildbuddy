@@ -642,6 +642,7 @@ func (bc *bufferedStreamWriteCloser) Write(data []byte) (int, error) {
 
 func (bc *bufferedStreamWriteCloser) Commit() error {
 	if err := bc.bufferedWriter.Flush(); err != nil {
+		log.Warningf("VVV streamwriter %q flush failed %v", bc.streamWriteCloser.r.GetDigest(), err)
 		return err
 	}
 	return bc.streamWriteCloser.Commit()
