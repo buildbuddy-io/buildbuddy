@@ -2282,6 +2282,54 @@ func TestEncryption(t *testing.T) {
 	}
 }
 
+func TestReadEncryptedWrongDigestSize(t *testing.T) {
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	te, kmsDir := getCrypterEnv(t)
+	rootDir := testfs.MakeTempDir(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	groupKeyID := "EK123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{userID: user}
+	auther := testauth.NewTestAuthenticator(users)
+	te.SetAuthenticator(auther)
+
+	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+
+	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+	err = te.GetDBHandle().DB(ctx).Create(key).Error
+	require.NoError(t, err)
+	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	require.NoError(t, err)
+
+	opts := &pebble_cache.Options{
+		RootDirectory: rootDir,
+		Partitions: []disk.Partition{{
+			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
+		}},
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	rn, buf := newCASResourceBuf(t, 100)
+	err = pc.Set(ctx, rn, buf)
+
+	// Pass a different digest size to Get. It should not affect Get.
+	rn.Digest.SizeBytes = 1
+	readBuf, err := pc.Get(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, readBuf)
+
+	err = pc.Stop()
+	require.NoError(t, err)
+}
+
 // The same digest encrypted/unencrypted should be able to co-exist in the
 // cache.
 func TestEncryptedUnencryptedSameDigest(t *testing.T) {

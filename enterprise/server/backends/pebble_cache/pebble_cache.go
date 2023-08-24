@@ -3360,7 +3360,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 
 	if !rawStorage {
 		if shouldDecrypt {
-			d, err := p.env.GetCrypter().NewDecryptor(ctx, r.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
+			d, err := p.env.GetCrypter().NewDecryptor(ctx, fileMetadata.GetFileRecord().GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
 			if err != nil {
 				return nil, status.UnavailableErrorf("decryptor not available: %s", err)
 			}
