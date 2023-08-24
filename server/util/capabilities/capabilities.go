@@ -3,13 +3,10 @@ package capabilities
 import (
 	"context"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
-
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 )
 
 var (
@@ -51,25 +48,6 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	user, err := a.AuthenticatedUser(ctx)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) {
-			if authIsRequired {
-				return false, nil
-			}
-			return int32(cap)&AnonymousUserCapabilitiesMask > 0, nil
-		}
-		return false, err
-	}
-	return user.HasCapability(cap), nil
-}
-
-func IsGranted2(ctx context.Context, id string, env environment.Env, cap akpb.ApiKey_Capability) (bool, error) {
-	a := env.GetAuthenticator()
-	authIsRequired := !a.AnonymousUsageEnabled(ctx)
-	log.Infof("VVV %q auth required %t subdomain %q", id, authIsRequired, subdomain.Get(ctx))
-	user, err := a.AuthenticatedUser(ctx)
-	if err != nil {
-		log.Infof("VVV %q err %v", id, err)
-		if authutil.IsAnonymousUserError(err) {
-			log.Infof("VVV %q anon user", id)
 			if authIsRequired {
 				return false, nil
 			}

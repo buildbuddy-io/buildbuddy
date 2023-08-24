@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"strings"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -19,12 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/metadata"
-
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -391,15 +388,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 			log.Infof("VVV first message %q can write %t", req.ResourceName, canWrite)
 
-			md, ok := metadata.FromIncomingContext(ctx)
-			if ok {
-				for k, v := range md {
-					log.Infof("VVV %q HEADER %s=%s", req.ResourceName, k, strings.Join(v, ","))
-				}
-			}
-
-			capabilities.IsGranted2(ctx, req.ResourceName, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
-
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
 				err = s.handleAlreadyExists(ctx, ht, stream, req)
@@ -408,6 +396,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			}
 
 			streamState, err = s.initStreamState(ctx, req)
+			log.Infof("VVV init stream state %q err %v", req.ResourceName, err)
 			if status.IsAlreadyExistsError(err) {
 				return s.handleAlreadyExists(ctx, ht, stream, req)
 			}
@@ -429,6 +418,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			}
 		}
 		if err := streamState.Write(req.Data); err != nil {
+			log.Infof("VVV %q stream state write err %v", req.ResourceName, err)
 			return err
 		}
 
@@ -440,8 +430,10 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			if err := streamState.Commit(); err != nil {
+				log.Infof("VVV %q stream state commit err %v", req.ResourceName, err)
 				return err
 			}
+			log.Infof("VVV %q final response", req.ResourceName)
 			return stream.SendAndClose(&bspb.WriteResponse{
 				CommittedSize: streamState.offset,
 			})

@@ -23,7 +23,6 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//metadata",
     ],
 )
 
