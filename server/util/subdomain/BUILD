@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//server/endpoint_urls/build_buddy_url",
         "//server/util/flagutil",
-        "//server/util/log",
         "//server/util/urlutil",
     ],
 )
