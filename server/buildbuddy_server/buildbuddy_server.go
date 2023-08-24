@@ -231,7 +231,7 @@ func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.Cance
 	return &inpb.CancelExecutionsResponse{}, nil
 }
 
-func filterGroupRoles(ctx context.Context, groupRoles []*tables.GroupRole) []*tables.GroupRole {
+func filterGroupRolesToSubdomain(ctx context.Context, groupRoles []*tables.GroupRole) []*tables.GroupRole {
 	filtered := make([]*tables.GroupRole, 0)
 	for _, gr := range groupRoles {
 		if sd := subdomain.Get(ctx); sd != "" {
@@ -244,7 +244,7 @@ func filterGroupRoles(ctx context.Context, groupRoles []*tables.GroupRole) []*ta
 	return filtered
 }
 
-func makeGroups(ctx context.Context, groupRoles []*tables.GroupRole) []*grpb.Group {
+func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, gr := range groupRoles {
 		g := gr.Group
@@ -317,7 +317,7 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 		return nil, status.UnauthenticatedErrorf("User %q not found", req.GetUserId())
 	}
 
-	filteredGroupRoles := filterGroupRoles(ctx, tu.Groups)
+	filteredGroupRoles := filterGroupRolesToSubdomain(ctx, tu.Groups)
 
 	selectedGroupID := ""
 	selectedGroupRole := role.None
@@ -350,7 +350,7 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 
 	return &uspb.GetUserResponse{
 		DisplayUser:      tu.ToProto(),
-		UserGroup:        makeGroups(ctx, filteredGroupRoles),
+		UserGroup:        makeGroups(filteredGroupRoles),
 		SelectedGroupId:  selectedGroupID,
 		AllowedRpc:       allowedRPCs,
 		GithubLinked:     tu.GithubToken != "",
