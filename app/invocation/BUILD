@@ -266,6 +266,8 @@ ts_library(
     srcs = ["invocation_error_card.tsx"],
     deps = [
         "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//app/terminal",
         "//proto:failure_details_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
