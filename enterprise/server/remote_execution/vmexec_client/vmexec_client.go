@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sync/errgroup"
@@ -24,7 +25,7 @@ import (
 const (
 	// Timeout used for the explicit Sync() call in the case where the command
 	// is cancelled or times out.
-	syncTimeout = 5 * time.Second
+	syncTimeout = 1 * time.Second // DO NOT SUBMIT
 )
 
 // Execute executes the command using the ExecStreamed API.
@@ -140,6 +141,7 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	// have completed yet. Explicitly sync here so that we have a better chance
 	// of collecting output files in this case.
 	if err := ctx.Err(); err != nil {
+		log.Debugf("Context error detected; attempting final sync() within the VM.")
 		ctxErr := status.FromContextError(ctx)
 		ctx, cancel := background.ExtendContextForFinalization(ctx, syncTimeout)
 		defer cancel()
@@ -149,6 +151,7 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				ctxErr,
 				"failed to sync filesystem following interrupted command; some output files may be missing from the workspace: %s. command interrupted due to", err)
 		}
+		log.Debugf("Sync attempt completed")
 	}
 	return result
 }

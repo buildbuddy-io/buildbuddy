@@ -8,6 +8,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+
+	// "github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -75,7 +78,7 @@ func (s *Server) SetDevice(name string, device *Device) {
 // Start starts the device server.
 // lis will be closed when calling Stop().
 func (s *Server) Start(lis net.Listener) error {
-	s.server = grpc.NewServer(grpc_server.CommonGRPCServerOptions(s.env)...)
+	s.server = grpc.NewServer(grpc_server.MinimalGRPCServerOptions()...)
 	nbdpb.RegisterBlockDeviceServer(s.server, s)
 	go func() {
 		_ = s.server.Serve(lis)
@@ -104,8 +107,11 @@ func (s *Server) Metadata(ctx context.Context, req *nbdpb.MetadataRequest) (*nbd
 	return &nbdpb.MetadataResponse{DeviceMetadata: md}, nil
 }
 
+var _ = log.Debugf
+
 func (s *Server) Read(ctx context.Context, req *nbdpb.ReadRequest) (*nbdpb.ReadResponse, error) {
 	name := req.GetName()
+	// log.Debugf("Read %s", name)
 	d := s.getDevice(name)
 	if d == nil {
 		return nil, status.NotFoundErrorf("device %q not found", name)
@@ -119,6 +125,7 @@ func (s *Server) Read(ctx context.Context, req *nbdpb.ReadRequest) (*nbdpb.ReadR
 
 func (s *Server) Write(ctx context.Context, req *nbdpb.WriteRequest) (*nbdpb.WriteResponse, error) {
 	name := req.GetName()
+	// log.Debugf("Write %s", name)
 	d := s.getDevice(name)
 	if d == nil {
 		return nil, status.NotFoundErrorf("device %q not found", name)

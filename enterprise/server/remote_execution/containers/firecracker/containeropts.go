@@ -1,6 +1,8 @@
 package firecracker
 
 import (
+	"io"
+
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	dockerclient "github.com/docker/docker/client"
@@ -49,4 +51,17 @@ type ContainerOpts struct {
 	// The root directory to store all files in. This needs to be
 	// short, less than 38 characters. If unset, /tmp will be used.
 	JailerRoot string
+
+	// ExecMonitor is run before each Exec() call in the VM.
+	ExecMonitor *MonitorCommand
+}
+
+type MonitorCommand struct {
+	// Arguments specifies
+	Arguments []string
+	Stdout    io.Writer
+	Stderr    io.Writer
+	// PollArgs specifies a command that returns 0 if monitoring has been set up
+	// or 1 otherwise. The Exec() will be delayed until this returns 0.
+	PollArgs []string
 }

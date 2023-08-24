@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"sync"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -35,11 +36,16 @@ const (
 )
 
 type execServer struct {
-	workspaceNBD *nbdclient.ClientDevice
+	workspaceNBD       *nbdclient.ClientDevice
+	workspaceNBDPaused bool
+	// scratchNBD   *nbdclient.ClientDevice
 }
 
 func NewServer(workspaceNBD *nbdclient.ClientDevice) (*execServer, error) {
-	return &execServer{workspaceNBD: workspaceNBD}, nil
+	return &execServer{
+		workspaceNBD: workspaceNBD,
+		// scratchNBD:   scratchNBD,
+	}, nil
 }
 
 func clearARPCache() error {
@@ -75,7 +81,19 @@ func clearARPCache() error {
 	return nil
 }
 
+var startMonitoringOnce sync.Once
+
 func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
+	startMonitoringOnce.Do(func() {
+
+	})
+
+	if x.workspaceNBDPaused {
+		if err := x.workspaceNBD.UnpauseHostIO(); err != nil {
+			return nil, err
+		}
+		x.workspaceNBDPaused = false
+	}
 	if req.GetClearArpCache() {
 		if err := clearARPCache(); err != nil {
 			return nil, err
@@ -90,6 +108,21 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
 	}
 	return &vmxpb.InitializeResponse{}, nil
+}
+
+func (x *execServer) PrepareForPause(ctx context.Context, req *vmxpb.PrepareForPauseRequest) (*vmxpb.PrepareForPauseResponse, error) {
+	// if x.scratchNBD != nil {
+	// 	if err := x.scratchNBD.PauseHostIO(); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
+	if x.workspaceNBD != nil {
+		if err := x.workspaceNBD.PauseHostIO(); err != nil {
+			return nil, err
+		}
+		x.workspaceNBDPaused = true
+	}
+	return &vmxpb.PrepareForPauseResponse{}, nil
 }
 
 func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.SyncResponse, error) {

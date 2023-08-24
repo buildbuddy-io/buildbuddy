@@ -246,13 +246,13 @@ func main() {
 	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
 
 	die(mkdirp("/scratch", 0755))
-	if *enableNBD {
-		scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
-		die(err)
-		die(scratchNBD.Mount("/scratch"))
-	} else {
-		die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
-	}
+	// if *enableNBD {
+	// 	scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
+	// 	die(err)
+	// 	die(scratchNBD.Mount("/scratch"))
+	// } else {
+	die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
+	// }
 	die(mkdirp("/scratch/bbvmroot", 0755))
 	die(mkdirp("/scratch/bbvmwork", 0755))
 

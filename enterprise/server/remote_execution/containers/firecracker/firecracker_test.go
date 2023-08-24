@@ -5,11 +5,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -293,13 +295,14 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
+		// ContainerImage:         busyboxImage,
+		ContainerImage:         "docker.io/itsthenetwork/alpine-tcpdump:latest",
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			MemSizeMb:         200, // small to make snapshotting faster.
 			EnableNetworking:  false,
-			ScratchDiskSizeMb: 100,
+			ScratchDiskSizeMb: 1_000,
 		},
 		JailerRoot: tempJailerRoot(t),
 	}
@@ -346,7 +349,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
 
-	assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
+	require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
 
 	// Try pause, unpause, exec several times.
 	for i := 1; i <= 3; i++ {
@@ -358,11 +361,50 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
 		require.NoError(t, err)
 
+		log.Infof("\n\n === UNPAUSE #%d ===\n", i)
+
 		if err := c.Unpause(ctx); err != nil {
 			t.Fatalf("unable to unpause container: %s", err)
 		}
 
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		go func() {
+			<-ctx.Done()
+			if ctx.Err() == context.DeadlineExceeded {
+				log.Errorf("Context timed out!")
+			}
+		}()
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+
+		{
+			// Get the pcap from the the scratchfs
+			extractDir := testfs.MakeTempDir(t)
+			log.Infof("Extracting scratchfs to %s", extractDir)
+			err := ext4.ImageToDirectory(ctx, c.ScratchFSPath(), extractDir)
+			require.NoError(t, err)
+			_ = filepath.WalkDir(extractDir, func(path string, d fs.DirEntry, err error) error {
+				// log.Infof("Walk scratchfs: %s", strings.TrimPrefix(path, extractDir))
+				if strings.HasSuffix(path, ".pcap") {
+					b, err := os.ReadFile(path)
+					require.NoError(t, err)
+					if len(b) == 0 {
+						log.Warningf("pcap is empty")
+					} else {
+						_ = os.RemoveAll("/tmp/latest.pcap")
+						err = os.WriteFile("/tmp/latest.pcap", b, 0644)
+						require.NoError(t, err)
+					}
+				}
+				return nil
+			})
+		}
+
+		// if len(res.Stderr) > 0 {
+		// 	os.RemoveAll("/tmp/latest.pcap")
+		// 	os.WriteFile("/tmp/latest.pcap", res.Stderr, 0644)
+		// }
+
 		require.NoError(t, res.Error)
 
 		assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))

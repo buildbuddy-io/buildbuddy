@@ -210,6 +210,17 @@ func propagateInvocationIDToSpanStreamServerInterceptor() grpc.StreamServerInter
 	}
 }
 
+func MinimalGRPCServerOptions() []grpc.ServerOption {
+	return []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes),
+		// Set to avoid errors: Bandwidth exhausted HTTP/2 error code: ENHANCE_YOUR_CALM Received Goaway too_many_pings
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second, // If a client pings more than once every 10 seconds, terminate the connection
+			PermitWithoutStream: true,             // Allow pings even when there are no active streams
+		}),
+	}
+}
+
 func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(env),

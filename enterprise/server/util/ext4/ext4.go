@@ -122,7 +122,7 @@ func DirectoryToImageAutoSize(ctx context.Context, inputDir, outputFile string) 
 		return nil
 	}
 
-	imageSizeBytes := int64(float64(dirSizeBytes)*1.2) + 1000000
+	imageSizeBytes := int64(float64(dirSizeBytes)*1.5) + 1000000
 	return DirectoryToImage(ctx, inputDir, outputFile, imageSizeBytes)
 }
 
