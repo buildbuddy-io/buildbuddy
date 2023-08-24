@@ -26,6 +26,7 @@ ts_library(
     srcs = ["edit_org.tsx"],
     deps = [
         "//app/auth:auth_service",
+        "//app/capabilities",
         "//app/components/button",
         "//app/service:rpc_service",
         "//enterprise/app/org:org_form",

@@ -13,6 +13,7 @@ go_library(
         "//proto:config_go_proto",
         "//server/backends/github",
         "//server/build_event_protocol/target_tracker",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/remote_cache/hit_tracker",
         "//server/util/status",

@@ -117,10 +117,12 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
           </label>
           <div className="input-help-text">May contain lowercase letters, numbers, or hyphens (-)</div>
           <div className="url-input-row">
-            <span>
-              {window.location.hostname}
-              {window.location.port && `:${window.location.port}`}/join/
-            </span>
+            {!capabilities.config.subdomainsEnabled && (
+              <span>
+                {window.location.hostname}
+                {window.location.port && `:${window.location.port}`}/join/
+              </span>
+            )}
             <input
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
@@ -129,12 +131,28 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
               name="urlIdentifier"
               value={request.urlIdentifier}
             />
+            {capabilities.config.subdomainsEnabled && (
+              <span>
+                .{capabilities.config.domain}
+                {window.location.port && `:${window.location.port}`}/join/
+              </span>
+            )}
           </div>
           {initialRequest.urlIdentifier && initialRequest.urlIdentifier !== request.urlIdentifier && (
-            <Banner type="warning">
-              This change will deactivate the old URL. <br />
-              Be sure to update any links in docs, bookmarks, etc.
-            </Banner>
+            <>
+              {capabilities.config.subdomainsEnabled && (
+                <Banner type="warning">
+                  This change will deactivate the old subdomain. <br />
+                  Existing links referring to the previous subdomain will no longer function.
+                </Banner>
+              )}
+              {!capabilities.config.subdomainsEnabled && (
+                <Banner type="warning">
+                  This change will deactivate the old URL. <br />
+                  Be sure to update any links in docs, bookmarks, etc.
+                </Banner>
+              )}
+            </>
           )}
         </div>
         {this.showSuggestionPreference() && (

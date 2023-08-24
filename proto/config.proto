@@ -123,4 +123,7 @@ message FrontendConfig {
   // Whether customer subdomains are enabled and front-end was loaded on a
   // subdomain.
   bool customer_subdomain = 40;
+
+  // The domain for this installation (e.g. buildbuddy.io)
+  string domain = 41;
 }
