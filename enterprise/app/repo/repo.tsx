@@ -399,22 +399,20 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                 Link Google Cloud
               </button>
             )}
-            {
-              <button
-                disabled={
-                  !this.state.githubInstallationsResponse?.installations ||
-                  !this.hasPermissions() ||
-                  this.state.isDeploying ||
-                  Boolean(this.state.workflowResponse) ||
-                  needsGCPLink
-                }
-                className="create-button"
-                onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
-                {this.state.isDeploying || this.state.workflowResponse
-                  ? `Deploying${deployDestination}...`
-                  : `Deploy${deployDestination}`}
-              </button>
-            }
+            <button
+              disabled={
+                !this.state.githubInstallationsResponse?.installations ||
+                !this.hasPermissions() ||
+                this.state.isDeploying ||
+                Boolean(this.state.workflowResponse) ||
+                needsGCPLink
+              }
+              className="create-button"
+              onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
+              {this.state.isDeploying || this.state.workflowResponse
+                ? `Deploying${deployDestination}...`
+                : `Deploy${deployDestination}`}
+            </button>
           </div>
         )}
         {this.state.workflowResponse && (
