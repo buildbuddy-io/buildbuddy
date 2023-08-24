@@ -106,3 +106,16 @@ ts_library(
         "@npm//tslib",
     ],
 )
+
+ts_library(
+    name = "org_access_denied",
+    srcs = ["org_access_denied.tsx"],
+    deps = [
+        "//app/auth:auth_service",
+        "//app/auth:user",
+        "//app/components/button",
+        "//app/router",
+        "@npm//@types/react",
+        "@npm//react",
+    ],
+)

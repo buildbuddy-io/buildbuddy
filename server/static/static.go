@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -178,6 +179,8 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		WorkflowHistoryEnabled:                 *workflowHistoryEnabled,
 		AuditLogsUiEnabled:                     *auditLogsUIEnabled,
 		NewTrendsUiEnabled:                     *newTrendsUIEnabled,
+		SubdomainsEnabled:                      subdomain.Enabled(),
+		CustomerSubdomain:                      subdomain.Get(ctx) != "",
 	}
 
 	configJSON, err := protojson.Marshal(&config)

@@ -229,9 +229,14 @@ func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.Cance
 	return &inpb.CancelExecutionsResponse{}, nil
 }
 
-func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
+func makeGroups(ctx context.Context, groupRoles []*tables.GroupRole) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, gr := range groupRoles {
+		if sd := subdomain.Get(ctx); sd != "" {
+			if gr.Group.URLIdentifier == nil || *gr.Group.URLIdentifier != sd {
+				continue
+			}
+		}
 		g := gr.Group
 		urlIdentifier := ""
 		if g.URLIdentifier != nil {
@@ -272,6 +277,24 @@ func (s *BuildBuddyServer) GetImpersonatedUser(ctx context.Context, req *uspb.Ge
 	return s.getUser(ctx, req, userDB.GetImpersonatedUser)
 }
 
+func (s *BuildBuddyServer) getGroupIDForSubdomain(ctx context.Context) (string, error) {
+	sd := subdomain.Get(ctx)
+	if sd == "" {
+		return "", nil
+	}
+
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return "", status.UnimplementedError("Not Implemented")
+	}
+
+	g, err := userDB.GetGroupByURLIdentifier(ctx, sd)
+	if err != nil {
+		return "", err
+	}
+	return g.GroupID, nil
+}
+
 type userLookup func(ctx context.Context) (*tables.User, error)
 
 func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest, dbLookup userLookup) (*uspb.GetUserResponse, error) {
@@ -297,20 +320,29 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
 		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs()...)
 	}
+
+	subdomainGroupID := ""
 	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
 			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
 				allowedRPCs = append(allowedRPCs, role_filter.ServerAdminOnlyRPCs()...)
+				gid, err := s.getGroupIDForSubdomain(ctx)
+				if err != nil && !status.IsNotFoundError(err) {
+					return nil, err
+				}
+				subdomainGroupID = gid
 				break
 			}
 		}
 	}
+
 	return &uspb.GetUserResponse{
-		DisplayUser:     tu.ToProto(),
-		UserGroup:       makeGroups(tu.Groups),
-		SelectedGroupId: selectedGroupID,
-		AllowedRpc:      allowedRPCs,
-		GithubLinked:    tu.GithubToken != "",
+		DisplayUser:      tu.ToProto(),
+		UserGroup:        makeGroups(ctx, tu.Groups),
+		SelectedGroupId:  selectedGroupID,
+		AllowedRpc:       allowedRPCs,
+		GithubLinked:     tu.GithubToken != "",
+		SubdomainGroupId: subdomainGroupID,
 	}, nil
 }
 

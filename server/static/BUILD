@@ -16,6 +16,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/hit_tracker",
         "//server/util/status",
+        "//server/util/subdomain",
         "//server/version",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_google_protobuf//encoding/protojson",
