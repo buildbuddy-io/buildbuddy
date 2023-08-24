@@ -199,6 +199,17 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     return s ? s.split(",") : [];
   }
 
+  getUnsetSecrets() {
+    return (
+      this.getSecrets()
+        .filter((s) => !this.state.secretsResponse?.secret.map((s) => s.name).includes(s))
+        // Exclude the GCP refresh token from secrets that need to be set
+        // up manually by the user, since we set this up as part of GCP
+        // account linking.
+        .filter((s) => gcpRefreshTokenKey != s)
+    );
+  }
+
   async handleCreateClicked() {
     this.setState({ isCreating: true });
     try {
@@ -217,13 +228,13 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   async saveSecrets() {
-    await Promise.all(this.getSecrets().map((s) => encryptAndUpdate(s, this.state.secrets.get(s) || "")));
+    await Promise.all(this.getUnsetSecrets().map((s) => encryptAndUpdate(s, this.state.secrets.get(s) || "")));
   }
 
   async handleDeployClicked(repoResponse: repo.CreateRepoResponse) {
     this.setState({ isDeploying: true });
     try {
-      if (this.getSecrets().length) {
+      if (this.getUnsetSecrets().length) {
         await this.saveSecrets();
       }
       let workflowResponse = await this.runWorkflow(repoResponse.repoUrl);
@@ -362,25 +373,22 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             className={`repo-block card repo-create ${this.props.user && this.state.repoResponse ? "" : "disabled"}`}>
             <div className="repo-title">Configure deployment</div>
             <div className="deployment-configs">
-              {this.getSecrets()
-                .filter((s) => !this.state.secretsResponse?.secret.map((s) => s.name).includes(s))
-                .filter((s) => gcpRefreshTokenKey != s)
-                .map((s) => (
-                  <div className="deployment-config">
-                    <div>{s}</div>
-                    <div>
-                      <TextInput
-                        type="password"
-                        placeholder={s}
-                        value={this.state.secrets.get(s)}
-                        onChange={(e) => {
-                          this.state.secrets.set(s, e.target.value);
-                          this.forceUpdate();
-                        }}
-                      />
-                    </div>
+              {this.getUnsetSecrets().map((s) => (
+                <div className="deployment-config">
+                  <div>{s}</div>
+                  <div>
+                    <TextInput
+                      type="password"
+                      placeholder={s}
+                      value={this.state.secrets.get(s)}
+                      onChange={(e) => {
+                        this.state.secrets.set(s, e.target.value);
+                        this.forceUpdate();
+                      }}
+                    />
                   </div>
-                ))}
+                </div>
+              ))}
             </div>
             {needsGCPLink && (
               <button
@@ -396,19 +404,20 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                 Link Google Cloud
               </button>
             )}
-            {!this.state.workflowResponse && (
-              <button
-                disabled={
-                  !this.state.githubInstallationsResponse?.installations ||
-                  !this.hasPermissions() ||
-                  this.state.isDeploying ||
-                  needsGCPLink
-                }
-                className="create-button"
-                onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
-                {this.state.isDeploying ? `Deploying${deployDestination}...` : `Deploy${deployDestination}`}
-              </button>
-            )}
+            <button
+              disabled={
+                !this.state.githubInstallationsResponse?.installations ||
+                !this.hasPermissions() ||
+                this.state.isDeploying ||
+                Boolean(this.state.workflowResponse) ||
+                needsGCPLink
+              }
+              className="create-button"
+              onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
+              {this.state.isDeploying || this.state.workflowResponse
+                ? `Deploying${deployDestination}...`
+                : `Deploy${deployDestination}`}
+            </button>
           </div>
         )}
         {this.state.workflowResponse && (
