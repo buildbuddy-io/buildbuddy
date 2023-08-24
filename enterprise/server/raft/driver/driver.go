@@ -24,6 +24,7 @@ import (
 )
 
 var (
+	enableDriver            = flag.Bool("cache.raft.enable_driver", false, "If true, enable placement driver")
 	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", true, "If set, allow moving replicas between nodes")
 	enableReplacingReplicas = flag.Bool("cache.raft.enable_replacing_replicas", true, "If set, allow replacing dead / down replicas")
 	driverPollInterval      = flag.Duration("cache.raft.driver_poll_interval", 10*time.Second, "Poll the cluster for moves/replacements this often")
@@ -368,6 +369,10 @@ func New(store rfspb.ApiServer, gossipManager *gossip.GossipManager, nodeRegistr
 }
 
 func (d *Driver) Start() error {
+	if !*enableDriver {
+		log.Debugf("Driver disabled; not running")
+		return nil
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.started {

@@ -351,7 +351,10 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (
 			PartitionId:        partID,
 			GroupId:            groupID,
 		},
-		Digest: r.GetDigest(),
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+		Compressor:     r.GetCompressor(),
+		Encryption:     nil,
 	}, nil
 }
 
