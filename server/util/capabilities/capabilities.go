@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 )
@@ -63,7 +64,7 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 func IsGranted2(ctx context.Context, id string, env environment.Env, cap akpb.ApiKey_Capability) (bool, error) {
 	a := env.GetAuthenticator()
 	authIsRequired := !a.AnonymousUsageEnabled(ctx)
-	log.Infof("VVV %q auth required %", id, authIsRequired)
+	log.Infof("VVV %q auth required %t subdomain %q", id, authIsRequired, subdomain.Get(ctx))
 	user, err := a.AuthenticatedUser(ctx)
 	if err != nil {
 		log.Infof("VVV %q err %v", id, err)

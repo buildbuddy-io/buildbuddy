@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -388,6 +390,13 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 
 			log.Infof("VVV first message %q can write %t", req.ResourceName, canWrite)
+
+			md, ok := metadata.FromIncomingContext(ctx)
+			if ok {
+				for k, v := range md {
+					log.Infof("VVV %q HEADER %s=%s", req.ResourceName, k, strings.Join(v, ","))
+				}
+			}
 
 			capabilities.IsGranted2(ctx, req.ResourceName, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
 
