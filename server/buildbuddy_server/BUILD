@@ -54,6 +54,7 @@ go_library(
         "//server/util/request_context",
         "//server/util/role",
         "//server/util/status",
+        "//server/util/subdomain",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
     ],
