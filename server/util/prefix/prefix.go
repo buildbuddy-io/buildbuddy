@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 )
 
 const (
@@ -25,7 +26,7 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 	// NullAuthenticator insteadof nil).
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		log.Warningf("VVV user prefix err %v anon enabled %t", err, auth.AnonymousUsageEnabled(ctx))
+		log.Warningf("VVV user prefix err %v anon enabled %t subdomain %q", err, auth.AnonymousUsageEnabled(ctx), subdomain.Get(ctx))
 	}
 	if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
 		return addPrefix(interfaces.AuthAnonymousUser, key), nil

@@ -11,5 +11,6 @@ go_library(
         "//server/util/authutil",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/subdomain",
     ],
 )
