@@ -255,7 +255,7 @@ func routeLabel(r *http.Request) string {
 	if strings.HasPrefix(path, "/invocation/") {
 		return "/invocation/[...]"
 	}
-	if strings.HasPrefix(path, "/api/v1/metrics") {
+	if path == "/api/v1/metrics" {
 		return "/api/v1/metrics"
 	}
 	return "[OTHER]"
