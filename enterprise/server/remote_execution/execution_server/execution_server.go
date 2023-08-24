@@ -441,8 +441,16 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
 
 	invocationID := bazel_request.GetInvocationID(ctx)
+	rmd := bazel_request.GetRequestMetadata(ctx)
 	if invocationID == "" {
-		log.CtxInfof(ctx, "Execution %q is missing invocation ID metadata. Request metadata: %+v", executionID, bazel_request.GetRequestMetadata(ctx))
+		log.CtxInfof(ctx, "Execution %q is missing invocation ID metadata. Request metadata: %+v", executionID, rmd)
+	}
+	// Drop ToolDetails from the request metadata. Executors will include this
+	// metadata in all app requests, but the ToolDetails identify the request as
+	// being from bazel, which is not desired.
+	if rmd != nil {
+		rmd = proto.Clone(rmd).(*repb.RequestMetadata)
+		rmd.ToolDetails = nil
 	}
 
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
@@ -458,7 +466,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		ExecutionId:     executionID,
 		Action:          action,
 		Command:         command,
-		RequestMetadata: bazel_request.GetRequestMetadata(ctx),
+		RequestMetadata: rmd,
 	}
 	// Allow execution worker to auth to cache (if necessary).
 	if jwt, ok := ctx.Value("x-buildbuddy-jwt").(string); ok {
