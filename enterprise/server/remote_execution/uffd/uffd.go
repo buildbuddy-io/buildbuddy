@@ -268,11 +268,6 @@ func resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint
 	}
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 	if errno != 0 {
-		if errno == unix.ENOENT {
-			// The faulting process changed its virtual memory layout simultaneously with an outstanding UFFDIO_COPY
-			// The UFFDIO_COPY will have aborted and the handler should continue to serve page faults
-			return 0, nil
-		}
 		return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
 	}
 	return int64(copyData.Copy), nil
