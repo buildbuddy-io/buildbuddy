@@ -350,6 +350,7 @@ func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer string, r *rs
 func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
+		log.Warningf("VVV readwritecontext failed: %v", err)
 		return err
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
@@ -369,7 +370,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		if writeCloser == nil {
 			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
-				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
+				log.Warningf("VVV could not create writer for %q: %v", rn.GetDigest().GetHash(), err)
 				return err
 			}
 			defer wc.Close()
@@ -378,11 +379,13 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		n, err := writeCloser.Write(req.Data)
 		if err != nil {
+			log.Warningf("VVV write closer write failed for %q: %v", rn.GetDigest().GetHash(), err)
 			return err
 		}
 		bytesWritten += int64(n)
 		if req.FinishWrite {
 			if err := writeCloser.Commit(); err != nil {
+				log.Warningf("VVV write closer commit failed for %q: %v", rn.GetDigest().GetHash(), err)
 				return err
 			}
 			// TODO(vadim): use handoff peer from request once client is including it in the FinishWrite request.
