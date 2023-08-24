@@ -5,5 +5,4 @@ go_library(
     srcs = ["urlutil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/urlutil",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/log"],
 )
