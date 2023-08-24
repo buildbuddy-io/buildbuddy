@@ -270,13 +270,13 @@ export default class SidebarComponent extends React.Component<Props, State> {
                     </div>
                   ))}
                 </div>
-                {this.props.user && router.canCreateOrg(this.props.user) && (
+                {!capabilities.config.customerSubdomain && this.props.user && router.canCreateOrg(this.props.user) && (
                   <div className="sidebar-item create-organization" onClick={this.handleCreateOrgClicked.bind(this)}>
                     <PlusCircle className="icon" />
                     Create org
                   </div>
                 )}
-                {Boolean(this.props.user?.canImpersonate()) && (
+                {!capabilities.config.customerSubdomain && Boolean(this.props.user?.canImpersonate()) && (
                   <div className="sidebar-item admin-only" onClick={this.handleSearchGroupsClicked.bind(this)}>
                     <ArrowRightCircle className="icon" />
                     Go to org
