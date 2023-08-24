@@ -387,9 +387,13 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 
+			log.Infof("VVV first message %q can write %t", req.ResourceName, canWrite)
+
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
-				return s.handleAlreadyExists(ctx, ht, stream, req)
+				err = s.handleAlreadyExists(ctx, ht, stream, req)
+				log.Infof("VVV %q return err %v", req.ResourceName, err)
+				return err
 			}
 
 			streamState, err = s.initStreamState(ctx, req)
