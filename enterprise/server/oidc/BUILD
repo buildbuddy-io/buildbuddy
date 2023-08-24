@@ -22,7 +22,7 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "//server/util/subdomain",
-        "//server/util/url",
+        "//server/util/urlutil",
         "@com_github_coreos_go_oidc//:go-oidc",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//credentials",

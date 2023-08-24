@@ -26,6 +26,7 @@ ts_library(
     srcs = ["edit_org.tsx"],
     deps = [
         "//app/auth:auth_service",
+        "//app/capabilities",
         "//app/components/button",
         "//app/service:rpc_service",
         "//enterprise/app/org:org_form",
@@ -104,5 +105,18 @@ ts_library(
         "@npm//@types/react",
         "@npm//react",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "org_access_denied",
+    srcs = ["org_access_denied.tsx"],
+    deps = [
+        "//app/auth:auth_service",
+        "//app/auth:user",
+        "//app/components/button",
+        "//app/router",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )

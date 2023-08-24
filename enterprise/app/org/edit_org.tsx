@@ -5,6 +5,7 @@ import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import OrgForm, { FormProps } from "./org_form";
 import { Link } from "lucide-react";
+import capabilities from "../../../app/capabilities/capabilities";
 
 /**
  * Page that allows editing an org specified in the URL.
@@ -48,12 +49,19 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
     await authService.refreshUser();
   }
 
+  getInviteLink() {
+    if (!this.state.initialRequest.urlIdentifier) {
+      return "";
+    }
+    const port = window.location.port ? ":" + window.location.port : "";
+    if (capabilities.config.subdomainsEnabled) {
+      return `${this.state.initialRequest.urlIdentifier}.${capabilities.config.domain}${port}/join`;
+    }
+    return `${window.location.hostname}${port}/join/${this.state.initialRequest.urlIdentifier}`;
+  }
+
   render() {
-    const inviteLink = this.state.initialRequest.urlIdentifier
-      ? `${window.location.hostname}${window.location.port ? ":" + window.location.port : ""}/join/${
-          this.state.initialRequest.urlIdentifier
-        }`
-      : "";
+    const inviteLink = this.getInviteLink();
 
     return (
       <>

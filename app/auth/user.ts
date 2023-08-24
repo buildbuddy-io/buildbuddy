@@ -10,6 +10,7 @@ export class User {
   githubLinked: boolean;
   /** Whether the user is temporarily acting as a member of the selected group. */
   isImpersonating: boolean;
+  subdomainGroupID: string;
 
   constructor(init: Partial<User>) {
     this.displayUser = init.displayUser!;
@@ -22,6 +23,7 @@ export class User {
     this.allowedRpcs = init.allowedRpcs!;
     this.githubLinked = init.githubLinked!;
     this.isImpersonating = init.isImpersonating!;
+    this.subdomainGroupID = init.subdomainGroupID!;
 
     // All props are required, but it's a pain in TS to get a type representing
     // "only the fields of User, not the methods". So do a runtime check here.

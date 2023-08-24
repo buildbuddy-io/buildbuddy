@@ -368,7 +368,12 @@ class Router {
     // Require the user to create an org if they are logged in but not part of
     // an org.
     if (user && !user.groups?.length) {
-      return Path.createOrgPath;
+      if (capabilities.config.customerSubdomain) {
+        const params = new URLSearchParams({ source_url: window.location.href });
+        return Path.orgAccessDeniedPath + "?" + params.toString();
+      } else {
+        return Path.createOrgPath;
+      }
     }
 
     const path = window.location.pathname;
@@ -449,6 +454,7 @@ export class Path {
   static settingsOrgGitHubLinkPath = "/settings/org/github";
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";
+  static orgAccessDeniedPath = "/org/access-denied";
   static trendsPath = "/trends/";
   static usagePath = "/usage/";
   static auditLogsPath = "/audit-logs/";

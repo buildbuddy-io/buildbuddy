@@ -37,6 +37,11 @@ message GetUserResponse {
 
   // True if the user has a linked GitHub account.
   bool github_linked = 7;
+
+  // If the app is accessed via a custom subdomain this field will indicate the
+  // group ID that owns the subdomain, but only if the user is allowed to
+  // impersonate.
+  string subdomain_group_id = 8;
 }
 
 message CreateUserRequest {

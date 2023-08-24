@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -36,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -64,8 +66,6 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -231,9 +231,14 @@ func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.Cance
 	return &inpb.CancelExecutionsResponse{}, nil
 }
 
-func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
+func makeGroups(ctx context.Context, groupRoles []*tables.GroupRole) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, gr := range groupRoles {
+		if sd := subdomain.Get(ctx); sd != "" {
+			if gr.Group.URLIdentifier == nil || *gr.Group.URLIdentifier != sd {
+				continue
+			}
+		}
 		g := gr.Group
 		urlIdentifier := ""
 		if g.URLIdentifier != nil {
@@ -274,6 +279,24 @@ func (s *BuildBuddyServer) GetImpersonatedUser(ctx context.Context, req *uspb.Ge
 	return s.getUser(ctx, req, userDB.GetImpersonatedUser)
 }
 
+func (s *BuildBuddyServer) getGroupIDForSubdomain(ctx context.Context) (string, error) {
+	sd := subdomain.Get(ctx)
+	if sd == "" {
+		return "", nil
+	}
+
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return "", status.UnimplementedError("Not Implemented")
+	}
+
+	g, err := userDB.GetGroupByURLIdentifier(ctx, sd)
+	if err != nil {
+		return "", err
+	}
+	return g.GroupID, nil
+}
+
 type userLookup func(ctx context.Context) (*tables.User, error)
 
 func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest, dbLookup userLookup) (*uspb.GetUserResponse, error) {
@@ -299,20 +322,29 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
 		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs()...)
 	}
+
+	subdomainGroupID := ""
 	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
 			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
 				allowedRPCs = append(allowedRPCs, role_filter.ServerAdminOnlyRPCs()...)
+				gid, err := s.getGroupIDForSubdomain(ctx)
+				if err != nil && !status.IsNotFoundError(err) {
+					return nil, err
+				}
+				subdomainGroupID = gid
 				break
 			}
 		}
 	}
+
 	return &uspb.GetUserResponse{
-		DisplayUser:     tu.ToProto(),
-		UserGroup:       makeGroups(tu.Groups),
-		SelectedGroupId: selectedGroupID,
-		AllowedRpc:      allowedRPCs,
-		GithubLinked:    tu.GithubToken != "",
+		DisplayUser:      tu.ToProto(),
+		UserGroup:        makeGroups(ctx, tu.Groups),
+		SelectedGroupId:  selectedGroupID,
+		AllowedRpc:       allowedRPCs,
+		GithubLinked:     tu.GithubToken != "",
+		SubdomainGroupId: subdomainGroupID,
 	}, nil
 }
 
@@ -421,15 +453,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		UseGroupOwnedExecutors: &useGroupOwnedExecutors,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
-
-	if urlIdentifier != "" {
-		if existingGroup, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); existingGroup != nil {
-			return nil, status.InvalidArgumentError("URL is already in use")
-		} else if gstatus.Code(err) != gcodes.NotFound {
-			return nil, err
-		}
-		group.URLIdentifier = &urlIdentifier
-	}
+	group.URLIdentifier = &urlIdentifier
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 
 	groupID, err := userDB.CreateGroup(ctx, group)
@@ -451,13 +475,6 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	var err error
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
-	if urlIdentifier != "" {
-		if group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); group != nil && group.GroupID != req.GetRequestContext().GetGroupId() {
-			return nil, status.InvalidArgumentError("URL is already in use")
-		} else if err != nil && gstatus.Code(err) != gcodes.NotFound {
-			return nil, err
-		}
-	}
 	if group == nil {
 		if req.GetRequestContext().GetGroupId() == "" {
 			return nil, status.InvalidArgumentError("Missing organization identifier.")
@@ -903,6 +920,44 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	return toProtoAPIKeys(append(userKeys, groupKeys...)), nil
 }
 
+// replaceURLSubdomain replaces the subdomain in the URL with the group's URL
+// identifier if custom subdomains are enabled.
+func (s *BuildBuddyServer) replaceURLSubdomain(ctx context.Context, rawURL string) string {
+	if !subdomain.Enabled() {
+		return rawURL
+	}
+
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return rawURL
+	}
+
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return rawURL
+	}
+
+	if g.URLIdentifier == nil || *g.URLIdentifier == "" {
+		return rawURL
+	}
+
+	pURL, err := url.Parse(rawURL)
+	// Input URLs should already be validated so this is not supposed to happen.
+	if err != nil {
+		alert.UnexpectedEvent("invalid_config_url", rawURL)
+		return rawURL
+	}
+
+	domain := urlutil.GetDomain(pURL)
+	newHost := *g.URLIdentifier + "." + domain
+	if pURL.Port() != "" {
+		newHost += ":" + pURL.Port()
+	}
+	pURL.Host = newHost
+
+	return pURL.String()
+}
+
 func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBazelConfigRequest) (*bzpb.GetBazelConfigResponse, error) {
 	configOptions := make([]*bzpb.ConfigOption, 0)
 
@@ -912,7 +967,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		resultsURL = assembleURL(req.Host, req.Protocol, "")
 		resultsURL += "/invocation/"
 	}
-	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", resultsURL))
+	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", s.replaceURLSubdomain(ctx, resultsURL)))
 
 	grpcPort := "1985"
 	if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
@@ -927,14 +982,14 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		return nil, err
 	}
 
-	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
+	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", s.replaceURLSubdomain(ctx, eventsAPIURL)))
 
 	if s.env.GetCache() != nil {
 		cacheAPIURL := cache_api_url.String()
 		if cacheAPIURL == "" {
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
+		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", s.replaceURLSubdomain(ctx, cacheAPIURL)))
 	}
 
 	if remote_execution_config.RemoteExecutionEnabled() {
@@ -942,7 +997,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if remoteExecutionAPIURL == "" {
 			remoteExecutionAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", remoteExecutionAPIURL))
+		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", s.replaceURLSubdomain(ctx, remoteExecutionAPIURL)))
 	}
 
 	credentials := make([]*bzpb.Credentials, len(groupAPIKeys))

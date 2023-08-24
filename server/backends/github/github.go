@@ -27,8 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 )
 
 var (
@@ -217,7 +215,7 @@ func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, red
 	userID := r.FormValue("user_id")
 	groupID := r.FormValue("group_id")
 	redirectURL := r.FormValue("redirect_url")
-	if err := burl.ValidateRedirect(c.env, redirectURL); err != nil {
+	if err := build_buddy_url.ValidateRedirect(redirectURL); err != nil {
 		redirectWithError(w, r, err)
 		return
 	}
