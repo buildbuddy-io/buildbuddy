@@ -51,17 +51,17 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
 
   getInviteLink() {
     if (!this.state.initialRequest.urlIdentifier) {
-      return ""
+      return "";
     }
-    const port = window.location.port ? ":" + window.location.port : ""
+    const port = window.location.port ? ":" + window.location.port : "";
     if (capabilities.config.subdomainsEnabled) {
-      return `${this.state.initialRequest.urlIdentifier}.${capabilities.config.domain}${port}/join`
+      return `${this.state.initialRequest.urlIdentifier}.${capabilities.config.domain}${port}/join`;
     }
-    return `${window.location.hostname}${port}/join/${this.state.initialRequest.urlIdentifier}`
+    return `${window.location.hostname}${port}/join/${this.state.initialRequest.urlIdentifier}`;
   }
 
   render() {
-    const inviteLink = this.getInviteLink()
+    const inviteLink = this.getInviteLink();
 
     return (
       <>

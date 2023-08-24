@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -919,6 +920,8 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	return toProtoAPIKeys(append(userKeys, groupKeys...)), nil
 }
 
+// replaceURLSubdomain replaces the subdomain in the URL with the group's URL
+// identifier if custom subdomains are enabled.
 func (s *BuildBuddyServer) replaceURLSubdomain(ctx context.Context, rawURL string) string {
 	if !subdomain.Enabled() {
 		return rawURL
@@ -945,15 +948,7 @@ func (s *BuildBuddyServer) replaceURLSubdomain(ctx context.Context, rawURL strin
 		return rawURL
 	}
 
-	hostname := pURL.Hostname()
-	pts := strings.Split(hostname, ".")
-	var domain string
-	if len(pts) < 2 {
-		domain = hostname
-	} else {
-		domain = strings.Join(pts[len(pts)-2:], ".")
-	}
-
+	domain := urlutil.GetDomain(pURL)
 	newHost := *g.URLIdentifier + "." + domain
 	if pURL.Port() != "" {
 		newHost += ":" + pURL.Port()

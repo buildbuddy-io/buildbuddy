@@ -132,27 +132,26 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
               value={request.urlIdentifier}
             />
             {capabilities.config.subdomainsEnabled && (
-                <span>
-                .
-                {capabilities.config.domain}
+              <span>
+                .{capabilities.config.domain}
                 {window.location.port && `:${window.location.port}`}/join/
               </span>
             )}
           </div>
           {initialRequest.urlIdentifier && initialRequest.urlIdentifier !== request.urlIdentifier && (
-              <>
-                {capabilities.config.subdomainsEnabled && (
-                  <Banner type="warning">
-                    This change will deactivate the old subdomain. <br />
-                    Existing links referring to the previous subdomain will no longer function.
-                  </Banner>
-                )}
-                {!capabilities.config.subdomainsEnabled && (
-                  <Banner type="warning">
-                    This change will deactivate the old URL. <br />
-                    Be sure to update any links in docs, bookmarks, etc.
-                  </Banner>
-                )}
+            <>
+              {capabilities.config.subdomainsEnabled && (
+                <Banner type="warning">
+                  This change will deactivate the old subdomain. <br />
+                  Existing links referring to the previous subdomain will no longer function.
+                </Banner>
+              )}
+              {!capabilities.config.subdomainsEnabled && (
+                <Banner type="warning">
+                  This change will deactivate the old URL. <br />
+                  Be sure to update any links in docs, bookmarks, etc.
+                </Banner>
+              )}
             </>
           )}
         </div>
