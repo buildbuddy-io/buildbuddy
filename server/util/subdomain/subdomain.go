@@ -44,3 +44,7 @@ func Get(ctx context.Context) string {
 func Enabled() bool {
 	return *enableSubdomainMatching
 }
+
+func DefaultSubdomains() []string {
+	return *defaultSubdomains
+}

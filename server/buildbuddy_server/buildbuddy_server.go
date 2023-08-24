@@ -64,8 +64,6 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -421,15 +419,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		UseGroupOwnedExecutors: &useGroupOwnedExecutors,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
-
-	if urlIdentifier != "" {
-		if existingGroup, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); existingGroup != nil {
-			return nil, status.InvalidArgumentError("URL is already in use")
-		} else if gstatus.Code(err) != gcodes.NotFound {
-			return nil, err
-		}
-		group.URLIdentifier = &urlIdentifier
-	}
+	group.URLIdentifier = &urlIdentifier
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 
 	groupID, err := userDB.CreateGroup(ctx, group)
@@ -451,13 +441,6 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	var err error
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
-	if urlIdentifier != "" {
-		if group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); group != nil && group.GroupID != req.GetRequestContext().GetGroupId() {
-			return nil, status.InvalidArgumentError("URL is already in use")
-		} else if err != nil && gstatus.Code(err) != gcodes.NotFound {
-			return nil, err
-		}
-	}
 	if group == nil {
 		if req.GetRequestContext().GetGroupId() == "" {
 			return nil, status.InvalidArgumentError("Missing organization identifier.")
