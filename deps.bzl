@@ -6772,8 +6772,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "org_golang_google_grpc",
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
-        patch_args = ["-p1"],
-        patches = ["@{}//buildpatches:org_google_golang_grpc.patch".format(workspace_name)],
         sum = "h1:fVRFRnXvU+x6C4IlHZewvJOVHoOv1TUuQyoRsYnB4bI=",
         version = "v1.56.2",
     )

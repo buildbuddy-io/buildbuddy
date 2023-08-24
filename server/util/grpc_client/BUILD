@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/rpc/interceptors",
-        "//server/util/log",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/google",
         "@org_golang_google_grpc//keepalive",
