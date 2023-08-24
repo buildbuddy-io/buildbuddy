@@ -171,6 +171,11 @@
   overflow-y: scroll;
 }
 
+.invocation-error-card .error-contents-important {
+  font-weight: bold;
+  margin-top: 16px;
+}
+
 .file-name {
   display: flex;
   align-items: flex-start;
