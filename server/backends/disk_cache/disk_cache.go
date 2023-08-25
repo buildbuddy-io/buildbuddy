@@ -170,6 +170,8 @@ type DiskCache struct {
 	defaultPartition  *partition
 }
 
+// Register registers the disk cache for use in a real environment.
+// For testing, use NewDiskCache directly.
 func Register(env environment.Env) error {
 	if *rootDirectoryFlag == "" {
 		return nil
@@ -188,6 +190,10 @@ func Register(env environment.Env) error {
 		return status.InternalErrorf("Error configuring cache: %s", err)
 	}
 	env.SetCache(c)
+	// We only export prometheus stats in Register() because otherwise tests
+	// would have to worry about tearing down the cache to avoid errors while
+	// refreshing stats for a root dir that has already been removed.
+	c.startRefreshMetrics(dc.RootDirectory)
 	return nil
 }
 
@@ -276,8 +282,6 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 	c.partitions = partitions
 	c.defaultPartition = defaultPartition
-
-	c.startRefreshMetrics(opts.RootDirectory)
 
 	statusz.AddSection(cacheName, "On disk LRU cache", c)
 	return c, nil
