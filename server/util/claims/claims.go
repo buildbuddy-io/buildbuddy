@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/golang-jwt/jwt"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -144,9 +143,6 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 		for _, g := range u.Groups {
 			if g.Group.GroupID == c.GetGroupId() {
 				eg = c.GetGroupId()
-				if sd := subdomain.Get(ctx); sd != "" && (g.Group.URLIdentifier == nil || *g.Group.URLIdentifier != sd) {
-					return nil, status.PermissionDeniedErrorf("Selected group is not available via current subdomain.")
-				}
 			}
 		}
 	}

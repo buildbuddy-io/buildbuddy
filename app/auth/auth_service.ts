@@ -193,10 +193,18 @@ export class AuthService {
     rpcService.requestContext.groupId = this.user?.selectedGroup?.id || "";
   }
 
-  async setSelectedGroupId(groupId: string, { reload = false }: { reload?: boolean } = {}) {
+  async setSelectedGroupId(groupId: string, groupURL: string, { reload = false }: { reload?: boolean } = {}) {
     if (!this.user) throw new Error("failed to set selected group ID: not logged in");
 
     this.setCookie(SELECTED_GROUP_ID_COOKIE, groupId);
+
+    // If we're on a subdomain and the new group is on a different subdomain then
+    // we have to use a redirect.
+    if (capabilities.config.customerSubdomain && new URL(groupURL).hostname != window.location.hostname) {
+      window.location.href = groupURL;
+      return;
+    }
+
     if (reload) {
       // Don't publish a new user to avoid UI flickering.
       window.location.reload();

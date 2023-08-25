@@ -60,6 +60,11 @@ message Group {
 
   // Controls whether user-owned API keys are enabled.
   bool user_owned_keys_enabled = 11;
+
+  // Default URL from the group. If custom subdomains are enabled this will
+  // reference the group subdomain, otherwise it will point to the default
+  // BuildBuddy URL.
+  string url = 12;
 }
 
 message JoinGroupRequest {
@@ -106,6 +111,11 @@ message GetGroupResponse {
 
   // True if the group has SSO enabled.
   bool sso_enabled = 5;
+
+  // Default URL from the group. If custom subdomains are enabled this will
+  // reference the group subdomain, otherwise it will point to the default
+  // BuildBuddy URL.
+  string url = 6;
 }
 
 message GetGroupUsersRequest {
@@ -204,6 +214,11 @@ message CreateGroupResponse {
   // ID of the created group.
   // Ex. "GR4576963743584254779"
   string id = 1;
+
+  // Default URL from the group. If custom subdomains are enabled this will
+  // reference the group subdomain, otherwise it will point to the default
+  // BuildBuddy URL.
+  string url = 3;
 }
 
 message UpdateGroupRequest {

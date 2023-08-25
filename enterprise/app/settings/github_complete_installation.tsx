@@ -54,8 +54,13 @@ export default class CompleteGitHubAppInstallationDialog extends React.Component
 
   private onChangeSelectedGroup(e: React.ChangeEvent<HTMLSelectElement>) {
     this.setState({ isRefreshingUser: true });
+    const grp = this.props.user.groups.find((g) => g.id === e.target.value);
+    // Should not be possible.
+    if (!grp) {
+      throw new Error("group not found");
+    }
     authService
-      .setSelectedGroupId(e.target.value)
+      .setSelectedGroupId(grp.id, grp?.url)
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ isRefreshingUser: false }));
   }

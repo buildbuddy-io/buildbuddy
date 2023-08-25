@@ -66,12 +66,12 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
       return;
     }
 
-    await authService.setSelectedGroupId(org.id);
+    await authService.setSelectedGroupId(org.id, org.url);
     router.navigateHome();
   }
 
   private async onViewBuildsClicked(org: grp.GetGroupResponse) {
-    await authService.setSelectedGroupId(org.id);
+    await authService.setSelectedGroupId(org.id, org.url);
     router.navigateHome();
   }
 
