@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -103,6 +104,12 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	// See https://github.com/containers/skopeo/issues/1240
 	tmp := testfs.MakeTempDir(t)
 	err := os.Setenv("REGISTRY_AUTH_FILE", filepath.Join(tmp, "auth.json"))
+	require.NoError(t, err)
+
+	// Clean up any lingering networking changes from previous test runs.
+	// TODO: make the executor more robust when an IP is already in use,
+	// and remove this.
+	err = networking.DeleteNetNamespaces(ctx)
 	require.NoError(t, err)
 
 	testRootDir := testfs.MakeTempDir(t)
