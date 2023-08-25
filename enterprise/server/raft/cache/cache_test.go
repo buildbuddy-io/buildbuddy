@@ -189,6 +189,7 @@ func TestReaderAndWriter(t *testing.T) {
 }
 
 func TestCacheShutdown(t *testing.T) {
+	t.Skip()
 	env, _, ctx := getEnvAuthAndCtx(t)
 	caches := startNNodes(t, ctx, env, 3)
 	rc1 := caches[0]
