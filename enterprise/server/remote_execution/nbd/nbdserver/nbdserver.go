@@ -75,7 +75,10 @@ func (s *Server) SetDevice(name string, device *Device) {
 // Start starts the device server.
 // lis will be closed when calling Stop().
 func (s *Server) Start(lis net.Listener) error {
-	s.server = grpc.NewServer(grpc_server.CommonGRPCServerOptions(s.env)...)
+	// Intentionally using a minimal set of server options here here since the
+	// common interceptors add overhead to each disk I/O operation and also add
+	// noise to the logs.
+	s.server = grpc.NewServer(grpc_server.KeepaliveEnforcementPolicy())
 	nbdpb.RegisterBlockDeviceServer(s.server, s)
 	go func() {
 		_ = s.server.Serve(lis)
