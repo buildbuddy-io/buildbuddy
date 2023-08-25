@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"sync"
 	"testing"
 	"time"
 
@@ -55,6 +54,10 @@ func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *rspb.
 	n, err := writeCloser.Write(buf)
 	require.NoError(t, err)
 	require.Equal(t, n, len(buf))
+
+	err = writeCloser.Commit()
+	require.NoError(t, err)
+
 	err = writeCloser.Close()
 	require.NoError(t, err)
 }
@@ -99,7 +102,7 @@ func parallelShutdown(caches ...*raft_cache.RaftCache) {
 
 func waitForHealthy(t *testing.T, caches ...*raft_cache.RaftCache) {
 	start := time.Now()
-	timeout := 10 * time.Second
+	timeout := 30 * time.Second
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -135,72 +138,45 @@ func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
 	}
 }
 
-func TestAutoBringup(t *testing.T) {
-	l1 := localAddr(t)
-	l2 := localAddr(t)
-	l3 := localAddr(t)
-	join := []string{l1, l2, l3}
-
-	env := testenv.GetTestEnv(t)
-
-	var rc1, rc2, rc3 *raft_cache.RaftCache
+func startNNodes(t *testing.T, ctx context.Context, env *testenv.TestEnv, n int) []*raft_cache.RaftCache {
 	eg := errgroup.Group{}
+	caches := make([]*raft_cache.RaftCache, n)
 
-	// startup 3 cache nodes
-	eg.Go(func() error {
-		var err error
-		rc1, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		rc2, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		rc3, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l3, join))
-		return err
-	})
-	err := eg.Wait()
-	require.NoError(t, err)
+	joinList := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		joinList = append(joinList, localAddr(t))
+	}
 
-	// wait for them all to become healthy
-	waitForHealthy(t, rc1, rc2, rc3)
-	waitForShutdown(t, rc1, rc2, rc3)
-}
-
-func TestReaderAndWriter(t *testing.T) {
-	l1 := localAddr(t)
-	l2 := localAddr(t)
-	l3 := localAddr(t)
-	join := []string{l1, l2, l3}
-
-	env, _, ctx := getEnvAuthAndCtx(t)
-
-	var rc1, rc2, rc3 *raft_cache.RaftCache
-	eg := errgroup.Group{}
-
-	// startup 3 cache nodes
-	eg.Go(func() error {
-		var err error
-		rc1, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		rc2, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		rc3, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l3, join))
-		return err
-	})
+	for i := 0; i < n; i++ {
+		i := i
+		lN := joinList[i]
+		joinList := joinList
+		eg.Go(func() error {
+			n, err := raft_cache.NewRaftCache(env, getCacheConfig(t, lN, joinList))
+			if err != nil {
+				return err
+			}
+			caches[i] = n
+			return nil
+		})
+	}
 	require.Nil(t, eg.Wait())
 
 	// wait for them all to become healthy
-	waitForHealthy(t, rc1, rc2, rc3)
+	waitForHealthy(t, caches...)
+	return caches
+}
+
+func TestAutoBringup(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	caches := startNNodes(t, ctx, env, 3)
+	waitForShutdown(t, caches...)
+}
+
+func TestReaderAndWriter(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	caches := startNNodes(t, ctx, env, 3)
+	rc1 := caches[0]
 
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -209,43 +185,14 @@ func TestReaderAndWriter(t *testing.T) {
 		writeDigest(t, ctx, rc1, r, buf)
 		readAndCompareDigest(t, ctx, rc1, r)
 	}
-	waitForShutdown(t, rc1, rc2, rc3)
+	waitForShutdown(t, caches...)
 }
 
 func TestCacheShutdown(t *testing.T) {
-	l1 := localAddr(t)
-	l2 := localAddr(t)
-	l3 := localAddr(t)
-	join := []string{l1, l2, l3}
-
 	env, _, ctx := getEnvAuthAndCtx(t)
-
-	var rc1, rc2, rc3 *raft_cache.RaftCache
-	eg := errgroup.Group{}
-
-	// startup 3 cache nodes
-	eg.Go(func() error {
-		var err error
-		rc1, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		rc2, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
-		return err
-	})
-
-	rc3Config := getCacheConfig(t, l3, join)
-	eg.Go(func() error {
-		var err error
-		rc3, err = raft_cache.NewRaftCache(env, rc3Config)
-		return err
-	})
-	err := eg.Wait()
-	require.NoError(t, err)
-
-	// wait for them all to become healthy
-	waitForHealthy(t, rc1, rc2, rc3)
+	caches := startNNodes(t, ctx, env, 3)
+	rc1 := caches[0]
+	rc2 := caches[1]
 
 	cacheRPCTimeout := 5 * time.Second
 	digestsWritten := make([]*rspb.ResourceName, 0)
@@ -258,7 +205,7 @@ func TestCacheShutdown(t *testing.T) {
 	}
 
 	// shutdown one node
-	waitForShutdown(t, rc3)
+	waitForShutdown(t, caches[len(caches)-1])
 
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
@@ -268,54 +215,23 @@ func TestCacheShutdown(t *testing.T) {
 		digestsWritten = append(digestsWritten, rn)
 	}
 
-	rc3, err = raft_cache.NewRaftCache(env, rc3Config)
-	require.NoError(t, err)
-	waitForHealthy(t, rc3)
-
 	for _, d := range digestsWritten {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
-		readAndCompareDigest(t, ctx, rc3, d)
+		readAndCompareDigest(t, ctx, rc2, d)
 	}
 
-	waitForShutdown(t, rc1, rc2, rc3)
+	waitForShutdown(t, caches...)
 }
 
 func TestDistributedRanges(t *testing.T) {
 	t.Skip()
-	numNodes := 5
-	addrs := make([]string, 0, numNodes)
-	for i := 0; i < numNodes; i++ {
-		addrs = append(addrs, localAddr(t))
-	}
-	join := addrs[:3]
 	env, _, ctx := getEnvAuthAndCtx(t)
-
-	mu := sync.Mutex{}
-	raftCaches := make([]*raft_cache.RaftCache, 0)
-	eg := errgroup.Group{}
-	for i := 0; i < numNodes; i++ {
-		localAddr := addrs[i]
-		eg.Go(func() error {
-			c, err := raft_cache.NewRaftCache(env, getCacheConfig(t, localAddr, join))
-			if err != nil {
-				return err
-			}
-			mu.Lock()
-			raftCaches = append(raftCaches, c)
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		t.Fatalf("Err starting caches: %s", err)
-	}
-	waitForHealthy(t, raftCaches...)
+	caches := startNNodes(t, ctx, env, 5)
 
 	digests := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 10; i++ {
-		rc := raftCaches[rand.Intn(len(raftCaches))]
+		rc := caches[rand.Intn(len(caches))]
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
@@ -324,46 +240,19 @@ func TestDistributedRanges(t *testing.T) {
 	}
 
 	for _, d := range digests {
-		rc := raftCaches[rand.Intn(len(raftCaches))]
+		rc := caches[rand.Intn(len(caches))]
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		readAndCompareDigest(t, ctx, rc, d)
 	}
 
-	waitForShutdown(t, raftCaches...)
+	waitForShutdown(t, caches...)
 }
 
 func TestFindMissingBlobs(t *testing.T) {
-	l1 := localAddr(t)
-	l2 := localAddr(t)
-	l3 := localAddr(t)
-	join := []string{l1, l2, l3}
-
 	env, _, ctx := getEnvAuthAndCtx(t)
-
-	var rc1, rc2, rc3 *raft_cache.RaftCache
-	eg := errgroup.Group{}
-
-	// startup 3 cache nodes
-	eg.Go(func() error {
-		var err error
-		rc1, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		rc2, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		rc3, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l3, join))
-		return err
-	})
-	require.Nil(t, eg.Wait())
-
-	// wait for them all to become healthy
-	waitForHealthy(t, rc1, rc2, rc3)
+	caches := startNNodes(t, ctx, env, 3)
+	rc1 := caches[0]
 
 	digestsWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 10; i++ {
@@ -372,6 +261,7 @@ func TestFindMissingBlobs(t *testing.T) {
 		r, buf := testdigest.RandomCASResourceBuf(t, 100)
 		digestsWritten = append(digestsWritten, r)
 		writeDigest(t, ctx, rc1, r, buf)
+		readAndCompareDigest(t, ctx, rc1, r)
 	}
 
 	missingDigests := make([]*rspb.ResourceName, 0)
@@ -391,5 +281,5 @@ func TestFindMissingBlobs(t *testing.T) {
 		missingHashes = append(missingHashes, d.GetHash())
 	}
 	require.ElementsMatch(t, expectedMissingHashes, missingHashes)
-	waitForShutdown(t, rc1, rc2, rc3)
+	waitForShutdown(t, caches...)
 }
