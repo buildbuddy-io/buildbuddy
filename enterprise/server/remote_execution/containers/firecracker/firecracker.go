@@ -393,7 +393,7 @@ type FirecrackerContainer struct {
 	vmLog              *VMLog
 	env                environment.Env
 	imageCacheAuth     *container.ImageCacheAuthenticator
-	allowSnapshotStart bool
+	createFromSnapshot bool
 	mountWorkspaceFile bool
 
 	// If a container is resumed from a snapshot, the jailer
@@ -410,6 +410,10 @@ type FirecrackerContainer struct {
 }
 
 func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
+	if *snaploader.EnableLocalSnapshotSharing && !(*enableNBD && *enableUFFD) {
+		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires NBD and UFFD to be enabled")
+	}
+
 	if opts.VMConfiguration == nil {
 		return nil, status.InvalidArgumentError("missing VMConfiguration")
 	}
@@ -480,12 +484,20 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		// TODO(Maggie): Once local snapshot sharing is stable, remove runner ID
 		// from the snapshot key
 		runnerID := c.id
-		if *enableNBD && *snaploader.EnableLocalSnapshotSharing {
+		if *snaploader.EnableLocalSnapshotSharing {
 			runnerID = ""
 		}
 		c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), runnerID)
 		if err != nil {
 			return nil, err
+		}
+		// If recycling is enabled and a snapshot exists, then when calling
+		// Create(), load the snapshot instead of creating a new VM.
+
+		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
+		if recyclingEnabled && *snaploader.EnableLocalSnapshotSharing {
+			_, err := loader.GetSnapshot(ctx, c.snapshotKey)
+			c.createFromSnapshot = (err == nil)
 		}
 	} else {
 		c.snapshotKey = opts.SavedState.GetSnapshotKey()
@@ -606,6 +618,14 @@ func alignToMultiple(n int64, multiple int64) int64 {
 // container can be reconstructed from the state on disk after an executor
 // restart.
 func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
+	if *snaploader.EnableLocalSnapshotSharing {
+		// When local snapshot sharing is enabled, don't bother explicitly
+		// persisting container state across reboots. Instead we can
+		// deterministically match tasks to cached snapshots just based on the
+		// task's snapshot key.
+		return nil, status.UnimplementedError("not implemented")
+	}
+
 	state := &rnpb.ContainerState{
 		IsolationType: string(platform.FirecrackerContainerType),
 		FirecrackerState: &rnpb.FirecrackerState{
@@ -1529,6 +1549,13 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 // Create creates a new VM and starts a top-level process inside it listening
 // for commands to execute.
 func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir string) error {
+	c.actionWorkingDir = actionWorkingDir
+
+	if c.createFromSnapshot {
+		log.Debugf("Create: will unpause snapshot")
+		return c.Unpause(ctx)
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1539,8 +1566,6 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
-
-	c.actionWorkingDir = actionWorkingDir
 
 	var err error
 	c.tempDir, err = os.MkdirTemp(c.jailerRoot, "fc-container-*")

@@ -85,6 +85,7 @@ go_test(
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/runner",
+        "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/util/ext4",
         "//proto:firecracker_go_proto",
@@ -119,6 +120,7 @@ go_test(
     args = [
         "--executor.firecracker_enable_nbd=true",
         "--executor.firecracker_enable_uffd=true",
+        "--executor.enable_local_snapshot_sharing=true",
     ],
     exec_properties = {
         "test.Pool": "bare",
@@ -141,6 +143,7 @@ go_test(
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/runner",
+        "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/util/ext4",
         "//proto:firecracker_go_proto",

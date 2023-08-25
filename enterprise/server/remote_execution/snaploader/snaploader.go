@@ -200,6 +200,15 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if err := proto.Unmarshal(buf, manifest); err != nil {
 		return nil, status.UnavailableErrorf("failed to unmarshal snapshot manifest: %s", status.Message(err))
 	}
+
+	// Check whether all artifacts in the manifest are available. This helps
+	// make sure that the snapshot we return can actually be loaded. This also
+	// updates the last access time of all the artifacts, which helps prevent
+	// the snapshot artifacts from expiring just after we've returned it.
+	if err := l.checkAllArtifactsExist(ctx, manifest); err != nil {
+		return nil, err
+	}
+
 	return &Snapshot{key: key, manifest: manifest}, nil
 }
 
@@ -284,6 +293,28 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	return &Snapshot{key: key, manifest: manifest}, nil
 }
 
+func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *fcpb.SnapshotManifest) error {
+	for _, f := range manifest.GetFiles() {
+		if !l.env.GetFileCache().ContainsFile(f) {
+			return status.NotFoundErrorf("file %q not found (digest %q)", f.GetName(), digest.String(f.GetDigest()))
+		}
+	}
+	for _, cf := range manifest.GetChunkedFiles() {
+		for _, c := range cf.GetChunks() {
+			node := &repb.FileNode{
+				Digest: &repb.Digest{
+					Hash:      c.GetDigestHash(),
+					SizeBytes: chunkDigestSize(cf, c),
+				},
+			}
+			if !l.env.GetFileCache().ContainsFile(node) {
+				return status.NotFoundErrorf("chunked file %q missing chunk at offset 0x%x (digest %q)", cf.GetName(), c.GetOffset(), digest.String(node.Digest))
+			}
+		}
+	}
+	return nil
+}
+
 func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cow *blockio.COWStore, err error) {
 	dataDir := filepath.Join(outputDirectory, file.GetName())
 	if err := os.Mkdir(dataDir, 0755); err != nil {
@@ -354,6 +385,14 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blocki
 		})
 	}
 	return cf, nil
+}
+
+func chunkDigestSize(chunkedFile *fcpb.ChunkedFile, chunk *fcpb.Chunk) int64 {
+	size := chunkedFile.GetChunkSize()
+	if remainder := chunkedFile.GetSize() - chunk.GetOffset(); remainder < size {
+		size = remainder
+	}
+	return size
 }
 
 func hashStrings(strs ...string) string {
