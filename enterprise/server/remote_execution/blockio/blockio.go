@@ -274,14 +274,15 @@ func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
 }
 
 // GetChunkStartAddressAndSize returns the start address of the chunk containing
-// the input offset, and the chunk size
+// the input offset, and the size of the chunk. Note that the returned chunk
+// size may not be equal to ChunkSizeBytes() if it's the last chunk in the file.
 func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkStartAddress, err := c.GetPageAddress(uintptr(chunkStartOffset), write)
 	if err != nil {
 		return 0, 0, err
 	}
-	return chunkStartAddress, c.chunkSizeBytes, nil
+	return chunkStartAddress, c.calculateChunkSize(chunkStartOffset), nil
 }
 
 // GetPageAddress returns the memory address for the given byte offset into
