@@ -11,6 +11,8 @@ import { User } from "./user";
 
 export { User };
 
+const SELECTED_GROUP_ID_COOKIE = "Selected-Group-ID"
+// Group ID used to be stored in local storage, but has been transitioned to being stored in a cookie.
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 const IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY = "impersonating_group_id";
 const AUTO_LOGIN_ATTEMPTED_STORAGE_KEY = "auto_login_attempted";
@@ -24,8 +26,8 @@ export class AuthService {
 
   register() {
     if (!capabilities.auth) return;
-    // Set initially preferred group ID from local storage.
-    rpcService.requestContext.groupId = window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY) || "";
+    // Set initially preferred group ID from cookie.
+    rpcService.requestContext.groupId = this.getCookie(SELECTED_GROUP_ID_COOKIE) || window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY) || "";
     // Set impersonating group ID from session storage, so impersonation doesn't
     // persist across different sessions.
     rpcService.requestContext.impersonatingGroupId =
@@ -179,7 +181,7 @@ export class AuthService {
   async setSelectedGroupId(groupId: string, { reload = false }: { reload?: boolean } = {}) {
     if (!this.user) throw new Error("failed to set selected group ID: not logged in");
 
-    window.localStorage.setItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY, groupId);
+    document.cookie = `${SELECTED_GROUP_ID_COOKIE}=${groupId}; domain=${capabilities.config.domain}; max-age=31536000;`
     if (reload) {
       // Don't publish a new user to avoid UI flickering.
       window.location.reload();
