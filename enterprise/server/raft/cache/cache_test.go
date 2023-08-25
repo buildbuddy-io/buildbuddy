@@ -226,7 +226,6 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	t.Skip()
 	env, _, ctx := getEnvAuthAndCtx(t)
 	caches := startNNodes(t, ctx, env, 5)
 
@@ -239,6 +238,10 @@ func TestDistributedRanges(t *testing.T) {
 		r, buf := testdigest.RandomCASResourceBuf(t, 100)
 		writeDigest(t, ctx, rc, r, buf)
 	}
+
+	victim := caches[0]
+	caches = caches[1:]
+	waitForShutdown(t, victim)
 
 	for _, d := range digests {
 		rc := caches[rand.Intn(len(caches))]
