@@ -94,6 +94,12 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentDidMount() {
     errorService.register();
+    if (this.state.path.startsWith("/org/GR")) {
+      const groupId = window.location.pathname.split("/").pop();
+      if (groupId && groupId.startsWith("GR")) {
+        authService.redirectToGroupId(groupId);
+      }
+    }
   }
 
   handlePathChange() {

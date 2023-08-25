@@ -176,6 +176,18 @@ export class AuthService {
     rpcService.requestContext.groupId = this.user?.selectedGroup?.id || "";
   }
 
+  redirectToGroupId(groupId: string) {
+    const newURL = new URL(window.location.href)
+    const path = newURL.searchParams.get("path")
+    if (!path) {
+      throw new Error("path parameter missing")
+    }
+    newURL.searchParams.delete("path")
+    window.localStorage.setItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY, groupId);
+    newURL.pathname = path
+    window.location.replace(newURL.toString())
+  }
+
   async setSelectedGroupId(groupId: string, { reload = false }: { reload?: boolean } = {}) {
     if (!this.user) throw new Error("failed to set selected group ID: not logged in");
 
