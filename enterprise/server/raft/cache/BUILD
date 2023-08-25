@@ -45,7 +45,7 @@ go_library(
 go_test(
     name = "cache_test",
     srcs = ["cache_test.go"],
-    tags = ["manual"],
+    shard_count = 5,
     deps = [
         ":cache",
         "//proto:resource_go_proto",

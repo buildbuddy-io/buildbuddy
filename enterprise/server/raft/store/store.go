@@ -787,6 +787,7 @@ func (s *Store) dropLeadershipForShutdown() {
 	}
 	eg := errgroup.Group{}
 	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
+		clusterInfo := clusterInfo
 		if !clusterInfo.IsLeader {
 			continue
 		}

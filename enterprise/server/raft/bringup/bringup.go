@@ -51,12 +51,14 @@ type ClusterStarter struct {
 }
 
 func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager, apiClient *client.APIClient) *ClusterStarter {
+	joinList := make([]string, len(gossipMan.Join))
+	copy(joinList, gossipMan.Join)
 	cs := &ClusterStarter{
 		nodeHost:             nodeHost,
 		createStateMachineFn: createStateMachineFn,
 		grpcAddr:             grpcAddr,
 		listenAddr:           gossipMan.ListenAddr,
-		join:                 gossipMan.Join,
+		join:                 joinList,
 		gossipManager:        gossipMan,
 		apiClient:            apiClient,
 		bootstrapped:         false,

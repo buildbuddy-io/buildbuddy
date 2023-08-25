@@ -50,8 +50,8 @@ type HealthChecker struct {
 	checkers      map[string]interfaces.Checker
 	lastStatus    []*serviceStatus
 	serverType    string
+	mu            sync.RWMutex // protects: shutdownFuncs, readyToServe, shuttingDown
 	shutdownFuncs []interfaces.CheckerFunc
-	mu            sync.RWMutex // protects: readyToServe, shuttingDown
 	readyToServe  bool
 	shuttingDown  bool
 }
@@ -162,7 +162,9 @@ func (h *HealthChecker) handleShutdownFuncs() {
 }
 
 func (h *HealthChecker) RegisterShutdownFunction(f interfaces.CheckerFunc) {
+	h.mu.Lock()
 	h.shutdownFuncs = append(h.shutdownFuncs, f)
+	h.mu.Unlock()
 }
 
 func (h *HealthChecker) AddHealthCheck(name string, f interfaces.Checker) {
