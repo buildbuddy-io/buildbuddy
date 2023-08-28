@@ -44,7 +44,9 @@ var (
 
 func init() {
 	headerContextKeys = map[string]string{
-		"x-buildbuddy-jwt": "x-buildbuddy-jwt",
+		"x-buildbuddy-jwt":    "x-buildbuddy-jwt",
+		"x-buildbuddy-origin": "x-buildbuddy-origin",
+		"x-buildbuddy-client": "x-buildbuddy-client",
 		"build.bazel.remote.execution.v2.requestmetadata-bin": "build.bazel.remote.execution.v2.requestmetadata-bin",
 	}
 }
@@ -54,6 +56,12 @@ func init() {
 func ClientOrigin() string {
 	return *origin
 }
+
+// PropagateLabelsContextKey is a context key that, if present in the context,
+// causes the configured origin and client headers to propagate to the outgoing
+// context. These headers will also be propagated as-is across chained RPCs to
+// other BuildBuddy servers if applicable.
+type PropagateLabelsContextKey struct{}
 
 type wrappedServerStreamWithContext struct {
 	grpc.ServerStream
@@ -156,11 +164,13 @@ func setHeadersFromContext(ctx context.Context) context.Context {
 			ctx = metadata.AppendToOutgoingContext(ctx, headerName, contextVal)
 		}
 	}
-	if *origin != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-origin", *origin)
-	}
-	if *client != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-client", *client)
+	if ctx.Value(PropagateLabelsContextKey{}) != nil {
+		if *origin != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-origin", *origin)
+		}
+		if *client != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-client", *client)
+		}
 	}
 	return ctx
 }

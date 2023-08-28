@@ -3,6 +3,7 @@ package usageutil
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
@@ -21,6 +22,14 @@ func Labels(ctx context.Context) (*tables.UsageLabels, error) {
 		Origin: originLabel(ctx),
 		Client: clientLabel(ctx),
 	}, nil
+}
+
+// Causes the server-internal origin and client labels to propagate to the
+// outgoing gRPC context. If the request is forwarded to another BuildBuddy
+// server, that server will also propagate these headers in any outgoing gRPC
+// requests.
+func InternalUsageContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, interceptors.PropagateLabelsContextKey{}, struct{}{})
 }
 
 func originLabel(ctx context.Context) string {
