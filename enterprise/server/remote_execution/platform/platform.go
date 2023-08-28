@@ -209,8 +209,7 @@ type ExecutorProperties struct {
 // ParseProperties parses the client provided properties into a struct.
 // Before use, the returned platform.Properties object *must* have
 // executor-specific overrides applied via the ApplyOverrides function.
-// TODO: Have a way to notify users if properties are invalid.
-func ParseProperties(task *repb.ExecutionTask) *Properties {
+func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	m := map[string]string{}
 	for _, prop := range task.GetCommand().GetPlatform().GetProperties() {
 		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
@@ -231,10 +230,10 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 	envOverrides := stringListProp(m, EnvOverridesPropertyName)
 	for _, prop := range stringListProp(m, EnvOverridesBase64PropertyName) {
 		b, err := base64.StdEncoding.DecodeString(prop)
-		// Ignore decode errors
-		if err == nil {
-			envOverrides = append(envOverrides, string(b))
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("Failed to decode base64 encoded env override: %s", err)
 		}
+		envOverrides = append(envOverrides, string(b))
 	}
 
 	return &Properties{
@@ -272,7 +271,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		DisablePredictedTaskSize:   boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                  stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:               envOverrides,
-	}
+	}, nil
 }
 
 // RemoteHeaderOverrides returns the platform properties that should override

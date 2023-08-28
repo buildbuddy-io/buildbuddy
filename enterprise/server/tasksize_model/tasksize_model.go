@@ -193,7 +193,11 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 
 	// Don't use predicted task sizes for Firecracker tasks for now, since task
 	// sizes are used as hard limits on allowed resources.
-	props := platform.ParseProperties(task)
+	props, err := platform.ParseProperties(task)
+	if err != nil {
+		log.Warningf("Failed to parse task properties: %s", err)
+		return nil
+	}
 	// If a task size is explicitly requested, measured task size is not used.
 	if props.EstimatedComputeUnits != 0 {
 		return nil

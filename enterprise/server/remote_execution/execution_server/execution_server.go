@@ -483,7 +483,10 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		taskGroupID = user.GetGroupID()
 	}
 
-	props := platform.ParseProperties(executionTask)
+	props, err := platform.ParseProperties(executionTask)
+	if err != nil {
+		return "", err
+	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
@@ -1016,7 +1019,10 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	}
 	counts := &tables.UsageCounts{}
 	// TODO: Incorporate remote-header overrides here.
-	plat := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+	plat, err := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+	if err != nil {
+		return err
+	}
 
 	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Pool, plat.WorkflowID, plat.UseSelfHostedExecutors)
 	if err != nil {
