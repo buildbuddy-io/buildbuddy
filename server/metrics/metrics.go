@@ -51,6 +51,9 @@ const (
 	// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
+	// Generic label to describe the stage the metric is capturing
+	Stage = "stage"
+
 	// SQL query before substituting template parameters.
 	SQLQueryTemplateLabel = "sql_query_template"
 
@@ -195,9 +198,13 @@ const (
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
-	Stage = "stage"
-
+	/// For firecracker remote execution runners, describes the snapshot
+	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
 	SnapshotSharingStatus = "snapshot_sharing_status"
+
+	/// For remote execution runners, describes the recycling status (Ex.
+	// 'clean' if the runner is not recycled or 'recycled')
+	RecycledRunnerStatus = "recycled_runner_status"
 )
 
 // Other constants
@@ -949,7 +956,7 @@ var (
 	}, []string{
 		Stage,
 		StatusHumanReadableLabel,
-		RecycleRunnerRequestStatusLabel,
+		RecycledRunnerStatus,
 		GroupID,
 		SnapshotSharingStatus,
 	})
