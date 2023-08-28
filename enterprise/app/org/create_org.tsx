@@ -19,8 +19,8 @@ export default class CreateOrgComponent extends OrgForm<grp.CreateGroupRequest> 
     return new grp.CreateGroupRequest({ ...DEFAULT_VALUES, ...values });
   }
   async submitRequest() {
-    const rsp = await rpcService.service.createGroup(this.state.request);
-    await authService.setSelectedGroupId(rsp.id, rsp.url);
+    const response = await rpcService.service.createGroup(this.state.request);
+    await authService.setSelectedGroupId(response.id, response.url);
     router.navigateTo(Path.settingsPath);
   }
 
