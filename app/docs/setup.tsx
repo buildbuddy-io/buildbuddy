@@ -4,10 +4,10 @@ import error_service from "../errors/error_service";
 import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import SetupCodeComponent from "./setup_code";
-import {User} from "../auth/user";
+import { User } from "../auth/user";
 
 interface Props {
-  user?: User
+  user?: User;
 }
 
 interface State {
@@ -37,7 +37,7 @@ export default class SetupComponent extends React.Component<Props> {
   }
 
   render() {
-    let bbURL = this.props.user?.selectedGroup.url || `${window.location.protocol}//${window.location.host}`
+    let bbURL = this.props.user?.selectedGroup.url || `${window.location.protocol}//${window.location.host}`;
 
     return (
       <div className="home">
