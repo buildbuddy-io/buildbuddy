@@ -929,10 +929,21 @@ var (
 	// represents what a customer will wait for the task to complete after it's
 	// been scheduled to a firecracker runner
 	// * "pause": Time to pause the VM, save a snapshot, and cleanup resources
+	//
+	// #### Examples
+	// ```promql
+	// # P95 workflow lifecycle duration in the past 5 minutes, grouped by group_id
+	// histogram_quantile(
+	//   0.95,
+	//   sum by(le, group_id) (
+	//      rate(buildbuddy_firecracker_stage_duration_msec_bucket{job="executor-workflows", stage="task_lifecycle"}[5m])
+	//     )
+	//  )
+	// ```
 	FirecrackerStageDurationMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
-		Subsystem: "workflow",
-		Name:      "duration_msec",
+		Subsystem: "firecracker",
+		Name:      "stage_duration_msec",
 		Buckets:   durationMsecBuckets(1*time.Millisecond, 2*time.Hour, 10),
 		Help:      "The total duration of each firecracker stage, in milliseconds",
 	}, []string{
