@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -1372,24 +1373,41 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	})
 
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
-		echo stdout >&1
-		echo stderr >&2
 		echo output > output.txt
+		echo stdout >&1
+		# Wait a little bit for stdout to be flushed.
+		sleep 1
+
+		# Send a message on stderr to let the test know we're done.
+		echo stderr >&2
+
 		sleep infinity
 	`}}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+
+	stderrReader, stderrWriter := io.Pipe()
+	// Use an exec context that is canceled as soon as we get a message on
+	// stderr, simulating a timeout.
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		defer cancel()
+		expectedStderr := "stderr\n"
+		b := make([]byte, len(expectedStderr))
+		_, err := io.ReadFull(stderrReader, b)
+		require.NoError(t, err)
+		require.Equal(t, expectedStderr, string(b))
+	}()
+
+	res := c.Exec(ctx, cmd, &container.Stdio{
+		// Write stderr to the pipe but buffer stdout in the result as usual.
+		Stderr: stderrWriter,
+	})
 
 	require.True(
-		t, status.IsDeadlineExceededError(res.Error),
-		"expected DeadlineExceeded, but got: %s", res.Error)
+		t, status.IsCanceledError(res.Error),
+		"expected Canceled, but got: %s", res.Error)
 	assert.Equal(
 		t, "stdout\n", string(res.Stdout),
 		"should get partial stdout if the exec times out")
-	assert.Equal(
-		t, "stderr\n", string(res.Stderr),
-		"should get partial stderr if the exec times out")
 	out := testfs.ReadFileAsString(t, workDir, "output.txt")
 	assert.Equal(
 		t, "output\n", out,
