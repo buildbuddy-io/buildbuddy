@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"runtime"
@@ -81,6 +82,7 @@ const (
 	disablePredictedTaskSizePropertyName = "debug-disable-predicted-task-size"
 	extraArgsPropertyName                = "extra-args"
 	EnvOverridesPropertyName             = "env-overrides"
+	EnvOverridesBase64PropertyName       = "env-overrides-base64"
 	podmanImageStreamingPropertyName     = "podman-enable-image-streaming"
 	IncludeSecretsPropertyName           = "include-secrets"
 
@@ -226,6 +228,15 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 	// Only Enable VFS if it is also enabled via flags
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
 
+	envOverrides := stringListProp(m, EnvOverridesPropertyName)
+	for _, prop := range stringListProp(m, EnvOverridesBase64PropertyName) {
+		b, err := base64.StdEncoding.DecodeString(prop)
+		// Ignore decode errors
+		if err == nil {
+			envOverrides = append(envOverrides, string(b))
+		}
+	}
+
 	return &Properties{
 		OS:                         strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                       strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -260,7 +271,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		DisableMeasuredTaskSize:    boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		DisablePredictedTaskSize:   boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                  stringListProp(m, extraArgsPropertyName),
-		EnvOverrides:               stringListProp(m, EnvOverridesPropertyName),
+		EnvOverrides:               envOverrides,
 	}
 }
 
