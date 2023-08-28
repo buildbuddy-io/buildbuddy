@@ -41,10 +41,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -1574,7 +1576,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		log.CtxDebugf(ctx, "Create took %s", createTime)
 
 		success := err == nil
-		c.emitTaskDurationMetric("init", createTime.Milliseconds(), success)
+		c.emitTaskDurationMetric(ctx, "init", createTime.Milliseconds(), success)
 	}()
 
 	c.currentTaskInitTimeUsec = start.UnixMicro()
@@ -1748,10 +1750,10 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		execDuration := time.Since(start)
 		log.CtxDebugf(ctx, "Exec took %s", execDuration)
 
-		timeSinceContainerInit := time.Since(time.Time(c.currentTaskInitTimeUsec))
+		timeSinceContainerInit := time.Since(time.UnixMicro(c.currentTaskInitTimeUsec))
 		execSuccess := result.Error == nil
-		c.emitTaskDurationMetric("task_lifecycle", timeSinceContainerInit.Milliseconds(), execSuccess)
-		c.emitTaskDurationMetric("exec", execDuration.Milliseconds(), execSuccess)
+		c.emitTaskDurationMetric(ctx, "task_lifecycle", timeSinceContainerInit.Milliseconds(), execSuccess)
+		c.emitTaskDurationMetric(ctx, "exec", execDuration.Milliseconds(), execSuccess)
 	}()
 
 	if c.fsLayout == nil {
@@ -1972,7 +1974,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 		log.CtxDebugf(ctx, "Pause took %s", pauseTime)
 
 		success := err == nil
-		c.emitTaskDurationMetric("pause", pauseTime.Milliseconds(), success)
+		c.emitTaskDurationMetric(ctx, "pause", pauseTime.Milliseconds(), success)
 	}()
 
 	var snapDetails *snapshotDetails
@@ -2084,7 +2086,7 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 		log.CtxDebugf(ctx, "Unpause took %s", unpauseTime)
 
 		success := err == nil
-		c.emitTaskDurationMetric("init", unpauseTime.Milliseconds(), success)
+		c.emitTaskDurationMetric(ctx, "init", unpauseTime.Milliseconds(), success)
 	}()
 
 	c.recycled = true
@@ -2180,14 +2182,14 @@ func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult
 	return status.InternalErrorf("process hit a segfault:\n%s", tail)
 }
 
-func (c *FirecrackerContainer) emitTaskDurationMetric(taskStage string, durationMs int64, success bool) {
+func (c *FirecrackerContainer) emitTaskDurationMetric(ctx context.Context, taskStage string, durationMs int64, success bool) {
 	taskStatus := "success"
 	if !success {
 		taskStatus = "failure"
 	}
 
 	recycleStatus := "clean"
-	if c.recycled == true {
+	if c.recycled {
 		recycleStatus = "recycled"
 	}
 
@@ -2203,11 +2205,11 @@ func (c *FirecrackerContainer) emitTaskDurationMetric(taskStage string, duration
 	}
 
 	metrics.FirecrackerStageDurationMsec.With(prometheus.Labels{
-		metrics.Stage:                           taskStage,
-		metrics.StatusHumanReadableLabel:        taskStatus,
-		metrics.RecycleRunnerRequestStatusLabel: recycleStatus,
-		metrics.GroupID:                         groupID,
-		metrics.SnapshotSharingStatus:           snapshotSharingStatus,
+		metrics.Stage:                    taskStage,
+		metrics.StatusHumanReadableLabel: taskStatus,
+		metrics.RecycledRunnerStatus:     recycleStatus,
+		metrics.GroupID:                  groupID,
+		metrics.SnapshotSharingStatus:    snapshotSharingStatus,
 	}).Observe(float64(durationMs))
 }
 
