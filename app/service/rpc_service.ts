@@ -21,6 +21,10 @@ type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddy
  */
 export type BuildBuddyServiceRpcName = RpcMethodNames<buildbuddy.service.BuildBuddyService>;
 
+export type FileEncoding = "gzip" | "";
+
+export type XMLHttpResponseType = XMLHttpRequest["responseType"];
+
 class RpcService {
   service: ExtendedBuildBuddyService;
   events: Subject<string>;
@@ -78,15 +82,29 @@ class RpcService {
     window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename, zip }));
   }
 
+  /**
+   * Fetches a bytestream resource.
+   *
+   * If the resource is known to already be stored in compressed form,
+   * storedEncoding can be specified to prevent the server from
+   * double-compressing (since it gzips all resources by default).
+   */
   fetchBytestreamFile(
     bytestreamURL: string,
     invocationId: string,
-    responseType?: "arraybuffer" | "json" | "text" | undefined
+    responseType?: XMLHttpResponseType,
+    { storedEncoding }: { storedEncoding?: FileEncoding } = {}
   ) {
-    return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId), responseType || "");
+    return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId), responseType || "", {
+      storedEncoding: storedEncoding,
+    });
   }
 
-  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | ""): Promise<string> {
+  fetchFile(
+    fileURL: string,
+    responseType: XMLHttpResponseType,
+    { storedEncoding }: { storedEncoding?: FileEncoding } = {}
+  ): Promise<any> {
     return new Promise((resolve, reject) => {
       var request = new XMLHttpRequest();
       request.responseType = responseType;
@@ -107,6 +125,11 @@ class RpcService {
       request.onerror = function () {
         reject("Error loading file (unknown error)");
       };
+      // If we know the stored content is already gzipped, inform the server so
+      // that it doesn't double-gzip.
+      if (storedEncoding === "gzip") {
+        request.setRequestHeader("X-Stored-Encoding-Hint", "gzip");
+      }
       request.send();
     });
   }

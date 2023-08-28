@@ -1,9 +1,8 @@
-import pako from "pako";
 import React from "react";
 import SetupCodeComponent from "../docs/setup_code";
 import FlameChart from "../flame_chart/flame_chart";
 import { Profile, parseProfile } from "../flame_chart/profile_model";
-import rpcService from "../service/rpc_service";
+import rpcService, { FileEncoding } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
 import { Clock } from "lucide-react";
@@ -87,21 +86,20 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     if (this.state.profile) return;
 
     let profileFile = this.getProfileFile();
-    let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
-    let isGzipped =
-      compressionOption === undefined ? (profileFile?.name ?? "").endsWith(".gz") : compressionOption == "1";
-
     if (!profileFile?.uri) return;
 
+    let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
+    let storedEncoding: FileEncoding = "";
+    if (compressionOption === "1" || (profileFile?.name ?? "").endsWith(".gz")) {
+      storedEncoding = "gzip";
+    }
+
     this.setState({ loading: true });
+    // Note: we use responseType "text" instead of "json" since the profile is
+    // not always valid JSON (the trailing "]}" may be missing).
     rpcService
-      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), isGzipped ? "arraybuffer" : "json")
-      .then((contents: any) => {
-        if (isGzipped) {
-          contents = parseProfile(pako.inflate(contents, { to: "string" }));
-        }
-        this.updateProfile(contents);
-      })
+      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "text", { storedEncoding })
+      .then((contents: string) => this.updateProfile(parseProfile(contents)))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }

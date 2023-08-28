@@ -94,6 +94,15 @@ func Gzip(next http.Handler) http.Handler {
 		// is not also set.
 		w.Header().Set("Transfer-Encoding", "chunked")
 
+		// If the client is telling us that the stored payload is already
+		// gzipped, make sure we don't double-gzip. Note that we still set the
+		// gzip headers above so that the browser can automatically decompress
+		// the response.
+		if r.Header.Get("X-Stored-Encoding-Hint") == "gzip" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		gz := gzPool.Get().(*gzip.Writer)
 		defer gzPool.Put(gz)
 
