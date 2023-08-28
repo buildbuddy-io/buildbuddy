@@ -231,17 +231,12 @@ func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.Cance
 	return &inpb.CancelExecutionsResponse{}, nil
 }
 
-func filterGroupRolesToSubdomain(ctx context.Context, groupRoles []*tables.GroupRole) []*tables.GroupRole {
-	filtered := make([]*tables.GroupRole, 0)
-	for _, gr := range groupRoles {
-		if sd := subdomain.Get(ctx); sd != "" {
-			if gr.Group.URLIdentifier == nil || *gr.Group.URLIdentifier != sd {
-				continue
-			}
-		}
-		filtered = append(filtered, gr)
+func getGroupUrl(g *tables.Group) string {
+	gURL := build_buddy_url.String()
+	if g.URLIdentifier != nil && *g.URLIdentifier != "" {
+		gURL = replaceURLSubdomainForGroup(build_buddy_url.String(), g)
 	}
-	return filtered
+	return gURL
 }
 
 func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
@@ -266,6 +261,7 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 			UserOwnedKeysEnabled:   g.UserOwnedKeysEnabled,
 			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
 			SuggestionPreference:   g.SuggestionPreference,
+			Url:                    getGroupUrl(&gr.Group),
 		})
 	}
 	return r
@@ -317,11 +313,9 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 		return nil, status.UnauthenticatedErrorf("User %q not found", req.GetUserId())
 	}
 
-	filteredGroupRoles := filterGroupRolesToSubdomain(ctx, tu.Groups)
-
 	selectedGroupID := ""
 	selectedGroupRole := role.None
-	if g := selectedGroup(req.GetRequestContext().GetGroupId(), filteredGroupRoles); g != nil {
+	if g := selectedGroup(ctx, req.GetRequestContext().GetGroupId(), tu.Groups); g != nil {
 		selectedGroupID = g.Group.GroupID
 		selectedGroupRole = role.Role(g.Role)
 	}
@@ -350,7 +344,7 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 
 	return &uspb.GetUserResponse{
 		DisplayUser:      tu.ToProto(),
-		UserGroup:        makeGroups(filteredGroupRoles),
+		UserGroup:        makeGroups(tu.Groups),
 		SelectedGroupId:  selectedGroupID,
 		AllowedRpc:       allowedRPCs,
 		GithubLinked:     tu.GithubToken != "",
@@ -401,6 +395,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		Name:        group.Name,
 		OwnedDomain: group.OwnedDomain,
 		SsoEnabled:  group.SamlIdpMetadataUrl != nil && *group.SamlIdpMetadataUrl != "",
+		Url:         getGroupUrl(group),
 	}, nil
 }
 
@@ -471,7 +466,8 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		return nil, err
 	}
 	return &grpb.CreateGroupResponse{
-		Id: groupID,
+		Id:  groupID,
+		Url: getGroupUrl(group),
 	}, nil
 }
 
@@ -823,7 +819,14 @@ func (s *BuildBuddyServer) DeleteUserApiKey(ctx context.Context, req *akpb.Delet
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
 
-func selectedGroup(preferredGroupID string, groupRoles []*tables.GroupRole) *tables.GroupRole {
+func selectedGroup(ctx context.Context, preferredGroupID string, groupRoles []*tables.GroupRole) *tables.GroupRole {
+	if sd := subdomain.Get(ctx); sd != "" {
+		for _, gr := range groupRoles {
+			if gr.Group.URLIdentifier != nil && *gr.Group.URLIdentifier == sd {
+				return gr
+			}
+		}
+	}
 	if preferredGroupID != "" {
 		for _, gr := range groupRoles {
 			if gr.Group.GroupID == preferredGroupID {
@@ -930,20 +933,8 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	return toProtoAPIKeys(append(userKeys, groupKeys...)), nil
 }
 
-// replaceURLSubdomain replaces the subdomain in the URL with the group's URL
-// identifier if custom subdomains are enabled.
-func (s *BuildBuddyServer) replaceURLSubdomain(ctx context.Context, rawURL string) string {
+func replaceURLSubdomainForGroup(rawURL string, g *tables.Group) string {
 	if !subdomain.Enabled() {
-		return rawURL
-	}
-
-	u, err := perms.AuthenticatedUser(ctx, s.env)
-	if err != nil {
-		return rawURL
-	}
-
-	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
-	if err != nil {
 		return rawURL
 	}
 
@@ -966,6 +957,26 @@ func (s *BuildBuddyServer) replaceURLSubdomain(ctx context.Context, rawURL strin
 	pURL.Host = newHost
 
 	return pURL.String()
+}
+
+// replaceURLSubdomain replaces the subdomain in the URL with the group's URL
+// identifier if custom subdomains are enabled.
+func (s *BuildBuddyServer) replaceURLSubdomain(ctx context.Context, rawURL string) string {
+	if !subdomain.Enabled() {
+		return rawURL
+	}
+
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return rawURL
+	}
+
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return rawURL
+	}
+
+	return replaceURLSubdomainForGroup(rawURL, g)
 }
 
 func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBazelConfigRequest) (*bzpb.GetBazelConfigResponse, error) {

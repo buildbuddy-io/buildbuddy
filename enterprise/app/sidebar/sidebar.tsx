@@ -31,6 +31,8 @@ import capabilities from "../../../app/capabilities/capabilities";
 import Link, { LinkProps } from "../../../app/components/link/link";
 import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
+import rpc_service from "../../../app/service/rpc_service";
+import { grp } from "../../../proto/group_ts_proto";
 
 interface Props {
   user?: User;
@@ -69,10 +71,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
     window.dispatchEvent(new CustomEvent("groupSearchClick"));
   }
 
-  async handleOrgClicked(groupId: string) {
+  async handleOrgClicked(groupId: string, groupURL: string) {
     if (this.props.user?.selectedGroup?.id === groupId) return;
 
-    await authService.setSelectedGroupId(groupId, { reload: true });
+    await authService.setSelectedGroupId(groupId, groupURL, { reload: true });
   }
 
   isHomeSelected() {
@@ -260,7 +262,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
                       className={`sidebar-item org-picker-item ${
                         group.id === this.props.user?.selectedGroup.id ? "selected" : ""
                       }`}
-                      onClick={this.handleOrgClicked.bind(this, group.id)}>
+                      onClick={this.handleOrgClicked.bind(this, group.id, group.url)}>
                       {group.id === this.props.user?.selectedGroup.id ? (
                         <CheckCircle className="icon" />
                       ) : (

@@ -13,6 +13,7 @@ ts_library(
         "//app/components/link",
         "//app/router",
         "//app/service:rpc_service",
+        "//proto:group_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
