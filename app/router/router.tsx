@@ -371,14 +371,20 @@ class Router {
       return Path.createOrgPath;
     }
 
+    const path = window.location.pathname;
+
     // No selected group on subdomain means either the group doesn't exist or
     // the user does not have access to it.
-    if (user && !user.selectedGroup.id && capabilities.config.customerSubdomain) {
+    if (
+      user &&
+      !user.selectedGroup.id &&
+      capabilities.config.customerSubdomain &&
+      // A user may have access to an invocation w/o having access to group.
+      !path.startsWith(Path.invocationPath)
+    ) {
       const params = new URLSearchParams({ source_url: window.location.href });
       return Path.orgAccessDeniedPath + "?" + params.toString();
     }
-
-    const path = window.location.pathname;
 
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
       return Path.home;
