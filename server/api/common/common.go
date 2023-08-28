@@ -173,6 +173,15 @@ func TestTimingFromSummary(testSummary *bespb.TestSummary) *cmnpb.Timing {
 	}
 }
 
+func TestResultTiming(testResult *bespb.TestResult) *cmnpb.Timing {
+	startTime := timeutil.GetTimeWithFallback(testResult.GetTestAttemptStart(), testResult.GetTestAttemptStartMillisEpoch())
+	duration := timeutil.GetDurationWithFallback(testResult.GetTestAttemptDuration(), testResult.GetTestAttemptDurationMillis())
+	return &cmnpb.Timing{
+		StartTime: timestamppb.New(startTime),
+		Duration:  durationpb.New(duration),
+	}
+}
+
 func TargetMapFromInvocation(inv *inpb.Invocation) TargetMap {
 	targetMap := make(TargetMap)
 	for _, event := range inv.GetEvent() {

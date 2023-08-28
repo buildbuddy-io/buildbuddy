@@ -135,15 +135,20 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 	case *bespb.BuildEvent_TestResult:
 		label := event.GetBuildEvent().GetId().GetTestResult().GetLabel()
 		idx.TestResultEventsByLabel[label] = append(idx.TestResultEventsByLabel[label], event.GetBuildEvent())
-		if idx.TestTargetByLabel[label] == nil {
-			idx.TestTargetByLabel[label] = &trpb.Target{
-				Metadata: &trpb.TargetMetadata{Label: label},
-				// There may be multiple TestResults per test label (sharding,
-				// attempts, etc.), so mark as TESTING until we get the
-				// TestSummary event.
-				Status: cmnpb.Status_TESTING,
-			}
+		target := idx.getOrInitTestTarget(label)
+		// We don't know what the final status for this label will be until we
+		// get the TestSummary, but until that happens we want to show something
+		// in the UI. So we report a rough status as follows: if all TestResults
+		// have passed so far including this one, report as passed. Otherwise,
+		// report as failed.
+		if (target.Status == cmnpb.Status_TESTING || target.Status == cmnpb.Status_PASSED) && event.GetBuildEvent().GetTestResult().GetStatus() == bespb.TestStatus_PASSED {
+			target.Status = cmnpb.Status_PASSED
+		} else {
+			target.Status = cmnpb.Status_FAILED
 		}
+		// Estimate the target timing as just the timing of the latest
+		// TestResult.
+		target.Timing = api_common.TestResultTiming(event.GetBuildEvent().GetTestResult())
 	case *bespb.BuildEvent_Action:
 		idx.ActionEvents = append(idx.ActionEvents, event.GetBuildEvent())
 		// Include failed ActionEvents in the top level events so that they
@@ -169,6 +174,24 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 	default:
 		idx.TopLevelEvents = append(idx.TopLevelEvents, event)
 	}
+}
+
+func (idx *Index) getOrInitTestTarget(label string) *trpb.Target {
+	target := idx.TestTargetByLabel[label]
+	if target != nil {
+		return target
+	}
+	target = &trpb.Target{
+		Metadata: &trpb.TargetMetadata{Label: label},
+		Status:   cmnpb.Status_TESTING,
+	}
+	idx.TestTargetByLabel[label] = target
+	// The build target has more metadata available (rule type, test size).
+	// Copy it if available.
+	if buildTarget := idx.BuildTargetByLabel[label]; buildTarget != nil {
+		target.Metadata = buildTarget.Metadata
+	}
+	return target
 }
 
 func (idx *Index) Finalize() {
