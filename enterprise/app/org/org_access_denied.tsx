@@ -15,6 +15,10 @@ export type State = {
 }
 
 export default class OrgAccessDeniedComponent extends React.Component<Props, State> {
+  state: State = {
+    groupId: ""
+  }
+
   componentDidMount() {
     rpcService.service.getGroup(grp.GetGroupRequest.create())
         .then((r) => this.setState({groupId: r.id}))
