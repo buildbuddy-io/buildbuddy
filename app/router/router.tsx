@@ -368,12 +368,14 @@ class Router {
     // Require the user to create an org if they are logged in but not part of
     // an org.
     if (user && !user.groups?.length) {
-      if (capabilities.config.customerSubdomain) {
-        const params = new URLSearchParams({ source_url: window.location.href });
-        return Path.orgAccessDeniedPath + "?" + params.toString();
-      } else {
-        return Path.createOrgPath;
-      }
+      return Path.createOrgPath;
+    }
+
+    // No selected group on subdomain means either the group doesn't exist or
+    // the user does not have access to it.
+    if (user && !user.selectedGroup.id && capabilities.config.customerSubdomain) {
+      const params = new URLSearchParams({ source_url: window.location.href });
+      return Path.orgAccessDeniedPath + "?" + params.toString();
     }
 
     const path = window.location.pathname;

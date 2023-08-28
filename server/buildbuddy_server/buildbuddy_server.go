@@ -826,6 +826,7 @@ func selectedGroup(ctx context.Context, preferredGroupID string, groupRoles []*t
 				return gr
 			}
 		}
+		return nil
 	}
 	if preferredGroupID != "" {
 		for _, gr := range groupRoles {
