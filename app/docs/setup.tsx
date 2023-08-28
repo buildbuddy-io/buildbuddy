@@ -4,8 +4,11 @@ import error_service from "../errors/error_service";
 import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import SetupCodeComponent from "./setup_code";
+import { User } from "../auth/user";
 
-interface Props {}
+interface Props {
+  user?: User;
+}
 
 interface State {
   menuExpanded: boolean;
@@ -34,6 +37,8 @@ export default class SetupComponent extends React.Component<Props> {
   }
 
   render() {
+    let bbURL = this.props.user?.selectedGroup.url || `${window.location.protocol}//${window.location.host}`;
+
     return (
       <div className="home">
         <div className="container narrow">
@@ -56,9 +61,7 @@ export default class SetupComponent extends React.Component<Props> {
           <code>
             bazel build //...
             <br />
-            INFO: Streaming build results to: {window.location.protocol}//
-            {window.location.host}
-            /invocation/7bedd84e-525e-4b93-a5f5-53517d57752b
+            INFO: Streaming build results to: {bbURL}/invocation/7bedd84e-525e-4b93-a5f5-53517d57752b
             <br />
             ...
           </code>

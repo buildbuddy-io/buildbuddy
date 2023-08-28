@@ -6,6 +6,7 @@ ts_library(
     name = "setup",
     srcs = ["setup.tsx"],
     deps = [
+        "//app/auth:user",
         "//app/capabilities",
         "//app/docs:setup_code",
         "//app/errors:error_service",

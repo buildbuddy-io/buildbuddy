@@ -90,7 +90,7 @@ export default class RootComponent extends React.Component {
                 user={undefined}
               />
             )}
-            {showSetup && <SetupComponent />}
+            {showSetup && <SetupComponent user={this.state.user} />}
           </div>
           <FooterComponent />
           <AlertComponent />
