@@ -27,10 +27,13 @@ export class AuthService {
   register() {
     if (!capabilities.auth) return;
     // Set initially preferred group ID from cookie.
-    rpcService.requestContext.groupId =
-      this.getCookie(SELECTED_GROUP_ID_COOKIE) ||
-      window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY) ||
-      "";
+    const preferredGroupId = this.getCookie(SELECTED_GROUP_ID_COOKIE) ||
+        window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY) ||
+        "";
+    rpcService.requestContext.groupId = preferredGroupId;
+    // Store the group ID in a cookie in case it was loaded from the old
+    // local storage location.
+    this.setCookie(SELECTED_GROUP_ID_COOKIE, preferredGroupId)
     // Set impersonating group ID from session storage, so impersonation doesn't
     // persist across different sessions.
     rpcService.requestContext.impersonatingGroupId =
@@ -65,6 +68,14 @@ export class AuthService {
   getCookie(name: string) {
     let match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
     if (match) return match[2];
+  }
+
+  setCookie(name: string, value: string) {
+    let cookie = `${name}=${value}; max-age=31536000;`
+    if (capabilities.config.subdomainsEnabled) {
+      cookie += ` domain=${capabilities.config.domain};`
+    }
+    document.cookie = cookie
   }
 
   startRefreshTimer() {
@@ -184,7 +195,7 @@ export class AuthService {
   async setSelectedGroupId(groupId: string, { reload = false }: { reload?: boolean } = {}) {
     if (!this.user) throw new Error("failed to set selected group ID: not logged in");
 
-    document.cookie = `${SELECTED_GROUP_ID_COOKIE}=${groupId}; domain=${capabilities.config.domain}; max-age=31536000;`;
+    this.setCookie(SELECTED_GROUP_ID_COOKIE, groupId)
     if (reload) {
       // Don't publish a new user to avoid UI flickering.
       window.location.reload();
