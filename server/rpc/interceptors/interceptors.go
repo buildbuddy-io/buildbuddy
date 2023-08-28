@@ -39,6 +39,7 @@ var (
 
 	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", false, "If enabled, grpc metrics by group ID will be recorded")
 	origin                     = flag.String("grpc_client_origin_header", "", "Header value to set for x-buildbuddy-origin.")
+	client                     = flag.String("grpc_client_type_header", "", "Header value to set for x-buildbuddy-client.")
 )
 
 func init() {
@@ -157,6 +158,9 @@ func setHeadersFromContext(ctx context.Context) context.Context {
 	}
 	if *origin != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-origin", *origin)
+	}
+	if *client != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-client", *client)
 	}
 	return ctx
 }

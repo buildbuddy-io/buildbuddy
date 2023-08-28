@@ -32,6 +32,11 @@ func originLabel(ctx context.Context) string {
 }
 
 func clientLabel(ctx context.Context) string {
+	vals := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-client")
+	if len(vals) > 0 {
+		return vals[0]
+	}
+
 	// Note: we avoid deserializing the RequestMetadata proto here since
 	// proto deserialization is too expensive to run on every request.
 	b := bazel_request.GetRequestMetadataBytes(ctx)
