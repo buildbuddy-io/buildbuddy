@@ -319,7 +319,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   )}
                   {setup && (
                     <Suspense fallback={<div className="loading" />}>
-                      <SetupComponent>
+                      <SetupComponent user={this.state.user}>
                         {!capabilities.auth && (
                           <p className="callout">
                             <b>Note:</b> To enable enterprise features, configure an auth provider using the{" "}
