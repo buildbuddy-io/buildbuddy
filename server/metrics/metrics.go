@@ -194,6 +194,10 @@ const (
 
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
+
+	Stage = "stage"
+
+	SnapshotSharingStatus = "snapshot_sharing_status"
 )
 
 // Other constants
@@ -912,6 +916,31 @@ var (
 		Name:      "file_upload_duration_usec",
 		Buckets:   coarseMicrosecondToHour,
 		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
+	})
+
+	// FirecrackerStageDurationMsec For a firecracker container assigned to
+	// execute a task, tracks the duration of each stage
+	//
+	// Stages include:
+	// * "init": Time for the VM to start up (either a new VM or from a snapshot)
+	// * "exec": Time to run the command inside the container
+	// * "task_lifecycle": Time from when the task if first assigned to the VM
+	// (beginning of init) to after it's finished execution. This roughly
+	// represents what a customer will wait for the task to complete after it's
+	// been scheduled to a firecracker runner
+	// * "pause": Time to pause the VM, save a snapshot, and cleanup resources
+	FirecrackerStageDurationMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "workflow",
+		Name:      "duration_msec",
+		Buckets:   durationMsecBuckets(1*time.Millisecond, 2*time.Hour, 10),
+		Help:      "The total duration of each firecracker stage, in milliseconds",
+	}, []string{
+		Stage,
+		StatusHumanReadableLabel,
+		RecycleRunnerRequestStatusLabel,
+		GroupID,
+		SnapshotSharingStatus,
 	})
 
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
