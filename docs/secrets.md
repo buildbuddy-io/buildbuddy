@@ -68,6 +68,52 @@ repository.
 Workflow secrets are accessed via environment variables, in the same way
 as normal Bazel actions shown above.
 
+## Sort-lived secrets
+
+For secrets that have a short Time To Live(TTL) duration, or ephemeral secrets,
+BuildBuddy provides special headers that could be set via Bazel command line.
+
+```bash
+# For simple secrets
+--remote_exec_header=x-buildbuddy-platform.env-overrides=VAR_A=value_a,VAR_B=val_b
+
+## At execution:
+> echo $VAR_A
+value_a
+> echo $VAR_B
+val_b
+
+---
+
+# For more complex secrets
+
+## First encode the secrets using base64
+> echo -n 'VAR_C={"a": 1, "b", 2}' | base64
+> echo -n 'VAR_D=asdfa!@#C,+{}' | base64
+
+## then use the base64-encoded strings in the `env-overrides-base64` header, comma separated.
+--remote_exec_header=x-buildbuddy-platform.env-overrides-base64=VkFSX0M9eyJhIjogMSwgImIiLCAyfQ==,VkFSX0Q9YXNkZmEhQCNDLCt7fQ==
+
+## At execution:
+> echo $VAR_C
+{"a": 1, "b", 2}
+> echo $VAR_D
+asdfa!@#C,+{}
+```
+
+> Note: If 2 values are given to the same variables, the last value will be used.
+> `env-overrides` values will be applied BEFORE `env-overrides-base64` and thus,
+> the latter would take priority.
+
+These secrets will be set as environment variables at Actions' Execution Time,
+overriding the default environment variables on your container image as well as
+the environment variables set in your Action's protobuf object. For this reason,
+using these secrets does not affect Action Cache Entry while could affect Action's
+result and could lead to Cache poisoning if miss used.
+
+Secrets that are passed through `env-overrides` or `env-overrides-base64` headers
+are not subjected to `include-secrets` control documented above.
+
 ## Security notes
 
 Secrets are encrypted on the client-side using
