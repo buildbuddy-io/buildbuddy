@@ -38,6 +38,15 @@
   user-select: none;
 }
 
+.input-tree-node .input-tree-node-size {
+  background-color: #eee;
+  border-radius: 4px;
+  color: #000;
+  margin-left: 8px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
 .input-tree-node-name .digest-component {
   margin-left: 8px;
 }

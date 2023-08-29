@@ -124,6 +124,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/terminal",
         "//proto:remote_execution_ts_proto",
+        "//proto:resource_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
@@ -135,6 +136,7 @@ ts_library(
     srcs = ["invocation_action_input_node.tsx"],
     deps = [
         "//app/components/digest",
+        "//app/format",
         "//proto:remote_execution_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",

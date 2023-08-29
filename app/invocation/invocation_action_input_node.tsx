@@ -2,11 +2,13 @@ import React from "react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { Download, FolderMinus, FolderPlus } from "lucide-react";
 import DigestComponent from "../components/digest/digest";
+import format from "../format/format";
 
 interface Props {
   node: InputNode;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, InputNode[]>;
+  treeShaToTotalSizeMap: Map<string, Number>;
   handleFileClicked: any;
 }
 
@@ -19,11 +21,11 @@ export interface InputNode {
 
 export default class InputNodeComponent extends React.Component<Props, State> {
   render() {
-    const expanded = this.props.treeShaToExpanded.get(
-      this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes
-    );
+    const digestString = this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes;
+    const totalSize = this.props.treeShaToTotalSizeMap.get(digestString);
+    const expanded = this.props.treeShaToExpanded.get(digestString);
     return (
-      <div className={`input-tree-node`}>
+      <div className="input-tree-node">
         <div
           className={`input-tree-node-name ${expanded ? "input-tree-node-expanded" : ""}`}
           onClick={() => this.props.handleFileClicked(this.props.node)}>
@@ -41,20 +43,20 @@ export default class InputNodeComponent extends React.Component<Props, State> {
             )}
           </span>{" "}
           <span className="input-tree-node-label">{this.props.node.obj.name}</span>
+          {totalSize ? <span className="input-tree-node-size">{`${format.bytes(+totalSize)} total`}</span> : ""}
           {this.props.node.obj?.digest && <DigestComponent digest={this.props.node.obj.digest} />}
         </div>
         {expanded && (
           <div className="input-tree-node-children">
-            {this.props.treeShaToChildrenMap
-              .get(this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes)
-              ?.map((child: any) => (
-                <InputNodeComponent
-                  node={child}
-                  treeShaToExpanded={this.props.treeShaToExpanded}
-                  treeShaToChildrenMap={this.props.treeShaToChildrenMap}
-                  handleFileClicked={this.props.handleFileClicked}
-                />
-              ))}
+            {this.props.treeShaToChildrenMap.get(digestString)?.map((child: any) => (
+              <InputNodeComponent
+                node={child}
+                treeShaToExpanded={this.props.treeShaToExpanded}
+                treeShaToChildrenMap={this.props.treeShaToChildrenMap}
+                treeShaToTotalSizeMap={this.props.treeShaToTotalSizeMap}
+                handleFileClicked={this.props.handleFileClicked}
+              />
+            ))}
           </div>
         )}
       </div>

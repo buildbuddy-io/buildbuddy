@@ -19,6 +19,8 @@ go_library(
         "//server/util/alert",
         "//server/util/capabilities",
         "//server/util/compression",
+        "//server/util/grpc_client",
+        "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",

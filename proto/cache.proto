@@ -252,3 +252,35 @@ message DirectoryWithDigest {
 message TreeCache {
   repeated DirectoryWithDigest children = 1;
 }
+
+// Fetch the cumulative sizes of all of the directories beneath the specified
+// root.  If the cache doesn't hold the full file hierarchy for any subtree,
+// all parents of the subtree will *not* be calculated, since we can't know
+// the "true" size of the tree.
+message GetTreeDirectorySizesRequest {
+  context.RequestContext request_context = 1;
+
+  build.bazel.remote.execution.v2.Digest root_digest = 2;
+
+  string instance_name = 3;
+
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 4;
+}
+
+message DigestWithTotalSize {
+  // The stringified digest in the form <hash/size>
+  string digest = 1;
+
+  // The total size of the specified object in the CAS, *including* the
+  // recursively expanded subcontents of child directories if this is a
+  // Directory.
+  int64 total_size = 2;
+}
+
+message GetTreeDirectorySizesResponse {
+  context.ResponseContext response_context = 1;
+
+  // A map from the digest string (hash/bytes) to the *total* cumulative size
+  // of the directory (i.e., a different, potentially larger number of bytes).
+  repeated DigestWithTotalSize sizes = 2;
+}
