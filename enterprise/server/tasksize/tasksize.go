@@ -121,7 +121,12 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 	if !*useMeasuredSizes {
 		return nil
 	}
-	props := platform.ParseProperties(task)
+	props, err := platform.ParseProperties(task)
+	if err != nil {
+		// TODO(sluongng): reject tasks that fail validation so users could catch errors sooner
+		log.CtxInfof(ctx, "Failed to parse task properties: %s", err)
+		return nil
+	}
 	// If a task size is explicitly requested, measured task size is not used.
 	if props.EstimatedComputeUnits != 0 {
 		return nil
@@ -178,7 +183,10 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	}
 	statusLabel := "ok"
 	defer func() {
-		props := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+		props, err := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to parse task properties: %s", err)
+		}
 		groupID, _ := s.groupKey(ctx)
 		metrics.RemoteExecutionTaskSizeWriteRequests.With(prometheus.Labels{
 			metrics.TaskSizeWriteStatusLabel: statusLabel,
@@ -322,7 +330,16 @@ func testSize(testSize string) (int64, int64) {
 // from the task such as test size and estimated compute units, but does not use
 // information about historical task executions.
 func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
-	props := platform.ParseProperties(task)
+	props, err := platform.ParseProperties(task)
+	if err != nil {
+		log.Infof("Failed to parse task properties, using default estimation: %s", err)
+
+		return applyMinimums(&scpb.TaskSize{
+			EstimatedMemoryBytes:   DefaultMemEstimate,
+			EstimatedMilliCpu:      DefaultCPUEstimate,
+			EstimatedFreeDiskBytes: DefaultFreeDiskEstimate,
+		})
+	}
 
 	memEstimate := DefaultMemEstimate
 	// Set default mem estimate based on whether this is a workflow.

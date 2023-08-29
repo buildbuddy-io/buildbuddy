@@ -743,7 +743,10 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 			Platform:  plat,
 		},
 	}
-	platProps := platform.ParseProperties(task)
+	platProps, err := platform.ParseProperties(task)
+	if err != nil {
+		return err
+	}
 	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
 	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
@@ -846,7 +849,10 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 }
 
 func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
-	props := platform.ParseProperties(task)
+	props, err := platform.ParseProperties(task)
+	if err != nil {
+		return nil, err
+	}
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err

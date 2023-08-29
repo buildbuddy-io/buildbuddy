@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -48,10 +49,11 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 			{Name: testCase.containerImageKey, Value: testCase.imageProp},
 		}}
 
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
-		err := ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
@@ -72,10 +74,11 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 			{Name: "container-image", Value: testCase.imageProp},
 		}}
 
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
-		err := ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		assert.Error(t, err)
 	}
 }
@@ -92,13 +95,15 @@ func TestParse_OS(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "OSFamily", Value: testCase.rawValue},
 		}}
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.OS)
 	}
 
 	// Empty case
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
-	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
 	assert.Equal(t, "linux", platformProps.OS)
 }
 
@@ -114,13 +119,15 @@ func TestParse_Arch(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "Arch", Value: testCase.rawValue},
 		}}
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.Arch)
 	}
 
 	// Empty case
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
-	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
 	assert.Equal(t, "amd64", platformProps.Arch)
 }
 
@@ -136,13 +143,15 @@ func TestParse_Pool(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: testCase.rawValue},
 		}}
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.Pool)
 	}
 
 	// Empty case
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
-	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
 	assert.Equal(t, "", platformProps.Pool)
 }
 
@@ -162,7 +171,8 @@ func TestParse_EstimatedBCU(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},
 		}}
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedComputeUnits)
 	}
 }
@@ -188,7 +198,8 @@ func TestParse_EstimatedFreeDisk(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},
 		}}
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedFreeDiskBytes)
 	}
 }
@@ -209,7 +220,8 @@ func TestParse_EstimatedCPU(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},
 		}}
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedMilliCPU)
 	}
 }
@@ -230,7 +242,8 @@ func TestParse_EstimatedMemory(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},
 		}}
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedMemoryBytes)
 	}
 }
@@ -393,7 +406,8 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		},
 	} {
 		plat := &repb.Platform{Properties: testCase.platformProps}
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		execProps := bare
 		execProps.DefaultXcodeVersion = testCase.defaultXcodeVersion
 		command := &repb.Command{EnvironmentVariables: testCase.startingEnvVars}
@@ -418,7 +432,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 				"MacOSX11.3": "Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.3.sdk",
 			},
 		})
-		err := ApplyOverrides(env, execProps, platformProps, command)
+		err = ApplyOverrides(env, execProps, platformProps, command)
 		if testCase.errorExpected {
 			require.Error(t, err)
 		} else {
@@ -431,10 +445,11 @@ func TestParse_ApplyOverrides(t *testing.T) {
 func TestEnvAndArgOverrides(t *testing.T) {
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{
 		{Name: "env-overrides", Value: "A=1,B=2,A=3"},
-		{Name: "env-overrides-base64", Value: base64.StdEncoding.EncodeToString([]byte(`C={"some":1,"value":2}`)) + ",D=invalidIgnored"},
+		{Name: "env-overrides-base64", Value: base64.StdEncoding.EncodeToString([]byte(`C={"some":1,"value":2}`))},
 		{Name: "extra-args", Value: "--foo,--bar=baz"},
 	}}
-	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
 	execProps := bare
 	command := &repb.Command{
 		Arguments: []string{"./some_cmd"},
@@ -443,7 +458,7 @@ func TestEnvAndArgOverrides(t *testing.T) {
 		},
 	}
 	env := testenv.GetTestEnv(t)
-	err := ApplyOverrides(env, execProps, platformProps, command)
+	err = ApplyOverrides(env, execProps, platformProps, command)
 	require.NoError(t, err)
 
 	expectedCmd := &repb.Command{
@@ -464,6 +479,26 @@ func TestEnvAndArgOverrides(t *testing.T) {
 	commandText, err := prototext.Marshal(command)
 	require.NoError(t, err)
 	require.Equal(t, expectedCmdText, commandText)
+}
+
+func TestEnvOverridesError(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+	}{
+		{"not_base64_encode", "D=123"},
+		{"mixed_base64", base64.StdEncoding.EncodeToString([]byte(`C={"some":1,"value":2}`)) + "D=123"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "env-overrides-base64", Value: tc.value},
+			}}
+			props, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+			require.Error(t, err)
+			require.True(t, status.IsFailedPreconditionError(err))
+			require.Nil(t, props)
+		})
+	}
 }
 
 func TestForceNetworkIsolationType(t *testing.T) {
@@ -492,10 +527,11 @@ func TestForceNetworkIsolationType(t *testing.T) {
 
 		flag.Set("executor.forced_network_isolation_type", testCase.forcedNetworkIsolationType)
 
-		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
-		err := ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
+		err = ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
 		assert.NoError(t, err)
 		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
 	}
