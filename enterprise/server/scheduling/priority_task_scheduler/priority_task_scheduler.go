@@ -295,7 +295,10 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 }
 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
-	ctx = usageutil.InternalUsageContext(ctx)
+	// Make sure we identify any executor cache requests as being from the
+	// executor, and also set the client origin (e.g. internal / external).
+	ctx = usageutil.WithLabelPropagation(ctx)
+
 	if execTask.GetJwt() != "" {
 		ctx = context.WithValue(ctx, "x-buildbuddy-jwt", execTask.GetJwt())
 	}

@@ -450,7 +450,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			continue
 		}
 		eg.Go(func() error {
-			ctx = usageutil.InternalUsageContext(ctx)
+			// When persisting artifacts, make sure we associate the cache
+			// requests with the app, not bazel.
+			ctx = usageutil.WithLabelPropagation(ctx)
+
 			fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
 			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
 				log.CtxError(ctx, err.Error())

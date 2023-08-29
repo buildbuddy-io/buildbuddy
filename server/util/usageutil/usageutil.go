@@ -2,8 +2,8 @@ package usageutil
 
 import (
 	"context"
+	"flag"
 
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
@@ -16,6 +16,14 @@ const (
 	executorClientLabel = "executor"
 )
 
+var (
+	origin = flag.String("grpc_client_origin_header", "", "Header value to set for x-buildbuddy-origin.")
+
+	// Header value to set for x-buildbuddy-client (see docs for
+	// WithLabelPropagation).
+	clientType string
+)
+
 // Labels returns usage labels for the given request context.
 func Labels(ctx context.Context) (*tables.UsageLabels, error) {
 	return &tables.UsageLabels{
@@ -24,12 +32,35 @@ func Labels(ctx context.Context) (*tables.UsageLabels, error) {
 	}, nil
 }
 
-// Causes the server-internal origin and client labels to propagate to the
-// outgoing gRPC context. If the request is forwarded to another BuildBuddy
-// server, that server will also propagate these headers in any outgoing gRPC
-// requests.
-func InternalUsageContext(ctx context.Context) context.Context {
-	return context.WithValue(ctx, interceptors.PropagateLabelsContextKey{}, struct{}{})
+// WithLabelPropagation causes outgoing gRPC requests to be associated with the
+// configured client and origin (e.g. internal executor), rather than being
+// associated with the client that initiated the current request (e.g. external
+// bazel).
+//
+// These labels will also be propagated across chained RPCs to BuildBuddy
+// servers. e.g. if the current client calls app 1 which calls app 2, app 2 will
+// see these label values. Note that if app 1 in this scenario also calls
+// WithLabelPropagation on its outgoing context to app 2, app 2 would see the
+// values for both app 1, and the original client, but app 1's values would take
+// precedence.
+func WithLabelPropagation(ctx context.Context) context.Context {
+	// Note: we set the header values here even if they're empty so that they
+	// override other header values, e.g. bazel request metadata.
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-origin", *origin)
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-client", clientType)
+	return ctx
+}
+
+// ClientOrigin returns the configured value of x-buildbuddy-origin that will be
+// set on *outgoing* gRPC requests with label propagation enabled.
+func ClientOrigin() string {
+	return *origin
+}
+
+// SetClientType sets the value of the x-buildbuddy-client header for *outgoing*
+// gRPC requests with label propagation enabled.
+func SetClientType(value string) {
+	clientType = value
 }
 
 func originLabel(ctx context.Context) string {
@@ -54,7 +85,6 @@ func clientLabel(ctx context.Context) string {
 	}
 	const (
 		mdToolDetailsFieldNumber       = 1
-		mdExecutorDetailsFieldNumber   = 1000
 		toolDetailsToolNameFieldNumber = 1
 	)
 	toolDetailsBytes, _ := pbwireutil.ConsumeFirstBytes(b, mdToolDetailsFieldNumber)
@@ -65,9 +95,6 @@ func clientLabel(ctx context.Context) string {
 		}
 		return ""
 	}
-	_, n := pbwireutil.ConsumeFirstBytes(b, mdExecutorDetailsFieldNumber)
-	if n >= 0 {
-		return executorClientLabel
-	}
+
 	return ""
 }

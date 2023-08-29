@@ -38,8 +38,6 @@ var (
 	once              sync.Once
 
 	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", false, "If enabled, grpc metrics by group ID will be recorded")
-	origin                     = flag.String("grpc_client_origin_header", "", "Header value to set for x-buildbuddy-origin.")
-	client                     = flag.String("grpc_client_type_header", "", "Header value to set for x-buildbuddy-client.")
 )
 
 func init() {
@@ -50,18 +48,6 @@ func init() {
 		"build.bazel.remote.execution.v2.requestmetadata-bin": "build.bazel.remote.execution.v2.requestmetadata-bin",
 	}
 }
-
-// ClientOrigin returns the configured value of x-buildbuddy-origin that will be
-// set on *outgoing* gRPC requests.
-func ClientOrigin() string {
-	return *origin
-}
-
-// PropagateLabelsContextKey is a context key that, if present in the context,
-// causes the configured origin and client headers to propagate to the outgoing
-// context. These headers will also be propagated as-is across chained RPCs to
-// other BuildBuddy servers if applicable.
-type PropagateLabelsContextKey struct{}
 
 type wrappedServerStreamWithContext struct {
 	grpc.ServerStream
@@ -162,14 +148,6 @@ func setHeadersFromContext(ctx context.Context) context.Context {
 	for headerName, contextKey := range headerContextKeys {
 		if contextVal, ok := ctx.Value(contextKey).(string); ok {
 			ctx = metadata.AppendToOutgoingContext(ctx, headerName, contextVal)
-		}
-	}
-	if ctx.Value(PropagateLabelsContextKey{}) != nil {
-		if *origin != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-origin", *origin)
-		}
-		if *client != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-client", *client)
 		}
 	}
 	return ctx
