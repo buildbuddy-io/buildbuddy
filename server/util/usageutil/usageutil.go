@@ -19,8 +19,8 @@ const (
 var (
 	origin = flag.String("grpc_client_origin_header", "", "Header value to set for x-buildbuddy-origin.")
 
-	// Header value to set for x-buildbuddy-client (see docs for
-	// WithLabelPropagation).
+	// Header value to set for x-buildbuddy-client.
+	// See: WithLocalServerLabels
 	clientType string
 )
 
@@ -32,18 +32,18 @@ func Labels(ctx context.Context) (*tables.UsageLabels, error) {
 	}, nil
 }
 
-// WithLabelPropagation causes outgoing gRPC requests to be associated with the
-// configured client and origin (e.g. internal executor), rather than being
-// associated with the client that initiated the current request (e.g. external
-// bazel).
+// WithLocalServerLabels causes outgoing gRPC requests to be labeled with the
+// configured client and origin of the local server instance (e.g. internal
+// executor), overriding any labels from the client that initiated the current
+// request (e.g. bazel).
 //
 // These labels will also be propagated across chained RPCs to BuildBuddy
 // servers. e.g. if the current client calls app 1 which calls app 2, app 2 will
 // see these label values. Note that if app 1 in this scenario also calls
-// WithLabelPropagation on its outgoing context to app 2, app 2 would see the
+// WithLocalServerLabels on its outgoing context to app 2, app 2 would see the
 // values for both app 1, and the original client, but app 1's values would take
 // precedence.
-func WithLabelPropagation(ctx context.Context) context.Context {
+func WithLocalServerLabels(ctx context.Context) context.Context {
 	// Note: we set the header values here even if they're empty so that they
 	// override other header values, e.g. bazel request metadata.
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-origin", *origin)

@@ -121,7 +121,7 @@ func TestLabelPropagation(t *testing.T) {
 			// context; our propagated labels should always take precedence.
 			bazelMD := &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}}
 			ctx, err := bazel_request.WithRequestMetadata(ctx, bazelMD)
-			ctx = usageutil.WithLabelPropagation(ctx)
+			ctx = usageutil.WithLocalServerLabels(ctx)
 			require.NoError(t, err)
 			outgoingMD, ok := metadata.FromOutgoingContext(ctx)
 			require.True(t, ok)
