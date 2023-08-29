@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -150,6 +151,8 @@ func main() {
 	setUmask()
 
 	rootContext := context.Background()
+
+	rand.Seed(time.Now().UnixNano())
 
 	// Flags must be parsed before config secrets integration is enabled since
 	// that feature itself depends on flag values.
