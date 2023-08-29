@@ -20,20 +20,24 @@ var (
 // directory in a tree using a streamed GetTree response.  Simply add the
 // individual directories via Add() and then call GetOutput().
 type directorySizeCounter struct {
+
 	// A map from digest to digests that are waiting for this digest to be done.
 	// When this digest is removed from waitingOn, it should bubble up and
 	// compute sizes for all entries in this set.  If a parent technically
 	// contains the same child digest twice (e.g., two empty directories), it
 	// will appear in this list twice so that we properly count its total size.
 	parents map[string][]string
+
 	// A map from digest to its pending children.  When this set is empty, we
 	// know the real size of the directory and we should bubble up the directory
 	// size to the digests in parents.
 	pendingChildren map[string]map[string]struct{}
+
 	// The pending size of the directory node with the specified digest.  When the
 	// set in childrenPending is empty, this value will be the computed total size
 	// of the directory and be moved over to totalSize
 	pendingSize map[string]int64
+
 	// The total size of the directory node with the specified digest.  When the
 	// set in childrenPending is empty, this value will be the computed total size
 	// of the directory.
