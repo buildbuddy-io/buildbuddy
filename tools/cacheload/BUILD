@@ -20,6 +20,7 @@ go_library(
         "//server/util/qps",
         "//server/util/retry",
         "//server/util/status",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

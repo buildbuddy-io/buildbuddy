@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/sync/errgroup"
@@ -165,6 +166,30 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest)
 	return err
 }
 
+type transferEntry struct {
+	value int64
+	ts    time.Time
+}
+
+func filterEntries(es []*transferEntry) []*transferEntry {
+	var newEntries []*transferEntry
+	for _, e := range es {
+		if time.Since(e.ts) > 15*time.Second {
+			continue
+		}
+		newEntries = append(newEntries, e)
+	}
+	return newEntries
+}
+
+func throughput(es []*transferEntry) float64 {
+	sum := int64(0)
+	for _, e := range es {
+		sum += e.value
+	}
+	return float64(sum) / 15.0
+}
+
 func main() {
 	flag.Parse()
 
@@ -222,13 +247,23 @@ func main() {
 	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), 1)
 	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), 1)
 
+	var mu sync.Mutex
+	var writes, reads []*transferEntry
+
 	eg.Go(func() error {
 		for {
 			select {
 			case <-gctx.Done():
 				return nil
 			case <-time.After(time.Second):
-				log.Printf("Write: %d, Read: %d QPS", writeQPSCounter.Get(), readQPSCounter.Get())
+				log.Infof("Write: %d, Read: %d QPS", writeQPSCounter.Get(), readQPSCounter.Get())
+				mu.Lock()
+				writes := filterEntries(writes)
+				wtp := throughput(writes)
+				reads := filterEntries(reads)
+				rtp := throughput(reads)
+				mu.Unlock()
+				log.Infof("TP write %s read %s", units.BytesSize(wtp), units.BytesSize(rtp))
 			}
 		}
 	})
@@ -250,6 +285,9 @@ func main() {
 					return err
 				}
 				writeQPSCounter.Inc()
+				mu.Lock()
+				writes = append(writes, &transferEntry{value: d.GetSizeBytes(), ts: time.Now()})
+				mu.Unlock()
 
 				if *readQPS == 0 {
 					continue
@@ -291,6 +329,9 @@ func main() {
 						return err
 					}
 					readQPSCounter.Inc()
+					mu.Lock()
+					reads = append(reads, &transferEntry{value: d.GetSizeBytes(), ts: time.Now()})
+					mu.Unlock()
 				}
 				if rand.Intn(10) < int(*recycleRate*10) {
 					writtenDigests <- d
