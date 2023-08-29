@@ -10,130 +10,138 @@ import (
 // Note: the doc generator script (`generate_docs.py`) in this directory
 // generates documentation from this file at build time.
 //
-// The doc generator treats comments starting with 3 slashes as markdown docs,
-// as well as the 'Help' field for each metric.
+// The doc generator treats the following things specially:
+//
+// * Metric definitions (promauto.New...): these will generate a markdown block
+//   with a nicely formatted metric entry, including the name, type, help
+//   text, and label values, along with the help text for each label.
+//
+// * Label constants: the comment above each of these constants is treated
+//   as the help text for the metric label (in the generated metric definition
+//   described above).
+//
+// * Comment blocks starting with "// #" (like "// ## Section 1" introducing
+//   a new metrics section, or "// #### Examples" for an example prometheus
+//   query): these are inserted directly into the documentation as markdown.
 
+// Label constants.
 const (
-	// Label constants.
-	// Commonly used labels can be added here, and their documentation will be
-	// displayed in the metrics where they are used.
-
 	// TODO(bduffany): Migrate StatusLabel usages to StatusHumanReadableLabel
 
-	/// Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
-	/// This is a numeric value; any non-zero code indicates an error.
+	// Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+	// This is a numeric value; any non-zero code indicates an error.
 	StatusLabel = "status"
 
-	/// Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code)
-	/// in human-readable format, such as "OK" or "NotFound".
+	// Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code)
+	// in human-readable format, such as "OK" or "NotFound".
 	StatusHumanReadableLabel = "status"
 
-	/// Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
+	// Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
 	InvocationStatusLabel = "invocation_status"
 
-	/// Cache type: `action` for action cache, `cas` for content-addressable storage.
+	// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
-	/// Cache event type: `hit`, `miss`, or `upload`.
+	// Cache event type: `hit`, `miss`, or `upload`.
 	CacheEventTypeLabel = "cache_event_type"
 
-	/// Cache name: Custom name to describe the cache, like "pebble-cache".
+	// Cache name: Custom name to describe the cache, like "pebble-cache".
 	CacheNameLabel = "cache_name"
 
-	/// Process exit code of an executed action.
+	// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
-	/// SQL query before substituting template parameters.
+	// SQL query before substituting template parameters.
 	SQLQueryTemplateLabel = "sql_query_template"
 
-	/// `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
+	// `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 	BlobstoreTypeLabel = "blobstore_type"
 
-	/// Status of the database connection: `in_use` or `idle`
+	// Status of the database connection: `in_use` or `idle`
 	SQLConnectionStatusLabel = "connection_status"
 
-	/// SQL DB replica role: `primary` for read+write replicas, or
-	/// `read_replica` for read-only DB replicas.
+	// SQL DB replica role: `primary` for read+write replicas, or
+	// `read_replica` for read-only DB replicas.
 	SQLDBRoleLabel = "sql_db_role"
 
-	/// HTTP route before substituting path parameters
-	/// (`/invocation/:id`, `/settings`, ...)
+	// HTTP route before substituting path parameters
+	// (`/invocation/:id`, `/settings`, ...)
 	HTTPRouteLabel = "route"
 
-	/// HTTP method: `GET`, `POST`, ...
+	// HTTP method: `GET`, `POST`, ...
 	HTTPMethodLabel = "method"
 
-	/// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
+	// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
 	HTTPResponseCodeLabel = "code"
 
-	/// Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+	// Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 	CacheBackendLabel = "backend"
 
-	/// Cache tier: `memory` or `cloud`. This label can be used to write Prometheus
-	/// queries that don't break if the cache backend is swapped out for
-	/// a different backend.
+	// Cache tier: `memory` or `cloud`. This label can be used to write Prometheus
+	// queries that don't break if the cache backend is swapped out for
+	// a different backend.
 	CacheTierLabel = "tier"
 
-	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
+	// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 	BazelCommand = "bazel_command"
 
-	/// Exit code of a completed bazel command
+	// Exit code of a completed bazel command
 	BazelExitCode = "bazel_exit_code"
 
-	/// Executed action stage. Action execution is split into stages corresponding to
-	/// the timestamps defined in
-	/// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
-	/// `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage,
-	/// `worker`, includes all stages during which a worker is handling the action,
-	/// which is all stages except the `queued` stage.
+	// Executed action stage. Action execution is split into stages corresponding to
+	// the timestamps defined in
+	// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
+	// `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage,
+	// `worker`, includes all stages during which a worker is handling the action,
+	// which is all stages except the `queued` stage.
 	ExecutedActionStageLabel = "stage"
 
-	/// Type of event sent to BuildBuddy's webhook handler: `push` or
-	/// `pull_request`.
+	// Type of event sent to BuildBuddy's webhook handler: `push` or
+	// `pull_request`.
 	WebhookEventName = "event"
 
-	/// Status of the recycle runner request: `hit` if the executor assigned a
-	/// recycled runner to the action; `miss` otherwise.
+	// Status of the recycle runner request: `hit` if the executor assigned a
+	// recycled runner to the action; `miss` otherwise.
 	RecycleRunnerRequestStatusLabel = "status"
 
-	/// Reason for a runner not being added to the runner pool.
+	// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
-	/// Effective workload isolation type used for an executed task, such as
-	/// "docker", "podman", "firecracker", or "none".
+	// Effective workload isolation type used for an executed task, such as
+	// "docker", "podman", "firecracker", or "none".
 	IsolationTypeLabel = "isolation"
 
-	/// Group (organization) ID associated with the request.
+	// Group (organization) ID associated with the request.
 	GroupID = "group_id"
 
-	/// OS associated with the request.
+	// OS associated with the request.
 	OS = "os"
 
-	/// CPU architecture associated with the request.
+	// CPU architecture associated with the request.
 	Arch = "arch"
 
-	/// The name used to identify the type of an unexpected event.
+	// The name used to identify the type of an unexpected event.
 	EventName = "name"
 
-	/// The ID of the disk cache partition this event applied to.
+	// The ID of the disk cache partition this event applied to.
 	PartitionID = "partition_id"
 
-	/// Status of the file cache request: `hit` if found in cache, `miss` otherwise.
+	// Status of the file cache request: `hit` if found in cache, `miss` otherwise.
 	FileCacheRequestStatusLabel = "status"
 
-	/// Status of the task size read request: `hit`, `miss`, or `error`.
+	// Status of the task size read request: `hit`, `miss`, or `error`.
 	TaskSizeReadStatusLabel = "status"
 
-	/// Status of the task size write request: `ok`, `missing_stats` or `error`.
+	// Status of the task size write request: `ok`, `missing_stats` or `error`.
 	TaskSizeWriteStatusLabel = "status"
 
-	/// The full name of the grpc method: `/<service>/<method>`
+	// The full name of the grpc method: `/<service>/<method>`
 	GRPCFullMethodLabel = "grpc_full_method"
 
-	/// The key used for quota accounting, either a group ID or an IP address.
+	// The key used for quota accounting, either a group ID or an IP address.
 	QuotaKey = "quota_key"
 
-	/// Whether the request was allowed by quota manager.
+	// Whether the request was allowed by quota manager.
 	QuotaAllowed = "quota_allowed"
 
 	// Describes the type of cache request
@@ -145,65 +153,65 @@ const (
 	// Describes the type of compression
 	CompressionType = "compression"
 
-	/// The name of the table in Clickhouse
+	// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
-	/// Status of the Clickhouse operation: `ok`, `error`.
+	// Status of the Clickhouse operation: `ok`, `error`.
 	ClickhouseStatusLabel = "status"
 
-	/// The ID of a raft nodehost.
+	// The ID of a raft nodehost.
 	RaftNodeHostIDLabel = "node_host_id"
-	/// The range ID of a raft region.
+	// The range ID of a raft region.
 	RaftRangeIDLabel = "range_id"
 
-	/// The type of raft move `add`, or `remove`.
+	// The type of raft move `add`, or `remove`.
 	RaftMoveLabel = "move_type"
 
-	/// Raft RangeCache event type: `hit`, `miss`, or `update`.
+	// Raft RangeCache event type: `hit`, `miss`, or `update`.
 	RaftRangeCacheEventTypeLabel = "rangecache_event_type"
 
-	/// Binary version. Example: `v2.0.0`.
+	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
 
-	/// Whether or not the API Key lookup hit the in memory
-	/// cache or not: "cache_hit", "cache_miss" or "invalid_key".
+	// Whether or not the API Key lookup hit the in memory
+	// cache or not: "cache_hit", "cache_miss" or "invalid_key".
 	APIKeyLookupStatus = "status"
 
-	/// Pebble DB compaction type.
+	// Pebble DB compaction type.
 	CompactionType = "compaction_type"
 
-	/// Pebble DB level number.
+	// Pebble DB level number.
 	PebbleLevel = "level"
 
-	/// Pebble DB operation type.
+	// Pebble DB operation type.
 	PebbleOperation = "pebble_op"
 
 	// Name of service the health check is running for (Ex "distributed_cache" or "sql_primary").
 	HealthCheckName = "health_check_name"
 
-	/// Container image tag.
+	// Container image tag.
 	ContainerImageTag = "container_image_tag"
 
-	/// The TreeCache status: hit/miss/invalid_entry.
+	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 )
 
+// Other constants
 const (
 	bbNamespace = "buildbuddy"
 
 	day = 24 * time.Hour
 )
 
+// Bucket constants
 var (
-	// Bucket constants.
-
 	coarseMicrosecondToHour = durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 10)
 )
 
 var (
-	/// ## Invocation build event metrics
-	///
-	/// All invocation metrics are recorded at the _end_ of each invocation.
+	// ## Invocation build event metrics
+	//
+	// All invocation metrics are recorded at the _end_ of each invocation.
 
 	InvocationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -216,17 +224,17 @@ var (
 		BazelCommand,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Number of invocations per second by invocation status
-	/// sum by (invocation_status) (rate(buildbuddy_invocation_count[5m]))
-	///
-	/// # Invocation success rate
-	/// sum(rate(buildbuddy_invocation_count{invocation_status="success"}[5m]))
-	///   /
-	/// sum(rate(buildbuddy_invocation_count[5m]))
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Number of invocations per second by invocation status
+	// sum by (invocation_status) (rate(buildbuddy_invocation_count[5m]))
+	//
+	// # Invocation success rate
+	// sum(rate(buildbuddy_invocation_count{invocation_status="success"}[5m]))
+	//   /
+	// sum(rate(buildbuddy_invocation_count[5m]))
+	// ```
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -252,15 +260,15 @@ var (
 		GroupID,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median invocation duration in the past 5 minutes
-	/// histogram_quantile(
-	///   0.5,
-	///   sum(rate(buildbuddy_invocation_duration_usec_bucket[5m])) by (le)
-	/// )
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Median invocation duration in the past 5 minutes
+	// histogram_quantile(
+	//   0.5,
+	//   sum(rate(buildbuddy_invocation_duration_usec_bucket[5m])) by (le)
+	// )
+	// ```
 
 	BuildEventCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -271,17 +279,17 @@ var (
 		StatusLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Build events uploaded per second
-	/// sum(rate(buildbuddy_invocation_build_event_count[5m]))
-	///
-	/// # Approximate error rate of build event upload handler
-	/// sum(rate(buildbuddy_invocation_build_event_count{status="0"}[5m]))
-	///   /
-	/// sum(rate(buildbuddy_invocation_build_event_count[5m]))
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Build events uploaded per second
+	// sum(rate(buildbuddy_invocation_build_event_count[5m]))
+	//
+	// # Approximate error rate of build event upload handler
+	// sum(rate(buildbuddy_invocation_build_event_count{status="0"}[5m]))
+	//   /
+	// sum(rate(buildbuddy_invocation_build_event_count[5m]))
+	// ```
 
 	StatsRecorderWorkers = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -328,10 +336,10 @@ var (
 		Help:      "How long it took to post an invocation proto to the webhook, in **microseconds**.",
 	})
 
-	/// ## Remote cache metrics
-	///
-	/// NOTE: Cache metrics are recorded at the end of each invocation,
-	/// which means that these metrics provide _approximate_ real-time signals.
+	// ## Remote cache metrics
+	//
+	// NOTE: Cache metrics are recorded at the end of each invocation,
+	// which means that these metrics provide _approximate_ real-time signals.
 
 	CacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -354,12 +362,12 @@ var (
 		ServerName,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Cache download rate (bytes per second)
-	/// sum(rate(buildbuddy_cache_download_size_bytes_sum[5m]))
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Cache download rate (bytes per second)
+	// sum(rate(buildbuddy_cache_download_size_bytes_sum[5m]))
+	// ```
 
 	CacheDownloadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -371,15 +379,15 @@ var (
 		CacheTypeLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median download duration for content-addressable store (CAS)
-	/// histogram_quantile(
-	///   0.5,
-	///   sum(rate(buildbuddy_remote_cache_download_duration_usec{cache_type="cas"}[5m])) by (le)
-	/// )
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Median download duration for content-addressable store (CAS)
+	// histogram_quantile(
+	//   0.5,
+	//   sum(rate(buildbuddy_remote_cache_download_duration_usec{cache_type="cas"}[5m])) by (le)
+	// )
+	// ```
 
 	CacheUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -392,12 +400,12 @@ var (
 		ServerName,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Cache upload rate (bytes per second)
-	/// sum(rate(buildbuddy_cache_upload_size_bytes_sum[5m]))
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Cache upload rate (bytes per second)
+	// sum(rate(buildbuddy_cache_upload_size_bytes_sum[5m]))
+	// ```
 
 	CacheUploadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -409,15 +417,15 @@ var (
 		CacheTypeLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median upload duration for content-addressable store (CAS)
-	/// histogram_quantile(
-	///   0.5,
-	///   sum(rate(buildbuddy_remote_cache_upload_duration_usec{cache_type="cas"}[5m])) by (le)
-	/// )
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Median upload duration for content-addressable store (CAS)
+	// histogram_quantile(
+	//   0.5,
+	//   sum(rate(buildbuddy_remote_cache_upload_duration_usec{cache_type="cas"}[5m])) by (le)
+	// )
+	// ```
 
 	DiskCacheLastEvictionAgeUsec = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -532,12 +540,12 @@ var (
 		CacheNameLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Total number of duplicate writes.
-	/// sum(buildbuddy_remote_cache_duplicate_writes)
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Total number of duplicate writes.
+	// sum(buildbuddy_remote_cache_duplicate_writes)
+	// ```
 
 	DiskCacheDuplicateWritesBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -607,7 +615,7 @@ var (
 		Help:      "Total number of TreeCache sets.",
 	})
 
-	/// ## Remote execution metrics
+	// ## Remote execution metrics
 
 	RemoteExecutionCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -620,12 +628,12 @@ var (
 		IsolationTypeLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Total number of actions executed per second
-	/// sum(rate(buildbuddy_remote_execution_count[5m]))
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Total number of actions executed per second
+	// sum(rate(buildbuddy_remote_execution_count[5m]))
+	// ```
 
 	RemoteExecutionTasksStartedCount = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -645,21 +653,21 @@ var (
 		GroupID,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median duration of all command stages
-	/// histogram_quantile(
-	///	  0.5,
-	///   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket[5m])) by (le, stage)
-	/// )
-	///
-	/// # p90 duration of just the command execution stage
-	/// histogram_quantile(
-	///	  0.9,
-	///   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage="execution"}[5m])) by (le)
-	/// )
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Median duration of all command stages
+	// histogram_quantile(
+	//	  0.5,
+	//   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket[5m])) by (le, stage)
+	// )
+	//
+	// # p90 duration of just the command execution stage
+	// histogram_quantile(
+	//	  0.9,
+	//   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage="execution"}[5m])) by (le)
+	// )
+	// ```
 
 	RemoteExecutionTaskSizeReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -706,12 +714,12 @@ var (
 		GroupID,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Total number of execution requests with client waiting for result.
-	/// sum(buildbuddy_remote_execution_waiting_execution_result)
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Total number of execution requests with client waiting for result.
+	// sum(buildbuddy_remote_execution_waiting_execution_result)
+	// ```
 
 	RemoteExecutionRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -733,12 +741,12 @@ var (
 		VersionLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Rate of new execution requests by OS/Arch.
-	/// sum(rate(buildbuddy_remote_execution_requests[1m])) by (os, arch)
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Rate of new execution requests by OS/Arch.
+	// sum(rate(buildbuddy_remote_execution_requests[1m])) by (os, arch)
+	// ```
 
 	RemoteExecutionMergedActions = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -749,12 +757,12 @@ var (
 		GroupID,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Rate of merged actions by group.
-	/// sum(rate(buildbuddy_remote_execution_merged_actions[1m])) by (group_id)
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Rate of merged actions by group.
+	// sum(rate(buildbuddy_remote_execution_merged_actions[1m])) by (group_id)
+	// ```
 
 	// Note: RemoteExecutionQueueLength is exported to customers.
 	RemoteExecutionQueueLength = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -766,12 +774,12 @@ var (
 		GroupID,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median queue length across all executors
-	/// quantile(0.5, buildbuddy_remote_execution_queue_length)
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Median queue length across all executors
+	// quantile(0.5, buildbuddy_remote_execution_queue_length)
+	// ```
 
 	RemoteExecutionTasksExecuting = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -782,14 +790,14 @@ var (
 		ExecutedActionStageLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Fraction of idle executors
-	/// count_values(0, buildbuddy_remote_execution_tasks_executing)
-	///   /
-	/// count(buildbuddy_remote_execution_tasks_executing)
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Fraction of idle executors
+	// count_values(0, buildbuddy_remote_execution_tasks_executing)
+	//   /
+	// count(buildbuddy_remote_execution_tasks_executing)
+	// ```
 
 	RemoteExecutionAssignedRAMBytes = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -826,16 +834,16 @@ var (
 		Help:      "Current total task memory usage in **bytes**. This only accounts for tasks which are actively executing. To see memory usage of pooled runners, sum with runner pool memory usage.",
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Total approximate memory usage of active and pooled runners,
-	/// # grouped by executor pod.
-	/// sum by (pod_name) (
-	///   buildbuddy_remote_execution_memory_usage_bytes
-	///   + buildbuddy_remote_execution_runner_pool_memory_usage_bytes
-	/// )
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Total approximate memory usage of active and pooled runners,
+	// # grouped by executor pod.
+	// sum by (pod_name) (
+	//   buildbuddy_remote_execution_memory_usage_bytes
+	//   + buildbuddy_remote_execution_runner_pool_memory_usage_bytes
+	// )
+	// ```
 
 	RemoteExecutionPeakMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -976,11 +984,11 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 40),
 	})
 
-	/// ## Blobstore metrics
-	///
-	/// "Blobstore" refers to the backing storage that BuildBuddy uses to
-	/// store objects in the cache, as well as certain pieces of temporary
-	/// data (such as invocation events while an invocation is in progress).
+	// ## Blobstore metrics
+	//
+	// "Blobstore" refers to the backing storage that BuildBuddy uses to
+	// store objects in the cache, as well as certain pieces of temporary
+	// data (such as invocation events while an invocation is in progress).
 
 	BlobstoreReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1002,10 +1010,10 @@ var (
 		BlobstoreTypeLabel,
 	})
 
-	/// ```promql
-	/// # Bytes downloaded per second
-	/// sum(rate(buildbuddy_blobstore_read_size_bytes[5m]))
-	/// ```
+	// ```promql
+	// # Bytes downloaded per second
+	// sum(rate(buildbuddy_blobstore_read_size_bytes[5m]))
+	// ```
 
 	BlobstoreReadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -1027,10 +1035,10 @@ var (
 		BlobstoreTypeLabel,
 	})
 
-	/// ```promql
-	/// # Bytes uploaded per second
-	/// sum(rate(buildbuddy_blobstore_write_size_bytes[5m]))
-	/// ```
+	// ```promql
+	// # Bytes uploaded per second
+	// sum(rate(buildbuddy_blobstore_write_size_bytes[5m]))
+	// ```
 
 	BlobstoreWriteSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -1072,15 +1080,15 @@ var (
 		BlobstoreTypeLabel,
 	})
 
-	/// # SQL metrics
-	///
-	/// The following metrics are for monitoring the SQL database configured
-	/// for BuildBuddy.
-	///
-	/// If you'd like to see an up-to-date catalog of what BuildBuddy stores in
-	/// its SQL database, see the table definitions [here](https://github.com/buildbuddy-io/buildbuddy/blob/master/server/tables/tables.go).
-	///
-	/// ## Query / error rate metrics
+	// # SQL metrics
+	//
+	// The following metrics are for monitoring the SQL database configured
+	// for BuildBuddy.
+	//
+	// If you'd like to see an up-to-date catalog of what BuildBuddy stores in
+	// its SQL database, see the table definitions [here](https://github.com/buildbuddy-io/buildbuddy/blob/master/server/tables/tables.go).
+	//
+	// ## Query / error rate metrics
 
 	SQLQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1091,12 +1099,12 @@ var (
 		SQLQueryTemplateLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # SQL queries per second (by query template).
-	/// sum by (sql_query_template) (rate(buildbuddy_sql_query_count[5m]))
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # SQL queries per second (by query template).
+	// sum by (sql_query_template) (rate(buildbuddy_sql_query_count[5m]))
+	// ```
 
 	SQLQueryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -1108,15 +1116,15 @@ var (
 		SQLQueryTemplateLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median SQL query duration
-	/// histogram_quantile(
-	///	  0.5,
-	///   sum(rate(buildbuddy_sql_query_duration_usec_bucket[5m])) by (le)
-	/// )
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Median SQL query duration
+	// histogram_quantile(
+	//	  0.5,
+	//   sum(rate(buildbuddy_sql_query_duration_usec_bucket[5m])) by (le)
+	// )
+	// ```
 
 	SQLErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1127,20 +1135,20 @@ var (
 		SQLQueryTemplateLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # SQL error rate
-	/// sum(rate(buildbuddy_sql_error_count[5m]))
-	///   /
-	/// sum(rate(buildbuddy_sql_query_count[5m]))
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # SQL error rate
+	// sum(rate(buildbuddy_sql_error_count[5m]))
+	//   /
+	// sum(rate(buildbuddy_sql_query_count[5m]))
+	// ```
 
-	/// ## `database/sql` metrics
-	///
-	/// The following metrics directly expose
-	/// [DBStats](https://golang.org/pkg/database/sql/#DBStats) from the
-	/// `database/sql` Go package.
+	// ## `database/sql` metrics
+	//
+	// The following metrics directly expose
+	// [DBStats](https://golang.org/pkg/database/sql/#DBStats) from the
+	// `database/sql` Go package.
 
 	SQLMaxOpenConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -1206,7 +1214,7 @@ var (
 		SQLDBRoleLabel,
 	})
 
-	/// ## HTTP metrics
+	// ## HTTP metrics
 
 	HTTPRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1218,17 +1226,17 @@ var (
 		HTTPMethodLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Requests per second, by status code
-	/// sum by (code) (rate(buildbuddy_http_request_count[5m]))
-	///
-	/// # 5xx error ratio
-	/// sum(rate(buildbuddy_http_request_count{code=~"5.."}[5m]))
-	///   /
-	/// sum(rate(buildbuddy_http_request_count[5m]))
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Requests per second, by status code
+	// sum by (code) (rate(buildbuddy_http_request_count[5m]))
+	//
+	// # 5xx error ratio
+	// sum(rate(buildbuddy_http_request_count{code=~"5.."}[5m]))
+	//   /
+	// sum(rate(buildbuddy_http_request_count[5m]))
+	// ```
 
 	HTTPRequestHandlerDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -1242,17 +1250,17 @@ var (
 		HTTPResponseCodeLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median request duration for successfuly processed (2xx) requests.
-	/// # Other status codes may be associated with early-exits and are
-	/// # likely to add too much noise.
-	/// histogram_quantile(
-	///   0.5,
-	///   sum by (le)	(rate(buildbuddy_http_request_handler_duration_usec{code=~"2.."}[5m]))
-	/// )
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Median request duration for successfuly processed (2xx) requests.
+	// # Other status codes may be associated with early-exits and are
+	// # likely to add too much noise.
+	// histogram_quantile(
+	//   0.5,
+	//   sum by (le)	(rate(buildbuddy_http_request_handler_duration_usec{code=~"2.."}[5m]))
+	// )
+	// ```
 
 	HTTPResponseSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -1266,24 +1274,24 @@ var (
 		HTTPResponseCodeLabel,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median HTTP response size
-	/// histogram_quantile(
-	///   0.5,
-	///   sum by (le)	(rate(buildbuddy_http_response_size_bytes[5m]))
-	/// )
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Median HTTP response size
+	// histogram_quantile(
+	//   0.5,
+	//   sum by (le)	(rate(buildbuddy_http_response_size_bytes[5m]))
+	// )
+	// ```
 
-	/// ## Internal metrics
-	///
-	/// These metrics are for monitoring lower-level subsystems of BuildBuddy.
-	///
-	/// ### Build event handler
-	///
-	/// The build event handler logs all build events uploaded to BuildBuddy
-	/// as part of the Build Event Protocol.
+	// ## Internal metrics
+	//
+	// These metrics are for monitoring lower-level subsystems of BuildBuddy.
+	//
+	// ### Build event handler
+	//
+	// The build event handler logs all build events uploaded to BuildBuddy
+	// as part of the Build Event Protocol.
 
 	BuildEventHandlerDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -1295,11 +1303,11 @@ var (
 		StatusLabel,
 	})
 
-	/// ### Webhooks
-	///
-	/// Webhooks are HTTP endpoints exposed by BuildBuddy server which allow it to
-	/// respond to repository events. These URLs are created as part of BuildBuddy
-	/// workflows.
+	// ### Webhooks
+	//
+	// Webhooks are HTTP endpoints exposed by BuildBuddy server which allow it to
+	// respond to repository events. These URLs are created as part of BuildBuddy
+	// workflows.
 
 	WebhookHandlerWorkflowsStarted = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1310,20 +1318,20 @@ var (
 		WebhookEventName,
 	})
 
-	/// ### Cache
-	///
-	/// "Cache" refers to the cache backend(s) that BuildBuddy uses to
-	/// accelerate file IO operations, which are common in different
-	/// subsystems such as the remote cache and the fetch server (for
-	/// downloading invocation artifacts).
-	///
-	/// BuildBuddy can be configured to use multiple layers of caching
-	/// (an in-memory layer, coupled with a cloud storage layer).
-	///
-	/// #### `get` metrics
-	///
-	/// `get` metrics track non-streamed cache reads (all data is fetched
-	/// from the cache in a single request).
+	// ### Cache
+	//
+	// "Cache" refers to the cache backend(s) that BuildBuddy uses to
+	// accelerate file IO operations, which are common in different
+	// subsystems such as the remote cache and the fetch server (for
+	// downloading invocation artifacts).
+	//
+	// BuildBuddy can be configured to use multiple layers of caching
+	// (an in-memory layer, coupled with a cloud storage layer).
+	//
+	// #### `get` metrics
+	//
+	// `get` metrics track non-streamed cache reads (all data is fetched
+	// from the cache in a single request).
 
 	CacheGetCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1358,9 +1366,9 @@ var (
 		CacheBackendLabel,
 	})
 
-	/// #### `read` metrics
-	///
-	/// `read` metrics track streamed cache reads.
+	// #### `read` metrics
+	//
+	// `read` metrics track streamed cache reads.
 
 	CacheReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1395,10 +1403,10 @@ var (
 		CacheBackendLabel,
 	})
 
-	/// #### `set` metrics
-	///
-	/// `set` metrics track non-streamed cache writes (all data is wrtiten
-	/// in a single request).
+	// #### `set` metrics
+	//
+	// `set` metrics track non-streamed cache writes (all data is wrtiten
+	// in a single request).
 
 	CacheSetCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1444,9 +1452,9 @@ var (
 		CacheBackendLabel,
 	})
 
-	/// #### `write` metrics
-	///
-	/// `write` metrics track streamed cache writes.
+	// #### `write` metrics
+	//
+	// `write` metrics track streamed cache writes.
 
 	CacheWriteCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1492,7 +1500,7 @@ var (
 		CacheBackendLabel,
 	})
 
-	/// ### Other cache metrics
+	// ### Other cache metrics
 
 	CacheDeleteCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1549,7 +1557,7 @@ var (
 		CacheBackendLabel,
 	})
 
-	/// ### Misc metrics
+	// ### Misc metrics
 
 	Version = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -1726,19 +1734,19 @@ var (
 		ServerName,
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Histogram buckets with the count of elements in each compression ratio bucket
-	/// # Visualize with the Bar Gauge type
-	/// # Legend: {{le}}
-	/// # Format: Heatmap
-	/// sum(buildbuddy_pebble_compression_ratio_bucket) by(le)
-	///
-	/// # Percentage of elements that increased in size when compressed (compression ratio > 1)
-	/// # Visualize with the Stat type
-	/// (sum(buildbuddy_pebble_compression_ratio_count) - sum(buildbuddy_pebble_compression_ratio_bucket{le="1.0"})) / sum(buildbuddy_pebble_compression_ratio_count)
-	/// ```
+	// #### Examples
+	//
+	// ```promql
+	// # Histogram buckets with the count of elements in each compression ratio bucket
+	// # Visualize with the Bar Gauge type
+	// # Legend: {{le}}
+	// # Format: Heatmap
+	// sum(buildbuddy_pebble_compression_ratio_bucket) by(le)
+	//
+	// # Percentage of elements that increased in size when compressed (compression ratio > 1)
+	// # Visualize with the Stat type
+	// (sum(buildbuddy_pebble_compression_ratio_count) - sum(buildbuddy_pebble_compression_ratio_bucket{le="1.0"})) / sum(buildbuddy_pebble_compression_ratio_count)
+	// ```
 
 	Logs = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1749,7 +1757,7 @@ var (
 		StatusHumanReadableLabel,
 	})
 
-	/// ### Raft cache metrics
+	// ### Raft cache metrics
 
 	RaftRanges = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -2137,7 +2145,7 @@ var (
 		GroupID,
 	})
 
-	/// ## Podman metrics
+	// ## Podman metrics
 
 	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import re
-import shlex
 import subprocess
 import sys
 
@@ -19,7 +17,9 @@ class DocsGenerator(object):
     def __init__(self, metrics_go_path):
         self.metrics_go_path = metrics_go_path
 
+        # Current parser state (string)
         self.state = None
+        # Cumulative output to be printed at the end.
         self.output_lines = []
 
         # Parsed LABEL_CONSTANTS section.
@@ -27,21 +27,14 @@ class DocsGenerator(object):
         self.label_constants = {}
 
         # Fields for METRIC and METRIC.LABELS state
-
         self.metric = None
 
         # Fields for LABEL_CONSTANTS state
-
         self.label_constant_comments = []
 
         # Fields for METRIC.LABELS state
-
         self.label_comments = []
         self.label_value = ""
-
-        # Fields for PROMQL state (promql code block in markdown)
-
-        self.promql_lines = []
 
     def parse(self):
         with open(self.metrics_go_path, "r") as f:
@@ -62,14 +55,16 @@ class DocsGenerator(object):
             if line == ")":
                 self.state = None
                 return
-            if line.startswith("///"):
-                m = re.match(r"///\s(.*)", line)
-                if not m:
-                    fatal(
-                        f'Label constant comments should start with "/// "',
-                        line_index=line_index,
-                    )
-                self.label_constant_comments.append(m.group(1))
+            if line.startswith("//"):
+                m = re.match(r"//\s*(.*)", line)
+                if m:
+                    self.label_constant_comments.append(m.group(1))
+                else:
+                    self.label_constant_comments = []
+                return
+            if line == "":
+                self.label_constant_comments = []
+                return
             m = re.match(r'(\w+) = "(.*)"', line)
             if m:
                 self.label_constants[m.group(1)] = {
@@ -108,26 +103,6 @@ class DocsGenerator(object):
                 self.flush_metric()
                 return
 
-            if line.startswith("///"):
-                m = re.match(r"///\s(.*)", line)
-                if not m:
-                    fatal(
-                        f'Label comments should start with "/// "',
-                        line_index=line_index,
-                    )
-                self.label_comments.append(m.group(1))
-                return
-
-            if line.startswith('"'):
-                m = re.match(r'"(.*)"', line)
-                if not m:
-                    fatal(
-                        f"Expected label constant after comment line.",
-                        line_index=line_index,
-                    )
-                self.add_metric_label(line_index, m.group(1))
-                return
-
             m = re.match(r"\w+", line)
             if m:
                 label_constant_token = m.group()
@@ -145,19 +120,16 @@ class DocsGenerator(object):
             self.state = "METRIC"
             return
 
-        # Insert markdown if applicable.
-        if line.startswith("///"):
-            if line == "///":
-                self.output_lines.append("")
-                return
-            m = re.match("^///\s(.*)", line)
-            if not m:
-                fatal(
-                    f'Doc comments (///) should start with "/// ".',
-                    line_index=line_index,
-                )
+        # Process markdown blocks.
+        if line.startswith("// #"):
+            self.state = "MARKDOWN_BLOCK"
 
-            self.output_lines.append(m.group(1))
+        if self.state == "MARKDOWN_BLOCK":
+            m = re.match("^//\s*(.*)", line)
+            if m:
+                self.output_lines.append(m.group(1))
+            else:
+                self.state = None
             return
 
     def flush_metric(self):
