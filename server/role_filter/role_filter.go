@@ -32,6 +32,7 @@ var (
 		"GetEventLogChunk",
 		"GetCacheScoreCard",
 		"GetCacheMetadata",
+		"GetTreeDirectorySizes",
 		"GetTarget",
 		"GetTargetHistory",
 		"GetExecution",

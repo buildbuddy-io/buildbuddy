@@ -3,6 +3,7 @@ import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import { Download, Info, HelpCircle } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
+import { resource } from "../../proto/resource_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent, { parseDigest } from "../components/digest/digest";
@@ -20,6 +21,7 @@ interface State {
   action?: build.bazel.remote.execution.v2.Action;
   loadingAction: boolean;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
+  treeShaToTotalSizeMap: Record<string, Long>;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
@@ -34,6 +36,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   state: State = {
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, InputNode[]>(),
+    treeShaToTotalSizeMap: {},
     inputDirs: [],
     loadingAction: true,
   };
@@ -56,9 +59,28 @@ export default class InvocationActionCardComponent extends React.Component<Props
         });
         this.fetchCommand(action);
         this.fetchInputRoot(action.inputRootDigest ?? build.bazel.remote.execution.v2.Digest.create({}));
+        this.fetchDirectorySizes(action.inputRootDigest ?? build.bazel.remote.execution.v2.Digest.create({}));
       })
       .catch((e) => console.error("Failed to fetch action:", e))
       .finally(() => this.setState({ loadingAction: false }));
+  }
+
+  fetchDirectorySizes(rootDigest: build.bazel.remote.execution.v2.Digest) {
+    const remoteInstanceName = this.props.model.optionsMap.get("remote_instance_name") || undefined;
+    rpcService.service
+      .getTreeDirectorySizes({
+        resourceName: resource.ResourceName.create({
+          digest: rootDigest,
+          cacheType: resource.CacheType.CAS,
+          instanceName: remoteInstanceName,
+        }),
+      })
+      .then((r) => {
+        this.setState({ treeShaToTotalSizeMap: r.sizes });
+      })
+      .catch((e) => {
+        this.setState({ treeShaToTotalSizeMap: {} });
+      });
   }
 
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
@@ -417,6 +439,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               node={node}
                               treeShaToExpanded={this.state.treeShaToExpanded}
                               treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                              treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
                               handleFileClicked={this.handleFileClicked.bind(this)}
                             />
                           ))}

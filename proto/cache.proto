@@ -252,3 +252,22 @@ message DirectoryWithDigest {
 message TreeCache {
   repeated DirectoryWithDigest children = 1;
 }
+
+// Fetch the cumulative sizes of all of the directories beneath the specified
+// root.  If the cache doesn't hold the full file hierarchy for any subtree,
+// all parents of the subtree will *not* be calculated, since we can't know
+// the "true" size of the tree.
+message GetTreeDirectorySizesRequest {
+  context.RequestContext request_context = 1;
+
+  // The resource name of the root of the tree.
+  resource.ResourceName resource_name = 2;
+}
+
+message GetTreeDirectorySizesResponse {
+  context.ResponseContext response_context = 1;
+
+  // A map from the digest string (hash/bytes) to the *total* cumulative size
+  // of the directory (i.e., a different, potentially larger number of bytes).
+  map<string, int64> sizes = 2;
+}
