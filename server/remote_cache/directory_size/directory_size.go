@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	directorySizesEnabled = flag.Bool("cache.directory_sizes_enabled", true, "If true, enable user-owned API keys.")
+	directorySizesEnabled = flag.Bool("cache.directory_sizes_enabled", true, "If true, enable an RPC that computes the cumulative size of directories stored in the cache.")
 )
 
 // A helper object to tally up the size total size (including contents) of each
