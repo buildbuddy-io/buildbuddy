@@ -46,6 +46,8 @@ export default class ChildInvocations extends React.Component<ChildInvocationPro
       results.push({ invocation, status: getStatus(invocation), durationMillis: this.getDurationMillis(invocation) });
     }
 
+    if (!results.length) return null;
+
     return (
       <div className="child-invocations-section">
         <h2>Bazel commands</h2>
