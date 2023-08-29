@@ -372,8 +372,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_awslabs_soci_snapshotter",
         importpath = "github.com/awslabs/soci-snapshotter",
         replace = "github.com/buildbuddy-io/soci-snapshotter",
-        sum = "h1:G6Adpu0lUQ9Qja6OUxG/gB0loz1UzlNo9804f9kjDPo=",
-        version = "v0.0.5",
+        sum = "h1:d2vXO1zu1N9hoZgQKzoufVoKfEtq6wuwVJHfRlgDyDM=",
+        version = "v0.0.7",
     )
 
     go_repository(
@@ -7071,11 +7071,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-v0.0.5-linux-amd64",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.5-linux-amd64"],
-        sha256 = "e626cac7bb01cc4911a16e6d6a8b4419c29922c8bd74db02d984969635d6f997",
+        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-v0.0.7-linux-amd64",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.7-linux-amd64"],
+        sha256 = "1149c110188a552982498e29fe52ae6c65a91d389e95a98d00a7b8dd771e109e",
         executable = True,
-        downloaded_file_path = "soci-store-v0.0.5-linux-amd64",
+        downloaded_file_path = "soci-store-v0.0.7-linux-amd64",
     )
 
     http_file(
