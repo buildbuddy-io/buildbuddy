@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -154,6 +155,9 @@ func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.G
 	}
 
 	casClient := env.GetContentAddressableStorageClient()
+	if casClient == nil {
+		return nil, status.UnimplementedError("Directory tree size computation requires a connection to a CAS server.")
+	}
 	nextPageToken := ""
 	dsc := NewDirectorySizeCounter(req.GetDigestFunction())
 	digestFunction := req.GetDigestFunction()
