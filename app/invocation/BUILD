@@ -136,6 +136,7 @@ ts_library(
     srcs = ["invocation_action_input_node.tsx"],
     deps = [
         "//app/components/digest",
+        "//app/format",
         "//proto:remote_execution_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",

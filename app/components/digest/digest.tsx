@@ -13,7 +13,6 @@ export type DigestProps = {
   expandOnHover?: boolean;
   hashWidth?: string;
   sizeWidth?: string;
-  totalSize?: Long;
 };
 
 export const DigestComponent = React.forwardRef((props: DigestProps, ref: React.Ref<HTMLInputElement>) => {
@@ -39,7 +38,7 @@ export const DigestComponent = React.forwardRef((props: DigestProps, ref: React.
           style={{
             ...(props.sizeWidth !== undefined && { width: props.sizeWidth }),
           }}>
-          {format.bytes(props.digest.sizeBytes)} {props.totalSize ? `(Total: ${format.bytes(+props.totalSize)})` : ""}
+          {format.bytes(props.digest.sizeBytes)}
         </span>
       )}
     </span>

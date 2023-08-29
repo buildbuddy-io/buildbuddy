@@ -2,6 +2,7 @@ import React from "react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { Download, FolderMinus, FolderPlus } from "lucide-react";
 import DigestComponent from "../components/digest/digest";
+import format from "../format/format";
 
 interface Props {
   node: InputNode;
@@ -21,6 +22,7 @@ export interface InputNode {
 export default class InputNodeComponent extends React.Component<Props, State> {
   render() {
     const digestString = this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes;
+    const totalSize = this.props.treeShaToTotalSizeMap[digestString];
     const expanded = this.props.treeShaToExpanded.get(digestString);
     return (
       <div className="input-tree-node">
@@ -41,12 +43,8 @@ export default class InputNodeComponent extends React.Component<Props, State> {
             )}
           </span>{" "}
           <span className="input-tree-node-label">{this.props.node.obj.name}</span>
-          {this.props.node.obj?.digest && (
-            <DigestComponent
-              digest={this.props.node.obj.digest}
-              totalSize={this.props.treeShaToTotalSizeMap[digestString]}
-            />
-          )}
+          {totalSize ? <span className="input-tree-node-size">{`${format.bytes(+totalSize)} total`}</span> : ""}
+          {this.props.node.obj?.digest && <DigestComponent digest={this.props.node.obj.digest} />}
         </div>
         {expanded && (
           <div className="input-tree-node-children">
