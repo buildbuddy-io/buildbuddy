@@ -49,7 +49,7 @@ var (
 	customerManagedEncryptionKeysEnabled   = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
 	tagsUIEnabled                          = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
 	timeseriesChartsInTimingProfileEnabled = flag.Bool("app.timeseries_charts_in_timing_profile_enabled", true, "If set, charts with sampled time series data (such as CPU and memory usage) will be shown")
-	workflowHistoryEnabled                 = flag.Bool("app.workflow_history_enabled", false, "If set, information about past action runs for workflows will be shown on the workflows page.")
+	workflowHistoryEnabled                 = flag.Bool("app.workflow_history_enabled", true, "If set, information about past action runs for workflows will be shown on the workflows page.")
 	auditLogsUIEnabled                     = flag.Bool("app.audit_logs_ui_enabled", false, "If set, the audit logs UI will be accessible from the sidebar.")
 	newTrendsUIEnabled                     = flag.Bool("app.new_trends_ui_enabled", false, "If set, show a new trends UI with a bit more organization.")
 
