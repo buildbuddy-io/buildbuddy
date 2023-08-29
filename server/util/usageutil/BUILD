@@ -21,6 +21,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//server/tables",
         "//server/util/bazel_request",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//proto",

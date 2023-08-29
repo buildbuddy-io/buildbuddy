@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -467,7 +467,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	if platformProps.WorkflowID != "" {
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  "BB_GRPC_CLIENT_ORIGIN",
-			Value: interceptors.ClientOrigin(),
+			Value: usageutil.ClientOrigin(),
 		})
 	}
 

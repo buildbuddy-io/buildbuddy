@@ -53,6 +53,7 @@ go_library(
         "//server/util/scratchspace",
         "//server/util/status",
         "//server/util/tracing",
+        "//server/util/usageutil",
         "//static:bundle",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

@@ -23,6 +23,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",
+        "//server/util/usageutil",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_text//language",

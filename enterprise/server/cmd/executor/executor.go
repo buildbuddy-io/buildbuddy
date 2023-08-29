@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -118,6 +119,9 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 	if err := redis_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
+
+	// Identify ourselves as an executor client in gRPC requests to the app.
+	usageutil.SetClientType("executor")
 
 	InitializeCacheClientsOrDie(*appTarget, realEnv)
 

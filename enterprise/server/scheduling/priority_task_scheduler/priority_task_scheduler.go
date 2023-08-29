@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -294,6 +295,10 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 }
 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
+	// Make sure we identify any executor cache requests as being from the
+	// executor, and also set the client origin (e.g. internal / external).
+	ctx = usageutil.WithLocalServerLabels(ctx)
+
 	if execTask.GetJwt() != "" {
 		ctx = context.WithValue(ctx, "x-buildbuddy-jwt", execTask.GetJwt())
 	}

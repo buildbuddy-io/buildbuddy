@@ -48,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 
 	"google.golang.org/grpc"
 
@@ -253,6 +254,9 @@ func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
 }
 
 func registerLocalGRPCClients(env environment.Env) error {
+	// Identify ourselves as an app client in gRPC requests to other apps.
+	usageutil.SetClientType("app")
+
 	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
 	if err != nil {
 		return status.InternalErrorf("Error initializing ByteStreamClient: %s", err)

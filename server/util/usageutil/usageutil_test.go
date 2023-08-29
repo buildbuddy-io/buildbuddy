@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -16,10 +17,11 @@ import (
 
 func TestLabels(t *testing.T) {
 	for _, test := range []struct {
-		Name     string
-		MD       *repb.RequestMetadata
-		Origin   string
-		Expected *tables.UsageLabels
+		Name         string
+		MDHeader     *repb.RequestMetadata
+		ClientHeader string
+		OriginHeader string
+		Expected     *tables.UsageLabels
 	}{
 		{
 			Name:     "NoLabels",
@@ -27,42 +29,107 @@ func TestLabels(t *testing.T) {
 		},
 		{
 			Name:     "BazelToolName",
-			MD:       &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}},
+			MDHeader: &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}},
 			Expected: &tables.UsageLabels{Client: "bazel"},
 		},
 		{
 			Name:     "NonBazelToolName",
-			MD:       &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "unknown"}},
+			MDHeader: &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "unknown"}},
 			Expected: &tables.UsageLabels{},
 		},
 		{
-			Name:     "ExecutorDetails",
-			MD:       &repb.RequestMetadata{ExecutorDetails: &repb.ExecutorDetails{}},
-			Expected: &tables.UsageLabels{Client: "executor"},
+			Name:         "ClientHeader",
+			ClientHeader: "executor",
+			Expected:     &tables.UsageLabels{Client: "executor"},
 		},
 		{
-			Name:     "OriginHeader",
-			Origin:   "test-origin",
-			Expected: &tables.UsageLabels{Origin: "test-origin"},
+			Name:         "OriginHeader",
+			OriginHeader: "test-origin",
+			Expected:     &tables.UsageLabels{Origin: "test-origin"},
 		},
 		{
-			Name:     "BazelToolNameAndOrigin",
-			MD:       &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}},
-			Origin:   "test-origin",
-			Expected: &tables.UsageLabels{Origin: "test-origin", Client: "bazel"},
+			Name:         "BazelToolNameAndOrigin",
+			MDHeader:     &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}},
+			OriginHeader: "test-origin",
+			Expected:     &tables.UsageLabels{Origin: "test-origin", Client: "bazel"},
+		},
+		{
+			Name:         "ClientOverridesRequestMetadata",
+			MDHeader:     &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}},
+			OriginHeader: "internal",
+			ClientHeader: "executor",
+			Expected:     &tables.UsageLabels{Origin: "internal", Client: "executor"},
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			md := metadata.MD{}
-			if test.MD != nil {
-				mdb, err := proto.Marshal(test.MD)
+			if test.MDHeader != nil {
+				mdb, err := proto.Marshal(test.MDHeader)
 				require.NoError(t, err)
 				md[bazel_request.RequestMetadataKey] = []string{string(mdb)}
 			}
-			if test.Origin != "" {
-				md["x-buildbuddy-origin"] = []string{test.Origin}
+			if test.OriginHeader != "" {
+				md["x-buildbuddy-origin"] = []string{test.OriginHeader}
+			}
+			if test.ClientHeader != "" {
+				md["x-buildbuddy-client"] = []string{test.ClientHeader}
 			}
 			ctx := metadata.NewIncomingContext(context.Background(), md)
+
+			labels, err := usageutil.Labels(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, test.Expected, labels)
+		})
+	}
+}
+
+func TestLabelPropagation(t *testing.T) {
+	for _, test := range []struct {
+		Name     string
+		Client   string
+		Origin   string
+		Expected *tables.UsageLabels
+	}{
+		{
+			Name:     "Empty",
+			Expected: &tables.UsageLabels{},
+		},
+		{
+			Name:     "Client",
+			Client:   "executor",
+			Expected: &tables.UsageLabels{Client: "executor"},
+		},
+		{
+			Name:     "Origin",
+			Origin:   "external",
+			Expected: &tables.UsageLabels{Origin: "external"},
+		},
+		{
+			Name:     "All",
+			Client:   "app",
+			Origin:   "internal",
+			Expected: &tables.UsageLabels{Client: "app", Origin: "internal"},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			flags.Set(t, "grpc_client_origin_header", test.Origin)
+			usageutil.SetClientType(test.Client)
+
+			ctx := context.Background()
+			// Set some pre-existing bazel request metadata on the incoming
+			// context; our propagated labels should always take precedence.
+			bazelMD := &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}}
+			ctx, err := bazel_request.WithRequestMetadata(ctx, bazelMD)
+			ctx = usageutil.WithLocalServerLabels(ctx)
+			require.NoError(t, err)
+			outgoingMD, ok := metadata.FromOutgoingContext(ctx)
+			require.True(t, ok)
+
+			// Simulate an RPC by creating a new context with the incoming
+			// metadata set to the previously applied outgoing metadata.
+			ctx = context.Background()
+			ctx = metadata.NewIncomingContext(ctx, outgoingMD)
 
 			labels, err := usageutil.Labels(ctx)
 
