@@ -185,7 +185,7 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	defer func() {
 		props, err := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to parse task properties: %s", err)
+			log.CtxInfof(ctx, "Failed to parse task properties: %s", err)
 		}
 		groupID, _ := s.groupKey(ctx)
 		metrics.RemoteExecutionTaskSizeWriteRequests.With(prometheus.Labels{
