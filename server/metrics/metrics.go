@@ -925,6 +925,20 @@ var (
 		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
 	})
 
+	FirecrackerStageDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "stage_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*day, 10),
+		Help:      "The total duration of each firecracker stage, in microseconds",
+	}, []string{
+		Stage,
+		StatusHumanReadableLabel,
+		RecycledRunnerStatus,
+		GroupID,
+		SnapshotSharingStatus,
+	})
+
 	// #### Stage label values
 	// * "init": Time for the VM to start up (either a new VM or from a snapshot)
 	// * "exec": Time to run the command inside the container
@@ -944,19 +958,6 @@ var (
 	//     )
 	//  )
 	// ```
-	FirecrackerStageDurationMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "firecracker",
-		Name:      "stage_duration_msec",
-		Buckets:   durationMsecBuckets(1*time.Millisecond, 2*time.Hour, 10),
-		Help:      "The total duration of each firecracker stage, in milliseconds",
-	}, []string{
-		Stage,
-		StatusHumanReadableLabel,
-		RecycledRunnerStatus,
-		GroupID,
-		SnapshotSharingStatus,
-	})
 
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
