@@ -192,8 +192,6 @@ func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.G
 		}
 	}
 
-	dsc.GetOutput()
-
 	return &capb.GetTreeDirectorySizesResponse{
 		Sizes: dsc.GetOutput(),
 	}, nil
