@@ -107,7 +107,7 @@ func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 
 func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType, digestFunction repb.DigestFunction_Value) *ResourceName {
 	if digestFunction == repb.DigestFunction_UNKNOWN {
-		digestFunction = oldStyleDigestFunction(d)
+		digestFunction = InferOldStyleDigestFunctionInDesperation(d)
 	}
 	return &ResourceName{
 		rn: &rspb.ResourceName{
@@ -313,7 +313,7 @@ func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) 
 	}
 }
 
-func oldStyleDigestFunction(d *repb.Digest) repb.DigestFunction_Value {
+func InferOldStyleDigestFunctionInDesperation(d *repb.Digest) repb.DigestFunction_Value {
 	switch len(d.GetHash()) {
 	case sha1.Size * 2:
 		return repb.DigestFunction_SHA1
@@ -425,7 +425,7 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rs
 	// Determine the digest function by looking at the digest length.
 	// If a digest_function value was specified in the bytestream URL, this
 	// is a new style hash, so lookup the type based on that value.
-	digestFunction := oldStyleDigestFunction(d)
+	digestFunction := InferOldStyleDigestFunctionInDesperation(d)
 	if dfString, ok := result["digest_function"]; ok && dfString != "" {
 		if df, ok := repb.DigestFunction_Value_value[strings.ToUpper(dfString)]; ok {
 			digestFunction = repb.DigestFunction_Value(df)

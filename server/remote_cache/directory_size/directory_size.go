@@ -144,17 +144,20 @@ func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.G
 	if !*directorySizesEnabled {
 		return &capb.GetTreeDirectorySizesResponse{}, nil
 	}
-	r := req.GetResourceName()
 
 	casClient := env.GetContentAddressableStorageClient()
 	nextPageToken := ""
-	dsc := NewDirectorySizeCounter(r.GetDigestFunction())
+	dsc := NewDirectorySizeCounter(req.GetDigestFunction())
+	digestFunction := req.GetDigestFunction()
+	if digestFunction == repb.DigestFunction_UNKNOWN {
+		digestFunction = digest.InferOldStyleDigestFunctionInDesperation(req.GetRootDigest())
+	}
 	for {
 		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-			RootDigest:     r.GetDigest(),
-			InstanceName:   r.GetInstanceName(),
+			RootDigest:     req.GetRootDigest(),
+			InstanceName:   req.GetInstanceName(),
 			PageToken:      nextPageToken,
-			DigestFunction: r.GetDigestFunction(),
+			DigestFunction: digestFunction,
 		})
 
 		if err != nil {

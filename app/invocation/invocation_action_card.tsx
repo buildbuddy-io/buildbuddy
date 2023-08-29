@@ -69,11 +69,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const remoteInstanceName = this.props.model.optionsMap.get("remote_instance_name") || undefined;
     rpcService.service
       .getTreeDirectorySizes({
-        resourceName: resource.ResourceName.create({
-          digest: rootDigest,
-          cacheType: resource.CacheType.CAS,
-          instanceName: remoteInstanceName,
-        }),
+        rootDigest: rootDigest,
+        instanceName: remoteInstanceName,
+        /* TODO(jdhollen): pass back the DigestFunction used for the invocation. */
       })
       .then((r) => {
         this.setState({ treeShaToTotalSizeMap: r.sizes });

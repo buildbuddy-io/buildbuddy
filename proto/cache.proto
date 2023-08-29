@@ -260,8 +260,11 @@ message TreeCache {
 message GetTreeDirectorySizesRequest {
   context.RequestContext request_context = 1;
 
-  // The resource name of the root of the tree.
-  resource.ResourceName resource_name = 2;
+  build.bazel.remote.execution.v2.Digest root_digest = 2;
+
+  string instance_name = 3;
+
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 4;
 }
 
 message GetTreeDirectorySizesResponse {
