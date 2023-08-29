@@ -198,11 +198,11 @@ const (
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
-	/// For firecracker remote execution runners, describes the snapshot
+	// For firecracker remote execution runners, describes the snapshot
 	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
 	SnapshotSharingStatus = "snapshot_sharing_status"
 
-	/// For remote execution runners, describes the recycling status (Ex.
+	// For remote execution runners, describes the recycling status (Ex.
 	// 'clean' if the runner is not recycled or 'recycled')
 	RecycledRunnerStatus = "recycled_runner_status"
 )
@@ -925,10 +925,7 @@ var (
 		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
 	})
 
-	// FirecrackerStageDurationMsec For a firecracker container assigned to
-	// execute a task, tracks the duration of each stage
-	//
-	// Stages include:
+	// #### Stage label values
 	// * "init": Time for the VM to start up (either a new VM or from a snapshot)
 	// * "exec": Time to run the command inside the container
 	// * "task_lifecycle": Time from when the task if first assigned to the VM

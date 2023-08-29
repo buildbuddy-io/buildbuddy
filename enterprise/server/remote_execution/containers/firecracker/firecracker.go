@@ -1590,7 +1590,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err = os.MkdirAll(c.getChroot(), 0755); err != nil {
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
 		return status.InternalErrorf("failed to create chroot dir: %s", err)
 	}
 
@@ -1606,13 +1606,13 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		scratchFSPath = filepath.Join(c.tempDir, scratchFSName)
 		workspaceFSPath = filepath.Join(c.tempDir, workspaceFSName)
 	}
-	if err = c.initScratchImage(ctx, scratchFSPath); err != nil {
+	if err := c.initScratchImage(ctx, scratchFSPath); err != nil {
 		return status.WrapError(err, "create initial scratch image")
 	}
 	// Create an empty workspace image initially; the real workspace will be
 	// hot-swapped just before running each command in order to ensure that the
 	// workspace contents are up to date.
-	if err = c.createWorkspaceImage(ctx, "" /*=workspaceDir*/, workspaceFSPath); err != nil {
+	if err := c.createWorkspaceImage(ctx, "" /*=workspaceDir*/, workspaceFSPath); err != nil {
 		return err
 	}
 	log.CtxDebugf(ctx, "Scratch and workspace disk images written to %q", c.tempDir)
@@ -1623,15 +1623,15 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return err
 	}
 
-	if err = c.setupNetworking(ctx); err != nil {
+	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
 
-	if err = c.setupVFSServer(ctx); err != nil {
+	if err := c.setupVFSServer(ctx); err != nil {
 		return err
 	}
 
-	if err = c.setupNBDServer(ctx); err != nil {
+	if err := c.setupNBDServer(ctx); err != nil {
 		return status.WrapError(err, "failed to init nbd server")
 	}
 
