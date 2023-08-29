@@ -51,6 +51,9 @@ const (
 	// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
+	// Generic label to describe the stage the metric is capturing
+	Stage = "stage"
+
 	// SQL query before substituting template parameters.
 	SQLQueryTemplateLabel = "sql_query_template"
 
@@ -194,6 +197,14 @@ const (
 
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
+
+	// For firecracker remote execution runners, describes the snapshot
+	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
+	SnapshotSharingStatus = "snapshot_sharing_status"
+
+	// For remote execution runners, describes the recycling status (Ex.
+	// 'clean' if the runner is not recycled or 'recycled')
+	RecycledRunnerStatus = "recycled_runner_status"
 )
 
 // Other constants
@@ -913,6 +924,40 @@ var (
 		Buckets:   coarseMicrosecondToHour,
 		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
 	})
+
+	FirecrackerStageDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "stage_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*day, 10),
+		Help:      "The total duration of each firecracker stage, in microseconds",
+	}, []string{
+		Stage,
+		StatusHumanReadableLabel,
+		RecycledRunnerStatus,
+		GroupID,
+		SnapshotSharingStatus,
+	})
+
+	// #### Stage label values
+	// * "init": Time for the VM to start up (either a new VM or from a snapshot)
+	// * "exec": Time to run the command inside the container
+	// * "task_lifecycle": Time from when the task if first assigned to the VM
+	// (beginning of init) to after it's finished execution. This roughly
+	// represents what a customer will wait for the task to complete after it's
+	// been scheduled to a firecracker runner
+	// * "pause": Time to pause the VM, save a snapshot, and cleanup resources
+	//
+	// #### Examples
+	// ```promql
+	// # P95 workflow lifecycle duration in the past 5 minutes, grouped by group_id
+	// histogram_quantile(
+	//   0.95,
+	//   sum by(le, group_id) (
+	//      rate(buildbuddy_firecracker_stage_duration_msec_bucket{job="executor-workflows", stage="task_lifecycle"}[5m])
+	//     )
+	//  )
+	// ```
 
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,

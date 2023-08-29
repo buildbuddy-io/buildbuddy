@@ -32,19 +32,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
-	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -52,6 +54,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
+	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -370,6 +373,13 @@ type FirecrackerContainer struct {
 
 	// Whether the VM was recycled.
 	recycled bool
+
+	// When the VM was initialized (i.e. created or unpaused) for the command
+	// it is currently executing
+	//
+	// This can be used to understand the total time it takes to execute a task,
+	// including VM startup time
+	currentTaskInitTimeUsec int64
 
 	// dockerClient is used to optimize image pulls by reusing image layers from
 	// the Docker cache as well as deduping multiple requests for the same image.
@@ -1560,10 +1570,18 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	defer span.End()
 
 	start := time.Now()
-	defer func() {
-		log.CtxDebugf(ctx, "Create took %s", time.Since(start))
-	}()
+	err := c.create(ctx)
 
+	createTime := time.Since(start)
+	log.CtxDebugf(ctx, "Create took %s", createTime)
+
+	success := err == nil
+	c.observeStageDuration(ctx, "init", createTime.Microseconds(), success)
+	return err
+}
+
+func (c *FirecrackerContainer) create(ctx context.Context) error {
+	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
@@ -1728,11 +1746,16 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer span.End()
 
 	start := time.Now()
-	defer func() {
-		log.CtxDebugf(ctx, "Exec took %s", time.Since(start))
-	}()
-
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
+	defer func() {
+		execDuration := time.Since(start)
+		log.CtxDebugf(ctx, "Exec took %s", execDuration)
+
+		timeSinceContainerInit := time.Since(time.UnixMicro(c.currentTaskInitTimeUsec))
+		execSuccess := result.Error == nil
+		c.observeStageDuration(ctx, "task_lifecycle", timeSinceContainerInit.Microseconds(), execSuccess)
+		c.observeStageDuration(ctx, "exec", execDuration.Microseconds(), execSuccess)
+	}()
 
 	if c.fsLayout == nil {
 		if err := c.syncWorkspace(ctx); err != nil {
@@ -1946,10 +1969,17 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	defer span.End()
 
 	start := time.Now()
-	defer func() {
-		log.CtxDebugf(ctx, "Pause took %s", time.Since(start))
-	}()
+	err := c.pause(ctx)
 
+	pauseTime := time.Since(start)
+	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
+
+	success := err == nil
+	c.observeStageDuration(ctx, "pause", pauseTime.Microseconds(), success)
+	return err
+}
+
+func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
@@ -2052,11 +2082,19 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	defer span.End()
 
 	start := time.Now()
-	defer func() {
-		log.CtxDebugf(ctx, "Unpause took %s", time.Since(start))
-	}()
+	err := c.unpause(ctx)
 
+	unpauseTime := time.Since(start)
+	log.CtxDebugf(ctx, "Unpause took %s", unpauseTime)
+
+	success := err == nil
+	c.observeStageDuration(ctx, "init", unpauseTime.Microseconds(), success)
+	return err
+}
+
+func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
+	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
 
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx)
@@ -2145,6 +2183,37 @@ func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult
 	// Logs contain "\r\n"; convert these to universal line endings.
 	tail = strings.ReplaceAll(tail, "\r\n", "\n")
 	return status.InternalErrorf("process hit a segfault:\n%s", tail)
+}
+
+func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskStage string, durationUsec int64, success bool) {
+	taskStatus := "success"
+	if !success {
+		taskStatus = "failure"
+	}
+
+	recycleStatus := "clean"
+	if c.recycled {
+		recycleStatus = "recycled"
+	}
+
+	var groupID string
+	u, err := perms.AuthenticatedUser(ctx, c.env)
+	if err == nil {
+		groupID = u.GetGroupID()
+	}
+
+	snapshotSharingStatus := "disabled"
+	if *snaploader.EnableLocalSnapshotSharing {
+		snapshotSharingStatus = "local_sharing_enabled"
+	}
+
+	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
+		metrics.Stage:                    taskStage,
+		metrics.StatusHumanReadableLabel: taskStatus,
+		metrics.RecycledRunnerStatus:     recycleStatus,
+		metrics.GroupID:                  groupID,
+		metrics.SnapshotSharingStatus:    snapshotSharingStatus,
+	}).Observe(float64(durationUsec))
 }
 
 // VMLog retains the tail of the VM log.
