@@ -72,7 +72,8 @@ as normal Bazel actions shown above.
 
 For secrets that have a short Time To Live (TTL), BuildBuddy supports setting
 environment variables via special headers passed at the Bazel command line.
-
+Using `env-overrides` is more secure than setting environment variables with Bazel,
+as it prevents the secrets from being stored in the remote cache.
 
 ```bash
 # For simple secrets
@@ -115,10 +116,12 @@ These secrets will be set as environment variables at action execution time,
 overriding the default environment variables on your container image as well as
 the environment variables set by Bazel as part of the action configuration.
 
-Using `env-overrides` is more secure than setting environment variables with Bazel,
-as it prevents the secrets from being stored in the remote cache. However,
-these secrets *may* be cached as part of action results if not properly handled.
-For example, avoid printing secret values to the command line.
+:::warning
+
+Secrets may be cached as part of action results if not properly handled.
+Avoid printing secret values to the console or storing them in action outputs.
+
+:::
 
 Secrets that are passed through `env-overrides` or `env-overrides-base64` headers
 are not subjected to `include-secrets` control documented above.
