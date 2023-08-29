@@ -8,7 +8,7 @@ interface Props {
   node: InputNode;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, InputNode[]>;
-  treeShaToTotalSizeMap: Record<string, Long>;
+  treeShaToTotalSizeMap: Map<string, Number>;
   handleFileClicked: any;
 }
 
@@ -22,7 +22,7 @@ export interface InputNode {
 export default class InputNodeComponent extends React.Component<Props, State> {
   render() {
     const digestString = this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes;
-    const totalSize = this.props.treeShaToTotalSizeMap[digestString];
+    const totalSize = this.props.treeShaToTotalSizeMap.get(digestString);
     const expanded = this.props.treeShaToExpanded.get(digestString);
     return (
       <div className="input-tree-node">

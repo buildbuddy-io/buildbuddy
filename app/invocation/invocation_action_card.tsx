@@ -21,7 +21,7 @@ interface State {
   action?: build.bazel.remote.execution.v2.Action;
   loadingAction: boolean;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
-  treeShaToTotalSizeMap: Record<string, Long>;
+  treeShaToTotalSizeMap: Map<string, Number>;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
@@ -36,7 +36,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   state: State = {
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, InputNode[]>(),
-    treeShaToTotalSizeMap: {},
+    treeShaToTotalSizeMap: new Map<string, Number>(),
     inputDirs: [],
     loadingAction: true,
   };
@@ -74,10 +74,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
         /* TODO(jdhollen): pass back the DigestFunction used for the invocation. */
       })
       .then((r) => {
-        this.setState({ treeShaToTotalSizeMap: r.sizes });
+        const sizes = new Map<string, Number>();
+        r.sizes.forEach((v) => {
+          sizes.set(v.digest, +v.totalSize);
+        });
+        this.setState({ treeShaToTotalSizeMap: sizes });
       })
       .catch((e) => {
-        this.setState({ treeShaToTotalSizeMap: {} });
+        this.setState({ treeShaToTotalSizeMap: new Map<string, Number>() });
       });
   }
 

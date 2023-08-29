@@ -140,8 +140,12 @@ func (dsc *directorySizeCounter) finish(digest string) {
 // Outputs only completed branches--if for some reason we couldn't find one of
 // the directories in the directory tree, we don't output a total size for any
 // of its parents because the size would be incorrect.
-func (dsc *directorySizeCounter) GetOutput() map[string]int64 {
-	return dsc.totalSize
+func (dsc *directorySizeCounter) GetOutput() []*capb.DigestWithTotalSize {
+	out := make([]*capb.DigestWithTotalSize, 0, len(dsc.totalSize))
+	for k, v := range dsc.totalSize {
+		out = append(out, &capb.DigestWithTotalSize{Digest: k, TotalSize: v})
+	}
+	return out
 }
 
 func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.GetTreeDirectorySizesRequest) (*capb.GetTreeDirectorySizesResponse, error) {

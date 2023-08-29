@@ -267,10 +267,20 @@ message GetTreeDirectorySizesRequest {
   build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 4;
 }
 
+message DigestWithTotalSize {
+  // The stringified digest in the form <hash/size>
+  string digest = 1;
+
+  // The total size of the specified object in the CAS, *including* the
+  // recursively expanded subcontents of child directories if this is a
+  // Directory.
+  int64 total_size = 2;
+}
+
 message GetTreeDirectorySizesResponse {
   context.ResponseContext response_context = 1;
 
   // A map from the digest string (hash/bytes) to the *total* cumulative size
   // of the directory (i.e., a different, potentially larger number of bytes).
-  map<string, int64> sizes = 2;
+  repeated DigestWithTotalSize sizes = 2;
 }
