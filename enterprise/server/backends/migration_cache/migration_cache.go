@@ -442,8 +442,6 @@ type doubleReader struct {
 	doubleReadBuf []byte
 	bytesReadSrc  int
 	bytesReadDest int
-	lastSrcError  error
-	lastDestErr   error
 }
 
 func (d *doubleReader) Read(p []byte) (n int, err error) {
@@ -457,16 +455,17 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 			}
 
 			var dstN int
-			dstN, dstErr = d.dest.Read(d.doubleReadBuf)
+			dstN, dstErr = io.ReadFull(d.dest, d.doubleReadBuf)
+			if dstErr == io.ErrUnexpectedEOF {
+				dstErr = io.EOF
+			}
 			d.bytesReadDest += dstN
-			d.lastDestErr = dstErr
 			return nil
 		})
 	}
 
 	srcN, srcErr := d.src.Read(p)
 	d.bytesReadSrc += srcN
-	d.lastSrcError = srcErr
 
 	eg.Wait()
 	// Don't log on EOF errors when reading chunks, because the readers from different caches
@@ -482,14 +481,11 @@ func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
 		// Don't log on byte differences for AC records, because there could be minor differences in metadata like timestamps
+		if d.r.GetCacheType() == rspb.CacheType_CAS && d.bytesReadDest != d.bytesReadSrc {
+			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
+		}
+
 		eg.Go(func() error {
-			if d.lastSrcError == io.EOF && d.lastDestErr != io.EOF {
-				destBuf, err := io.ReadAll(d.dest)
-				if err != nil {
-					log.Warningf("Migration %v read err: failed to read remaining bytes from dest cache: %s", d.r, err)
-				}
-				d.bytesReadDest += len(destBuf)
-			}
 			dstErr := d.dest.Close()
 			if dstErr != nil {
 				log.Warningf("Migration dest reader close err: %s", dstErr)
@@ -500,12 +496,6 @@ func (d *doubleReader) Close() error {
 
 	srcErr := d.src.Close()
 	eg.Wait()
-
-	if d.dest != nil {
-		if d.r.GetCacheType() == rspb.CacheType_CAS && d.bytesReadDest != d.bytesReadSrc {
-			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
-		}
-	}
 
 	return srcErr
 }
