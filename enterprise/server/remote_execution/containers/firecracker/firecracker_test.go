@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -378,12 +379,9 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
-	// TODO(Maggie): Enable test when NBD is stable
-	t.Skip()
-
-	flags.Set(t, "executor.firecracker_enable_nbd", true)
-	flags.Set(t, "executor.firecracker_enable_uffd", true)
-	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	if !*snaploader.EnableLocalSnapshotSharing {
+		t.Skip("Snapshot sharing is not enabled")
+	}
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
@@ -391,6 +389,14 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	jailerRoot := tempJailerRoot(t)
+
+	var containersToCleanup []*firecracker.FirecrackerContainer
+	t.Cleanup(func() {
+		for _, vm := range containersToCleanup {
+			err := vm.Remove(ctx)
+			assert.NoError(t, err)
+		}
+	})
 
 	// Returns a task that appends the message to a logfile, then prints the logfile so far
 	appendToLog := func(message string) *repb.Command {
@@ -420,16 +426,21 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		},
 		JailerRoot: jailerRoot,
 	}
-	baseVM, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Note: platform must match in order to share snapshots
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+		},
+	}
+	baseVM, err := firecracker.NewContainer(ctx, env, cacheAuth, task, opts)
 	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, baseVM)
 	err = container.PullImageIfNecessary(ctx, env, cacheAuth, baseVM, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
 	err = baseVM.Create(ctx, opts.ActionWorkingDirectory)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		err = baseVM.Remove(ctx)
-		require.NoError(t, err)
-	})
 
 	// Create a snapshot. Data written to this snapshot should persist
 	// when other VMs reuse the snapshot
@@ -456,13 +467,20 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 			},
 			JailerRoot: jailerRoot,
 		}
-		forkedVM, err := firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+		forkedVM, err := firecracker.NewContainer(ctx, env, cacheAuth, task, opts)
 		require.NoError(t, err)
 		containers = append(containers, forkedVM)
+		containersToCleanup = append(containersToCleanup, forkedVM)
 
-		// The new VM should reuse the Base VM's snapshot
-		err = forkedVM.Unpause(ctx)
-		require.NoError(t, err)
+		// The new VM should reuse the Base VM's snapshot, whether we call
+		// Create() or Unpause()
+		if i%2 == 0 {
+			err = forkedVM.Unpause(ctx)
+			require.NoError(t, err)
+		} else {
+			err = forkedVM.Create(ctx, workDir)
+			require.NoError(t, err)
+		}
 
 		// Write VM-specific data to the log
 		cmd = appendToLog(fmt.Sprintf("Fork-%d", i))
@@ -515,10 +533,12 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		},
 		JailerRoot: jailerRoot,
 	}
-	c, err = firecracker.NewContainer(ctx, env, cacheAuth, &repb.ExecutionTask{}, opts)
+	c, err = firecracker.NewContainer(ctx, env, cacheAuth, task, opts)
 	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, c)
+
 	// This VM should load the snapshot saved by the last forked VM to Pause
-	err = c.Unpause(ctx)
+	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
 	cmd = appendToLog("Last")
 	res = c.Exec(ctx, cmd, nil /*=stdio*/)
@@ -526,8 +546,6 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	require.Equal(t, "Base\nFork-3\nLast\n", string(res.Stdout))
 
 	err = c.Pause(ctx)
-	require.NoError(t, err)
-	err = c.Remove(ctx)
 	require.NoError(t, err)
 }
 
