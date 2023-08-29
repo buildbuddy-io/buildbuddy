@@ -3,14 +3,10 @@ package directory_size
 import (
 	"context"
 	"flag"
-	"fmt"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -148,16 +144,9 @@ func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.G
 	if !*directorySizesEnabled {
 		return &capb.GetTreeDirectorySizesResponse{}, nil
 	}
-	// XXX: Validate access? Is group ID getting added to cache request implicitly good enough?
 	r := req.GetResourceName()
 
-	// XXX: Is there a better way, or is this the least awful way to stream GetTree?
-	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
-	casClient := repb.NewContentAddressableStorageClient(conn)
-	if err != nil {
-		return nil, status.InternalErrorf("Error initializing ByteStreamClient: %s", err)
-	}
-
+	casClient := env.GetContentAddressableStorageClient()
 	nextPageToken := ""
 	dsc := NewDirectorySizeCounter(r.GetDigestFunction())
 	for {

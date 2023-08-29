@@ -17,6 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -62,6 +64,14 @@ func Register(env environment.Env) error {
 		return status.InternalErrorf("Error initializing ContentAddressableStorageServer: %s", err)
 	}
 	env.SetCASServer(casServer)
+
+	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
+	casClient := repb.NewContentAddressableStorageClient(conn)
+	if err != nil {
+		return status.InternalErrorf("Error initializing ContentAddressableStorageClient: %s", err)
+	}
+	env.SetContentAddressableStorageClient(casClient)
+
 	return nil
 }
 

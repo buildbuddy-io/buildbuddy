@@ -44,6 +44,7 @@
   color: #000;
   margin-left: 8px;
   padding: 0 8px;
+  white-space: nowrap;
 }
 
 .input-tree-node-name .digest-component {

@@ -10,8 +10,5 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/remote_cache/digest",
-        "//server/util/grpc_client",
-        "//server/util/grpc_server",
-        "//server/util/status",
     ],
 )
