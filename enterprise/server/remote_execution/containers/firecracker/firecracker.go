@@ -431,6 +431,10 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 			InitDockerd:       props.InitDockerd,
 			EnableDockerdTcp:  props.EnableDockerdTCP,
 		}
+	} else if *snaputil.EnableLocalSnapshotSharing {
+		// When local snapshot sharing is enabled, reject old-style persisted
+		// snapshots, since these aren't shareable (i.e. COW-formatted).
+		return nil, status.UnavailableError("ignoring persisted snapshot; this functionality has been replaced by local snapshot sharing")
 	} else {
 		vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
 	}
