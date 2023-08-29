@@ -71,11 +71,12 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 		return nil
 	}
 
-	// Create..
+	// We haven't seen this digest before, so start tracking it.
 	dsc.pendingSize[digestString] = dirDigest.GetSizeBytes()
 	for _, f := range dir.GetFiles() {
 		dsc.pendingSize[digestString] += f.GetDigest().GetSizeBytes()
 	}
+	// If this directory has no subdirectories, we're already done.
 	if len(dir.GetDirectories()) == 0 {
 		dsc.finish(digestString)
 		return nil
@@ -84,16 +85,23 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 	dsc.pendingChildren[digestString] = make(map[string]struct{})
 
 	for _, d := range dir.GetDirectories() {
-		dh := digest.String(d.GetDigest())
-		if subDirTotal, ok := dsc.totalSize[dh]; ok {
+		subdirDigest := digest.String(d.GetDigest())
+		// If we've already found the child directory's size, count it
+		// and move on.
+		if subDirTotal, ok := dsc.totalSize[subdirDigest]; ok {
 			dsc.pendingSize[digestString] += subDirTotal
 			continue
 		}
-		if _, ok := dsc.parents[dh]; !ok {
-			dsc.parents[dh] = make([]string, 0)
+
+		// Otherwise, add dir to the subdir's parents, and add subdir to the
+		// parent's children.  Note that we will add a parent more than once
+		// so that if it has two subdirectories with identical contents, we
+		// will count that subdirectory twice.
+		if _, ok := dsc.parents[subdirDigest]; !ok {
+			dsc.parents[subdirDigest] = make([]string, 0)
 		}
-		dsc.pendingChildren[digestString][dh] = struct{}{}
-		dsc.parents[dh] = append(dsc.parents[dh], digestString)
+		dsc.pendingChildren[digestString][subdirDigest] = struct{}{}
+		dsc.parents[subdirDigest] = append(dsc.parents[subdirDigest], digestString)
 	}
 
 	if len(dsc.pendingChildren[digestString]) == 0 {
@@ -111,6 +119,10 @@ func (dsc *directorySizeCounter) finish(digest string) {
 
 	total := dsc.pendingSize[digest]
 	dsc.totalSize[digest] = total
+	// Okay, this could be more efficient and more confusing, but since we
+	// want to count identical subdirectories twice, we just iterate twice.
+	// I don't know, if we wanted, we could just make parents hold an integer
+	// instead of being a straight set.  Whatever.
 	for _, parent := range dsc.parents[digest] {
 		dsc.pendingSize[parent] += total
 	}
@@ -139,13 +151,13 @@ func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.G
 	// XXX: Validate access? Is group ID getting added to cache request implicitly good enough?
 	r := req.GetResourceName()
 
+	// XXX: Is there a better way, or is this the least awful way to stream GetTree?
 	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	if err != nil {
 		return nil, status.InternalErrorf("Error initializing ByteStreamClient: %s", err)
 	}
 
-	// Fetch the full tree.
 	nextPageToken := ""
 	dsc := NewDirectorySizeCounter(r.GetDigestFunction())
 	for {
