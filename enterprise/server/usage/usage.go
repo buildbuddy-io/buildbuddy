@@ -328,9 +328,18 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 		json := string(b)
 		log.Infof("Flushing usage row: %s", json)
 
-		// First check whether the row already exists. Make sure to select for
-		// update in order to lock the row.
-		err := tx.Raw(`
+		// Lock the table so that other apps cannot attempt to insert usage rows
+		// with the same key. Note that this locking should not affect
+		// performance since only one app should be writing to the DB at a time
+		// anyway.
+		unlock, err := tables.LockExclusive(tx, &tables.Usage{})
+		if err != nil {
+			return err
+		}
+		defer unlock()
+
+		// First check whether the row already exists.
+		err = tx.Raw(`
 			SELECT *
 			FROM "Usages"
 			WHERE

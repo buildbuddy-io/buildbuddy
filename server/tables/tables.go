@@ -1146,6 +1146,52 @@ func isStrictModeEnabled(db *gorm.DB) (bool, error) {
 	return isStrictModeEnabled, nil
 }
 
+// LockExclusive locks the given tables for the scope of the given transaction,
+// using an exclusive lock.
+//
+// The returned `unlock` function should be deferred-called within the
+// transaction function to unlock the tables.
+//
+// Note that this function should only be called once per transaction, since in
+// MySQL, a LOCK TABLES statement releases any existing held locks.
+//
+// Table-level locking should be avoided for tables that are frequently written
+// to by multiple app instances, as it can hurt performance.
+func LockExclusive(tx *gorm.DB, tables ...Table) (unlock func() error, err error) {
+	// sqlite does not support table locks, and its transactional isolation is
+	// usually strong enough to not need table-level locking.
+	switch dialect := tx.Dialector.Name(); dialect {
+	case sqliteDialect:
+		// sqlite doesn't support table-level locks, but instead runs all
+		// transactions with SERIALIZABLE isolation, so table-level locks should
+		// not be necessary. For simplicity, just do nothing here.
+		return func() error { return nil }, nil
+	case mysqlDialect:
+		// MySQL tables need to be explicitly unlocked at the end of the
+		// transaction. Note that if the transaction fails due the connection
+		// being lost, MySQL server will automatically unlock tables.
+		var args []string
+		for _, t := range tables {
+			args = append(args, fmt.Sprintf("%q WRITE", t.TableName()))
+		}
+		if err := tx.Exec(fmt.Sprintf("LOCK TABLES %s", strings.Join(args, ", "))).Error; err != nil {
+			return nil, err
+		}
+		return func() error { return tx.Exec("UNLOCK TABLES").Error }, nil
+	case postgresDialect:
+		var args []string
+		for _, t := range tables {
+			args = append(args, fmt.Sprintf("%q", t.TableName()))
+		}
+		if err := tx.Exec(fmt.Sprintf("LOCK TABLE %s IN ACCESS EXCLUSIVE MODE", strings.Join(args, ", "))).Error; err != nil {
+			return nil, err
+		}
+		return func() error { return nil }, nil
+	default:
+		return nil, status.UnimplementedErrorf("unsupported SQL dialect %q", dialect)
+	}
+}
+
 func RegisterTables() {
 	allTables = nil
 	// Keep these sorted by two-letter prefix (and when adding new tables,
