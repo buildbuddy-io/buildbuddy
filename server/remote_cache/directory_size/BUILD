@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:remote_execution_go_proto",
         "//proto:cache_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/remote_cache/digest",
         "//server/util/grpc_client",
