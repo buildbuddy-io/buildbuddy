@@ -1570,19 +1570,22 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	defer span.End()
 
 	start := time.Now()
-	var err error
-	defer func() {
-		createTime := time.Since(start)
-		log.CtxDebugf(ctx, "Create took %s", createTime)
+	err := c.create(ctx)
 
-		success := err == nil
-		c.emitTaskDurationMetric(ctx, "init", createTime.Milliseconds(), success)
-	}()
+	createTime := time.Since(start)
+	log.CtxDebugf(ctx, "Create took %s", createTime)
 
-	c.currentTaskInitTimeUsec = start.UnixMicro()
+	success := err == nil
+	c.observeStageDuration(ctx, "init", createTime.Microseconds(), success)
+	return err
+}
+
+func (c *FirecrackerContainer) create(ctx context.Context) error {
+	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
+	var err error
 	c.tempDir, err = os.MkdirTemp(c.jailerRoot, "fc-container-*")
 	if err != nil {
 		return err
@@ -1615,8 +1618,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	log.CtxDebugf(ctx, "Scratch and workspace disk images written to %q", c.tempDir)
 	log.CtxDebugf(ctx, "Using container image at %q", c.containerFSPath)
 	log.CtxDebugf(ctx, "getChroot() is %q", c.getChroot())
-	var fcCfg *fcclient.Config
-	fcCfg, err = c.getConfig(ctx, c.containerFSPath, scratchFSPath, workspaceFSPath)
+	fcCfg, err := c.getConfig(ctx, c.containerFSPath, scratchFSPath, workspaceFSPath)
 	if err != nil {
 		return err
 	}
@@ -1640,8 +1642,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		fcclient.WithLogger(getLogrusLogger()),
 	}
 
-	var m *fcclient.Machine
-	m, err = fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
+	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
 	}
@@ -1752,8 +1753,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 		timeSinceContainerInit := time.Since(time.UnixMicro(c.currentTaskInitTimeUsec))
 		execSuccess := result.Error == nil
-		c.emitTaskDurationMetric(ctx, "task_lifecycle", timeSinceContainerInit.Milliseconds(), execSuccess)
-		c.emitTaskDurationMetric(ctx, "exec", execDuration.Milliseconds(), execSuccess)
+		c.observeStageDuration(ctx, "task_lifecycle", timeSinceContainerInit.Microseconds(), execSuccess)
+		c.observeStageDuration(ctx, "exec", execDuration.Microseconds(), execSuccess)
 	}()
 
 	if c.fsLayout == nil {
@@ -1968,17 +1969,18 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	defer span.End()
 
 	start := time.Now()
-	var err error
-	defer func() {
-		pauseTime := time.Since(start)
-		log.CtxDebugf(ctx, "Pause took %s", pauseTime)
+	err := c.pause(ctx)
 
-		success := err == nil
-		c.emitTaskDurationMetric(ctx, "pause", pauseTime.Milliseconds(), success)
-	}()
+	pauseTime := time.Since(start)
+	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
 
-	var snapDetails *snapshotDetails
-	snapDetails, err = c.snapshotDetails(ctx)
+	success := err == nil
+	c.observeStageDuration(ctx, "pause", pauseTime.Microseconds(), success)
+	return err
+}
+
+func (c *FirecrackerContainer) pause(ctx context.Context) error {
+	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
 	}
@@ -2080,21 +2082,22 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	defer span.End()
 
 	start := time.Now()
-	var err error
-	defer func() {
-		unpauseTime := time.Since(start)
-		log.CtxDebugf(ctx, "Unpause took %s", unpauseTime)
+	err := c.unpause(ctx)
 
-		success := err == nil
-		c.emitTaskDurationMetric(ctx, "init", unpauseTime.Milliseconds(), success)
-	}()
+	unpauseTime := time.Since(start)
+	log.CtxDebugf(ctx, "Unpause took %s", unpauseTime)
 
+	success := err == nil
+	c.observeStageDuration(ctx, "init", unpauseTime.Microseconds(), success)
+	return err
+}
+
+func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
-	c.currentTaskInitTimeUsec = start.UnixMicro()
+	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
 
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
-	err = c.LoadSnapshot(ctx)
-	return err
+	return c.LoadSnapshot(ctx)
 }
 
 // syncWorkspace creates a new disk image from the given working directory
@@ -2182,7 +2185,7 @@ func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult
 	return status.InternalErrorf("process hit a segfault:\n%s", tail)
 }
 
-func (c *FirecrackerContainer) emitTaskDurationMetric(ctx context.Context, taskStage string, durationMs int64, success bool) {
+func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskStage string, durationUsec int64, success bool) {
 	taskStatus := "success"
 	if !success {
 		taskStatus = "failure"
@@ -2200,21 +2203,17 @@ func (c *FirecrackerContainer) emitTaskDurationMetric(ctx context.Context, taskS
 	}
 
 	snapshotSharingStatus := "disabled"
-	if localSnapshotSharingEnabled() {
+	if *snaploader.EnableLocalSnapshotSharing {
 		snapshotSharingStatus = "local_sharing_enabled"
 	}
 
-	metrics.FirecrackerStageDurationMsec.With(prometheus.Labels{
+	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
 		metrics.Stage:                    taskStage,
 		metrics.StatusHumanReadableLabel: taskStatus,
 		metrics.RecycledRunnerStatus:     recycleStatus,
 		metrics.GroupID:                  groupID,
 		metrics.SnapshotSharingStatus:    snapshotSharingStatus,
-	}).Observe(float64(durationMs))
-}
-
-func localSnapshotSharingEnabled() bool {
-	return *enableNBD && *enableUFFD && *snaploader.EnableLocalSnapshotSharing
+	}).Observe(float64(durationUsec))
 }
 
 // VMLog retains the tail of the VM log.
