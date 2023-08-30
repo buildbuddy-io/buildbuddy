@@ -611,6 +611,7 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.ResourceIsolationString(r), peer)
 			continue
 		}
+		c.log.Debugf("Metadata(%q) lookup failed on peer %s: (err: %v)", cacheproxy.ResourceIsolationString(r), peer, err)
 
 		// Got an error -- mark this peer as failed and try the next one.
 		ps.MarkPeerAsFailed(peer)
