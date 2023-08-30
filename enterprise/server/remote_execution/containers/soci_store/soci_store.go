@@ -2,6 +2,7 @@ package soci_store
 
 import (
 	"context"
+	"flag"
 	"io"
 	"os"
 	"os/signal"
@@ -39,16 +40,19 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
+var (
+	sociStoreRootPath = flag.String("executor.podman.soci_store_root_path", "/tmp/soci", "The root path under which to store soci-store artifacts and mount the soci-store.")
+)
+
 const (
 	// Command-line argument to podman to enable the use of the soci store for streaming
 	EnableStreamingStoreArg = "--storage-opt=additionallayerstore=/tmp/soci/store:ref"
 
 	// Local filesystem locations for soci-store
-	rootPath        = "/tmp/soci"
-	StorePath       = "/tmp/soci/store"
-	indexPath       = "/tmp/soci/indexes"
-	contentBasePath = "/tmp/soci/content"
-	contentFullPath = "/tmp/soci/content/blobs/sha256"
+	storeSubPath   = "store"
+	indexSubPath   = "indexes"
+	contentSubPath = "content"
+	blobsSubPath   = "content/blobs/sha256"
 
 	sociStoreCredCacheTtl = 1 * time.Hour
 )
@@ -80,7 +84,7 @@ func RunSociStoreWithRetries(ctx context.Context, port int) {
 		log.Infof("Detected-soci store crash, restarting")
 		metrics.PodmanSociStoreCrashes.Inc()
 		// If the store crashed, the path must be unmounted to recover.
-		syscall.Unmount(StorePath, 0)
+		syscall.Unmount(StorePath(), 0)
 
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -88,11 +92,11 @@ func RunSociStoreWithRetries(ctx context.Context, port int) {
 
 func RunSociStore(ctx context.Context, port int) error {
 	var config Config
-	config.Config.RootPath = rootPath
-	config.Config.IndexStorePath = indexPath
-	config.Config.ContentStorePath = contentBasePath
+	config.Config.RootPath = *sociStoreRootPath
+	config.Config.IndexStorePath = filepath.Join(*sociStoreRootPath, indexSubPath)
+	config.Config.ContentStorePath = filepath.Join(*sociStoreRootPath, contentSubPath)
 
-	if err := disk.EnsureDirectoryExists(rootPath); err != nil {
+	if err := disk.EnsureDirectoryExists(*sociStoreRootPath); err != nil {
 		return err
 	}
 
@@ -102,16 +106,16 @@ func RunSociStore(ctx context.Context, port int) error {
 	hosts := resolver.RegistryHostsFromConfig(resolver.Config(config.ResolverConfig), credsFuncs...)
 
 	// Configure and mount filesystem
-	if _, err := os.Stat(StorePath); err != nil {
-		if err2 := os.MkdirAll(StorePath, 0755); err2 != nil && !os.IsExist(err2) {
-			log.Fatalf("soci-store failed to prepare mountpoint %s: %s / %s", StorePath, err, err2)
+	if _, err := os.Stat(StorePath()); err != nil {
+		if err2 := os.MkdirAll(StorePath(), 0755); err2 != nil && !os.IsExist(err2) {
+			log.Fatalf("soci-store failed to prepare mountpoint %s: %s / %s", StorePath(), err, err2)
 		}
 	}
 	if !config.Config.DisableVerification {
 		log.Warning("soci-store content verification is not supported; switching to non-verification mode")
 		config.Config.DisableVerification = true
 	}
-	mt, err := getMetadataStore(rootPath)
+	mt, err := getMetadataStore(*sociStoreRootPath)
 	if err != nil {
 		log.Fatalf("soci-store failed to configure metadata store: %s", err)
 	}
@@ -122,18 +126,18 @@ func RunSociStore(ctx context.Context, port int) error {
 	fsOpts = append(fsOpts, socifs.WithGetSources(
 		source.FromDefaultLabels(hosts), // provides source info based on default labels
 	), socifs.WithOverlayOpaqueType(opq))
-	fs, err := socifs.NewFilesystem(ctx, rootPath, config.Config, fsOpts...)
+	fs, err := socifs.NewFilesystem(ctx, *sociStoreRootPath, config.Config, fsOpts...)
 	if err != nil {
 		log.Fatalf("failed to prepare soci-store fs: %s", err)
 	}
 
-	layerManager, err := store.NewLayerManager(ctx, rootPath, hosts, mt, fs, config.Config)
+	layerManager, err := store.NewLayerManager(ctx, *sociStoreRootPath, hosts, mt, fs, config.Config)
 	if err != nil {
 		log.Fatalf("failed to prepare soci-store pool: %s", err)
 	}
-	server, err := store.Mount(ctx, StorePath, layerManager, config.Config.Debug)
+	server, err := store.Mount(ctx, StorePath(), layerManager, config.Config.Debug)
 	if err != nil {
-		log.Fatalf("failed to mount soci store fs at %q: %s", StorePath, err)
+		log.Fatalf("failed to mount soci store fs at %q: %s", StorePath(), err)
 	}
 	defer func() {
 		if err = server.Unmount(); err != nil {
@@ -218,10 +222,10 @@ func PutCredentials(ctx context.Context, image string, creds container.PullCrede
 // Stores the SOCI artifacts referenced in the provided GetArtifactsResponse on
 // the local filesystem in the place the soci-store expects to find them.
 func WriteArtifacts(ctx context.Context, bsc bspb.ByteStreamClient, resp *socipb.GetArtifactsResponse) error {
-	if err := disk.EnsureDirectoryExists(contentFullPath); err != nil {
+	if err := disk.EnsureDirectoryExists(filepath.Join(*sociStoreRootPath, blobsSubPath)); err != nil {
 		return err
 	}
-	if err := disk.EnsureDirectoryExists(indexPath); err != nil {
+	if err := disk.EnsureDirectoryExists(filepath.Join(*sociStoreRootPath, indexSubPath)); err != nil {
 		return err
 	}
 
@@ -250,10 +254,14 @@ func WriteArtifacts(ctx context.Context, bsc bspb.ByteStreamClient, resp *socipb
 	return nil
 }
 
+func StorePath() string {
+	return filepath.Join(*sociStoreRootPath, storeSubPath)
+}
+
 func getIndexPath(digest godigest.Digest) string {
-	return filepath.Join(indexPath, digest.Encoded())
+	return filepath.Join(*sociStoreRootPath, indexSubPath, digest.Encoded())
 }
 
 func getContentPath(digest *repb.Digest) string {
-	return filepath.Join(contentFullPath, digest.Hash)
+	return filepath.Join(*sociStoreRootPath, blobsSubPath, digest.Hash)
 }

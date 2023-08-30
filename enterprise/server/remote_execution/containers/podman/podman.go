@@ -130,7 +130,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
 		}
 
-		if err := disk.WaitUntilExists(context.Background(), soci_store.StorePath, disk.WaitOpts{}); err != nil {
+		if err := disk.WaitUntilExists(context.Background(), soci_store.StorePath(), disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
 		}
 
@@ -140,7 +140,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		env.GetHealthChecker().AddHealthCheck(
 			"soci_store", interfaces.CheckerFunc(
 				func(ctx context.Context) error {
-					if _, err := os.Stat(soci_store.StorePath); err == nil {
+					if _, err := os.Stat(soci_store.StorePath()); err == nil {
 						return nil
 					} else {
 						return fmt.Errorf("soci-store died (stat returned: %s)", err)
@@ -187,7 +187,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 	imageIsPublic := props.ContainerRegistryUsername == "" && props.ContainerRegistryPassword == ""
 	imageIsStreamable := p.imageStreamingEnabled && (imageIsPublic || *privateImageStreamingEnabled)
 	if imageIsStreamable {
-		if err := disk.WaitUntilExists(context.Background(), soci_store.StorePath, disk.WaitOpts{}); err != nil {
+		if err := disk.WaitUntilExists(context.Background(), soci_store.StorePath(), disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("soci-store not available: %s", err)
 		}
 	}
