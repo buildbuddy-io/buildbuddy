@@ -2103,6 +2103,10 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	if err != nil {
 		return nil, err
 	}
+	sizeBytes := r.GetDigest().GetSizeBytes()
+	if sizeBytes > 0 {
+		metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(sizeBytes))
+	}
 
 	if p.averageChunkSizeBytes > 0 {
 		if r.GetDigest().GetSizeBytes() < int64(p.averageChunkSizeBytes) {
@@ -2217,9 +2221,6 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
 		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md, len(keyBytes))
-		if md.GetStoredSizeBytes() > 0 {
-			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
-		}
 	}
 
 	return err
