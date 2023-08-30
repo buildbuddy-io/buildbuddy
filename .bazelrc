@@ -143,8 +143,8 @@ build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 build:auto-release -c opt
 
 # By default, build logs get sent to the production server
-build --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
-build --bes_backend=grpcs://buildbuddy.buildbuddy.io
+build --bes_results_url=https://app.buildbuddy.io/invocation/
+build --bes_backend=grpcs://remote.buildbuddy.io
 
 # Recommended if connecting to a remote (upload speed constrained) BuildBuddy instance
 build --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
