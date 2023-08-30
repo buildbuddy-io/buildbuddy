@@ -1607,6 +1607,126 @@ func TestMergeDiffSnapshot(t *testing.T) {
 	}
 }
 
+func TestBackgroundIO(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	// The first Exec() will just a background task that repeatedly does I/O
+	// operations and verifies their results. We'll try to pause the VM while
+	// it's mid read/write and try to trigger race conditions etc. with our
+	// snapshot handling.
+	const startBackgroundWorkerScript = `
+		function worker() (
+			set -e
+
+			cd /root
+
+			i=0
+			while true; do
+				mkdir "$i"
+
+				# Write a bunch of small files
+				VALUES=()
+				for j in {0..50}; do
+					VALUE="$RANDOM"
+					echo "$VALUE" > "$i/$j.txt"
+					VALUES+=("$VALUE")
+				done
+
+				# Flush in-memory disk cache then read values back from disk.
+				# Make sure we read back the same values.
+
+				echo 3 > /proc/sys/vm/drop_caches
+				for j in {0..50}; do
+					VALUE=$(cat "$i/$j.txt")
+					if [[ "$VALUE" != "${VALUES[$j]}" ]]; then
+						echo >&2 "$i/$j.txt contained unexpected value $VALUE"
+						exit 1
+					fi
+				done
+
+				# Flush everything to disk
+				sync
+
+				# Sleep a tiny bit
+				sleep 0.01
+
+				i=$(( i + 1 ))
+			done
+		)
+
+		# Run the worker in the background.
+		worker &>worker_errors.log &
+		echo $! > worker.pid
+	`
+	cmd := &repb.Command{Arguments: []string{"/bin/bash", "-c", startBackgroundWorkerScript}}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         ubuntuImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 1000,
+		},
+		JailerRoot: tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	err = c.PullImage(ctx, container.PullCredentials{})
+	require.NoError(t, err)
+
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start the background worker.
+	res := c.Exec(ctx, cmd, nil)
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+	// Repeatedly pause and resume the snapshot and check on the worker
+	// in between each pause and resume.
+	for i := 0; i < 10; i++ {
+		err = c.Unpause(ctx)
+		require.NoError(t, err)
+
+		cmd := &repb.Command{
+			Arguments: []string{"/bin/bash", "-c", `
+				# Let the worker run for a little.
+				sleep 0.2
+
+				# Output its state.
+				WORKER_PID=$(cat worker.pid)
+				echo "worker process state: " "$(cat "/proc/$WORKER_PID/stat" | awk '{print $3}')"
+				echo "worker errors:"
+				cat worker_errors.log
+			`},
+		}
+		res := c.Exec(ctx, cmd, nil)
+		require.NoError(t, res.Error)
+		assert.Equal(t, res.ExitCode, 0)
+		assert.Empty(t, string(res.Stderr))
+		expectedStdout := "worker process state: R\n" // "R" means "running"
+		expectedStdout += "worker errors:\n"
+		assert.Equal(t, expectedStdout, string(res.Stdout))
+
+		err = c.Pause(ctx)
+		require.NoError(t, err)
+
+		if t.Failed() {
+			break
+		}
+	}
+}
+
 func TestBazelBuild(t *testing.T) {
 	if !*testBazelBuild {
 		t.Skip()
