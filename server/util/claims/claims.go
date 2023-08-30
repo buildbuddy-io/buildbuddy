@@ -174,18 +174,23 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 func userClaims(u *tables.User, effectiveGroup string) *Claims {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
+	cacheEncryptionEnabled := false
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
 			GroupID: g.Group.GroupID,
 			Role:    role.Role(g.Role),
 		})
+		if g.Group.GroupID == effectiveGroup {
+			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
+		}
 	}
 	return &Claims{
-		UserID:           u.UserID,
-		GroupMemberships: groupMemberships,
-		AllowedGroups:    allowedGroups,
-		GroupID:          effectiveGroup,
+		UserID:                 u.UserID,
+		GroupMemberships:       groupMemberships,
+		AllowedGroups:          allowedGroups,
+		GroupID:                effectiveGroup,
+		CacheEncryptionEnabled: cacheEncryptionEnabled,
 	}
 }
 
