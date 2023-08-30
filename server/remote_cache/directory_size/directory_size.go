@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -14,7 +15,7 @@ import (
 )
 
 var (
-	directorySizesEnabled = flag.Bool("cache.directory_sizes_enabled", false, "If true, enable an RPC that computes the cumulative size of directories stored in the cache.")
+	directorySizesEnabled = flag.Bool("cache.directory_sizes_enabled", true, "If true, enable an RPC that computes the cumulative size of directories stored in the cache.")
 )
 
 // A helper object to tally up the size total size (including contents) of each
@@ -152,6 +153,11 @@ func (dsc *directorySizeCounter) GetOutput() []*capb.DigestWithTotalSize {
 func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.GetTreeDirectorySizesRequest) (*capb.GetTreeDirectorySizesResponse, error) {
 	if !*directorySizesEnabled {
 		return &capb.GetTreeDirectorySizesResponse{}, nil
+	}
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
+	if err != nil {
+		return nil, err
 	}
 
 	casClient := env.GetContentAddressableStorageClient()
