@@ -455,7 +455,10 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 			}
 
 			var dstN int
-			dstN, dstErr = d.dest.Read(d.doubleReadBuf)
+			dstN, dstErr = io.ReadFull(d.dest, d.doubleReadBuf)
+			if dstErr == io.ErrUnexpectedEOF {
+				dstErr = io.EOF
+			}
 			d.bytesReadDest += dstN
 			return nil
 		})
