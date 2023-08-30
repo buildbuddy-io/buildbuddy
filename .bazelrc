@@ -88,6 +88,10 @@ build:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
 build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
 build:untrusted-ci --disk_cache=
 build:untrusted-ci --flaky_test_attempts=2
+build:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
+build:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
+build:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
+build:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
 # Configuration used for all BuildBuddy workflows
 build:workflows --experimental_remote_cache_compression
