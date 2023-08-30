@@ -282,7 +282,7 @@ func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uint
 	if err != nil {
 		return 0, 0, err
 	}
-	return chunkStartAddress, c.calculateChunkSize(chunkStartOffset), nil
+	return chunkStartAddress, c.CalculateChunkSize(chunkStartOffset), nil
 }
 
 // GetPageAddress returns the memory address for the given byte offset into
@@ -475,7 +475,7 @@ func (s *COWStore) WriteFile(path string) error {
 	defer s.copyBufPool.Put(b)
 
 	for off, c := range s.chunks {
-		size := s.calculateChunkSize(off)
+		size := s.CalculateChunkSize(off)
 		copyBuf := (*b)[:size]
 		// TODO: skip sparse regions in the chunk?
 		if _, err := readFullAt(c, copyBuf, 0); err != nil {
@@ -488,7 +488,7 @@ func (s *COWStore) WriteFile(path string) error {
 	return nil
 }
 
-func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
+func (s *COWStore) CalculateChunkSize(startOffset int64) int64 {
 	size := s.chunkSizeBytes
 	if remainder := s.totalSizeBytes - startOffset; size > remainder {
 		return remainder
@@ -502,7 +502,7 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 		return nil
 	}
 
-	size := s.calculateChunkSize(chunkStartOffset)
+	size := s.CalculateChunkSize(chunkStartOffset)
 	dst, err := s.initDirtyChunk(chunkStartOffset, size)
 	if err != nil {
 		return status.WrapError(err, "initialize dirty chunk")
