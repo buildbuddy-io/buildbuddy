@@ -1377,7 +1377,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		return nil, err
 	}
 
-	groupID, partID := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
+	groupID, partID := p.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
 
 	encryptionEnabled, err := p.encryptionEnabled(ctx)
 	if err != nil {
@@ -1395,14 +1395,14 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:          r.GetCacheType(),
-			RemoteInstanceName: r.GetInstanceName(),
+			CacheType:          rn.GetCacheType(),
+			RemoteInstanceName: rn.GetInstanceName(),
 			PartitionId:        partID,
 			GroupId:            groupID,
 		},
-		Digest:         r.GetDigest(),
-		DigestFunction: r.GetDigestFunction(),
-		Compressor:     r.GetCompressor(),
+		Digest:         rn.GetDigest(),
+		DigestFunction: rn.GetDigestFunction(),
+		Compressor:     rn.GetCompressor(),
 		Encryption:     encryption,
 	}, nil
 }

@@ -339,21 +339,21 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (
 		return nil, err
 	}
 
-	groupID, partID, err := rc.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
+	groupID, partID, err := rc.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
 
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:          r.GetCacheType(),
-			RemoteInstanceName: r.GetInstanceName(),
+			CacheType:          rn.GetCacheType(),
+			RemoteInstanceName: rn.GetInstanceName(),
 			PartitionId:        partID,
 			GroupId:            groupID,
 		},
-		Digest:         r.GetDigest(),
-		DigestFunction: r.GetDigestFunction(),
-		Compressor:     r.GetCompressor(),
+		Digest:         rn.GetDigest(),
+		DigestFunction: rn.GetDigestFunction(),
+		Compressor:     rn.GetCompressor(),
 		Encryption:     nil,
 	}, nil
 }
