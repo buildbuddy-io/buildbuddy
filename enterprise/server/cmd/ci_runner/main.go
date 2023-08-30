@@ -49,7 +49,6 @@ import (
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -1357,10 +1356,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	if err := ws.clone(ctx, *targetRepoURL); err != nil {
-		return err
-	}
-	if err := ws.config(ctx); err != nil {
+	if err := ws.init(ctx, *targetRepoURL); err != nil {
 		return err
 	}
 	if err := ws.sync(ctx); err != nil {
@@ -1499,7 +1495,17 @@ func (ws *workspace) sync(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) config(ctx context.Context) error {
+func (ws *workspace) init(ctx context.Context, remoteURL string) error {
+	// Init an empty repo.
+	if _, err := git(ctx, ws.log, "init", "--quiet"); err != nil {
+		return err
+	}
+
+	// Configure the remote "origin".
+	if _, err := git(ctx, ws.log, "remote", "add", "origin", remoteURL); err != nil {
+		return err
+	}
+
 	// Set up repo-local config.
 	cfg := [][]string{
 		{"user.email", "ci-runner@buildbuddy.io"},
@@ -1514,13 +1520,22 @@ func (ws *workspace) config(ctx context.Context) error {
 		}
 	}
 
-	// Set up global config (~/.gitconfig) but only on Linux for now since Linux
-	// workflows are isolated.
+	// Configure the repo-local credential helper so that when fetching from the
+	// remote, we'll always use the latest GH app auth token without having to
+	// keep updating the remote in the git config.
+	if err := configureCredentialHelper(ctx, false /*=global*/); err != nil {
+		return err
+	}
+
+	// Set up the credential helper globally too so that bazel repository
+	// fetches can use it - but only on Linux for now since Linux workflows are
+	// isolated.
+	//
 	// TODO(bduffany): find a solution that works for Mac workflows too.
 	if runtime.GOOS == "linux" {
 		// Credential helper is used for external git deps fetched by bazel so
 		// it needs to be in the global config.
-		if err := configureGlobalCredentialHelper(ctx); err != nil {
+		if err := configureCredentialHelper(ctx, true /*=global*/); err != nil {
 			return err
 		}
 	}
@@ -1528,36 +1543,22 @@ func (ws *workspace) config(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) clone(ctx context.Context, remoteURL string) error {
-	authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
-	if err != nil {
-		return err
-	}
-	writeCommandSummary(ws.log, "Cloning target repo...")
-	// Don't show command since the URL may contain the repo access token.
-	args := []string{"clone", "--config=credential.helper=", "--filter=blob:none", "--no-checkout", authURL, "."}
-	if err := runCommand(ctx, "git", args, map[string]string{}, "" /*=dir*/, ws.log); err != nil {
-		return status.UnknownError("Command `git clone --filter=blob:none --no-checkout <url>` failed.")
-	}
-	return nil
-}
-
 func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []string) error {
 	if len(branches) == 0 {
 		return nil
 	}
-	authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
-	if err != nil {
-		return err
-	}
+	// We only need to configure the "fork" remote (if we haven't already),
+	// since "origin" should have already been configured in init().
 	remoteName := gitRemoteName(remoteURL)
-	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
-	// Don't show `git remote add` command or the error message since the URL may
-	// contain the repo access token.
-	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
-		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
+	if remoteName != defaultGitRemoteName {
+		writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
+		// Quietly remove any existing remote.
+		git(ctx, io.Discard, "remote", "remove", remoteName, remoteURL)
+		if _, err := git(ctx, ws.log, "remote", "add", remoteName, remoteURL); err != nil {
+			return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
+		}
 	}
-	fetchArgs := append([]string{"-c", "credential.helper=", "fetch", "--filter=blob:none", "--force", remoteName}, branches...)
+	fetchArgs := append([]string{"fetch", "--filter=blob:none", "--force", remoteName}, branches...)
 	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
@@ -1569,10 +1570,6 @@ type gitError struct {
 	Output string
 }
 
-func isRemoteAlreadyExists(err error) bool {
-	gitErr, ok := err.(*gitError)
-	return ok && strings.Contains(gitErr.Output, "already exists")
-}
 func isBranchNotFound(err error) bool {
 	gitErr, ok := err.(*gitError)
 	return ok && strings.Contains(gitErr.Output, "not found")
@@ -1813,7 +1810,7 @@ func getStructuredCommandLine() *clpb.CommandLine {
 	}
 }
 
-func configureGlobalCredentialHelper(ctx context.Context) error {
+func configureCredentialHelper(ctx context.Context, global bool) error {
 	if !strings.HasPrefix(*targetRepoURL, "https://") {
 		return nil
 	}
@@ -1827,8 +1824,12 @@ func configureGlobalCredentialHelper(ctx context.Context) error {
 	}
 	repoHostURL := fmt.Sprintf("https://%s", u.Host)
 	configKey := fmt.Sprintf("credential.%s.helper", repoHostURL)
+	configFileLocationFlag := "--local"
+	if global {
+		configFileLocationFlag = "--global"
+	}
 	configValue := fmt.Sprintf("!%s --credential_helper", os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"))
-	if _, err := git(ctx, io.Discard, "config", "--global", configKey, configValue); err != nil {
+	if _, err := git(ctx, io.Discard, "config", configFileLocationFlag, configKey, configValue); err != nil {
 		return err
 	}
 	return nil
