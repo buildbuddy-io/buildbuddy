@@ -442,6 +442,7 @@ type doubleReader struct {
 	doubleReadBuf []byte
 	bytesReadSrc  int
 	bytesReadDest int
+	lastSrcErr    error
 }
 
 func (d *doubleReader) Read(p []byte) (n int, err error) {
@@ -466,6 +467,7 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 
 	srcN, srcErr := d.src.Read(p)
 	d.bytesReadSrc += srcN
+	d.lastSrcErr = srcErr
 
 	eg.Wait()
 	// Don't log on EOF errors when reading chunks, because the readers from different caches
@@ -481,7 +483,7 @@ func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
 		// Don't log on byte differences for AC records, because there could be minor differences in metadata like timestamps
-		if d.r.GetCacheType() == rspb.CacheType_CAS && d.bytesReadDest != d.bytesReadSrc {
+		if d.r.GetCacheType() == rspb.CacheType_CAS && d.lastSrcErr == io.EOF && d.bytesReadDest != d.bytesReadSrc {
 			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
 		}
 
