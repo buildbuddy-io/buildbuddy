@@ -1904,7 +1904,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			// the chunkData. This is because the chunkData can be compressed or
 			// encrypted, so the digest computed from it will be different from
 			// the original digest.
-			return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, cdcw.firstChunk)
+			return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, cdcw.firstChunk, true /*=isSingleChunk*/)
 		}
 		now := p.clock.Now().UnixMicro()
 
@@ -1918,7 +1918,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			LastAccessUsec:  now,
 			LastModifyUsec:  now,
 		}
-		return p.writeMetadata(ctx, db, key, md)
+		return p.writeMetadata(ctx, db, key, md, bytesWritten)
 	}
 	return cwc, nil
 }
@@ -1950,11 +1950,11 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 	return cdcw.writeChunkWhenMultiple(data)
 }
 
-func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.PebbleKey, chunkData []byte) error {
+func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.PebbleKey, chunkData []byte, isSingleChunk bool) error {
 	ctx := cdcw.ctx
 	p := cdcw.pc
 	inlineWriter := p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
-	wcm, err := p.newWrappedWriter(ctx, inlineWriter, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed)
+	wcm, err := p.newWrappedWriter(ctx, inlineWriter, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed, isSingleChunk)
 	if err != nil {
 		return err
 	}
@@ -2006,7 +2006,7 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	cdcw.writtenChunks = append(cdcw.writtenChunks, rn)
 
 	cdcw.eg.Go(func() error {
-		return cdcw.writeRawChunk(fileRecord, key, chunkData)
+		return cdcw.writeRawChunk(fileRecord, key, chunkData, false /*=isSingleChunk*/)
 	})
 	return nil
 }
@@ -2110,7 +2110,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 			// have one chunk. We write them directly inline to avoid unnecessary
 			// processing.
 			wcm := p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
-			return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress)
+			return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress, true /*=shouldAccountForMetricFileSize*/)
 		}
 		// we enabled cdc chunking
 		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
@@ -2128,7 +2128,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		wcm = fw
 	}
 
-	return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress)
+	return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress, true /*=shouldAccountForMetricFileSize*/)
 }
 
 // newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write,
@@ -2137,7 +2137,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 // (2) encrypt the data if encryption is enabled
 // (3) write the data using input wcm's Write method.
 // On Commit, it will write the metadata for fileRecord.
-func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.MetadataWriteCloser, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.MetadataWriteCloser, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, shouldAccountForMetricFileSize bool) (interfaces.CommittedWriteCloser, error) {
 	// Grab another lease and pass the Close function to the writer
 	// so it will be closed when the writer is.
 	db, err := p.leaser.DB()
@@ -2158,7 +2158,11 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.Metad
 			LastAccessUsec:     now,
 			LastModifyUsec:     now,
 		}
-		return p.writeMetadata(ctx, db, key, md)
+		metricFileSize := int64(0)
+		if shouldAccountForMetricFileSize {
+			metricFileSize = bytesWritten
+		}
+		return p.writeMetadata(ctx, db, key, md, metricFileSize)
 	}
 
 	wc := interfaces.CommittedWriteCloser(cwc)
@@ -2183,7 +2187,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.Metad
 	return wc, nil
 }
 
-func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *rfpb.FileMetadata) error {
+func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *rfpb.FileMetadata, metricFileSize int64) error {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
@@ -2217,8 +2221,8 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
 		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md, len(keyBytes))
-		if md.GetStoredSizeBytes() > 0 {
-			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
+		if metricFileSize > 0 {
+			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(metricFileSize))
 		}
 	}
 
