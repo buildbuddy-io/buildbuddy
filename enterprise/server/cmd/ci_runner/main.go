@@ -1554,8 +1554,17 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
 	// Don't show `git remote add` command or the error message since the URL may
 	// contain the repo access token.
-	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
-		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
+	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil {
+		// Rename the existing remote. Removing then re-adding would be simpler,
+		// but unfortunately that drops the "partialclonefilter" options on the
+		// existing remote.
+		if isRemoteAlreadyExists(err) {
+			if _, err := git(ctx, io.Discard, "remote", "set-url", remoteName, authURL); err != nil {
+				return err
+			}
+		} else {
+			return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
+		}
 	}
 	fetchArgs := append([]string{"-c", "credential.helper=", "fetch", "--filter=blob:none", "--force", remoteName}, branches...)
 	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
