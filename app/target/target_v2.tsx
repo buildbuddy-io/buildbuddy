@@ -294,7 +294,6 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             .filter((value, index) => `#${index + 1}` == (this.props.tab || "#1"))
             .map((buildEvent) => (
               <span>
-                {/* TODO(bduffany): remove the need to wrap events in InvocationEvent. */}
                 <TargetTestDocumentCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
