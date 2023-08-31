@@ -113,14 +113,14 @@ func (t CookieRequestTracker) TrackRequest(w http.ResponseWriter, r *http.Reques
 // StopTrackingRequest stops tracking the SAML request given by index, which is a string
 // previously returned from TrackRequest
 func (t CookieRequestTracker) StopTrackingRequest(w http.ResponseWriter, r *http.Request, index string) error {
-	cookie, err := r.Cookie(t.NamePrefix + index)
+	c, err := r.Cookie(t.NamePrefix + index)
 	if err != nil {
 		return err
 	}
-	cookie.Value = ""
-	cookie.Domain = t.ServiceProvider.AcsURL.Hostname()
-	cookie.Expires = time.Unix(1, 0) // past time as close to epoch as possible, but not zero time.Time{}
-	http.SetCookie(w, cookie)
+	c.Value = ""
+	c.Domain = cookie.Domain()
+	c.Expires = time.Unix(1, 0) // past time as close to epoch as possible, but not zero time.Time{}
+	http.SetCookie(w, c)
 	return nil
 }
 
