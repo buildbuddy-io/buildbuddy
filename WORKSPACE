@@ -19,10 +19,12 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "278b7ff5a826f3dc10f04feaf0b70d48b68748ccd512d7f98bf442077f043fe3",
+    sha256 = "884fa7b014167fed6bf7cb8520652e364a904e57d3ce172419af30db5ce6217c",
+    strip_prefix = "rules_go-5206498b4f67ff3e6a9222a923cf67ff5191754e",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.41.0/rules_go-v0.41.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.41.0/rules_go-v0.41.0.zip",
+        # TODO(sluongng): this track the unreleased version v0.42.0 of rules_go to help us upgrade to Go 1.21
+        # We should replace this once rules_go v0.42.0 is released.
+        "https://github.com/bazelbuild/rules_go/archive/5206498b4f67ff3e6a9222a923cf67ff5191754e.zip",
     ],
 )
 
