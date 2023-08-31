@@ -1,12 +1,12 @@
 import React from "react";
 
-import { invocation } from "../../proto/invocation_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import rpcService from "../service/rpc_service";
 import TargetTestCasesCardComponent from "./target_test_cases_card";
 import TargetLogCardComponent from "./target_log_card";
 
 interface Props {
-  testResult: invocation.InvocationEvent;
+  buildEvent?: build_event_stream.BuildEvent;
   invocationId: string;
   dark: boolean;
 }
@@ -28,15 +28,14 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.testResult !== prevProps.testResult) {
+    if (this.props.buildEvent !== prevProps.buildEvent) {
       this.fetchTestXML();
     }
   }
 
   fetchTestXML() {
-    let testXMLUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
-      (log: any) => log.name == "test.xml"
-    )?.uri;
+    let testXMLUrl = this.props.buildEvent?.testResult?.testActionOutput.find((log: any) => log.name == "test.xml")
+      ?.uri;
 
     if (!testXMLUrl) {
       this.setState({ testDocument: undefined });
@@ -101,35 +100,35 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
                       <div className="stat-label">skipped</div>
                     </div>
                   )}
-                  {this.props.testResult.buildEvent?.id?.testResult && (
+                  {this.props.buildEvent?.id?.testResult && (
                     <div className="card">
-                      <div className="stat">Run {this.props.testResult.buildEvent.id.testResult.run}</div>
+                      <div className="stat">Run {this.props.buildEvent.id.testResult.run}</div>
                       <div className="stat-label">
-                        (Attempt {this.props.testResult.buildEvent.id.testResult.attempt}, Shard{" "}
-                        {this.props.testResult.buildEvent.id.testResult.shard})
+                        (Attempt {this.props.buildEvent.id.testResult.attempt}, Shard{" "}
+                        {this.props.buildEvent.id.testResult.shard})
                       </div>
                     </div>
                   )}
                 </div>
                 <TargetTestCasesCardComponent
-                  testResult={this.props.testResult}
+                  buildEvent={this.props.buildEvent}
                   testSuite={testSuite}
                   tagName="error"
                   dark={this.props.dark}
                 />
                 <TargetTestCasesCardComponent
-                  testResult={this.props.testResult}
+                  buildEvent={this.props.buildEvent}
                   testSuite={testSuite}
                   tagName="failure"
                   dark={this.props.dark}
                 />
                 <TargetTestCasesCardComponent
-                  testResult={this.props.testResult}
+                  buildEvent={this.props.buildEvent}
                   testSuite={testSuite}
                   dark={this.props.dark}
                 />
                 <TargetTestCasesCardComponent
-                  testResult={this.props.testResult}
+                  buildEvent={this.props.buildEvent}
                   testSuite={testSuite}
                   tagName="skipped"
                   dark={this.props.dark}

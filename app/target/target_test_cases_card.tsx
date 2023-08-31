@@ -1,12 +1,12 @@
 import React from "react";
 import format from "../format/format";
 import { AlertCircle, XCircle, PlayCircle, CheckCircle } from "lucide-react";
-import { invocation } from "../../proto/invocation_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { durationToMillisWithFallback } from "../util/proto";
 import TerminalComponent from "../terminal/terminal";
 
 interface Props {
-  testResult: invocation.InvocationEvent;
+  buildEvent?: build_event_stream.BuildEvent;
   testSuite: Element;
   tagName?: string;
   dark?: boolean;
@@ -68,8 +68,8 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
               {testCases.length} {testCases.length == 1 ? "test" : "tests"} {this.getStatusTitle()} in{" "}
               {format.durationMillis(
                 durationToMillisWithFallback(
-                  this.props.testResult.buildEvent?.testResult?.testAttemptDuration,
-                  this.props.testResult.buildEvent?.testResult?.testAttemptDurationMillis || 0
+                  this.props.buildEvent?.testResult?.testAttemptDuration,
+                  this.props.buildEvent?.testResult?.testAttemptDurationMillis || 0
                 )
               )}
             </div>
