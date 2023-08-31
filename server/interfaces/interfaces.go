@@ -377,6 +377,10 @@ type AuthDB interface {
 	// be used when a new group is being created.
 	CreateAPIKeyWithoutAuthCheck(tx *gorm.DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 
+	// CreateImpersonationAPIKey creates a short-lived API key for the target
+	// group ID.
+	CreateImpersonationAPIKey(ctx context.Context, groupID string) (*tables.APIKey, error)
+
 	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
 	GetUserOwnedKeysEnabled() bool
 

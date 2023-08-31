@@ -163,6 +163,9 @@ var (
 		"RemoveNamespace",
 		"ModifyNamespace",
 		"ApplyBucket",
+
+		// Impersonation
+		"CreateImpersonationApiKey",
 	}
 )
 

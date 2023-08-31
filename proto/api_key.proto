@@ -133,3 +133,14 @@ message DeleteApiKeyRequest {
 message DeleteApiKeyResponse {
   context.ResponseContext response_context = 1;
 }
+
+message CreateImpersonationApiKeyRequest {
+  context.RequestContext request_context = 1;
+}
+
+message CreateImpersonationApiKeyResponse {
+  context.ResponseContext response_context = 1;
+
+  // The API key that was created.
+  ApiKey api_key = 2;
+}
