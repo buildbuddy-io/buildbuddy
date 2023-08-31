@@ -556,10 +556,6 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	if c.imageIsStreamable {
-		return true, nil
-	}
-
 	// Try to avoid the `pull` command which results in a network roundtrip.
 	listResult := runPodman(ctx, "image", &container.Stdio{}, "inspect", "--format={{.ID}}", c.image)
 	if listResult.ExitCode == podmanInternalExitCode {
