@@ -51,8 +51,6 @@ install_static_dependencies()
 # gazelle:repository_macro deps.bzl%install_go_mod_dependencies
 install_go_mod_dependencies()
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
 HERMETIC_CC_TOOLCHAIN_VERSION = "v2.0.0"
 
 http_archive(
