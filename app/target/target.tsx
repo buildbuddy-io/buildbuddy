@@ -289,7 +289,7 @@ export default class TargetComponent extends React.Component<Props> {
                 <TargetTestLogCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
-                  testResult={result}
+                  buildEvent={result.buildEvent ?? undefined}
                 />
                 <TargetTestCoverageCardComponent
                   invocationId={this.props.model.getInvocationId()}
