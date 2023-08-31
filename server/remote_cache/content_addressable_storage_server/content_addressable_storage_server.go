@@ -537,8 +537,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
-	cacheCtx, cacheCancel := context.WithCancel(ctx)
-	defer cacheCancel()
+	cacheCtx, cacheCancel := context.WithCancelCause(ctx)
+	defer cacheCancel(context.Canceled)
 	eg, gCtx := errgroup.WithContext(cacheCtx)
 	cacheTreeNode := func(d *repb.Digest, descendents []*capb.DirectoryWithDigest) {
 		treeCache := &capb.TreeCache{
@@ -560,7 +560,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if err := s.cache.Set(gCtx, treeCacheRN, buf); err == nil {
 				metrics.TreeCacheSetCount.Inc()
 			} else {
-				log.Infof("Could not set treeCache blob: %s", err)
+				if context.Cause(gCtx) != nil && status.IsDeadlineExceededError(context.Cause(gCtx)) {
+					log.Infof("Could not set treeCache blob: %s", context.Cause(gCtx))
+				} else {
+					log.Infof("Could not set treeCache blob: %s", err)
+				}
 			}
 			return nil
 		})
@@ -651,7 +655,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	// Finalize tree cache sets; but don't wait forever.
 	go func() {
 		<-time.After(*maxTreeCacheSetDuration)
-		cacheCancel()
+		cacheCancel(status.DeadlineExceededErrorf("reached %s time limit for caching tree information, moving on", *maxTreeCacheSetDuration))
 	}()
 	if err := eg.Wait(); err != nil {
 		log.Warningf("Error populating tree cache: %s", err)
