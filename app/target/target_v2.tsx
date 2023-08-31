@@ -303,7 +303,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                 <TargetTestLogCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
-                  testResult={new invocation.InvocationEvent({ buildEvent })}
+                  buildEvent={buildEvent}
                 />
                 <TargetTestCoverageCardComponent
                   invocationId={this.props.invocationId}
