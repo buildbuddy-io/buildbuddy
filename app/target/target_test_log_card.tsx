@@ -1,7 +1,6 @@
 import React from "react";
 import format from "../format/format";
 import SetupCodeComponent from "../docs/setup_code";
-import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TerminalComponent } from "../terminal/terminal";
 import rpcService from "../service/rpc_service";
@@ -38,9 +37,8 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
   }
 
   fetchTestLog() {
-    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
-      (log: any) => log.name == "test.log"
-    )?.uri;
+    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find((log: any) => log.name == "test.log")
+      ?.uri;
 
     if (!testLogUrl) {
       return;
