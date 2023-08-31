@@ -1841,8 +1841,10 @@ type cdcWriter struct {
 
 	chunker       *chunker.Chunker
 	writtenChunks []*rspb.ResourceName
-	numChunks     int
-	firstChunk    []byte
+
+	numChunks      int
+	firstChunk     []byte
+	isCompleteFile bool
 
 	eg *errgroup.Group
 }
@@ -1899,6 +1901,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			return err
 		}
 		if cdcw.numChunks == 1 {
+			cdcw.isCompleteFile = true
 			// When there is only one single chunk, we want to store the original
 			// file record with the original key instead of computed digest from
 			// the chunkData. This is because the chunkData can be compressed or
@@ -1918,7 +1921,11 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			LastAccessUsec:  now,
 			LastModifyUsec:  now,
 		}
-		return p.writeMetadata(ctx, db, key, md)
+		err := p.writeMetadata(ctx, db, key, md)
+		if err == nil {
+			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
+		}
+		return err
 	}
 	return cwc, nil
 }
@@ -1954,7 +1961,7 @@ func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.
 	ctx := cdcw.ctx
 	p := cdcw.pc
 	inlineWriter := p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
-	wcm, err := p.newWrappedWriter(ctx, inlineWriter, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed)
+	wcm, err := p.newWrappedWriter(ctx, inlineWriter, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed, cdcw.isCompleteFile)
 	if err != nil {
 		return err
 	}
@@ -2110,7 +2117,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 			// have one chunk. We write them directly inline to avoid unnecessary
 			// processing.
 			wcm := p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
-			return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress)
+			return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress, true /*=isCompleteFile*/)
 		}
 		// we enabled cdc chunking
 		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
@@ -2128,7 +2135,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		wcm = fw
 	}
 
-	return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress)
+	return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress, true /*=isCompleteFile*/)
 }
 
 // newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write,
@@ -2137,7 +2144,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 // (2) encrypt the data if encryption is enabled
 // (3) write the data using input wcm's Write method.
 // On Commit, it will write the metadata for fileRecord.
-func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.MetadataWriteCloser, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.MetadataWriteCloser, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, isCompleteFile bool) (interfaces.CommittedWriteCloser, error) {
 	// Grab another lease and pass the Close function to the writer
 	// so it will be closed when the writer is.
 	db, err := p.leaser.DB()
@@ -2158,7 +2165,11 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.Metad
 			LastAccessUsec:     now,
 			LastModifyUsec:     now,
 		}
-		return p.writeMetadata(ctx, db, key, md)
+		err := p.writeMetadata(ctx, db, key, md)
+		if err == nil && isCompleteFile {
+			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
+		}
+		return err
 	}
 
 	wc := interfaces.CommittedWriteCloser(cwc)
@@ -2217,9 +2228,6 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
 		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md, len(keyBytes))
-		if md.GetStoredSizeBytes() > 0 {
-			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
-		}
 	}
 
 	return err
