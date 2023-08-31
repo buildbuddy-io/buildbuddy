@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -52,6 +53,7 @@ var (
 
 type SAMLAuthenticator struct {
 	env           environment.Env
+	mu            sync.Mutex
 	samlProviders map[string]*samlsp.Middleware
 }
 
@@ -179,7 +181,9 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if slug == "" {
 		return nil, status.FailedPreconditionError("Organization slug not set")
 	}
+	a.mu.Lock()
 	provider, ok := a.samlProviders[slug]
+	a.mu.Unlock()
 	if ok {
 		return provider, nil
 	}
@@ -251,7 +255,9 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 		}
 		samlSP.Session = cookieProvider
 	}
+	a.mu.Lock()
 	a.samlProviders[slug] = samlSP
+	a.mu.Unlock()
 	return samlSP, nil
 }
 
