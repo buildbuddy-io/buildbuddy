@@ -147,8 +147,8 @@ register_toolchains(
     "@zig_sdk//toolchain:windows_arm64",
 )
 `,
-		"BUILD":     `sh_binary(name = "exit", srcs = ["exit.sh"])`,
-		"exit.sh":   `exit "$1"`,
+		"BUILD":   `sh_binary(name = "exit", srcs = ["exit.sh"])`,
+		"exit.sh": `exit "$1"`,
 		"buildbuddy.yaml": `
 actions:
   - name: "Exit 36"
