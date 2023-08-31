@@ -10,6 +10,8 @@ go_library(
         "executor.go",
         "executor_linux.go",
         "executor_notlinux.go",
+        "executor_unix.go",
+        "executor_windows.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor",
     visibility = ["//visibility:public"],

@@ -17,7 +17,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
@@ -854,7 +853,13 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// completed so that the outer workflow invocation gets disconnected
 		// rather than finishing with an error.
 		if *workflowID != "" && exitCode == bazelLocalEnvironmentalErrorExitCode {
-			syscall.Kill(os.Getpid(), syscall.SIGKILL)
+			p, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				return err
+			}
+			if err := p.Kill(); err != nil {
+				return err
+			}
 		}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
