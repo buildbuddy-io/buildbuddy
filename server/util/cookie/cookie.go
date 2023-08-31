@@ -26,7 +26,8 @@ var (
 	domainWideCookies = flag.Bool("auth.domain_wide_cookies", false, "If true, cookies will have domain set so that they are accessible on domain and all subdomains.")
 )
 
-func cookieDomain() string {
+// Domain returns the default domain to use for cookies.
+func Domain() string {
 	domain := ""
 	if *domainWideCookies {
 		domain = build_buddy_url.Domain()
@@ -48,7 +49,7 @@ func cookie(name, value, domain string, expiry time.Time, httpOnly bool) *http.C
 }
 
 func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time, httpOnly bool) {
-	cd := cookieDomain()
+	cd := Domain()
 	// If we're setting the domain on the cookie, clear out any existing cookie
 	// that didn't have the domain set.
 	if value != "" && cd != "" {
@@ -62,7 +63,7 @@ func clearCookie(w http.ResponseWriter, name, domain string) {
 }
 
 func ClearCookie(w http.ResponseWriter, name string) {
-	cd := cookieDomain()
+	cd := Domain()
 	// If we're setting the domain on cookies, make sure we also clear out
 	// any cookies that didn't have the domain set.
 	if cd != "" {
