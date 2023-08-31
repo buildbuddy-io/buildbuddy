@@ -32,7 +32,6 @@ ts_library(
     srcs = ["action_card.tsx"],
     deps = [
         "//app/docs:setup_code",
-        "//app/format",
         "//app/service:rpc_service",
         "//app/terminal",
         "//proto:build_event_stream_ts_proto",
