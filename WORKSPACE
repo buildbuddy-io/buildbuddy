@@ -49,8 +49,6 @@ load(":deps.bzl", "install_buildbuddy_dependencies")
 # gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 install_buildbuddy_dependencies()
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
 HERMETIC_CC_TOOLCHAIN_VERSION = "v2.0.0"
 
 http_archive(
