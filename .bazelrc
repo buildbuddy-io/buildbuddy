@@ -11,20 +11,20 @@ build:local --remote_cache=grpc://localhost:1985
 build:local --remote_upload_local_results
 
 # Build with --config=dev to send build logs to the dev server
-build:dev --bes_results_url=https://app.buildbuddy.dev/invocation/
-build:dev --bes_backend=grpcs://remote.buildbuddy.dev
+build:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
+build:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 
 # Build with --config=cache-dev to send build logs to the dev server with cache
-build:cache-dev --bes_results_url=https://app.buildbuddy.dev/invocation/
-build:cache-dev --bes_backend=grpcs://remote.buildbuddy.dev
-build:cache-dev --remote_cache=grpcs://remote.buildbuddy.dev
+build:cache-dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
+build:cache-dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
+build:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
 build:cache-dev --remote_upload_local_results
 build:cache-dev --experimental_remote_cache_compression
 
 # Build with --config=cache to send build logs to the production server with cache
-build:cache --bes_results_url=https://app.buildbuddy.io/invocation/
-build:cache --bes_backend=grpcs://remote.buildbuddy.io
-build:cache --remote_cache=grpcs://remote.buildbuddy.io
+build:cache --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
+build:cache --bes_backend=grpcs://buildbuddy.buildbuddy.io
+build:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 build:cache --remote_upload_local_results
 build:cache --experimental_remote_cache_compression
 
@@ -44,12 +44,12 @@ build:remote-shared --extra_toolchains=//:sh_toolchain
 # Build with --config=remote to use BuildBuddy RBE.
 build:remote --config=remote-shared
 build:remote --config=cache
-build:remote --remote_executor=grpcs://remote.buildbuddy.io
+build:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
 
 # Build with --config=remote-dev to use BuildBuddy RBE.
 build:remote-dev --config=remote-shared
 build:remote-dev --config=cache-dev
-build:remote-dev --remote_executor=grpcs://remote.buildbuddy.dev
+build:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 
 # Build with --config=target-linux to
 #   - Tell Bazel to build binaries for linux
@@ -88,6 +88,10 @@ build:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
 build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
 build:untrusted-ci --disk_cache=
 build:untrusted-ci --flaky_test_attempts=2
+build:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
+build:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
+build:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
+build:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
 # Configuration used for all BuildBuddy workflows
 build:workflows --experimental_remote_cache_compression
