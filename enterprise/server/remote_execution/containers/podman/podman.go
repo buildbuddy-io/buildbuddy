@@ -971,7 +971,7 @@ func (c *podmanCommandContainer) killContainerIfRunning(ctx context.Context) err
 // In either case we need to remove the image before re-pulling the image in order to fix it.
 func (c *podmanCommandContainer) maybeCleanupCorruptedImages(ctx context.Context, result *interfaces.CommandResult) error {
 	stderr := string(result.Stderr)
-	if result.ExitCode == podmanInternalExitCode && storageErrorRegex.MatchString(string(stderr)) {
+	if result.ExitCode == podmanInternalExitCode && storageErrorRegex.MatchString(stderr) {
 		log.Debug("podman detected storage corruption, removing image")
 		result.Error = status.UnavailableError("a storage corruption occurred")
 		result.ExitCode = commandutil.NoExitCode
