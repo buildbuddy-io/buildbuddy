@@ -525,6 +525,9 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	if tu.TotalCachedActionExecUsec > 0 {
 		counts["total_cached_action_exec_usec"] = tu.TotalCachedActionExecUsec
 	}
+	if tu.CPUNanos > 0 {
+		counts["cpu_nanos"] = tu.CPUNanos
+	}
 	return counts, nil
 }
 
@@ -548,5 +551,6 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		MacExecutionDurationUsec:   hInt64["mac_execution_duration_usec"],
 		TotalUploadSizeBytes:       hInt64["total_upload_size_bytes"],
 		TotalCachedActionExecUsec:  hInt64["total_cached_action_exec_usec"],
+		CPUNanos:                   hInt64["cpu_nanos"],
 	}, nil
 }
