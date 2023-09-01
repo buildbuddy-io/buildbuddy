@@ -35,14 +35,6 @@ func (bb *BatchBuilder) Merge(bb2 *BatchBuilder) *BatchBuilder {
 	return bb
 }
 
-func (bb *BatchBuilder) SetSplitTag(splitTag string) *BatchBuilder {
-	if bb.cmd == nil {
-		bb.cmd = &rfpb.BatchCmdRequest{}
-	}
-	bb.cmd.SplitTag = splitTag
-	return bb
-}
-
 func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 	if bb.cmd == nil {
 		bb.cmd = &rfpb.BatchCmdRequest{}
@@ -81,14 +73,6 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 	case *rfpb.FileUpdateMetadataRequest:
 		req.Value = &rfpb.RequestUnion_FileUpdateMetadata{
 			FileUpdateMetadata: value,
-		}
-	case *rfpb.SplitLeaseRequest:
-		req.Value = &rfpb.RequestUnion_SplitLease{
-			SplitLease: value,
-		}
-	case *rfpb.SplitReleaseRequest:
-		req.Value = &rfpb.RequestUnion_SplitRelease{
-			SplitRelease: value,
 		}
 	case *rfpb.DeleteRangeRequest:
 		req.Value = &rfpb.RequestUnion_DeleteRange{
@@ -171,7 +155,7 @@ func NewBatchResponseFromProto(c *rfpb.BatchCmdResponse) *BatchResponse {
 
 func (br *BatchResponse) checkIndex(n int) {
 	if n >= len(br.cmd.GetUnion()) {
-		br.setErr(status.FailedPreconditionErrorf("batch did not contain element %d", n))
+		br.setErr(status.FailedPreconditionErrorf("batch %+v did not contain element %d", br.cmd, n))
 	}
 }
 

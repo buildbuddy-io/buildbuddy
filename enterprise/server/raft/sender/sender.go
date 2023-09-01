@@ -3,7 +3,6 @@ package sender
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -19,12 +18,6 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	gstatus "google.golang.org/grpc/status"
-)
-
-const (
-	// If we know there's a split going on, we use a fixed retry interval
-	// since we know the split is likely to finish within this bound.
-	splitRetryInterval = 250 * time.Millisecond
 )
 
 type ISender interface {
@@ -156,11 +149,6 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
 
-func isRangeSplittingError(err error) bool {
-	t := strings.HasPrefix(status.Message(err), constants.RangeSplittingMsg)
-	return t
-}
-
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) (int, error) {
 	for i, replica := range rd.GetReplicas() {
 		client, err := s.connectionForReplicaDescriptor(ctx, replica)
@@ -222,10 +210,6 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 		skipRangeCache = true
 		if !status.IsOutOfRangeError(err) {
 			return err
-		}
-		if isRangeSplittingError(err) {
-			log.Debugf("Run() delayed %q for split", key)
-			retrier.FixedDelayOnce(splitRetryInterval)
 		}
 		lastError = err
 	}
@@ -314,20 +298,6 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 				rsps = append(rsps, rangeRsp)
 			}
 			lastError = err
-		}
-
-		waitingForSplit := len(errs) > 0
-		for _, err := range errs {
-			if !isRangeSplittingError(err) {
-				waitingForSplit = false
-			}
-		}
-
-		// Only use the short split wait interval if it's the only error left.
-		// If there are other errors, use the normal backoff.
-		if waitingForSplit {
-			log.Debugf("RunMultiKey() delayed for split")
-			retrier.FixedDelayOnce(splitRetryInterval)
 		}
 
 		if len(remainingKeys) == 0 {

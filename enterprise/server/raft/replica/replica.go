@@ -101,9 +101,6 @@ type Replica struct {
 	fileDir   string
 	ClusterID uint64
 	NodeID    uint64
-	timer     *time.Timer
-	timerMu   *sync.Mutex
-	splitTag  string
 
 	store               IStore
 	partitions          []disk.Partition
@@ -674,26 +671,6 @@ func (sm *Replica) cas(wb pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse
 	}, status.FailedPreconditionError(constants.CASErrorMessage)
 }
 
-func (sm *Replica) IsSplitting() bool {
-	sm.timerMu.Lock()
-	defer sm.timerMu.Unlock()
-	return sm.timer != nil
-}
-
-func (sm *Replica) releaseAndClearTimer() {
-	sm.timerMu.Lock()
-	defer sm.timerMu.Unlock()
-	if sm.timer == nil {
-		log.Warningf("releaseAndClearTimer was called but no timer was active")
-		return
-	}
-
-	sm.leaser().ReleaseSplitLock()
-	sm.timer.Stop()
-	sm.timer = nil
-	sm.splitTag = ""
-}
-
 func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
 	if cas == nil {
 		return nil
@@ -706,67 +683,6 @@ func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
 	}
 
 	return wb.Commit(pebble.Sync)
-}
-
-func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResponse, error) {
-	sm.timerMu.Lock()
-	defer sm.timerMu.Unlock()
-
-	if sm.splitTag != "" && req.GetSplitTag() != sm.splitTag {
-		return nil, status.FailedPreconditionErrorf("Region already leased by split %q", sm.splitTag)
-	}
-	timeTilExpiry := time.Duration(req.GetDurationSeconds()) * time.Second
-	startNewTimer := func() {
-		sm.log.Debugf("Trying to acquire split lock %q...", req.GetSplitTag())
-		splitAcquireStart := time.Now()
-		sm.leaser().AcquireSplitLock()
-		sm.log.Debugf("Acquired split lock %q in %s", req.GetSplitTag(), time.Since(splitAcquireStart))
-		sm.splitTag = req.GetSplitTag()
-		sm.timer = time.AfterFunc(timeTilExpiry, func() {
-			log.Warningf("Split lease %q expired!", req.GetSplitTag())
-			sm.releaseAndClearTimer()
-			if err := sm.oneshotCAS(req.GetCasOnExpiry()); err != nil {
-				log.Errorf("Error reverting lease: %s", err)
-			}
-		})
-	}
-
-	if sm.timer == nil {
-		startNewTimer()
-	} else {
-		if !sm.timer.Stop() {
-			startNewTimer()
-		}
-		sm.timer.Reset(timeTilExpiry)
-	}
-	return &rfpb.SplitLeaseResponse{}, nil
-}
-
-func (sm *Replica) splitRelease(req *rfpb.SplitReleaseRequest) (*rfpb.SplitReleaseResponse, error) {
-	wb := sm.db().NewIndexedBatch()
-	defer wb.Close()
-
-	defer func() {
-		sm.releaseAndClearTimer()
-	}()
-
-	for _, union := range req.GetBatch().GetUnion() {
-		switch value := union.Value.(type) {
-		case *rfpb.RequestUnion_Cas:
-			if _, err := sm.cas(wb, value.Cas); err != nil {
-				return nil, err
-			}
-		default:
-			return nil, status.InvalidArgumentError("only CAS reqs are allowed in split release batch")
-		}
-	}
-
-	if wb.Count() > 0 {
-		if err := wb.Commit(pebble.Sync); err != nil {
-			return nil, err
-		}
-	}
-	return &rfpb.SplitReleaseResponse{}, nil
 }
 
 type splitPoint struct {
@@ -922,18 +838,6 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 	return nil
 }
 
-// splitAppliesToThisReplica returns true if this replica is one of the replicas
-// found in the provided range descriptor.
-func (sm *Replica) splitAppliesToThisReplica(rd *rfpb.RangeDescriptor) bool {
-	for _, replica := range rd.GetReplicas() {
-		if replica.GetClusterId() == sm.ClusterID &&
-			replica.GetNodeId() == sm.NodeID {
-			return true
-		}
-	}
-	return false
-}
-
 func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetLeft()) == 0 {
 		return nil, status.InvalidArgumentError("Scan requires a valid key.")
@@ -1023,18 +927,6 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion, rsp *r
 			FileUpdateMetadata: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_SplitLease:
-		r, err := sm.splitLease(value.SplitLease)
-		rsp.Value = &rfpb.ResponseUnion_SplitLease{
-			SplitLease: r,
-		}
-		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_SplitRelease:
-		r, err := sm.splitRelease(value.SplitRelease)
-		rsp.Value = &rfpb.ResponseUnion_SplitRelease{
-			SplitRelease: r,
-		}
-		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_FindSplitPoint:
 		r, err := sm.findSplitPoint(value.FindSplitPoint)
 		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
@@ -1091,7 +983,7 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 		return status.FailedPreconditionError("range descriptor is not set")
 	}
 	if sm.rangeDescriptor.GetGeneration() != header.GetGeneration() {
-		return status.OutOfRangeErrorf("%s: generation: %d requested: %d (split)", constants.RangeNotCurrentMsg, sm.rangeDescriptor.GetGeneration(), header.GetGeneration())
+		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, sm.rangeDescriptor.GetGeneration(), header.GetGeneration())
 	}
 	return nil
 }
@@ -1421,27 +1313,16 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			return nil, err
 		}
 
-		sm.timerMu.Lock()
-		denyRequestBecauseSplitting := false
-		if sm.splitTag != "" && sm.splitTag != batchCmdReq.GetSplitTag() {
-			denyRequestBecauseSplitting = true
-		}
-		sm.timerMu.Unlock()
-
 		wb := sm.db().NewIndexedBatch()
 		defer wb.Close()
 
 		var headerErr error
 		if batchCmdReq.GetHeader() != nil {
 			headerErr = sm.validateRange(batchCmdReq.GetHeader())
+			batchCmdRsp.Status = statusProto(headerErr)
 		}
 
-		if denyRequestBecauseSplitting {
-			splittingErr := status.OutOfRangeErrorf("%s: region is locked during split", constants.RangeSplittingMsg)
-			batchCmdRsp.Status = statusProto(splittingErr)
-		} else if headerErr != nil {
-			batchCmdRsp.Status = statusProto(headerErr)
-		} else {
+		if headerErr == nil {
 			for _, union := range batchCmdReq.GetUnion() {
 				rsp := &rfpb.ResponseUnion{}
 				sm.handlePropose(wb, union, rsp)
@@ -1900,7 +1781,6 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore, partitions []di
 		fileDir:             fileDir,
 		ClusterID:           clusterID,
 		NodeID:              nodeID,
-		timerMu:             &sync.Mutex{},
 		store:               store,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
 		partitions:          partitions,
