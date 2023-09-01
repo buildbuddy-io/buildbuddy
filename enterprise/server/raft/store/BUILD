@@ -7,7 +7,6 @@ go_library(
     srcs = ["store.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store",
     deps = [
-        "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
@@ -35,7 +34,6 @@ go_library(
         "//server/util/status",
         "//server/util/statusz",
         "@com_github_docker_go_units//:go-units",
-        "@com_github_google_uuid//:uuid",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//:dragonboat",

@@ -11,11 +11,9 @@ import (
 	"net"
 	"os"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -40,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/docker/go-units"
-	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -64,8 +61,6 @@ const (
 	// eligible to receive ranges moved from other nodes.
 	maximumDiskCapacity = .95
 
-	splitQueueSize = 100
-
 	// evictionCutoffThreshold is the point above which the cache will be
 	// considered to be full and eviction will kick in.
 	evictionCutoffThreshold = .90
@@ -84,8 +79,6 @@ const (
 )
 
 var (
-	enableSplittingReplicas            = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
-	replicaSplitSizeBytes              = flag.Int64("cache.raft.replica_split_size_bytes", 2e7, "Split replicas after they reach this size")
 	partitionUsageDeltaGossipThreshold = flag.Int("cache.raft.partition_usage_delta_bytes_threshold", 100e6, "Gossip partition usage information if it has changed by more than this amount since the last gossip.")
 	samplesPerEviction                 = flag.Int("cache.raft.samples_per_eviction", 20, "How many records to sample on each eviction")
 	samplePoolSize                     = flag.Int("cache.raft.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
@@ -574,8 +567,6 @@ type Store struct {
 	leaderUpdatedCB listener.LeaderCB
 
 	fileStorer filestore.Store
-	splitMu    sync.Mutex
-	splitQueue chan *rfpb.RangeDescriptor
 	eg         *errgroup.Group
 	quitChan   chan struct{}
 }
@@ -601,8 +592,6 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 		metaRangeData: "",
 		fileStorer:    filestore.New(),
-		splitMu:       sync.Mutex{},
-		splitQueue:    make(chan *rfpb.RangeDescriptor, splitQueueSize),
 		eg:            &errgroup.Group{},
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
@@ -648,9 +637,6 @@ func (s *Store) Statusz(ctx context.Context) string {
 		}
 
 		extra := ""
-		if r.IsSplitting() {
-			extra += "(Splitting) "
-		}
 		if rd := s.lookupRange(r.ClusterID); rd != nil {
 			if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok && rlIface.(*rangelease.Lease).Valid() {
 				extra += "Leaseholder"
@@ -675,53 +661,7 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 }
 
 func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
-	clusterID := usage.GetReplica().GetClusterId()
-	if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
-		s.RequestSplit(clusterID)
-	}
-}
-
-func (s *Store) RequestSplit(clusterID uint64) {
-	rd := s.lookupRange(clusterID)
-	if rd == nil {
-		return
-	}
-	header := &rfpb.Header{
-		RangeId:    rd.GetRangeId(),
-		Generation: rd.GetGeneration(),
-	}
-	if _, err := s.LeasedRange(header); err != nil {
-		return
-	}
-	select {
-	case s.splitQueue <- rd:
-		break
-	default:
-		s.log.Warningf("Split queue was full; dropping request to split cluster %d.", clusterID)
-	}
-}
-
-func (s *Store) handleSplits(quitChan <-chan struct{}) error {
-	for {
-		select {
-		case <-quitChan:
-			return nil
-		case rd := <-s.splitQueue:
-			req := &rfpb.SplitClusterRequest{
-				Header: &rfpb.Header{
-					RangeId:    rd.GetRangeId(),
-					Generation: rd.GetGeneration(),
-				},
-				Range: rd,
-			}
-			ctx, cancel := context.WithTimeout(context.TODO(), 60*time.Second)
-			_, err := s.SplitCluster(ctx, req)
-			cancel()
-			if err != nil {
-				s.log.Warningf("Error splitting cluster: %s", err)
-			}
-		}
-	}
+	// TODO(tylerw): do something with usage here. Split?
 }
 
 func (s *Store) Start() error {
@@ -742,10 +682,6 @@ func (s *Store) Start() error {
 	go func() {
 		s.grpcServer.Serve(lis)
 	}()
-
-	s.eg.Go(func() error {
-		return s.handleSplits(s.quitChan)
-	})
 
 	return nil
 }
@@ -1012,9 +948,6 @@ func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDe
 	if err != nil {
 		return nil, nil, err
 	}
-	if r.IsSplitting() {
-		return nil, nil, status.OutOfRangeErrorf("%s: id %d generation: %d", constants.RangeSplittingMsg, rd.GetRangeId(), rd.GetGeneration())
-	}
 	return r, rd, nil
 }
 
@@ -1110,41 +1043,6 @@ func (s *Store) isLeader(clusterID uint64) bool {
 	return false
 }
 
-func (s *Store) CloneCluster(ctx context.Context, req *rfpb.CloneClusterRequest) (*rfpb.CloneClusterResponse, error) {
-	src, err := s.GetReplica(req.GetSourceRangeId())
-	if err != nil {
-		return nil, err
-	}
-
-	dst, err := s.GetReplica(req.GetDestRangeId())
-	if err != nil {
-		return nil, err
-	}
-
-	if err := dst.ImportDB(src); err != nil {
-		return nil, err
-	}
-
-	// The snapshot request requires a deadline to be set on the context.
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	// Force compaction so that dragonboat doesn't try to use the existing raft
-	// logs for recovery. The logs are "wrong" since we performed the database
-	// clone outside of raft. With the raft snapshot in place, recovery attempts
-	// will ask the state machine (replica) to provide a snapshot which will
-	// reflect the cloned data.
-	opts := dragonboat.SnapshotOption{
-		OverrideCompactionOverhead: true,
-		CompactionOverhead:         0,
-	}
-	if _, err := s.nodeHost.SyncRequestSnapshot(ctx, dst.ClusterID, opts); err != nil {
-		return nil, err
-	}
-
-	return &rfpb.CloneClusterResponse{}, nil
-}
-
 func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error) {
 	if err := s.nodeHost.RequestLeaderTransfer(req.GetClusterId(), req.GetTargetNodeId()); err != nil {
 		return nil, err
@@ -1220,20 +1118,10 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	r, _, err := s.validatedRange(req.GetHeader())
-	if err != nil {
+	if _, _, err := s.validatedRange(req.GetHeader()); err != nil {
 		return nil, err
 	}
 	clusterID := req.GetHeader().GetReplica().GetClusterId()
-	// Normal Read or Write RPCs to the replica will acquire a lease on the
-	// DB which will fail during splitting. SyncPropose, however, proposes
-	// a cmd to the raft statemachine, which (with some exceptions), cannot
-	// apply during a split. To avoid SyncProposing anything into the raft
-	// log during a range split, we check here if the replica is splitting
-	// before doing the syncPropose.
-	if r.IsSplitting() {
-		return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeSplittingMsg, clusterID)
-	}
 
 	batch := req.GetBatch()
 	batch.Header = req.GetHeader()
@@ -1248,6 +1136,10 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	return &rfpb.SyncProposeResponse{
 		Batch: batchResponse,
 	}, nil
+}
+
+func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
+	return nil, status.UnimplementedErrorf("not yet implemented")
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
@@ -1614,230 +1506,6 @@ func casRevert(cas *rfpb.CASRequest) *rfpb.CASRequest {
 		},
 		ExpectedValue: cas.GetKv().GetValue(),
 	}
-}
-
-// SplitCluster splits a raft range into two roughly equal parts. For the time
-// being, splits are only supported for ranges active on this cluster.
-//
-// Splits happen in the following way:
-//
-//  1. The range to be split is locked for splitting. This prevents all
-//     further reads and writes.
-//  2. A new range is brought up on the same nodes as the range to be split.
-//  3. A split point is determined, and data is copied from the range to be split
-//     to the newly created range.
-//  4. The newly created range is activated (locally).
-//  5. The metarange is updated with the new range info, and the split range's
-//     new endpoints.
-//  6. The split range is unlocked.
-func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
-	if !*enableSplittingReplicas {
-		return nil, status.FailedPreconditionError("Splitting not enabled")
-	}
-
-	s.splitMu.Lock()
-	defer s.splitMu.Unlock()
-
-	splitStart := time.Now()
-
-	_, err := s.LeasedRange(req.GetHeader())
-	if err != nil {
-		return nil, err
-	}
-
-	sourceRange := req.GetRange()
-	if sourceRange == nil {
-		return nil, status.FailedPreconditionErrorf("no range provided to split: %+v", req)
-	}
-	if len(sourceRange.GetReplicas()) == 0 {
-		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", sourceRange)
-	}
-	clusterID := sourceRange.GetReplicas()[0].GetClusterId()
-
-	s.rangeMu.RLock()
-	oldLeft, rangeOK := s.openRanges[req.GetHeader().GetRangeId()]
-	s.rangeMu.RUnlock()
-	if !rangeOK {
-		return nil, status.FailedPreconditionErrorf("Range %d not found on this node", req.GetHeader().GetRangeId())
-	}
-
-	u, err := uuid.NewRandom()
-	if err != nil {
-		return nil, status.InternalErrorf("Error generating split tag: %s", err)
-	}
-	splitTag := u.String()
-	s.log.Infof("splitlog: checking if cluster %d has a viable split point", clusterID)
-
-	// Before proceeding, see if this cluster has a split point. If it does not; we can
-	// exit early.
-	findSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
-	findSplitBatchRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
-	if err != nil {
-		return nil, status.InternalErrorf("could not find split point: %s", err)
-	}
-	findSplitRsp, err := findSplitBatchRsp.FindSplitPointResponse(0)
-	if err != nil {
-		return nil, status.InternalErrorf("could not find split point: %s", err)
-	}
-
-	// start a new cluster in parallel to the existing cluster
-	existingMembers, err := s.GetClusterMembership(ctx, clusterID)
-	if err != nil {
-		return nil, status.InternalErrorf("could not get cluster membership: %s", err)
-	}
-	newIDs, err := s.reserveIDsForNewCluster(ctx, len(existingMembers))
-	if err != nil {
-		return nil, status.InternalErrorf("could not reserve IDs for new cluster: %s", err)
-	}
-
-	nodeGrpcAddrs := make(map[string]string)
-	for _, replica := range existingMembers {
-		nhid, _, err := s.registry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
-		if err != nil {
-			return nil, status.InternalErrorf("could not resolve node host ID: %s", err)
-		}
-		grpcAddr, _, err := s.registry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
-		if err != nil {
-			return nil, status.InternalErrorf("could not resolve GRPC address: %s", err)
-		}
-		nodeGrpcAddrs[nhid] = grpcAddr
-	}
-
-	firstNodeID := newIDs.maxNodeID - uint64(len(existingMembers))
-	bootStrapInfo := bringup.MakeBootstrapInfo(newIDs.clusterID, firstNodeID, nodeGrpcAddrs)
-
-	s.log.Infof("splitlog: new cluster ID will be %d", newIDs.clusterID)
-
-	// Create a new range descriptor for the left range. This will be inserted
-	// when the split lock is released, if the split succeeds successfully.
-	newLeft := proto.Clone(oldLeft).(*rfpb.RangeDescriptor)
-	newLeft.Generation += 1 // increment rd generation upon split
-	newLeft.Right = findSplitRsp.GetSplit()
-
-	// Initially, insert a range descriptor that does not contain replicas.
-	// This will keep the range from being marked as "active" in the store
-	// or acquiring a range lease (which wouldn't work because the metarange
-	// is not yet updated). Just before unlocking the left range, we'll
-	// update this range descriptor to include the replicas.
-	newRight := &rfpb.RangeDescriptor{
-		RangeId:    newIDs.rangeID,
-		Generation: newLeft.Generation + 1,
-		Left:       findSplitRsp.GetSplit(),
-		Right:      oldLeft.GetRight(),
-	}
-	newRightBuf, err := proto.Marshal(newRight)
-	if err != nil {
-		return nil, err
-	}
-	newRightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: newRightBuf,
-		},
-	})
-	if err := bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, newRightBatch); err != nil {
-		return nil, status.InternalErrorf("could not start new cluster: %s", err)
-	}
-	s.log.Infof("splitlog: new cluster %d started", newIDs.clusterID)
-
-	s.log.Infof("splitlog: attempting to acquire split lease")
-	leaseStart := time.Now()
-	// Lock the DB that is to be split. This acquires the split lock on the db leaser,
-	// preventing Reader and Writer access once all Reads/Writes have finished.
-	leaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
-		DurationSeconds: 60,
-		SplitTag:        splitTag,
-	})
-	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, leaseReq); err != nil {
-		return nil, status.InternalErrorf("could not obtain split lease: %s", err)
-	}
-
-	s.log.Infof("splitlog: acquired split lease")
-
-	if err := bringup.CloneCluster(ctx, s.apiClient, bootStrapInfo, req.GetRange().GetRangeId(), newIDs.rangeID); err != nil {
-		return nil, status.InternalErrorf("could not clone cluster: %s", err)
-	}
-
-	s.log.Infof("splitlog: cloned cluster")
-
-	// As mentioned above, add the replicas to right range now that it is
-	// about to be activated.
-	oldRight := proto.Clone(newRight).(*rfpb.RangeDescriptor)
-	newRight.Replicas = bootStrapInfo.Replicas
-	b := rbuilder.NewBatchBuilder().SetSplitTag(splitTag)
-	if err := addLocalRangeEdits(oldRight, newRight, b); err != nil {
-		return nil, err
-	}
-
-	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, newIDs.clusterID, b); err != nil {
-		return nil, status.InternalErrorf("could not update right range descriptor: %s", err)
-	}
-	s.log.Infof("splitlog: added right range replicas %v", newRight.Replicas)
-
-	// Update the metarange to add the new right range.
-	if err := s.updateMetarange(ctx, oldLeft, newLeft, newRight); err != nil {
-		return nil, status.InternalErrorf("could not update meta range: %s", err)
-	}
-
-	s.log.Infof("splitlog: updated metarange")
-
-	// Finally, update this ranges RangeDescriptor to reflect the fact that
-	// it is now split, and unlock it.
-	b = rbuilder.NewBatchBuilder()
-	if err := addLocalRangeEdits(oldLeft, newLeft, b); err != nil {
-		return nil, err
-	}
-	batchProto, err := b.ToProto()
-	if err != nil {
-		return nil, err
-	}
-	releaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitReleaseRequest{
-		Batch: batchProto,
-	}).SetSplitTag(splitTag)
-
-	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, releaseReq); err != nil {
-		return nil, status.InternalErrorf("could not release split lease: %s", err)
-	}
-
-	leaseDuration := time.Since(leaseStart)
-	s.log.Infof("splitlog: released split lease")
-
-	// Delete old data from left range
-	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRangeRequest{
-		Start: newLeft.Right,
-		End:   oldLeft.Right,
-	})
-	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, deleteReq); err != nil {
-		return nil, status.InternalErrorf("could not delete old data: %s", err)
-	}
-
-	s.log.Infof("splitlog: cleaned up old data on left cluster %d", clusterID)
-
-	// Delete old data from right range
-	rightDeleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRangeRequest{
-		Start: newLeft.Left,
-		End:   newLeft.Right,
-	})
-	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, newIDs.clusterID, rightDeleteReq); err != nil {
-		return nil, status.InternalErrorf("could not delete old data: %s", err)
-	}
-
-	s.log.Infof("splitlog: cleaned up old data on right cluster %d", newIDs.clusterID)
-
-	metrics.RaftSplits.With(prometheus.Labels{
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-	}).Inc()
-
-	metrics.RaftSplitDurationUs.With(prometheus.Labels{
-		metrics.RaftRangeIDLabel: strconv.Itoa(int(newLeft.GetRangeId())),
-	}).Observe(float64(time.Since(splitStart).Microseconds()))
-
-	splitRsp := &rfpb.SplitClusterResponse{
-		Left:  newLeft,
-		Right: newRight,
-	}
-	s.log.Infof("splitlog: split completed in %s (lease %s): %+v", time.Since(splitStart), leaseDuration, splitRsp)
-	return splitRsp, nil
 }
 
 func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {
