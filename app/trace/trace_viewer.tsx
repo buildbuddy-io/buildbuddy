@@ -133,7 +133,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
   }
 
   private updateMouse(mouse: ClientXY) {
-    this.mouse = mouse;
+    this.mouse = { clientX: mouse.clientX, clientY: mouse.clientY };
     // Update the mouse's model X coordinate (i.e. hovered timestamp).
     // When panning, keep mouseModelX fixed.
     if (!this.panning) {
