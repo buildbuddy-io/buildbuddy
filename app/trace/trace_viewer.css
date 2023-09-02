@@ -1,0 +1,135 @@
+.trace-viewer {
+  width: 100%;
+  /* Disable text selection since it conflicts with mouse panning.
+     (Also, canvas text isn't selectable.) */
+  user-select: none;
+}
+
+.trace-viewer .panel {
+  position: relative;
+  overflow-x: scroll;
+  overflow-y: scroll;
+}
+
+.trace-viewer canvas {
+  position: sticky;
+  top: 0;
+  left: 0;
+}
+
+.trace-viewer .panel-container:not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.trace-viewer .panel-container {
+  border-radius: 2px;
+  border: 2px solid #eee;
+}
+
+.trace-viewer .panel::-webkit-scrollbar-thumb {
+  background: #bdbdbd;
+  border-radius: 1px;
+}
+.trace-viewer .panel::-webkit-scrollbar-thumb:hover {
+  background: #9e9e9e;
+}
+.trace-viewer .panel::-webkit-scrollbar-thumb:active {
+  background: #757575;
+}
+.trace-viewer .panel::-webkit-scrollbar-corner {
+  background: #e0e0e0;
+}
+
+.trace-viewer .panel::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+  background: #fafafa;
+}
+
+.trace-viewer .panel-controls {
+  position: absolute;
+  right: var(--scrollbar-size);
+  display: flex;
+  padding: 8px;
+  gap: 4px;
+}
+
+.trace-viewer .button {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  outline: none;
+  background: rgba(250, 250, 250, 0.6);
+  backdrop-filter: blur(3px);
+  border-radius: 4px;
+  color: #616161;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: 70ms ease-out;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.trace-viewer .button:hover {
+  opacity: 1;
+}
+
+.trace-viewer .button:focus {
+  border: 1px solid #64b5f6;
+}
+
+.trace-viewer .button:active {
+  background: #f5f5f5;
+  border: 1px solid #757575;
+  color: black;
+}
+
+.trace-viewer .icon-button {
+  padding: 0;
+  width: 32px;
+}
+
+.trace-viewer .button .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.trace-viewer-hovercard {
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27);
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  backdrop-filter: blur(3px);
+  max-width: calc(min(640px, 100vw));
+  word-break: break-all;
+}
+
+.trace-viewer-hovercard .data {
+  color: #000;
+}
+
+.trace-viewer-hovercard.no-block-hovered {
+  color: #888;
+}
+
+.trace-viewer-hovercard .hovercard-title {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.trace-viewer-hovercard .hovercard-details {
+  color: #888;
+}
+
+.trace-viewer-hovercard .duration {
+  font-size: 14px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #eee;
+  margin-bottom: 4px;
+}

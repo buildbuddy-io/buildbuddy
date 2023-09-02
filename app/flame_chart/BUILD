@@ -9,8 +9,8 @@ ts_library(
         "//app/capabilities",
         "//app/components/scrollbar",
         "//app/flame_chart:flame_chart_model",
-        "//app/flame_chart:profile_model",
         "//app/flame_chart:style_constants",
+        "//app/trace:trace_events",
         "//app/util:animated_value",
         "//app/util:animation_loop",
         "//app/util:dom",
@@ -34,16 +34,11 @@ ts_library(
     srcs = ["flame_chart_model.ts"],
     deps = [
         "//app/capabilities",
-        "//app/flame_chart:profile_model",
         "//app/flame_chart:style_constants",
+        "//app/trace:trace_events",
         "//app/util:color",
         "@npm//tslib",
     ],
-)
-
-ts_library(
-    name = "profile_model",
-    srcs = ["profile_model.ts"],
 )
 
 ts_library(

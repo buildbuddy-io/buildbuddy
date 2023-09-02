@@ -1,5 +1,5 @@
 import { getUniformBrightnessColor, getMaterialChartColor, getLightMaterialChartColor } from "../util/color";
-import { buildThreadTimelines, buildTimeSeries, ThreadEvent, TraceEvent, TimeSeriesEvent } from "./profile_model";
+import { buildThreadTimelines, buildTimeSeries, ThreadEvent, TraceEvent, TimeSeriesEvent } from "../trace/trace_events";
 import capabilities from "../capabilities/capabilities";
 import {
   BLOCK_HEIGHT,
@@ -8,7 +8,6 @@ import {
   SECTION_PADDING_BOTTOM,
   SECTION_PADDING_TOP,
   TIME_SERIES_HEIGHT,
-  POINT_RADIUS,
 } from "./style_constants";
 
 const MICROSECONDS_PER_SECOND = 1000 * 1000;

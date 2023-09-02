@@ -134,6 +134,9 @@ message FrontendConfig {
 
   // Regional servers.
   repeated Region regions = 44;
+
+  // Whether the new trace viewer is enabled.
+  bool trace_viewer_enabled = 45;
 }
 
 message Region {

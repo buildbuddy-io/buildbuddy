@@ -1,3 +1,10 @@
+/**
+ * This file contains utilities for parsing a raw trace file.
+ *
+ * The trace file format is loosely documented here:
+ * https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview#heading=h.yr4qxyxotyw
+ */
+
 /** Represents the profile data for an invocation. */
 export interface Profile {
   traceEvents: TraceEvent[];
@@ -33,7 +40,7 @@ export type ThreadTimeline = {
 };
 
 export type TimeSeriesEvent = TraceEvent & {
-  value: number;
+  value: number | string;
 };
 
 export type TimeSeries = {

@@ -7,7 +7,7 @@ import { AnimationLoop } from "../util/animation_loop";
 import { createSvgElement } from "../util/dom";
 import { truncateDecimals } from "../util/math";
 import { BlockModel, buildFlameChartModel, FlameChartModel, LineModel } from "./flame_chart_model";
-import { Profile } from "./profile_model";
+import { Profile } from "../trace/trace_events";
 import {
   BLOCK_HEIGHT,
   INITIAL_END_TIME_SECONDS,
