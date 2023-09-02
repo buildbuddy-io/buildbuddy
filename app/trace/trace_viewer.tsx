@@ -86,8 +86,8 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
 
   componentWillUnmount(): void {
     window.removeEventListener("resize", this.onWindowResize);
-    window.addEventListener("mousemove", this.onWindowMouseMove);
-    window.addEventListener("mouseup", this.onWindowMouseUp);
+    window.removeEventListener("mousemove", this.onWindowMouseMove);
+    window.removeEventListener("mouseup", this.onWindowMouseUp);
     document.body.style.cursor = "";
   }
 
