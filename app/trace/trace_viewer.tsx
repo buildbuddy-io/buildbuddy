@@ -29,7 +29,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
 
   private animation = new AnimationLoop((dt: number) => this.update(dt));
 
-  private zoom = new AnimatedValue(1, { min: 0, max: 1 });
+  private canvasXPerModelX = new AnimatedValue(0, { min: 0, max: 1 });
   private zoomOriginModelX = 0;
   private zoomOriginClientX = 0;
   private isUsingZoomButtons = false;
@@ -40,31 +40,6 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
   private panning?: Panel | null;
 
   private hovercardRef = React.createRef<EventHovercard>();
-
-  computeCanvasXPerModelX(): number {
-    // When zoom is at 0 (min), the full canvas width should be equal to
-    // the model width.
-    // When zoom is at 1 (max), the full canvas width should be equal to
-    // 1 second (this is arbitrary, but reasonable).
-
-    // TODO: test that this works when modelMaxX < 1e6!
-    const canvasWidth = this.panels[0].container().clientWidth;
-    // Point-slope: y - y1 = m * ( x - x1 )
-    // x is zoom level
-    // y is canvasXPerModelX
-    const x0 = 1;
-    const y0 = canvasWidth / this.model.xMax;
-    const x1 = 0;
-    const y1 = canvasWidth / constants.MODEL_X_PER_SECOND;
-    const m = (y1 - y0) / (x1 - x0);
-    // Transform the zoom value to be slower on the initial part of the curve.
-    // TODO: this formula works OK in practice but it's somewhat arbitrary.
-    // Better approach: every <x> amount of mouse scrolling should zoom us in by
-    // a fixed power of 10, such that the min zoom level lets us see the whole
-    // graph and the max zoom level lets us see 1 usec per pixel or something.
-    const x = 1 - Math.pow(1 - this.zoom.value, 4);
-    return y1 + m * (x - x1);
-  }
 
   private unobserveResize?: () => void;
 
@@ -102,27 +77,30 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
   }
 
   private update(dt = 0) {
-    this.zoom.step(dt);
+    this.canvasXPerModelX.min = this.panels[0].container().clientWidth / this.model.xMax;
+    this.canvasXPerModelX.step(dt, { threshold: 1e-9 });
 
-    const canvasXPerModelX = this.computeCanvasXPerModelX();
     for (const panel of this.panels) {
       panel.resize();
 
       // If actively zooming or panning, set scrollX so that the zoom origin stays fixed.
-      if (!this.zoom.isAtTarget || this.panning) {
+      if (!this.canvasXPerModelX.isAtTarget || this.panning) {
         panel.scrollX =
-          this.zoomOriginModelX * canvasXPerModelX -
+          this.zoomOriginModelX * this.canvasXPerModelX.value -
           (this.zoomOriginClientX - panel.container().getBoundingClientRect().left);
       }
       // Set panel x scale
-      panel.canvasXPerModelX = canvasXPerModelX;
+      panel.canvasXPerModelX = this.canvasXPerModelX.value;
 
       // Set sizer div width
       const sizer = panel.container().getElementsByClassName("sizer")[0] as HTMLDivElement;
-      sizer.style.width = `${canvasXPerModelX * this.model.xMax}px`;
+      sizer.style.width = `${this.canvasXPerModelX.value * this.model.xMax}px`;
 
-      // TODO: figure out a less error prone way to keep scrollX / scrollLeft in sync
-      panel.scrollX = clamp(panel.scrollX, 0, canvasXPerModelX * this.model.xMax - panel.container().clientWidth);
+      panel.scrollX = clamp(
+        panel.scrollX,
+        0,
+        this.canvasXPerModelX.value * this.model.xMax - panel.container().clientWidth
+      );
       panel.container().scrollLeft = panel.scrollX;
 
       if (this.panning === panel) {
@@ -134,7 +112,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
       panel.draw();
     }
 
-    if (this.zoom.isAtTarget) this.animation.stop();
+    if (this.canvasXPerModelX.isAtTarget) this.animation.stop();
   }
 
   private updateMouse(mouse: MouseEvent | React.MouseEvent) {
@@ -152,7 +130,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     if (this.isUsingZoomButtons) {
       const boundingRect = this.panels[0].container().getBoundingClientRect();
       this.zoomOriginClientX = boundingRect.left + boundingRect.width / 2;
-      this.zoomOriginModelX = (this.panels[0].scrollX + boundingRect.width / 2) / this.computeCanvasXPerModelX();
+      this.zoomOriginModelX = (this.panels[0].scrollX + boundingRect.width / 2) / this.canvasXPerModelX.value;
     }
 
     let isHoveringAnyPanel = false;
@@ -195,22 +173,23 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     }
   }
 
+  private adjustZoom(amount: number) {
+    this.canvasXPerModelX.target *= Math.pow(0.92, -amount);
+    this.animation.start();
+  }
+
   private onWheel(e: WheelEvent) {
     if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
-      this.updateMouse(e);
-      this.zoom.target -= e.deltaY * 0.0003;
-      // Start zoom animation.
-      this.animation.start();
+      this.adjustZoom(e.deltaY * 0.04);
     }
   }
 
   private onClickZoom(e: React.MouseEvent, direction: -1 | 1) {
     this.isUsingZoomButtons = true;
     this.updateMouse(e);
-    this.zoom.target -= direction * 0.1;
-    this.animation.start();
+    this.adjustZoom(direction * 8);
   }
 
   private onWindowMouseMove = (e: MouseEvent) => {

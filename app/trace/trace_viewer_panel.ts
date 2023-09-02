@@ -34,7 +34,10 @@ export default class Panel {
   }
 
   private isSectionVisible(section: SectionModel) {
-    return !(section.y > this.scrollY + this.model.height || section.y + section.height < this.scrollY);
+    return !(
+      constants.TIMESTAMP_HEADER_SIZE + section.y > this.scrollY + this.model.height ||
+      constants.TIMESTAMP_HEADER_SIZE + section.y + section.height < this.scrollY
+    );
   }
 
   private isSectionFullyVisible(section: SectionModel) {

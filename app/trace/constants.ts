@@ -7,7 +7,7 @@ export const EVENTS_PANEL_HEIGHT = 540;
 export const LINE_PLOTS_PANEL_HEIGHT = 360;
 
 export const TIMESTAMP_HEADER_SIZE = 16;
-export const TIMESTAMP_HEADER_COLOR = "#ECEFF1";
+export const TIMESTAMP_HEADER_COLOR = "rgba(236, 239, 241, 0.9)"; // "#ECEFF1" with alpha
 export const TIMESTAMP_FONT_COLOR = "#37474F";
 export const TIMESTAMP_FONT_SIZE = "11px";
 
@@ -27,7 +27,7 @@ export const TRACK_HEIGHT = 16;
 export const TRACK_VERTICAL_GAP = 1;
 
 export const EVENT_HORIZONTAL_GAP = 1;
-export const EVENT_LABEL_WIDTH_THRESHOLD = 45;
+export const EVENT_LABEL_WIDTH_THRESHOLD = 20;
 export const EVENT_LABEL_FONT_SIZE = "12px";
 export const EVENT_LABEL_FONT_COLOR = SECTION_LABEL_FONT_COLOR;
 
