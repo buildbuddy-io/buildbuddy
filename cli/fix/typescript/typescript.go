@@ -121,6 +121,9 @@ func (t *TS) GenerateRules(args language.GenerateArgs) language.GenerateResult {
 		for i := 0; i < int(tree.RootNode().ChildCount()); i++ {
 			child := tree.RootNode().Child(i)
 			if child.Type() == "import_statement" {
+				if child.NamedChild(1) == nil {
+					continue
+				}
 				ruleImports = append(ruleImports, child.NamedChild(1).Child(1).Content(data))
 			}
 		}
