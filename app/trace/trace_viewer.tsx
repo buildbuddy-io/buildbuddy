@@ -28,7 +28,11 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
   private panels: Panel[] = [];
 
   private animation = new AnimationLoop((dt: number) => this.update(dt));
+
   private zoom = new AnimatedValue(1, { min: 0, max: 1 });
+  private zoomOriginModelX = 0;
+  private zoomOriginClientX = 0;
+  private isUsingZoomButtons = false;
 
   private mouse: ClientXY = { clientX: 0, clientY: 0 };
   private mouseModelX = 0;
@@ -104,10 +108,11 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     for (const panel of this.panels) {
       panel.resize();
 
-      // If actively zooming or panning, set scrollX so that mouseModelX stays fixed.
+      // If actively zooming or panning, set scrollX so that the zoom origin stays fixed.
       if (!this.zoom.isAtTarget || this.panning) {
         panel.scrollX =
-          this.mouseModelX * canvasXPerModelX - (this.mouse.clientX - panel.container().getBoundingClientRect().left);
+          this.zoomOriginModelX * canvasXPerModelX -
+          (this.zoomOriginClientX - panel.container().getBoundingClientRect().left);
       }
       // Set panel x scale
       panel.canvasXPerModelX = canvasXPerModelX;
@@ -132,7 +137,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     if (this.zoom.isAtTarget) this.animation.stop();
   }
 
-  private updateMouse(mouse: ClientXY) {
+  private updateMouse(mouse: MouseEvent | React.MouseEvent) {
     this.mouse = { clientX: mouse.clientX, clientY: mouse.clientY };
     // Update the mouse's model X coordinate (i.e. hovered timestamp).
     // When panning, keep mouseModelX fixed.
@@ -141,6 +146,15 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
         this.panels[0].scrollX + (mouse.clientX - this.panels[0].container().getBoundingClientRect().left);
       this.mouseModelX = mouseCanvasX / this.panels[0].canvasXPerModelX;
     }
+    this.zoomOriginClientX = mouse.clientX;
+    this.zoomOriginModelX = this.mouseModelX;
+    // When using zoom buttons, set zoom origin to the center.
+    if (this.isUsingZoomButtons) {
+      const boundingRect = this.panels[0].container().getBoundingClientRect();
+      this.zoomOriginClientX = boundingRect.left + boundingRect.width / 2;
+      this.zoomOriginModelX = (this.panels[0].scrollX + boundingRect.width / 2) / this.computeCanvasXPerModelX();
+    }
+
     let isHoveringAnyPanel = false;
     let hoveredEvent: TraceEvent | null = null;
     for (const panel of this.panels) {
@@ -192,7 +206,9 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     }
   }
 
-  private onClickZoom(direction: -1 | 1) {
+  private onClickZoom(e: React.MouseEvent, direction: -1 | 1) {
+    this.isUsingZoomButtons = true;
+    this.updateMouse(e);
     this.zoom.target -= direction * 0.1;
     this.animation.start();
   }
@@ -264,13 +280,15 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
               }}>
               <button
                 className="button icon-button"
-                onClick={() => this.onClickZoom(-1)}
+                onClick={(e) => this.onClickZoom(e, -1)}
+                onMouseOut={() => (this.isUsingZoomButtons = false)}
                 title={`Zoom out (${modifierKey()}+scroll)`}>
                 <ZoomOut className="icon" />
               </button>
               <button
                 className="button icon-button"
-                onClick={() => this.onClickZoom(+1)}
+                onClick={(e) => this.onClickZoom(e, +1)}
+                onMouseOut={() => (this.isUsingZoomButtons = false)}
                 title={`Zoom in (${modifierKey()}+scroll)`}>
                 <ZoomIn className="icon" />
               </button>
