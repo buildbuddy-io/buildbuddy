@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -57,10 +58,23 @@ func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	return fs
 }
 
+func newTestReplica(t *testing.T, rootDir string, clusterID, nodeID uint64, store replica.IStore) *replica.Replica {
+	db, err := pebble.Open(rootDir, &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	return replica.New(leaser, clusterID, nodeID, store, partitions)
+}
+
 func TestOpenCloseReplica(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -202,7 +216,7 @@ func (wt *replicaTester) delete(fileRecord *rfpb.FileRecord) {
 func TestReplicaDirectReadWrite(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -248,7 +262,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 func TestReplicaIncrement(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -295,7 +309,7 @@ func TestReplicaIncrement(t *testing.T) {
 func TestReplicaCAS(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -371,7 +385,7 @@ func TestReplicaCAS(t *testing.T) {
 func TestReplicaScan(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -478,7 +492,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -536,7 +550,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	// Restore a new replica from the created snapshot.
 	rootDir2 := testfs.MakeTempDir(t)
-	repl2 := replica.New(rootDir2, 2, 2, store, partitions)
+	repl2 := newTestReplica(t, rootDir2, 2, 2, store)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
 	require.NoError(t, err)
@@ -554,7 +568,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -612,7 +626,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 func TestFindSplitPoint(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -687,7 +701,7 @@ func TestFindSplitPoint(t *testing.T) {
 func TestUsage(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store, partitions)
+	repl := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})

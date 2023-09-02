@@ -19,6 +19,7 @@ go_library(
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
+        "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/gossip",

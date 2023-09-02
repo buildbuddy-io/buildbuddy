@@ -92,7 +92,8 @@ type TestingStore struct {
 }
 
 func (ts *TestingStore) NewReplica(clusterID, nodeID uint64) *replica.Replica {
-	return replica.New(ts.RootDir, clusterID, nodeID, ts.Store, []disk.Partition{})
+	sm := ts.Store.ReplicaFactoryFn(clusterID, nodeID)
+	return sm.(*replica.Replica)
 }
 
 func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeHost) {

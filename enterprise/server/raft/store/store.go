@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -556,6 +557,9 @@ type Store struct {
 	liveness      *nodeliveness.Liveness
 	log           log.Logger
 
+	db     pebble.IPebbleDB
+	leaser pebble.Leaser
+
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
 
@@ -594,6 +598,14 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		fileStorer:    filestore.New(),
 		eg:            &errgroup.Group{},
 	}
+
+	db, err := pebble.Open(rootDir, &pebble.Options{})
+	if err != nil {
+		return nil, err
+	}
+	s.db = db
+	s.leaser = pebble.NewDBLeaser(db)
+
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	usages, err := newUsageTracker(s, gossipManager, partitions)
 	if err != nil {
@@ -1006,7 +1018,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-	return replica.New(s.rootDir, clusterID, nodeID, s, s.partitions)
+	return replica.New(s.leaser, clusterID, nodeID, s, s.partitions)
 }
 
 func (s *Store) Sender() *sender.Sender {
