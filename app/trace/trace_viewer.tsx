@@ -21,6 +21,7 @@ export interface TraceViewProps {
  */
 export default class TraceViewer extends React.Component<TraceViewProps> {
   private model = buildTraceViewerModel(this.props.profile);
+  private rootRef = React.createRef<HTMLDivElement>();
   private canvasRefs: React.RefObject<HTMLCanvasElement>[] = this.model.panels.map((_) =>
     React.createRef<HTMLCanvasElement>()
   );
@@ -61,6 +62,8 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     return y1 + m * (x - x1);
   }
 
+  private unobserveResize?: () => void;
+
   componentDidMount() {
     const fontFamily = window.getComputedStyle(document.body).fontFamily;
     this.panels = this.model.panels.map(
@@ -69,8 +72,10 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
 
     this.update();
 
-    // TODO: use ResizeObserver on the container element to handle the sidebar
-    // expanding/collapsing while on this page.
+    const resizeObserver = new ResizeObserver(() => this.update());
+    resizeObserver.observe(this.rootRef.current!);
+    this.unobserveResize = () => resizeObserver.disconnect();
+
     window.addEventListener("resize", this.onWindowResize);
     window.addEventListener("mousemove", this.onWindowMouseMove);
     window.addEventListener("mouseup", this.onWindowMouseUp);
@@ -88,6 +93,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("mousemove", this.onWindowMouseMove);
     window.removeEventListener("mouseup", this.onWindowMouseUp);
+    this.unobserveResize?.();
     document.body.style.cursor = "";
   }
 
@@ -217,6 +223,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
   render() {
     return (
       <div
+        ref={this.rootRef}
         className="trace-viewer"
         style={{
           ...({
