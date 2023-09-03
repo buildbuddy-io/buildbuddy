@@ -171,7 +171,6 @@ func (sm *Replica) replicaLocalKey(key []byte) []byte {
 		sm.log.Warningf("Key %q already has replica suffix!", key)
 		return key
 	}
-
 	return append(key, suffix...)
 }
 
@@ -1449,10 +1448,10 @@ func encodeDataToWriter(w io.Writer, r io.Reader, msgLength int64) error {
 	return nil
 }
 
-func encodeIterKeyValue(w io.Writer, iter pebble.Iterator) error {
+func encodeKeyValue(w io.Writer, key, value []byte) error {
 	kv := &rfpb.KV{
-		Key:   iter.Key(),
-		Value: iter.Value(),
+		Key:   key,
+		Value: value,
 	}
 	protoBytes, err := proto.Marshal(kv)
 	if err != nil {
@@ -1485,7 +1484,7 @@ func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
 	})
 	defer iter.Close()
 	for iter.First(); iter.Valid(); iter.Next() {
-		if err := encodeIterKeyValue(w, iter); err != nil {
+		if err := encodeKeyValue(w, iter.Key(), iter.Value()); err != nil {
 			return err
 		}
 	}
@@ -1498,12 +1497,17 @@ func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error 
 		UpperBound: constants.MetaRangePrefix,
 	})
 	defer iter.Close()
+	suffix := sm.replicaSuffix()
 	for iter.First(); iter.Valid(); iter.Next() {
-		if !bytes.HasSuffix(iter.Key(), sm.replicaSuffix()) {
+		if !bytes.HasSuffix(iter.Key(), suffix) {
 			// Skip keys that are not ours.
 			continue
 		}
-		if err := encodeIterKeyValue(w, iter); err != nil {
+		// Trim the replica-specific suffix from keys that have it.
+		// When this snapshot is loaded by another replica, it will
+		// append its own replica suffix to local keys that need it.
+		key := iter.Key()[:len(iter.Key())-len(suffix)]
+		if err := encodeKeyValue(w, key, iter.Value()); err != nil {
 			return err
 		}
 	}
