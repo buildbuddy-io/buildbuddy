@@ -41,6 +41,7 @@ go_test(
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/sender",
+        "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -93,9 +92,7 @@ type IStore interface {
 // It also provides opportunities for the system to signal Raft Log compactions
 // to free up disk spaces.
 type Replica struct {
-	dbMu      sync.Mutex
-	rawDB     pebble.IPebbleDB
-	rawLeaser pebble.Leaser
+	leaser pebble.Leaser
 
 	rootDir   string
 	fileDir   string
@@ -164,16 +161,17 @@ func isFileRecordKey(keyBytes []byte) bool {
 	return false
 }
 
-func (sm *Replica) db() pebble.IPebbleDB {
-	sm.dbMu.Lock()
-	defer sm.dbMu.Unlock()
-	return sm.rawDB
+func (sm *Replica) replicaSuffix() []byte {
+	return []byte(fmt.Sprintf("-c%04dn%04d", sm.ClusterID, sm.NodeID))
 }
 
-func (sm *Replica) leaser() pebble.Leaser {
-	sm.dbMu.Lock()
-	defer sm.dbMu.Unlock()
-	return sm.rawLeaser
+func (sm *Replica) replicaLocalKey(key []byte) []byte {
+	suffix := sm.replicaSuffix()
+	if bytes.HasSuffix(key, suffix) {
+		sm.log.Warningf("Key %q already has replica suffix!", key)
+		return key
+	}
+	return append(key, suffix...)
 }
 
 func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
@@ -244,7 +242,7 @@ func rdString(rd *rfpb.RangeDescriptor) string {
 }
 
 func (sm *Replica) setRange(key, val []byte) error {
-	if !bytes.Equal(key, constants.LocalRangeKey) {
+	if !bytes.HasPrefix(key, constants.LocalRangeKey) {
 		return status.FailedPreconditionErrorf("setRange called with non-range key: %s", key)
 	}
 
@@ -281,7 +279,6 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 					return err
 				}
 			}
-
 			return wb.Set(key, val, nil /*ignored write options*/)
 		}
 		sm.rangeMu.RUnlock()
@@ -289,10 +286,12 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	}
 	sm.rangeMu.RUnlock()
 
+	// Still here? this is a local key, so treat it appropriately.
+	key = sm.replicaLocalKey(key)
 	if err := wb.Set(key, val, nil /*ignored write options*/); err != nil {
 		return err
 	}
-	if bytes.Equal(key, constants.LocalRangeKey) {
+	if bytes.Equal(key, sm.replicaLocalKey(constants.LocalRangeKey)) {
 		if err := sm.setRange(key, val); err != nil {
 			log.Errorf("Error setting range: %s", err)
 		}
@@ -300,8 +299,12 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	return nil
 }
 
-func (sm *Replica) lookup(db ReplicaReader, query []byte) ([]byte, error) {
-	buf, closer, err := db.Get(query)
+func (sm *Replica) lookup(db ReplicaReader, key []byte) ([]byte, error) {
+	if isLocalKey(key) {
+		key = sm.replicaLocalKey(key)
+	}
+
+	buf, closer, err := db.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
 			return nil, status.NotFoundErrorf("Key not found: %s", err)
@@ -321,7 +324,7 @@ func (sm *Replica) lookup(db ReplicaReader, query []byte) ([]byte, error) {
 }
 
 func (sm *Replica) LastAppliedIndex() (uint64, error) {
-	readDB, err := sm.leaser().DB()
+	readDB, err := sm.leaser.DB()
 	if err != nil {
 		return 0, err
 	}
@@ -377,7 +380,7 @@ func (sm *Replica) flushPartitionMetadatas(wb pebble.Batch) error {
 	if err != nil {
 		return err
 	}
-	if err := wb.Set(constants.PartitionMetadatasKey, bs, nil); err != nil {
+	if err := sm.rangeCheckedSet(wb, constants.PartitionMetadatasKey, bs); err != nil {
 		return err
 	}
 	return nil
@@ -404,7 +407,12 @@ func (sm *Replica) updatePartitionMetadata(wb pebble.Batch, key, val []byte, fil
 		pm.TotalCount--
 		pm.SizeBytes -= fileMetadata.GetStoredSizeBytes()
 	} else {
-		_, closer, err := wb.Get(key)
+		readDB, err := sm.leaser.DB()
+		if err != nil {
+			return err
+		}
+		defer readDB.Close()
+		_, closer, err := readDB.Get(key)
 		if err == nil {
 			// Skip increment on duplicate write.
 			return closer.Close()
@@ -447,22 +455,6 @@ type ReplicaWriter interface {
 	NewSnapshot() *pebble.Snapshot
 }
 
-func (sm *Replica) openDB() (pebble.IPebbleDB, error) {
-	dbDir := sm.getDBDir()
-	db, err := pebble.Open(dbDir, &pebble.Options{})
-	if err != nil {
-		return nil, err
-	}
-	sm.dbMu.Lock()
-	defer sm.dbMu.Unlock()
-	if sm.rawLeaser != nil {
-		sm.rawLeaser.Close()
-	}
-	sm.rawDB = db
-	sm.rawLeaser = pebble.NewDBLeaser(db)
-	return db, nil
-}
-
 // Open opens the existing on disk state machine to be used or it creates a
 // new state machine with empty state if it does not exist. Open returns the
 // most recent index value of the Raft log that has been persisted, or it
@@ -476,11 +468,11 @@ func (sm *Replica) openDB() (pebble.IPebbleDB, error) {
 // and the Lookup method will not be called before the completion of the Open
 // method.
 func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
-	db, err := sm.openDB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return 0, err
 	}
-
+	defer db.Close()
 	sm.checkAndSetRangeDescriptor(db)
 	if err := sm.loadPartitionMetadata(db); err != nil {
 		return 0, err
@@ -671,20 +663,6 @@ func (sm *Replica) cas(wb pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse
 	}, status.FailedPreconditionError(constants.CASErrorMessage)
 }
 
-func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
-	if cas == nil {
-		return nil
-	}
-	wb := sm.db().NewIndexedBatch()
-	defer wb.Close()
-
-	if _, err := sm.cas(wb, cas); err != nil {
-		return err
-	}
-
-	return wb.Commit(pebble.Sync)
-}
-
 type splitPoint struct {
 	left      []byte
 	right     []byte
@@ -709,7 +687,13 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 		UpperBound: rangeDescriptor.GetRight(),
 	}
 
-	iter := sm.db().NewIter(iterOpts)
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	iter := db.NewIter(iterOpts)
 	defer iter.Close()
 
 	totalSize := int64(0)
@@ -761,7 +745,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 	}
 
 	if splitKey == nil {
-		sm.printRange(sm.db(), iterOpts, "unsplittable range")
+		sm.printRange(db, iterOpts, "unsplittable range")
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
 	}
 	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ClusterID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
@@ -812,30 +796,6 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 		totalSize += size
 		sm.log.Infof("%q: key: %q (%d)", tag, iter.Key(), totalSize)
 	}
-}
-
-func (sm *Replica) deleteStoredFiles(start, end []byte) error {
-	ctx := context.Background()
-	iter := sm.db().NewIter(&pebble.IterOptions{
-		LowerBound: start,
-		UpperBound: end,
-	})
-	defer iter.Close()
-
-	for iter.First(); iter.Valid(); iter.Next() {
-		if isLocalKey(iter.Key()) {
-			continue
-		}
-
-		fileMetadata := &rfpb.FileMetadata{}
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			return err
-		}
-		if err := sm.fileStorer.DeleteStoredFile(ctx, sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
@@ -1114,7 +1074,7 @@ func randomKey(partitionID string, n int) []byte {
 }
 
 func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rfpb.FileMetadata, error) {
-	db, err := sm.leaser().DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1151,7 +1111,7 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rf
 }
 
 func (sm *Replica) Metadata(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
-	db, err := sm.leaser().DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1165,7 +1125,7 @@ func (sm *Replica) Metadata(ctx context.Context, header *rfpb.Header, fileRecord
 }
 
 func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
-	db, err := sm.leaser().DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1192,7 +1152,7 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 }
 
 func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
-	reader, err := sm.leaser().DB()
+	reader, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1219,7 +1179,7 @@ func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRec
 }
 
 func (sm *Replica) GetMulti(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.GetMultiResponse_Data, error) {
-	reader, err := sm.leaser().DB()
+	reader, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1305,6 +1265,12 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
 	for idx, entry := range entries {
 		// Insert all of the data in the batch.
 		batchCmdReq := &rfpb.BatchCmdRequest{}
@@ -1313,7 +1279,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			return nil, err
 		}
 
-		wb := sm.db().NewIndexedBatch()
+		wb := db.NewIndexedBatch()
 		defer wb.Close()
 
 		var headerErr error
@@ -1348,7 +1314,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		}).Inc()
 		sm.raftProposeQPS.Inc()
 		appliedIndex := uint64ToBytes(entry.Index)
-		if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
+		if err := sm.rangeCheckedSet(wb, constants.LastAppliedIndexKey, appliedIndex); err != nil {
 			return nil, err
 		}
 		if err := wb.Commit(pebble.NoSync); err != nil {
@@ -1393,7 +1359,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
-	db, err := sm.leaser().DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1428,7 +1394,12 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 // Sync returns an error when there is unrecoverable error for synchronizing
 // the in-core state.
 func (sm *Replica) Sync() error {
-	return sm.db().LogData(nil, pebble.Sync)
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.LogData(nil, pebble.Sync)
 }
 
 // PrepareSnapshot prepares the snapshot to be concurrently captured and
@@ -1445,7 +1416,13 @@ func (sm *Replica) Sync() error {
 // PrepareSnapshot returns an error when there is unrecoverable error for
 // preparing the snapshot.
 func (sm *Replica) PrepareSnapshot() (interface{}, error) {
-	snap := sm.db().NewSnapshot()
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	snap := db.NewSnapshot()
 	return snap, nil
 }
 
@@ -1471,6 +1448,19 @@ func encodeDataToWriter(w io.Writer, r io.Reader, msgLength int64) error {
 	return nil
 }
 
+func encodeKeyValue(w io.Writer, key, value []byte) error {
+	kv := &rfpb.KV{
+		Key:   key,
+		Value: value,
+	}
+	protoBytes, err := proto.Marshal(kv)
+	if err != nil {
+		return err
+	}
+	protoLength := int64(len(protoBytes))
+	return encodeDataToWriter(w, bytes.NewReader(protoBytes), protoLength)
+}
+
 func readDataFromReader(r *bufio.Reader) (io.Reader, int64, error) {
 	count, err := binary.ReadVarint(r)
 	if err != nil {
@@ -1479,28 +1469,45 @@ func readDataFromReader(r *bufio.Reader) (io.Reader, int64, error) {
 	return io.LimitReader(r, count), count, nil
 }
 
-func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot, start, end []byte) error {
-	tstart := time.Now()
-	defer func() {
-		sm.log.Infof("Took %s to save snapshot to writer", time.Since(tstart))
-	}()
+func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
+	sm.rangeMu.RLock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.RUnlock()
+
+	if rd == nil {
+		log.Warningf("No range descriptor set; not snapshotting range data")
+		return nil
+	}
 	iter := snap.NewIter(&pebble.IterOptions{
-		LowerBound: keys.Key(start),
-		UpperBound: keys.Key(end),
+		LowerBound: keys.Key(rd.GetLeft()),
+		UpperBound: keys.Key(rd.GetRight()),
 	})
 	defer iter.Close()
 	for iter.First(); iter.Valid(); iter.Next() {
-		kv := &rfpb.KV{
-			Key:   iter.Key(),
-			Value: iter.Value(),
-		}
-		protoBytes, err := proto.Marshal(kv)
-		if err != nil {
+		if err := encodeKeyValue(w, iter.Key(), iter.Value()); err != nil {
 			return err
 		}
+	}
+	return nil
+}
 
-		protoLength := int64(len(protoBytes))
-		if err := encodeDataToWriter(w, bytes.NewReader(protoBytes), protoLength); err != nil {
+func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error {
+	iter := snap.NewIter(&pebble.IterOptions{
+		LowerBound: constants.LocalPrefix,
+		UpperBound: constants.MetaRangePrefix,
+	})
+	defer iter.Close()
+	suffix := sm.replicaSuffix()
+	for iter.First(); iter.Valid(); iter.Next() {
+		if !bytes.HasSuffix(iter.Key(), suffix) {
+			// Skip keys that are not ours.
+			continue
+		}
+		// Trim the replica-specific suffix from keys that have it.
+		// When this snapshot is loaded by another replica, it will
+		// append its own replica suffix to local keys that need it.
+		key := iter.Key()[:len(iter.Key())-len(suffix)]
+		if err := encodeKeyValue(w, key, iter.Value()); err != nil {
 			return err
 		}
 	}
@@ -1510,11 +1517,6 @@ func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot, star
 func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 	wb := db.NewBatch()
 	defer wb.Close()
-
-	// Delete everything in the current database first.
-	if err := wb.DeleteRange(keys.MinByte, keys.MaxByte, nil /*ignored write options*/); err != nil {
-		return err
-	}
 
 	readBuf := bufio.NewReader(r)
 	for {
@@ -1537,7 +1539,7 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		if err := proto.Unmarshal(protoBytes, kv); err != nil {
 			return err
 		}
-		if err := wb.Set(kv.Key, kv.Value, nil /*ignored write options*/); err != nil {
+		if err := sm.rangeCheckedSet(wb, kv.Key, kv.Value); err != nil {
 			return err
 		}
 	}
@@ -1632,52 +1634,16 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
 	}
 	defer snap.Close()
-	return sm.SaveSnapshotToWriter(w, snap, keys.MinByte, keys.MaxByte)
-}
 
-func (sm *Replica) SaveSnapshotRange(preparedSnap interface{}, w io.Writer, start, end []byte) error {
-	snap, ok := preparedSnap.(*pebble.Snapshot)
-	if !ok {
-		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
-	}
-	defer snap.Close()
-	return sm.SaveSnapshotToWriter(w, snap, start, end)
-}
+	tstart := time.Now()
+	defer func() {
+		sm.log.Infof("Took %s to save snapshot to writer", time.Since(tstart))
+	}()
 
-// ImportDB swaps out the underlying pebble database using a clone of the source
-// replica.
-func (sm *Replica) ImportDB(src *Replica) error {
-	appliedIndex, err := sm.LastAppliedIndex()
-	if err != nil {
+	if err := sm.saveRangeLocalData(w, snap); err != nil {
 		return err
 	}
-
-	if err := sm.db().Close(); err != nil {
-		return err
-	}
-	if err := os.RemoveAll(sm.getDBDir()); err != nil {
-		return err
-	}
-	if err := src.db().Checkpoint(sm.getDBDir(), pebble.WithFlushedWAL()); err != nil {
-		return err
-	}
-	db, err := sm.openDB()
-	if err != nil {
-		return err
-	}
-	if err := sm.loadPartitionMetadata(db); err != nil {
-		return err
-	}
-	if err := db.Set(constants.LastAppliedIndexKey, uint64ToBytes(appliedIndex), pebble.Sync); err != nil {
-		return err
-	}
-	sm.rangeMu.RLock()
-	buf, err := proto.Marshal(sm.rangeDescriptor)
-	sm.rangeMu.RUnlock()
-	if err != nil {
-		return err
-	}
-	if err := db.Set(constants.LocalRangeKey, buf, pebble.Sync); err != nil {
+	if err := sm.saveRangeData(w, snap); err != nil {
 		return err
 	}
 	return nil
@@ -1702,7 +1668,7 @@ func (sm *Replica) ImportDB(src *Replica) error {
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
-	db, err := sm.leaser().DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -1712,7 +1678,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 
-	readDB, err := sm.leaser().DB()
+	readDB, err := sm.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -1730,7 +1696,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 }
 
 func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
-	return sm.leaser().DB()
+	return sm.leaser.DB()
 }
 
 // Close closes the IOnDiskStateMachine instance. Close is invoked when the
@@ -1750,14 +1716,7 @@ func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
 // IOnDiskStateMachine instance has been closed, the Close method is not
 // allowed to update the state of IOnDiskStateMachine visible to the outside.
 func (sm *Replica) Close() error {
-	leaser := sm.leaser()
-	if leaser == nil {
-		return nil
-	}
-
 	close(sm.quitChan)
-
-	leaser.Close()
 
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
@@ -1766,22 +1725,16 @@ func (sm *Replica) Close() error {
 	if sm.store != nil && rangeDescriptor != nil {
 		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
-	return sm.db().Close()
+	return nil
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(rootDir string, clusterID, nodeID uint64, store IStore, partitions []disk.Partition) *Replica {
-	fileDir := filepath.Join(rootDir, fmt.Sprintf("files-c%dn%d", clusterID, nodeID))
-	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
-		log.Errorf("Error creating fileDir %q for replica: %s", fileDir, err)
-	}
+func New(leaser pebble.Leaser, clusterID, nodeID uint64, store IStore, partitions []disk.Partition) *Replica {
 	r := &Replica{
-		rawLeaser:           nil,
-		rootDir:             rootDir,
-		fileDir:             fileDir,
 		ClusterID:           clusterID,
 		NodeID:              nodeID,
 		store:               store,
+		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
 		partitions:          partitions,
 		lastUsageCheckIndex: 0,
