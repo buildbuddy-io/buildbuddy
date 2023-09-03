@@ -182,7 +182,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
-      this.adjustZoom(e.deltaY * 0.04);
+      this.adjustZoom(-e.deltaY * 0.04);
     }
   }
 
