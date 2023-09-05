@@ -70,8 +70,8 @@ type CookieRequestTracker struct {
 	SameSite        http.SameSite
 }
 
-// TrackRequest starts tracking the SAML request with the given ID. It returns an
-// `index` that should be used as the RelayState in the SAMl request flow.
+// TrackRequest starts tracking the SAML request with the given ID. It returns
+// an `index` that should be used as the RelayState in the SAMl request flow.
 func (t CookieRequestTracker) TrackRequest(w http.ResponseWriter, r *http.Request, samlRequestID string) (string, error) {
 	randomBytes := make([]byte, 42)
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -110,8 +110,8 @@ func (t CookieRequestTracker) TrackRequest(w http.ResponseWriter, r *http.Reques
 	return trackedRequest.Index, nil
 }
 
-// StopTrackingRequest stops tracking the SAML request given by index, which is a string
-// previously returned from TrackRequest
+// StopTrackingRequest stops tracking the SAML request given by index, which is
+// a string previously returned from TrackRequest
 func (t CookieRequestTracker) StopTrackingRequest(w http.ResponseWriter, r *http.Request, index string) error {
 	c, err := r.Cookie(t.NamePrefix + index)
 	if err != nil {
@@ -119,7 +119,8 @@ func (t CookieRequestTracker) StopTrackingRequest(w http.ResponseWriter, r *http
 	}
 	c.Value = ""
 	c.Domain = cookie.Domain()
-	c.Expires = time.Unix(1, 0) // past time as close to epoch as possible, but not zero time.Time{}
+	// past time as close to epoch as possible, but not zero time.Time{}
+	c.Expires = time.Unix(1, 0)
 	http.SetCookie(w, c)
 	return nil
 }
