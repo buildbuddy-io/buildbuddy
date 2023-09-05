@@ -161,6 +161,17 @@ func isFileRecordKey(keyBytes []byte) bool {
 	return false
 }
 
+func batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) {
+	batchReader := wb.Reader()
+	for len(batchReader) > 0 {
+		_, ukey, value, _ := batchReader.Next()
+		if bytes.Equal(ukey, key) {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
 func (sm *Replica) replicaSuffix() []byte {
 	return []byte(fmt.Sprintf("-c%04dn%04d", sm.ClusterID, sm.NodeID))
 }
@@ -258,7 +269,7 @@ func (sm *Replica) setRange(key, val []byte) error {
 		sm.store.RemoveRange(sm.rangeDescriptor, sm)
 	}
 
-	sm.log.Debugf("Range descriptor is changing from %s to %s", rdString(sm.rangeDescriptor), rdString(rangeDescriptor))
+	sm.log.Infof("Range descriptor is changing from %s to %s", rdString(sm.rangeDescriptor), rdString(rangeDescriptor))
 	sm.rangeDescriptor = rangeDescriptor
 	sm.mappedRange = &rangemap.Range{
 		Left:  rangeDescriptor.GetLeft(),
@@ -288,22 +299,13 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 
 	// Still here? this is a local key, so treat it appropriately.
 	key = sm.replicaLocalKey(key)
-	if err := wb.Set(key, val, nil /*ignored write options*/); err != nil {
-		return err
-	}
-	if bytes.Equal(key, sm.replicaLocalKey(constants.LocalRangeKey)) {
-		if err := sm.setRange(key, val); err != nil {
-			log.Errorf("Error setting range: %s", err)
-		}
-	}
-	return nil
+	return wb.Set(key, val, nil /*ignored write options*/)
 }
 
 func (sm *Replica) lookup(db ReplicaReader, key []byte) ([]byte, error) {
 	if isLocalKey(key) {
 		key = sm.replicaLocalKey(key)
 	}
-
 	buf, closer, err := db.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
@@ -455,6 +457,43 @@ type ReplicaWriter interface {
 	NewSnapshot() *pebble.Snapshot
 }
 
+func (sm *Replica) loadPartitionMetadata(db ReplicaReader) error {
+	pms, err := sm.getPartitionMetadatas(db)
+	if err != nil {
+		return err
+	}
+	for _, pm := range pms.GetMetadata() {
+		sm.partitionMetadata[pm.GetPartitionId()] = pm
+	}
+	return nil
+}
+
+func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
+	buf, err := sm.lookup(db, constants.LocalRangeKey)
+	if err != nil {
+		sm.log.Debugf("Replica opened but range not yet set: %s", err)
+		return
+	}
+	sm.setRange(constants.LocalRangeKey, buf)
+}
+
+// loadReplicaState loads any in-memory replica state from the DB.
+func (sm *Replica) loadReplicaState(db ReplicaReader) error {
+	sm.checkAndSetRangeDescriptor(db)
+	if err := sm.loadPartitionMetadata(db); err != nil {
+		return err
+	}
+	lastStoredIndex, err := sm.getLastAppliedIndex(db)
+	if err != nil {
+		return err
+	}
+	if sm.lastAppliedIndex > lastStoredIndex {
+		return status.FailedPreconditionErrorf("last applied not moving forward: %d > %d", sm.lastAppliedIndex, lastStoredIndex)
+	}
+	sm.lastAppliedIndex = lastStoredIndex
+	return nil
+}
+
 // Open opens the existing on disk state machine to be used or it creates a
 // new state machine with empty state if it does not exist. Open returns the
 // most recent index value of the Raft log that has been persisted, or it
@@ -473,31 +512,13 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 		return 0, err
 	}
 	defer db.Close()
-	sm.checkAndSetRangeDescriptor(db)
-	if err := sm.loadPartitionMetadata(db); err != nil {
+	sm.quitChan = make(chan struct{})
+
+	if err := sm.loadReplicaState(db); err != nil {
 		return 0, err
 	}
-	return sm.getLastAppliedIndex(db)
-}
-
-func (sm *Replica) loadPartitionMetadata(db ReplicaReader) error {
-	pms, err := sm.getPartitionMetadatas(db)
-	if err != nil {
-		return err
-	}
-	for _, pm := range pms.GetMetadata() {
-		sm.partitionMetadata[pm.GetPartitionId()] = pm
-	}
-	return nil
-}
-
-func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
-	buf, err := sm.lookup(db, constants.LocalRangeKey)
-	if err != nil {
-		sm.log.Debugf("Replica opened but range not yet set")
-		return
-	}
-	sm.setRange(constants.LocalRangeKey, buf)
+	go sm.processAccessTimeUpdates()
+	return sm.lastAppliedIndex, nil
 }
 
 func (sm *Replica) fileDelete(wb pebble.Batch, req *rfpb.FileDeleteRequest) (*rfpb.FileDeleteResponse, error) {
@@ -1273,9 +1294,9 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 
 	for idx, entry := range entries {
 		// Insert all of the data in the batch.
-		batchCmdReq := &rfpb.BatchCmdRequest{}
-		batchCmdRsp := &rfpb.BatchCmdResponse{}
-		if err := proto.Unmarshal(entry.Cmd, batchCmdReq); err != nil {
+		batchReq := &rfpb.BatchCmdRequest{}
+		batchRsp := &rfpb.BatchCmdResponse{}
+		if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
 			return nil, err
 		}
 
@@ -1283,27 +1304,27 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		defer wb.Close()
 
 		var headerErr error
-		if batchCmdReq.GetHeader() != nil {
-			headerErr = sm.validateRange(batchCmdReq.GetHeader())
-			batchCmdRsp.Status = statusProto(headerErr)
+		if batchReq.GetHeader() != nil {
+			headerErr = sm.validateRange(batchReq.GetHeader())
+			batchRsp.Status = statusProto(headerErr)
 		}
 
 		if headerErr == nil {
-			for _, union := range batchCmdReq.GetUnion() {
+			for _, union := range batchReq.GetUnion() {
 				rsp := &rfpb.ResponseUnion{}
 				sm.handlePropose(wb, union, rsp)
 				if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
 					sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
 				}
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
+				batchRsp.Union = append(batchRsp.Union, rsp)
 			}
 		}
 
-		rspBuf, err := proto.Marshal(batchCmdRsp)
+		rspBuf, err := proto.Marshal(batchRsp)
 		if err != nil {
 			return nil, err
 		}
-		rangeID := batchCmdReq.GetHeader().GetRangeId()
+		rangeID := batchReq.GetHeader().GetRangeId()
 
 		entries[idx].Result = dbsm.Result{
 			Value: uint64(len(entries[idx].Cmd)),
@@ -1319,6 +1340,13 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		}
 		if err := wb.Commit(pebble.NoSync); err != nil {
 			return nil, err
+		}
+
+		// Update the local in-memory range descriptor iff this batch
+		// modified it and the batch was successfully committed.
+		localRangeKey := sm.replicaLocalKey(constants.LocalRangeKey)
+		if buf, ok := batchContainsKey(wb, localRangeKey); ok {
+			sm.setRange(localRangeKey, buf)
 		}
 		sm.lastAppliedIndex = entry.Index
 	}
@@ -1365,19 +1393,19 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 	}
 	defer db.Close()
 
-	batchCmdReq := &rfpb.BatchCmdRequest{}
-	if err := proto.Unmarshal(reqBuf, batchCmdReq); err != nil {
+	batchReq := &rfpb.BatchCmdRequest{}
+	if err := proto.Unmarshal(reqBuf, batchReq); err != nil {
 		return nil, err
 	}
-	batchCmdRsp := &rfpb.BatchCmdResponse{}
-	for _, req := range batchCmdReq.GetUnion() {
+	batchRsp := &rfpb.BatchCmdResponse{}
+	for _, req := range batchReq.GetUnion() {
 		//sm.log.Debugf("Lookup: request union: %+v", req)
 		rsp := sm.handleRead(db, req)
 		//sm.log.Debugf("Lookup: response union: %+v", rsp)
-		batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
+		batchRsp.Union = append(batchRsp.Union, rsp)
 	}
 
-	rspBuf, err := proto.Marshal(batchCmdRsp)
+	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
 		return nil, err
 	}
@@ -1539,7 +1567,10 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		if err := proto.Unmarshal(protoBytes, kv); err != nil {
 			return err
 		}
-		if err := sm.rangeCheckedSet(wb, kv.Key, kv.Value); err != nil {
+		if isLocalKey(kv.Key) {
+			kv.Key = sm.replicaLocalKey(kv.Key)
+		}
+		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
 		}
 	}
@@ -1677,22 +1708,12 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	if err != nil {
 		return err
 	}
-
 	readDB, err := sm.leaser.DB()
 	if err != nil {
 		return err
 	}
 	defer readDB.Close()
-	newLastApplied, err := sm.getLastAppliedIndex(readDB)
-	if err != nil {
-		return err
-	}
-	if sm.lastAppliedIndex > newLastApplied {
-		return status.FailedPreconditionErrorf("last applied not moving forward: %d > %d", sm.lastAppliedIndex, newLastApplied)
-	}
-	sm.lastAppliedIndex = newLastApplied
-	sm.checkAndSetRangeDescriptor(readDB)
-	return nil
+	return sm.loadReplicaState(db)
 }
 
 func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
@@ -1730,7 +1751,7 @@ func (sm *Replica) Close() error {
 
 // CreateReplica creates an ondisk statemachine.
 func New(leaser pebble.Leaser, clusterID, nodeID uint64, store IStore, partitions []disk.Partition) *Replica {
-	r := &Replica{
+	return &Replica{
 		ClusterID:           clusterID,
 		NodeID:              nodeID,
 		store:               store,
@@ -1740,11 +1761,8 @@ func New(leaser pebble.Leaser, clusterID, nodeID uint64, store IStore, partition
 		lastUsageCheckIndex: 0,
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 		fileStorer:          filestore.New(),
-		quitChan:            make(chan struct{}),
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
 		readQPS:             qps.NewCounter(),
 		raftProposeQPS:      qps.NewCounter(),
 	}
-	go r.processAccessTimeUpdates()
-	return r
 }

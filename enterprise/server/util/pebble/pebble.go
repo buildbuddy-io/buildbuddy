@@ -135,6 +135,8 @@ type Batch interface {
 	// Count returns the count of memtable-modifying operations in this batch. All
 	// operations with the except of LogData increment this count.
 	Count() uint32
+
+	Reader() pebble.BatchReader
 }
 
 // IPebbleDB is an interface the covers the methods on a pebble.DB used by our
@@ -244,6 +246,10 @@ func (ib *instrumentedBatch) NewIter(o *pebble.IterOptions) Iterator {
 
 func (ib *instrumentedBatch) Apply(batch Batch, opts *pebble.WriteOptions) error {
 	return ib.batch.Apply(batch.(*instrumentedBatch).batch, opts)
+}
+
+func (ib *instrumentedBatch) Reader() pebble.BatchReader {
+	return ib.batch.Reader()
 }
 
 type opMetrics struct {
@@ -406,17 +412,13 @@ func Open(dbDir string, options *pebble.Options) (IPebbleDB, error) {
 type Leaser interface {
 	DB() (IPebbleDB, error)
 	Close()
-	AcquireSplitLock()
-	ReleaseSplitLock()
 }
 
 type leaser struct {
-	db        IPebbleDB
-	waiters   sync.WaitGroup
-	closedMu  sync.Mutex // PROTECTS(closed)
-	closed    bool
-	splitMu   sync.Mutex // PROTECTS(splitting)
-	splitting bool
+	db       IPebbleDB
+	waiters  sync.WaitGroup
+	closedMu sync.Mutex // PROTECTS(closed)
+	closed   bool
 }
 
 // NewDBLeaser returns a new DB leaser that wraps db and serializes access to
@@ -428,18 +430,12 @@ type leaser struct {
 //
 // Once the DB leaser has been closed with Close(), no new handles can be
 // acquired, instead an error is returned.
-//
-// Additionally, if AcquireSplitLock() is called, the leaser will wait for all
-// all handles to be returned and prevent prevent additional handles from being
-// leased until ReleaseSplitLock() is called.
 func NewDBLeaser(db IPebbleDB) Leaser {
 	return &leaser{
-		db:        db,
-		waiters:   sync.WaitGroup{},
-		closedMu:  sync.Mutex{},
-		closed:    false,
-		splitMu:   sync.Mutex{},
-		splitting: false,
+		db:       db,
+		waiters:  sync.WaitGroup{},
+		closedMu: sync.Mutex{},
+		closed:   false,
 	}
 }
 
@@ -455,26 +451,7 @@ func (l *leaser) Close() {
 	l.waiters.Wait()
 }
 
-func (l *leaser) AcquireSplitLock() {
-	l.splitMu.Lock()
-	defer l.splitMu.Unlock()
-	l.waiters.Wait()
-	l.splitting = true
-}
-
-func (l *leaser) ReleaseSplitLock() {
-	l.splitMu.Lock()
-	defer l.splitMu.Unlock()
-	l.splitting = false
-}
-
 func (l *leaser) DB() (IPebbleDB, error) {
-	l.splitMu.Lock()
-	defer l.splitMu.Unlock()
-	if l.splitting {
-		return nil, status.OutOfRangeError("db is splitting")
-	}
-
 	l.closedMu.Lock()
 	defer l.closedMu.Unlock()
 	if l.closed {
