@@ -1034,11 +1034,19 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	}
 
 	if plat.OS == platform.DarwinOperatingSystemName {
-		counts.MacExecutionDurationUsec += dur.Microseconds()
+		if dur > 0 {
+			counts.MacExecutionDurationUsec = dur.Microseconds()
+		}
 	} else if plat.OS == platform.LinuxOperatingSystemName {
-		counts.LinuxExecutionDurationUsec += dur.Microseconds()
+		if dur > 0 {
+			counts.LinuxExecutionDurationUsec = dur.Microseconds()
+		}
 	} else {
 		return status.InternalErrorf("Unsupported platform %s", plat.OS)
+	}
+	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
+	if usg.GetCpuNanos() > 0 {
+		counts.CPUNanos = usg.GetCpuNanos()
 	}
 	labels, err := usageutil.Labels(ctx)
 	if err != nil {
