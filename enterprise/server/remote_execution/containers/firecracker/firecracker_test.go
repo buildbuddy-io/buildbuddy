@@ -1460,6 +1460,34 @@ func TestFirecrackerLargeResult(t *testing.T) {
 	assert.Len(t, res.Stdout, stdoutSize)
 }
 
+func TestFirecrackerNBDStuckRequestRegressionTest(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	// Write an NOP script and exec it directly.
+	err := os.WriteFile(filepath.Join(workDir, "script.sh"), []byte("#!/usr/bin/env bash"), 0755)
+	cmd := &repb.Command{Arguments: []string{"./script.sh"}}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         500,
+			EnableNetworking:  true,
+			ScratchDiskSizeMb: 200,
+		},
+		JailerRoot: tempJailerRoot(t),
+	}
+
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	require.NoError(t, res.Error)
+}
+
 func TestFirecrackerWithExecutorRestart(t *testing.T) {
 	ctx := context.Background()
 
