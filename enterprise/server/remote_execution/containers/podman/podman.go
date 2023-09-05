@@ -972,12 +972,12 @@ func (c *podmanCommandContainer) killContainerIfRunning(ctx context.Context) err
 func (c *podmanCommandContainer) maybeCleanupCorruptedImages(ctx context.Context, result *interfaces.CommandResult) error {
 	stderr := string(result.Stderr)
 	if result.ExitCode == podmanInternalExitCode && storageErrorRegex.MatchString(stderr) {
-		log.Debug("podman detected storage corruption, removing image")
+		log.CtxInfo(ctx, "podman detected storage corruption, removing image")
 		result.Error = status.UnavailableError("a storage corruption occurred")
 		result.ExitCode = commandutil.NoExitCode
 		return removeImage(ctx, c.image)
 	} else if result.ExitCode == podmanCannotInvokeExitCode && inputOutputErrorRegex.MatchString(stderr) {
-		log.Debug("podman detected input/output error, removing image")
+		log.CtxInfo(ctx, "podman detected input/output error, removing image")
 		result.Error = status.UnavailableError("an input/output error occurred streaming the image")
 		result.ExitCode = commandutil.NoExitCode
 		return removeImage(ctx, c.image)
