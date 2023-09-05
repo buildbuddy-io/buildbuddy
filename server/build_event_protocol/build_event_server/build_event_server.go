@@ -194,7 +194,10 @@ func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel
 	// cross-server consistency of messages in an invocation.
 	sort.Sort(sort.IntSlice(acks))
 
-	expectedSeqNo := channel.GetInitialSequenceNumber()
+	expectedSeqNo := int64(1)
+	if channel != nil {
+		expectedSeqNo = channel.GetInitialSequenceNumber()
+	}
 	for _, ack := range acks {
 		if ack != int(expectedSeqNo) {
 			log.CtxWarningf(ctx, "Missing ack: saw %d and wanted %d. Bailing!", ack, expectedSeqNo)
