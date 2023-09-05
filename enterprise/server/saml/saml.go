@@ -2,9 +2,11 @@ package saml
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"net/http"
@@ -23,7 +25,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/crewjam/saml"
 	"github.com/crewjam/saml/samlsp"
+	"github.com/golang-jwt/jwt"
 )
 
 var (
@@ -39,6 +43,7 @@ const (
 	slugCookie             = "Slug"
 	cookieDuration         = 365 * 24 * time.Hour
 	sessionDuration        = 12 * time.Hour
+	sessionCookieName      = "token"
 	contextSamlSessionKey  = "saml.session"
 	contextSamlEntityIDKey = "saml.entityID"
 	contextSamlSlugKey     = "saml.slug"
@@ -50,6 +55,147 @@ var (
 	samlEmailAttributes     = []string{"email", "mail", "emailAddress", "Email", "emailaddress", "email_address"}
 	samlSubjectAttributes   = append([]string{"urn:oasis:names:tc:SAML:attribute:subject-id", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent", "user_id", "username"}, samlEmailAttributes...)
 )
+
+// CookieRequestTracker tracks requests by setting a uniquely named
+// cookie for each request.
+//
+// This is a modified version of samlsp.CookieRequestTracker that also sets
+// the domain field on the cookies.
+type CookieRequestTracker struct {
+	ServiceProvider *saml.ServiceProvider
+	NamePrefix      string
+	Codec           samlsp.TrackedRequestCodec
+	MaxAge          time.Duration
+	RelayStateFunc  func(w http.ResponseWriter, r *http.Request) string
+	SameSite        http.SameSite
+}
+
+// TrackRequest starts tracking the SAML request with the given ID. It returns
+// an `index` that should be used as the RelayState in the SAMl request flow.
+func (t CookieRequestTracker) TrackRequest(w http.ResponseWriter, r *http.Request, samlRequestID string) (string, error) {
+	randomBytes := make([]byte, 42)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", err
+	}
+
+	trackedRequest := samlsp.TrackedRequest{
+		Index:         base64.RawURLEncoding.EncodeToString(randomBytes),
+		SAMLRequestID: samlRequestID,
+		URI:           r.URL.String(),
+	}
+
+	if t.RelayStateFunc != nil {
+		relayState := t.RelayStateFunc(w, r)
+		if relayState != "" {
+			trackedRequest.Index = relayState
+		}
+	}
+
+	signedTrackedRequest, err := t.Codec.Encode(trackedRequest)
+	if err != nil {
+		return "", err
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     t.NamePrefix + trackedRequest.Index,
+		Value:    signedTrackedRequest,
+		Domain:   cookie.Domain(),
+		MaxAge:   int(t.MaxAge.Seconds()),
+		HttpOnly: true,
+		SameSite: t.SameSite,
+		Secure:   t.ServiceProvider.AcsURL.Scheme == "https",
+		Path:     t.ServiceProvider.AcsURL.Path,
+	})
+
+	return trackedRequest.Index, nil
+}
+
+// StopTrackingRequest stops tracking the SAML request given by index, which is
+// a string previously returned from TrackRequest
+func (t CookieRequestTracker) StopTrackingRequest(w http.ResponseWriter, r *http.Request, index string) error {
+	c, err := r.Cookie(t.NamePrefix + index)
+	if err != nil {
+		return err
+	}
+	c.Value = ""
+	c.Domain = cookie.Domain()
+	// past time as close to epoch as possible, but not zero time.Time{}
+	c.Expires = time.Unix(1, 0)
+	http.SetCookie(w, c)
+	return nil
+}
+
+// GetTrackedRequests returns all the pending tracked requests
+func (t CookieRequestTracker) GetTrackedRequests(r *http.Request) []samlsp.TrackedRequest {
+	rv := []samlsp.TrackedRequest{}
+	for _, cookie := range r.Cookies() {
+		if !strings.HasPrefix(cookie.Name, t.NamePrefix) {
+			continue
+		}
+
+		trackedRequest, err := t.Codec.Decode(cookie.Value)
+		if err != nil {
+			continue
+		}
+		index := strings.TrimPrefix(cookie.Name, t.NamePrefix)
+		if index != trackedRequest.Index {
+			continue
+		}
+
+		rv = append(rv, *trackedRequest)
+	}
+	return rv
+}
+
+// GetTrackedRequest returns a pending tracked request.
+func (t CookieRequestTracker) GetTrackedRequest(r *http.Request, index string) (*samlsp.TrackedRequest, error) {
+	cookie, err := r.Cookie(t.NamePrefix + index)
+	if err != nil {
+		return nil, err
+	}
+
+	trackedRequest, err := t.Codec.Decode(cookie.Value)
+	if err != nil {
+		return nil, err
+	}
+	if trackedRequest.Index != index {
+		return nil, fmt.Errorf("expected index %q, got %q", index, trackedRequest.Index)
+	}
+	return trackedRequest, nil
+}
+
+// wrapper around samlsp.CookieSesionProvider that allows a seamless migration
+// of cookies to a different domain value.
+type cookieSessionProvider struct {
+	oldDomain string
+	d         samlsp.CookieSessionProvider
+}
+
+func (p cookieSessionProvider) CreateSession(w http.ResponseWriter, r *http.Request, assertion *saml.Assertion) error {
+	if p.oldDomain != "" {
+		clone := p.d
+		clone.Domain = p.oldDomain
+		if err := clone.DeleteSession(w, r); err != nil {
+			return err
+		}
+	}
+	return p.d.CreateSession(w, r, assertion)
+}
+
+func (p cookieSessionProvider) DeleteSession(w http.ResponseWriter, r *http.Request) error {
+	if p.oldDomain != "" {
+		clone := p.d
+		clone.Domain = p.oldDomain
+		if err := clone.DeleteSession(w, r); err != nil {
+			return err
+		}
+	}
+	return p.d.DeleteSession(w, r)
+}
+
+func (p cookieSessionProvider) GetSession(r *http.Request) (samlsp.Session, error) {
+	return p.d.GetSession(r)
+}
 
 type SAMLAuthenticator struct {
 	env           environment.Env
@@ -236,25 +382,50 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	entityURL := build_buddy_url.WithPath("saml/metadata")
 	query := fmt.Sprintf("%s=%s", slugParam, slug)
 	entityURL.RawQuery = query
-	samlSP, _ := samlsp.New(samlsp.Options{
+	opts := samlsp.Options{
 		EntityID:          entityURL.String(),
 		URL:               *build_buddy_url.WithPath("/auth/"),
 		Key:               keyPair.PrivateKey.(*rsa.PrivateKey),
 		Certificate:       keyPair.Leaf,
 		IDPMetadata:       idpMetadata,
 		AllowIDPInitiated: true,
-	})
+	}
+	samlSP, _ := samlsp.New(opts)
 	samlSP.ServiceProvider.MetadataURL.RawQuery = query
 	samlSP.ServiceProvider.AcsURL.RawQuery = query
 	samlSP.ServiceProvider.SloURL.RawQuery = query
-	if cookieProvider, ok := samlSP.Session.(samlsp.CookieSessionProvider); ok {
-		cookieProvider.MaxAge = sessionDuration
-		if codec, ok := cookieProvider.Codec.(samlsp.JWTSessionCodec); ok {
-			codec.MaxAge = sessionDuration
-			cookieProvider.Codec = codec
-		}
-		samlSP.Session = cookieProvider
+	samlSP.RequestTracker = &CookieRequestTracker{
+		ServiceProvider: &samlSP.ServiceProvider,
+		NamePrefix:      "saml_",
+		Codec:           samlsp.DefaultTrackedRequestCodec(opts),
+		MaxAge:          saml.MaxIssueDelay,
+		RelayStateFunc:  opts.RelayStateFunc,
+		SameSite:        opts.CookieSameSite,
 	}
+	sessionCodec := &samlsp.JWTSessionCodec{
+		SigningMethod: jwt.SigningMethodRS256,
+		Audience:      opts.URL.String(),
+		Issuer:        opts.URL.String(),
+		MaxAge:        sessionDuration,
+		Key:           opts.Key,
+	}
+	sessionDomain := opts.URL.Host
+	if cookie.Domain() != "" {
+		sessionDomain = cookie.Domain()
+	}
+	csp := &cookieSessionProvider{d: samlsp.CookieSessionProvider{
+		Name:     sessionCookieName,
+		Domain:   sessionDomain,
+		MaxAge:   sessionDuration,
+		HTTPOnly: true,
+		Secure:   opts.URL.Scheme == "https",
+		SameSite: opts.CookieSameSite,
+		Codec:    sessionCodec,
+	}}
+	if cookie.Domain() != "" {
+		csp.oldDomain = opts.URL.Host
+	}
+	samlSP.Session = csp
 	a.mu.Lock()
 	a.samlProviders[slug] = samlSP
 	a.mu.Unlock()

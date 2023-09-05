@@ -16,6 +16,8 @@ go_library(
         "//server/util/cookie",
         "//server/util/flagutil",
         "//server/util/status",
+        "@com_github_crewjam_saml//:saml",
         "@com_github_crewjam_saml//samlsp",
+        "@com_github_golang_jwt_jwt//:jwt",
     ],
 )
