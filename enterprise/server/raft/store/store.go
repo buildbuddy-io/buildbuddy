@@ -9,7 +9,6 @@ import (
 	"math"
 	"math/rand"
 	"net"
-	"os"
 	"sort"
 	"sync"
 	"time"
@@ -83,6 +82,7 @@ var (
 	partitionUsageDeltaGossipThreshold = flag.Int("cache.raft.partition_usage_delta_bytes_threshold", 100e6, "Gossip partition usage information if it has changed by more than this amount since the last gossip.")
 	samplesPerEviction                 = flag.Int("cache.raft.samples_per_eviction", 20, "How many records to sample on each eviction")
 	samplePoolSize                     = flag.Int("cache.raft.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
+	enableSplittingReplicas            = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
 )
 
 type nodePartitionUsage struct {
@@ -567,12 +567,14 @@ type Store struct {
 	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
 	usages   *usageTracker
 
+	openedReplicasMu sync.Mutex
+	openedReplicas   map[string]*replica.Replica
+
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
 
 	fileStorer filestore.Store
 	eg         *errgroup.Group
-	quitChan   chan struct{}
 }
 
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
@@ -590,6 +592,9 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
+
+		openedReplicasMu: sync.Mutex{},
+		openedReplicas:   make(map[string]*replica.Replica),
 
 		leases:   sync.Map{},
 		replicas: sync.Map{},
@@ -677,8 +682,6 @@ func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
 }
 
 func (s *Store) Start() error {
-	s.quitChan = make(chan struct{}, 0)
-
 	// A grpcServer is run which is responsible for presenting a meta API
 	// to manage raft nodes on each host, as well as an API to shuffle data
 	// around between nodes, outside of raft.
@@ -700,12 +703,12 @@ func (s *Store) Start() error {
 
 func (s *Store) Stop(ctx context.Context) error {
 	s.dropLeadershipForShutdown()
-
-	close(s.quitChan)
 	if err := s.eg.Wait(); err != nil {
 		return err
 	}
 	s.log.Info("Store: waitgroups finished")
+	s.nodeHost.Stop()
+	s.log.Info("Store: nodehost closed")
 
 	listener.DefaultListener().UnregisterLeaderUpdatedCB(&s.leaderUpdatedCB)
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
@@ -1018,11 +1021,27 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-	return replica.New(s.leaser, clusterID, nodeID, s, s.partitions)
+	r := replica.New(s.leaser, clusterID, nodeID, s, s.partitions)
+
+	s.openedReplicasMu.Lock()
+	defer s.openedReplicasMu.Unlock()
+	s.openedReplicas[fmt.Sprintf("c%dn%d", r.ClusterID, r.NodeID)] = r
+
+	return r
 }
 
 func (s *Store) Sender() *sender.Sender {
 	return s.sender
+}
+
+func (s *Store) GetReplicaByClusterAndNode(clusterID, nodeID uint64) (*replica.Replica, error) {
+	s.openedReplicasMu.Lock()
+	defer s.openedReplicasMu.Unlock()
+	r, ok := s.openedReplicas[fmt.Sprintf("c%dn%d", clusterID, nodeID)]
+	if !ok {
+		return nil, status.NotFoundErrorf("Replica c%dn%d not present on this store", clusterID, nodeID)
+	}
+	return r, nil
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
@@ -1060,6 +1079,73 @@ func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeader
 		return nil, err
 	}
 	return &rfpb.TransferLeadershipResponse{}, nil
+}
+
+func (s *Store) AddPeer(ctx context.Context, sourceClusterID, newClusterID uint64) error {
+	rd := s.lookupRange(sourceClusterID)
+	if rd == nil {
+		return status.FailedPreconditionErrorf("cluster %d not found on this node", sourceClusterID)
+	}
+	sourceReplica, err := s.GetReplica(rd.GetRangeId())
+	if err != nil || sourceReplica == nil {
+		return status.FailedPreconditionErrorf("range %d not found on this node", rd.GetRangeId())
+	}
+	initialMembers := make(map[uint64]string)
+	for _, replica := range rd.GetReplicas() {
+		nhid, _, err := s.registry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
+		if err != nil {
+			return status.InternalErrorf("could not resolve node host ID: %s", err)
+		}
+		initialMembers[replica.GetNodeId()] = nhid
+	}
+
+	waitErr := make(chan error, 1)
+	// Wait for the notification that the cluster node is ready on the local
+	// nodehost.
+	go func() {
+		err := listener.DefaultListener().WaitForClusterReady(ctx, newClusterID)
+		waitErr <- err
+		close(waitErr)
+	}()
+
+	s.log.Infof("Starting new raft node c%dn%d", newClusterID, sourceReplica.NodeID)
+	rc := raftConfig.GetRaftConfig(newClusterID, sourceReplica.NodeID)
+	err = s.nodeHost.StartOnDiskCluster(initialMembers, false /*join*/, s.ReplicaFactoryFn, rc)
+	if err != nil {
+		if err == dragonboat.ErrClusterAlreadyExist {
+			err = status.AlreadyExistsError(err.Error())
+		}
+		return err
+	}
+
+	err, ok := <-waitErr
+	if ok && err != nil {
+		s.log.Errorf("WaitForClusterReady err: %s", err)
+		return err
+	}
+
+	// The snapshot request requires a deadline to be set on the context.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Wait a little bit for the dragonboat library to start the peer.
+	// TODO: find a better way?
+	s.waitForReplicaToCatchUp(ctx, newClusterID, 0)
+	time.Sleep(100 * time.Millisecond)
+
+	// Force compaction so that dragonboat doesn't try to use the existing
+	// raft logs for recovery. The logs are incomplete since we perform the
+	// database clone outside of raft. With the raft snapshot in place,
+	// recovery attempts will ask the state machine (replica) to provide a
+	// snapshot which will reflect the cloned data.
+	opts := dragonboat.SnapshotOption{
+		OverrideCompactionOverhead: true,
+		CompactionOverhead:         0,
+	}
+	if _, err := s.nodeHost.SyncRequestSnapshot(ctx, newClusterID, opts); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
@@ -1148,10 +1234,6 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	return &rfpb.SyncProposeResponse{
 		Batch: batchResponse,
 	}, nil
-}
-
-func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
-	return nil, status.UnimplementedErrorf("not yet implemented")
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
@@ -1457,67 +1539,49 @@ func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*
 	return replicas, nil
 }
 
-// loadSnapshot ingests an already created snapshot (see createSnapshot above)
-// into a range by sending all records in the snapshot over raft to the new
-// range. This may require copying stored file data -- that can be prevented by
-// first sending a CopyStoredFilesRequest RAFT command to pre-load the stored
-// data onto the replicas in the new range..
-func (s *Store) loadSnapshot(ctx context.Context, req *rfpb.LoadSnapshotRequest) (*rfpb.LoadSnapshotResponse, error) {
-	r, err := s.GetReplica(req.GetHeader().GetRangeId())
+func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
+	if !*enableSplittingReplicas {
+		return nil, status.FailedPreconditionError("Splitting not enabled")
+	}
+
+	sourceRange := req.GetRange()
+	if sourceRange == nil {
+		return nil, status.FailedPreconditionErrorf("no range provided to split: %+v", req)
+	}
+	if len(sourceRange.GetReplicas()) == 0 {
+		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", sourceRange)
+	}
+
+	// Copy source range, because it's a pointer and will change when we
+	// propose the split.
+	sourceRange = proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
+	clusterID := sourceRange.GetReplicas()[0].GetClusterId()
+
+	newClusterID, newRangeID, err := s.reserveClusterAndRangeID(ctx)
+	if err != nil {
+		return nil, status.InternalErrorf("could not reserve IDs for new cluster: %s", err)
+	}
+	simpleSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.SimpleSplitRequest{
+		SourceRangeId: sourceRange.GetRangeId(),
+		NewClusterId:  newClusterID,
+		NewRangeId:    newRangeID,
+	})
+	rsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, simpleSplitReq)
+	if err != nil {
+		return nil, status.InternalErrorf("simple split err: %s", err)
+	}
+	simpleSplitRsp, err := rsp.SimpleSplitResponse(0)
 	if err != nil {
 		return nil, err
 	}
-	exists, err := disk.FileExists(ctx, req.GetSnapId())
-	if err != nil {
+	if err := s.updateMetarange(ctx, sourceRange, simpleSplitRsp.GetNewLeft(), simpleSplitRsp.GetNewRight()); err != nil {
+		log.Errorf("metarange update error: %s", err)
 		return nil, err
 	}
-	if !exists {
-		return nil, status.FailedPreconditionErrorf("snap with ID %q not found", req.GetSnapId())
-	}
-	f, err := os.Open(req.GetSnapId())
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("error opening snap %q: %s", req.GetSnapId(), err)
-	}
-	defer f.Close()
-
-	batch := rbuilder.NewBatchBuilder()
-	flush := func() error {
-		if batch.Size() == 0 {
-			return nil
-		}
-		if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, r.ClusterID, batch); err != nil {
-			return err
-		}
-		batch = rbuilder.NewBatchBuilder()
-		return nil
-	}
-
-	for record := range r.ParseSnapshot(ctx, f) {
-		if record.Error != nil {
-			return nil, record.Error
-		}
-		batch = batch.Add(record.PB)
-		if batch.Size() > 100 {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if err := flush(); err != nil {
-		return nil, err
-	}
-
-	return &rfpb.LoadSnapshotResponse{}, nil
-}
-
-func casRevert(cas *rfpb.CASRequest) *rfpb.CASRequest {
-	return &rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   cas.GetKv().GetKey(),
-			Value: cas.GetExpectedValue(),
-		},
-		ExpectedValue: cas.GetKv().GetValue(),
-	}
+	return &rfpb.SplitClusterResponse{
+		Left:  simpleSplitRsp.GetNewLeft(),
+		Right: simpleSplitRsp.GetNewRight(),
+	}, nil
 }
 
 func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {
@@ -1796,49 +1860,30 @@ func (s *Store) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {
 	return ids, nil
 }
 
-type newClusterIDs struct {
-	clusterID uint64
-	rangeID   uint64
-	maxNodeID uint64
-}
-
-func (s *Store) reserveIDsForNewCluster(ctx context.Context, numNodes int) (*newClusterIDs, error) {
+func (s *Store) reserveClusterAndRangeID(ctx context.Context) (uint64, uint64, error) {
 	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
 		Key:   constants.LastClusterIDKey,
 		Delta: uint64(1),
 	}).Add(&rfpb.IncrementRequest{
 		Key:   constants.LastRangeIDKey,
 		Delta: uint64(1),
-	}).Add(&rfpb.IncrementRequest{
-		Key:   constants.LastNodeIDKey,
-		Delta: uint64(numNodes),
 	}).ToProto()
 	if err != nil {
-		return nil, err
+		return 0, 0, err
 	}
 	metaRangeRsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, metaRangeBatch)
 	if err != nil {
-		return nil, err
+		return 0, 0, err
 	}
 	clusterIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(0)
 	if err != nil {
-		return nil, err
+		return 0, 0, err
 	}
 	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(1)
 	if err != nil {
-		return nil, err
+		return 0, 0, err
 	}
-	nodeIDsIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(2)
-	if err != nil {
-		return nil, err
-	}
-	ids := &newClusterIDs{
-		clusterID: clusterIncrRsp.GetValue(),
-		rangeID:   rangeIDIncrRsp.GetValue(),
-		maxNodeID: nodeIDsIncrRsp.GetValue(),
-	}
-
-	return ids, nil
+	return clusterIncrRsp.GetValue(), rangeIDIncrRsp.GetValue(), nil
 }
 
 func casRangeEdit(key []byte, old, new *rfpb.RangeDescriptor) (*rfpb.CASRequest, error) {
@@ -1911,6 +1956,7 @@ func (s *Store) updateMetarange(ctx context.Context, oldLeft, left, right *rfpb.
 	if err := addMetaRangeEdits(oldLeft, left, right, b); err != nil {
 		return err
 	}
+	log.Printf("oldLeft: %+v", oldLeft)
 	batchProto, err := b.ToProto()
 	if err != nil {
 		return err
@@ -1920,6 +1966,13 @@ func (s *Store) updateMetarange(ctx context.Context, oldLeft, left, right *rfpb.
 		return err
 	}
 	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
+	casResponse, err := batchRsp.CASResponse(0)
+	if err != nil {
+		rd := &rfpb.RangeDescriptor{}
+		proto.Unmarshal(casResponse.GetKv().GetValue(), rd)
+		log.Printf("err: %s, kv: %+v", err, rd)	
+		return err
+	}
 	return batchRsp.AnyError()
 }
 

@@ -145,6 +145,9 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	require.NotNil(t, s)
 	s.Start()
 	ts.Store = s
+	t.Cleanup(func() {
+		s.Stop(context.TODO())
+	})
 	return ts, nodeHost
 }
 
@@ -356,7 +359,6 @@ func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int
 }
 
 func TestSplitMetaRange(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -398,7 +400,6 @@ func getStoreWithRangeLease(t testing.TB, stores []*TestingStore, header *rfpb.H
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -485,7 +486,6 @@ func bytesToUint64(buf []byte) uint64 {
 }
 
 func TestPostFactoSplit(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
