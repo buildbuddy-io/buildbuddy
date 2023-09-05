@@ -162,6 +162,9 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 // hit.
 // N.B. Callers are responsible for closing the returned connection.
 func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.ClientConn, error) {
+
+	log.Debugf("vsock: SimpleGRPCDial %q port %d", socketPath, port)
+
 	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
 		return dialHostToGuest(ctx, socketPath, port)
 	}

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
@@ -266,16 +267,23 @@ func resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint
 		Src: src,
 		Len: uint64(size),
 	}
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
-	if errno != 0 {
-		if errno == unix.ENOENT {
-			// The faulting process changed its virtual memory layout simultaneously with an outstanding UFFDIO_COPY
-			// The UFFDIO_COPY will have aborted and the handler should continue to serve page faults
-			return 0, nil
+	const maxCopyAttempts = 10
+	dly := 5 * time.Millisecond
+	for i := 1; i <= maxCopyAttempts; i++ {
+		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+		if errno == 0 {
+			return int64(copyData.Copy), nil
 		}
-		return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
+		if errno != unix.ENOENT {
+			return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
+		}
+		// The faulting process changed its virtual memory layout simultaneously with an outstanding UFFDIO_COPY
+		// The UFFDIO_COPY will have aborted and the handler should continue to serve page faults
+		log.Debugf("resolvePageFault(%d, %d, %d): ENOENT: retrying", faultingRegion, src, size)
+		time.Sleep(dly)
+		dly *= 2
 	}
-	return int64(copyData.Copy), nil
+	return 0, status.InternalError("UFFDIO_COPY failed after all ENOENT retry attempts")
 }
 
 // readFaultingAddress reads a notification from the uffd object and returns the faulting address

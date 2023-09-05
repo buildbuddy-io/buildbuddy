@@ -216,7 +216,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionMetrics.Isolation = r.GetIsolationType()
 	finishedCleanly := false
 	defer func() {
-		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
+		s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	}()
 
 	log.CtxInfof(ctx, "Preparing runner for task.")

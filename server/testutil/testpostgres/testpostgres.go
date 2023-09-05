@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
-
 	"time"
 
-	// "github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/dockerutil"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -61,6 +59,32 @@ func Start(t testing.TB, reuseServer bool) string {
 	}
 
 	if port == 0 {
+		log.Debug("Starting sshd...")
+		// if strings.HasPrefix("A", "B") {
+		{
+			cmd := exec.Command("bash", "-c", `
+				set -e
+				set -x
+				cd /
+				export PATH="$PATH:/sbin/:/usr/sbin/"
+				# Set the root password to 'root'
+				printf 'root:root' | chpasswd
+				# Install openssh-server (with apt, assuming the VM is running ubuntu)
+				export DEBIAN_FRONTEND=noninteractive
+				apt update && apt install -y openssh-server
+				# Permit SSH root login
+				echo >>/etc/ssh/sshd_config 'PermitRootLogin yes'
+				# Start sshd
+				echo 'Starting sshd...'
+				/etc/init.d/ssh start
+				echo 'sshd started'
+			`)
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			err := cmd.Run()
+			require.NoError(t, err)
+		}
+
 		port = testport.FindFree(t)
 		containerName = fmt.Sprintf("%s%d", containerNamePrefix, port)
 

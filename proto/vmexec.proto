@@ -21,6 +21,9 @@ service Exec {
   // Prepares the VM for command execution after a fresh start or a resume.
   rpc Initialize(InitializeRequest) returns (InitializeResponse);
 
+  // Prepares the VM for pausing.
+  rpc PrepareForPause(PrepareForPauseRequest) returns (PrepareForPauseResponse);
+
   // Calls sync(1) within the VM.
   rpc Sync(SyncRequest) returns (SyncResponse);
 
@@ -133,6 +136,9 @@ message InitializeRequest {
 message InitializeResponse {
   // This page intentionally left empty.
 }
+
+message PrepareForPauseRequest {}
+message PrepareForPauseResponse {}
 
 message SyncRequest {}
 message SyncResponse {}

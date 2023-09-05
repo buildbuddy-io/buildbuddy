@@ -5,11 +5,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -167,6 +169,34 @@ func tempJailerRoot(t *testing.T) string {
 	return testfs.MakeTempSymlink(t, "/tmp", "buildbuddy-*-jailer", testfs.MakeTempDir(t))
 }
 
+func TestFirecrackerStuckNBD(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	err := os.WriteFile(filepath.Join(workDir, "script.sh"), []byte("#!/bin/sh\nexit 0\n"), 0777)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{"./script.sh"}}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "gcr.io/flame-public/strace:latest",
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           2,
+			MemSizeMb:         550,
+			EnableNetworking:  true,
+			ScratchDiskSizeMb: 200,
+		},
+		JailerRoot: tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	require.NoError(t, res.Error)
+}
+
 func TestFirecrackerRunSimple(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
@@ -293,13 +323,14 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
+		// ContainerImage:         busyboxImage,
+		ContainerImage:         "docker.io/itsthenetwork/alpine-tcpdump:latest",
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			MemSizeMb:         200, // small to make snapshotting faster.
 			EnableNetworking:  false,
-			ScratchDiskSizeMb: 100,
+			ScratchDiskSizeMb: 1_000,
 		},
 		JailerRoot: tempJailerRoot(t),
 	}
@@ -346,7 +377,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
 
-	assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
+	require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
 
 	// Try pause, unpause, exec several times.
 	for i := 1; i <= 3; i++ {
@@ -358,11 +389,50 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
 		require.NoError(t, err)
 
+		log.Infof("\n\n === UNPAUSE #%d ===\n", i)
+
 		if err := c.Unpause(ctx); err != nil {
 			t.Fatalf("unable to unpause container: %s", err)
 		}
 
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		go func() {
+			<-ctx.Done()
+			if ctx.Err() == context.DeadlineExceeded {
+				log.Errorf("Context timed out!")
+			}
+		}()
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+
+		{
+			// Get the pcap from the the scratchfs
+			extractDir := testfs.MakeTempDir(t)
+			log.Infof("Extracting scratchfs to %s", extractDir)
+			err := ext4.ImageToDirectory(ctx, c.ScratchFSPath(), extractDir)
+			require.NoError(t, err)
+			_ = filepath.WalkDir(extractDir, func(path string, d fs.DirEntry, err error) error {
+				// log.Infof("Walk scratchfs: %s", strings.TrimPrefix(path, extractDir))
+				if strings.HasSuffix(path, ".pcap") {
+					b, err := os.ReadFile(path)
+					require.NoError(t, err)
+					if len(b) == 0 {
+						log.Warningf("pcap is empty")
+					} else {
+						_ = os.RemoveAll("/tmp/latest.pcap")
+						err = os.WriteFile("/tmp/latest.pcap", b, 0644)
+						require.NoError(t, err)
+					}
+				}
+				return nil
+			})
+		}
+
+		// if len(res.Stderr) > 0 {
+		// 	os.RemoveAll("/tmp/latest.pcap")
+		// 	os.WriteFile("/tmp/latest.pcap", res.Stderr, 0644)
+		// }
+
 		require.NoError(t, res.Error)
 
 		assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
@@ -863,7 +933,7 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	assert.Equal(t, "/workspace\n", string(res.Stdout))
 }
 
-func TestFirecrackerRunWithDocker(t *testing.T) {
+func TestFirecrackerRunWithDockerSimple(t *testing.T) {
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -873,31 +943,36 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
-	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", `
-			set -e
-			# Discard pull output to make the output deterministic
-			docker pull ` + busyboxImage + ` &>/dev/null
+	err := os.WriteFile(filepath.Join(workDir, "script.sh"), []byte(`
+		set -e
 
-			# Try running a few commands
-			docker run --rm ` + busyboxImage + ` echo Hello
-			docker run --rm ` + busyboxImage + ` echo world
-		`},
+		# echo 'Started!'
+
+		# Discard pull output to make the output deterministic
+		# docker pull `+busyboxImage+` &>/dev/null
+
+		echo Hello
+		echo world
+
+		# Try running a few commands
+		# docker run --rm `+busyboxImage+` echo Hello
+		# docker run --rm `+busyboxImage+` echo world
+	`), 0777)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "./script.sh"},
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         imageWithDockerInstalled,
+		ContainerImage:         platform.DefaultImage(),
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         2500,
+			MemSizeMb:         2000,
 			EnableNetworking:  true,
 			InitDockerd:       true,
-			ScratchDiskSizeMb: 100,
+			ScratchDiskSizeMb: 1000,
 		},
 		JailerRoot: tempJailerRoot(t),
 	}

@@ -101,6 +101,7 @@ go_test(
         # recycled runner, because we can't fit all db docker images with the
         # default disk limit.
         "test.runner-recycling-key": "postgres",
+        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04-workflows",
     },
     shard_count = 7,
     tags = ["docker"],

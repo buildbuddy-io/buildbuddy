@@ -1,18 +1,24 @@
 package nbdclient
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/Merovius/nbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
+	"golang.org/x/sys/unix"
+
+	// "github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
@@ -28,6 +34,49 @@ const (
 	// How often to poll for an NBD to become ready.
 	readyCheckPollInterval = 500 * time.Microsecond
 )
+
+type bufferedLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+var bl bufferedLog
+
+func (b *bufferedLog) Logf(format string, args ...any) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	pfx := fmt.Sprintf("%s ", time.Now())
+	b.buf.Write([]byte(pfx + fmt.Sprintf(format, args...) + "\n"))
+}
+
+func (b *bufferedLog) Flush() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	fmt.Fprint(os.Stderr, b.buf.String())
+	b.buf.Reset()
+}
+
+func (b *bufferedLog) FlushLoop() {
+	for {
+		time.Sleep(1 * time.Second)
+		b.Flush()
+	}
+}
+
+func init() {
+	go bl.FlushLoop()
+
+	// os.Setenv("NLDEBUG", "level=1")
+	// go func() {
+	// 	// Monitor dropped netlink packets
+	// 	for {
+	// 		b, _ := os.ReadFile("/proc/net/netlink")
+	// 		s := string(b)
+	// 		fmt.Println(s)
+	// 		time.Sleep(1 * time.Second)
+	// 	}
+	// }()
+}
 
 type device struct {
 	// Index is the nbd index assigned to the device.
@@ -53,6 +102,7 @@ type ClientDevice struct {
 	metadata  *nbdpb.DeviceMetadata
 	device    *device
 	mountPath string
+	mu        sync.RWMutex
 }
 
 func dialHost() (*grpc.ClientConn, error) {
@@ -64,19 +114,120 @@ func dialHost() (*grpc.ClientConn, error) {
 
 // NewClientDevice returns a client to the host device with the given name.
 func NewClientDevice(ctx context.Context, name string) (*ClientDevice, error) {
-	conn, err := dialHost()
+	cmd := exec.Command("/bin/sh", "-c", `
+		(
+			while true; do
+				echo 'sh: alive :)'
+				sleep 1
+			done
+		) &
+	`)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
 	if err != nil {
-		return nil, err
+		log.Fatal(err.Error())
 	}
-	client := nbdpb.NewBlockDeviceClient(conn)
+
+	go func() {
+		for {
+			time.Sleep(1000 * time.Millisecond)
+			log.Infof("nbdclient: %s: alive", name)
+		}
+	}()
+
 	return &ClientDevice{
-		ctx:    ctx,
-		conn:   conn,
-		client: client,
+		ctx: ctx,
 		// Note: only the name metadata is populated initially; the rest of the
 		// metadata is fetched from the host before mounting.
 		metadata: &nbdpb.DeviceMetadata{Name: name},
 	}, nil
+}
+
+func (d *ClientDevice) PauseHostIO() error {
+	d.mu.Lock() // corresponding Unlock is in Unpause
+	if err := d.conn.Close(); err != nil {
+		return err
+	}
+	d.conn = nil
+	d.client = nil
+	log.Infof("/dev/nbd%d: Paused host IO", d.device.Index)
+	return nil
+}
+
+func (d *ClientDevice) UnpauseHostIO() error {
+	conn, err := dialHost()
+	if err != nil {
+		return err
+	}
+	d.conn = conn
+	d.client = nbdpb.NewBlockDeviceClient(conn)
+	d.mu.Unlock()
+	log.Infof("/dev/nbd%d: Unpaused host IO", d.device.Index)
+	return nil
+}
+
+var syncLoopOnce sync.Once
+
+func startNlmon() {
+	go syncLoopOnce.Do(func() {
+		for {
+			log.Infof("attempting sync /root/nlmon.pcap")
+			f, err := os.Open("/root/nlmon.pcap")
+			if err == nil {
+				err := unix.Fsync(int(f.Fd()))
+				log.Infof("synced /root/nlmon.pcap: err=%s", err)
+				f.Close()
+			} else {
+				log.Infof("failed to sync pcap: %s", err)
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
+	})
+
+	c := exec.Command("sh", "-c", `
+		set -e
+
+		cd /root
+
+		trap 'echo SHELL EXITED' EXIT
+
+		ip link | grep nlmon || {
+			echo "Creating nlmon0..."
+			ip link add nlmon0 type nlmon
+			ip link set dev nlmon0 up
+			echo "Done."
+		}
+		pkill -9 tcpdump || true
+		rm -rf /root/nlmon.pcap || true
+
+		# tcpdump --version
+		(
+			tcpdump -n -i nlmon0 -w /root/nlmon.pcap
+			echo 'tcpdump exited with code' $?
+		) &
+	`)
+	c.Stderr = os.Stderr
+	c.Stdout = os.Stdout
+	if err := c.Run(); err != nil {
+		log.Fatalf("Failed to start nlmon: %s", err)
+	}
+
+	// Wait for tcpdump to start, then wait a few ms
+	dly := 10 * time.Millisecond
+	for {
+		c = exec.Command("sh", "-c", "pgrep tcpdump || exit 1")
+		c.Stderr = os.Stderr
+		c.Stdout = os.Stdout
+		if err := c.Run(); err == nil {
+			break
+		}
+		time.Sleep(dly)
+		dly *= 2
+		log.Infof("Waiting for tcpdump to start...")
+		continue
+	}
+	time.Sleep(5 * time.Millisecond)
 }
 
 // DevicePath returns the /dev/nbd* path for this device, such as "/dev/nbd0"
@@ -88,6 +239,9 @@ func (d *ClientDevice) DevicePath() string {
 }
 
 func (d *ClientDevice) updateMetadata(ctx context.Context) error {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
 	return d.doWithRedial(func() error {
 		res, err := d.client.Metadata(ctx, &nbdpb.MetadataRequest{
 			Name: d.metadata.GetName(),
@@ -111,6 +265,8 @@ func (d *ClientDevice) createDevice() error {
 	if d.device != nil {
 		return status.FailedPreconditionError("device is already created")
 	}
+
+	// startNlmon()
 
 	start := time.Now()
 
@@ -178,15 +334,24 @@ func (d *ClientDevice) Mount(path string) error {
 	if d.mountPath != "" {
 		return status.FailedPreconditionError("already mounted")
 	}
+	if err := d.dialHost(); err != nil {
+		return err
+	}
 	if err := d.createDevice(); err != nil {
 		return status.WrapError(err, "failed to create device")
 	}
 	fstype := filesystemTypeString(d.metadata.GetFilesystemType())
-	if err := syscall.Mount(d.DevicePath(), path, fstype, syscall.MS_RELATIME, "" /*=data*/); err != nil {
+	log.Infof("Mounting %s (type %s) to %s", d.DevicePath(), d.metadata.GetName(), path)
+	if err := syscall.Mount(d.DevicePath(), path, fstype, syscall.MS_NOATIME, "" /*=data*/); err != nil {
 		return status.InternalErrorf("failed to mount %s (type %s) to %s: %s", d.DevicePath(), fstype, path, err)
 	}
 	d.mountPath = path
-	log.Infof("Mounted %s (type %s) to %s", d.DevicePath(), d.metadata.GetName(), path)
+	log.Infof("Mounted nbd.")
+
+	// log.Infof("Doing a test read of /dev/nbd%d", d.device.Index)
+	// b, _ := exec.Command("sh", "-c", "cat /dev/nbd0 | tail -c5; # find /workspace -type f | xargs cat").CombinedOutput()
+	// log.Infof("tail: %q", string(b))
+
 	return nil
 }
 
@@ -196,6 +361,11 @@ func (d *ClientDevice) Unmount() error {
 	if d.mountPath == "" {
 		return status.FailedPreconditionError("not mounted")
 	}
+
+	// os.WriteFile("/proc/sys/vm/drop_caches", []byte("3\n"), 0)
+	// log.Infof("Pre-unmount: cat-ing all files in /workspace")
+	// exec.Command("sh", "-c", "find /workspace -type f | xargs cat").Run()
+
 	if err := syscall.Unmount(d.mountPath, 0); err != nil {
 		return status.InternalErrorf("unmount %s (%s): %s", d.mountPath, d.metadata.GetName(), err)
 	}
@@ -209,10 +379,25 @@ func (d *ClientDevice) Unmount() error {
 	}
 	log.Infof("Disconnected %s", d.DevicePath())
 	d.device = nil
+
+	d.conn.Close()
+	d.conn = nil
+
 	return nil
 }
 
 func (d *ClientDevice) ReadAt(p []byte, off int64) (int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	// stop := canary.Start(1 * time.Second)
+	// defer stop()
+
+	// syscall.Write(2, []byte("\n"))
+
+	// log.Infof("nbdclient: ReadAt(%d@%d)", len(p), off)
+	// log.Infof("nbdclient: ReadAt: done")
+
 	var res *nbdpb.ReadResponse
 	err := d.doWithRedial(func() error {
 		var err error
@@ -236,6 +421,26 @@ func (d *ClientDevice) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (d *ClientDevice) WriteAt(p []byte, off int64) (int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	// stop := canary.Start(1 * time.Second)
+	// defer stop()
+
+	// log.Infof("nbdclient: WriteAt(%d@%d)", len(p), off)
+	// defer log.Infof("nbdclient: WriteAt: done")
+
+	// time.Sleep(1 * time.Millisecond)
+	// defer time.Sleep(1 * time.Millisecond)
+	// time.Sleep(5 * time.Millisecond)
+	// syscall.Write(2, []byte(fmt.Sprintf("nbd%d: handling write(@%d,%dB)", d.device.Index, off, len(p))))
+	// syscall.Write(2, []byte(fmt.Sprintf("nbd%d: handling write(@%d,%dB)", d.device.Index, off, len(p))))
+	// fmt.Fprintf(os.Stderr, "nbd%d: handling write(@%d,%dB)", d.device.Index, off, len(p))
+	// syscall.Write(2, []byte("\n"))
+	// defer fmt.Fprintf(os.Stderr, "nbd%d: DONE handling write(@%d,%dB)", d.device.Index, off, len(p))
+
+	// fmt.Fprintf(os.Stderr, "")
+
 	err := d.doWithRedial(func() error {
 		_, err := d.client.Write(d.ctx, &nbdpb.WriteRequest{
 			Name:   d.metadata.GetName(),
@@ -251,9 +456,20 @@ func (d *ClientDevice) WriteAt(p []byte, off int64) (int, error) {
 }
 
 func (d *ClientDevice) Sync() error {
+	log.Infof("nbdclient: ignoring flush command")
 	// Do nothing for now since we don't buffer reads/writes and instead pass
 	// them through directly to the host executor. The executor is responsible
 	// for guaranteeing that reads and writes are persisted.
+	return nil
+}
+
+func (d *ClientDevice) dialHost() error {
+	var err error
+	d.conn, err = dialHost()
+	if err != nil {
+		return err
+	}
+	d.client = nbdpb.NewBlockDeviceClient(d.conn)
 	return nil
 }
 
@@ -268,11 +484,9 @@ func (d *ClientDevice) doWithRedial(f func() error) error {
 		}
 		d.conn.Close()
 		log.Infof("%s: host device server is unavailable; reconnecting.", d.DevicePath())
-		d.conn, err = dialHost()
-		if err != nil {
+		if err := d.dialHost(); err != nil {
 			return status.WrapErrorf(lastErr, "failed to re-dial host (got error %s) after initial UNAVAILABLE error", err)
 		}
-		d.client = nbdpb.NewBlockDeviceClient(d.conn)
 		lastErr = err
 	}
 	return lastErr

@@ -21,6 +21,7 @@ go_library(
         "//server/util/query_builder",
         "//server/util/role",
         "//server/util/status",
+        "//server/util/subdomain",
     ],
 )
 
@@ -67,6 +68,7 @@ go_test(
         # recycled runner, because we can't fit all db docker images with the
         # default disk limit.
         "test.runner-recycling-key": "mysql",
+        "test.EstimatedCPU": "4000m",
     },
     shard_count = 5,
     tags = ["docker"],
@@ -109,7 +111,9 @@ go_test(
         # We don't want different different db tests to be assigned to the samed
         # recycled runner, because we can't fit all db docker images with the
         # default disk limit.
-        "test.runner-recycling-key": "mysql",
+        "test.runner-recycling-key": "postgres",
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "8000000000",
     },
     shard_count = 5,
     tags = ["docker"],

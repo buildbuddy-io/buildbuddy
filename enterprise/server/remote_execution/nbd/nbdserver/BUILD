@@ -9,6 +9,7 @@ go_library(
         "//proto:nbd_go_proto",
         "//server/environment",
         "//server/util/grpc_server",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//proto",

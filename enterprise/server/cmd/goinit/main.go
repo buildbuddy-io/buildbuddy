@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	// "runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -196,6 +197,8 @@ func waitForDockerd(ctx context.Context) error {
 // This is mostly cribbed from github.com/superfly/init-snapshot
 // which was very helpful <3!
 func main() {
+	// runtime.GOMAXPROCS(4)
+
 	start := time.Now()
 	rootContext := context.Background()
 
@@ -246,13 +249,13 @@ func main() {
 	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
 
 	die(mkdirp("/scratch", 0755))
-	if *enableNBD {
-		scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
-		die(err)
-		die(scratchNBD.Mount("/scratch"))
-	} else {
-		die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
-	}
+	// if *enableNBD {
+	// 	scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
+	// 	die(err)
+	// 	die(scratchNBD.Mount("/scratch"))
+	// } else {
+	die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
+	// }
 	die(mkdirp("/scratch/bbvmroot", 0755))
 	die(mkdirp("/scratch/bbvmwork", 0755))
 
@@ -293,8 +296,16 @@ func main() {
 	die(mount("proc", "/proc", "proc", commonMountFlags, ""))
 	die(mount("binfmt_misc", "/proc/sys/fs/binfmt_misc", "binfmt_misc", commonMountFlags|syscall.MS_RELATIME, ""))
 
+	// Disable usermode hotplug helper when devices change.
+	die(os.WriteFile("/proc/sys/kernel/hotplug", []byte("\n"), 0))
+
 	die(mkdirp("/sys", 0555))
 	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
+
+	// Set up debugfs
+	die(mount("none", "/sys/kernel/debug/", "debugfs", 0, ""))
+	// Debug specific sources
+	die(os.WriteFile("/sys/kernel/debug/dynamic_debug/control", []byte("file nbd.c line 1- +p"), 0))
 
 	die(mkdirp("/run", 0755))
 	die(mount("run", "/run", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, ""))
@@ -410,7 +421,13 @@ func main() {
 		// a pid). We could alternatively use a mutex to avoid reaping while
 		// vmexec is running a command, but that causes problems for Bazel,
 		// which explicitly waits for stale server processes to be reaped.
-		cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmexec")...)
+
+		args := []string{}
+		// args = append(args, "strace", "-f")
+		args = append(args, os.Args...)
+		args = append(args, "--vmexec")
+
+		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()

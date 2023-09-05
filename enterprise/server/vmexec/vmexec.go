@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
+	"sync"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -35,11 +37,16 @@ const (
 )
 
 type execServer struct {
-	workspaceNBD *nbdclient.ClientDevice
+	workspaceNBD       *nbdclient.ClientDevice
+	workspaceNBDPaused bool
+	// scratchNBD   *nbdclient.ClientDevice
 }
 
 func NewServer(workspaceNBD *nbdclient.ClientDevice) (*execServer, error) {
-	return &execServer{workspaceNBD: workspaceNBD}, nil
+	return &execServer{
+		workspaceNBD: workspaceNBD,
+		// scratchNBD:   scratchNBD,
+	}, nil
 }
 
 func clearARPCache() error {
@@ -75,7 +82,19 @@ func clearARPCache() error {
 	return nil
 }
 
+var startMonitoringOnce sync.Once
+
 func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
+	startMonitoringOnce.Do(func() {
+
+	})
+
+	if x.workspaceNBDPaused {
+		if err := x.workspaceNBD.UnpauseHostIO(); err != nil {
+			return nil, err
+		}
+		x.workspaceNBDPaused = false
+	}
 	if req.GetClearArpCache() {
 		if err := clearARPCache(); err != nil {
 			return nil, err
@@ -90,6 +109,21 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
 	}
 	return &vmxpb.InitializeResponse{}, nil
+}
+
+func (x *execServer) PrepareForPause(ctx context.Context, req *vmxpb.PrepareForPauseRequest) (*vmxpb.PrepareForPauseResponse, error) {
+	// if x.scratchNBD != nil {
+	// 	if err := x.scratchNBD.PauseHostIO(); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
+	if x.workspaceNBD != nil {
+		if err := x.workspaceNBD.PauseHostIO(); err != nil {
+			return nil, err
+		}
+		x.workspaceNBDPaused = true
+	}
+	return &vmxpb.PrepareForPauseResponse{}, nil
 }
 
 func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.SyncResponse, error) {
@@ -116,6 +150,7 @@ func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspa
 		if err := x.workspaceNBD.Mount(workspaceMountPath); err != nil {
 			return nil, err
 		}
+		log.Infof("MountWorkspace completed.")
 		return &vmxpb.MountWorkspaceResponse{}, nil
 	}
 
@@ -168,6 +203,31 @@ type message struct {
 }
 
 func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
+	// unix.Sync()
+	// os.WriteFile("/proc/sys/vm/drop_caches", []byte("3\n"), 0)
+
+	// log.Infof("ExecStreamed: cat-ing all files in /workspace")
+	// b, _ := exec.Command("sh", "-c", `
+	// 	cd /workspace
+	// 	echo "test-setup.sh"
+	// 	# cat external/bazel_tools/tools/test/test-setup.sh >/dev/null
+	// 	echo "end of test-setup.sh"
+	// `).CombinedOutput()
+	// log.Infof("pre-ExecStreamed:\n%s", string(b))
+
+	// time.Sleep(1 * time.Second)
+
+	// log.Infof("ExecStreamed: cat /dev/nbd0")
+	// exec.Command("sh", "-c", "cat /dev/nbd0").Run()
+	// log.Infof("ExecStreamed: cat /dev/nbd0: Done")
+
+	// log.Infof("Done.")
+	// log.Infof("running: find / -type f | xargs cat")
+	// exec.Command("sh", "-c", "find / -type f | xargs cat").Run()
+	// log.Infof("Done.")
+
+	// os.WriteFile("/proc/sys/vm/drop_caches", []byte("3\n"), 0)
+
 	ctx := stream.Context()
 
 	msgs := make(chan *message, 128)
@@ -264,6 +324,14 @@ type command struct {
 }
 
 func newCommand(start *vmxpb.ExecRequest) (*command, error) {
+	cpath := filepath.Join(start.GetWorkingDirectory(), start.GetArguments()[0])
+
+	// b, _ := os.ReadFile(cpath)
+	// log.Infof("newCommand: contents: %q", string(b))
+
+	log.Infof("newCommand: running %s...", cpath)
+	// os.WriteFile("/proc/sys/vm/drop_caches", []byte("3\n"), 0)
+
 	if len(start.GetArguments()) == 0 {
 		return nil, status.InvalidArgumentError("arguments not specified")
 	}
@@ -302,6 +370,10 @@ func newCommand(start *vmxpb.ExecRequest) (*command, error) {
 		}
 		stdin = stdinPipe
 	}
+
+	s, _ := os.Stat(cpath)
+	log.Infof("newCommand: stat: %+v", s)
+
 	return &command{
 		cmd:          cmd,
 		stdin:        stdin,

@@ -69,7 +69,7 @@ const (
 	// estimate added for docker-in-firecracker actions. It was computed as the
 	// minimum additional disk needed to run a mysql:8.0 container inside
 	// a firecracker VM, multiplied by ~3X.
-	DockerInFirecrackerAdditionalDiskEstimateBytes = int64(12 * 1e9) // 12 GB
+	DockerInFirecrackerAdditionalDiskEstimateBytes = int64(8 * 1e9) // 12 GB
 
 	MaxEstimatedFreeDisk = int64(100 * 1e9) // 100GB
 
