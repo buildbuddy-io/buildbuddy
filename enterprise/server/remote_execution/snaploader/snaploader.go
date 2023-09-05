@@ -387,10 +387,17 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Chunked
 		ChunkSize: cf.ChunkSizeBytes(),
 	}
 	dirtyChunkCount := 0
+	var dirtyBytes int64
 	chunks := cf.Chunks()
 	for _, c := range chunks {
 		if cf.Dirty(c.Offset) {
 			dirtyChunkCount++
+			chunkSize, err := c.SizeBytes()
+			if err != nil {
+				return nil, status.WrapError(err, "dirty chunk size")
+			}
+			dirtyBytes += chunkSize
+
 			// Sync dirty chunks to make sure the underlying file is up to date
 			// before we add it to cache.
 			if err := c.Sync(); err != nil {
@@ -413,10 +420,15 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Chunked
 		})
 	}
 
+	gid := groupID(ctx, l.env)
 	metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
-		metrics.GroupID:  groupID(ctx, l.env),
+		metrics.GroupID:  gid,
 		metrics.FileName: name,
 	}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
+	metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
+		metrics.GroupID:  gid,
+		metrics.FileName: name,
+	}).Add(float64(dirtyBytes))
 
 	return pb, nil
 }

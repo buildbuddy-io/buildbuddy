@@ -983,6 +983,16 @@ var (
 	// sum(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio) by(le)
 	// ```
 
+	COWSnapshotDirtyBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_dirty_bytes",
+		Help:      "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
+	}, []string{
+		GroupID,
+		FileName,
+	})
+
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
