@@ -99,10 +99,10 @@ container_layer(
     files = [
         ":firecracker",
         ":jailer",
-        "@com_github_buildbuddy_io_soci_snapshotter-soci-store-v0.0.7-linux-amd64//file:soci-store-v0.0.7-linux-amd64",
+        "@com_github_buildbuddy_io_soci_snapshotter-soci-store-v0.0.8-linux-amd64//file:soci-store-v0.0.8-linux-amd64",
     ],
     symlinks = {
-        "/usr/bin/soci-store": "/usr/bin/soci-store-v0.0.7-linux-amd64",
+        "/usr/bin/soci-store": "/usr/bin/soci-store-v0.0.8-linux-amd64",
     },
 )
 
