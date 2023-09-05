@@ -1405,7 +1405,7 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 		return status.WrapError(err, "create uffd handler")
 	}
 	sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
-	if err := h.Start(ctx, sockAbsPath, c.memoryStore.COWStore); err != nil {
+	if err := h.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
 		return status.WrapError(err, "start uffd handler")
 	}
 	c.uffdHandler = h

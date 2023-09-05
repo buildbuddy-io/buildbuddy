@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sys/unix"
@@ -75,8 +75,10 @@ type setupMessage struct {
 	Uffd     uintptr
 }
 
-// When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
-// This handler uses a blockio.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
+// When loading a firecracker memory snapshot, this userfaultfd handler can
+// be used to handle page faults for the VM.
+// This handler uses a snaploader.ChunkedFile to manage the snapshot -
+// allowing it to be served remotely, compressed, etc.
 type Handler struct {
 	lis      net.Listener
 	quitChan chan struct{}
@@ -92,7 +94,7 @@ func NewHandler() (*Handler, error) {
 // Start starts a goroutine to listen on the given socket path for Firecracker's
 // UFFD initialization message, and then starts fulfilling UFFD requests using
 // the given memory store.
-func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blockio.COWStore) error {
+func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *snaploader.ChunkedFile) error {
 	lis, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
 	if err != nil {
 		return status.WrapError(err, "listen on socket")
@@ -179,7 +181,7 @@ func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
 	}, nil
 }
 
-func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) error {
+func (h *Handler) handle(ctx context.Context, memoryStore *snaploader.ChunkedFile) error {
 	defer close(h.quitChan)
 
 	// Get uffd sent from firecracker
