@@ -294,31 +294,26 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             .filter((value, index) => `#${index + 1}` == (this.props.tab || "#1"))
             .map((buildEvent) => (
               <span>
-                {/* TODO(bduffany): remove the need to wrap events in InvocationEvent. */}
                 <TargetTestDocumentCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
-                  testResult={new invocation.InvocationEvent({ buildEvent })}
+                  buildEvent={buildEvent}
                 />
                 <TargetTestLogCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
-                  testResult={new invocation.InvocationEvent({ buildEvent })}
+                  buildEvent={buildEvent}
                 />
                 <TargetTestCoverageCardComponent
                   invocationId={this.props.invocationId}
                   repo={this.props.repo || ""}
                   commit={this.props.commit || ""}
-                  testResult={new invocation.InvocationEvent({ buildEvent })}
+                  buildEvent={buildEvent}
                 />
               </span>
             ))}
           {actionEvents.map((action) => (
-            <ActionCardComponent
-              dark={this.props.dark}
-              invocationId={this.props.invocationId}
-              action={new invocation.InvocationEvent({ buildEvent: action })}
-            />
+            <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} buildEvent={action} />
           ))}
           {target.files && (
             <TargetArtifactsCardComponent

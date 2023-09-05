@@ -284,23 +284,27 @@ export default class TargetComponent extends React.Component<Props> {
                 <TargetTestDocumentCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
-                  testResult={result}
+                  buildEvent={result.buildEvent ?? undefined}
                 />
                 <TargetTestLogCardComponent
                   dark={this.props.dark}
                   invocationId={this.props.invocationId}
-                  testResult={result}
+                  buildEvent={result.buildEvent ?? undefined}
                 />
                 <TargetTestCoverageCardComponent
                   invocationId={this.props.model.getInvocationId()}
                   repo={this.props.model.getRepo()}
                   commit={this.props.model.getCommit()}
-                  testResult={result}
+                  buildEvent={result.buildEvent ?? undefined}
                 />
               </span>
             ))}
           {actionEvents.map((action) => (
-            <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} action={action} />
+            <ActionCardComponent
+              dark={this.props.dark}
+              invocationId={this.props.invocationId}
+              buildEvent={action.buildEvent ?? undefined}
+            />
           ))}
           {this.props.files && (
             <TargetArtifactsCardComponent

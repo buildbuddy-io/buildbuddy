@@ -1,7 +1,7 @@
 import { Percent } from "lucide-react";
 import React from "react";
 
-import { invocation } from "../../proto/invocation_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import format from "../format/format";
 import rpcService from "../service/rpc_service";
 import { percentageColor } from "../util/color";
@@ -11,7 +11,7 @@ interface Props {
   invocationId: string;
   repo: string;
   commit: string;
-  testResult: invocation.InvocationEvent;
+  buildEvent?: build_event_stream.BuildEvent;
 }
 
 interface State {
@@ -28,13 +28,13 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.testResult !== prevProps.testResult) {
+    if (this.props.buildEvent !== prevProps.buildEvent) {
       this.fetchTestCoverage();
     }
   }
 
   fetchTestCoverage() {
-    let testCoverageUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
+    let testCoverageUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
@@ -67,7 +67,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
   }
 
   render() {
-    let testCoverageUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
+    let testCoverageUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.lcov"
     )?.uri;
 
@@ -76,9 +76,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
       error = (
         <>
           To see test coverage data, run{" "}
-          <span className="inline-code">
-            bazel coverage {this.props.testResult?.buildEvent?.id?.testResult?.label || ""}
-          </span>
+          <span className="inline-code">bazel coverage {this.props.buildEvent?.id?.testResult?.label || ""}</span>
         </>
       );
     }

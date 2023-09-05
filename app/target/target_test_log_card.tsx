@@ -1,7 +1,6 @@
 import React from "react";
 import format from "../format/format";
 import SetupCodeComponent from "../docs/setup_code";
-import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TerminalComponent } from "../terminal/terminal";
 import rpcService from "../service/rpc_service";
@@ -9,7 +8,7 @@ import { CheckCircle, Clock, HelpCircle, PauseCircle, XCircle } from "lucide-rea
 import { durationToMillisWithFallback } from "../util/proto";
 
 interface Props {
-  testResult: invocation.InvocationEvent;
+  buildEvent?: build_event_stream.BuildEvent;
   invocationId: string;
   dark: boolean;
 }
@@ -32,15 +31,14 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.testResult !== prevProps.testResult) {
+    if (this.props.buildEvent !== prevProps.buildEvent) {
       this.fetchTestLog();
     }
   }
 
   fetchTestLog() {
-    let testLogUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
-      (log: any) => log.name == "test.log"
-    )?.uri;
+    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find((log: any) => log.name == "test.log")
+      ?.uri;
 
     if (!testLogUrl) {
       return;
@@ -116,33 +114,33 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
 
   render() {
     const title = <div className="title">Test log</div>;
-    const strategy = this.props.testResult.buildEvent?.testResult?.executionInfo?.strategy;
+    const strategy = this.props.buildEvent?.testResult?.executionInfo?.strategy;
     return (
       <>
-        <div className={`card ${this.getStatusClass(this.props.testResult.buildEvent?.testResult?.status)}`}>
-          {this.getStatusIcon(this.props.testResult.buildEvent?.testResult?.status)}
+        <div className={`card ${this.getStatusClass(this.props.buildEvent?.testResult?.status)}`}>
+          {this.getStatusIcon(this.props.buildEvent?.testResult?.status)}
           <div className="content">
             <div className="title">
-              {this.getStatusTitle(this.props.testResult.buildEvent?.testResult?.status)} in{" "}
+              {this.getStatusTitle(this.props.buildEvent?.testResult?.status)} in{" "}
               {format.durationMillis(
                 durationToMillisWithFallback(
-                  this.props.testResult.buildEvent?.testResult?.testAttemptDuration,
-                  this.props.testResult.buildEvent?.testResult?.testAttemptDurationMillis ?? 0
+                  this.props.buildEvent?.testResult?.testAttemptDuration,
+                  this.props.buildEvent?.testResult?.testAttemptDurationMillis ?? 0
                 )
               )}
               {strategy && <> ({strategy})</>}
             </div>
             <div className="subtitle">
-              On Shard {this.props.testResult.buildEvent?.id?.testResult?.shard ?? 0} (Run{" "}
-              {this.props.testResult.buildEvent?.id?.testResult?.run ?? 0}, Attempt{" "}
-              {this.props.testResult.buildEvent?.id?.testResult?.attempt ?? 0})
+              On Shard {this.props.buildEvent?.id?.testResult?.shard ?? 0} (Run{" "}
+              {this.props.buildEvent?.id?.testResult?.run ?? 0}, Attempt{" "}
+              {this.props.buildEvent?.id?.testResult?.attempt ?? 0})
             </div>
           </div>
         </div>
         <div
           className={`card ${
             this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")
-          } ${this.getStatusClass(this.props.testResult.buildEvent?.testResult?.status)}`}>
+          } ${this.getStatusClass(this.props.buildEvent?.testResult?.status)}`}>
           <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
           <div className="content">
             {!this.state.cacheEnabled && (

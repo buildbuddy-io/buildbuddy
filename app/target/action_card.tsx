@@ -1,13 +1,12 @@
 import React from "react";
-import format from "../format/format";
 import SetupCodeComponent from "../docs/setup_code";
-import { invocation } from "../../proto/invocation_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TerminalComponent } from "../terminal/terminal";
 import rpcService from "../service/rpc_service";
 import { PauseCircle, PlayCircle } from "lucide-react";
 
 interface Props {
-  action: invocation.InvocationEvent;
+  buildEvent?: build_event_stream.BuildEvent;
   invocationId: string;
   dark: boolean;
 }
@@ -30,20 +29,20 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   };
 
   componentDidMount() {
-    console.log(this.props.action);
+    console.log(this.props.buildEvent);
     this.fetchStdErr();
     this.fetchStdOut();
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.action !== prevProps.action) {
+    if (this.props.buildEvent !== prevProps.buildEvent) {
       this.fetchStdErr();
       this.fetchStdOut();
     }
   }
 
   fetchStdErr() {
-    let logUrl = this.props.action?.buildEvent?.action?.stderr?.uri;
+    let logUrl = this.props.buildEvent?.action?.stderr?.uri;
 
     if (!logUrl) {
       return;
@@ -71,7 +70,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchStdOut() {
-    let logUrl = this.props.action?.buildEvent?.action?.stdout?.uri;
+    let logUrl = this.props.buildEvent?.action?.stdout?.uri;
 
     if (!logUrl) {
       return;
@@ -104,7 +103,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   render() {
     const title = <div className="title">Error Log</div>;
-    const action = this.props.action?.buildEvent?.action;
+    const action = this.props.buildEvent?.action;
     return (
       <div className="target-action-card">
         {action?.stderr?.uri && (
