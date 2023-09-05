@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -116,7 +117,7 @@ type CacheSnapshotOptions struct {
 	ContainerFSPath     string
 
 	// MemSnapshotPath is the memory snapshot file path. It is required if the
-	// memory file is not represented as a ChunkedFile.
+	// memory file is not represented as a DynamicChunkedFile.
 	MemSnapshotPath string
 
 	// This field is optional -- a snapshot may have a scratch filesystem
@@ -128,22 +129,78 @@ type CacheSnapshotOptions struct {
 	WorkspaceFSPath string
 
 	// Labeled map of chunked artifacts backed by blockio.COWStore storage.
-	ChunkedFiles map[string]*ChunkedFile
+	ChunkedFiles map[string]*DynamicChunkedFile
 }
 
 type UnpackedSnapshot struct {
 	// ChunkedFiles holds any chunked files that were part of the snapshot.
-	ChunkedFiles map[string]*ChunkedFile
+	ChunkedFiles map[string]*DynamicChunkedFile
 }
 
-type ChunkedFile struct {
+// DynamicChunkedFile is a wrapper for a copy-on-write store that dynamically
+// fetches missing chunks from the cache
+type DynamicChunkedFile struct {
 	*blockio.COWStore
+
+	localCache interfaces.FileCache
+
+	// Name of the file
+	name string
+
+	// Where artifacts that exist locally are stored
+	dataDir string
 
 	// digests caches any known digests for *non-dirty* chunks, keyed by offset.
 	digests map[int64]*repb.Digest
 }
 
-func (cf *ChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, error) {
+func NewDynamicChunkedFile(store *blockio.COWStore, filecache interfaces.FileCache, name string, dataDir string, digests map[int64]*repb.Digest) *DynamicChunkedFile {
+	return &DynamicChunkedFile{
+		COWStore:   store,
+		localCache: filecache,
+		name:       name,
+		dataDir:    dataDir,
+		digests:    digests,
+	}
+}
+
+func (cf *DynamicChunkedFile) fetchChunkIfMissing(offset int64) error {
+	chunkStartOffset := cf.ChunkStartOffset(offset)
+	if cf.ContainsOffset(chunkStartOffset) {
+		return nil
+	}
+
+	chunkDigest, ok := cf.digests[chunkStartOffset]
+	if !ok {
+		return status.NotFoundErrorf("missing chunk start offset %d", chunkStartOffset)
+	}
+
+	chunk, err := cf.fetchChunkFromLocalCache(chunkDigest, chunkStartOffset)
+	if err != nil {
+		// TODO(Maggie) - Fetch chunk remotely if remote snapshot sharing is on
+		//if status.IsNotFoundError(err) {
+		//}
+		return err
+	}
+	return cf.AddChunk(chunkStartOffset, chunk)
+}
+
+func (cf *DynamicChunkedFile) fetchChunkFromLocalCache(chunkDigest *repb.Digest, chunkStartOffset int64) (*blockio.Chunk, error) {
+	node := &repb.FileNode{Digest: chunkDigest}
+	path := filepath.Join(cf.dataDir, fmt.Sprintf("%d", chunkStartOffset))
+	inLocalCache := cf.localCache.FastLinkFile(node, path)
+	if !inLocalCache {
+		return nil, status.NotFoundErrorf("snapshot chunk %s/%d not found in local cache", cf.name, chunkStartOffset)
+	}
+	mm, err := blockio.NewMmap(path)
+	if err != nil {
+		return nil, status.WrapError(err, "create mmap for chunk")
+	}
+	c := &blockio.Chunk{Offset: chunkStartOffset, Store: mm}
+	return c, nil
+}
+
+func (cf *DynamicChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, error) {
 	// If we already know the original chunk digest and the chunk hasn't
 	// changed, return the original digest.
 	if d := cf.digests[chunk.Offset]; d != nil && !cf.COWStore.Dirty(chunk.Offset) {
@@ -151,6 +208,63 @@ func (cf *ChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, error) {
 	}
 	// Otherwise compute the digest.
 	return digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
+}
+
+// GetChunkStartAddressAndSize returns the start address of the chunk containing
+// the input offset, and the size of the chunk. Note that the returned chunk
+// size may not be equal to ChunkSizeBytes() if it's the last chunk in the file.
+func (cf *DynamicChunkedFile) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
+	chunkStartOffset := cf.ChunkStartOffset(int64(offset))
+	chunkStartAddress, err := cf.GetPageAddress(uintptr(chunkStartOffset), write)
+	if err != nil {
+		return 0, 0, err
+	}
+	return chunkStartAddress, cf.CalculateChunkSize(chunkStartOffset), nil
+}
+
+// GetPageAddress returns the memory address for the given byte offset into
+// the store.
+//
+// This memory address can be used to handle a page fault with userfaultfd.
+//
+// If reading a lazily mmapped chunk, this will cause the chunk to be mmapped
+// so that the returned address is valid.
+//
+// If write is set to true, and the page is not dirty, then a copy is first
+// performed so that the returned chunk can be written to without modifying
+// readonly chunks.
+func (cf *DynamicChunkedFile) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
+	if err := cf.fetchChunkIfMissing(int64(offset)); err != nil {
+		return 0, status.WrapError(err, "fetch missing chunk")
+	}
+	chunkStartOffset := cf.ChunkStartOffset(int64(offset))
+	chunkStartAddress, err := cf.ChunkMemoryAddress(chunkStartOffset, write)
+	if err != nil {
+		return 0, status.WrapError(err, "get chunk memory address")
+	}
+
+	relativeOffset := offset - uintptr(chunkStartOffset)
+	return chunkStartAddress + relativeOffset, nil
+}
+
+func (cf *DynamicChunkedFile) ReadAt(p []byte, offset int64) (int, error) {
+	if err := cf.fetchChunkIfMissing(offset); err != nil {
+		// Not found errors mean that we are reading from a hole
+		if !status.IsNotFoundError(err) {
+			return 0, status.WrapError(err, "fetch missing chunk")
+		}
+	}
+	return cf.COWStore.ReadAt(p, offset)
+}
+
+func (cf *DynamicChunkedFile) WriteAt(p []byte, offset int64) (int, error) {
+	if err := cf.fetchChunkIfMissing(offset); err != nil {
+		// Not found errors mean that we need to create a new chunk
+		if !status.IsNotFoundError(err) {
+			return 0, status.WrapError(err, "fetch missing chunk")
+		}
+	}
+	return cf.COWStore.WriteAt(p, offset)
 }
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
@@ -243,7 +357,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	}
 
 	unpacked := &UnpackedSnapshot{
-		ChunkedFiles: make(map[string]*ChunkedFile, len(snapshot.manifest.ChunkedFiles)),
+		ChunkedFiles: make(map[string]*DynamicChunkedFile, len(snapshot.manifest.ChunkedFiles)),
 	}
 	// Construct COWs from chunks.
 	for _, cf := range snapshot.manifest.ChunkedFiles {
@@ -336,44 +450,27 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 	return nil
 }
 
-func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cf *ChunkedFile, err error) {
+func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cf *DynamicChunkedFile, err error) {
 	dataDir := filepath.Join(outputDirectory, file.GetName())
 	if err := os.Mkdir(dataDir, 0755); err != nil {
 		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
 	}
-	var chunks []*blockio.Chunk
-	defer func() {
-		// If there was an error, clean up any chunks we created.
-		if err == nil {
-			return
-		}
-		for _, c := range chunks {
-			c.Close()
-		}
-	}()
-	cf = &ChunkedFile{digests: make(map[int64]*repb.Digest, len(file.Chunks))}
+	cf = &DynamicChunkedFile{
+		localCache: l.env.GetFileCache(),
+		name:       file.GetName(),
+		dataDir:    outputDirectory,
+		digests:    make(map[int64]*repb.Digest, len(file.Chunks)),
+	}
 	for _, chunk := range file.Chunks {
+		// Memoize the original digest so that if the chunk doesn't change we
+		// don't have to recompute it later when adding back to cache.
 		size := file.GetChunkSize()
 		if remainder := file.GetSize() - chunk.GetOffset(); size > remainder {
 			size = remainder
 		}
-		d := &repb.Digest{Hash: chunk.GetDigestHash(), SizeBytes: size}
-		node := &repb.FileNode{Digest: d}
-		path := filepath.Join(dataDir, fmt.Sprintf("%d", chunk.GetOffset()))
-		if !l.env.GetFileCache().FastLinkFile(node, path) {
-			return nil, status.UnavailableErrorf("snapshot chunk %s/%d not found in local cache", file.GetName(), chunk.GetOffset())
-		}
-		mm, err := blockio.NewLazyMmap(path)
-		if err != nil {
-			return nil, status.WrapError(err, "create mmap for chunk")
-		}
-		c := &blockio.Chunk{Offset: chunk.GetOffset(), Store: mm}
-		chunks = append(chunks, c)
-		// Memoize the original digest so that if the chunk doesn't change we
-		// don't have to recompute it later when adding back to cache.
-		cf.digests[chunk.GetOffset()] = d
+		cf.digests[chunk.GetOffset()] = &repb.Digest{Hash: chunk.GetDigestHash(), SizeBytes: size}
 	}
-	cow, err := blockio.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
+	cow, err := blockio.NewCOWStore([]*blockio.Chunk{}, file.GetChunkSize(), file.GetSize(), dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +478,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 	return cf, nil
 }
 
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *ChunkedFile) (*fcpb.ChunkedFile, error) {
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *DynamicChunkedFile) (*fcpb.ChunkedFile, error) {
 	size, err := cf.SizeBytes()
 	if err != nil {
 		return nil, err

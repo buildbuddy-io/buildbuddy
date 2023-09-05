@@ -104,7 +104,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	keyA, err := snaploader.NewKey(taskA, "config-hash-a", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA)
-	optsA.ChunkedFiles = map[string]*snaploader.ChunkedFile{
+	optsA.ChunkedFiles = map[string]*snaploader.DynamicChunkedFile{
 		"scratchfs": {COWStore: cowA},
 	}
 	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
@@ -189,7 +189,7 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 		unpackedContent := mustReadStore(t, unpacked.ChunkedFiles[name])
 		require.NoError(t, err)
 		if !bytes.Equal(originalContent, unpackedContent) {
-			require.FailNowf(t, "unpacked ChunkedFile does not match original snapshot", "file name: %s", name)
+			require.FailNowf(t, "unpacked DynamicChunkedFile does not match original snapshot", "file name: %s", name)
 		}
 	}
 	return unpacked

@@ -5,7 +5,7 @@ go_library(
     srcs = ["nbdserver.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver",
     deps = [
-        "//enterprise/server/remote_execution/blockio",
+        "//enterprise/server/remote_execution/snaploader",
         "//proto:nbd_go_proto",
         "//server/environment",
         "//server/util/grpc_server",

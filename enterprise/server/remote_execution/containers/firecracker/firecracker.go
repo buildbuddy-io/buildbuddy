@@ -389,11 +389,11 @@ type FirecrackerContainer struct {
 	// When NBD is enabled, this is the running NBD server that serves the VM
 	// disks.
 	nbdServer      *nbdserver.Server
-	scratchStore   *snaploader.ChunkedFile
-	workspaceStore *snaploader.ChunkedFile
+	scratchStore   *snaploader.DynamicChunkedFile
+	workspaceStore *snaploader.DynamicChunkedFile
 
 	uffdHandler *uffd.Handler
-	memoryStore *snaploader.ChunkedFile
+	memoryStore *snaploader.DynamicChunkedFile
 
 	jailerRoot         string            // the root dir the jailer will work in
 	machine            *fcclient.Machine // the firecracker machine object.
@@ -519,7 +519,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 
 // MergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks
 // into the baseSnapshotPath file or the baseSnapshotStore if non-nil.
-func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *snaploader.ChunkedFile, diffSnapshotPath string, concurrency int, bufSize int) error {
+func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *snaploader.DynamicChunkedFile, diffSnapshotPath string, concurrency int, bufSize int) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -696,7 +696,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	// updated the memoryStore in mergeDiffSnapshot above).
 	if *enableUFFD && c.memoryStore == nil {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
-		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir)
+		memoryStore, err := c.convertToCOW(ctx, fullMemSnapshotName, memSnapshotPath, memChunkDir)
 		if err != nil {
 			return status.WrapError(err, "convert memory snapshot to COWStore")
 		}
@@ -709,7 +709,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
-		ChunkedFiles:        map[string]*snaploader.ChunkedFile{},
+		ChunkedFiles:        map[string]*snaploader.DynamicChunkedFile{},
 	}
 	if *enableNBD {
 		opts.ChunkedFiles[scratchDriveID] = c.scratchStore
@@ -894,7 +894,7 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 		return nil
 	}
 	chunkDir := filepath.Join(filepath.Dir(path), scratchDriveID)
-	cow, err := c.convertToCOW(ctx, path, chunkDir)
+	cow, err := c.convertToCOW(ctx, scratchFSName, path, chunkDir)
 	if err != nil {
 		return err
 	}
@@ -941,7 +941,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	if err := os.RemoveAll(chunkDir); err != nil {
 		return err
 	}
-	cow, err := c.convertToCOW(ctx, ext4ImagePath, chunkDir)
+	cow, err := c.convertToCOW(ctx, workspaceFSName, ext4ImagePath, chunkDir)
 	if err != nil {
 		return err
 	}
@@ -949,7 +949,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	return nil
 }
 
-func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string) (*snaploader.ChunkedFile, error) {
+func (c *FirecrackerContainer) convertToCOW(ctx context.Context, fileName, filePath, chunkDir string) (*snaploader.DynamicChunkedFile, error) {
 	start := time.Now()
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
@@ -965,7 +965,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	}
 	size, _ := cow.SizeBytes()
 	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
-	return &snaploader.ChunkedFile{COWStore: cow}, nil
+	return snaploader.NewDynamicChunkedFile(cow, c.env.GetFileCache(), fileName, chunkDir, map[int64]*repb.Digest{}), nil
 }
 
 func cowChunkSizeBytes() int64 {
