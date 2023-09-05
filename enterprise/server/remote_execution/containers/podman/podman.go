@@ -75,6 +75,7 @@ var (
 	sociStoreKeychainPort   = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
 	podmanRuntime           = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanEnableStats       = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	transientStore          = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -923,6 +924,9 @@ func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerStat
 func runPodman(ctx context.Context, subCommand string, stdio *container.Stdio, args ...string) *interfaces.CommandResult {
 	command := []string{
 		"podman",
+		// Use transient store to reduce contention.
+		// See https://github.com/containers/podman/issues/19824
+		fmt.Sprintf("--transient-store=%t", *transientStore),
 		subCommand,
 	}
 
