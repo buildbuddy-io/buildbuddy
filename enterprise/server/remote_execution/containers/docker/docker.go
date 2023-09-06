@@ -244,12 +244,17 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
+	var mu sync.Mutex
+	exitedUncleanly := false
 	exitedCleanly := false
 	defer func() {
 		// Clean up the container in the background.
 		// TODO: Add this removal as a job to a centralized queue.
 		go func() {
 			ctx := context.Background()
+			mu.Lock()
+			exitedCleanly := exitedCleanly
+			mu.Unlock()
 			if !exitedCleanly {
 				if err := r.client.ContainerKill(ctx, cid, "SIGKILL"); err != nil {
 					log.Errorf("Failed to kill docker container: %s", err)
@@ -267,7 +272,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		_, err := stdcopy.StdCopy(&stdout, &stderr, hijackedResp.Reader)
 		result.Stdout = stdout.Bytes()
 		result.Stderr = stderr.Bytes()
-		if ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled {
+		mu.Lock()
+		defer mu.Unlock()
+		if exitedUncleanly {
 			return nil
 		}
 		return wrapDockerErr(err, "failed to copy docker container output")
@@ -276,12 +283,17 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
 		select {
 		case err := <-errCh:
+			mu.Lock()
+			exitedUncleanly = true
+			mu.Unlock()
 			// Close the output reader so that the above goroutine can also
 			// exit.
 			hijackedResp.Close()
 			return wrapDockerErr(err, "container did not exit cleanly")
 		case s := <-statusCh:
+			mu.Lock()
 			exitedCleanly = true
+			mu.Unlock()
 			if s.Error != nil {
 				return wrapDockerErr(status.UnknownError(s.Error.Message), "failed to get container status")
 			}
