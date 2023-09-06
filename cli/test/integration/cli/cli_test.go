@@ -307,6 +307,18 @@ func TestTargetPatternFile(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestQueryFile(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD":       `sh_test(name = "nop", srcs = ["nop.sh"])`,
+		"nop.sh":      "",
+		"targets.txt": "//:nop",
+	})
+
+	_, err := testcli.CombinedOutput(testcli.Command(t, ws, "query", "--query_file=targets.txt"))
+	require.NoError(t, err)
+}
+
 func TestFix(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 
