@@ -965,7 +965,18 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, fileName, fileP
 	}
 	size, _ := cow.SizeBytes()
 	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
-	return snaploader.NewDynamicChunkedFile(cow, c.env.GetFileCache(), fileName, chunkDir, map[int64]*repb.Digest{}), nil
+
+	chunks := cow.Chunks()
+	digests := make(map[int64]*repb.Digest, len(chunks))
+	for _, chunk := range chunks {
+		d, err := digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return nil, status.WrapError(err, "compute chunk digest")
+		}
+		digests[chunk.Offset] = d
+	}
+
+	return snaploader.NewDynamicChunkedFile(cow, c.env.GetFileCache(), fileName, chunkDir, digests), nil
 }
 
 func cowChunkSizeBytes() int64 {
