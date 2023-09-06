@@ -295,7 +295,7 @@ func TestTerminalOutput(t *testing.T) {
 	require.Contains(t, term.Render(), "\x1b[32mINFO")
 }
 
-func TestNoPickerUsed(t *testing.T) {
+func TestTargetPatternFile(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"BUILD":       `sh_test(name = "nop", srcs = ["nop.sh"])`,
