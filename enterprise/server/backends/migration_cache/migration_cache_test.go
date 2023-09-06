@@ -960,11 +960,15 @@ func TestGetMultiWithCopying(t *testing.T) {
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
-	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	srcCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDirSrc, MaxSizeBytes: maxSizeBytes})
 	require.NoError(t, err)
-	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	err = srcCache.Start()
 	require.NoError(t, err)
-	config := &migration_cache.MigrationConfig{}
+	destCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDirDest, MaxSizeBytes: maxSizeBytes})
+	require.NoError(t, err)
+	err = destCache.Start()
+	require.NoError(t, err)
+	config := &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background

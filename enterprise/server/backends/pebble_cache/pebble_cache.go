@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1605,9 +1604,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	defer db.Close()
 
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
-	sort.Slice(resources, func(i, j int) bool {
-		return resources[i].GetDigest().GetHash() < resources[j].GetDigest().GetHash()
-	})
 
 	buf := &bytes.Buffer{}
 	for _, r := range resources {
