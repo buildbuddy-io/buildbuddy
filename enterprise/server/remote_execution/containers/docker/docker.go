@@ -273,6 +273,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
 		select {
 		case err := <-errCh:
+			// Close the output reader so that the above goroutine can also
+			// exit.
+			hijackedResp.Close()
 			return wrapDockerErr(err, "container did not exit cleanly")
 		case s := <-statusCh:
 			exitedCleanly = true
