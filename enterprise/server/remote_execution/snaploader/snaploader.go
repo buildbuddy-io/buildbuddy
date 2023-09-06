@@ -207,7 +207,12 @@ func (cf *DynamicChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, e
 		return d, nil
 	}
 	// Otherwise compute the digest.
-	return digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
+	d, err := digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
+	if err != nil {
+		return nil, err
+	}
+	cf.digests[chunk.Offset] = d
+	return d, nil
 }
 
 // GetChunkStartAddressAndSize returns the start address of the chunk containing
