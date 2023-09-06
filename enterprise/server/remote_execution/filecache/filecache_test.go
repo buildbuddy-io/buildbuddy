@@ -44,7 +44,7 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 func TestFilecache(t *testing.T) {
 	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
-	fc, err := filecache.NewFileCache(fcDir, 100000)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestFileCacheOverwrite(t *testing.T) {
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			filecacheRoot := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000)
+			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
 			require.NoError(t, err)
 			fc.WaitForDirectoryScanToComplete()
 			tempDir := fc.TempDir()

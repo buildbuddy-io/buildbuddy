@@ -147,7 +147,7 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
-	fc, err := filecache.NewFileCache(testRootDir, fileCacheSize)
+	fc, err := filecache.NewFileCache(testRootDir, fileCacheSize, false)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
 
@@ -1483,7 +1483,7 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 		flags.Set(t, "executor.root_directory", testRoot)
 		ta = testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
 		env.SetAuthenticator(ta)
-		fc, err = filecache.NewFileCache(filecacheRoot, fileCacheSize)
+		fc, err = filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
 		require.NoError(t, err)
 		fc.WaitForDirectoryScanToComplete()
 		env.SetFileCache(fc)
