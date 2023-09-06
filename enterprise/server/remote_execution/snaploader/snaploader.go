@@ -495,6 +495,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 	}
 	dirtyChunkCount := 0
 	var dirtyBytes int64
+	seenOffsets := make(map[int64]struct{})
 	chunks := cf.Chunks()
 	for _, c := range chunks {
 		if cf.Dirty(c.Offset) {
@@ -525,6 +526,19 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 			Offset:     c.Offset,
 			DigestHash: d.GetHash(),
 		})
+		seenOffsets[c.Offset] = struct{}{}
+	}
+
+	// We need to cache non-dynamically fetched chunks too - they should be in Digests
+	for offset, d := range cf.digests {
+		_, alreadySeen := seenOffsets[offset]
+		if !alreadySeen {
+			pb.Chunks = append(pb.Chunks, &fcpb.Chunk{
+				Offset:     offset,
+				DigestHash: d.GetHash(),
+			})
+		}
+
 	}
 
 	gid, err := groupID(ctx, l.env)
