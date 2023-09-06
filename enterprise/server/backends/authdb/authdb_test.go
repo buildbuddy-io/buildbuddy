@@ -133,7 +133,6 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 func TestBackfillUnencryptedKeys(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t)
-	adb := env.GetAuthDB()
 
 	keys := createRandomAPIKeys(t, ctx, env)
 

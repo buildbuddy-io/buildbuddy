@@ -246,6 +246,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: []byte("key-name"),
 	}).ToBuf()
+	require.NoError(t, err)
 	readRsp, err := repl.Lookup(buf)
 	require.NoError(t, err)
 
@@ -335,6 +336,7 @@ func TestReplicaCAS(t *testing.T) {
 	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: fileMetadataKey,
 	}).ToBuf()
+	require.NoError(t, err)
 	readRsp, err := repl.Lookup(buf)
 	require.NoError(t, err)
 	readBatch := rbuilder.NewBatchResponse(readRsp)
@@ -432,6 +434,7 @@ func TestReplicaScan(t *testing.T) {
 		Right:    []byte("c"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
+	require.NoError(t, err)
 	readRsp, err := repl.Lookup(buf)
 	require.NoError(t, err)
 
@@ -446,6 +449,7 @@ func TestReplicaScan(t *testing.T) {
 		Right:    []byte("d"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
+	require.NoError(t, err)
 	readRsp, err = repl.Lookup(buf)
 	require.NoError(t, err)
 
@@ -460,6 +464,7 @@ func TestReplicaScan(t *testing.T) {
 		Right:    []byte("z"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
+	require.NoError(t, err)
 	readRsp, err = repl.Lookup(buf)
 	require.NoError(t, err)
 
@@ -474,6 +479,7 @@ func TestReplicaScan(t *testing.T) {
 		Right:    []byte("z"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
+	require.NoError(t, err)
 	readRsp, err = repl.Lookup(buf)
 	require.NoError(t, err)
 

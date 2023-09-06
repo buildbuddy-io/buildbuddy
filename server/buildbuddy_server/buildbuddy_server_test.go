@@ -48,6 +48,9 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 			},
 		},
 	})
+	if err != nil {
+		return "", err
+	}
 	request := &pepb.PublishBuildToolEventStreamRequest{
 		OrderedBuildEvent: &pepb.OrderedBuildEvent{
 			SequenceNumber: 1,
@@ -87,13 +90,13 @@ func TestGetInvocation(t *testing.T) {
 	require.Equal(t, 1, len(rsp.Invocation))
 	require.Equal(t, rsp.Invocation[0].InvocationId, iid)
 
-	rsp, err = server.GetInvocation(
+	_, err = server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
 		&inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: ""}},
 	)
 	require.Error(t, err)
 
-	rsp, err = server.GetInvocation(
+	_, err = server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user2),
 		&inpb.GetInvocationRequest{
 			RequestContext: testauth.RequestContext(user2, group2),
@@ -192,7 +195,7 @@ func TestDeleteInvocation(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	rsp, err = server.GetInvocation(
+	_, err = server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
 		&inpb.GetInvocationRequest{
 			RequestContext: testauth.RequestContext(user1, group1),

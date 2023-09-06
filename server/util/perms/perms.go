@@ -184,7 +184,7 @@ func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environme
 		return err
 	}
 	orQuery, orArgs := o.Build()
-	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+	q.AddWhereClause("("+orQuery+")", orArgs...)
 	return nil
 }
 

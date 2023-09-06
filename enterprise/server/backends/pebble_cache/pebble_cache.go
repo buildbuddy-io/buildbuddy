@@ -1414,7 +1414,8 @@ func (p *PebbleCache) blobDir() string {
 }
 
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	// Skip lint to ensure the correct ctx is used if it's needed.
+	ctx, spn := tracing.StartSpan(ctx) //nolint:SA4006
 	defer spn.End()
 
 	fileMetadata := &rfpb.FileMetadata{}
@@ -1464,7 +1465,8 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 }
 
 func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	// Skip lint to ensure the correct ctx is used if it's needed.
+	ctx, spn := tracing.StartSpan(ctx) //nolint:SA4006
 	defer spn.End()
 
 	fileMetadata := &rfpb.FileMetadata{}
@@ -2670,6 +2672,9 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	start := append([]byte(e.partitionKeyPrefix()+"/"), keys.MinByte...)
 	end := append([]byte(e.partitionKeyPrefix()+"/"), keys.MaxByte...)
 	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
+	if err != nil {
+		return 0, 0, 0, err
+	}
 
 	partitionMD := &rfpb.PartitionMetadata{
 		PartitionId: e.part.ID,

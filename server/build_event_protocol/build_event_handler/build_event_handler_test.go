@@ -309,7 +309,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Make sure invocation isn't written yet
-	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	_, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.Error(t, err)
 
 	// Send started event with api key
@@ -318,7 +318,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Look up the invocation and make sure it's only visible to group
-	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 
@@ -353,7 +353,7 @@ func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Make sure invocation isn't written yet
-	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	_, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.Error(t, err)
 
 	// Send started event with no api key
@@ -362,7 +362,7 @@ func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Look up the invocation and make sure it's publicly visible
-	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_PUBLIC, invocation.ReadPermission)
 }
@@ -387,7 +387,7 @@ func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 	}
 
 	// Make sure invocation isn't written
-	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	_, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.Error(t, err)
 
 	// Send started event with api key
@@ -396,7 +396,7 @@ func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Make sure invocation is only readable by group
-	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 }
@@ -424,7 +424,7 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Make invocation sure isn't written yet
-	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	_, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.Error(t, err)
 
 	// Send started event with api key
@@ -438,7 +438,7 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Make sure invocation is only readable by group and has commit sha
-	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)

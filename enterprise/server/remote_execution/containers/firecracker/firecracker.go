@@ -1459,7 +1459,8 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if c.vfsServer != nil {
 		return nil
 	}
-	ctx, span := tracing.StartSpan(ctx)
+	// Skip lint to ensure the correct ctx is used if it's needed.
+	ctx, span := tracing.StartSpan(ctx) //nolint:SA4006
 	defer span.End()
 
 	vsockServerPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVFSServerPort)

@@ -671,6 +671,9 @@ func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID strin
 	// If the workflow ID identifies a GitRepository, look up the GitRepository and construct a synthetic Workflow
 	// from it.
 	groupID, repoURL, err := parseRepositoryWorkflowID(workflowID)
+	if err != nil {
+		return nil, err
+	}
 	rwf, err := ws.getRepositoryWorkflow(ctx, groupID, repoURL)
 	if err != nil {
 		return nil, err

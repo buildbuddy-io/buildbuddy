@@ -395,6 +395,7 @@ func TestDeleteFile_InvalidAuth(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{userID: &userWithoutWriteAuth})
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
 
 	s := NewAPIServer(env)
 	r, _ := testdigest.RandomCASResourceBuf(t, 100)

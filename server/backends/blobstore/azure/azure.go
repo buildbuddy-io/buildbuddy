@@ -113,7 +113,8 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 	start := time.Now()
 	readCloser := response.Body(azblob.RetryReaderOptions{})
 	defer readCloser.Close()
-	ctx, spn := tracing.StartSpan(ctx)
+	// Skip lint to ensure the correct ctx is used if it's needed.
+	ctx, spn := tracing.StartSpan(ctx) //nolint:SA4006
 	b, err := io.ReadAll(readCloser)
 	spn.End()
 	if err != nil {

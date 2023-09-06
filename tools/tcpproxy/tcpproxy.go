@@ -19,6 +19,10 @@ func handleConn(srcConn *net.TCPConn) {
 
 	defer srcConn.Close()
 	dstAddr, err := net.ResolveTCPAddr("tcp", *destination)
+	if err != nil {
+		log.Warningf("could not resolve destination %q: %s", *destination, err)
+		return
+	}
 
 	dstConn, err := net.DialTCP("tcp", nil, dstAddr)
 	if err != nil {
@@ -60,6 +64,9 @@ func main() {
 	}
 
 	localAddr, err := net.ResolveTCPAddr("tcp", *listen)
+	if err != nil {
+		log.Fatalf("could not resolve tcp address %q: %s", *listen, err)
+	}
 	listener, err := net.ListenTCP("tcp", localAddr)
 	if err != nil {
 		log.Fatalf("could not listen on %q: %s", *listen, err)

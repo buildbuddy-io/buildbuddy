@@ -97,6 +97,9 @@ func (a *githubAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 	}
 
 	jwt, err := assembleJWT(t)
+	if err != nil {
+		return err
+	}
 
 	guid, err := uuid.NewRandom()
 	if err != nil {

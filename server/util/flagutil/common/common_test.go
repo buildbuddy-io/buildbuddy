@@ -120,7 +120,7 @@ func TestSetValueForFlagName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "2", *flagString)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagURL := flagtypes.URLFromString("url", "https://www.example.com", "")
 	u, err := url.Parse("https://www.example.com:8080")
 	require.NoError(t, err)
@@ -128,7 +128,7 @@ func TestSetValueForFlagName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, url.URL{Scheme: "https", Host: "www.example.com:8080"}, *flagURL)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagURL = flagtypes.URLFromString("url", "https://www.example.com", "")
 	u, err = url.Parse("https://www.example.com:8080")
 	require.NoError(t, err)
@@ -136,7 +136,7 @@ func TestSetValueForFlagName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, url.URL{Scheme: "https", Host: "www.example.com"}, *flagURL)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	stringSlice := make([]string, 2)
 	stringSlice[0] = "1"
 	stringSlice[1] = "2"
@@ -152,40 +152,40 @@ func TestSetValueForFlagName(t *testing.T) {
 	assert.Equal(t, []string{"1", "2", "3"}, *(*[]string)(flags.Lookup("string_slice").Value.(*flagtypes.StringSliceFlag)))
 	assert.Equal(t, []string{"1", "2", "3"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStringSlice = flagtypes.StringSlice("string_slice", []string{"1", "2"}, "")
 	err = common.SetValueForFlagName("string_slice", []string{"3"}, map[string]struct{}{}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"3"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStringSlice = flagtypes.StringSlice("string_slice", []string{"1", "2"}, "")
 	err = common.SetValueForFlagName("string_slice", []string{"3"}, map[string]struct{}{"string_slice": {}}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStructSlice := []testStruct{{Field: 1}, {Field: 2}}
 	flagtypes.JSONSliceVar(&flagStructSlice, "struct_slice", flagStructSlice, "")
 	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}, {Field: 3}}, flagStructSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStructSlice = []testStruct{{Field: 1}, {Field: 2}}
 	flagtypes.JSONSliceVar(&flagStructSlice, "struct_slice", flagStructSlice, "")
 	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{"struct_slice": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}, {Field: 3}}, flagStructSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStructSlice = []testStruct{{Field: 1}, {Field: 2}}
 	flagtypes.JSONSliceVar(&flagStructSlice, "struct_slice", flagStructSlice, "")
 	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 3}}, flagStructSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStructSlice = []testStruct{{Field: 1}, {Field: 2}}
 	flagtypes.JSONSliceVar(&flagStructSlice, "struct_slice", flagStructSlice, "")
 	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{"struct_slice": {}}, false)
@@ -199,27 +199,27 @@ func TestBadSetValueForFlagName(t *testing.T) {
 	err := common.SetValueForFlagName("bool", 0, map[string]struct{}{}, true)
 	require.Error(t, err)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	err = common.SetValueForFlagName("bool", false, map[string]struct{}{}, true)
 	require.Error(t, err)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	_ = flagtypes.StringSlice("string_slice", []string{"1", "2"}, "")
 	err = common.SetValueForFlagName("string_slice", "3", map[string]struct{}{}, true)
 	require.Error(t, err)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	_ = flagtypes.StringSlice("string_slice", []string{"1", "2"}, "")
 	err = common.SetValueForFlagName("string_slice", "3", map[string]struct{}{}, false)
 	require.Error(t, err)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStructSlice := []testStruct{{Field: 1}, {Field: 2}}
 	flagtypes.JSONSliceVar(&flagStructSlice, "struct_slice", flagStructSlice, "")
 	err = common.SetValueForFlagName("struct_slice", testStruct{Field: 3}, map[string]struct{}{}, true)
 	require.Error(t, err)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStructSlice = []testStruct{{Field: 1}, {Field: 2}}
 	flagtypes.JSONSliceVar(&flagStructSlice, "struct_slice", flagStructSlice, "")
 	err = common.SetValueForFlagName("struct_slice", testStruct{Field: 3}, map[string]struct{}{}, false)
@@ -239,13 +239,13 @@ func TestDereferencedValueFromFlagName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, true, v)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	_ = flagtypes.StringSlice("string_slice", []string{"1", "2"}, "")
 	stringSlice, err := common.GetDereferencedValue[[]string]("string_slice")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, stringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	structSlice := flagtypes.JSONSlice("struct_slice", []testStruct{{Field: 1}, {Field: 2}}, "")
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, *structSlice)

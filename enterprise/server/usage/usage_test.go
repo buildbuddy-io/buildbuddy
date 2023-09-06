@@ -352,6 +352,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	err = ut1.Increment(ctx1, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	err = ut2.Increment(ctx2, labels, &tables.UsageCounts{CASCacheHits: 100})
+	require.NoError(t, err)
 	err = te1.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	err = te2.GetMetricsCollector().Flush(context.Background())

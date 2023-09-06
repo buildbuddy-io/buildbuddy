@@ -232,6 +232,9 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) error 
 	}
 	cookie.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
 	session, err := sp.Session.GetSession(r)
+	if err != nil {
+		return err
+	}
 	if session != nil {
 		redirectURL := r.URL.Query().Get(authRedirectParam)
 		if redirectURL == "" {

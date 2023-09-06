@@ -267,6 +267,7 @@ func TestGetSet(t *testing.T) {
 		rbuf, err := mc.Get(ctx, r)
 		require.NoError(t, err)
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
 		require.True(t, r.GetDigest().GetHash() == d2.GetHash())
 	}
 }
@@ -1080,13 +1081,13 @@ func TestDelete(t *testing.T) {
 	err = mc.Delete(ctx, r)
 	require.NoError(t, err)
 
-	data, err = mc.Get(ctx, r)
+	_, err = mc.Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = srcCache.Get(ctx, r)
+	_, err = srcCache.Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = destCache.Get(ctx, r)
+	_, err = destCache.Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 }
 

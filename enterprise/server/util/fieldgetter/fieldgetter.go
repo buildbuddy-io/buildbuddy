@@ -32,10 +32,9 @@ func ExtractValues(obj interface{}, fieldPaths ...string) (map[string]string, er
 		fields := strings.Split(path, ".")
 		cur := objVal
 		parentPath := []string{}
-		curPath := []string{}
 		for _, name := range fields {
 			t := cur.Kind()
-			curPath = append(parentPath, name)
+			curPath := append(parentPath, name)
 			if t == reflect.Struct {
 				cur = cur.FieldByName(name)
 				if !cur.IsValid() {

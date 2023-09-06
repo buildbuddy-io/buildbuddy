@@ -102,7 +102,8 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 		return nil, err
 	}
 	start := time.Now()
-	ctx, spn := tracing.StartSpan(ctx)
+	// Skip lint to ensure the correct ctx is used if it's needed.
+	ctx, spn := tracing.StartSpan(ctx) //nolint:SA4006
 	b, err := io.ReadAll(reader)
 	spn.End()
 	util.RecordReadMetrics(gcsLabel, start, b, err)
@@ -117,7 +118,8 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 		return 0, err
 	}
 	start := time.Now()
-	ctx, spn := tracing.StartSpan(ctx)
+	// Skip lint to ensure the correct ctx is used if it's needed.
+	ctx, spn := tracing.StartSpan(ctx) //nolint:SA4006
 	n, err := writer.Write(compressedData)
 	spn.End()
 	util.RecordWriteMetrics(gcsLabel, start, n, err)

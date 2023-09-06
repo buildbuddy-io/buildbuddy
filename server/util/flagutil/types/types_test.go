@@ -328,7 +328,6 @@ string_alias: "meow"
 	require.NoError(t, err)
 	assert.Equal(t, "2", *flagString)
 
-	flags = replaceFlagsForTesting(t)
 	string_slice := make([]string, 2)
 	string_slice[0] = "1"
 	string_slice[1] = "2"
@@ -338,28 +337,28 @@ string_alias: "meow"
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, string_slice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStringSlice = StringSlice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice", "string_slice_alias")
 	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStringSlice = StringSlice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice", "string_slice_alias")
 	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"3"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStringSlice = StringSlice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice", "string_slice_alias")
 	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	string_slice = make([]string, 2)
 	string_slice[0] = "1"
 	string_slice[1] = "2"
@@ -370,7 +369,7 @@ string_alias: "meow"
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, string_slice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStringSlice = StringSlice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice", "string_slice_alias")
 	Alias[[]string]("string_slice_alias", "string_slice_alias_alias")
@@ -378,7 +377,7 @@ string_alias: "meow"
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStringSlice = StringSlice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice", "string_slice_alias")
 	Alias[[]string]("string_slice_alias", "string_slice_alias_alias")
@@ -386,7 +385,7 @@ string_alias: "meow"
 	require.NoError(t, err)
 	assert.Equal(t, []string{"3"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	flagStringSlice = StringSlice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice", "string_slice_alias")
 	Alias[[]string]("string_slice_alias", "string_slice_alias_alias")
@@ -394,7 +393,7 @@ string_alias: "meow"
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, *flagStringSlice)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	_ = StringSlice("string_slice", []string{"1", "2"}, "")
 	stringSlice, err := common.GetDereferencedValue[[]string]("string_slice")
 	require.NoError(t, err)
@@ -410,7 +409,7 @@ string_alias: "meow"
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, stringSliceAliasAlias)
 
-	flags = replaceFlagsForTesting(t)
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	JSONSlice("struct_slice", []testStruct{{Field: 1}, {Field: 2}}, "")
 	structSlice, err := common.GetDereferencedValue[[]testStruct]("struct_slice")
 	require.NoError(t, err)
