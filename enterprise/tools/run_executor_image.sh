@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
+set -eu
 
 # Builds and runs the executor Docker image locally.
 
 DOCKER_ARGS=(
+  --rm --interactive --tty
   # Make sure we can access /dev/kvm (for firecracker).
   --privileged
+  # Use host networking, for simplicity.
+  --net=host
   # Mount persistent build root dirs and filecache so that
   # firecracker image warmup doesn't take forever.
   # The executor.local.yaml defines these with a $USER prefix,
@@ -20,11 +24,12 @@ DOCKER_ARGS=(
   --volume /var/run/docker.sock:/var/run/docker.sock
   # Mount the local config file.
   --volume "$PWD/enterprise/config/executor.local.yaml:/executor.local.yaml"
-  # Note: we need "--net=host" but don't need to set it explicitly,
-  # since the `bazel run` target created by rules_docker sets it by default.
 )
 
-bazel run //enterprise/server/cmd/executor:executor_image -- "${DOCKER_ARGS[@]}" -- \
+# Running a container_image target just builds and tags it.
+# docker run is needed to actually run it.
+bazel run //enterprise/server/cmd/executor:executor_image
+docker run "${DOCKER_ARGS[@]}" bazel/enterprise/server/cmd/executor:executor_image \
   --monitoring_port=9091 \
   --config_file=/executor.local.yaml \
   "$@"
