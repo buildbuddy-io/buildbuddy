@@ -606,6 +606,7 @@ ts_library(
     name = "workflow_rerun_button",
     srcs = ["workflow_rerun_button.tsx"],
     deps = [
+        "//app/auth:user",
         "//app/components/button",
         "//app/components/button:button_group",
         "//app/components/dialog",

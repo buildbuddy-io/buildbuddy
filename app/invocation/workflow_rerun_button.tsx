@@ -19,9 +19,11 @@ import InvocationModel from "./invocation_model";
 import Spinner from "../components/spinner/spinner";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import Long from "long";
+import { User } from "../auth/user";
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
+  user?: User;
 }
 
 type State = {
@@ -112,6 +114,9 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
 
   render() {
     const isEnabled = this.props.model.workflowConfigured && !this.state.isLoading;
+    const showCleanRerun = Boolean(
+      this.props.user?.isGroupAdmin() || !this.props.user?.selectedGroup?.restrictCleanWorkflowRunsToAdmins
+    );
 
     return (
       <>
@@ -124,9 +129,11 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
               {this.state.isLoading ? <Spinner /> : <RefreshCw />}
               <span>Re-run</span>
             </OutlinedButton>
-            <OutlinedButton disabled={!isEnabled} className="icon-button" onClick={this.onOpenMenu.bind(this)}>
-              <ChevronDown />
-            </OutlinedButton>
+            {showCleanRerun && (
+              <OutlinedButton disabled={!isEnabled} className="icon-button" onClick={this.onOpenMenu.bind(this)}>
+                <ChevronDown />
+              </OutlinedButton>
+            )}
           </OutlinedButtonGroup>
           <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
             <Menu>

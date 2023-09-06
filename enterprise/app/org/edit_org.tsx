@@ -21,7 +21,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
     }
   }
 
-  showSuggestionPreference(): boolean {
+  showAdvancedSettings(): boolean {
     return true;
   }
 
@@ -37,6 +37,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
       userOwnedKeysEnabled: group.userOwnedKeysEnabled,
       useGroupOwnedExecutors: group.useGroupOwnedExecutors,
       suggestionPreference: group.suggestionPreference,
+      restrictCleanWorkflowRunsToAdmins: group.restrictCleanWorkflowRunsToAdmins,
     });
     this.setState({ request, initialRequest: this.newRequest(request) });
   }

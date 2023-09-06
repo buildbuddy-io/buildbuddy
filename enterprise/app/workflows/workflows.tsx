@@ -271,7 +271,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
               {this.state.reposResponse?.repoUrls.map((repoUrl) => (
                 <>
                   <RepoItem
-                    isAdmin={isAdmin}
+                    user={this.props.user}
                     repoUrl={repoUrl}
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })}
                     showCleanWorkflowWarning={() => this.setState({ showCleanWorkflowWarning: true })}
@@ -283,7 +283,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
               {this.state.workflowsResponse?.workflow.map((workflow) => (
                 <>
                   <RepoItem
-                    isAdmin={isAdmin}
+                    user={this.props.user}
                     repoUrl={workflow.repoUrl}
                     webhookUrl={workflow.webhookUrl}
                     onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
@@ -339,7 +339,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
 }
 
 type RepoItemProps = {
-  isAdmin: boolean;
+  user?: User;
   repoUrl: string;
   webhookUrl?: string;
   onClickUnlinkItem: (url: string) => void;
@@ -452,6 +452,10 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   render() {
+    const showCleanRerun = Boolean(
+      this.props.user?.isGroupAdmin() || !this.props.user?.selectedGroup?.restrictCleanWorkflowRunsToAdmins
+    );
+
     return (
       <div className="workflow-item container">
         <div className="workflow-item-column">
@@ -477,7 +481,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
             </div>
           </div>
         </div>
-        {this.props.isAdmin && (
+        {this.props.user?.isGroupAdmin() && (
           <div className="workflow-item-column workflow-buttons-container">
             <div className="workflow-item-row">
               {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
@@ -505,10 +509,12 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                     {/*The Popup component has e.preventDefault in its onClick handler, which messes up the checkbox.
                   We need e.stopPropagation to prevent the parent Popup's onClick handler from triggering
                   */}
-                    <label className="run-clean-container" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox checked={this.state.runClean} onChange={this.onClickRunClean.bind(this)} />
-                      <span>Run in a clean container</span>
-                    </label>
+                    {showCleanRerun && (
+                      <label className="run-clean-container" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={this.state.runClean} onChange={this.onClickRunClean.bind(this)} />
+                        <span>Run in a clean container</span>
+                      </label>
+                    )}
                     <FilledButton onClick={this.runWorkflow.bind(this)} disabled={this.state.runWorkflowBranch === ""}>
                       Run workflow
                     </FilledButton>

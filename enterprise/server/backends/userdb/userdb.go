@@ -334,7 +334,8 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 				user_owned_keys_enabled = ?,
 				use_group_owned_executors = ?,
 				cache_encryption_enabled = ?,
-				suggestion_preference = ?
+				suggestion_preference = ?,
+				restrict_clean_workflow_runs_to_admins = ?
 			WHERE group_id = ?`,
 			g.Name,
 			g.URLIdentifier,
@@ -344,6 +345,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			g.UseGroupOwnedExecutors,
 			g.CacheEncryptionEnabled,
 			g.SuggestionPreference,
+			g.RestrictCleanWorkflowRunsToAdmins,
 			g.GroupID)
 		if res.Error != nil {
 			return res.Error
@@ -798,6 +800,7 @@ func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
 			g.cache_encryption_enabled,
 			g.saml_idp_metadata_url,
 			g.suggestion_preference,
+			g.restrict_clean_workflow_runs_to_admins,
 			ug.role
 		FROM "Groups" as g
 		JOIN "UserGroups" as ug
@@ -825,6 +828,7 @@ func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
 			&gr.Group.CacheEncryptionEnabled,
 			&gr.Group.SamlIdpMetadataUrl,
 			&gr.Group.SuggestionPreference,
+			&gr.Group.RestrictCleanWorkflowRunsToAdmins,
 			&gr.Role,
 		)
 		if err != nil {
@@ -866,7 +870,8 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				use_group_owned_executors,
 				cache_encryption_enabled,
 				saml_idp_metadata_url,
-				suggestion_preference
+				suggestion_preference,
+				restrict_clean_workflow_runs_to_admins
 			FROM "Groups"
 			WHERE group_id = ?
 		`, u.GetGroupID()).Rows()
@@ -889,6 +894,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				&gr.Group.CacheEncryptionEnabled,
 				&gr.Group.SamlIdpMetadataUrl,
 				&gr.Group.SuggestionPreference,
+				&gr.Group.RestrictCleanWorkflowRunsToAdmins,
 			)
 			if err != nil {
 				return err

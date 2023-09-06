@@ -252,16 +252,17 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 			githubToken = *g.GithubToken
 		}
 		r = append(r, &grpb.Group{
-			Id:                     g.GroupID,
-			Name:                   g.Name,
-			OwnedDomain:            g.OwnedDomain,
-			GithubLinked:           githubToken != "",
-			UrlIdentifier:          urlIdentifier,
-			SharingEnabled:         g.SharingEnabled,
-			UserOwnedKeysEnabled:   g.UserOwnedKeysEnabled,
-			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
-			SuggestionPreference:   g.SuggestionPreference,
-			Url:                    getGroupUrl(&gr.Group),
+			Id:                                g.GroupID,
+			Name:                              g.Name,
+			OwnedDomain:                       g.OwnedDomain,
+			GithubLinked:                      githubToken != "",
+			UrlIdentifier:                     urlIdentifier,
+			SharingEnabled:                    g.SharingEnabled,
+			UserOwnedKeysEnabled:              g.UserOwnedKeysEnabled,
+			UseGroupOwnedExecutors:            g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
+			RestrictCleanWorkflowRunsToAdmins: g.RestrictCleanWorkflowRunsToAdmins,
+			SuggestionPreference:              g.SuggestionPreference,
+			Url:                               getGroupUrl(&gr.Group),
 		})
 	}
 	return r
@@ -508,6 +509,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	group.UserOwnedKeysEnabled = req.GetUserOwnedKeysEnabled()
 	group.UseGroupOwnedExecutors = &useGroupOwnedExecutors
 	group.SuggestionPreference = req.GetSuggestionPreference()
+	group.RestrictCleanWorkflowRunsToAdmins = req.GetRestrictCleanWorkflowRunsToAdmins()
 	if group.SuggestionPreference == grpb.SuggestionPreference_UNKNOWN_SUGGESTION_PREFERENCE {
 		group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 	}

@@ -37,7 +37,7 @@ export default class InvocationButtons extends React.Component<InvocationButtons
 
     return (
       <div className="invocation-top-right-buttons">
-        {showRerunButton && <WorkflowRerunButton model={this.props.model} />}
+        {showRerunButton && <WorkflowRerunButton model={this.props.model} user={this.props.user} />}
         {showCancelButton && <InvocationCancelButton invocationId={this.props.model.getInvocationId()} />}
         <InvocationCompareButton invocationId={this.props.model.getInvocationId()} />
 
