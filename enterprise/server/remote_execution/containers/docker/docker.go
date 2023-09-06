@@ -267,6 +267,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		_, err := stdcopy.StdCopy(&stdout, &stderr, hijackedResp.Reader)
 		result.Stdout = stdout.Bytes()
 		result.Stderr = stderr.Bytes()
+		if ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled {
+			return nil
+		}
 		return wrapDockerErr(err, "failed to copy docker container output")
 	})
 	eg.Go(func() error {
