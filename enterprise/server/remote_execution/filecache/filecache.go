@@ -1,6 +1,7 @@
 package filecache
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -98,7 +99,8 @@ func evictFn(v *entry, reason lru.EvictionReason) {
 
 // NewFileCache constructs an fileCache with maxSize that will cache files
 // in rootDir.
-func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
+// If deleteContent is true, the root dir will be deleted and recreated.
+func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*fileCache, error) {
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
@@ -108,6 +110,12 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 		hostID = uuid.GetFailsafeHostID()
 	}
 	rootDir = filepath.Join(rootDir, hostID)
+	if deleteContent {
+		log.Infof("Cleaning up filecache %q", rootDir)
+		if err := disk.ForceRemove(context.Background(), rootDir); err != nil {
+			return nil, err
+		}
+	}
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}

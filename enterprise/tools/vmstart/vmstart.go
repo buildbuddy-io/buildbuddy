@@ -50,7 +50,7 @@ func getToolEnv() *real_environment.RealEnv {
 	healthChecker := healthcheck.NewHealthChecker("tool")
 	re := real_environment.NewRealEnv(healthChecker)
 
-	fc, err := filecache.NewFileCache(*snapshotDir, *snapshotDirMaxBytes)
+	fc, err := filecache.NewFileCache(*snapshotDir, *snapshotDirMaxBytes, false)
 	if err != nil {
 		log.Fatalf("Unable to setup filecache %s", err)
 	}

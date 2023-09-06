@@ -773,7 +773,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	flags.Set(t, "executor.root_directory", filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds")))
 	localCacheDirectory := filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
 
-	fc, err := filecache.NewFileCache(localCacheDirectory, 1_000_000_000 /* Default cache size value */)
+	fc, err := filecache.NewFileCache(localCacheDirectory, 1_000_000_000 /* Default cache size value */, false)
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
 	}

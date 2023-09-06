@@ -50,6 +50,7 @@ import (
 var (
 	appTarget                = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
 	disableLocalCache        = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
+	deleteFileCacheOnStartup = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on start up")
 	localCacheDirectory      = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
 	localCacheSizeBytes      = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
 	startupWarmupMaxWaitSecs = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
@@ -126,7 +127,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 
 	if !*disableLocalCache {
 		log.Infof("Enabling filecache in %q (size %d bytes)", *localCacheDirectory, *localCacheSizeBytes)
-		if fc, err := filecache.NewFileCache(*localCacheDirectory, *localCacheSizeBytes); err == nil {
+		if fc, err := filecache.NewFileCache(*localCacheDirectory, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
 			realEnv.SetFileCache(fc)
 		}
 	}
