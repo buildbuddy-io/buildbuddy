@@ -284,6 +284,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		select {
 		case err := <-errCh:
 			mu.Lock()
+			// We don't want to propagate the error from the above goroutine so
+			// we set a signal to avoid returning an error since we're already
+			// going to return one here.
 			exitedUncleanly = true
 			mu.Unlock()
 			// Close the output reader so that the above goroutine can also
