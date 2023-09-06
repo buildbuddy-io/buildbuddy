@@ -122,9 +122,20 @@ container_image(
 #
 # This target can be run locally with enterprise/tools/run_executor_image.sh
 go_image(
-    name = "executor_image",
+    name = "executor_go_image",
     base = ":base_image",
     binary = ":executor",
+    tags = ["manual"],
+)
+
+container_image(
+    name = "executor_image",
+    base = ":executor_go_image",
+    entrypoint = [
+        "/tini",
+        "--",
+        "/app/enterprise/server/cmd/executor/executor",
+    ],
     tags = ["manual"],
 )
 
