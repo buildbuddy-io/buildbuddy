@@ -763,6 +763,9 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	}
 
 	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{})
+	if err != nil {
+		return err
+	}
 	defer func() {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
 		defer cancel()
