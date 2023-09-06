@@ -1621,7 +1621,12 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
-		if copyErr != nil || closeErr != nil {
+		if copyErr != nil {
+			log.Warningf("GetMulti encountered error when copying %s: %s", r.GetDigest().GetHash(), copyErr)
+			continue
+		}
+		if closeErr != nil {
+			log.Warningf("GetMulti cannot close reader when copying %s: %s", r.GetDigest().GetHash(), closeErr)
 			continue
 		}
 		foundMap[r.GetDigest()] = append([]byte{}, buf.Bytes()...)
