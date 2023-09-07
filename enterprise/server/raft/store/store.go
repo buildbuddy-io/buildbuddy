@@ -567,9 +567,6 @@ type Store struct {
 	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
 	usages   *usageTracker
 
-	openedReplicasMu sync.Mutex
-	openedReplicas   map[string]*replica.Replica
-
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
 
@@ -592,9 +589,6 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
-
-		openedReplicasMu: sync.Mutex{},
-		openedReplicas:   make(map[string]*replica.Replica),
 
 		leases:   sync.Map{},
 		replicas: sync.Map{},
@@ -1020,26 +1014,11 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
 	r := replica.New(s.leaser, clusterID, nodeID, s, s.partitions)
-
-	s.openedReplicasMu.Lock()
-	defer s.openedReplicasMu.Unlock()
-	s.openedReplicas[fmt.Sprintf("c%dn%d", r.ClusterID, r.NodeID)] = r
-
 	return r
 }
 
 func (s *Store) Sender() *sender.Sender {
 	return s.sender
-}
-
-func (s *Store) GetReplicaByClusterAndNode(clusterID, nodeID uint64) (*replica.Replica, error) {
-	s.openedReplicasMu.Lock()
-	defer s.openedReplicasMu.Unlock()
-	r, ok := s.openedReplicas[fmt.Sprintf("c%dn%d", clusterID, nodeID)]
-	if !ok {
-		return nil, status.NotFoundErrorf("Replica c%dn%d not present on this store", clusterID, nodeID)
-	}
-	return r, nil
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
@@ -1983,7 +1962,6 @@ func (s *Store) updateMetarange(ctx context.Context, oldLeft, left, right *rfpb.
 	if err := addMetaRangeEdits(oldLeft, left, right, b); err != nil {
 		return err
 	}
-	log.Printf("oldLeft: %+v", oldLeft)
 	batchProto, err := b.ToProto()
 	if err != nil {
 		return err
@@ -1993,11 +1971,8 @@ func (s *Store) updateMetarange(ctx context.Context, oldLeft, left, right *rfpb.
 		return err
 	}
 	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
-	casResponse, err := batchRsp.CASResponse(0)
+	_, err = batchRsp.CASResponse(0)
 	if err != nil {
-		rd := &rfpb.RangeDescriptor{}
-		proto.Unmarshal(casResponse.GetKv().GetValue(), rd)
-		log.Printf("err: %s, kv: %+v", err, rd)
 		return err
 	}
 	return batchRsp.AnyError()
