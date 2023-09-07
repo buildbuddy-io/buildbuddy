@@ -64,7 +64,7 @@ sudo sysctl -w net.ipv4.tcp_keepalive_time=180
 # Lowered from default value: 75
 sudo sysctl -w net.ipv4.tcp_keepalive_intvl=60
 # Lowered from default value: 9
-sudo sysctl -w net.ipv4.tcp_keepalive_probes=2
+sudo sysctl -w net.ipv4.tcp_keepalive_probes=5
 ```
 
 This will cause the Linux kernel to send keepalive probes earlier and more frequently, before the proxy/gateway in the middle detects and drops the idle connection.
