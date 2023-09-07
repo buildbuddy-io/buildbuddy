@@ -62,10 +62,7 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Cas{
 			Cas: value,
 		}
-	case *rfpb.FindSplitPointRequest:
-		req.Value = &rfpb.RequestUnion_FindSplitPoint{
-			FindSplitPoint: value,
-		}
+
 	case *rfpb.FileDeleteRequest:
 		req.Value = &rfpb.RequestUnion_FileDelete{
 			FileDelete: value,
@@ -214,15 +211,6 @@ func (br *BatchResponse) CASResponse(n int) (*rfpb.CASResponse, error) {
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetCas(), br.unionError(u)
-}
-
-func (br *BatchResponse) FindSplitPointResponse(n int) (*rfpb.FindSplitPointResponse, error) {
-	br.checkIndex(n)
-	if br.err != nil {
-		return nil, br.err
-	}
-	u := br.cmd.GetUnion()[n]
-	return u.GetFindSplitPoint(), br.unionError(u)
 }
 
 func (br *BatchResponse) FileDeleteResponse(n int) (*rfpb.FileDeleteResponse, error) {

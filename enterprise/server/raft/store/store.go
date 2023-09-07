@@ -1081,6 +1081,51 @@ func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeader
 	return &rfpb.TransferLeadershipResponse{}, nil
 }
 
+func (s *Store) waitForReplicaOpen(ctx context.Context, clusterID uint64) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			if rd := s.lookupRange(clusterID); rd != nil {
+				return nil
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+func (s *Store) SnapshotCluster(ctx context.Context, clusterID uint64) error {
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
+		defer cancel()
+		ctx = c
+	}
+	opts := dragonboat.SnapshotOption{
+		OverrideCompactionOverhead: true,
+		CompactionOverhead:         0,
+	}
+
+	// Wait for the cluster to be opened on this store
+	if err := s.waitForReplicaOpen(ctx, clusterID); err != nil {
+		return err
+	}
+
+	// Wait a little longer for the replica to accept the snapshot request
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			_, err := s.nodeHost.SyncRequestSnapshot(ctx, clusterID, opts)
+			if err == nil {
+				return nil
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
 func (s *Store) AddPeer(ctx context.Context, sourceClusterID, newClusterID uint64) error {
 	rd := s.lookupRange(sourceClusterID)
 	if rd == nil {
@@ -1124,27 +1169,6 @@ func (s *Store) AddPeer(ctx context.Context, sourceClusterID, newClusterID uint6
 		return err
 	}
 
-	// The snapshot request requires a deadline to be set on the context.
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	// Wait a little bit for the dragonboat library to start the peer.
-	// TODO: find a better way?
-	s.waitForReplicaToCatchUp(ctx, newClusterID, 0)
-	time.Sleep(100 * time.Millisecond)
-
-	// Force compaction so that dragonboat doesn't try to use the existing
-	// raft logs for recovery. The logs are incomplete since we perform the
-	// database clone outside of raft. With the raft snapshot in place,
-	// recovery attempts will ask the state machine (replica) to provide a
-	// snapshot which will reflect the cloned data.
-	opts := dragonboat.SnapshotOption{
-		OverrideCompactionOverhead: true,
-		CompactionOverhead:         0,
-	}
-	if _, err := s.nodeHost.SyncRequestSnapshot(ctx, newClusterID, opts); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1570,12 +1594,17 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err != nil {
 		return nil, status.InternalErrorf("simple split err: %s", err)
 	}
+
 	simpleSplitRsp, err := rsp.SimpleSplitResponse(0)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.updateMetarange(ctx, sourceRange, simpleSplitRsp.GetNewLeft(), simpleSplitRsp.GetNewRight()); err != nil {
 		log.Errorf("metarange update error: %s", err)
+		return nil, err
+	}
+
+	if err := s.SnapshotCluster(ctx, clusterID); err != nil {
 		return nil, err
 	}
 	return &rfpb.SplitClusterResponse{
@@ -1970,7 +1999,7 @@ func (s *Store) updateMetarange(ctx context.Context, oldLeft, left, right *rfpb.
 	if err != nil {
 		rd := &rfpb.RangeDescriptor{}
 		proto.Unmarshal(casResponse.GetKv().GetValue(), rd)
-		log.Printf("err: %s, kv: %+v", err, rd)	
+		log.Printf("err: %s, kv: %+v", err, rd)
 		return err
 	}
 	return batchRsp.AnyError()

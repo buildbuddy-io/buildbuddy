@@ -66,6 +66,7 @@ type IStore interface {
 	NotifyUsage(ru *rfpb.ReplicaUsage)
 	Sender() *sender.Sender
 	AddPeer(ctx context.Context, sourceClusterID, newClusterID uint64) error
+	SnapshotCluster(ctx context.Context, clusterID uint64) error
 }
 
 // IOnDiskStateMachine is the interface to be implemented by application's
@@ -94,7 +95,6 @@ type IStore interface {
 // to free up disk spaces.
 type Replica struct {
 	leaser pebble.Leaser
-	_db     pebble.IPebbleDB
 
 	rootDir   string
 	fileDir   string
@@ -164,14 +164,14 @@ func isFileRecordKey(keyBytes []byte) bool {
 }
 
 func batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) {
-       batchReader := wb.Reader()
-       for len(batchReader) > 0 {
-               _, ukey, value, _ := batchReader.Next()
-               if bytes.Equal(ukey, key) {
-                       return value, true
-               }
-       }
-       return nil, false
+	batchReader := wb.Reader()
+	for len(batchReader) > 0 {
+		_, ukey, value, _ := batchReader.Next()
+		if bytes.Equal(ukey, key) {
+			return value, true
+		}
+	}
+	return nil, false
 }
 
 func replicaSpecificSuffix(clusterID, nodeID uint64) []byte {
@@ -185,7 +185,7 @@ func (sm *Replica) replicaSuffix() []byte {
 func replicaSpecificKey(key []byte, clusterID, nodeID uint64) []byte {
 	suffix := replicaSpecificSuffix(clusterID, nodeID)
 	if bytes.HasSuffix(key, suffix) {
-		log.Warningf("Key %q already has replica suffix!", key)
+		log.Debugf("Key %q already has replica suffix!", key)
 		return key
 	}
 	return append(key, suffix...)
@@ -477,7 +477,7 @@ func (sm *Replica) loadPartitionMetadata(db ReplicaReader) error {
 	return nil
 }
 
-func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
+func (sm *Replica) loadRangeDescriptor(db ReplicaReader) {
 	buf, err := sm.lookup(db, constants.LocalRangeKey)
 	if err != nil {
 		sm.log.Debugf("Replica opened but range not yet set: %s", err)
@@ -488,7 +488,7 @@ func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
 
 // loadReplicaState loads any in-memory replica state from the DB.
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
-	sm.checkAndSetRangeDescriptor(db)
+	sm.loadRangeDescriptor(db)
 	if err := sm.loadPartitionMetadata(db); err != nil {
 		return err
 	}
@@ -707,7 +707,7 @@ func absInt(i int64) int64 {
 	return i
 }
 
-func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
+func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) ([]byte, error) {
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
 	sm.rangeMu.Unlock()
@@ -779,11 +779,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
 	}
 	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ClusterID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
-	return &rfpb.FindSplitPointResponse{
-		Split:          splitKey,
-		LeftSizeBytes:  splitSize,
-		RightSizeBytes: totalSize - splitSize,
-	}, nil
+	return splitKey, nil
 }
 
 func canSplitKeys(leftKey, rightKey []byte) bool {
@@ -837,7 +833,7 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*rfpb.SimpleSplitResponse, error) {
 	ctx := context.Background()
 
-	splitPointRsp, err := sm.findSplitPoint(&rfpb.FindSplitPointRequest{})
+	splitKey, err := sm.findSplitPoint(&rfpb.FindSplitPointRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -847,8 +843,9 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 	sm.rangeMu.RUnlock()
 
 	peerRangeDescriptor := proto.Clone(rd).(*rfpb.RangeDescriptor)
-	peerRangeDescriptor.Left = splitPointRsp.GetSplit()
+	peerRangeDescriptor.Left = splitKey
 	peerRangeDescriptor.RangeId = req.GetNewRangeId()
+	peerRangeDescriptor.Generation += 1
 	for _, r := range peerRangeDescriptor.GetReplicas() {
 		r.ClusterId = req.GetNewClusterId()
 	}
@@ -871,7 +868,16 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 		return nil, err
 	}
 
-	rd.Right = splitPointRsp.GetSplit()
+	// Force compaction so that dragonboat doesn't try to use the existing
+	// raft logs for recovery. The logs are incomplete since we perform the
+	// database clone outside of raft. With the raft snapshot in place,
+	// recovery attempts will ask the state machine (replica) to provide a
+	// snapshot which will reflect the cloned data.
+	if err := sm.store.SnapshotCluster(ctx, req.GetNewClusterId()); err != nil {
+		return nil, err
+	}
+
+	rd.Right = splitKey
 	rd.Generation += 1
 	buf, err = proto.Marshal(rd)
 	if err != nil {
@@ -973,12 +979,6 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion, rsp *r
 		r, err := sm.fileUpdateMetadata(wb, value.FileUpdateMetadata)
 		rsp.Value = &rfpb.ResponseUnion_FileUpdateMetadata{
 			FileUpdateMetadata: r,
-		}
-		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_FindSplitPoint:
-		r, err := sm.findSplitPoint(value.FindSplitPoint)
-		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
-			FindSplitPoint: r,
 		}
 		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_SimpleSplit:
@@ -1768,7 +1768,6 @@ func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
 // IOnDiskStateMachine instance has been closed, the Close method is not
 // allowed to update the state of IOnDiskStateMachine visible to the outside.
 func (sm *Replica) Close() error {
-	sm._db.Close()
 	close(sm.quitChan)
 
 	sm.rangeMu.Lock()
