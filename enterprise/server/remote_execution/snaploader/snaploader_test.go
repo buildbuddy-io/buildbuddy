@@ -116,7 +116,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 
 	// Read the bytes from cowA now to avoid relying on cowA being immutable
 	// (though it should be).
-	scratchfsBytesA := mustReadStore(t, cowA)
+	scratchfsBytesA := mustReadFile(t, chunkedFileA)
 
 	// Now unpack the snapshot for use by VM B, then make a modification.
 	workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
@@ -187,9 +187,8 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 		}
 	}
 	for name, originalCOW := range originalSnapshot.ChunkedFiles {
-		originalContent := mustReadStore(t, originalCOW)
-		unpackedContent := mustReadStore(t, unpacked.ChunkedFiles[name])
-		require.NoError(t, err)
+		originalContent := mustReadFile(t, originalCOW)
+		unpackedContent := mustReadFile(t, unpacked.ChunkedFiles[name])
 		if !bytes.Equal(originalContent, unpackedContent) {
 			require.FailNowf(t, "unpacked DynamicChunkedFile does not match original snapshot", "file name: %s", name)
 		}
@@ -197,8 +196,8 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 	return unpacked
 }
 
-func mustReadStore(t *testing.T, store blockio.Store) []byte {
-	r := blockio.Reader(store)
+func mustReadFile(t *testing.T, file *snaploader.DynamicChunkedFile) []byte {
+	r := snaploader.Reader(file)
 	b, err := io.ReadAll(r)
 	require.NoError(t, err)
 	return b

@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -257,23 +258,60 @@ func (cf *DynamicChunkedFile) GetPageAddress(offset uintptr, write bool) (uintpt
 }
 
 func (cf *DynamicChunkedFile) ReadAt(p []byte, offset int64) (int, error) {
-	if err := cf.fetchChunkIfMissing(offset); err != nil {
-		// Not found errors mean that we are reading from a hole
-		if !status.IsNotFoundError(err) {
-			return 0, status.WrapError(err, "fetch missing chunk")
+	// Dynamically fetch all chunks that might be read from
+	lastByteToRead := offset + int64(len(p))
+	chunkStart := cf.ChunkStartOffset(offset)
+	for chunkStart < lastByteToRead {
+		if err := cf.fetchChunkIfMissing(chunkStart); err != nil {
+			// Not found errors mean that we are reading from a hole
+			if !status.IsNotFoundError(err) {
+				return 0, status.WrapError(err, "fetch missing chunk")
+			}
 		}
+		chunkStart += cf.ChunkSizeBytes()
 	}
+
 	return cf.COWStore.ReadAt(p, offset)
 }
 
 func (cf *DynamicChunkedFile) WriteAt(p []byte, offset int64) (int, error) {
-	if err := cf.fetchChunkIfMissing(offset); err != nil {
-		// Not found errors mean that we need to create a new chunk
-		if !status.IsNotFoundError(err) {
-			return 0, status.WrapError(err, "fetch missing chunk")
+	// Dynamically fetch all chunks that might be written to
+	lastByteToRead := offset + int64(len(p))
+	chunkStart := cf.ChunkStartOffset(offset)
+	for chunkStart < lastByteToRead {
+		if err := cf.fetchChunkIfMissing(chunkStart); err != nil {
+			// Not found errors mean that we need to create a new chunk
+			if !status.IsNotFoundError(err) {
+				return 0, status.WrapError(err, "fetch missing chunk")
+			}
 		}
+		chunkStart += cf.ChunkSizeBytes()
 	}
+
 	return cf.COWStore.WriteAt(p, offset)
+}
+
+type dynamicChunkedFileReader struct {
+	file *DynamicChunkedFile
+	r    *io.SectionReader
+}
+
+// Reader returns an io.Reader that reads all bytes from the given store,
+// starting at offset 0 and ending at SizeBytes.
+func Reader(f *DynamicChunkedFile) io.Reader {
+	return &dynamicChunkedFileReader{file: f}
+}
+
+func (r *dynamicChunkedFileReader) Read(p []byte) (n int, err error) {
+	if r.r == nil {
+		size, err := r.file.SizeBytes()
+		if err != nil {
+			return 0, err
+		}
+		r.r = io.NewSectionReader(r.file, 0, size)
+		r.file = nil
+	}
+	return r.r.Read(p)
 }
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
