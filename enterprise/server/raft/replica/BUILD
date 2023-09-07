@@ -50,7 +50,6 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/ioutil",
-        "//server/util/log",
         "//server/util/status",
         "@com_github_lni_dragonboat_v3//statemachine",
         "@com_github_stretchr_testify//require",
