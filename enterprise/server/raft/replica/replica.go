@@ -824,12 +824,6 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 	}
 }
 
-// REMEMBER: no raft commands may runwhile this one is running!
-// xxx Request contains the new ClusterID and RangeID
-// xxx Find a split point and compute new range descriptors
-// xxx Add a peer with the new ClusterID
-// xxx Update peer's range descriptor and snapshot it
-// xxx Update this peer's range descriptor
 func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*rfpb.SimpleSplitResponse, error) {
 	ctx := context.Background()
 
