@@ -39,7 +39,7 @@ var (
 	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", true, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
-	finerDrilldownTimeIncrements   = flag.Bool("app.finer_drilldown_time_increments", false, "If enabled, split drilldowns into smaller time buckets when the user has a smaller date range selected.")
+	finerDrilldownTimeBuckets      = flag.Bool("app.finer_drilldown_time_buckets", false, "If enabled, split drilldowns into smaller time buckets when the user has a smaller date range selected.")
 )
 
 type InvocationStatService struct {
@@ -557,7 +557,9 @@ func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table stri
 	return metricBuckets, metricArrayStr, nil
 }
 
-func getTimeIncrement(duration time.Duration) time.Duration {
+// Given a duration for which we are computing a heatmap, return an
+// appropriate fixed bucket size for a heatmap.
+func computeTimeBucketSize(duration time.Duration) time.Duration {
 	if duration <= 16*time.Hour {
 		return 5 * time.Minute
 	}
@@ -611,8 +613,10 @@ func getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContex
 	var timestampBuckets []int64
 	timestampBuckets = append(timestampBuckets, start.UnixMicro())
 	// When the queried time range is less than eight days, we show smaller buckets.
-	if *finerDrilldownTimeIncrements && time.Duration(endSec-startSec)*time.Second <= (8*24)*time.Hour {
-		increment := getTimeIncrement(time.Duration(endSec-startSec) * time.Second)
+	const eightDays = 8 * 24 * time.Hour
+	queriedDuration := end.Sub(start)
+	if *finerDrilldownTimeBuckets && queriedDuration <= eightDays {
+		increment := computeTimeBucketSize(time.Duration(endSec-startSec) * time.Second)
 		current := start.Round(increment)
 		for current.Before(start) || current.Equal(start) {
 			current = current.Add(increment)
