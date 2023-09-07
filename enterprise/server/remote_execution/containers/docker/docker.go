@@ -185,6 +185,14 @@ func NewDockerContainer(env environment.Env, imageCacheAuth *container.ImageCach
 	}
 }
 
+type containerState int
+
+const (
+	ctrRunning containerState = iota
+	ctrExitedCleanly
+	ctrDidNotExitCleanly
+)
+
 func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
@@ -244,13 +252,17 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	exitedCleanly := false
+	var mu sync.Mutex
+	state := ctrRunning
 	defer func() {
 		// Clean up the container in the background.
 		// TODO: Add this removal as a job to a centralized queue.
 		go func() {
 			ctx := context.Background()
-			if !exitedCleanly {
+			mu.Lock()
+			state := state
+			mu.Unlock()
+			if state != ctrExitedCleanly {
 				if err := r.client.ContainerKill(ctx, cid, "SIGKILL"); err != nil {
 					log.Errorf("Failed to kill docker container: %s", err)
 				}
@@ -267,15 +279,30 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		_, err := stdcopy.StdCopy(&stdout, &stderr, hijackedResp.Reader)
 		result.Stdout = stdout.Bytes()
 		result.Stderr = stderr.Bytes()
+		mu.Lock()
+		defer mu.Unlock()
+		if state == ctrDidNotExitCleanly {
+			// If the container did not exit cleanly, the goroutine below will
+			// return an error, so we should not to avoid clobbering the error.
+			return nil
+		}
 		return wrapDockerErr(err, "failed to copy docker container output")
 	})
 	eg.Go(func() error {
 		statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
 		select {
 		case err := <-errCh:
+			mu.Lock()
+			state = ctrDidNotExitCleanly
+			mu.Unlock()
+			// Close the output reader so that the above goroutine can also
+			// exit.
+			hijackedResp.Close()
 			return wrapDockerErr(err, "container did not exit cleanly")
 		case s := <-statusCh:
-			exitedCleanly = true
+			mu.Lock()
+			state = ctrExitedCleanly
+			mu.Unlock()
 			if s.Error != nil {
 				return wrapDockerErr(status.UnknownError(s.Error.Message), "failed to get container status")
 			}
