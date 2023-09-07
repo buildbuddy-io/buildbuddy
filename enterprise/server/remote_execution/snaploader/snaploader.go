@@ -11,10 +11,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -78,18 +81,17 @@ func artifactFileCacheKey(ctx context.Context, env environment.Env, computeDiges
 			Digest: d,
 		}, nil
 	}
+	fileName := filepath.Base(filePath)
+	gid, err := groupID(ctx, env)
+	if err != nil {
+		return nil, err
+	}
 	// Note that this only works because filecache doesn't
 	// verify digests. If you want to store these remotely in
 	// CAS, you need to compute the full digest.
-	var groupID string
-	u, err := perms.AuthenticatedUser(ctx, env)
-	if err == nil {
-		groupID = u.GetGroupID()
-	}
-	fileName := filepath.Base(filePath)
 	return &repb.FileNode{
 		Digest: &repb.Digest{
-			Hash:      hashStrings(groupID, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerId, fileName),
+			Hash:      hashStrings(gid, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerId, fileName),
 			SizeBytes: sizeBytes,
 		},
 	}, nil
@@ -389,8 +391,18 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Chunked
 		Size:      size,
 		ChunkSize: cf.ChunkSizeBytes(),
 	}
-	for _, c := range cf.Chunks() {
+	dirtyChunkCount := 0
+	var dirtyBytes int64
+	chunks := cf.Chunks()
+	for _, c := range chunks {
 		if cf.Dirty(c.Offset) {
+			dirtyChunkCount++
+			chunkSize, err := c.SizeBytes()
+			if err != nil {
+				return nil, status.WrapError(err, "dirty chunk size")
+			}
+			dirtyBytes += chunkSize
+
 			// Sync dirty chunks to make sure the underlying file is up to date
 			// before we add it to cache.
 			if err := c.Sync(); err != nil {
@@ -412,6 +424,20 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Chunked
 			DigestHash: d.GetHash(),
 		})
 	}
+
+	gid, err := groupID(ctx, l.env)
+	if err != nil {
+		return nil, err
+	}
+	metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
+		metrics.GroupID:  gid,
+		metrics.FileName: name,
+	}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
+	metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
+		metrics.GroupID:  gid,
+		metrics.FileName: name,
+	}).Add(float64(dirtyBytes))
+
 	return pb, nil
 }
 
@@ -429,4 +455,15 @@ func hashStrings(strs ...string) string {
 		out += hash.String(s)
 	}
 	return hash.String(out)
+}
+
+func groupID(ctx context.Context, env environment.Env) (string, error) {
+	var gid string
+	u, err := perms.AuthenticatedUser(ctx, env)
+	if err == nil {
+		gid = u.GetGroupID()
+	} else if err != nil && !authutil.IsAnonymousUserError(err) {
+		return "", err
+	}
+	return gid, nil
 }

@@ -205,6 +205,9 @@ const (
 	// For remote execution runners, describes the recycling status (Ex.
 	// 'clean' if the runner is not recycled or 'recycled')
 	RecycledRunnerStatus = "recycled_runner_status"
+
+	// Name of a file.
+	FileName = "file_name"
 )
 
 // Other constants
@@ -958,6 +961,37 @@ var (
 	//     )
 	//  )
 	// ```
+
+	COWSnapshotDirtyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_dirty_chunk_ratio",
+		Buckets:   prometheus.LinearBuckets(0, .05, 20),
+		Help:      "After a copy-on-write snapshot has been used, the ratio of dirty/total chunks.",
+	}, []string{
+		GroupID,
+		FileName,
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # To view how many elements fall into each bucket
+	// # Visualize with the Bar Gauge type
+	// # Legend: {{le}}
+	// # Format: Heatmap
+	// sum(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio) by(le)
+	// ```
+
+	COWSnapshotDirtyBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_dirty_bytes",
+		Help:      "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
+	}, []string{
+		GroupID,
+		FileName,
+	})
 
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1713,6 +1747,20 @@ var (
 		CompressionType,
 	})
 
+	// #### Examples
+	//
+	// ```promql
+	// # Histogram buckets with the count of elements in each compression ratio bucket
+	// # Visualize with the Bar Gauge type
+	// # Legend: {{le}}
+	// # Format: Heatmap
+	// sum(buildbuddy_pebble_compression_ratio_bucket) by(le)
+	//
+	// # Percentage of elements that increased in size when compressed (compression ratio > 1)
+	// # Visualize with the Stat type
+	// (sum(buildbuddy_pebble_compression_ratio_count) - sum(buildbuddy_pebble_compression_ratio_bucket{le="1.0"})) / sum(buildbuddy_pebble_compression_ratio_count)
+	// ```
+
 	ServerUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "server",
@@ -1778,20 +1826,6 @@ var (
 		CacheTypeLabel,
 		ServerName,
 	})
-
-	// #### Examples
-	//
-	// ```promql
-	// # Histogram buckets with the count of elements in each compression ratio bucket
-	// # Visualize with the Bar Gauge type
-	// # Legend: {{le}}
-	// # Format: Heatmap
-	// sum(buildbuddy_pebble_compression_ratio_bucket) by(le)
-	//
-	// # Percentage of elements that increased in size when compressed (compression ratio > 1)
-	// # Visualize with the Stat type
-	// (sum(buildbuddy_pebble_compression_ratio_count) - sum(buildbuddy_pebble_compression_ratio_bucket{le="1.0"})) / sum(buildbuddy_pebble_compression_ratio_count)
-	// ```
 
 	Logs = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,

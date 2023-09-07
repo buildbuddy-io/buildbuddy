@@ -12,10 +12,13 @@ go_library(
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/metrics",
         "//server/remote_cache/digest",
+        "//server/util/authutil",
         "//server/util/hash",
         "//server/util/perms",
         "//server/util/status",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
     ],
 )
