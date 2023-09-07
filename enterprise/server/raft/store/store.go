@@ -707,8 +707,6 @@ func (s *Store) Stop(ctx context.Context) error {
 		return err
 	}
 	s.log.Info("Store: waitgroups finished")
-	s.nodeHost.Stop()
-	s.log.Info("Store: nodehost closed")
 
 	listener.DefaultListener().UnregisterLeaderUpdatedCB(&s.leaderUpdatedCB)
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)

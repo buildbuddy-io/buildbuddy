@@ -457,6 +457,7 @@ func (rc *RaftCache) Stop() error {
 		close(rc.shutdown)
 		rc.driver.Stop()
 		rc.store.Stop(context.Background())
+		rc.nodeHost.Stop()
 		rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
 	})
