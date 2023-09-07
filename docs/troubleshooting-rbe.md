@@ -40,12 +40,12 @@ If you'd like to add Mac executors to your BuildBuddy Cloud account, please [con
 
 ## WARNING: Remote Cache: UNAVAILABLE: io exception
 
-This error occurs when Bazel JVM have a hard time maintaining the TCP connection with BuildBuddy remote cache.
+This error may occur when Bazel fails to properly maintain a long-running TCP connection to BuildBuddy.
 
-To validate this error, user could use Bazel's flag `--remote_grpc_log=grpc.log` to capture the grpc traffic
-from Bazel JVM and BuildBuddy. The log file will be in protobuf format. to convert it to JSON format, user
-could use our [BB CLI](/docs/cli) and run `bb print --grpc_log=<path-to-file>/grpc.log`. In side the log, we
-expect to see network errors such as
+To check whether this is the case, try running Bazel with `--remote_grpc_log=grpc.log` to capture the gRPC traffic
+between Bazel and BuildBuddy. The log file will be in protobuf format. To convert it to JSON format, download the [BuildBuddy CLI](/docs/cli) and run `bb print --grpc_log=<path-to-file>/grpc.log`.
+
+In the log, you may see network errors such as the following:
 
 ```json
   "status":  {
@@ -54,18 +54,19 @@ expect to see network errors such as
   },
 ```
 
-This is usually encountered by customers who run operate some proxy or gateway (i.e. AWS NAT Gateway) in between
-Bazel JVM and BuildBuddy server.
+This typically happens when there is a proxy or gateway (e.g. AWS NAT Gateway) in between Bazel and BuildBuddy that is terminating idle connections too quickly.
 
-When this happen, user should consider tunning their Linux network settings like this:
+When this happens, try the following Linux network settings:
 
 ```bash
+# Lowered from default 7200
 sudo sysctl -w net.ipv4.tcp_keepalive_time=180
-sudo sysctl -w net.ipv4.tcp_keepalive_intvl=60
-sudo sysctl -w net.ipv4.tcp_keepalive_probes=25
+# Using default value
+sudo sysctl -w net.ipv4.tcp_keepalive_intvl=75
+# Using default value
+sudo sysctl -w net.ipv4.tcp_keepalive_probes=9
 ```
 
-so the keepalive routines in Linux kernel would send keepalive probe more frequently.
+This will cause the Linux kernel to send keepalive probes more eagerly, before the proxy/gateway in the middle detects and drops the idle connection.
 
-The exact values could be different, subjected to user's specific network condition.
-Please [contact us](/contact/) if you have any questions / concerns.
+The optimal values may depend on specific network conditions, but try these values as a starting point. Please [contact us](/contact/) if you have any questions / concerns.
