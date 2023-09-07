@@ -564,8 +564,8 @@ func getTimeIncrement(duration time.Duration) time.Duration {
 	if duration <= 48*time.Hour {
 		return 15 * time.Minute
 	}
-	if duration <= (96)*time.Hour {
-		return 30 * time.Hour
+	if duration <= 96*time.Hour {
+		return 30 * time.Minute
 	}
 	return 1 * time.Hour
 }
