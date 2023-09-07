@@ -21,7 +21,7 @@ require (
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.10.1
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.33.8
-	github.com/Merovius/nbd v0.0.0-20230605051639-7ffd87295813
+	github.com/Merovius/nbd v0.0.0-20230908150103-a1d15e184887
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go v1.44.286
 	github.com/aws/aws-sdk-go-v2 v1.18.1
