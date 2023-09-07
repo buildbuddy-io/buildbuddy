@@ -567,16 +567,16 @@ func getTimeIncrement(duration time.Duration) time.Duration {
 	if duration <= 49*time.Hour {
 		return 30 * time.Minute
 	}
-	if duration <= (8*24)*time.Hour {
+	if duration <= (5*24)*time.Hour {
 		return time.Hour
 	}
-	if duration <= (15*24)*time.Hour {
+	if duration <= (8*24)*time.Hour {
 		return 2 * time.Hour
 	}
-	if duration <= (31*24)*time.Hour {
+	if duration <= (15*24)*time.Hour {
 		return 4 * time.Hour
 	}
-	return time.Hour
+	return 8 * time.Hour
 }
 
 const ONE_WEEK = 7 * 24 * time.Hour
