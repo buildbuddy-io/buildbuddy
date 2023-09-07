@@ -595,7 +595,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		e := al.GetAllEntries()[0]
 		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
 		require.Equal(t, u.Groups[0].Group.GroupID, e.Resource.GetId())
-		require.Equal(t, alpb.Action_IMPERSONATE, e.Action)
+		require.Equal(t, alpb.Action_CREATE_IMPERSONATION_API_KEY, e.Action)
 		require.Equal(t, req, e.Request)
 
 		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())

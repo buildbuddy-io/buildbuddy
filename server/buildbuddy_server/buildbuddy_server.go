@@ -696,7 +696,7 @@ func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *a
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_IMPERSONATE, req)
+		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_CREATE_IMPERSONATION_API_KEY, req)
 	}
 	return &akpb.CreateImpersonationApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
