@@ -7,7 +7,7 @@ function Component() {
   return (
     <div className={`${common.section} ${common.sectionGray} ${styles.integrationSection}`}>
       <div className={common.container}>
-        <div className={styles.text}>
+        <div className={common.centeredText}>
           <h2 className={styles.title}>BuildBuddy integrates with</h2>
         </div>
       </div>

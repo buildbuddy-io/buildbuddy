@@ -82,6 +82,7 @@
   font-size: 56px;
   line-height: 64px;
   font-weight: 700;
+  text-wrap: balance;
 }
 
 .subtitle {
