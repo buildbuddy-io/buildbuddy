@@ -610,6 +610,7 @@ func TestRemoveNamespace(t *testing.T) {
 	_, err = qm.RemoveNamespace(ctx, &qpb.RemoveNamespaceRequest{
 		Namespace: "remote_execution",
 	})
+	require.NoError(t, err)
 
 	gotBuckets := fetchAllQuotaBuckets(t, env, ctx)
 	assert.ElementsMatch(t, gotBuckets, []*tables.QuotaBucket{
@@ -642,6 +643,7 @@ func TestRemoveNamespace(t *testing.T) {
 func TestQuotaManagerApplyBucket(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
 	env.SetAuthDB(adb)
 	udb, err := userdb.NewUserDB(env, env.GetDBHandle())
 	require.NoError(t, err)

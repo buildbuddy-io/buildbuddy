@@ -189,6 +189,9 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.
 		return nil, status.InternalErrorf("failed to fetch metrics from prometheus: %s", err)
 	}
 	metricFamilies, err := queryResultsToMetrics(vectorMap)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to prase metrics fetched from prometheus: %s", err)
+	}
 
 	err = q.setMetrics(ctx, groupID, metricFamilies)
 	if err != nil {

@@ -117,6 +117,7 @@ func TestCOW_SparseData(t *testing.T) {
 	// single IO block on disk (since we only wrote 1 byte).
 	dirtyPath := filepath.Join(outDir, "0.dirty")
 	b, err := os.ReadFile(dirtyPath)
+	require.NoError(t, err)
 	expectedContent := make([]byte, len(chunks[0]))
 	expectedContent[0] = 1
 	require.Equal(t, expectedContent, b)

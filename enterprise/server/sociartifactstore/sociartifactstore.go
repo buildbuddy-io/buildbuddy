@@ -27,7 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/containerd/containerd/images"
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/match"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -406,6 +406,9 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 	}
 
 	imageDesc, err := imageDescriptor(image)
+	if err != nil {
+		return nil, nil, err
+	}
 	annotations := map[string]string{sociBuildToolIdentifierKey: buildToolIdentifier}
 	index := soci.NewIndex(ztocDescriptors, imageDesc, annotations)
 	indexBytes, err := soci.MarshalIndex(index)

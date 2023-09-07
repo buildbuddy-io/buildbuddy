@@ -185,7 +185,7 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	o.AddOr(groupQueryStr, groupArgs...)
 	o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
 	orQuery, orArgs := o.Build()
-	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+	q.AddWhereClause("("+orQuery+")", orArgs...)
 }
 
 func (s *InvocationSearchService) shouldQueryClickhouse(req *inpb.SearchInvocationRequest) bool {

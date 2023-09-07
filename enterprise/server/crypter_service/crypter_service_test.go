@@ -192,6 +192,7 @@ func createKey(t *testing.T, env environment.Env, clock clockwork.Clock, keyID, 
 	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
 	require.NoError(t, err)
 	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, []byte(groupID))
+	require.NoError(t, err)
 
 	key := &tables.EncryptionKey{
 		EncryptionKeyID: keyID,
@@ -309,7 +310,7 @@ func TestDecryptWrongGroup(t *testing.T) {
 	// If group ID doesn't match, authentication should fail.
 	d, err = crypter.newDecryptorWithChunkSize(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), "GRBAD", 1024)
 	require.NoError(t, err)
-	decrypted, err = io.ReadAll(d)
+	_, err = io.ReadAll(d)
 	require.ErrorContains(t, err, "authentication failed")
 }
 
@@ -351,13 +352,13 @@ func TestDecryptWrongDigest(t *testing.T) {
 	wrongHashDigest := &repb.Digest{Hash: "badhash", SizeBytes: dummyDigest.SizeBytes}
 	d, err = crypter.newDecryptorWithChunkSize(ctx, wrongHashDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
 	require.NoError(t, err)
-	decrypted, err = io.ReadAll(d)
+	_, err = io.ReadAll(d)
 	require.ErrorContains(t, err, "authentication failed")
 
 	wrongSizeDigest := &repb.Digest{Hash: dummyDigest.Hash, SizeBytes: 9999999999999999}
 	d, err = crypter.newDecryptorWithChunkSize(ctx, wrongSizeDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
 	require.NoError(t, err)
-	decrypted, err = io.ReadAll(d)
+	_, err = io.ReadAll(d)
 	require.ErrorContains(t, err, "authentication failed")
 }
 
@@ -435,9 +436,11 @@ func TestKeyLookup(t *testing.T) {
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID1)
 		require.NoError(t, err)
 		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(bytes.NewBuffer(nil)))
+		require.NoError(t, err)
 		user1MD := c.Metadata()
 
 		ctx, err = auther.WithAuthenticatedUser(ctx, userID2)
+		require.NoError(t, err)
 		_, err = crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(nil)), user1MD)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -450,6 +453,7 @@ func TestKeyLookup(t *testing.T) {
 		require.True(t, status.IsNotFoundError(err))
 
 		ctx, err = auther.WithAuthenticatedUser(ctx, userID2)
+		require.NoError(t, err)
 		_, err = crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(nil)), &rfpb.EncryptionMetadata{EncryptionKeyId: group1KeyID, Version: 1})
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -757,6 +761,7 @@ func TestConfigAPI(t *testing.T) {
 	// after encryption keys become unavailable.
 	encryptedResource, encryptedBuf := testdigest.RandomACResourceBuf(t, 10)
 	err = pc.Set(apiKeyCtx, encryptedResource, encryptedBuf)
+	require.NoError(t, err)
 
 	// Remove the key from the KMS and let the cached key expire. Previously
 	// encrypted data should become unreadable.

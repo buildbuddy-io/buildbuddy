@@ -41,21 +41,21 @@ func (j *jsTranslator) Translate(name, input string) (string, error) {
 		strings.Join(builtins.BuildGlobals, `", "`),
 		strings.Join(builtins.Rules, `", "`))
 
-	v, err := vm.RunScript("globals.js", globals)
+	_, err := vm.RunScript("globals.js", globals)
 	if err != nil {
 		return "", err
 	}
 
-	v, err = vm.RunScript("translate.js", translateScript)
+	_, err = vm.RunScript("translate.js", translateScript)
 	if err != nil {
 		return "", err
 	}
 
-	v, err = vm.RunScript(name, input)
+	_, err = vm.RunScript(name, input)
 	if err != nil {
 		return "", err
 	}
-	v, err = vm.RunScript("output.js", "output")
+	v, err := vm.RunScript("output.js", "output")
 	if err != nil {
 		return "", err
 	}

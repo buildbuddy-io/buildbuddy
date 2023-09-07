@@ -80,6 +80,7 @@ func TestGetSet(t *testing.T) {
 
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
 		if r.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
@@ -129,6 +130,7 @@ func TestMetadata(t *testing.T) {
 		// After updating data, last access and modify time should update
 		time.Sleep(1 * time.Second) // Sleep to guarantee timestamps change
 		err = dc.Set(ctx, rn, buf)
+		require.NoError(t, err)
 		md, err = dc.Metadata(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.StoredSizeBytes)
@@ -329,6 +331,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	readBuf := make([]byte, size)
 	n, err := reader.Read(readBuf)
+	require.NoError(t, err)
 	require.EqualValues(t, limit, n)
 	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
 }
@@ -370,6 +373,7 @@ func TestSizeLimit(t *testing.T) {
 		}
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
@@ -428,6 +432,7 @@ func TestLRU(t *testing.T) {
 		}
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
 		if r.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
@@ -677,7 +682,7 @@ func TestDefaultToV2Layout(t *testing.T) {
 		err := c.Set(ctx, r, data)
 		require.NoError(t, err)
 
-		c, ctx = newCacheAndContext(t, &disk_cache.Options{RootDirectory: rootDir}, 10_000_000)
+		c, _ = newCacheAndContext(t, &disk_cache.Options{RootDirectory: rootDir}, 10_000_000)
 		require.False(t, c.IsV2Layout(), "cache should have remained on v1 layout")
 	}
 
@@ -829,6 +834,7 @@ func TestNonDefaultPartition(t *testing.T) {
 	// Anonymous user on default partition.
 	{
 		ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+		require.NoError(t, err)
 		r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 
 		err = dc.Set(ctx, r, buf)
@@ -919,6 +925,7 @@ func TestV2Layout(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	require.NoError(t, err)
 	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 
 	err = dc.Set(ctx, r, buf)
@@ -1013,6 +1020,7 @@ func TestV2LayoutMigration(t *testing.T) {
 	dc.WaitUntilMapped()
 
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	require.NoError(t, err)
 	testHash := "7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620"
 	{
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}

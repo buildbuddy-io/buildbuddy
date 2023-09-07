@@ -439,6 +439,8 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	readBuf := make([]byte, rn.GetDigest().GetSizeBytes())
 	n, err := io.ReadFull(reader, readBuf)
+	require.Error(t, err)
+	require.Equal(t, "unexpected EOF", err.Error())
 	require.EqualValues(t, limit, n)
 	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
 }
@@ -580,7 +582,6 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 		}
 	}
 
-	baseCaches = append(baseCaches, memoryCache3)
 	distributedCaches = append(distributedCaches, dc3)
 	dc3.StartListening()
 	waitForReady(t, config3.ListenAddr)
@@ -1014,7 +1015,6 @@ func TestHintedHandoff(t *testing.T) {
 
 	// Restart the downed node -- as soon as it's back up, it should
 	// receive hinted handoffs from the other peers.
-	baseCaches = append(baseCaches, memoryCache3)
 	distributedCaches = append(distributedCaches, dc3)
 	dc3.StartListening()
 	waitForReady(t, config3.ListenAddr)

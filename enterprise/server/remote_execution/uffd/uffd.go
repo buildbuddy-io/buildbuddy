@@ -168,6 +168,9 @@ func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
 		return nil, status.InternalErrorf("expected 1 control message containing UFFD, found %d", len(controlMsgs))
 	}
 	fds, err := syscall.ParseUnixRights(&controlMsgs[0])
+	if err != nil {
+		return nil, status.WrapError(err, "parse unix writes")
+	}
 	if len(fds) != 1 {
 		return nil, status.InternalErrorf("expected 1 fd (the uffd object), found %d", len(fds))
 	}

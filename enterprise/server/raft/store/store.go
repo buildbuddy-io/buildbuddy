@@ -1864,7 +1864,7 @@ func addLocalRangeEdits(oldLeft, newLeft *rfpb.RangeDescriptor, b *rbuilder.Batc
 	if err != nil {
 		return err
 	}
-	b = b.Add(cas)
+	b.Add(cas)
 	return nil
 }
 
@@ -1890,14 +1890,13 @@ func addMetaRangeEdits(oldLeft, newLeft, newRight *rfpb.RangeDescriptor, b *rbui
 	//  if it's generation is past ours, ignore the error, we're out of date
 	//  if the existing value already matches what we were trying to set, we're done.
 	//  else return an error
-	b = b.Add(&rfpb.CASRequest{
+	b.Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   keys.RangeMetaKey(newRight.GetRight()),
 			Value: newRightBuf,
 		},
 		ExpectedValue: oldLeftBuf,
-	})
-	b = b.Add(&rfpb.CASRequest{
+	}).Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   keys.RangeMetaKey(newLeft.GetRight()),
 			Value: newLeftBuf,

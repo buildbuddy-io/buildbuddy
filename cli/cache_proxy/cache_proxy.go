@@ -102,6 +102,9 @@ func NewCacheProxy(ctx context.Context, env environment.Env, conn *grpc.ClientCo
 		return nil, status.InternalErrorf("CacheProxy: error starting local CAS server: %s", err.Error())
 	}
 	localConn, err := startServerLocally(ctx, localBSS)
+	if err != nil {
+		return nil, status.InternalErrorf("CacheProxy: error starting local bytestream gRPC server: %s", err.Error())
+	}
 	localBSSClient := bspb.NewByteStreamClient(localConn)
 	remoteBSSClient := bspb.NewByteStreamClient(conn)
 	return &CacheProxy{

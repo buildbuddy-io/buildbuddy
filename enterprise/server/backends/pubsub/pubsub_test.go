@@ -55,6 +55,7 @@ func TestPubSub(t *testing.T) {
 
 	// Publish another message which should be seen by all subscribers,
 	err = pubSub.Publish(ctx, channel1, message3)
+	require.NoError(t, err)
 	requireMessages(t, subscriber, message3)
 	requireMessages(t, subscriber2, message3)
 	requireMessages(t, tailSubscriber, message3)

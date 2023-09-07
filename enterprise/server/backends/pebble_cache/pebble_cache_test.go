@@ -403,6 +403,7 @@ func TestDupeWrites(t *testing.T) {
 
 				// Compute a digest for the bytes returned.
 				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
 				require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
 			})
 		}
@@ -651,7 +652,7 @@ func testCopyPartitionData(t *testing.T, chunkingOn bool) {
 	}
 
 	pc.Stop()
-	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	_, err = pebble_cache.NewPebbleCache(te, opts)
 	require.NoError(t, err)
 }
 
@@ -829,6 +830,7 @@ func TestMetadata(t *testing.T) {
 
 					// After updating data, last access and modify time should update
 					err = pc.Set(ctx, r, dataToWrite)
+					require.NoError(t, err)
 					md, err = pc.Metadata(ctx, rWrongSize)
 					require.NoError(t, err, tc.name)
 					if chunkingOn {
@@ -1891,6 +1893,7 @@ func TestStartupScan(t *testing.T) {
 
 				// Compute a digest for the bytes returned.
 				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
 				require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
 			}
 		})
@@ -2129,6 +2132,7 @@ func TestMigrateVersions(t *testing.T) {
 
 			// Compute a digest for the bytes returned.
 			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
 			if d.GetHash() != d2.GetHash() {
 				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 			}
@@ -2163,6 +2167,7 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
 	require.NoError(t, err)
 	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, []byte(groupID))
+	require.NoError(t, err)
 
 	key := &tables.EncryptionKey{
 		EncryptionKeyID: keyID,
@@ -2319,6 +2324,7 @@ func TestReadEncryptedWrongDigestSize(t *testing.T) {
 
 	rn, buf := newCASResourceBuf(t, 100)
 	err = pc.Set(ctx, rn, buf)
+	require.NoError(t, err)
 
 	// Pass a different digest size to Get. It should not affect Get.
 	rn.Digest.SizeBytes = 1

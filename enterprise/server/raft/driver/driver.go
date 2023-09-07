@@ -629,7 +629,7 @@ func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes
 func (d *Driver) updateState(ctx context.Context, state *clusterState) error {
 	s, err := d.computeState(ctx)
 	if err == nil {
-		state = s
+		*state = *s
 	}
 	return err
 }

@@ -115,7 +115,7 @@ func ApplyToQuery(timestampField string, t *tppb.PaginationToken, q *query_build
 	o.AddOr(fmt.Sprintf("%s < ? ", timestampField), t.GetInvocationEndTimeUsec())
 	o.AddOr(fmt.Sprintf("(%s = ? AND commit_sha > ?)", timestampField), t.GetInvocationEndTimeUsec(), t.GetCommitSha())
 	orQuery, orArgs := o.Build()
-	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+	q.AddWhereClause("("+orQuery+")", orArgs...)
 }
 
 func GetTargetHistory(ctx context.Context, env environment.Env, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {

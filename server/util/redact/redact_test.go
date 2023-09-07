@@ -371,6 +371,7 @@ func TestRedactAPIKey(t *testing.T) {
 
 		require.NoError(t, err)
 		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(e)
+		require.NoError(t, err)
 		json := string(b)
 		require.NotContains(t, json, apiKey)
 		require.Contains(t, json, "<REDACTED>")

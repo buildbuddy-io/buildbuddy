@@ -335,7 +335,6 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "org1.io should still have 1 member, since US2 is in org2.io")
-	groupUser = groupUsers[0]
 
 	// Note: US3 has @org1.io email (US1's owned domain)
 	createUser(t, ctx, env, "US3", "org1.io")
@@ -812,7 +811,7 @@ func TestDeleteAPIKey(t *testing.T) {
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 
 	createUser(t, ctx, env, "US3", "org1.io")
-	ctx3 := authUserCtx(ctx, env, t, "US3")
+	authUserCtx(ctx, env, t, "US3")
 
 	err := adb.DeleteAPIKey(ctx2, k1.APIKeyID)
 
@@ -836,7 +835,7 @@ func TestDeleteAPIKey(t *testing.T) {
 	})
 	require.NoError(t, err)
 	// Re-authenticate with the new group role
-	ctx3 = authUserCtx(ctx, env, t, "US3")
+	ctx3 := authUserCtx(ctx, env, t, "US3")
 
 	setUserOwnedKeysEnabled(t, ctx1, env, gr1.Group.GroupID, true)
 

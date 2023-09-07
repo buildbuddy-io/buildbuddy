@@ -435,7 +435,9 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 	// Now add 2 EXPIRE commands to the buffer: the first key should expire
 	// immediately but the second should expire long after the test completes.
 	err = buf.Expire(ctx, "expiring1", 0)
+	require.NoError(t, err)
 	err = buf.Expire(ctx, "expiring2", 24*time.Hour)
+	require.NoError(t, err)
 
 	// Note: No need to flush, since all commands should have gone directly to
 	// Redis.

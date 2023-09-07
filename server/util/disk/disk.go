@@ -59,7 +59,7 @@ func RemoveIfExists(filename string) error {
 }
 
 func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return 0, err
@@ -87,7 +87,7 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 }
 
 func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	data, err := os.ReadFile(fullPath)
 	if os.IsNotExist(err) {
@@ -97,7 +97,7 @@ func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
 }
 
 func DeleteFile(ctx context.Context, fullPath string) error {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	return os.Remove(fullPath)
 }
@@ -108,7 +108,7 @@ func DeleteFile(ctx context.Context, fullPath string) error {
 // used for performance reasons, since recursive chmod can be slow for very
 // large directories.
 func ForceRemove(ctx context.Context, path string) error {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
 	err := os.RemoveAll(path)
@@ -134,7 +134,7 @@ func ForceRemove(ctx context.Context, path string) error {
 }
 
 func FileExists(ctx context.Context, fullPath string) (bool, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	_, err := os.Stat(fullPath)
 	if err == nil {
