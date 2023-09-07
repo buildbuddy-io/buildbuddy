@@ -100,9 +100,9 @@ func (z *AzureBlobStore) createContainerIfNotExists(ctx context.Context) error {
 	return nil
 }
 
-func (z *AzureBlobStore) ReadBlob(rawCtx context.Context, blobName string) ([]byte, error) {
+func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	blobURL := z.containerURL.NewBlockBlobURL(blobName)
-	response, err := blobURL.Download(rawCtx, 0 /*=offset*/, azblob.CountToEnd, azblob.BlobAccessConditions{}, false /*=rangeGetContentMD5*/, azblob.ClientProvidedKeyOptions{})
+	response, err := blobURL.Download(ctx, 0 /*=offset*/, azblob.CountToEnd, azblob.BlobAccessConditions{}, false /*=rangeGetContentMD5*/, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		if z.isAzureError(err, azblob.ServiceCodeBlobNotFound) {
 			return nil, status.NotFoundError(err.Error())
@@ -113,7 +113,7 @@ func (z *AzureBlobStore) ReadBlob(rawCtx context.Context, blobName string) ([]by
 	start := time.Now()
 	readCloser := response.Body(azblob.RetryReaderOptions{})
 	defer readCloser.Close()
-	_, spn := tracing.StartSpan(rawCtx)
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	b, err := io.ReadAll(readCloser)
 	spn.End()
 	if err != nil {

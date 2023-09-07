@@ -1455,11 +1455,11 @@ func (c *FirecrackerContainer) setupNBDServer(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) setupVFSServer(rawCtx context.Context) error {
+func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if c.vfsServer != nil {
 		return nil
 	}
-	_, span := tracing.StartSpan(rawCtx)
+	ctx, span := tracing.StartSpan(ctx) // nolint:SA4006
 	defer span.End()
 
 	vsockServerPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVFSServerPort)

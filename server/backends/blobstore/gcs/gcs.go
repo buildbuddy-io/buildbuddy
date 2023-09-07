@@ -93,8 +93,8 @@ func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName s
 	return nil
 }
 
-func (g *GCSBlobStore) ReadBlob(rawCtx context.Context, blobName string) ([]byte, error) {
-	reader, err := g.bucketHandle.Object(blobName).NewReader(rawCtx)
+func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			return nil, status.NotFoundError(err.Error())
@@ -102,22 +102,22 @@ func (g *GCSBlobStore) ReadBlob(rawCtx context.Context, blobName string) ([]byte
 		return nil, err
 	}
 	start := time.Now()
-	_, spn := tracing.StartSpan(rawCtx)
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	b, err := io.ReadAll(reader)
 	spn.End()
 	util.RecordReadMetrics(gcsLabel, start, b, err)
 	return util.Decompress(b, err)
 }
 
-func (g *GCSBlobStore) WriteBlob(rawCtx context.Context, blobName string, data []byte) (int, error) {
-	writer := g.bucketHandle.Object(blobName).NewWriter(rawCtx)
+func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
+	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
 	defer writer.Close()
 	compressedData, err := util.Compress(data)
 	if err != nil {
 		return 0, err
 	}
 	start := time.Now()
-	_, spn := tracing.StartSpan(rawCtx)
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	n, err := writer.Write(compressedData)
 	spn.End()
 	util.RecordWriteMetrics(gcsLabel, start, n, err)

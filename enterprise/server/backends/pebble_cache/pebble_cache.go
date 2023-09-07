@@ -1413,8 +1413,8 @@ func (p *PebbleCache) blobDir() string {
 	return filePath
 }
 
-func (p *PebbleCache) lookupFileMetadataAndVersion(rawCtx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
-	_, spn := tracing.StartSpan(rawCtx)
+func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
 	fileMetadata := &rfpb.FileMetadata{}
@@ -1463,8 +1463,8 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 	return false, nil
 }
 
-func readFileMetadata(rawCtx context.Context, reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
-	_, spn := tracing.StartSpan(rawCtx)
+func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
 	fileMetadata := &rfpb.FileMetadata{}
