@@ -622,7 +622,10 @@ func getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContex
 	// When the queried time range is less than a month, we show smaller buckets.
 	if *finerDrilldownTimeIncrements && time.Duration(endSec-startSec)*time.Second <= (31*24)*time.Hour {
 		increment := getTimeIncrement(time.Duration(endSec-startSec) * time.Second)
-		current := start.Add(increment)
+		current := start.Round(increment)
+		for current.Before(start) {
+			current = current.Add(increment)
+		}
 		for current.Before(end) {
 			timestampBuckets = append(timestampBuckets, current.UnixMicro())
 			current = current.Add(increment)
