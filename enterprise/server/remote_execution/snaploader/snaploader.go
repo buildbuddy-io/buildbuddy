@@ -148,19 +148,15 @@ type DynamicChunkedFile struct {
 	// Name of the file
 	name string
 
-	// Where artifacts that exist locally are stored
-	dataDir string
-
 	// digests caches any known digests for *non-dirty* chunks, keyed by offset.
 	digests map[int64]*repb.Digest
 }
 
-func NewDynamicChunkedFile(store *blockio.COWStore, filecache interfaces.FileCache, name string, dataDir string) (*DynamicChunkedFile, error) {
+func NewDynamicChunkedFile(store *blockio.COWStore, filecache interfaces.FileCache, name string) (*DynamicChunkedFile, error) {
 	cf := &DynamicChunkedFile{
 		COWStore:   store,
 		localCache: filecache,
 		name:       name,
-		dataDir:    dataDir,
 	}
 	chunks := store.Chunks()
 	digests := make(map[int64]*repb.Digest, len(chunks))
@@ -205,7 +201,7 @@ func (cf *DynamicChunkedFile) fetchChunkIfMissing(offset int64) error {
 
 func (cf *DynamicChunkedFile) fetchChunkFromLocalCache(chunkDigest *repb.Digest, chunkStartOffset int64) (*blockio.Chunk, error) {
 	node := &repb.FileNode{Digest: chunkDigest}
-	path := filepath.Join(cf.dataDir, fmt.Sprintf("%d", chunkStartOffset))
+	path := filepath.Join(cf.DataDir(), cf.ChunkName(chunkStartOffset))
 	inLocalCache := cf.localCache.FastLinkFile(node, path)
 	if !inLocalCache {
 		return nil, status.NotFoundErrorf("snapshot chunk %s/%d not found in local cache", cf.name, chunkStartOffset)
@@ -531,7 +527,6 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 	cf = &DynamicChunkedFile{
 		localCache: l.env.GetFileCache(),
 		name:       file.GetName(),
-		dataDir:    outputDirectory,
 		digests:    make(map[int64]*repb.Digest, len(file.Chunks)),
 	}
 	for _, chunk := range file.Chunks {
@@ -584,7 +579,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 		if err != nil {
 			return nil, err
 		}
-		node := &repb.FileNode{Digest: d}
+		// TODO: Should we add a name here?
+		node := &repb.FileNode{Digest: d, Name: fmt.Sprintf("cow-%d", c.Offset)}
 		path := filepath.Join(cf.DataDir(), cf.ChunkName(c.Offset))
 		// TODO: if the file is already cached, then instead of adding the file,
 		// just record a file access (to avoid the syscall overhead of

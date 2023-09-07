@@ -90,22 +90,85 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 
 	// Create an initial chunked file for VM A.
 	workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
+	const chunkSize = 512 * 1
+	const fileSize = 13 + (chunkSize * 1) // ~5 MB total, with uneven size
+	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
+	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
+	cowA, err := blockio.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
+	require.NoError(t, err)
+	chunkedFileA, err := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs")
+	require.NoError(t, err)
+
+	// Overwrite a random range to simulate the disk being written to. This
+	// should create some dirty chunks.
+	writeRandomRange(t, chunkedFileA)
+
+	// Now store a snapshot for VM A, including the COW we created.
+	task := &repb.ExecutionTask{}
+	key, err := snaploader.NewKey(task, "config-hash", "")
+	require.NoError(t, err)
+	optsA := makeFakeSnapshot(t, workDirA)
+	optsA.ChunkedFiles = map[string]*snaploader.DynamicChunkedFile{
+		"scratchfs": chunkedFileA,
+	}
+	snapA, err := loader.CacheSnapshot(ctx, key, optsA)
+	require.NoError(t, err)
+	// Note: we'd normally close cowA here, but we keep it open so that
+	// mustUnpack() can verify the original contents.
+
+	// Test packing and unpacking snapshots multiple times to ensure we can
+	// successfully save a snapshot that was unpacked from another snapshot
+	originalSnap := snapA
+	originalOpts := optsA
+	for i := 0; i < 3; i++ {
+		forkWorkDir := testfs.MakeDirAll(t, workDir, fmt.Sprintf("VM-%d", i))
+		unpacked := mustUnpack(t, ctx, loader, originalSnap, forkWorkDir, originalOpts)
+		forkCOW := unpacked.ChunkedFiles["scratchfs"]
+		writeRandomRange(t, forkCOW)
+		forkOpts := makeFakeSnapshot(t, forkWorkDir)
+		forkOpts.ChunkedFiles = map[string]*snaploader.DynamicChunkedFile{
+			"scratchfs": forkCOW,
+		}
+		forkSnap, err := loader.CacheSnapshot(ctx, key, forkOpts)
+		require.NoError(t, err)
+		originalSnap = forkSnap
+		originalOpts = forkOpts
+	}
+}
+
+func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
+	const maxFilecacheSizeBytes = 20_000_000 // 20 MB
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	filecacheDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+
+	// Create an initial chunked file for VM A.
+	workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
 	const chunkSize = 512 * 1024
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
 	cowA, err := blockio.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
 	require.NoError(t, err)
+	chunkedFileA, err := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs")
+	require.NoError(t, err)
+
 	// Overwrite a random range to simulate the disk being written to. This
 	// should create some dirty chunks.
-	writeRandomRange(t, cowA)
+	writeRandomRange(t, chunkedFileA)
+
 	// Now store a snapshot for VM A, including the COW we created.
 	taskA := &repb.ExecutionTask{}
 	keyA, err := snaploader.NewKey(taskA, "config-hash-a", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA)
-	chunkedFileA, err := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs", chunkDirA)
-	require.NoError(t, err)
 	optsA.ChunkedFiles = map[string]*snaploader.DynamicChunkedFile{
 		"scratchfs": chunkedFileA,
 	}
@@ -154,14 +217,14 @@ func makeRandomFile(t *testing.T, rootDir, prefix string, size int) string {
 	return filepath.Join(rootDir, name)
 }
 
-func writeRandomRange(t *testing.T, store blockio.Store) {
-	s, err := store.SizeBytes()
+func writeRandomRange(t *testing.T, f *snaploader.DynamicChunkedFile) {
+	s, err := f.SizeBytes()
 	require.NoError(t, err)
 	off := rand.Intn(int(s))
 	length := rand.Intn(int(s) - off)
 	str, err := random.RandomString(length)
 	require.NoError(t, err)
-	_, err = store.WriteAt([]byte(str), int64(off))
+	_, err = f.WriteAt([]byte(str), int64(off))
 	require.NoError(t, err)
 }
 

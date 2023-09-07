@@ -243,7 +243,7 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 
 	fp := c.filecachePath(node)
 	if err := fastcopy.FastCopy(existingFilePath, fp); err != nil {
-		log.Warningf("Error adding file to filecache: %s", err.Error())
+		log.Warningf("Error adding file %s to filecache: %s", node.Name, err.Error())
 		return
 	}
 	e := &entry{

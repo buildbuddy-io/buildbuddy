@@ -966,7 +966,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, fileName, fileP
 	size, _ := cow.SizeBytes()
 	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
 
-	return snaploader.NewDynamicChunkedFile(cow, c.env.GetFileCache(), fileName, chunkDir)
+	return snaploader.NewDynamicChunkedFile(cow, c.env.GetFileCache(), fileName)
 }
 
 func cowChunkSizeBytes() int64 {
