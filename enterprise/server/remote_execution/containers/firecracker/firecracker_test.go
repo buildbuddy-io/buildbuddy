@@ -1607,6 +1607,40 @@ func TestMergeDiffSnapshot(t *testing.T) {
 	}
 }
 
+func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	// Write an NOP script and exec it directly, to test a fork/exec that
+	// depends on the NBD in order to complete.
+	err := os.WriteFile(filepath.Join(workDir, "script.sh"), []byte("#!/usr/bin/env bash"), 0777)
+	require.NoError(t, err)
+	cmd := &repb.Command{Arguments: []string{"./script.sh"}}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			// Important: NumCpus is 1 here to test that we can serve the NBD
+			// request for the script, and execute the script, while only having
+			// a single CPU core available (Go defaults GOMAXPROCS to this
+			// value).
+			NumCpus:           1,
+			MemSizeMb:         500,
+			EnableNetworking:  true,
+			ScratchDiskSizeMb: 200,
+		},
+		JailerRoot: tempJailerRoot(t),
+	}
+
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	require.NoError(t, res.Error)
+}
+
 func TestBazelBuild(t *testing.T) {
 	if !*testBazelBuild {
 		t.Skip()

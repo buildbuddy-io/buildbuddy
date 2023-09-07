@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -196,6 +197,26 @@ func waitForDockerd(ctx context.Context) error {
 // This is mostly cribbed from github.com/superfly/init-snapshot
 // which was very helpful <3!
 func main() {
+	// Set GOMAXPROCS to at least 2 to ensure that the nbdclient can always make
+	// progress. Otherwise, while calling forkExec to execute commands in the
+	// VM, the Go runtime can get stuck in the raw syscall[1] here[2] while
+	// trying to write to its child process, but meanwhile the child process
+	// cannot actually start because it depends on the NBD client in order to
+	// load the executable, but the NBD client cannot make progress because it's
+	// stuck in the raw syscall.
+	//
+	// [1] "Regular" syscalls will yield execution to another goroutine while
+	// "raw" syscalls will just block the current OS thread, which is why the
+	// NBD client cannot make progress when there's only one OS thread available
+	// to the Go runtime.
+	// [2] https://cs.opensource.google/go/go/+/master:src/syscall/exec_linux.go;drc=729f214e3afd61afd924b946745798a8d144aad6;l=151
+	//
+	// TODO(bduffany): run the nbdclient netlink server in a separate process
+	// and remove this workaround.
+	if runtime.GOMAXPROCS(-1 /* read the current value */) < 2 {
+		runtime.GOMAXPROCS(2)
+	}
+
 	start := time.Now()
 	rootContext := context.Background()
 
