@@ -479,13 +479,6 @@ message SyncReadResponse {
   BatchCmdResponse batch = 1;
 }
 
-message StartPeerRequest {
-  uint64 source_cluster_id = 1;
-  uint64 source_range_id = 2;
-
-  uint64 new_cluster_id = 3;
-}
-
 message StartClusterRequest {
   uint64 cluster_id = 1;
   uint64 node_id = 2;
