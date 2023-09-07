@@ -156,17 +156,30 @@ type DynamicChunkedFile struct {
 }
 
 func NewDynamicChunkedFile(store *blockio.COWStore, filecache interfaces.FileCache, name string, dataDir string) (*DynamicChunkedFile, error) {
-	digests, err := cowDigests(store)
-	if err != nil {
-		return nil, status.WrapError(err, "compute cow digests")
-	}
-	return &DynamicChunkedFile{
+	cf := &DynamicChunkedFile{
 		COWStore:   store,
 		localCache: filecache,
 		name:       name,
 		dataDir:    dataDir,
-		digests:    digests,
-	}, nil
+	}
+	chunks := store.Chunks()
+	digests := make(map[int64]*repb.Digest, len(chunks))
+	for _, chunk := range chunks {
+		chunkReader, err := cf.ChunkReader(chunk.Offset)
+		if err != nil {
+			return nil, status.WrapError(err, "chunk reader")
+		}
+		d, err := digest.Compute(chunkReader, repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return nil, status.WrapError(err, "compute chunk digest")
+		}
+		digests[chunk.Offset] = d
+	}
+	// TODO: Do we need this? We will read all the chunks at the beginning
+	// when generating the digests
+	cf.digests = digests
+
+	return cf, nil
 }
 
 func (cf *DynamicChunkedFile) fetchChunkIfMissing(offset int64) error {
@@ -212,7 +225,11 @@ func (cf *DynamicChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, e
 		return d, nil
 	}
 	// Otherwise compute the digest.
-	d, err := digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
+	r, err := cf.ChunkReader(chunk.Offset)
+	if err != nil {
+		return nil, err
+	}
+	d, err := digest.Compute(r, repb.DigestFunction_BLAKE3)
 	if err != nil {
 		return nil, err
 	}
@@ -291,12 +308,21 @@ func (cf *DynamicChunkedFile) WriteAt(p []byte, offset int64) (int, error) {
 	return cf.COWStore.WriteAt(p, offset)
 }
 
+// ChunkReader returns an io.Reader for the specified chunk, dynamically fetching it
+// if needed
+func (cf *DynamicChunkedFile) ChunkReader(chunkStartOffset int64) (io.Reader, error) {
+	if err := cf.fetchChunkIfMissing(chunkStartOffset); err != nil {
+		return nil, status.WrapError(err, "fetch missing chunk")
+	}
+	return cf.COWStore.ChunkReader(chunkStartOffset), nil
+}
+
 type dynamicChunkedFileReader struct {
 	file *DynamicChunkedFile
 	r    *io.SectionReader
 }
 
-// Reader returns an io.Reader that reads all bytes from the given store,
+// Reader returns an io.Reader that reads all bytes from the given file,
 // starting at offset 0 and ending at SizeBytes.
 func Reader(f *DynamicChunkedFile) io.Reader {
 	return &dynamicChunkedFileReader{file: f}
@@ -597,19 +623,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 	}).Add(float64(dirtyBytes))
 
 	return pb, nil
-}
-
-func cowDigests(cow *blockio.COWStore) (map[int64]*repb.Digest, error) {
-	chunks := cow.Chunks()
-	digests := make(map[int64]*repb.Digest, len(chunks))
-	for _, chunk := range chunks {
-		d, err := digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
-		if err != nil {
-			return nil, status.WrapError(err, "compute chunk digest")
-		}
-		digests[chunk.Offset] = d
-	}
-	return digests, nil
 }
 
 func chunkDigestSize(chunkedFile *fcpb.ChunkedFile, chunk *fcpb.Chunk) int64 {

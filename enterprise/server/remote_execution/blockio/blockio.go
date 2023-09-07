@@ -626,6 +626,13 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Chunk, error) {
 	}, nil
 }
 
+func (s *COWStore) ChunkReader(chunkStartOffset int64) io.Reader {
+	s.mu.RLock()
+	chunk := s.chunks[chunkStartOffset]
+	s.mu.RUnlock()
+	return Reader(chunk)
+}
+
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
 // read-only chunks. Any newly created chunks will be written to dataDir. The
 // backing files are named according to their starting byte offset (in base 10).
