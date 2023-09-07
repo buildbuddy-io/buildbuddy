@@ -558,25 +558,16 @@ func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table stri
 }
 
 func getTimeIncrement(duration time.Duration) time.Duration {
-	if duration <= 8*time.Hour {
+	if duration <= 16*time.Hour {
 		return 5 * time.Minute
 	}
-	if duration <= 25*time.Hour {
+	if duration <= 48*time.Hour {
 		return 15 * time.Minute
 	}
-	if duration <= 49*time.Hour {
-		return 30 * time.Minute
+	if duration <= (96)*time.Hour {
+		return 30 * time.Hour
 	}
-	if duration <= (5*24)*time.Hour {
-		return time.Hour
-	}
-	if duration <= (8*24)*time.Hour {
-		return 2 * time.Hour
-	}
-	if duration <= (15*24)*time.Hour {
-		return 4 * time.Hour
-	}
-	return 8 * time.Hour
+	return 1 * time.Hour
 }
 
 const ONE_WEEK = 7 * 24 * time.Hour
@@ -619,8 +610,8 @@ func getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContex
 
 	var timestampBuckets []int64
 	timestampBuckets = append(timestampBuckets, start.UnixMicro())
-	// When the queried time range is less than a month, we show smaller buckets.
-	if *finerDrilldownTimeIncrements && time.Duration(endSec-startSec)*time.Second <= (31*24)*time.Hour {
+	// When the queried time range is less than eight days, we show smaller buckets.
+	if *finerDrilldownTimeIncrements && time.Duration(endSec-startSec)*time.Second <= (8*24)*time.Hour {
 		increment := getTimeIncrement(time.Duration(endSec-startSec) * time.Second)
 		current := start.Round(increment)
 		for current.Before(start) || current.Equal(start) {
