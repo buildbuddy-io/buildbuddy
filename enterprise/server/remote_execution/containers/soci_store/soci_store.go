@@ -3,6 +3,7 @@ package soci_store
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -45,9 +46,6 @@ var (
 )
 
 const (
-	// Command-line argument to podman to enable the use of the soci store for streaming
-	EnableStreamingStoreArg = "--storage-opt=additionallayerstore=/tmp/soci/store:ref"
-
 	// Local filesystem locations for soci-store
 	storeSubPath   = "store"
 	indexSubPath   = "indexes"
@@ -73,6 +71,11 @@ type KubeconfigKeychainConfig struct {
 }
 
 type ResolverConfig resolver.Config
+
+// Command-line argument to podman to enable the use of the soci store for streaming
+func EnableStreamingStoreArg() string {
+	return fmt.Sprintf("--storage-opt=additionallayerstore=%s:ref", StorePath())
+}
 
 func RunSociStoreWithRetries(ctx context.Context, port int) {
 	for {

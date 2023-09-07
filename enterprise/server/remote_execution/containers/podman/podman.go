@@ -66,9 +66,9 @@ var (
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
-	podmanRuntime           = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
-	podmanEnableStats       = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
-	transientStore          = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.")
+	podmanRuntime     = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
+	podmanEnableStats = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	transientStore    = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -118,14 +118,14 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 		go soci_store.RunSociStoreWithRetries(env.GetServerContext(), *sociStoreKeychainPort)
 
 		// Configures podman to check soci store for image data.
-		storageConf := `
+		storageConf := fmt.Sprintf(`
 [storage]
 driver = "overlay"
 runroot = "/run/containers/storage"
 graphroot = "/var/lib/containers/storage"
 [storage.options]
-additionallayerstores=["/var/lib/soci-store/store:ref"]
-`
+additionallayerstores=["%s:ref"]
+`, soci_store.StorePath())
 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
 		}
@@ -377,7 +377,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		}
 	}
 	if c.imageIsStreamable {
-		args = append(args, soci_store.EnableStreamingStoreArg)
+		args = append(args, soci_store.EnableStreamingStoreArg())
 	}
 	if c.options.Init {
 		args = append(args, "--init")
@@ -690,7 +690,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 		// The pull can be removed once there's a new podman version that
 		// includes the fix for this bug.
 		// TODO(iain): diagnose and report the bug.
-		podmanArgs = append(podmanArgs, soci_store.EnableStreamingStoreArg)
+		podmanArgs = append(podmanArgs, soci_store.EnableStreamingStoreArg())
 		err := soci_store.PutCredentials(ctx, c.image, creds, c.sociStoreKeychainClient)
 		if err != nil {
 			return err
