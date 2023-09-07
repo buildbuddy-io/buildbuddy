@@ -59,14 +59,14 @@ This typically happens when there is a proxy or gateway (e.g. AWS NAT Gateway) i
 When this happens, try the following Linux network settings:
 
 ```bash
-# Lowered from default 7200
+# Lowered from default value: 7200
 sudo sysctl -w net.ipv4.tcp_keepalive_time=180
-# Using default value
-sudo sysctl -w net.ipv4.tcp_keepalive_intvl=75
-# Using default value
-sudo sysctl -w net.ipv4.tcp_keepalive_probes=9
+# Lowered from default value: 75
+sudo sysctl -w net.ipv4.tcp_keepalive_intvl=60
+# Lowered from default value: 9
+sudo sysctl -w net.ipv4.tcp_keepalive_probes=2
 ```
 
-This will cause the Linux kernel to send keepalive probes more eagerly, before the proxy/gateway in the middle detects and drops the idle connection.
+This will cause the Linux kernel to send keepalive probes earlier and more frequently, before the proxy/gateway in the middle detects and drops the idle connection.
 
 The optimal values may depend on specific network conditions, but try these values as a starting point. Please [contact us](/contact/) if you have any questions / concerns.
