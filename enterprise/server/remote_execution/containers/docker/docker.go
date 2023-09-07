@@ -185,6 +185,14 @@ func NewDockerContainer(env environment.Env, imageCacheAuth *container.ImageCach
 	}
 }
 
+type containerState int
+
+const (
+	ctrRunning containerState = iota
+	ctrExitedCleanly
+	ctrDidNotExitCleanly
+)
+
 func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
@@ -245,17 +253,16 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	}
 
 	var mu sync.Mutex
-	exitedUncleanly := false
-	exitedCleanly := false
+	state := ctrRunning
 	defer func() {
 		// Clean up the container in the background.
 		// TODO: Add this removal as a job to a centralized queue.
 		go func() {
 			ctx := context.Background()
 			mu.Lock()
-			exitedCleanly := exitedCleanly
+			state := state
 			mu.Unlock()
-			if !exitedCleanly {
+			if state != ctrExitedCleanly {
 				if err := r.client.ContainerKill(ctx, cid, "SIGKILL"); err != nil {
 					log.Errorf("Failed to kill docker container: %s", err)
 				}
@@ -274,7 +281,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		result.Stderr = stderr.Bytes()
 		mu.Lock()
 		defer mu.Unlock()
-		if exitedUncleanly {
+		if state == ctrDidNotExitCleanly {
+			// If the container did not exit cleanly, the goroutine below will
+			// return an error, so we should not to avoid clobbering the error.
 			return nil
 		}
 		return wrapDockerErr(err, "failed to copy docker container output")
@@ -284,10 +293,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		select {
 		case err := <-errCh:
 			mu.Lock()
-			// We don't want to propagate the error from the above goroutine so
-			// we set a signal to avoid returning an error since we're already
-			// going to return one here.
-			exitedUncleanly = true
+			state = ctrDidNotExitCleanly
 			mu.Unlock()
 			// Close the output reader so that the above goroutine can also
 			// exit.
@@ -295,7 +301,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 			return wrapDockerErr(err, "container did not exit cleanly")
 		case s := <-statusCh:
 			mu.Lock()
-			exitedCleanly = true
+			state = ctrExitedCleanly
 			mu.Unlock()
 			if s.Error != nil {
 				return wrapDockerErr(status.UnknownError(s.Error.Message), "failed to get container status")
