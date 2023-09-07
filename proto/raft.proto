@@ -204,6 +204,17 @@ message CASResponse {
   KV kv = 1;
 }
 
+message SimpleSplitRequest {
+  uint64 source_range_id = 1;
+  uint64 new_cluster_id = 2;
+  uint64 new_range_id = 3;
+}
+
+message SimpleSplitResponse {
+  RangeDescriptor new_left = 1;
+  RangeDescriptor new_right = 2;
+}
+
 // A request to find a split point in a range.
 message FindSplitPointRequest {}
 
@@ -261,6 +272,7 @@ message RequestUnion {
     SplitLeaseRequest split_lease = 11;
     SplitReleaseRequest split_release = 12;
     DeleteRangeRequest delete_range = 14;
+    SimpleSplitRequest simple_split = 15;
   }
 }
 
@@ -284,6 +296,7 @@ message ResponseUnion {
     SplitLeaseResponse split_lease = 12;
     SplitReleaseResponse split_release = 13;
     DeleteRangeResponse delete_range = 15;
+    SimpleSplitResponse simple_split = 16;
   }
 }
 

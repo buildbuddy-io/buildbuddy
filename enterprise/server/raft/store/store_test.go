@@ -12,7 +12,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
@@ -145,6 +144,9 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	require.NotNil(t, s)
 	s.Start()
 	ts.Store = s
+	t.Cleanup(func() {
+		s.Stop(context.TODO())
+	})
 	return ts, nodeHost
 }
 
@@ -356,7 +358,6 @@ func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int
 }
 
 func TestSplitMetaRange(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -398,7 +399,6 @@ func getStoreWithRangeLease(t testing.TB, stores []*TestingStore, header *rfpb.H
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -485,7 +485,6 @@ func bytesToUint64(buf []byte) uint64 {
 }
 
 func TestPostFactoSplit(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -525,7 +524,7 @@ func TestPostFactoSplit(t *testing.T) {
 	}
 
 	// Now bring up a new replica in the original cluster.
-	_, err = s3.AddClusterNode(ctx, &rfpb.AddClusterNodeRequest{
+	_, err = s1.AddClusterNode(ctx, &rfpb.AddClusterNodeRequest{
 		Range: s1.GetRange(2),
 		Node: &rfpb.NodeDescriptor{
 			Nhid:        nh4.ID(),
@@ -537,14 +536,9 @@ func TestPostFactoSplit(t *testing.T) {
 
 	r1, err := s1.GetReplica(2)
 	require.NoError(t, err)
-	r1DB, err := r1.TestingDB()
-	require.NoError(t, err)
 
-	lastIndexBytes, closer, err := r1DB.Get([]byte(constants.LastAppliedIndexKey))
+	lastAppliedIndex, err := r1.LastAppliedIndex()
 	require.NoError(t, err)
-	lastAppliedIndex := bytesToUint64(lastIndexBytes)
-	closer.Close()
-	r1DB.Close()
 
 	var r4 *replica.Replica
 	for {
@@ -561,18 +555,10 @@ func TestPostFactoSplit(t *testing.T) {
 	// Wait for raft replication to finish bringing the new node up to date.
 	waitStart := time.Now()
 	for {
-		r4DB, err := r4.TestingDB()
-		if err == nil {
-			indexBytes, closer, err := r4DB.Get([]byte(constants.LastAppliedIndexKey))
-			require.NoError(t, err)
-			newReplicaIndex := bytesToUint64(indexBytes)
-			closer.Close()
-			r4DB.Close()
-
-			if newReplicaIndex >= lastAppliedIndex {
-				log.Infof("Replica caught up in %s", time.Since(waitStart))
-				break
-			}
+		newReplicaIndex, err := r4.LastAppliedIndex()
+		if err == nil && newReplicaIndex >= lastAppliedIndex {
+			log.Infof("Replica caught up in %s", time.Since(waitStart))
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -595,7 +581,6 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)

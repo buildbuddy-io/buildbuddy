@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -53,6 +52,12 @@ func (fs *fakeStore) Sender() *sender.Sender {
 	return nil
 }
 func (fs *fakeStore) NotifyUsage(ru *rfpb.ReplicaUsage) {}
+func (fs *fakeStore) AddPeer(ctx context.Context, sourceClusterID, newClusterID uint64) error {
+	return nil
+}
+func (fs *fakeStore) SnapshotCluster(ctx context.Context, clusterID uint64) error {
+	return nil
+}
 func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	fs.fileReadFn = fn
 	return fs
@@ -626,81 +631,6 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 		_, err := repl.Reader(ctx, header, fileRecord, 0, 0)
 		require.NotNil(t, err)
 		require.True(t, status.IsNotFoundError(err), err)
-	}
-}
-
-func TestFindSplitPoint(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
-	require.NotNil(t, repl)
-
-	stopc := make(chan struct{})
-	lastAppliedIndex, err := repl.Open(stopc)
-	require.NoError(t, err)
-	require.Equal(t, uint64(0), lastAppliedIndex)
-	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
-
-	writeFiles := func(partitionID string, count int, sizeBytes int64) {
-		for i := 0; i < count; i++ {
-			// Write a file to the replica's data dir.
-			r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
-			fileRecord := &rfpb.FileRecord{
-				Isolation: &rfpb.Isolation{
-					CacheType:   rspb.CacheType_CAS,
-					PartitionId: partitionID,
-					GroupId:     interfaces.AuthAnonymousUser,
-				},
-				Digest:         r.GetDigest(),
-				DigestFunction: repb.DigestFunction_SHA256,
-			}
-			header := &rfpb.Header{RangeId: 1, Generation: 1}
-			writeCommitter := writer(t, em, repl, header, fileRecord)
-			_, err = writeCommitter.Write(buf)
-			require.NoError(t, err)
-			require.Nil(t, writeCommitter.Commit())
-			require.Nil(t, writeCommitter.Close())
-		}
-	}
-
-	{
-		// No data: findSplitPoint should return error.
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
-		rsp, err := repl.Update([]dbsm.Entry{entry})
-		require.NoError(t, err)
-		require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
-	}
-	{
-		// 10 digests of the same size, split point should be half way between
-		writeFiles("default", 10, 100000)
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
-		rsp, err := repl.Update([]dbsm.Entry{entry})
-		require.NoError(t, err)
-
-		splitRsp, err := rbuilder.NewBatchResponse(rsp[0].Result.Data).FindSplitPointResponse(0)
-		require.NoError(t, err)
-		require.NotNil(t, splitRsp)
-
-		log.Printf("splitRsp: %+v", splitRsp)
-		// Left and right side of split should both be approximately 50%
-		require.Equal(t, int64(5), splitRsp.GetLeftSizeBytes()/100000)
-		require.Equal(t, int64(5), splitRsp.GetRightSizeBytes()/100000)
-	}
-	{
-		// Write one more big blob; expect split point to be right before it.
-		writeFiles("default2", 1, 1000000)
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
-		rsp, err := repl.Update([]dbsm.Entry{entry})
-		require.NoError(t, err)
-
-		splitRsp, err := rbuilder.NewBatchResponse(rsp[0].Result.Data).FindSplitPointResponse(0)
-		require.NoError(t, err)
-		require.NotNil(t, splitRsp)
-
-		// Left and right side of split should both be approximately 50%
-		require.Equal(t, int64(10), splitRsp.GetLeftSizeBytes()/100000)
-		require.Equal(t, int64(10), splitRsp.GetRightSizeBytes()/100000)
 	}
 }
 

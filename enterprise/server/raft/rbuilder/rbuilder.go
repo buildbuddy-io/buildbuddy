@@ -62,10 +62,6 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Cas{
 			Cas: value,
 		}
-	case *rfpb.FindSplitPointRequest:
-		req.Value = &rfpb.RequestUnion_FindSplitPoint{
-			FindSplitPoint: value,
-		}
 	case *rfpb.FileDeleteRequest:
 		req.Value = &rfpb.RequestUnion_FileDelete{
 			FileDelete: value,
@@ -77,6 +73,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 	case *rfpb.DeleteRangeRequest:
 		req.Value = &rfpb.RequestUnion_DeleteRange{
 			DeleteRange: value,
+		}
+	case *rfpb.SimpleSplitRequest:
+		req.Value = &rfpb.RequestUnion_SimpleSplit{
+			SimpleSplit: value,
 		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
@@ -212,15 +212,6 @@ func (br *BatchResponse) CASResponse(n int) (*rfpb.CASResponse, error) {
 	return u.GetCas(), br.unionError(u)
 }
 
-func (br *BatchResponse) FindSplitPointResponse(n int) (*rfpb.FindSplitPointResponse, error) {
-	br.checkIndex(n)
-	if br.err != nil {
-		return nil, br.err
-	}
-	u := br.cmd.GetUnion()[n]
-	return u.GetFindSplitPoint(), br.unionError(u)
-}
-
 func (br *BatchResponse) FileDeleteResponse(n int) (*rfpb.FileDeleteResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
@@ -228,4 +219,13 @@ func (br *BatchResponse) FileDeleteResponse(n int) (*rfpb.FileDeleteResponse, er
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetFileDelete(), br.unionError(u)
+}
+
+func (br *BatchResponse) SimpleSplitResponse(n int) (*rfpb.SimpleSplitResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetSimpleSplit(), br.unionError(u)
 }

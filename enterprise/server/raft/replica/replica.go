@@ -65,6 +65,8 @@ type IStore interface {
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	NotifyUsage(ru *rfpb.ReplicaUsage)
 	Sender() *sender.Sender
+	AddPeer(ctx context.Context, sourceClusterID, newClusterID uint64) error
+	SnapshotCluster(ctx context.Context, clusterID uint64) error
 }
 
 // IOnDiskStateMachine is the interface to be implemented by application's
@@ -172,17 +174,25 @@ func batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) {
 	return nil, false
 }
 
-func (sm *Replica) replicaSuffix() []byte {
-	return []byte(fmt.Sprintf("-c%04dn%04d", sm.ClusterID, sm.NodeID))
+func replicaSpecificSuffix(clusterID, nodeID uint64) []byte {
+	return []byte(fmt.Sprintf("-c%04dn%04d", clusterID, nodeID))
 }
 
-func (sm *Replica) replicaLocalKey(key []byte) []byte {
-	suffix := sm.replicaSuffix()
+func (sm *Replica) replicaSuffix() []byte {
+	return replicaSpecificSuffix(sm.ClusterID, sm.NodeID)
+}
+
+func replicaSpecificKey(key []byte, clusterID, nodeID uint64) []byte {
+	suffix := replicaSpecificSuffix(clusterID, nodeID)
 	if bytes.HasSuffix(key, suffix) {
-		sm.log.Warningf("Key %q already has replica suffix!", key)
+		log.Debugf("Key %q already has replica suffix!", key)
 		return key
 	}
 	return append(key, suffix...)
+}
+
+func (sm *Replica) replicaLocalKey(key []byte) []byte {
+	return replicaSpecificKey(key, sm.ClusterID, sm.NodeID)
 }
 
 func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
@@ -284,7 +294,6 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	if !isLocalKey(key) {
 		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
 			sm.rangeMu.RUnlock()
-
 			if isFileRecordKey(key) {
 				if err := sm.updateAndFlushPartitionMetadatas(wb, key, val, nil /*=fileMetadata*/, fileRecordAdd); err != nil {
 					return err
@@ -468,7 +477,7 @@ func (sm *Replica) loadPartitionMetadata(db ReplicaReader) error {
 	return nil
 }
 
-func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
+func (sm *Replica) loadRangeDescriptor(db ReplicaReader) {
 	buf, err := sm.lookup(db, constants.LocalRangeKey)
 	if err != nil {
 		sm.log.Debugf("Replica opened but range not yet set: %s", err)
@@ -479,7 +488,7 @@ func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
 
 // loadReplicaState loads any in-memory replica state from the DB.
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
-	sm.checkAndSetRangeDescriptor(db)
+	sm.loadRangeDescriptor(db)
 	if err := sm.loadPartitionMetadata(db); err != nil {
 		return err
 	}
@@ -512,8 +521,8 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 		return 0, err
 	}
 	defer db.Close()
-	sm.quitChan = make(chan struct{})
 
+	sm.quitChan = make(chan struct{})
 	if err := sm.loadReplicaState(db); err != nil {
 		return 0, err
 	}
@@ -698,7 +707,7 @@ func absInt(i int64) int64 {
 	return i
 }
 
-func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
+func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) ([]byte, error) {
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
 	sm.rangeMu.Unlock()
@@ -770,11 +779,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
 	}
 	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ClusterID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
-	return &rfpb.FindSplitPointResponse{
-		Split:          splitKey,
-		LeftSizeBytes:  splitSize,
-		RightSizeBytes: totalSize - splitSize,
-	}, nil
+	return splitKey, nil
 }
 
 func canSplitKeys(leftKey, rightKey []byte) bool {
@@ -817,6 +822,68 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 		totalSize += size
 		sm.log.Infof("%q: key: %q (%d)", tag, iter.Key(), totalSize)
 	}
+}
+
+func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*rfpb.SimpleSplitResponse, error) {
+	ctx := context.Background()
+
+	splitKey, err := sm.findSplitPoint(&rfpb.FindSplitPointRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	sm.rangeMu.RLock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.RUnlock()
+
+	peerRangeDescriptor := proto.Clone(rd).(*rfpb.RangeDescriptor)
+	peerRangeDescriptor.Left = splitKey
+	peerRangeDescriptor.RangeId = req.GetNewRangeId()
+	peerRangeDescriptor.Generation += 1
+	for _, r := range peerRangeDescriptor.GetReplicas() {
+		r.ClusterId = req.GetNewClusterId()
+	}
+
+	buf, err := proto.Marshal(peerRangeDescriptor)
+	if err != nil {
+		return nil, err
+	}
+
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	peerRangeKey := replicaSpecificKey(constants.LocalRangeKey, req.GetNewClusterId(), sm.NodeID)
+	if err := db.Set(peerRangeKey, buf, pebble.Sync); err != nil {
+		return nil, err
+	}
+	if err := sm.store.AddPeer(ctx, sm.ClusterID, req.GetNewClusterId()); err != nil {
+		return nil, err
+	}
+
+	// Force compaction so that dragonboat doesn't try to use the existing
+	// raft logs for recovery. The logs are incomplete since we perform the
+	// database clone outside of raft. With the raft snapshot in place,
+	// recovery attempts will ask the state machine (replica) to provide a
+	// snapshot which will reflect the cloned data.
+	if err := sm.store.SnapshotCluster(ctx, req.GetNewClusterId()); err != nil {
+		return nil, err
+	}
+
+	rd.Right = splitKey
+	rd.Generation += 1
+	buf, err = proto.Marshal(rd)
+	if err != nil {
+		return nil, err
+	}
+	if err := sm.rangeCheckedSet(wb, sm.replicaLocalKey(constants.LocalRangeKey), buf); err != nil {
+		return nil, err
+	}
+	return &rfpb.SimpleSplitResponse{
+		NewLeft:  rd,
+		NewRight: peerRangeDescriptor,
+	}, err
 }
 
 func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
@@ -908,10 +975,10 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion, rsp *r
 			FileUpdateMetadata: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_FindSplitPoint:
-		r, err := sm.findSplitPoint(value.FindSplitPoint)
-		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
-			FindSplitPoint: r,
+	case *rfpb.RequestUnion_SimpleSplit:
+		r, err := sm.simpleSplit(wb, value.SimpleSplit)
+		rsp.Value = &rfpb.ResponseUnion_SimpleSplit{
+			SimpleSplit: r,
 		}
 		rsp.Status = statusProto(err)
 	default:
@@ -1338,6 +1405,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err := sm.rangeCheckedSet(wb, constants.LastAppliedIndexKey, appliedIndex); err != nil {
 			return nil, err
 		}
+
 		if err := wb.Commit(pebble.NoSync); err != nil {
 			return nil, err
 		}
@@ -1578,49 +1646,6 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		return err
 	}
 	return nil
-}
-
-type Record struct {
-	PB    proto.Message
-	Error error
-}
-
-func (sm *Replica) ParseSnapshot(ctx context.Context, r io.Reader) <-chan Record {
-	ch := make(chan Record, 10)
-
-	readBuf := bufio.NewReader(r)
-	go func() {
-		defer close(ch)
-		for {
-			r, count, err := readDataFromReader(readBuf)
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				ch <- Record{Error: err}
-				break
-			}
-			protoBytes := make([]byte, count)
-			n, err := io.ReadFull(r, protoBytes)
-			if err != nil {
-				ch <- Record{Error: err}
-				break
-			}
-			if int64(n) != count {
-				ch <- Record{
-					Error: status.FailedPreconditionErrorf("Count %d != bytes read %d", count, n),
-				}
-				break
-			}
-			kv := &rfpb.KV{}
-			if err := proto.Unmarshal(protoBytes, kv); err != nil {
-				ch <- Record{Error: err}
-				break
-			}
-			ch <- Record{PB: &rfpb.DirectWriteRequest{Kv: kv}}
-		}
-	}()
-	return ch
 }
 
 // SaveSnapshot saves the point in time state of the IOnDiskStateMachine
