@@ -104,8 +104,10 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	keyA, err := snaploader.NewKey(taskA, "config-hash-a", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA)
+	chunkedFileA, err := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs", chunkDirA)
+	require.NoError(t, err)
 	optsA.ChunkedFiles = map[string]*snaploader.DynamicChunkedFile{
-		"scratchfs": {COWStore: cowA},
+		"scratchfs": chunkedFileA,
 	}
 	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
 	require.NoError(t, err)

@@ -154,14 +154,18 @@ type DynamicChunkedFile struct {
 	digests map[int64]*repb.Digest
 }
 
-func NewDynamicChunkedFile(store *blockio.COWStore, filecache interfaces.FileCache, name string, dataDir string, digests map[int64]*repb.Digest) *DynamicChunkedFile {
+func NewDynamicChunkedFile(store *blockio.COWStore, filecache interfaces.FileCache, name string, dataDir string) (*DynamicChunkedFile, error) {
+	digests, err := cowDigests(store)
+	if err != nil {
+		return nil, status.WrapError(err, "compute cow digests")
+	}
 	return &DynamicChunkedFile{
 		COWStore:   store,
 		localCache: filecache,
 		name:       name,
 		dataDir:    dataDir,
 		digests:    digests,
-	}
+	}, nil
 }
 
 func (cf *DynamicChunkedFile) fetchChunkIfMissing(offset int64) error {
@@ -555,6 +559,19 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 	}).Add(float64(dirtyBytes))
 
 	return pb, nil
+}
+
+func cowDigests(cow *blockio.COWStore) (map[int64]*repb.Digest, error) {
+	chunks := cow.Chunks()
+	digests := make(map[int64]*repb.Digest, len(chunks))
+	for _, chunk := range chunks {
+		d, err := digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return nil, status.WrapError(err, "compute chunk digest")
+		}
+		digests[chunk.Offset] = d
+	}
+	return digests, nil
 }
 
 func chunkDigestSize(chunkedFile *fcpb.ChunkedFile, chunk *fcpb.Chunk) int64 {
