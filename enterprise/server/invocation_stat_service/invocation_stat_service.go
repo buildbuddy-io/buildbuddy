@@ -149,7 +149,7 @@ func flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext, lookbackWindowDays int32) error {
+func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
@@ -199,16 +199,8 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 	if start := tq.GetUpdatedAfter(); start.IsValid() {
 		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
 	} else {
-		// If no start time specified, respect the lookback window field if set,
-		// or default to 7 days.
-		// TODO(bduffany): Delete this once clients no longer need it.
+		// If no start time specified, default to 7 days.
 		lookbackWindowHours := 7 * 24 * time.Hour
-		if lookbackWindowDays != 0 {
-			if lookbackWindowDays < 1 || lookbackWindowDays > 365 {
-				return status.InvalidArgumentErrorf("lookback_window_days must be between 0 and 366")
-			}
-			lookbackWindowHours = time.Duration(lookbackWindowDays*24) * time.Hour
-		}
 		q.AddWhereClause("updated_at_usec >= ?", time.Now().Add(-lookbackWindowHours).UnixMicro())
 	}
 
@@ -265,7 +257,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
     `)
 
 	reqCtx := req.GetRequestContext()
-	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx, 0); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx); err != nil {
 		return nil, err
 	}
 	qStr, qArgs := q.Build()
@@ -281,7 +273,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
-	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx, req.GetLookbackWindowDays()); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx); err != nil {
 		return nil, err
 	}
 	q.SetGroupBy("name")
@@ -362,7 +354,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getExecutionTrendQuery(reqCtx.GetTimezoneOffsetMinutes()))
-	if err := i.addWhereClauses(q, req.GetQuery(), req.GetRequestContext(), req.GetLookbackWindowDays()); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), req.GetRequestContext()); err != nil {
 		return nil, err
 	}
 	q.SetGroupBy("name")
@@ -656,7 +648,7 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 
 func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
 	placeholderQuery := query_builder.NewQuery("")
-	if err := i.addWhereClauses(placeholderQuery, q, reqCtx, 0); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, q, reqCtx); err != nil {
 		return "", nil, err
 	}
 	if m.GetInvocation() == sfpb.InvocationMetricType_DURATION_USEC_INVOCATION_METRIC {
@@ -970,7 +962,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext()); err != nil {
 		return "", nil, err
 	}
 
