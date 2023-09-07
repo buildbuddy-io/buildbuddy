@@ -5,6 +5,7 @@ import { User } from "../../../app/auth/auth_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { BuildBuddyError } from "../../../app/util/errors";
 import Select, { Option } from "../../../app/components/select/select";
+import Checkbox from "../../../app/components/checkbox/checkbox";
 
 export type FormProps = {
   user: User;
@@ -36,7 +37,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
 
   abstract newRequest(values?: Record<string, any>): T;
   abstract submitRequest(): void;
-  abstract showSuggestionPreference(): boolean;
+  abstract showAdvancedSettings(): boolean;
 
   async onSubmit(e: any) {
     e.preventDefault();
@@ -155,7 +156,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             </>
           )}
         </div>
-        {this.showSuggestionPreference() && (
+        {this.showAdvancedSettings() && (
           <div className="form-row stacked">
             <label>Build suggestions</label>
             <div className="input-help-text">Show diagnostics and improvements on builds within this org</div>
@@ -219,6 +220,19 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
               checked={request.userOwnedKeysEnabled}
             />
             <span>Enable user-owned API keys</span>
+          </label>
+        )}
+        {this.showAdvancedSettings() && capabilities.config.workflowsEnabled && (
+          <label className="form-row input-label">
+            <input
+              autoComplete="off"
+              onFocus={this.onFocus.bind(this)}
+              onChange={this.onChange.bind(this)}
+              type="checkbox"
+              name="restrictCleanWorkflowRunsToAdmins"
+              checked={request.restrictCleanWorkflowRunsToAdmins}
+            />
+            <span>Prevent non-admins from clearing workflow runner state</span>
           </label>
         )}
         {initialRequest.userOwnedKeysEnabled && !request.userOwnedKeysEnabled && (

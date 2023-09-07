@@ -220,8 +220,9 @@ type Group struct {
 	GithubToken *string
 	Model
 
-	SharingEnabled       bool `gorm:"default:1"`
-	UserOwnedKeysEnabled bool `gorm:"not null;default:0"`
+	SharingEnabled                    bool `gorm:"default:1"`
+	UserOwnedKeysEnabled              bool `gorm:"not null;default:0"`
+	RestrictCleanWorkflowRunsToAdmins bool `gorm:"not null;default:0"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.

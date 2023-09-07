@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -44,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
@@ -689,8 +691,27 @@ func (ws *workflowService) GetLegacyWorkflowIDForGitRepository(groupID string, r
 	return fmt.Sprintf("%s:%s:%s", repoWorkflowIDPrefix, groupID, repoURL)
 }
 
+func (ws *workflowService) checkCleanWorkflowPermissions(ctx context.Context, wf *tables.Workflow) error {
+	u, err := perms.AuthenticatedUser(ctx, ws.env)
+	if err != nil {
+		return err
+	}
+	g, err := ws.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return err
+	}
+	if !g.RestrictCleanWorkflowRunsToAdmins {
+		return nil
+	}
+	return authutil.AuthorizeGroupRole(u, wf.GroupID, role.Admin)
+}
+
 // To run workflow in a clean container, update the instance name suffix
 func (ws *workflowService) useCleanWorkflow(ctx context.Context, wf *tables.Workflow) error {
+	if err := ws.checkCleanWorkflowPermissions(ctx, wf); err != nil {
+		return err
+	}
+
 	suffix, err := random.RandomString(10)
 	if err != nil {
 		return err

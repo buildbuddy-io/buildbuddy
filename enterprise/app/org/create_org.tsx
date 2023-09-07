@@ -24,7 +24,7 @@ export default class CreateOrgComponent extends OrgForm<grp.CreateGroupRequest> 
     router.navigateTo(Path.settingsPath);
   }
 
-  showSuggestionPreference(): boolean {
+  showAdvancedSettings(): boolean {
     return false;
   }
 
