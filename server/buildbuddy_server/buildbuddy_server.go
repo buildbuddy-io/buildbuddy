@@ -705,6 +705,7 @@ func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *a
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			ExpiryUsec:          k.ExpiryUsec,
 		},
 	}, nil
 }

@@ -39,6 +39,9 @@ message ApiKey {
 
   // True if this is a user owned key.
   bool user_owned = 6;
+
+  // Optional time after which this API key is no longer valid.
+  int64 expiry_usec = 7;
 }
 
 message CreateApiKeyRequest {
