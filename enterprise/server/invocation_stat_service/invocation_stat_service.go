@@ -623,7 +623,7 @@ func getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContex
 	if *finerDrilldownTimeIncrements && time.Duration(endSec-startSec)*time.Second <= (31*24)*time.Hour {
 		increment := getTimeIncrement(time.Duration(endSec-startSec) * time.Second)
 		current := start.Round(increment)
-		for current.Before(start) {
+		for current.Before(start) || current.Equal(start) {
 			current = current.Add(increment)
 		}
 		for current.Before(end) {
