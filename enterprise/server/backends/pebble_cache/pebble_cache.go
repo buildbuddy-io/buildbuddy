@@ -1922,6 +1922,11 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			LastModifyUsec:  now,
 			FileType:        rfpb.FileMetadata_COMPLETE_FILE_TYPE,
 		}
+
+		if numChunks := len(md.StorageMetadata.GetChunkedMetadata().GetResource()); numChunks <= 1 {
+			log.Errorf("expected to have more than one chunks, but actually have %d for digest %s", numChunks, fileRecord.GetDigest().GetHash())
+			return status.InternalErrorf("invalid number of chunks (%d)", numChunks)
+		}
 		return p.writeMetadata(ctx, db, key, md)
 	}
 	return cwc, nil
