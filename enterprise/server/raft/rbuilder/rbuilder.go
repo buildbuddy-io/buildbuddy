@@ -62,7 +62,6 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Cas{
 			Cas: value,
 		}
-
 	case *rfpb.FileDeleteRequest:
 		req.Value = &rfpb.RequestUnion_FileDelete{
 			FileDelete: value,
