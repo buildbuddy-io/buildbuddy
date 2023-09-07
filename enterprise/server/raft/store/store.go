@@ -1072,6 +1072,8 @@ func (s *Store) waitForReplicaOpen(ctx context.Context, clusterID uint64) error 
 	}
 }
 
+// Snapshots the cluster *on this node*. This is a local operation and does not
+// create a snapshot on other nodes that are members of this cluster.
 func (s *Store) SnapshotCluster(ctx context.Context, clusterID uint64) error {
 	if _, ok := ctx.Deadline(); !ok {
 		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
