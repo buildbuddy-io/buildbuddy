@@ -78,8 +78,9 @@ type setupMessage struct {
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a blockio.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
-	lis      net.Listener
-	quitChan chan struct{}
+	lis            net.Listener
+	stoppedChan    chan struct{}
+	handleDoneChan chan struct{}
 
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
@@ -105,9 +106,13 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 		return status.WrapError(err, "set socket permissions")
 	}
 
-	// Initialize quitChan. Stop() will wait until this is closed to verify the handler has completed handling
-	// open requests
-	h.quitChan = make(chan struct{}, 0)
+	// receiveSetupMsg() will terminate early if Stop() is called before
+	// receiving the UFFD. This may happen if firecracker crashes due to failing
+	// to initialize the UFFD object.
+	h.stoppedChan = make(chan struct{})
+	// Stop() will wait until this is closed to verify the handler has completed
+	// handling open requests
+	h.handleDoneChan = make(chan struct{}, 0)
 
 	// Create a FD that can be used to terminate Poll early
 	pipeRead, pipeWrite, err := os.Pipe()
@@ -129,12 +134,25 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *blo
 // the UFFD handler over a unix socket. It also sends GuestRegionUFFDMapping data so the handler knows
 // how to resolve the page faults
 func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
-	defer h.lis.Close()
+	setupDone := make(chan struct{})
+	defer close(setupDone)
+	go func() {
+		select {
+		case <-h.stoppedChan:
+		case <-setupDone:
+		}
+		h.lis.Close()
+	}()
 
 	log.CtxDebugf(ctx, "Waiting for firecracker to connect to uffd socket")
 	conn, err := h.lis.Accept()
 	if err != nil {
-		return nil, status.WrapError(err, "accept firecracker connection")
+		select {
+		case <-h.stoppedChan:
+			return nil, status.InternalError("handler stopped while waiting to receive setup message")
+		default:
+			return nil, status.WrapError(err, "accept firecracker connection")
+		}
 	}
 	unixConn := conn.(*net.UnixConn)
 	log.CtxDebugf(ctx, "Firecracker connected to uffd socket")
@@ -183,7 +201,7 @@ func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
 }
 
 func (h *Handler) handle(ctx context.Context, memoryStore *blockio.COWStore) error {
-	defer close(h.quitChan)
+	defer close(h.handleDoneChan)
 
 	// Get uffd sent from firecracker
 	setup, err := h.receiveSetupMsg(ctx)
@@ -302,10 +320,12 @@ func pageStartAddress(addr uint64, pageSize int) uintptr {
 }
 
 func (h *Handler) Stop() error {
-	if h.earlyTerminationWriter == nil || h.earlyTerminationReader == nil || h.quitChan == nil {
+	if h.earlyTerminationWriter == nil || h.earlyTerminationReader == nil || h.handleDoneChan == nil {
 		log.Info("UFFD handler was already stopped when Stop() was called")
 		return nil
 	}
+
+	close(h.stoppedChan)
 
 	log.Info("UFFD handler beginning shut down")
 	_, err := h.earlyTerminationWriter.Write([]byte{0})
@@ -314,8 +334,8 @@ func (h *Handler) Stop() error {
 	}
 
 	// Wait for handle() to finish processing open requests
-	<-h.quitChan
-	h.quitChan = nil
+	<-h.handleDoneChan
+	h.handleDoneChan = nil
 
 	h.earlyTerminationReader.Close()
 	h.earlyTerminationWriter.Close()
