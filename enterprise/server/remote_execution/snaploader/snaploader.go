@@ -148,34 +148,18 @@ type DynamicChunkedFile struct {
 	// Name of the file
 	name string
 
-	// digests caches any known digests for *non-dirty* chunks, keyed by offset.
-	digests map[int64]*repb.Digest
+	// unloadedChunks tracks the digests of chunks that have not been dynamically
+	// loaded yet. Once they've been loaded, the chunks are stored in COWStore
+	unloadedChunks map[int64]*repb.Digest
 }
 
-func NewDynamicChunkedFile(store *blockio.COWStore, filecache interfaces.FileCache, name string) (*DynamicChunkedFile, error) {
-	cf := &DynamicChunkedFile{
-		COWStore:   store,
-		localCache: filecache,
-		name:       name,
+func NewDynamicChunkedFile(store *blockio.COWStore, filecache interfaces.FileCache, name string) *DynamicChunkedFile {
+	return &DynamicChunkedFile{
+		COWStore:       store,
+		localCache:     filecache,
+		name:           name,
+		unloadedChunks: map[int64]*repb.Digest{},
 	}
-	chunks := store.Chunks()
-	digests := make(map[int64]*repb.Digest, len(chunks))
-	for _, chunk := range chunks {
-		chunkReader, err := cf.ChunkReader(chunk.Offset)
-		if err != nil {
-			return nil, status.WrapError(err, "chunk reader")
-		}
-		d, err := digest.Compute(chunkReader, repb.DigestFunction_BLAKE3)
-		if err != nil {
-			return nil, status.WrapError(err, "compute chunk digest")
-		}
-		digests[chunk.Offset] = d
-	}
-	// TODO: Do we need this? We will read all the chunks at the beginning
-	// when generating the digests
-	cf.digests = digests
-
-	return cf, nil
 }
 
 func (cf *DynamicChunkedFile) fetchChunkIfMissing(offset int64) error {
@@ -184,9 +168,9 @@ func (cf *DynamicChunkedFile) fetchChunkIfMissing(offset int64) error {
 		return nil
 	}
 
-	chunkDigest, ok := cf.digests[chunkStartOffset]
+	chunkDigest, ok := cf.unloadedChunks[chunkStartOffset]
 	if !ok {
-		return status.NotFoundErrorf("missing chunk start offset %d", chunkStartOffset)
+		return status.NotFoundErrorf("file does not contain an unloaded chunk with start offset %d", chunkStartOffset)
 	}
 
 	chunk, err := cf.fetchChunkFromLocalCache(chunkDigest, chunkStartOffset)
@@ -196,7 +180,14 @@ func (cf *DynamicChunkedFile) fetchChunkIfMissing(offset int64) error {
 		//}
 		return err
 	}
-	return cf.AddChunk(chunkStartOffset, chunk)
+
+	err = cf.AddChunk(chunkStartOffset, chunk)
+	if err != nil {
+		return status.WrapError(err, "add chunk to store")
+	}
+
+	delete(cf.unloadedChunks, chunkStartOffset)
+	return nil
 }
 
 func (cf *DynamicChunkedFile) fetchChunkFromLocalCache(chunkDigest *repb.Digest, chunkStartOffset int64) (*blockio.Chunk, error) {
@@ -215,9 +206,8 @@ func (cf *DynamicChunkedFile) fetchChunkFromLocalCache(chunkDigest *repb.Digest,
 }
 
 func (cf *DynamicChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, error) {
-	// If we already know the original chunk digest and the chunk hasn't
-	// changed, return the original digest.
-	if d := cf.digests[chunk.Offset]; d != nil && !cf.COWStore.Dirty(chunk.Offset) {
+	// If the chunk hasn't changed, return the original digest
+	if d := cf.unloadedChunks[chunk.Offset]; d != nil {
 		return d, nil
 	}
 	// Otherwise compute the digest.
@@ -229,7 +219,6 @@ func (cf *DynamicChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, e
 	if err != nil {
 		return nil, err
 	}
-	cf.digests[chunk.Offset] = d
 	return d, nil
 }
 
@@ -274,7 +263,7 @@ func (cf *DynamicChunkedFile) ReadAt(p []byte, offset int64) (int, error) {
 	// Dynamically fetch all chunks that might be read from
 	lastByteToRead := offset + int64(len(p))
 	chunkStart := cf.ChunkStartOffset(offset)
-	for chunkStart < lastByteToRead {
+	for chunkStart <= lastByteToRead {
 		if err := cf.fetchChunkIfMissing(chunkStart); err != nil {
 			// Not found errors mean that we are reading from a hole
 			if !status.IsNotFoundError(err) {
@@ -289,9 +278,9 @@ func (cf *DynamicChunkedFile) ReadAt(p []byte, offset int64) (int, error) {
 
 func (cf *DynamicChunkedFile) WriteAt(p []byte, offset int64) (int, error) {
 	// Dynamically fetch all chunks that might be written to
-	lastByteToRead := offset + int64(len(p))
+	lastByteToWrite := offset + int64(len(p))
 	chunkStart := cf.ChunkStartOffset(offset)
-	for chunkStart < lastByteToRead {
+	for chunkStart <= lastByteToWrite {
 		if err := cf.fetchChunkIfMissing(chunkStart); err != nil {
 			// Not found errors mean that we need to create a new chunk
 			if !status.IsNotFoundError(err) {
@@ -470,12 +459,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		}
 		fileNode.Name = filepath.Base(f)
 		manifest.Files = append(manifest.Files, fileNode)
-
-		// If EnableLocalSnapshotSharing=true and we're computing real digests,
-		// the files will be immutable. We won't need to re-save them to file cache
-		if !*EnableLocalSnapshotSharing || !l.env.GetFileCache().ContainsFile(fileNode) {
-			l.env.GetFileCache().AddFile(fileNode, f)
-		}
+		l.cacheLocally(fileNode, f)
 	}
 	for name, cow := range opts.ChunkedFiles {
 		cf, err := l.cacheCOW(ctx, name, cow)
@@ -524,26 +508,29 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 	if err := os.Mkdir(dataDir, 0755); err != nil {
 		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
 	}
-	cf = &DynamicChunkedFile{
-		localCache: l.env.GetFileCache(),
-		name:       file.GetName(),
-		digests:    make(map[int64]*repb.Digest, len(file.Chunks)),
-	}
+
+	unloadedChunks := make(map[int64]*repb.Digest, len(file.Chunks))
 	for _, chunk := range file.Chunks {
-		// Memoize the original digest so that if the chunk doesn't change we
-		// don't have to recompute it later when adding back to cache.
 		size := file.GetChunkSize()
 		if remainder := file.GetSize() - chunk.GetOffset(); size > remainder {
 			size = remainder
 		}
-		cf.digests[chunk.GetOffset()] = &repb.Digest{Hash: chunk.GetDigestHash(), SizeBytes: size}
+		unloadedChunks[chunk.GetOffset()] = &repb.Digest{Hash: chunk.GetDigestHash(), SizeBytes: size}
 	}
+
+	// Initialize a COW store with no chunks. Chunks will be dynamically loaded
+	// using the digests in unloadedChunks
 	cow, err := blockio.NewCOWStore([]*blockio.Chunk{}, file.GetChunkSize(), file.GetSize(), dataDir)
 	if err != nil {
 		return nil, err
 	}
-	cf.COWStore = cow
-	return cf, nil
+
+	return &DynamicChunkedFile{
+		COWStore:       cow,
+		localCache:     l.env.GetFileCache(),
+		name:           file.GetName(),
+		unloadedChunks: unloadedChunks,
+	}, nil
 }
 
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *DynamicChunkedFile) (*fcpb.ChunkedFile, error) {
@@ -556,9 +543,12 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 		Size:      size,
 		ChunkSize: cf.ChunkSizeBytes(),
 	}
+
 	dirtyChunkCount := 0
 	var dirtyBytes int64
 	seenOffsets := make(map[int64]struct{})
+
+	// Populate manifest for chunks that have been dynamically fetched
 	chunks := cf.Chunks()
 	for _, c := range chunks {
 		if cf.Dirty(c.Offset) {
@@ -575,17 +565,15 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 				return nil, status.WrapError(err, "sync dirty chunk")
 			}
 		}
+
 		d, err := cf.chunkDigest(c)
 		if err != nil {
 			return nil, err
 		}
-		// TODO: Should we add a name here?
-		node := &repb.FileNode{Digest: d, Name: fmt.Sprintf("cow-%d", c.Offset)}
+
+		node := &repb.FileNode{Digest: d, Name: fmt.Sprintf("%s/%d", cf.name, c.Offset)}
 		path := filepath.Join(cf.DataDir(), cf.ChunkName(c.Offset))
-		// TODO: if the file is already cached, then instead of adding the file,
-		// just record a file access (to avoid the syscall overhead of
-		// unlink/relink).
-		l.env.GetFileCache().AddFile(node, path)
+		l.cacheLocally(node, path)
 		pb.Chunks = append(pb.Chunks, &fcpb.Chunk{
 			Offset:     c.Offset,
 			DigestHash: d.GetHash(),
@@ -593,8 +581,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 		seenOffsets[c.Offset] = struct{}{}
 	}
 
-	// We need to cache non-dynamically fetched chunks too - they should be in Digests
-	for offset, d := range cf.digests {
+	// Populate manifest for chunks that were not dynamically fetched
+	for offset, d := range cf.unloadedChunks {
 		_, alreadySeen := seenOffsets[offset]
 		if !alreadySeen {
 			pb.Chunks = append(pb.Chunks, &fcpb.Chunk{
@@ -602,7 +590,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 				DigestHash: d.GetHash(),
 			})
 		}
-
 	}
 
 	gid, err := groupID(ctx, l.env)
@@ -619,6 +606,16 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Dynamic
 	}).Add(float64(dirtyBytes))
 
 	return pb, nil
+}
+
+// cacheLocally copies the data at `path` to the local filecache with
+// the given `key`
+func (l *FileCacheLoader) cacheLocally(key *repb.FileNode, path string) {
+	// If EnableLocalSnapshotSharing=true and we're computing real unloadedChunks,
+	// the files will be immutable. We won't need to re-save them to file cache
+	if !*EnableLocalSnapshotSharing || !l.env.GetFileCache().ContainsFile(key) {
+		l.env.GetFileCache().AddFile(key, path)
+	}
 }
 
 func chunkDigestSize(chunkedFile *fcpb.ChunkedFile, chunk *fcpb.Chunk) int64 {

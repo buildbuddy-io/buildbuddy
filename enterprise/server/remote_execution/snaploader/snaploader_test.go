@@ -90,13 +90,13 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 
 	// Create an initial chunked file for VM A.
 	workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
-	const chunkSize = 512 * 1
-	const fileSize = 13 + (chunkSize * 1) // ~5 MB total, with uneven size
+	const chunkSize = 512 * 1024
+	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
 	cowA, err := blockio.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
 	require.NoError(t, err)
-	chunkedFileA, err := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs")
+	chunkedFileA := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs")
 	require.NoError(t, err)
 
 	// Overwrite a random range to simulate the disk being written to. This
@@ -116,8 +116,9 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	// Note: we'd normally close cowA here, but we keep it open so that
 	// mustUnpack() can verify the original contents.
 
-	// Test packing and unpacking snapshots multiple times to ensure we can
-	// successfully save a snapshot that was unpacked from another snapshot
+	// Test packing and unpacking snapshots multiple times with the same key
+	// to ensure we can successfully save a snapshot that was unpacked
+	// from another snapshot
 	originalSnap := snapA
 	originalOpts := optsA
 	for i := 0; i < 3; i++ {
@@ -141,7 +142,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	filecacheDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes)
+	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
@@ -157,7 +158,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
 	cowA, err := blockio.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
 	require.NoError(t, err)
-	chunkedFileA, err := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs")
+	chunkedFileA := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs")
 	require.NoError(t, err)
 
 	// Overwrite a random range to simulate the disk being written to. This
