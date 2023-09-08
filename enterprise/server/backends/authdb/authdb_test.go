@@ -544,6 +544,64 @@ func TestSubdomainRestrictions(t *testing.T) {
 	}
 }
 
+func TestImpersonationAPIKeys(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	al := testauditlog.New(t)
+	env.SetAuditLogger(al)
+	adb := env.GetAuthDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if role.Role(u.Groups[0].Role) == role.Admin {
+			admin = u
+			break
+		}
+	}
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	// Should not be able to create an impersonation key if you're not a server
+	// admin.
+	for _, u := range users {
+		req := &akpb.CreateImpersonationApiKeyRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: u.Groups[0].Group.GroupID},
+		}
+		_, err := env.GetBuildBuddyServer().CreateImpersonationApiKey(adminCtx, req)
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+	}
+
+	// Now treat the random group we picked as the server admin group.
+	// Same user should now be able to create an impersonation key for any
+	// group.
+	auth.ServerAdminGroupID = admin.Groups[0].Group.GroupID
+	for _, u := range users {
+		al.Reset()
+		req := &akpb.CreateImpersonationApiKeyRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: u.Groups[0].Group.GroupID},
+		}
+		rsp, err := env.GetBuildBuddyServer().CreateImpersonationApiKey(adminCtx, req)
+		require.NoError(t, err)
+
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
+		require.Equal(t, u.Groups[0].Group.GroupID, e.Resource.GetId())
+		require.Equal(t, alpb.Action_CREATE_IMPERSONATION_API_KEY, e.Action)
+		require.Equal(t, req, e.Request)
+
+		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+		require.NoError(t, err)
+	}
+}
+
 func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env) []*tables.APIKey {
 	users := enterprise_testauth.CreateRandomGroups(t, env)
 	var allKeys []*tables.APIKey

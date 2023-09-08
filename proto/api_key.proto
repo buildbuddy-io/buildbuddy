@@ -39,6 +39,9 @@ message ApiKey {
 
   // True if this is a user owned key.
   bool user_owned = 6;
+
+  // Optional time after which this API key is no longer valid.
+  int64 expiry_usec = 7;
 }
 
 message CreateApiKeyRequest {
@@ -132,4 +135,15 @@ message DeleteApiKeyRequest {
 
 message DeleteApiKeyResponse {
   context.ResponseContext response_context = 1;
+}
+
+message CreateImpersonationApiKeyRequest {
+  context.RequestContext request_context = 1;
+}
+
+message CreateImpersonationApiKeyResponse {
+  context.ResponseContext response_context = 1;
+
+  // The API key that was created.
+  ApiKey api_key = 2;
 }

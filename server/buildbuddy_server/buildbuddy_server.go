@@ -688,6 +688,30 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
 
+func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *akpb.CreateImpersonationApiKeyRequest) (*akpb.CreateImpersonationApiKeyResponse, error) {
+	authDB := s.env.GetAuthDB()
+	if authDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	k, err := authDB.CreateImpersonationAPIKey(ctx, req.GetRequestContext().GetGroupId())
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_CREATE_IMPERSONATION_API_KEY, req)
+	}
+	return &akpb.CreateImpersonationApiKeyResponse{
+		ApiKey: &akpb.ApiKey{
+			Id:                  k.APIKeyID,
+			Value:               k.Value,
+			Label:               k.Label,
+			Capability:          capabilities.FromInt(k.Capabilities),
+			VisibleToDevelopers: k.VisibleToDevelopers,
+			ExpiryUsec:          k.ExpiryUsec,
+		},
+	}, nil
+}
+
 func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {

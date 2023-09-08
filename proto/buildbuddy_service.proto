@@ -84,6 +84,8 @@ service BuildBuddyService {
       returns (api_key.UpdateApiKeyResponse);
   rpc DeleteApiKey(api_key.DeleteApiKeyRequest)
       returns (api_key.DeleteApiKeyResponse);
+  rpc CreateImpersonationApiKey(api_key.CreateImpersonationApiKeyRequest)
+      returns (api_key.CreateImpersonationApiKeyResponse);
 
   // User API keys API
   rpc GetUserApiKeys(api_key.GetApiKeysRequest)
