@@ -16,6 +16,10 @@ go_test(
     # exec_properties = {
     #     "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0",
     # },
+    exec_properties = {
+        # TODO: remove network dependency.
+        "dockerNetwork": "bridge",
+    },
     shard_count = 12,
     deps = [
         "//proto:eventlog_go_proto",
