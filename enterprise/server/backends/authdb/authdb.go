@@ -567,8 +567,10 @@ func (d *AuthDB) createAPIKey(db *db.DB, ak tables.APIKey) (*tables.APIKey, erro
 			encrypted_value,
 			nonce,
 			label,
-			visible_to_developers
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			visible_to_developers,
+			impersonation,
+			expiry_usec
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pk,
 		ak.UserID,
 		ak.GroupID,
@@ -579,6 +581,8 @@ func (d *AuthDB) createAPIKey(db *db.DB, ak tables.APIKey) (*tables.APIKey, erro
 		nonce,
 		ak.Label,
 		ak.VisibleToDevelopers,
+		ak.Impersonation,
+		ak.ExpiryUsec,
 	).Error
 	if err != nil {
 		return nil, err
