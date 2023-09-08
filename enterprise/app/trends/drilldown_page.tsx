@@ -715,8 +715,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return null;
     }
 
-    const startDate = moment(this.currentZoomFilters.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
-    const endDate = moment((this.currentZoomFilters.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
+    const startDate = moment(this.currentZoomFilters.dateRangeMicros.startInclusive / 1000).format("lll");
+    const endDate = moment(this.currentZoomFilters.dateRangeMicros.endExclusive / 1000).format("lll");
     const startValue = this.renderYBucketValue(this.currentZoomFilters.bucketRange.startInclusive);
     const endValue = this.renderYBucketValue(this.currentZoomFilters.bucketRange.endExclusive);
 
@@ -756,8 +756,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return null;
     }
 
-    const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
-    const endDate = moment((this.currentHeatmapSelection.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
+    const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("lll");
+    const endDate = moment(this.currentHeatmapSelection.dateRangeMicros.endExclusive / 1000).format("lll");
     const startValue = this.renderYBucketValue(this.currentHeatmapSelection.bucketRange.startInclusive);
     const endValue = this.renderYBucketValue(this.currentHeatmapSelection.bucketRange.endExclusive);
     return (
