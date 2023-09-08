@@ -1121,8 +1121,9 @@ func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
 		}
 
 		opts := &repairOpts{
-			deleteEntriesWithMissingFiles: fixMissingFiles,
-			deleteACEntriesOlderThan:      *deleteACEntriesOlderThan,
+			deleteEntriesWithMissingFiles:  fixMissingFiles,
+			deleteACEntriesOlderThan:       *deleteACEntriesOlderThan,
+			deleteEntriesWithMissingChunks: true,
 		}
 		err := p.backgroundRepairIteration(quitChan, opts)
 		if err != nil {
@@ -1144,8 +1145,9 @@ func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
 }
 
 type repairOpts struct {
-	deleteEntriesWithMissingFiles bool
-	deleteACEntriesOlderThan      time.Duration
+	deleteEntriesWithMissingChunks bool
+	deleteEntriesWithMissingFiles  bool
+	deleteACEntriesOlderThan       time.Duration
 }
 
 func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *repairOpts) error {
@@ -1182,6 +1184,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 	lastUpdate := time.Now()
 	totalCount := 0
 	missingFiles := 0
+	missingChunks := 0
 	oldACEntries := 0
 	oldACEntriesBytes := int64(0)
 	uncompressedCount := 0
@@ -1253,6 +1256,23 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			}
 		}
 
+		if opts.deleteEntriesWithMissingChunks {
+			md := fileMetadata.GetStorageMetadata()
+			if md.GetInlineMetadata() == nil && md.GetFileMetadata() == nil && len(md.GetChunkedMetadata().GetResource()) == 0 {
+				_ = modLim.Wait(p.env.GetServerContext())
+				unlockFn := p.locker.Lock(key.LockID())
+				err := p.deleteMetadataOnly(p.env.GetServerContext(), key)
+				log.Debugf("delete entry %s because of empty storage metadata", key.String())
+				unlockFn()
+				if err != nil {
+					log.Warningf("Could not delete key %q: %s", key.String(), err)
+				} else {
+					missingChunks += 1
+					removedEntry = true
+				}
+			}
+		}
+
 		if !removedEntry && opts.deleteACEntriesOlderThan != 0 && bytes.Contains(keyBytes, acDir) {
 			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 			age := time.Since(atime)
@@ -1282,6 +1302,9 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 	log.Infof("Pebble Cache: backgroundRepairIteration scanned %s records (%s uncompressed entries remaining using %s bytes [%s])", pr.Sprint(totalCount), pr.Sprint(uncompressedCount), pr.Sprint(uncompressedBytes), units.BytesSize(float64(uncompressedBytes)))
 	if opts.deleteEntriesWithMissingFiles {
 		log.Infof("Pebble Cache: backgroundRepairIteration deleted %d keys with missing files", missingFiles)
+	}
+	if opts.deleteEntriesWithMissingChunks {
+		log.Infof("Pebble Cache: backgroundRepairIteration deleted %d keys with missing chunks", missingChunks)
 	}
 	if opts.deleteACEntriesOlderThan != 0 {
 		log.Infof("Pebble Cache: backgroundRepairIteration deleted %s AC keys older than %s using %s", pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan, units.BytesSize(float64(oldACEntriesBytes)))
