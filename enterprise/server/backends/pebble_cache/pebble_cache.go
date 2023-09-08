@@ -1113,17 +1113,18 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
 	fixMissingFiles := *scanForMissingFiles
 	fixOLDACEntries := *deleteACEntriesOlderThan != 0
+	fixCASEntriesWithEmptyStorage := true
 
 	for {
 		// Nothing to do?
-		if !fixMissingFiles && !fixOLDACEntries {
+		if !fixMissingFiles && !fixOLDACEntries && !fixCASEntriesWithEmptyStorage {
 			return nil
 		}
 
 		opts := &repairOpts{
-			deleteEntriesWithMissingFiles:  fixMissingFiles,
-			deleteACEntriesOlderThan:       *deleteACEntriesOlderThan,
-			deleteEntriesWithMissingChunks: true,
+			deleteEntriesWithMissingFiles:    fixMissingFiles,
+			deleteACEntriesOlderThan:         *deleteACEntriesOlderThan,
+			deleteCASEntriesWithEmptyStorage: fixCASEntriesWithEmptyStorage,
 		}
 		err := p.backgroundRepairIteration(quitChan, opts)
 		if err != nil {
@@ -1145,13 +1146,13 @@ func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
 }
 
 type repairOpts struct {
-	deleteEntriesWithMissingChunks bool
-	deleteEntriesWithMissingFiles  bool
-	deleteACEntriesOlderThan       time.Duration
+	deleteCASEntriesWithEmptyStorage bool
+	deleteEntriesWithMissingFiles    bool
+	deleteACEntriesOlderThan         time.Duration
 }
 
 func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *repairOpts) error {
-	log.Infof("Pebble Cache: backgroundRepairIteration starting")
+	log.Infof("Pebble Cache (%s): backgroundRepairIteration starting", p.name)
 
 	evictors := make(map[string]*partitionEvictor, 0)
 	p.statusMu.Lock()
@@ -1218,7 +1219,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		}
 
 		if time.Since(lastUpdate) > 1*time.Minute {
-			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s", pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)))
+			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s, deleted %d entries with emptyStorageData", pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)), missingChunks)
 			lastUpdate = time.Now()
 		}
 
@@ -1256,19 +1257,21 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			}
 		}
 
-		if opts.deleteEntriesWithMissingChunks {
+		if opts.deleteCASEntriesWithEmptyStorage {
 			md := fileMetadata.GetStorageMetadata()
-			if md.GetInlineMetadata() == nil && md.GetFileMetadata() == nil && len(md.GetChunkedMetadata().GetResource()) == 0 {
-				_ = modLim.Wait(p.env.GetServerContext())
-				unlockFn := p.locker.Lock(key.LockID())
-				err := p.deleteMetadataOnly(p.env.GetServerContext(), key)
-				log.Debugf("delete entry %s because of empty storage metadata", key.String())
-				unlockFn()
-				if err != nil {
-					log.Warningf("Could not delete key %q: %s", key.String(), err)
-				} else {
-					missingChunks += 1
-					removedEntry = true
+			if fileMetadata.GetFileRecord().GetIsolation().GetCacheType() == rspb.CacheType_CAS {
+				if md.GetInlineMetadata() == nil && md.GetFileMetadata() == nil && len(md.GetChunkedMetadata().GetResource()) == 0 {
+					_ = modLim.Wait(p.env.GetServerContext())
+					unlockFn := p.locker.Lock(key.LockID())
+					err := p.deleteMetadataOnly(p.env.GetServerContext(), key)
+					unlockFn()
+					log.Debugf("cache (%s) delete entry %s because of empty storage metadata", p.name, key.String())
+					if err != nil {
+						log.Warningf("cache (%s) Could not delete key %q because of empty storage metadata: %s", p.name, key.String(), err)
+					} else {
+						missingChunks += 1
+						removedEntry = true
+					}
 				}
 			}
 		}
@@ -1303,8 +1306,8 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 	if opts.deleteEntriesWithMissingFiles {
 		log.Infof("Pebble Cache: backgroundRepairIteration deleted %d keys with missing files", missingFiles)
 	}
-	if opts.deleteEntriesWithMissingChunks {
-		log.Infof("Pebble Cache: backgroundRepairIteration deleted %d keys with missing chunks", missingChunks)
+	if opts.deleteCASEntriesWithEmptyStorage {
+		log.Infof("Pebble Cache (%s): backgroundRepairIteration deleted %d CAS keys with empty storage", p.name, missingChunks)
 	}
 	if opts.deleteACEntriesOlderThan != 0 {
 		log.Infof("Pebble Cache: backgroundRepairIteration deleted %s AC keys older than %s using %s", pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan, units.BytesSize(float64(oldACEntriesBytes)))
