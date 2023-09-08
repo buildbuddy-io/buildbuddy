@@ -10,8 +10,8 @@ import Popup from "../../../app/components/popup/popup";
 import { DateRangePicker, OnChangeProps, RangeWithKey } from "react-date-range";
 import error_service from "../../../app/errors/error_service";
 import Spinner from "../../../app/components/spinner/spinner";
-import Action = auditlog.Action;
 import { User } from "../../../app/auth/user";
+import Action = auditlog.Action;
 
 interface AuditLogsComponentProps {
   user: User;
@@ -164,6 +164,8 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
         return "Unlink GitHub Repo";
       case Action.EXECUTE_CLEAN_WORKFLOW:
         return "Execute Clean Workflow";
+      case Action.CREATE_IMPERSONATION_API_KEY:
+        return "Create Impersonation API Key";
     }
     return "";
   }
