@@ -568,7 +568,7 @@ func (d *AuthDB) createAPIKey(db *db.DB, ak tables.APIKey) (*tables.APIKey, erro
 			nonce,
 			label,
 			visible_to_developers,
-		    impersonation,
+			impersonation,
 			expiry_usec
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pk,
