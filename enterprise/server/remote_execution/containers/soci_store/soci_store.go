@@ -207,7 +207,7 @@ func PutCredentials(ctx context.Context, image string, creds container.PullCrede
 	// container access credentials. To address this, send the credentials to
 	// the store via this gRPC service so it can cache and use them.
 	//
-	// TODO(iain): this runs in-process, send credentialss via function call
+	// TODO(iain): this runs in-process, send credentials via function call
 	putCredsReq := sspb.PutCredentialsRequest{
 		ImageName: image,
 		Credentials: &sspb.Credentials{
