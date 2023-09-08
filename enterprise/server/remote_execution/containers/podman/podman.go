@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -63,6 +65,8 @@ var (
 	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 	sociArtifactStoreTarget      = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
 	sociStoreKeychainPort        = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
+	sociStoreLogLevel            = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
+	runSociStoreInProcess        = flag.Bool("executor.podman.run_soci_store_in_process", true, "If true, runs the soci-store (if needed) in the executor process. Otherwise, runs it as a separate process.")
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
@@ -102,6 +106,30 @@ type pullStatus struct {
 	pulled bool
 }
 
+// TODO(iain): remove this once --executor.podman.run_soci_store_in_process seems good in dev for a while
+func runSociStore(ctx context.Context) {
+	for {
+		log.Infof("Starting soci store")
+		args := []string{fmt.Sprintf("--local_keychain_port=%d", *sociStoreKeychainPort)}
+		if *sociStoreLogLevel != "" {
+			args = append(args, fmt.Sprintf("--log-level=%s", *sociStoreLogLevel))
+		}
+		args = append(args, soci_store.StorePath())
+		cmd := exec.CommandContext(ctx, "soci-store", args...)
+		logWriter := log.Writer("[socistore] ")
+		cmd.Stderr = logWriter
+		cmd.Stdout = logWriter
+		cmd.Run()
+
+		log.Infof("Detected soci store crash, restarting")
+		metrics.PodmanSociStoreCrashes.Inc()
+		// If the store crashed, the path must be unmounted to recover.
+		syscall.Unmount(soci_store.StorePath(), 0)
+
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 type Provider struct {
 	env                     environment.Env
 	imageCacheAuth          *container.ImageCacheAuthenticator
@@ -115,7 +143,11 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
 	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
 	if *imageStreamingEnabled {
-		go soci_store.RunSociStoreWithRetries(env.GetServerContext(), *sociStoreKeychainPort)
+		if *runSociStoreInProcess {
+			go soci_store.RunSociStoreWithRetries(env.GetServerContext(), *sociStoreKeychainPort)
+		} else {
+			go runSociStore(env.GetServerContext())
+		}
 
 		// Configures podman to check soci store for image data.
 		storageConf := fmt.Sprintf(`
