@@ -483,7 +483,8 @@ func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
 		// Don't log on byte differences for AC records, because there could be minor differences in metadata like timestamps
-		if d.r.GetCacheType() == rspb.CacheType_CAS && d.lastSrcErr == io.EOF && d.bytesReadDest != d.bytesReadSrc {
+		// Don't log when compressed data is requested, the size of compressed files can be different.
+		if d.r.GetCacheType() == rspb.CacheType_CAS && d.lastSrcErr == io.EOF && d.r.GetCompressor() != repb.Compressor_ZSTD && d.bytesReadDest != d.bytesReadSrc {
 			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
 		}
 
