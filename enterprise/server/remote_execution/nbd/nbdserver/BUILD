@@ -23,6 +23,7 @@ go_test(
     deps = [
         ":nbdserver",
         "//enterprise/server/remote_execution/blockio",
+        "//enterprise/server/remote_execution/snaploader",
         "//proto:nbd_go_proto",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
