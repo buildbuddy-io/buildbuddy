@@ -685,8 +685,8 @@ github.com/Masterminds/semver/v3 v3.2.1 h1:RN9w6+7QoMeJVGyfmbcgs28Br8cvmnucEXnY0
 github.com/Masterminds/semver/v3 v3.2.1/go.mod h1:qvl/7zhW3nngYb5+80sSMF+FG2BjYrf8m9wsX0PNOMQ=
 github.com/Masterminds/sprig/v3 v3.2.3 h1:eL2fZNezLomi0uOLqjQoN6BfsDD+fyLtgbJMAj9n6YA=
 github.com/Masterminds/sprig/v3 v3.2.3/go.mod h1:rXcFaZ2zZbLRJv/xSysmlgIM1u11eBaRMhvYXJNkGuM=
-github.com/Merovius/nbd v0.0.0-20230605051639-7ffd87295813 h1:+K7ZvvUcTZ6OrYnYG0ZTlUWxUmMEm9vOOwBuzdgEgWc=
-github.com/Merovius/nbd v0.0.0-20230605051639-7ffd87295813/go.mod h1:xJ7rkITDGX2Y8aDn6vAJQWwCQNp9RskpY7kE6ep/Ux8=
+github.com/Merovius/nbd v0.0.0-20230908150103-a1d15e184887 h1:+RuruTkdD790c2czCjTKFd/TZAAQ8EPh/7zyqg10ff8=
+github.com/Merovius/nbd v0.0.0-20230908150103-a1d15e184887/go.mod h1:xJ7rkITDGX2Y8aDn6vAJQWwCQNp9RskpY7kE6ep/Ux8=
 github.com/Microsoft/go-winio v0.4.11/go.mod h1:VhR8bwka0BXejwEJY73c50VrPtXAaKcyvVC4A4RozmA=
 github.com/Microsoft/go-winio v0.4.14/go.mod h1:qXqCSQ3Xa7+6tgxaGTIe4Kpcdsi+P8jBhyzoq1bpyYA=
 github.com/Microsoft/go-winio v0.4.15-0.20190919025122-fc70bd9a86b5/go.mod h1:tTuCMEN+UleMWgg9dVx4Hu52b1bJo+59jBh3ajtinzw=

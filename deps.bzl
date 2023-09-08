@@ -3841,8 +3841,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_merovius_nbd",
         importpath = "github.com/Merovius/nbd",
-        sum = "h1:+K7ZvvUcTZ6OrYnYG0ZTlUWxUmMEm9vOOwBuzdgEgWc=",
-        version = "v0.0.0-20230605051639-7ffd87295813",
+        sum = "h1:+RuruTkdD790c2czCjTKFd/TZAAQ8EPh/7zyqg10ff8=",
+        version = "v0.0.0-20230908150103-a1d15e184887",
     )
 
     go_repository(
