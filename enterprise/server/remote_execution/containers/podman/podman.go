@@ -61,6 +61,7 @@ var (
 
 	// Container image streaming flags
 	// TODO(iain): get rid of soci_store_keychain_port and pass creds via function call
+	// TODO(iain): get rid of run_soci_store_in_process and soci_store_log_level once vetted in dev
 	imageStreamingEnabled        = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all public (non-authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 	sociArtifactStoreTarget      = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
