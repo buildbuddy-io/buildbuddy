@@ -67,7 +67,7 @@ var (
 	sociArtifactStoreTarget      = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
 	sociStoreKeychainPort        = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
 	sociStoreLogLevel            = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
-	runSociStoreInProcess        = flag.Bool("executor.podman.run_soci_store_in_process", true, "If true, runs the soci-store (if needed) in the executor process. Otherwise, runs it as a separate process.")
+	runSociStoreInProcess        = flag.Bool("executor.podman.run_soci_store_in_process", false, "If true, runs the soci-store (if needed) in the executor process. Otherwise, runs it as a separate process.")
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
