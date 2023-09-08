@@ -107,7 +107,6 @@ type pullStatus struct {
 	pulled bool
 }
 
-// TODO(iain): remove this once --executor.podman.run_soci_store_in_process seems good in dev for a while
 func runSociStore(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
