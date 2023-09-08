@@ -53,6 +53,10 @@ const ZOOM_BUTTON_ATTRIBUTES = {
   sideMargin: 12,
 };
 
+// If the heatmap we're showing contains more than 49 hours (two daysish) of
+// data, then we'll only show tick marks for days.
+const MINIMUM_DURATION_FOR_DAY_LABELS_MICROS = 1e6 * 60 * 60 * 49;
+
 // This is a magic number that states there will only be one axis label for
 // every N pixels of rendered axis length (currently 100).
 const TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
@@ -394,16 +398,17 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return interpolator(value, selected);
   }
 
-  private computeXAxisLabel(timestampMillis: number, rounding: moment.unitOfTime.StartOf): string | undefined {
-    const time = moment(+timestampMillis / 1e3);
-    const start = moment(+timestampMillis / 1e3).startOf(rounding);
+  private computeXAxisLabel(timestampMicros: number, rounding: moment.unitOfTime.StartOf): string | undefined {
+    const timestampMillis = timestampMicros / 1e3;
+    const time = moment(timestampMillis);
+    const start = moment(timestampMillis).startOf(rounding);
     if (!time.isSame(start)) {
       return undefined;
     }
     if (rounding === "day") {
       return time.format("MMM D");
     }
-    const startOfDay = moment(+timestampMillis / 1e3).startOf("day");
+    const startOfDay = moment(timestampMillis).startOf("day");
     if (time.isSame(startOfDay)) {
       return time.format("MMM D");
     }
@@ -416,7 +421,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     }
 
     const timeBrackets = this.props.heatmapData.timestampBracket;
-    const labelType = +timeBrackets[timeBrackets.length - 1] - +timeBrackets[0] > 1e6 * 60 * 60 * 25 ? "day" : "hour";
+    const heatmapTimespan = +timeBrackets[timeBrackets.length - 1] - +timeBrackets[0];
+    const labelType = heatmapTimespan > MINIMUM_DURATION_FOR_DAY_LABELS_MICROS ? "day" : "hour";
 
     const numColumns = this.props.heatmapData.column.length || 1;
     const labelSpacing = Math.ceil(numColumns / Math.min(numColumns, width / TICK_LABEL_SPACING_MAGIC_NUMBER));
@@ -430,7 +436,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
           if (lastLabelDistance < labelSpacing) {
             return null;
           }
-          const label = this.computeXAxisLabel(v, labelType);
+          const label = this.computeXAxisLabel(v /* micros */, labelType);
           if (!label) {
             return null;
           }
