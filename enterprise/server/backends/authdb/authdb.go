@@ -789,7 +789,7 @@ func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 		SELECT * FROM "APIKeys"
 		WHERE group_id = ?
 		AND (user_id IS NULL OR user_id = '')
-		AND impersonation = 0
+		AND impersonation = false
 		AND expiry_usec = 0
 		ORDER BY label ASC LIMIT 1
 	`, groupID)
@@ -825,7 +825,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
 		q.AddWhereClause("visible_to_developers = ?", true)
 	}
-	q.AddWhereClause(`impersonation = 0`)
+	q.AddWhereClause(`impersonation = false`)
 	q.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, time.Now().UnixMicro())
 	q.SetOrderBy("label", true /*ascending*/)
 	queryStr, args := q.Build()
@@ -948,7 +948,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	q := query_builder.NewQuery(`SELECT * FROM "APIKeys"`)
 	q.AddWhereClause(`user_id = ?`, u.GetUserID())
 	q.AddWhereClause(`group_id = ?`, groupID)
-	q.AddWhereClause(`impersonation = 0`)
+	q.AddWhereClause(`impersonation = false`)
 	q.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, time.Now().UnixMicro())
 	q.SetOrderBy("label", true /*=ascending*/)
 	queryStr, args := q.Build()
