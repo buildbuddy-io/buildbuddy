@@ -79,6 +79,7 @@ interface ImpersonationProps {
 
 interface ImpersonationState {
   isCopied: boolean;
+  apiKey?: api_key.ApiKey;
 }
 
 class ImpersonationComponent extends React.Component<ImpersonationProps, ImpersonationState> {
@@ -87,22 +88,22 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
   };
 
   private copyTimeout?: number;
-  private apiKey?: api_key.ApiKey;
 
   private async generateApiKey() {
-    // If we already generated a key, and it has enough life left then reuse it
-    // to avoid unnecessary audit log events.
-    let key = this.apiKey;
-    if (key) {
-      const timeLeftMillis = +key.expiryUsec / 1000 - new Date().getTime();
-      if (timeLeftMillis > 15 * 60 * 1000) {
-        return key.value;
-      }
+    if (this.state.apiKey) {
+      return this.state.apiKey.value;
     }
     const response = await rpc_service.service.createImpersonationApiKey(
       api_key.CreateImpersonationApiKeyRequest.create()
     );
-    this.apiKey = response.apiKey!;
+    this.setState({
+      apiKey: response.apiKey!,
+    });
+    // Store the generated key for some time to avoid generating a new key if
+    // the user needs the key again.
+    window.setTimeout(() => {
+      this.setState({ apiKey: undefined });
+    }, 45 * 60 * 1000);
     return response.apiKey!.value;
   }
 
@@ -134,7 +135,7 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
         <OutlinedButton
           onClick={this.handleGenerateImpersonationAPIKeyClicked.bind(this)}
           className="generate-api-key-button">
-          <span>Generate Temporary API Key</span>
+          <span>{this.state.apiKey ? "Copy" : "Generate"} Temporary API Key</span>
           {this.state.isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
         </OutlinedButton>
         <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)} className="exit-button">
