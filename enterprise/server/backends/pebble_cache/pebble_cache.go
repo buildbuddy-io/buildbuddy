@@ -1852,6 +1852,7 @@ type cdcWriter struct {
 
 func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, isCompressed bool) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
+
 	if err != nil {
 		return nil, err
 	}
@@ -3369,6 +3370,17 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		reader, err = p.newChunkedReader(ctx, chunkedMD, shouldDecompress)
 	} else {
 		reader, err = p.fileStorer.NewReader(ctx, blobDir, md, offset, limit)
+	}
+	if md.GetInlineMetadata() == nil && md.GetChunkedMetadata() == nil && md.GetFileMetadata() == nil {
+		log.Errorf("cache (%s) empty storage metadata for key %s, delete metadata ", p.name, key.String())
+		unlockFn := p.locker.Lock(key.LockID())
+		delErr := p.deleteMetadataOnly(ctx, key)
+		unlockFn()
+		if delErr != nil {
+			delErr := p.deleteMetadataOnly(ctx, key)
+			log.Errorf("cache (%s) failed to delete metadata: %s", delErr)
+		}
+		return nil, status.InternalErrorf("no storage metadata for key %s", key.String())
 	}
 	if err != nil {
 		if status.IsNotFoundError(err) || os.IsNotExist(err) {
