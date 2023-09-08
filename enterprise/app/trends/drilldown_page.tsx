@@ -715,8 +715,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return null;
     }
 
-    const startDate = moment(this.currentZoomFilters.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
-    const endDate = moment((this.currentZoomFilters.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
+    const startDate = moment(this.currentZoomFilters.dateRangeMicros.startInclusive / 1000).format("MMM D HH:mm");
+    const endDate = moment(this.currentZoomFilters.dateRangeMicros.endExclusive / 1000).format("MMM D HH:mm");
     const startValue = this.renderYBucketValue(this.currentZoomFilters.bucketRange.startInclusive);
     const endValue = this.renderYBucketValue(this.currentZoomFilters.bucketRange.endExclusive);
 
@@ -756,8 +756,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return null;
     }
 
-    const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
-    const endDate = moment((this.currentHeatmapSelection.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
+    const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("lll");
+    const endDate = moment(this.currentHeatmapSelection.dateRangeMicros.endExclusive / 1000).format("lll");
     const startValue = this.renderYBucketValue(this.currentHeatmapSelection.bucketRange.startInclusive);
     const endValue = this.renderYBucketValue(this.currentHeatmapSelection.bucketRange.endExclusive);
     return (
@@ -780,21 +780,23 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">
-          Drilldown by
-          <Select
-            className="drilldown-page-select"
-            onChange={this.handleMetricChange.bind(this)}
-            value={this.selectedMetric.name}>
-            {METRIC_OPTIONS.map(
-              (o) =>
-                o.name && (
-                  <Option key={o.name} value={o.name}>
-                    {o.name}
-                  </Option>
-                )
-            )}
-          </Select>
-          {this.renderZoomChip()}
+          <span className="drilldown-by-text">Drilldown by</span>
+          <div className="drilldown-page-selection-group">
+            <Select
+              className="drilldown-page-select"
+              onChange={this.handleMetricChange.bind(this)}
+              value={this.selectedMetric.name}>
+              {METRIC_OPTIONS.map(
+                (o) =>
+                  o.name && (
+                    <Option key={o.name} value={o.name}>
+                      {o.name}
+                    </Option>
+                  )
+              )}
+            </Select>
+            {this.renderZoomChip()}
+          </div>
         </div>
         {this.state.loading && <div className="loading"></div>}
         {!this.state.loading && (
