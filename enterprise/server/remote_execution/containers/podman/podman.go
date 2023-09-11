@@ -64,8 +64,11 @@ var (
 
 	// TODO(iain): delete executor.podman.run_soci_snapshotter flag once
 	// the snapshotter doesn't need root permissions to run.
-	sociStoreLogLevel            = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
-	runSociStoreLocally          = flag.Bool("executor.podman.run_soci_store", true, "If true, runs the soci store locally if needed for image streaming.")
+	sociStoreLogLevel   = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
+	runSociStoreLocally = flag.Bool("executor.podman.run_soci_store", true, "If true, runs the soci store locally if needed for image streaming.")
+
+	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/2570): remove this flag
+	runSociStoreRaceDetector     = flag.Bool("executor.podman.dev_only_soci_store_race_detector", false, "If true, runs the soci store with race detection enabled (up to 10x slower). Only for us in dev.")
 	imageStreamingEnabled        = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all public (non-authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 
@@ -138,7 +141,11 @@ func runSociStore(ctx context.Context) {
 			args = append(args, fmt.Sprintf("--log-level=%s", *sociStoreLogLevel))
 		}
 		args = append(args, sociStorePath)
-		cmd := exec.CommandContext(ctx, "soci-store", args...)
+		sociStore := "soci-store"
+		if *runSociStoreRaceDetector {
+			sociStore = "soci-store-race"
+		}
+		cmd := exec.CommandContext(ctx, sociStore, args...)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
