@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package iprules;
+
+import "proto/context.proto";
+
+message IPRule {
+  string ip_rule_id = 1;
+
+  // Allowed IP range, in CIDR notation (e.g. 1.2.3.0/24)
+  string cidr = 2;
+
+  string description = 3;
+}
+
+message AddRuleRequest {
+  context.RequestContext request_context = 1;
+
+  IPRule rule = 2;
+}
+
+message AddRuleResponse {
+  context.ResponseContext response_context = 1;
+
+  IPRule rule = 2;
+}
+
+message UpdateRuleRequest {
+  context.RequestContext request_context = 1;
+
+  IPRule rule = 2;
+}
+
+message UpdateRuleResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message DeleteRuleRequest {
+  context.RequestContext request_context = 1;
+
+  string ip_rule_id = 2;
+}
+
+message DeleteRuleResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message GetRulesRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetRulesResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated IPRule ip_rules = 2;
+}

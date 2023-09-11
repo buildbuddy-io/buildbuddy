@@ -51,6 +51,7 @@ type TestUser struct {
 	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
+	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
 }
 
 func (c *TestUser) GetAPIKeyID() string                                { return "" }
@@ -73,6 +74,9 @@ func (c *TestUser) GetUseGroupOwnedExecutors() bool {
 }
 func (c *TestUser) GetCacheEncryptionEnabled() bool {
 	return c.CacheEncryptionEnabled
+}
+func (c *TestUser) GetEnforceIPRules() bool {
+	return c.EnforceIPRules
 }
 func (c *TestUser) IsImpersonating() bool {
 	return false

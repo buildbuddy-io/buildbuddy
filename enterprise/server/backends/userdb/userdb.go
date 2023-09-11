@@ -335,7 +335,8 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 				use_group_owned_executors = ?,
 				cache_encryption_enabled = ?,
 				suggestion_preference = ?,
-				restrict_clean_workflow_runs_to_admins = ?
+				restrict_clean_workflow_runs_to_admins = ?,
+				enforce_ip_rules = ?
 			WHERE group_id = ?`,
 			g.Name,
 			g.URLIdentifier,
@@ -346,6 +347,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			g.CacheEncryptionEnabled,
 			g.SuggestionPreference,
 			g.RestrictCleanWorkflowRunsToAdmins,
+			g.EnforceIPRules,
 			g.GroupID)
 		if res.Error != nil {
 			return res.Error

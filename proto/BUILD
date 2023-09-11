@@ -387,6 +387,14 @@ proto_library(
 )
 
 proto_library(
+    name = "iprules_proto",
+    srcs = ["iprules.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "user_proto",
     srcs = ["user.proto"],
     exports = [":user_id_proto"],
@@ -957,6 +965,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "iprules_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/iprules",
+    proto = ":iprules_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "raft_service_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/raft_service",
@@ -1479,6 +1496,14 @@ ts_proto_library(
     name = "invocation_policy_ts_proto",
     proto = ":invocation_policy_proto",
     deps = [],
+)
+
+ts_proto_library(
+    name = "iprules_ts_proto",
+    proto = ":iprules_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(
