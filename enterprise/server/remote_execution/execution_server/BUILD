@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server",
     deps = [
         "//enterprise/server/backends/pubsub",
+        "//enterprise/server/gcplink",
         "//enterprise/server/remote_execution/config",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
