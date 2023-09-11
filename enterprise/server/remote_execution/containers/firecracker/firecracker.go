@@ -72,6 +72,7 @@ var debugTerminal = flag.Bool("executor.firecracker_debug_terminal", false, "Run
 var enableNBD = flag.Bool("executor.firecracker_enable_nbd", false, "Enables network block devices for firecracker VMs.")
 var enableUFFD = flag.Bool("executor.firecracker_enable_uffd", false, "Enables userfaultfd for firecracker VMs.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
+var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 
 const (
 	// How long to wait for the VMM to listen on the firecracker socket.
@@ -115,10 +116,6 @@ const (
 	// The workspacefs image name and drive ID.
 	workspaceFSName  = "workspacefs.ext4"
 	workspaceDriveID = "workspacefs"
-	// workspaceDiskSlackSpaceMB is the amount of additional storage allocated to
-	// the workspace disk for writing action outputs, test tempfiles, etc.
-	// TODO(bduffany): Consider making this configurable
-	workspaceDiskSlackSpaceMB = 2_000 // 2 GB
 
 	// The scratchfs image name and drive ID.
 	scratchFSName  = "scratchfs.ext4"
@@ -925,7 +922,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 		if err != nil {
 			return err
 		}
-		workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + workspaceDiskSlackSpaceMB*1e6
+		workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + *workspaceDiskSlackSpaceMB*1e6
 		if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
 			return status.WrapError(err, "failed to convert workspace dir to ext4 image")
 		}
