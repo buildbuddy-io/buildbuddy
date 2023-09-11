@@ -20,6 +20,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/util/background",
+        "//server/util/compression",
         "//server/util/disk",
         "//server/util/flagutil",
         "//server/util/log",

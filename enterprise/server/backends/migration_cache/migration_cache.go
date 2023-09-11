@@ -1,6 +1,7 @@
 package migration_cache
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"math/rand"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -35,6 +37,7 @@ type MigrationCache struct {
 	src                  interfaces.Cache
 	dest                 interfaces.Cache
 	doubleReadPercentage float64
+	decompressPercentage float64
 	logNotFoundErrors    bool
 
 	eg       *errgroup.Group
@@ -84,6 +87,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 		src:                         srcCache,
 		dest:                        destCache,
 		doubleReadPercentage:        migrationConfig.DoubleReadPercentage,
+		decompressPercentage:        migrationConfig.DecompressPercentage,
 		logNotFoundErrors:           migrationConfig.LogNotFoundErrors,
 		copyChan:                    make(chan *copyData, migrationConfig.CopyChanBufferSize),
 		maxCopiesPerSec:             migrationConfig.MaxCopiesPerSec,
@@ -443,6 +447,28 @@ type doubleReader struct {
 	bytesReadSrc  int
 	bytesReadDest int
 	lastSrcErr    error
+
+	shouldDecompressSrcAndVerify bool
+	decompressSrcErr             error
+}
+
+func (d *doubleReader) shouldVerifyNumBytes() bool {
+	// Don't compare byte differences for AC records, because there could be minor differences in metadata like timestamps
+	if d.r.GetCacheType() != rspb.CacheType_CAS {
+		return false
+	}
+
+	// If there are errors from the source reader, the number of bytes read from source and destination reader will be different.
+	if d.lastSrcErr == io.EOF {
+		return false
+	}
+
+	if d.r.GetCompressor() != repb.Compressor_ZSTD {
+		return true
+	}
+
+	// If compressed data is requested, we only verify some percent of the results.
+	return d.shouldDecompressSrcAndVerify && d.decompressSrcErr == nil
 }
 
 func (d *doubleReader) Read(p []byte) (n int, err error) {
@@ -466,8 +492,28 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 	}
 
 	srcN, srcErr := d.src.Read(p)
-	d.bytesReadSrc += srcN
 	d.lastSrcErr = srcErr
+	if d.shouldDecompressSrcAndVerify {
+		eg.Go(func() error {
+			dr, err := compression.NewZstdDecompressingReader(bytes.NewReader(p[:srcN]))
+
+			if err != nil {
+				log.Warningf("Migration unable to get source decompressing reader for digest %q: %s", d.r.GetDigest().GetHash(), err)
+				d.decompressSrcErr = err
+				return nil
+			}
+			decompressedBuf, err := io.ReadAll(dr)
+			if err != nil {
+				log.Warningf("Migration unable to decompress for digest %q: %s", d.r.GetDigest().GetHash(), err)
+				d.decompressSrcErr = err
+				return nil
+			}
+			d.bytesReadSrc += len(decompressedBuf)
+			return nil
+		})
+	} else {
+		d.bytesReadSrc += srcN
+	}
 
 	eg.Wait()
 	// Don't log on EOF errors when reading chunks, because the readers from different caches
@@ -482,9 +528,7 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
-		// Don't log on byte differences for AC records, because there could be minor differences in metadata like timestamps
-		// Don't log when compressed data is requested, the size of compressed files can be different.
-		if d.r.GetCacheType() == rspb.CacheType_CAS && d.lastSrcErr == io.EOF && d.r.GetCompressor() != repb.Compressor_ZSTD && d.bytesReadDest != d.bytesReadSrc {
+		if d.shouldVerifyNumBytes() && d.bytesReadDest != d.bytesReadSrc {
 			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
 		}
 
@@ -513,11 +557,26 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	var destReader io.ReadCloser
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+
+	shouldDecompressAndVerify := false
+	if doubleRead && r.GetCompressor() == repb.Compressor_ZSTD {
+		shouldDecompressAndVerify = (rand.Float64() <= mc.decompressPercentage)
+	}
+
 	if doubleRead {
 		eg.Go(func() error {
 			destReader, dstErr = mc.dest.Reader(ctx, r, uncompressedOffset, limit)
-			if dstErr == nil {
-				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
+			if dstErr != nil {
+				return nil
+			}
+			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
+			if shouldDecompressAndVerify {
+				dr, err := compression.NewZstdDecompressingReader(destReader)
+				if err != nil {
+					log.Warningf("Migration failed to get dest decompressing reader for digest %q: %s", r.GetDigest().GetHash(), err)
+				} else {
+					destReader = dr
+				}
 			}
 			return nil
 		})
@@ -551,9 +610,10 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	return &doubleReader{
-		src:  srcReader,
-		dest: destReader,
-		r:    r,
+		src:                          srcReader,
+		dest:                         destReader,
+		r:                            r,
+		shouldDecompressSrcAndVerify: shouldDecompressAndVerify,
 	}, nil
 }
 
