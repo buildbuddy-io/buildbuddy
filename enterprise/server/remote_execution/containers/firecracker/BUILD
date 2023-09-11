@@ -111,6 +111,7 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
@@ -168,5 +169,6 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_x_sync//errgroup",
     ],
 )

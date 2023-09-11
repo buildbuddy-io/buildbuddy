@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1639,6 +1640,189 @@ func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
 
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
 	require.NoError(t, res.Error)
+}
+
+func TestFirecrackerStressIO(t *testing.T) {
+	// TODO: make these configurable via flags
+
+	// High-level orchestration options
+	const (
+		// Total number of runs
+		runs = 30
+		// Max number of VMs to run concurrently
+		concurrency = 2
+	)
+	// Per-exec options
+	const (
+		// Number of files to write per run.
+		// After writing all files, they will all be read back.
+		// Between read/write phases, the FS is synced and the page cache is
+		// dropped.
+		// If set to 0, each task does nothing (basically: sh -c '').
+		// If set to < 0, skips Exec entirely and just does pause/unpause.
+		ops = 100
+		// File size of each file written, in bytes.
+		fileSize = 10 * 1024
+		// Whether to execute each run inside a docker container in the VM.
+		// Requires dockerd.
+		dockerize = true
+	)
+	// VM lifecycle options
+	const (
+		// Max number of times a single VM can be used before it is removed
+		maxRunsPerVM = 100
+	)
+	// VM configuration
+	const (
+		cpus       = 4
+		memoryMB   = 1600
+		scratchMB  = 1600
+		dockerd    = true
+		networking = true
+	)
+
+	if dockerize && (!dockerd || !networking) {
+		require.FailNow(t, "dockerize option requires dockerd and networking")
+	}
+
+	ctx := context.Background()
+	te := getTestEnv(ctx, t)
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	jailerRoot := tempJailerRoot(t)
+
+	// Create a little test setup that's like a simpler version of the runner
+	// pool.
+	type VM struct {
+		Instance *firecracker.FirecrackerContainer
+		Runs     int
+	}
+	pool := make(chan *VM, runs)
+	get := func() (*VM, error) {
+		select {
+		case vm := <-pool:
+			if err := vm.Instance.Unpause(ctx); err != nil {
+				_ = vm.Instance.Remove(context.Background())
+				return nil, err
+			}
+			return vm, nil
+		default:
+		}
+		workDir := testfs.MakeTempDir(t)
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         imageWithDockerInstalled,
+			ActionWorkingDirectory: workDir,
+			JailerRoot:             jailerRoot,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           cpus,
+				MemSizeMb:         memoryMB,
+				ScratchDiskSizeMb: scratchMB,
+				InitDockerd:       dockerd,
+				EnableNetworking:  networking,
+			},
+		}
+		c, err := firecracker.NewContainer(ctx, te, cacheAuth, &repb.ExecutionTask{}, opts)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.PullImage(ctx, container.PullCredentials{}); err != nil {
+			return nil, err
+		}
+		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+			return nil, err
+		}
+		return &VM{Instance: c}, nil
+	}
+	pause := func(vm *VM) error {
+		if err := vm.Instance.Pause(ctx); err != nil {
+			_ = vm.Instance.Remove(context.Background())
+			assert.FailNowf(t, "pause failed", "%s", err)
+			return err
+		}
+		vm.Runs++
+		if vm.Runs < maxRunsPerVM {
+			pool <- vm
+		}
+		return nil
+	}
+
+	script := `
+		set -e
+
+		OPS=` + fmt.Sprint(ops) + `
+		if [ "$OPS" -eq 0 ]; then exit 0; fi
+
+		SIZE=` + fmt.Sprint(fileSize) + `
+		RUN_NUMBER=$(cat /root/run_number 2>/dev/null || echo 0)
+		echo "Writing $OPS files..."
+		for i in $(seq $OPS); do
+			DIR=/root/$RUN_NUMBER
+			if [ $(( i % 2 )) -eq 0 ]; then
+				DIR=/workspace/$RUN_NUMBER
+			fi
+			mkdir -p "$DIR"
+			yes | head -c "$SIZE" > "${DIR}/${i}".txt
+		done
+		# Flush to disk, then clear caches to read back from disk
+		sync
+		echo 3 > /proc/sys/vm/drop_caches
+		echo "Reading back $OPS files..."
+		for i in $(seq $OPS); do
+			DIR=/root/$RUN_NUMBER
+			if [ $(( i % 2 )) -eq 0 ]; then
+				DIR=/workspace/$RUN_NUMBER
+			fi
+			cat "${DIR}/${i}".txt > /dev/null
+		done
+		echo $(( RUN_NUMBER + 1 )) > /root/run_number
+	`
+	cmd := &repb.Command{Arguments: []string{"/bin/sh", "-c", script}}
+	if dockerize {
+		cmd.Arguments = append([]string{
+			"docker", "run", "--rm",
+			"--privileged",
+			"--net=host",
+			"--volume=/root:/root",
+			"--volume=/workspace:/workspace",
+			busyboxImage,
+		}, cmd.Arguments...)
+	}
+	eg, ctx := errgroup.WithContext(context.Background())
+	eg.SetLimit(concurrency)
+	for i := 1; i <= runs; i++ {
+		i := i
+		eg.Go(func() (err error) {
+			if t.Failed() {
+				return nil
+			}
+			defer func() { assert.NoError(t, err) }()
+
+			vm, err := get()
+			if err != nil {
+				return err
+			}
+			defer pause(vm)
+
+			log.Infof("Run %d of %d, VM exec %d of %d", i, runs, vm.Runs+1, maxRunsPerVM)
+
+			if ops < 0 {
+				return nil
+			}
+
+			res := vm.Instance.Exec(ctx, cmd, nil)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.ExitCode != 0 {
+				return fmt.Errorf("exit code %d; stderr: %s", res.ExitCode, string(res.Stderr))
+			}
+			return nil
+		})
+		if t.Failed() {
+			break
+		}
+	}
+	err := eg.Wait()
+	assert.NoError(t, err)
 }
 
 func TestBazelBuild(t *testing.T) {
