@@ -131,7 +131,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let settings = this.state.user && this.state.path.startsWith("/settings");
     let org = this.state.user && this.state.path.startsWith("/org/");
     let orgCreate = this.state.user && this.state.path === Path.createOrgPath;
-    let orgJoinAuthenticated = this.state.path.startsWith("/join") && this.state.user;
+    let orgJoinAuthenticated = this.state.path.startsWith(Path.joinOrgPath) && this.state.user;
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
