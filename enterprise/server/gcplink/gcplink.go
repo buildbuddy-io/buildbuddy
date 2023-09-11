@@ -32,11 +32,11 @@ const (
 	// Access token used by the gcloud cli to authenticate
 	// Must match: https://cloud.google.com/sdk/docs/authorizing#auth-login
 	accessTokenEnvVariableName = "CLOUDSDK_AUTH_ACCESS_TOKEN"
-	authTokenURL = "https://accounts.google.com/o/oauth2/token"
+	authTokenURL               = "https://accounts.google.com/o/oauth2/token"
 )
 
 var (
-	gcpClientId = flag.String("gcp.client_id", "", "The client id to use for GCP linking.")
+	gcpClientId     = flag.String("gcp.client_id", "", "The client id to use for GCP linking.")
 	gcpClientSecret = flag.String("gcp.client_secret", "", "The client secret to use for GCP linking.")
 )
 
@@ -94,7 +94,7 @@ func ExchangeRefreshTokenForAuthToken(ctx context.Context, envVars []*repb.Comma
 	for _, e := range envVars {
 		if e.GetName() != refreshTokenEnvVariableName {
 			newEnvVars = append(newEnvVars, &repb.Command_EnvironmentVariable{
-				Name: e.GetName(),
+				Name:  e.GetName(),
 				Value: e.GetValue(),
 			})
 			continue
@@ -108,10 +108,10 @@ func ExchangeRefreshTokenForAuthToken(ctx context.Context, envVars []*repb.Comma
 			return nil, err
 		}
 		newEnvVars = append(newEnvVars, &repb.Command_EnvironmentVariable{
-			Name: accessTokenEnvVariableName,
+			Name:  accessTokenEnvVariableName,
 			Value: accessToken,
 		})
-	
+
 	}
 	return newEnvVars, nil
 }

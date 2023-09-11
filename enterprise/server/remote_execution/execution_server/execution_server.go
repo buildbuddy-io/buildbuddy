@@ -502,7 +502,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, props.WorkflowID != "")
 		if err != nil {
 			return "", err
-		}				
+		}
 		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
 	}
 
