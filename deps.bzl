@@ -7071,11 +7071,19 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-v0.0.8-linux-amd64",
+        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.8-linux-amd64"],
         sha256 = "978febe41046d9338e766ddd0a8f3f46d798b7f5b7a537840f4d9c2f814a759a",
         executable = True,
-        downloaded_file_path = "soci-store-v0.0.8-linux-amd64",
+        downloaded_file_path = "soci-store",
+    )
+
+    http_file(
+        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.9-linux-amd64-race"],
+        sha256 = "80ae48ba00e228a22ba5196f8c6a3a9b010ddbfd522fb1d6c24962ff9f1a3b16",
+        executable = True,
+        downloaded_file_path = "soci-store-race",
     )
 
     http_file(
