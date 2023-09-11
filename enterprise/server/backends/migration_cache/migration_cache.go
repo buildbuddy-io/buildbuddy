@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -448,8 +449,9 @@ type doubleReader struct {
 	bytesReadDest int
 	lastSrcErr    error
 
-	shouldDecompressSrcAndVerify bool
-	decompressSrcErr             error
+	decompressBuf    bytes.Buffer
+	decompressor     io.WriteCloser
+	decompressSrcErr error
 }
 
 func (d *doubleReader) shouldVerifyNumBytes() bool {
@@ -468,7 +470,7 @@ func (d *doubleReader) shouldVerifyNumBytes() bool {
 	}
 
 	// If compressed data is requested, we only verify some percent of the results.
-	return d.shouldDecompressSrcAndVerify && d.decompressSrcErr == nil
+	return d.decompressor != nil && d.decompressSrcErr == nil
 }
 
 func (d *doubleReader) Read(p []byte) (n int, err error) {
@@ -493,22 +495,15 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 
 	srcN, srcErr := d.src.Read(p)
 	d.lastSrcErr = srcErr
-	if d.shouldDecompressSrcAndVerify {
+	if d.decompressor != nil {
 		eg.Go(func() error {
-			dr, err := compression.NewZstdDecompressingReader(bytes.NewReader(p[:srcN]))
+			_, err = d.decompressor.Write(p[:srcN])
 
-			if err != nil {
-				log.Warningf("Migration unable to get source decompressing reader for digest %q: %s", d.r.GetDigest().GetHash(), err)
-				d.decompressSrcErr = err
-				return nil
-			}
-			decompressedBuf, err := io.ReadAll(dr)
 			if err != nil {
 				log.Warningf("Migration unable to decompress for digest %q: %s", d.r.GetDigest().GetHash(), err)
 				d.decompressSrcErr = err
 				return nil
 			}
-			d.bytesReadSrc += len(decompressedBuf)
 			return nil
 		})
 	} else {
@@ -528,8 +523,15 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
-		if d.shouldVerifyNumBytes() && d.bytesReadDest != d.bytesReadSrc {
-			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
+		if d.decompressor != nil {
+			eg.Go(func() error {
+				decompressErr := d.decompressor.Close()
+				if decompressErr != nil {
+					log.Warningf("Migration decompressor close err: %s", decompressErr)
+				}
+				d.bytesReadSrc += d.decompressBuf.Len()
+				return nil
+			})
 		}
 
 		eg.Go(func() error {
@@ -543,6 +545,9 @@ func (d *doubleReader) Close() error {
 
 	srcErr := d.src.Close()
 	eg.Wait()
+	if d.shouldVerifyNumBytes() && d.bytesReadDest != d.bytesReadSrc {
+		log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
+	}
 
 	return srcErr
 }
@@ -555,6 +560,8 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
+	var decompressBuffer bytes.Buffer
+	var decompressor io.WriteCloser
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 
@@ -580,6 +587,14 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 			}
 			return nil
 		})
+
+		if shouldDecompressAndVerify {
+			var err error
+			decompressor, err = compression.NewZstdDecompressor(ioutil.NopWriteCloser(&decompressBuffer))
+			if err != nil {
+				log.Warningf("Migration failed to get source decompressor for digest %q: %s", r.GetDigest().GetHash(), err)
+			}
+		}
 	}
 
 	srcReader, srcErr := mc.src.Reader(ctx, r, uncompressedOffset, limit)
@@ -610,10 +625,11 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	return &doubleReader{
-		src:                          srcReader,
-		dest:                         destReader,
-		r:                            r,
-		shouldDecompressSrcAndVerify: shouldDecompressAndVerify,
+		src:           srcReader,
+		dest:          destReader,
+		r:             r,
+		decompressor:  decompressor,
+		decompressBuf: decompressBuffer,
 	}, nil
 }
 

@@ -23,6 +23,7 @@ go_library(
         "//server/util/compression",
         "//server/util/disk",
         "//server/util/flagutil",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
