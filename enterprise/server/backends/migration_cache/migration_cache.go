@@ -448,8 +448,9 @@ type doubleReader struct {
 	bytesReadSrc  int
 	bytesReadDest int
 	lastSrcErr    error
+	lastDestErr   error
 
-	decompressBuf    bytes.Buffer
+	decompressBuf    *bytes.Buffer
 	decompressor     io.WriteCloser
 	decompressSrcErr error
 }
@@ -489,6 +490,7 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 				dstErr = io.EOF
 			}
 			d.bytesReadDest += dstN
+			d.lastDestErr = dstErr
 			return nil
 		})
 	}
@@ -535,6 +537,15 @@ func (d *doubleReader) Close() error {
 		}
 
 		eg.Go(func() error {
+			log.Info("close dest reader")
+			if d.lastSrcErr == io.EOF && d.lastDestErr != io.EOF {
+				destBuf, err := io.ReadAll(d.dest)
+				if err != nil {
+					log.Warningf("Migration %v read err: failed to read remaining bytes from dest cache: %s", d.r, err)
+				}
+				d.bytesReadDest += len(destBuf)
+			}
+
 			dstErr := d.dest.Close()
 			if dstErr != nil {
 				log.Warningf("Migration dest reader close err: %s", dstErr)
@@ -560,7 +571,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
-	var decompressBuffer bytes.Buffer
+	decompressBuffer := &bytes.Buffer{}
 	var decompressor io.WriteCloser
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
@@ -590,7 +601,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 
 		if shouldDecompressAndVerify {
 			var err error
-			decompressor, err = compression.NewZstdDecompressor(ioutil.NopWriteCloser(&decompressBuffer))
+			decompressor, err = compression.NewZstdDecompressor(ioutil.NopWriteCloser(decompressBuffer))
 			if err != nil {
 				log.Warningf("Migration failed to get source decompressor for digest %q: %s", r.GetDigest().GetHash(), err)
 			}
