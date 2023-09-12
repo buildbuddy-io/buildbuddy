@@ -1205,6 +1205,11 @@ type AuditLogger interface {
 }
 
 type IPRulesService interface {
-	CheckGroup(ctx context.Context, groupID string) (bool, error)
-	Check(ctx context.Context) (bool, error)
+	// Authorize checks whether the authenticated user in the context is allowed
+	// to access the group identified in the context.
+	Authorize(ctx context.Context) error
+
+	// Authorize checks whether the authenticated user in the context is allowed
+	// to access the specified groupId.
+	AuthorizeGroup(ctx context.Context, groupID string) error
 }

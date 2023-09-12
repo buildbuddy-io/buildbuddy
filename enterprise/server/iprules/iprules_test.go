@@ -44,14 +44,12 @@ func TestEnforcementNotEnabled(t *testing.T) {
 	require.NoError(t, err)
 
 	// The test group does not have IP rule enabled, so the check should pass.
-	ok, err := irs.Check(authCtx)
+	err = irs.Authorize(authCtx)
 	require.NoError(t, err)
-	require.True(t, ok)
 
 	// Checking by group ID should also pass.
-	ok, err = irs.CheckGroup(ctx, u.Groups[0].Group.GroupID)
+	err = irs.AuthorizeGroup(ctx, u.Groups[0].Group.GroupID)
 	require.NoError(t, err)
-	require.True(t, ok)
 }
 
 func TestEnforcement(t *testing.T) {
@@ -80,9 +78,8 @@ func TestEnforcement(t *testing.T) {
 	rule2 := rsp.GetRule()
 
 	// Rules not in effect yet, should pass.
-	ok, err := irs.Check(authCtx)
+	err = irs.Authorize(authCtx)
 	require.NoError(t, err)
-	require.True(t, ok)
 
 	// Enable IP rule enforcement.
 	g.EnforceIPRules = true
@@ -96,27 +93,25 @@ func TestEnforcement(t *testing.T) {
 	require.NoError(t, err)
 
 	// No IP in context, check should fail.
-	_, err = irs.Check(authCtx)
+	err = irs.Authorize(authCtx)
 	require.Error(t, err)
 	require.True(t, status.IsFailedPreconditionError(err))
 
 	// An IP in the middle of the first rule.
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "1.2.3.15")
-	ok, err = irs.Check(authCtx)
+	err = irs.Authorize(authCtx)
 	require.NoError(t, err)
-	require.True(t, ok)
 
 	// Exact match to second rule.
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "4.5.6.7")
-	ok, err = irs.Check(authCtx)
+	err = irs.Authorize(authCtx)
 	require.NoError(t, err)
-	require.True(t, ok)
 
 	// Non-matching IP.
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "5.6.7.8")
-	ok, err = irs.Check(authCtx)
-	require.NoError(t, err)
-	require.False(t, ok)
+	err = irs.Authorize(authCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 
 	// Update the second rule to something else. Old rule should no longer
 	// apply.
@@ -128,15 +123,14 @@ func TestEnforcement(t *testing.T) {
 	})
 	require.NoError(t, err)
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "4.5.6.7")
-	ok, err = irs.Check(authCtx)
-	require.NoError(t, err)
-	require.False(t, ok)
+	err = irs.Authorize(authCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 
 	// New rule value should apply.
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "8.8.8.8")
-	ok, err = irs.Check(authCtx)
+	err = irs.Authorize(authCtx)
 	require.NoError(t, err)
-	require.True(t, ok)
 
 	// Delete rule2. Its value should no longer apply.
 	_, err = irs.DeleteRule(authCtx, &irpb.DeleteRuleRequest{
@@ -145,7 +139,7 @@ func TestEnforcement(t *testing.T) {
 	})
 	require.NoError(t, err)
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "8.8.8.8")
-	ok, err = irs.Check(authCtx)
-	require.NoError(t, err)
-	require.False(t, ok)
+	err = irs.Authorize(authCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 }

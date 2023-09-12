@@ -145,27 +145,27 @@ func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*net.I
 	return allowed, nil
 }
 
-func (s *Service) CheckGroup(ctx context.Context, groupID string) (bool, error) {
+func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
 	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
 	if err != nil {
-		return false, nil
+		return err
 	}
 	if !g.EnforceIPRules {
-		return true, nil
+		return nil
 	}
 
 	rawClientIP := clientip.Get(ctx)
 	clientIP := net.ParseIP(rawClientIP)
 	// Client IP is not parsable.
 	if clientIP == nil {
-		return false, status.FailedPreconditionErrorf("client IP %q is not valid", clientIP)
+		return status.FailedPreconditionErrorf("client IP %q is not valid", clientIP)
 	}
 
 	allowed, ok := s.cache.Get(groupID)
 	if !ok {
 		rs, err := s.loadRulesFromDB(ctx, groupID)
 		if err != nil {
-			return false, err
+			return err
 		}
 		s.cache.Add(groupID, rs)
 		allowed = rs
@@ -173,32 +173,32 @@ func (s *Service) CheckGroup(ctx context.Context, groupID string) (bool, error) 
 
 	for _, a := range allowed {
 		if a.Contains(clientIP) {
-			return true, nil
+			return nil
 		}
 	}
 
-	return false, nil
+	return status.PermissionDeniedErrorf("Client %q is not allowed by Organization IP rules", rawClientIP)
 }
 
-func (s *Service) Check(ctx context.Context) (bool, error) {
+func (s *Service) Authorize(ctx context.Context) error {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if authutil.IsAnonymousUserError(err) {
-		return true, nil
+		return nil
 	}
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	// Server admins in impersonation mode can bypass IP rules.
 	if u.IsImpersonating() {
-		return true, nil
+		return nil
 	}
 
 	if !u.GetEnforceIPRules() {
-		return true, nil
+		return nil
 	}
 
-	return s.CheckGroup(ctx, u.GetGroupID())
+	return s.AuthorizeGroup(ctx, u.GetGroupID())
 }
 
 func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error) {
