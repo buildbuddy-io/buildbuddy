@@ -462,7 +462,7 @@ func (d *doubleReader) shouldVerifyNumBytes() bool {
 	}
 
 	// If there are errors from the source reader, the number of bytes read from source and destination reader will be different.
-	if d.lastSrcErr == io.EOF {
+	if d.lastSrcErr != io.EOF {
 		return false
 	}
 
@@ -530,6 +530,7 @@ func (d *doubleReader) Close() error {
 				decompressErr := d.decompressor.Close()
 				if decompressErr != nil {
 					log.Warningf("Migration decompressor close err: %s", decompressErr)
+					d.decompressSrcErr = decompressErr
 				}
 				d.bytesReadSrc += d.decompressBuf.Len()
 				return nil
