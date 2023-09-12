@@ -1,7 +1,6 @@
 package migration_cache
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"math/rand"
@@ -17,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -450,8 +448,10 @@ type doubleReader struct {
 	lastSrcErr    error
 	lastDestErr   error
 
-	decompressBuf    *bytes.Buffer
+	// Pipe Reader to read from decompressor
+	pr               *io.PipeReader
 	decompressor     io.WriteCloser
+	mu               sync.Mutex // protects decompressSrcErr
 	decompressSrcErr error
 }
 
@@ -503,6 +503,8 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 
 			if err != nil {
 				log.Warningf("Migration unable to decompress for digest %q: %s", d.r.GetDigest().GetHash(), err)
+				d.mu.Lock()
+				defer d.mu.Unlock()
 				d.decompressSrcErr = err
 				return nil
 			}
@@ -530,9 +532,10 @@ func (d *doubleReader) Close() error {
 				decompressErr := d.decompressor.Close()
 				if decompressErr != nil {
 					log.Warningf("Migration decompressor close err: %s", decompressErr)
+					d.mu.Lock()
+					defer d.mu.Unlock()
 					d.decompressSrcErr = decompressErr
 				}
-				d.bytesReadSrc += d.decompressBuf.Len()
 				return nil
 			})
 		}
@@ -571,8 +574,8 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
-	decompressBuffer := &bytes.Buffer{}
 	var decompressor io.WriteCloser
+	pr, pw := io.Pipe()
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 
@@ -601,7 +604,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 
 		if shouldDecompressAndVerify {
 			var err error
-			decompressor, err = compression.NewZstdDecompressor(ioutil.NopWriteCloser(decompressBuffer))
+			decompressor, err = compression.NewZstdDecompressor(pw)
 			if err != nil {
 				log.Warningf("Migration failed to get source decompressor for digest %q: %s", r.GetDigest().GetHash(), err)
 			}
@@ -635,13 +638,28 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 
 	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
-	return &doubleReader{
-		src:           srcReader,
-		dest:          destReader,
-		r:             r,
-		decompressor:  decompressor,
-		decompressBuf: decompressBuffer,
-	}, nil
+	dr := &doubleReader{
+		src:          srcReader,
+		dest:         destReader,
+		r:            r,
+		decompressor: decompressor,
+		pr:           pr,
+		mu:           sync.Mutex{},
+	}
+
+	go func() {
+		srcN, err := io.Copy(io.Discard, pr)
+		if err != nil {
+			log.Warningf("Migration failed to read from decompressor: %s", err)
+			dr.mu.Lock()
+			dr.decompressSrcErr = err
+			dr.mu.Unlock()
+		} else {
+			dr.bytesReadSrc += int(srcN)
+		}
+	}()
+
+	return dr, nil
 }
 
 type doubleWriter struct {
