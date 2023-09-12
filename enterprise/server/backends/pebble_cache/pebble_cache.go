@@ -2245,7 +2245,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 				if chunkedMD != nil {
 					numChunks = len(chunkedMD.GetResource())
 				}
-				metrics.PebbleCacheNumCDCChunks.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(numChunks))
+				metrics.PebbleCacheNumChunksPerFile.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(numChunks))
 			}
 		}
 	}
