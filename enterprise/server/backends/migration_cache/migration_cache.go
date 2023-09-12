@@ -656,18 +656,22 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		done:         make(chan struct{}, 0),
 	}
 
-	go func() {
-		defer close(dr.done)
-		srcN, err := io.Copy(io.Discard, pr)
-		if err != nil {
-			log.Warningf("Migration failed to read from decompressor: %s", err)
-			dr.mu.Lock()
-			dr.decompressSrcErr = err
-			dr.mu.Unlock()
-		} else {
-			dr.bytesReadSrc += int(srcN)
-		}
-	}()
+	if shouldDecompressAndVerify {
+		// Launch a go routine to read from the contents written to the
+		// decompressor.
+		go func() {
+			defer close(dr.done)
+			srcN, err := io.Copy(io.Discard, pr)
+			if err != nil {
+				log.Warningf("Migration failed to read from decompressor: %s", err)
+				dr.mu.Lock()
+				dr.decompressSrcErr = err
+				dr.mu.Unlock()
+			} else {
+				dr.bytesReadSrc += int(srcN)
+			}
+		}()
+	}
 
 	return dr, nil
 }
