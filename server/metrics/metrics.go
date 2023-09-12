@@ -2217,7 +2217,6 @@ var (
 		Help:      "The number of operations performed against the pebble database.",
 	}, []string{
 		PebbleOperation,
-		CacheNameLabel,
 	})
 
 	PebbleCachePebbleOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -2228,7 +2227,6 @@ var (
 		Help:      "The latency of operations performed against the pebble database, in microseconds.",
 	}, []string{
 		PebbleOperation,
-		CacheNameLabel,
 	})
 
 	// Total size of cache that pebble allocate mamually from system memory using malloc.
