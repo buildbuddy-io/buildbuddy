@@ -7072,16 +7072,16 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     http_file(
         name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.8-linux-amd64"],
-        sha256 = "978febe41046d9338e766ddd0a8f3f46d798b7f5b7a537840f4d9c2f814a759a",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.10-linux-amd64"],
+        sha256 = "6c49f9c3eacec7e2d65afec3557bdb5946154ecc9c8d42055fd9e85e4c7bd9c1",
         executable = True,
         downloaded_file_path = "soci-store",
     )
 
     http_file(
         name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.9-linux-amd64-race"],
-        sha256 = "80ae48ba00e228a22ba5196f8c6a3a9b010ddbfd522fb1d6c24962ff9f1a3b16",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.10-linux-amd64-race"],
+        sha256 = "c802e1792cd5f59129448b71272d00259e64de6225072b00c0e99621287f1e8f",
         executable = True,
         downloaded_file_path = "soci-store-race",
     )
