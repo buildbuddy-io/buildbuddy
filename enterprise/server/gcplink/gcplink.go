@@ -3,6 +3,7 @@ package gcplink
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -134,5 +135,14 @@ func makeTokenExchangeRequest(refreshToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return buf.String(), nil
+	var response accessTokenResponse
+	err = json.Unmarshal(buf.Bytes(), &response)
+	if err != nil {
+		return "", err
+	}
+	return response.AccessToken, nil
+}
+
+type accessTokenResponse struct {
+	AccessToken string `json:"access_token"`
 }
