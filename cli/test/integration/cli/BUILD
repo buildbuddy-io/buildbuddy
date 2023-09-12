@@ -3,10 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 go_test(
     name = "cli_test",
     srcs = ["cli_test.go"],
-    exec_properties = {
-        # TODO: remove network dependency.
-        "dockerNetwork": "bridge",
-    },
     shard_count = 4,
     deps = [
         "//cli/log",
