@@ -6,7 +6,7 @@ genrule(
     outs = ["version.txt"],
     cmd_bash = """
         version=$$(grep ^STABLE_VERSION_TAG bazel-out/stable-status.txt | cut -d' ' -f2); \
-        echo "$$version" > $@;
+        printf '%s' $$version > $@;
     """,
     stamp = 1,
 )
@@ -16,7 +16,7 @@ genrule(
     outs = ["commit.txt"],
     cmd_bash = """
         commit=$$(grep ^STABLE_COMMIT_SHA bazel-out/stable-status.txt | cut -d' ' -f2); \
-        echo "$$commit" > $@;
+        printf '%s' $$commit > $@;
     """,
     stamp = 1,
 )
