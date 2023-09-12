@@ -50,7 +50,7 @@ func Register(env environment.Env) error {
 	if cacheMigrationConfig.Src == nil || cacheMigrationConfig.Dest == nil {
 		return nil
 	}
-	log.Infof("Registering Migration Cache")
+	log.Info("Registering Migration Cache")
 
 	srcCache, err := getCacheFromConfig(env, *cacheMigrationConfig.Src)
 	if err != nil {
@@ -64,7 +64,7 @@ func Register(env environment.Env) error {
 	mc := NewMigrationCache(env, cacheMigrationConfig, srcCache, destCache)
 
 	if env.GetCache() != nil {
-		log.Warningf("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
+		log.Warning("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
 			" should be nested under the cache.migration block.")
 	}
 	env.SetCache(mc)
