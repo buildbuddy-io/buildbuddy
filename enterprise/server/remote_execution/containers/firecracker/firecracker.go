@@ -70,6 +70,7 @@ var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version"
 var debugStreamVMLogs = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 var debugTerminal = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
 var enableNBD = flag.Bool("executor.firecracker_enable_nbd", false, "Enables network block devices for firecracker VMs.")
+var EnableRootfs = flag.Bool("executor.firecracker_enable_merged_rootfs", false, "Merges the containerfs and scratchfs into a single rootfs, removing the need to use overlayfs for the guest's root filesystem. Requires NBD to also be enabled.")
 var enableUFFD = flag.Bool("executor.firecracker_enable_uffd", false, "Enables userfaultfd for firecracker VMs.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
@@ -120,6 +121,9 @@ const (
 	// The scratchfs image name and drive ID.
 	scratchFSName  = "scratchfs.ext4"
 	scratchDriveID = "scratchfs"
+	// The rootfs image name and drive ID (merged containerfs + scratchfs).
+	rootFSName  = "rootfs.ext4"
+	rootDriveID = "rootfs"
 	// minScratchDiskSizeBytes is the minimum size needed for the scratch disk.
 	// This is needed because the init binary needs some space to copy files around.
 	minScratchDiskSizeBytes = 64e6
@@ -352,7 +356,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 type FirecrackerContainer struct {
 	id          string // a random GUID, unique per-run of firecracker
 	vmIdx       int    // the index of this vm on the host machine
-	loader      snaploader.Loader
+	loader      *snaploader.FileCacheLoader
 	snapshotKey *fcpb.SnapshotKey
 
 	vmConfig         *fcpb.VMConfiguration
@@ -390,6 +394,7 @@ type FirecrackerContainer struct {
 	// disks.
 	nbdServer      *nbdserver.Server
 	scratchStore   *snaploader.ChunkedFile
+	rootStore      *snaploader.ChunkedFile
 	workspaceStore *snaploader.ChunkedFile
 
 	uffdHandler *uffd.Handler
@@ -419,6 +424,9 @@ type FirecrackerContainer struct {
 func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
 	if *snaploader.EnableLocalSnapshotSharing && !(*enableNBD && *enableUFFD) {
 		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires NBD and UFFD to be enabled")
+	}
+	if *EnableRootfs && !*enableNBD {
+		return nil, status.FailedPreconditionError("executor configuration error: merged rootfs requires NBD to be enabled")
 	}
 
 	if opts.VMConfiguration == nil {
@@ -708,13 +716,18 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		VMStateSnapshotPath: filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
-		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
 		ChunkedFiles:        map[string]*snaploader.ChunkedFile{},
 	}
 	if *enableNBD {
-		opts.ChunkedFiles[scratchDriveID] = c.scratchStore
+		if c.rootStore != nil {
+			opts.ChunkedFiles[rootDriveID] = c.rootStore
+		} else {
+			opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
+			opts.ChunkedFiles[scratchDriveID] = c.scratchStore
+		}
 		opts.ChunkedFiles[workspaceDriveID] = c.workspaceStore
 	} else {
+		opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 		opts.ScratchFSPath = c.scratchFSPath()
 		opts.WorkspaceFSPath = c.workspaceFSPath()
 	}
@@ -832,6 +845,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	for name, cow := range unpacked.ChunkedFiles {
 		switch name {
+		case rootDriveID:
+			c.rootStore = cow
 		case scratchDriveID:
 			c.scratchStore = cow
 		case workspaceDriveID:
@@ -899,6 +914,41 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 		return err
 	}
 	c.scratchStore = cow
+	return nil
+}
+
+// initRootfsStore creates the initial rootfs chunk layout in the chroot.
+func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+		return status.InternalErrorf("failed to create rootfs chunk dir: %s", err)
+	}
+	cf, err := snaploader.UnpackContainerImage(ctx, c.loader, c.containerImage, c.containerFSPath, c.getChroot(), cowChunkSizeBytes())
+	if err != nil {
+		return status.WrapError(err, "unpack container image")
+	}
+	if err := c.resizeRootfs(ctx, cf); err != nil {
+		cf.Close()
+		return err
+	}
+	c.rootStore = cf
+	return nil
+}
+
+// Resizes the rootfs store to match the disk size requested for the action.
+// Note, this operation doesn't mutate the original containerfs, and is also
+// cheap (just updates size metadata). Also note that this does not update the
+// ext4 superblock to be aware of the increased block device size - instead, the
+// guest does that by issuing an EXT4_IOC_RESIZE_FS syscall.
+func (c *FirecrackerContainer) resizeRootfs(ctx context.Context, cf *snaploader.ChunkedFile) error {
+	curSize, err := cf.SizeBytes()
+	if err != nil {
+		return status.WrapError(err, "get container image size")
+	}
+	newSize := curSize + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
+	if _, err := cf.Resize(newSize); err != nil {
+		return status.WrapError(err, "resize root fs")
+	}
+	log.Debugf("Resized rootfs from %d => %d bytes", curSize, newSize)
 	return nil
 }
 
@@ -1088,6 +1138,9 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 	if *enableNBD {
 		bootArgs = "-enable_nbd " + bootArgs
 	}
+	if *EnableRootfs {
+		bootArgs = "-enable_rootfs " + bootArgs
+	}
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
 		return nil, err
@@ -1103,14 +1156,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 		Seccomp:         fcclient.SeccompConfig{Enabled: true},
 		// Note: ordering in this list determines the device lettering
 		// (/dev/vda, /dev/vdb, /dev/vdc, ...)
-		Drives: []fcmodels.Drive{
-			{
-				DriveID:      fcclient.String(containerDriveID),
-				PathOnHost:   &containerFS,
-				IsRootDevice: fcclient.Bool(false),
-				IsReadOnly:   fcclient.Bool(true),
-			},
-		},
+		Drives: []fcmodels.Drive{},
 		VsockDevices: []fcclient.VsockDevice{
 			{Path: firecrackerVSockPath},
 		},
@@ -1133,6 +1179,14 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			Smt:             fcclient.Bool(false),
 			TrackDirtyPages: true,
 		},
+	}
+	if !*EnableRootfs {
+		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
+			DriveID:      fcclient.String(containerDriveID),
+			PathOnHost:   &containerFS,
+			IsRootDevice: fcclient.Bool(false),
+			IsReadOnly:   fcclient.Bool(true),
+		})
 	}
 	if !*enableNBD {
 		cfg.Drives = append(cfg.Drives, []fcmodels.Drive{
@@ -1419,7 +1473,10 @@ func (c *FirecrackerContainer) setupNBDServer(ctx context.Context) error {
 	if c.workspaceStore == nil {
 		return status.FailedPreconditionError("workspaceStore is nil")
 	}
-	if c.scratchStore == nil {
+	if *EnableRootfs && c.rootStore == nil {
+		return status.FailedPreconditionError("rootStore is nil")
+	}
+	if !*EnableRootfs && c.scratchStore == nil {
 		return status.FailedPreconditionError("scratchStore is nil")
 	}
 	ctx, span := tracing.StartSpan(ctx)
@@ -1429,16 +1486,27 @@ func (c *FirecrackerContainer) setupNBDServer(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
+	var devices []*nbdserver.Device
 	wd, err := nbdserver.NewExt4Device(c.workspaceStore, workspaceDriveID)
 	if err != nil {
 		return err
 	}
-	sd, err := nbdserver.NewExt4Device(c.scratchStore, scratchDriveID)
-	if err != nil {
-		return err
+	devices = append(devices, wd)
+	if c.rootStore != nil {
+		rd, err := nbdserver.NewExt4Device(c.rootStore, rootDriveID)
+		if err != nil {
+			return err
+		}
+		devices = append(devices, rd)
+	} else {
+		sd, err := nbdserver.NewExt4Device(c.scratchStore, scratchDriveID)
+		if err != nil {
+			return err
+		}
+		devices = append(devices, sd)
 	}
 
-	c.nbdServer, err = nbdserver.New(ctx, c.env, sd, wd)
+	c.nbdServer, err = nbdserver.New(ctx, c.env, devices...)
 	if err != nil {
 		return err
 	}
@@ -1603,8 +1671,14 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		scratchFSPath = filepath.Join(c.tempDir, scratchFSName)
 		workspaceFSPath = filepath.Join(c.tempDir, workspaceFSName)
 	}
-	if err := c.initScratchImage(ctx, scratchFSPath); err != nil {
-		return status.WrapError(err, "create initial scratch image")
+	if *EnableRootfs {
+		if err := c.initRootfsStore(ctx); err != nil {
+			return status.WrapError(err, "create root image")
+		}
+	} else {
+		if err := c.initScratchImage(ctx, scratchFSPath); err != nil {
+			return status.WrapError(err, "create initial scratch image")
+		}
 	}
 	// Create an empty workspace image initially; the real workspace will be
 	// hot-swapped just before running each command in order to ensure that the
@@ -1936,6 +2010,10 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if c.scratchStore != nil {
 		c.scratchStore.Close()
 		c.scratchStore = nil
+	}
+	if c.rootStore != nil {
+		c.rootStore.Close()
+		c.rootStore = nil
 	}
 	if c.uffdHandler != nil {
 		if err := c.uffdHandler.Stop(); err != nil {
