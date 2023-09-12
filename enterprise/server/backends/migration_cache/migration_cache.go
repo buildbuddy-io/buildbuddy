@@ -537,7 +537,6 @@ func (d *doubleReader) Close() error {
 		}
 
 		eg.Go(func() error {
-			log.Info("close dest reader")
 			if d.lastSrcErr == io.EOF && d.lastDestErr != io.EOF {
 				destBuf, err := io.ReadAll(d.dest)
 				if err != nil {
