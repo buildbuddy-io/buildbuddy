@@ -28,17 +28,6 @@ func (discardWriteCloser) Close() error {
 	return nil
 }
 
-// A writer that does nothing on Close()
-type nopWriteCloser struct {
-	io.Writer
-}
-
-func (nopWriteCloser) Close() error { return nil }
-
-func NopWriteCloser(w io.Writer) *nopWriteCloser {
-	return &nopWriteCloser{w}
-}
-
 type CloseFunc func() error
 type CommitFunc func(int64) error
 
