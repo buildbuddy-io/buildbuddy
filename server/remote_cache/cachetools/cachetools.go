@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -41,12 +42,6 @@ type StreamBlobOpts struct {
 	Offset int64
 	Limit  int64
 }
-
-type nopCloser struct {
-	io.Writer
-}
-
-func (nopCloser) Close() error { return nil }
 
 func getBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, opts *StreamBlobOpts, out io.Writer) (int64, error) {
 	if bsClient == nil {
@@ -78,7 +73,7 @@ func getBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 	}
 	w := io.MultiWriter(checksum, out)
 
-	var wc io.WriteCloser = nopCloser{w}
+	var wc io.WriteCloser = ioutil.NopWriteCloser(w)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		decompressor, err := compression.NewZstdDecompressor(w)
 		if err != nil {

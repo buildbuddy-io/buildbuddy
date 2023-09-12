@@ -13,6 +13,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/bytebufferpool",
         "//server/util/compression",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
