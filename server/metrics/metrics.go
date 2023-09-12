@@ -2224,6 +2224,16 @@ var (
 		GroupID,
 	})
 
+	PebbleCacheNumCDCChunks = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_num_cdc_chunks",
+		Help:      "Number of chunks stored in pebble cache",
+		Buckets:   []float64{1.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0},
+	}, []string{
+		CacheNameLabel,
+	})
+
 	// ## Podman metrics
 
 	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{

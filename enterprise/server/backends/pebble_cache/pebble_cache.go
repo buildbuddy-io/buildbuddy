@@ -2230,14 +2230,23 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
 		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md, len(keyBytes))
 
+		chunkedMD := md.GetStorageMetadata().GetChunkedMetadata()
+
 		sizeBytes := md.GetStoredSizeBytes()
-		for _, cm := range md.GetStorageMetadata().GetChunkedMetadata().GetResource() {
+		for _, cm := range chunkedMD.GetResource() {
 			// For an entry that points to multiple chunks, the file size is the
 			// sum of the size of the chunks instead of stored_size_bytes.
 			sizeBytes += cm.GetDigest().GetSizeBytes()
 		}
 		if md.GetFileType() == rfpb.FileMetadata_COMPLETE_FILE_TYPE {
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(sizeBytes))
+			if p.averageChunkSizeBytes != 0 {
+				numChunks := 1
+				if chunkedMD != nil {
+					numChunks = len(chunkedMD.GetResource())
+				}
+				metrics.PebbleCacheNumCDCChunks.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(numChunks))
+			}
 		}
 	}
 
