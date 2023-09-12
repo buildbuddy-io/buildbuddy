@@ -448,7 +448,9 @@ type doubleReader struct {
 	lastSrcErr    error
 	lastDestErr   error
 
-	// Pipe Reader to read from decompressor
+	done chan struct{}
+	// Pipe Writer and Reader used to read from decompressor
+	pw               *io.PipeWriter
 	pr               *io.PipeReader
 	decompressor     io.WriteCloser
 	mu               sync.Mutex // protects decompressSrcErr
@@ -529,6 +531,7 @@ func (d *doubleReader) Close() error {
 	if d.dest != nil {
 		if d.decompressor != nil {
 			eg.Go(func() error {
+				d.pw.Close()
 				decompressErr := d.decompressor.Close()
 				if decompressErr != nil {
 					log.Warningf("Migration decompressor close err: %s", decompressErr)
@@ -559,6 +562,11 @@ func (d *doubleReader) Close() error {
 
 	srcErr := d.src.Close()
 	eg.Wait()
+	// Wait till we finish reading from the decompressor
+	if d.decompressor != nil {
+		log.Info("wait for io.copy finished")
+		<-d.done
+	}
 	if d.shouldVerifyNumBytes() && d.bytesReadDest != d.bytesReadSrc {
 		log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
 	}
@@ -643,12 +651,17 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		dest:         destReader,
 		r:            r,
 		decompressor: decompressor,
+		pw:           pw,
 		pr:           pr,
 		mu:           sync.Mutex{},
+		done:         make(chan struct{}, 0),
 	}
 
 	go func() {
+		defer close(dr.done)
+		log.Infof("io.Copy started")
 		srcN, err := io.Copy(io.Discard, pr)
+		log.Infof("io.Copy finished")
 		if err != nil {
 			log.Warningf("Migration failed to read from decompressor: %s", err)
 			dr.mu.Lock()
