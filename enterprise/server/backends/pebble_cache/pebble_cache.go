@@ -2864,7 +2864,11 @@ func (e *partitionEvictor) sampleGroup() {
 		log.Warningf("could not sample group in partition %q: %s", e.part.ID, err)
 		return
 	}
-	metrics.PebbleCacheGroupIDSampleCount.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
+	metricLbls := prometheus.Labels{
+		metrics.GroupID:        groupID,
+		metrics.CacheNameLabel: e.cacheName,
+	}
+	metrics.PebbleCacheGroupIDSampleCount.With(metricLbls).Inc()
 }
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
@@ -3188,7 +3192,10 @@ func (p *PebbleCache) updatePebbleMetrics() error {
 
 	// Compaction related metrics.
 	incCompactionMetric := func(compactionType string, oldValue, newValue int64) {
-		lbls := prometheus.Labels{metrics.CompactionType: compactionType}
+		lbls := prometheus.Labels{
+			metrics.CompactionType: compactionType,
+			metrics.CacheNameLabel: p.name,
+		}
 		metrics.PebbleCachePebbleCompactCount.With(lbls).Add(float64(newValue - oldValue))
 	}
 	incCompactionMetric("default", om.Compact.DefaultCount, m.Compact.DefaultCount)
@@ -3197,15 +3204,22 @@ func (p *PebbleCache) updatePebbleMetrics() error {
 	incCompactionMetric("move", om.Compact.MoveCount, m.Compact.MoveCount)
 	incCompactionMetric("read", om.Compact.ReadCount, m.Compact.ReadCount)
 	incCompactionMetric("rewrite", om.Compact.RewriteCount, m.Compact.RewriteCount)
-	metrics.PebbleCachePebbleCompactEstimatedDebtBytes.Set(float64(m.Compact.EstimatedDebt))
-	metrics.PebbleCachePebbleCompactInProgressBytes.Set(float64(m.Compact.InProgressBytes))
-	metrics.PebbleCachePebbleCompactInProgress.Set(float64(m.Compact.NumInProgress))
-	metrics.PebbleCachePebbleCompactMarkedFiles.Set(float64(m.Compact.MarkedFiles))
+
+	nameLabel := prometheus.Labels{
+		metrics.CacheNameLabel: p.name,
+	}
+	metrics.PebbleCachePebbleCompactEstimatedDebtBytes.With(nameLabel).Set(float64(m.Compact.EstimatedDebt))
+	metrics.PebbleCachePebbleCompactInProgressBytes.With(nameLabel).Set(float64(m.Compact.InProgressBytes))
+	metrics.PebbleCachePebbleCompactInProgress.With(nameLabel).Set(float64(m.Compact.NumInProgress))
+	metrics.PebbleCachePebbleCompactMarkedFiles.With(nameLabel).Set(float64(m.Compact.MarkedFiles))
 
 	// Level metrics.
 	for i, l := range m.Levels {
 		ol := om.Levels[i]
-		lbls := prometheus.Labels{metrics.PebbleLevel: strconv.Itoa(i)}
+		lbls := prometheus.Labels{
+			metrics.PebbleLevel:    strconv.Itoa(i),
+			metrics.CacheNameLabel: p.name,
+		}
 		metrics.PebbleCachePebbleLevelSublevels.With(lbls).Set(float64(l.Sublevels))
 		metrics.PebbleCachePebbleLevelNumFiles.With(lbls).Set(float64(l.NumFiles))
 		metrics.PebbleCachePebbleLevelSizeBytes.With(lbls).Set(float64(l.Size))
@@ -3223,7 +3237,7 @@ func (p *PebbleCache) updatePebbleMetrics() error {
 	}
 
 	// Block cache metrics.
-	metrics.PebbleCachePebbleBlockCacheSizeBytes.Set(float64(m.BlockCache.Size))
+	metrics.PebbleCachePebbleBlockCacheSizeBytes.With(nameLabel).Set(float64(m.BlockCache.Size))
 
 	p.oldMetrics = *m
 
