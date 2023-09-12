@@ -564,7 +564,6 @@ func (d *doubleReader) Close() error {
 	eg.Wait()
 	// Wait till we finish reading from the decompressor
 	if d.decompressor != nil {
-		log.Info("wait for io.copy finished")
 		<-d.done
 	}
 	if d.shouldVerifyNumBytes() && d.bytesReadDest != d.bytesReadSrc {
@@ -659,9 +658,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 
 	go func() {
 		defer close(dr.done)
-		log.Infof("io.Copy started")
 		srcN, err := io.Copy(io.Discard, pr)
-		log.Infof("io.Copy finished")
 		if err != nil {
 			log.Warningf("Migration failed to read from decompressor: %s", err)
 			dr.mu.Lock()
