@@ -90,8 +90,8 @@ type TestingStore struct {
 	GRPCAddress string
 }
 
-func (ts *TestingStore) NewReplica(clusterID, nodeID uint64) *replica.Replica {
-	sm := ts.Store.ReplicaFactoryFn(clusterID, nodeID)
+func (ts *TestingStore) NewReplica(shardID, replicaID uint64) *replica.Replica {
+	sm := ts.Store.ReplicaFactoryFn(shardID, replicaID)
 	return sm.(*replica.Replica)
 }
 
@@ -160,9 +160,9 @@ func TestAddGetRemoveRange(t *testing.T) {
 		Right:   []byte("z"),
 		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
+			{ShardId: 1, ReplicaId: 1},
+			{ShardId: 1, ReplicaId: 2},
+			{ShardId: 1, ReplicaId: 3},
 		},
 	}
 	s1.AddRange(rd, r1)
@@ -259,8 +259,8 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 
 	rd := s1.GetRange(1)
 	_, err = s1.RemoveClusterNode(ctx, &rfpb.RemoveClusterNodeRequest{
-		Range:  rd,
-		NodeId: 4,
+		Range:     rd,
+		ReplicaId: 4,
 	})
 	require.NoError(t, err)
 
@@ -426,7 +426,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Expect that a new cluster was added with clusterID = 4
+	// Expect that a new cluster was added with shardID = 4
 	// having 3 replicas.
 	replicas, err := s1.GetClusterMembership(ctx, 4)
 	require.NoError(t, err)
@@ -449,7 +449,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Expect that a new cluster was added with clusterID = 4
+	// Expect that a new cluster was added with shardID = 4
 	// having 3 replicas.
 	replicas, err = s1.GetClusterMembership(ctx, 5)
 	require.NoError(t, err)
@@ -606,19 +606,19 @@ func TestManySplits(t *testing.T) {
 
 		for _, rangeReplica := range list.GetRangeReplicas() {
 			for _, replica := range rangeReplica.GetRange().GetReplicas() {
-				clusterID := replica.GetClusterId()
-				if _, ok := seen[clusterID]; !ok {
-					clusters = append(clusters, clusterID)
-					seen[clusterID] = struct{}{}
+				shardID := replica.GetShardId()
+				if _, ok := seen[shardID]; !ok {
+					clusters = append(clusters, shardID)
+					seen[shardID] = struct{}{}
 				}
 			}
 		}
 
-		for _, clusterID := range clusters {
-			if clusterID == 1 {
+		for _, shardID := range clusters {
+			if shardID == 1 {
 				continue
 			}
-			rd := s1.GetRange(clusterID)
+			rd := s1.GetRange(shardID)
 			header := headerFromRangeDescriptor(rd)
 			s := getStoreWithRangeLease(t, stores, header)
 			_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
@@ -629,8 +629,8 @@ func TestManySplits(t *testing.T) {
 			require.NoError(t, err)
 
 			// Expect that a new cluster was added with the new
-			// clusterID and 3 replicas.
-			replicas, err := s.GetClusterMembership(ctx, clusterID)
+			// shardID and 3 replicas.
+			replicas, err := s.GetClusterMembership(ctx, shardID)
 			require.NoError(t, err)
 			require.Equal(t, 3, len(replicas))
 		}

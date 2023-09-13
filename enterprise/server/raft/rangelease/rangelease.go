@@ -37,7 +37,7 @@ func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 
 type Lease struct {
 	nodeHost      client.NodeHost
-	clusterID     uint64
+	shardID       uint64
 	liveness      *nodeliveness.Liveness
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
@@ -51,10 +51,10 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(nodeHost client.NodeHost, clusterID uint64, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
+func New(nodeHost client.NodeHost, shardID uint64, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
 	return &Lease{
 		nodeHost:              nodeHost,
-		clusterID:             clusterID,
+		shardID:               shardID,
 		liveness:              liveness,
 		leaseDuration:         defaultLeaseDuration,
 		gracePeriod:           defaultGracePeriod,
@@ -133,7 +133,7 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.clusterID, casRequest)
+	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.shardID, casRequest)
 	if err != nil {
 		// This indicates a communication error proposing the message.
 		return nil, err
@@ -184,10 +184,10 @@ func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
 	return leaseRecord, nil
 }
 
-func (l *Lease) getClusterID() (uint64, error) {
+func (l *Lease) getShardID() (uint64, error) {
 	replicas := l.rangeDescriptor.GetReplicas()
 	for _, replicaDescriptor := range replicas {
-		return replicaDescriptor.GetClusterId(), nil
+		return replicaDescriptor.GetShardId(), nil
 	}
 	return 0, status.FailedPreconditionError("No replicas in range")
 }

@@ -41,8 +41,8 @@ const (
 
 // Other constants
 const (
-	InitialClusterID = 1
-	InitialNodeID    = 1
+	InitialShardID   = 1
+	InitialReplicaID = 1
 	InitialRangeID   = 1
 
 	UnsplittableMaxByte = systemMaxByte
@@ -56,11 +56,11 @@ var (
 	MetaRangePrefix = keys.Key{metaPrefixByte}
 	SystemPrefix    = keys.Key{systemPrefixByte}
 
-	// The last clusterID that was generated.
-	LastClusterIDKey = keys.MakeKey(SystemPrefix, []byte("last_cluster_id"))
+	// The last shardID that was generated.
+	LastShardIDKey = keys.MakeKey(SystemPrefix, []byte("last_shard_id"))
 
-	// The last nodeID that was generated.
-	LastNodeIDKey = keys.MakeKey(SystemPrefix, []byte("last_node_id"))
+	// The last replicaID that was generated.
+	LastReplicaIDKey = keys.MakeKey(SystemPrefix, []byte("last_replica_id"))
 
 	// The last rangeID that was generated.
 	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id"))

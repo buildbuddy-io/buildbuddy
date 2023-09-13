@@ -30,26 +30,26 @@ func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.Gos
 	return node
 }
 
-func requireResolves(t testing.TB, dnr registry.NodeRegistry, clusterID, nodeID uint64, raftAddr, grpcAddr string) {
-	addr, key, err := dnr.Resolve(clusterID, nodeID)
+func requireResolves(t testing.TB, dnr registry.NodeRegistry, shardID, replicaID uint64, raftAddr, grpcAddr string) {
+	addr, key, err := dnr.Resolve(shardID, replicaID)
 	require.NoError(t, err)
 	require.Equal(t, raftAddr, addr, dnr.String())
 	require.NotNil(t, key)
 
-	addr, key, err = dnr.ResolveGRPC(clusterID, nodeID)
+	addr, key, err = dnr.ResolveGRPC(shardID, replicaID)
 	require.NoError(t, err)
 	require.Equal(t, grpcAddr, addr, dnr.String())
 	require.NotNil(t, key)
 }
 
-func requireError(t testing.TB, dnr registry.NodeRegistry, clusterID, nodeID uint64, expectedErr error) {
-	addr, key, err := dnr.Resolve(clusterID, nodeID)
+func requireError(t testing.TB, dnr registry.NodeRegistry, shardID, replicaID uint64, expectedErr error) {
+	addr, key, err := dnr.Resolve(shardID, replicaID)
 	require.Equal(t, "", addr)
 	require.Equal(t, "", key)
 	require.NotNil(t, err)
 	require.Equal(t, err.Error(), expectedErr.Error())
 
-	addr, key, err = dnr.ResolveGRPC(clusterID, nodeID)
+	addr, key, err = dnr.ResolveGRPC(shardID, replicaID)
 	require.Equal(t, "", addr)
 	require.Equal(t, "", key)
 	require.NotNil(t, err)

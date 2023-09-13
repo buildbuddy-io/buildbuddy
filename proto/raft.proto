@@ -206,7 +206,7 @@ message CASResponse {
 
 message SimpleSplitRequest {
   uint64 source_range_id = 1;
-  uint64 new_cluster_id = 2;
+  uint64 new_shard_id = 2;
   uint64 new_range_id = 3;
 }
 
@@ -330,8 +330,8 @@ message BatchCmdResponse {
 // which has knowledge of the queried node may respond with a
 // RegistryQueryResponse.
 message RegistryQueryRequest {
-  uint64 cluster_id = 1;
-  uint64 node_id = 2;
+  uint64 shard_id = 1;
+  uint64 replica_id = 2;
 }
 
 message RegistryQueryResponse {
@@ -370,7 +370,7 @@ message Constraint {
 }
 
 message PlacementQuery {
-  uint64 target_cluster_id = 1;
+  uint64 target_shard_id = 1;
 
   repeated Constraint constraints = 2;
 }
@@ -389,7 +389,7 @@ message NodeLivenessRecord {
 message RangeLeaseRecord {
   message NodeLiveness {
     int64 epoch = 1;
-    bytes node_id = 2;
+    bytes replica_id = 2;
   }
 
   // A RangeLease can either be time based or based off of a node liveness
@@ -435,8 +435,8 @@ message NodeDescriptor {
 }
 
 message ReplicaDescriptor {
-  uint64 cluster_id = 1;
-  uint64 node_id = 2;
+  uint64 shard_id = 1;
+  uint64 replica_id = 2;
 }
 
 message Header {
@@ -480,8 +480,8 @@ message SyncReadResponse {
 }
 
 message StartClusterRequest {
-  uint64 cluster_id = 1;
-  uint64 node_id = 2;
+  uint64 shard_id = 1;
+  uint64 replica_id = 2;
   map<uint64, string> initial_member = 3;
 
   // The following commands will be SyncProposed on the local
@@ -499,8 +499,8 @@ message StartClusterResponse {
 }
 
 message RemoveDataRequest {
-  uint64 cluster_id = 1;
-  uint64 node_id = 2;
+  uint64 shard_id = 1;
+  uint64 replica_id = 2;
 }
 
 message RemoveDataResponse {}
@@ -516,7 +516,7 @@ message AddClusterNodeResponse {
 
 message RemoveClusterNodeRequest {
   RangeDescriptor range = 1;
-  uint64 node_id = 2;
+  uint64 replica_id = 2;
 }
 message RemoveClusterNodeResponse {
   // The range with the specified node removed.
@@ -627,8 +627,8 @@ message GetMultiResponse {
 }
 
 message TransferLeadershipRequest {
-  uint64 cluster_id = 1;
-  uint64 target_node_id = 2;
+  uint64 shard_id = 1;
+  uint64 target_replica_id = 2;
 }
 
 message TransferLeadershipResponse {}

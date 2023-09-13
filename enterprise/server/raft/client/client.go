@@ -29,9 +29,9 @@ import (
 const DefaultContextTimeout = 60 * time.Second
 
 type NodeHost interface {
-	GetNoOPSession(clusterID uint64) *client.Session
+	GetNoOPSession(shardID uint64) *client.Session
 	SyncPropose(ctx context.Context, session *client.Session, cmd []byte) (dbsm.Result, error)
-	SyncRead(ctx context.Context, clusterID uint64, query interface{}) (interface{}, error)
+	SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error)
 }
 
 type apiClientAndConn struct {
@@ -221,8 +221,8 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 	return status.DeadlineExceededErrorf("exceeded retry limit for node host function")
 }
 
-func SyncProposeLocal(ctx context.Context, nodehost NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	sesh := nodehost.GetNoOPSession(clusterID)
+func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	sesh := nodehost.GetNoOPSession(shardID)
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
@@ -246,7 +246,7 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, clusterID uint64, 
 	return batchResponse, err
 }
 
-func SyncReadLocal(ctx context.Context, nodehost NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
@@ -254,7 +254,7 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, clusterID uint64, bat
 
 	var raftResponseIface interface{}
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		raftResponseIface, err = nodehost.SyncRead(ctx, clusterID, buf)
+		raftResponseIface, err = nodehost.SyncRead(ctx, shardID, buf)
 		return err
 	})
 	if err != nil {
@@ -276,27 +276,27 @@ type NodeHostSender struct {
 	*dragonboat.NodeHost
 }
 
-func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncProposeLocal(ctx, nhs.NodeHost, clusterID, batch)
+func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	return SyncProposeLocal(ctx, nhs.NodeHost, shardID, batch)
 }
-func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncReadLocal(ctx, nhs.NodeHost, clusterID, batch)
+func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	return SyncReadLocal(ctx, nhs.NodeHost, shardID, batch)
 }
 
-func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
+func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
 	batch, err := builder.ToProto()
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := SyncProposeLocal(ctx, nodehost, clusterID, batch)
+	rsp, err := SyncProposeLocal(ctx, nodehost, shardID, batch)
 	if err != nil {
 		return nil, err
 	}
 	return rbuilder.NewBatchResponseFromProto(rsp), nil
 }
 
-func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, builder *rbuilder.BatchBuilder) error {
-	rspBatch, err := SyncProposeLocalBatch(ctx, nodehost, clusterID, builder)
+func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) error {
+	rspBatch, err := SyncProposeLocalBatch(ctx, nodehost, shardID, builder)
 	if err != nil {
 		return err
 	}

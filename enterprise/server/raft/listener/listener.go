@@ -95,11 +95,11 @@ func (rl *RaftListener) UnregisterLeaderUpdatedCB(cb *LeaderCB) {
 	rl.mu.Unlock()
 }
 
-func (rl *RaftListener) WaitForClusterReady(ctx context.Context, clusterID uint64) error {
+func (rl *RaftListener) WaitForClusterReady(ctx context.Context, shardID uint64) error {
 	quitOnce := sync.Once{}
 	quit := make(chan struct{})
 	cb := NodeCB(func(info raftio.NodeInfo) {
-		if info.ShardID == clusterID {
+		if info.ShardID == shardID {
 			quitOnce.Do(func() {
 				close(quit)
 			})
@@ -114,7 +114,7 @@ func (rl *RaftListener) WaitForClusterReady(ctx context.Context, clusterID uint6
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-quit:
-		log.Printf("Cluster %d was ready after %s", clusterID, time.Since(start))
+		log.Printf("Cluster %d was ready after %s", shardID, time.Since(start))
 		return nil
 	}
 }

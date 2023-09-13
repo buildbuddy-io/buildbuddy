@@ -150,8 +150,8 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 
 	leadReplicaIndex := -1
 	for i, replica := range newDescriptor.GetReplicas() {
-		if replica.GetClusterId() == rep.GetClusterId() &&
-			replica.GetNodeId() == rep.GetNodeId() {
+		if replica.GetShardId() == rep.GetShardId() &&
+			replica.GetReplicaId() == rep.GetReplicaId() {
 			leadReplicaIndex = i
 			break
 		}

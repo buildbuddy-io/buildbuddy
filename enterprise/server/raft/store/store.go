@@ -145,7 +145,7 @@ func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*R
 	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
 		FileRecord: sample.Key.fileRecord,
 	})
-	rsp, err := client.SyncProposeLocalBatch(ctx, pu.store.nodeHost, sample.Key.header.GetReplica().GetClusterId(), deleteReq)
+	rsp, err := client.SyncProposeLocalBatch(ctx, pu.store.nodeHost, sample.Key.header.GetReplica().GetShardId(), deleteReq)
 	if err != nil {
 		return false, status.InternalErrorf("could not propose eviction: %s", err)
 	}
@@ -635,11 +635,11 @@ func (s *Store) Statusz(ctx context.Context) string {
 		return true
 	})
 	sort.Slice(replicas, func(i, j int) bool {
-		return replicas[i].ClusterID < replicas[j].ClusterID
+		return replicas[i].ShardID < replicas[j].ShardID
 	})
 	buf += "Replicas:\n"
 	for _, r := range replicas {
-		cluster := fmt.Sprintf("(c%03dn%03d)", r.ClusterID, r.NodeID)
+		cluster := fmt.Sprintf("(c%03dn%03d)", r.ShardID, r.ReplicaID)
 
 		usage, err := r.Usage()
 		if err != nil {
@@ -648,7 +648,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 		}
 
 		extra := ""
-		if rd := s.lookupRange(r.ClusterID); rd != nil {
+		if rd := s.lookupRange(r.ShardID); rd != nil {
 			if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok && rlIface.(*rangelease.Lease).Valid() {
 				extra += "Leaseholder"
 			}
@@ -706,7 +706,7 @@ func (s *Store) Stop(ctx context.Context) error {
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
-func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
+func (s *Store) lookupRange(shardID uint64) *rfpb.RangeDescriptor {
 	s.rangeMu.RLock()
 	defer s.rangeMu.RUnlock()
 
@@ -714,7 +714,7 @@ func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 		if len(rangeDescriptor.GetReplicas()) == 0 {
 			continue
 		}
-		if clusterID == rangeDescriptor.GetReplicas()[0].GetClusterId() {
+		if shardID == rangeDescriptor.GetReplicas()[0].GetShardId() {
 			return rangeDescriptor
 		}
 	}
@@ -738,12 +738,12 @@ func (s *Store) dropLeadershipForShutdown() {
 		// Pick the first node in the map that isn't us. Map ordering is
 		// random; which is a good thing, it means we're randomly picking
 		// another node in the cluster and requesting they take the lead.
-		for nodeID := range clusterInfo.Nodes {
-			if nodeID == clusterInfo.ReplicaID {
+		for replicaID := range clusterInfo.Nodes {
+			if replicaID == clusterInfo.ReplicaID {
 				continue
 			}
 			eg.Go(func() error {
-				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, nodeID); err != nil {
+				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, replicaID); err != nil {
 					log.Warningf("Error transferring leadership: %s", err)
 				}
 				return nil
@@ -760,13 +760,13 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 		return
 	}
 
-	clusterID := rd.GetReplicas()[0].GetClusterId()
-	if !s.isLeader(clusterID) {
+	shardID := rd.GetReplicas()[0].GetShardId()
+	if !s.isLeader(shardID) {
 		return
 	}
 
 	rangeID := rd.GetRangeId()
-	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.nodeHost, clusterID, s.liveness, rd))
+	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.nodeHost, shardID, s.liveness, rd))
 	rl, ok := rlIface.(*rangelease.Lease)
 	if !ok {
 		alert.UnexpectedEvent("unexpected_leases_map_type_error")
@@ -774,7 +774,7 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 	}
 
 	for attempt := 0; attempt < 3; attempt++ {
-		if !s.isLeader(clusterID) {
+		if !s.isLeader(shardID) {
 			break
 		}
 		if rl.Valid() {
@@ -806,8 +806,8 @@ func (s *Store) releaseRangeLease(rangeID uint64) {
 	}
 }
 
-func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
-	return s.lookupRange(clusterID)
+func (s *Store) GetRange(shardID uint64) *rfpb.RangeDescriptor {
+	return s.lookupRange(shardID)
 }
 
 func (s *Store) updateUsages(r *replica.Replica) error {
@@ -1012,8 +1012,8 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
 }
 
-func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-	r := replica.New(s.leaser, clusterID, nodeID, s, s.partitions)
+func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
+	r := replica.New(s.leaser, shardID, replicaID, s, s.partitions)
 	return r
 }
 
@@ -1036,7 +1036,7 @@ func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	return r, nil
 }
 
-func (s *Store) isLeader(clusterID uint64) bool {
+func (s *Store) isLeader(shardID uint64) bool {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
@@ -1044,7 +1044,7 @@ func (s *Store) isLeader(clusterID uint64) bool {
 		return false
 	}
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
-		if clusterInfo.ShardID == clusterID {
+		if clusterInfo.ShardID == shardID {
 			return clusterInfo.LeaderID == clusterInfo.ReplicaID && clusterInfo.Term > 0
 		}
 	}
@@ -1052,19 +1052,19 @@ func (s *Store) isLeader(clusterID uint64) bool {
 }
 
 func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error) {
-	if err := s.nodeHost.RequestLeaderTransfer(req.GetClusterId(), req.GetTargetNodeId()); err != nil {
+	if err := s.nodeHost.RequestLeaderTransfer(req.GetShardId(), req.GetTargetReplicaId()); err != nil {
 		return nil, err
 	}
 	return &rfpb.TransferLeadershipResponse{}, nil
 }
 
-func (s *Store) waitForReplicaOpen(ctx context.Context, clusterID uint64) error {
+func (s *Store) waitForReplicaOpen(ctx context.Context, shardID uint64) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if rd := s.lookupRange(clusterID); rd != nil {
+			if rd := s.lookupRange(shardID); rd != nil {
 				return nil
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -1074,7 +1074,7 @@ func (s *Store) waitForReplicaOpen(ctx context.Context, clusterID uint64) error 
 
 // Snapshots the cluster *on this node*. This is a local operation and does not
 // create a snapshot on other nodes that are members of this cluster.
-func (s *Store) SnapshotCluster(ctx context.Context, clusterID uint64) error {
+func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
 	if _, ok := ctx.Deadline(); !ok {
 		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
 		defer cancel()
@@ -1086,7 +1086,7 @@ func (s *Store) SnapshotCluster(ctx context.Context, clusterID uint64) error {
 	}
 
 	// Wait for the cluster to be opened on this store
-	if err := s.waitForReplicaOpen(ctx, clusterID); err != nil {
+	if err := s.waitForReplicaOpen(ctx, shardID); err != nil {
 		return err
 	}
 
@@ -1096,7 +1096,7 @@ func (s *Store) SnapshotCluster(ctx context.Context, clusterID uint64) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			_, err := s.nodeHost.SyncRequestSnapshot(ctx, clusterID, opts)
+			_, err := s.nodeHost.SyncRequestSnapshot(ctx, shardID, opts)
 			if err == nil {
 				return nil
 			}
@@ -1105,10 +1105,10 @@ func (s *Store) SnapshotCluster(ctx context.Context, clusterID uint64) error {
 	}
 }
 
-func (s *Store) AddPeer(ctx context.Context, sourceClusterID, newClusterID uint64) error {
-	rd := s.lookupRange(sourceClusterID)
+func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error {
+	rd := s.lookupRange(sourceShardID)
 	if rd == nil {
-		return status.FailedPreconditionErrorf("cluster %d not found on this node", sourceClusterID)
+		return status.FailedPreconditionErrorf("cluster %d not found on this node", sourceShardID)
 	}
 	sourceReplica, err := s.GetReplica(rd.GetRangeId())
 	if err != nil || sourceReplica == nil {
@@ -1116,24 +1116,24 @@ func (s *Store) AddPeer(ctx context.Context, sourceClusterID, newClusterID uint6
 	}
 	initialMembers := make(map[uint64]string)
 	for _, replica := range rd.GetReplicas() {
-		nhid, _, err := s.registry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
+		nhid, _, err := s.registry.ResolveNHID(replica.GetShardId(), replica.GetReplicaId())
 		if err != nil {
 			return status.InternalErrorf("could not resolve node host ID: %s", err)
 		}
-		initialMembers[replica.GetNodeId()] = nhid
+		initialMembers[replica.GetReplicaId()] = nhid
 	}
 
 	waitErr := make(chan error, 1)
 	// Wait for the notification that the cluster node is ready on the local
 	// nodehost.
 	go func() {
-		err := listener.DefaultListener().WaitForClusterReady(ctx, newClusterID)
+		err := listener.DefaultListener().WaitForClusterReady(ctx, newShardID)
 		waitErr <- err
 		close(waitErr)
 	}()
 
-	s.log.Infof("Starting new raft node c%dn%d", newClusterID, sourceReplica.NodeID)
-	rc := raftConfig.GetRaftConfig(newClusterID, sourceReplica.NodeID)
+	s.log.Infof("Starting new raft node c%dn%d", newShardID, sourceReplica.ReplicaID)
+	rc := raftConfig.GetRaftConfig(newShardID, sourceReplica.ReplicaID)
 	err = s.nodeHost.StartOnDiskReplica(initialMembers, false /*join*/, s.ReplicaFactoryFn, rc)
 	if err != nil {
 		if err == dragonboat.ErrShardAlreadyExist {
@@ -1152,13 +1152,13 @@ func (s *Store) AddPeer(ctx context.Context, sourceClusterID, newClusterID uint6
 }
 
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
-	rc := raftConfig.GetRaftConfig(req.GetClusterId(), req.GetNodeId())
+	rc := raftConfig.GetRaftConfig(req.GetShardId(), req.GetReplicaId())
 
 	waitErr := make(chan error, 1)
 	// Wait for the notification that the cluster node is ready on the local
 	// nodehost.
 	go func() {
-		err := listener.DefaultListener().WaitForClusterReady(ctx, req.GetClusterId())
+		err := listener.DefaultListener().WaitForClusterReady(ctx, req.GetShardId())
 		waitErr <- err
 		close(waitErr)
 	}()
@@ -1178,7 +1178,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 	}
 
 	if req.GetLastAppliedIndex() > 0 {
-		if err := s.waitForReplicaToCatchUp(ctx, req.GetClusterId(), req.GetLastAppliedIndex()); err != nil {
+		if err := s.waitForReplicaToCatchUp(ctx, req.GetShardId(), req.GetLastAppliedIndex()); err != nil {
 			return nil, err
 		}
 	}
@@ -1189,13 +1189,13 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 	}
 
 	// If we are the last member in the cluster, we'll do the syncPropose.
-	nodeIDs := make([]uint64, 0, len(req.GetInitialMember()))
-	for nodeID := range req.GetInitialMember() {
-		nodeIDs = append(nodeIDs, nodeID)
+	replicaIDs := make([]uint64, 0, len(req.GetInitialMember()))
+	for replicaID := range req.GetInitialMember() {
+		replicaIDs = append(replicaIDs, replicaID)
 	}
-	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
-	if req.GetNodeId() == nodeIDs[len(nodeIDs)-1] {
-		batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetClusterId(), req.GetBatch())
+	sort.Slice(replicaIDs, func(i, j int) bool { return replicaIDs[i] < replicaIDs[j] })
+	if req.GetReplicaId() == replicaIDs[len(replicaIDs)-1] {
+		batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetShardId(), req.GetBatch())
 		if err != nil {
 			return nil, err
 		}
@@ -1206,7 +1206,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
 	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRemoveData(ctx, req.GetClusterId(), req.GetNodeId())
+		err := s.nodeHost.SyncRemoveData(ctx, req.GetShardId(), req.GetReplicaId())
 		if err == dragonboat.ErrShardNotStopped {
 			err = dragonboat.ErrTimeout
 		}
@@ -1222,15 +1222,15 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	if _, _, err := s.validatedRange(req.GetHeader()); err != nil {
 		return nil, err
 	}
-	clusterID := req.GetHeader().GetReplica().GetClusterId()
+	shardID := req.GetHeader().GetReplica().GetShardId()
 
 	batch := req.GetBatch()
 	batch.Header = req.GetHeader()
 
-	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, batch)
+	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, shardID, batch)
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, clusterID)
+			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, shardID)
 		}
 		return nil, err
 	}
@@ -1240,11 +1240,11 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
-	clusterID := req.GetHeader().GetReplica().GetClusterId()
-	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, clusterID, req.GetBatch())
+	shardID := req.GetHeader().GetReplica().GetShardId()
+	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, shardID, req.GetBatch())
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, clusterID)
+			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, shardID)
 		}
 		return nil, err
 	}
@@ -1331,7 +1331,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 	var bytesWritten int64
 	var writeCloser interfaces.MetadataWriteCloser
-	var clusterID uint64
+	var shardID uint64
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -1346,7 +1346,7 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 				s.log.Errorf("Error while calling LeasedRange: %s", err)
 				return err
 			}
-			clusterID = r.ClusterID
+			shardID = r.ShardID
 			writeCloser, err = r.Writer(stream.Context(), req.GetHeader(), req.GetFileRecord())
 			if err != nil {
 				return err
@@ -1390,7 +1390,7 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 					Value: protoBytes,
 				},
 			})
-			if err := client.SyncProposeLocalBatchNoRsp(stream.Context(), s.nodeHost, clusterID, writeReq); err != nil {
+			if err := client.SyncProposeLocalBatchNoRsp(stream.Context(), s.nodeHost, shardID, writeReq); err != nil {
 				return err
 			}
 			return stream.Send(&rfpb.WriteResponse{
@@ -1513,11 +1513,11 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 	}
 }
 
-func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*rfpb.ReplicaDescriptor, error) {
+func (s *Store) GetClusterMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
 	var membership *dragonboat.Membership
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		membership, err = s.nodeHost.SyncGetShardMembership(ctx, clusterID)
+		membership, err = s.nodeHost.SyncGetShardMembership(ctx, shardID)
 		if err != nil {
 			return err
 		}
@@ -1533,10 +1533,10 @@ func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*
 	}
 
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
-	for nodeID := range membership.Nodes {
+	for replicaID := range membership.Nodes {
 		replicas = append(replicas, &rfpb.ReplicaDescriptor{
-			ClusterId: clusterID,
-			NodeId:    nodeID,
+			ShardId:   shardID,
+			ReplicaId: replicaID,
 		})
 	}
 	return replicas, nil
@@ -1558,18 +1558,18 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	// Copy source range, because it's a pointer and will change when we
 	// propose the split.
 	sourceRange = proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
-	clusterID := sourceRange.GetReplicas()[0].GetClusterId()
+	shardID := sourceRange.GetReplicas()[0].GetShardId()
 
-	newClusterID, newRangeID, err := s.reserveClusterAndRangeID(ctx)
+	newShardID, newRangeID, err := s.reserveClusterAndRangeID(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("could not reserve IDs for new cluster: %s", err)
 	}
 	simpleSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.SimpleSplitRequest{
 		SourceRangeId: sourceRange.GetRangeId(),
-		NewClusterId:  newClusterID,
+		NewShardId:    newShardID,
 		NewRangeId:    newRangeID,
 	})
-	rsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, simpleSplitReq)
+	rsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, shardID, simpleSplitReq)
 	if err != nil {
 		return nil, status.InternalErrorf("simple split err: %s", err)
 	}
@@ -1583,7 +1583,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, err
 	}
 
-	if err := s.SnapshotCluster(ctx, clusterID); err != nil {
+	if err := s.SnapshotCluster(ctx, shardID); err != nil {
 		return nil, err
 	}
 	return &rfpb.SplitClusterResponse{
@@ -1600,7 +1600,7 @@ func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {
 	return r.LastAppliedIndex()
 }
 
-func (s *Store) waitForReplicaToCatchUp(ctx context.Context, clusterID uint64, desiredLastAppliedIndex uint64) error {
+func (s *Store) waitForReplicaToCatchUp(ctx context.Context, shardID uint64, desiredLastAppliedIndex uint64) error {
 	start := time.Now()
 	for {
 		select {
@@ -1609,11 +1609,11 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, clusterID uint64, d
 		default:
 			break
 		}
-		if rd := s.lookupRange(clusterID); rd != nil {
+		if rd := s.lookupRange(shardID); rd != nil {
 			if r, err := s.GetReplica(rd.GetRangeId()); err == nil {
 				if lastApplied, err := r.LastAppliedIndex(); err == nil {
 					if lastApplied >= desiredLastAppliedIndex {
-						s.log.Infof("Cluster %d took %s to catch up", clusterID, time.Since(start))
+						s.log.Infof("Cluster %d took %s to catch up", shardID, time.Since(start))
 						break
 					}
 				}
@@ -1624,12 +1624,12 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, clusterID uint64, d
 	return nil
 }
 
-func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64, error) {
+func (s *Store) getConfigChangeID(ctx context.Context, shardID uint64) (uint64, error) {
 	var membership *dragonboat.Membership
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		// Get the config change index for this cluster.
-		membership, err = s.nodeHost.SyncGetShardMembership(ctx, clusterID)
+		membership, err = s.nodeHost.SyncGetShardMembership(ctx, shardID)
 		if err != nil {
 			return err
 		}
@@ -1644,7 +1644,7 @@ func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64
 		return 0, err
 	}
 	if membership == nil {
-		return 0, status.InternalErrorf("null cluster membership for cluster: %d", clusterID)
+		return 0, status.InternalErrorf("null cluster membership for cluster: %d", shardID)
 	}
 	return membership.ConfigChangeID, nil
 }
@@ -1676,17 +1676,17 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
 	}
 
-	clusterID := req.GetRange().GetReplicas()[0].GetClusterId()
+	shardID := req.GetRange().GetReplicas()[0].GetShardId()
 
 	// Reserve a new node ID for the node about to be added.
-	nodeIDs, err := s.reserveNodeIDs(ctx, 1)
+	replicaIDs, err := s.reserveReplicaIDs(ctx, 1)
 	if err != nil {
 		return nil, err
 	}
-	newNodeID := nodeIDs[0]
+	newReplicaID := replicaIDs[0]
 
 	// Get the config change index for this cluster.
-	configChangeID, err := s.getConfigChangeID(ctx, clusterID)
+	configChangeID, err := s.getConfigChangeID(ctx, shardID)
 	if err != nil {
 		return nil, err
 	}
@@ -1699,12 +1699,12 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 	}
 
 	// Gossip the address of the node that is about to be added.
-	s.registry.Add(clusterID, newNodeID, node.GetNhid())
+	s.registry.Add(shardID, newReplicaID, node.GetNhid())
 	s.registry.AddNode(node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
 
 	// Propose the config change (this adds the node to the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		return s.nodeHost.SyncRequestAddReplica(ctx, clusterID, newNodeID, node.GetNhid(), configChangeID)
+		return s.nodeHost.SyncRequestAddReplica(ctx, shardID, newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
 		return nil, err
@@ -1716,8 +1716,8 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 		return nil, err
 	}
 	_, err = c.StartCluster(ctx, &rfpb.StartClusterRequest{
-		ClusterId:        clusterID,
-		NodeId:           newNodeID,
+		ShardId:          shardID,
+		ReplicaId:        newReplicaID,
 		Join:             true,
 		LastAppliedIndex: lastAppliedIndex,
 	})
@@ -1727,7 +1727,7 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 
 	// Finally, update the range descriptor information to reflect the
 	// membership of this new node in the range.
-	rd, err = s.addReplicaToRangeDescriptor(ctx, clusterID, newNodeID, rd)
+	rd, err = s.addReplicaToRangeDescriptor(ctx, shardID, newReplicaID, rd)
 	if err != nil {
 		return nil, err
 	}
@@ -1759,34 +1759,34 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
 	}
 
-	var clusterID, nodeID uint64
+	var shardID, replicaID uint64
 	for _, replica := range req.GetRange().GetReplicas() {
-		if replica.GetNodeId() == req.GetNodeId() {
-			clusterID = replica.GetClusterId()
-			nodeID = replica.GetNodeId()
+		if replica.GetReplicaId() == req.GetReplicaId() {
+			shardID = replica.GetShardId()
+			replicaID = replica.GetReplicaId()
 			break
 		}
 	}
-	if clusterID == 0 && nodeID == 0 {
-		return nil, status.FailedPreconditionErrorf("No node with id %d found in range: %+v", req.GetNodeId(), req.GetRange())
+	if shardID == 0 && replicaID == 0 {
+		return nil, status.FailedPreconditionErrorf("No node with id %d found in range: %+v", req.GetReplicaId(), req.GetRange())
 	}
 
-	configChangeID, err := s.getConfigChangeID(ctx, clusterID)
+	configChangeID, err := s.getConfigChangeID(ctx, shardID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		return s.nodeHost.SyncRequestDeleteReplica(ctx, clusterID, nodeID, configChangeID)
+		return s.nodeHost.SyncRequestDeleteReplica(ctx, shardID, replicaID, configChangeID)
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	grpcAddr, _, err := s.registry.ResolveGRPC(clusterID, nodeID)
+	grpcAddr, _, err := s.registry.ResolveGRPC(shardID, replicaID)
 	if err != nil {
-		s.log.Errorf("error resolving grpc addr for c%dn%d: %s", clusterID, nodeID, err)
+		s.log.Errorf("error resolving grpc addr for c%dn%d: %s", shardID, replicaID, err)
 		return nil, err
 	}
 	// Remove the data from the now stopped node.
@@ -1796,8 +1796,8 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 		return nil, err
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-		ClusterId: clusterID,
-		NodeId:    nodeID,
+		ShardId:   shardID,
+		ReplicaId: replicaID,
 	})
 	if err != nil {
 		s.log.Errorf("remove data err: %s", err)
@@ -1806,7 +1806,7 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 
 	// Finally, update the range descriptor information to reflect the
 	// new membership of this range without the removed node.
-	rd, err = s.removeReplicaFromRangeDescriptor(ctx, clusterID, nodeID, req.GetRange())
+	rd, err = s.removeReplicaFromRangeDescriptor(ctx, shardID, replicaID, req.GetRange())
 	if err != nil {
 		return nil, err
 	}
@@ -1856,8 +1856,8 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 	return rsp, nil
 }
 
-func (s *Store) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {
-	newVal, err := s.sender.Increment(ctx, constants.LastNodeIDKey, uint64(n))
+func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) {
+	newVal, err := s.sender.Increment(ctx, constants.LastReplicaIDKey, uint64(n))
 	if err != nil {
 		return nil, err
 	}
@@ -1870,7 +1870,7 @@ func (s *Store) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {
 
 func (s *Store) reserveClusterAndRangeID(ctx context.Context) (uint64, uint64, error) {
 	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-		Key:   constants.LastClusterIDKey,
+		Key:   constants.LastShardIDKey,
 		Delta: uint64(1),
 	}).Add(&rfpb.IncrementRequest{
 		Key:   constants.LastRangeIDKey,
@@ -1979,7 +1979,7 @@ func (s *Store) updateMetarange(ctx context.Context, oldLeft, left, right *rfpb.
 	return batchRsp.AnyError()
 }
 
-func (s *Store) updateRangeDescriptor(ctx context.Context, clusterID uint64, old, new *rfpb.RangeDescriptor) error {
+func (s *Store) updateRangeDescriptor(ctx context.Context, shardID uint64, old, new *rfpb.RangeDescriptor) error {
 	// TODO(tylerw): this should use 2PC.
 	oldBuf, err := proto.Marshal(old)
 	if err != nil {
@@ -2004,7 +2004,7 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, clusterID uint64, old
 		ExpectedValue: oldBuf,
 	}
 
-	if clusterID == constants.InitialClusterID {
+	if shardID == constants.InitialShardID {
 		localBatch.Add(metaRangeCasReq)
 	} else {
 		metaRangeBatch.Add(metaRangeCasReq)
@@ -2016,7 +2016,7 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, clusterID uint64, old
 	}
 
 	// Update the local range.
-	localRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, localReq)
+	localRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, shardID, localReq)
 	if err != nil {
 		return err
 	}
@@ -2047,29 +2047,29 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, clusterID uint64, old
 	return nil
 }
 
-func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, clusterID, nodeID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, shardID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	newDescriptor.Replicas = append(newDescriptor.Replicas, &rfpb.ReplicaDescriptor{
-		ClusterId: clusterID,
-		NodeId:    nodeID,
+		ShardId:   shardID,
+		ReplicaId: replicaID,
 	})
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
-	if err := s.updateRangeDescriptor(ctx, clusterID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.updateRangeDescriptor(ctx, shardID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
 }
 
-func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, clusterID, nodeID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, shardID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	for i, replica := range newDescriptor.Replicas {
-		if replica.GetNodeId() == nodeID {
+		if replica.GetReplicaId() == replicaID {
 			newDescriptor.Replicas = append(newDescriptor.Replicas[:i], newDescriptor.Replicas[i+1:]...)
 			break
 		}
 	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
-	if err := s.updateRangeDescriptor(ctx, clusterID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.updateRangeDescriptor(ctx, shardID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil

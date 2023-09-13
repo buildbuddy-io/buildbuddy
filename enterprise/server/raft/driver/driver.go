@@ -44,8 +44,8 @@ const (
 
 // make a replica struct that can be used as a map key because protos cannot be.
 type replicaStruct struct {
-	clusterID uint64
-	nodeID    uint64
+	shardID   uint64
+	replicaID uint64
 	nhid      string
 }
 
@@ -145,7 +145,7 @@ func (d *Driver) LookupNodehost(nhid string) *rfpb.NodeDescriptor {
 }
 
 func (d *Driver) LookupNodehostForReplica(rs replicaStruct) *rfpb.NodeDescriptor {
-	if nhid, _, err := d.nodeRegistry.ResolveNHID(rs.clusterID, rs.nodeID); err == nil {
+	if nhid, _, err := d.nodeRegistry.ResolveNHID(rs.shardID, rs.replicaID); err == nil {
 		return d.LookupNodehost(nhid)
 	}
 	return nil
@@ -216,7 +216,7 @@ func (d *Driver) MoveableReplicas(state *clusterState) replicaSet {
 	for rep := range state.allReplicas {
 		// Skip nodes on this machine, since we hold
 		// the lease for them if we manage the range.
-		if state.myNodes.Contains(rep.nodeID) {
+		if state.myNodes.Contains(rep.replicaID) {
 			continue
 		}
 
@@ -237,7 +237,7 @@ func (d *Driver) MoveableReplicas(state *clusterState) replicaSet {
 	return candidates
 }
 
-// MoveableLeases returns a set of clusterIDs that:
+// MoveableLeases returns a set of shardIDs that:
 //   - Are clusters this node manages
 //   - Have more QPS than avg
 //   - Contribute to this node's above-average propose QPS
@@ -263,16 +263,16 @@ func (d *Driver) MoveableLeases(state *clusterState) uint64Set {
 	avgQPSPerRange := int64(float64(localProposeQPS) / float64(len(state.managedRanges)))
 
 	myClusters := make(uint64Set, 0)
-	for clusterID, rangeReplica := range state.managedRanges {
+	for shardID, rangeReplica := range state.managedRanges {
 		replicaUsage := rangeReplica.GetReplicaUsage()
 		if replicaUsage.GetRaftProposeQps() > avgQPSPerRange {
-			myClusters.Add(clusterID)
+			myClusters.Add(shardID)
 		}
 	}
 	return myClusters
 }
 
-func (cm *clusterMap) FindHome(state *clusterState, clusterID uint64) []string {
+func (cm *clusterMap) FindHome(state *clusterState, shardID uint64) []string {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -297,7 +297,7 @@ func (cm *clusterMap) FindHome(state *clusterState, clusterID uint64) []string {
 		// tablet in this cluster.
 		alreadyHostingCluster := false
 		for rep := range state.allReplicas {
-			if rep.clusterID != clusterID {
+			if rep.shardID != shardID {
 				continue
 			}
 			if rep.nhid == nhid {
@@ -454,15 +454,15 @@ type clusterState struct {
 	// Information about our own replicas.
 	myNodes uint64Set
 
-	// map of clusterID -> RangeReplica
+	// map of shardID -> RangeReplica
 	managedRanges map[uint64]*rfpb.RangeReplica
 
 	// set of all replicas we know about and their locations
 	allReplicas replicaSet
 }
 
-func (cs *clusterState) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
-	if r, ok := cs.managedRanges[clusterID]; ok {
+func (cs *clusterState) GetRange(shardID uint64) *rfpb.RangeDescriptor {
+	if r, ok := cs.managedRanges[shardID]; ok {
 		return r.GetRange()
 	}
 	return nil
@@ -479,7 +479,7 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 		node:    rsp.GetNode(),
 		myNodes: make(uint64Set, len(rsp.GetRangeReplicas())),
 
-		// clusterID -> range
+		// shardID -> range
 		managedRanges: make(map[uint64]*rfpb.RangeReplica, 0),
 
 		// set of all replicas we've seen
@@ -489,20 +489,20 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 	for _, rr := range rsp.GetRangeReplicas() {
 		for i, replica := range rr.GetRange().GetReplicas() {
 			if i == 0 {
-				state.managedRanges[replica.GetClusterId()] = rr
+				state.managedRanges[replica.GetShardId()] = rr
 			}
-			nhid, _, err := d.nodeRegistry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
+			nhid, _, err := d.nodeRegistry.ResolveNHID(replica.GetShardId(), replica.GetReplicaId())
 			if err != nil {
-				log.Warningf("Error resolving NHID of c%dn%d: %s", replica.GetClusterId(), replica.GetNodeId(), err)
+				log.Warningf("Error resolving NHID of c%dn%d: %s", replica.GetShardId(), replica.GetReplicaId(), err)
 				continue
 			}
 			state.allReplicas.Add(replicaStruct{
 				nhid:      nhid,
-				clusterID: replica.GetClusterId(),
-				nodeID:    replica.GetNodeId(),
+				shardID:   replica.GetShardId(),
+				replicaID: replica.GetReplicaId(),
 			})
 		}
-		state.myNodes.Add(rr.GetReplicaUsage().GetReplica().GetNodeId())
+		state.myNodes.Add(rr.GetReplicaUsage().GetReplica().GetReplicaId())
 	}
 	return state, nil
 }
@@ -534,9 +534,9 @@ func (d *Driver) makeMoveInstructions(state *clusterState, replicas replicaSet) 
 	moves := make([]moveInstruction, 0)
 	for rep := range replicas {
 		currentLocation := rep.nhid
-		potentialHomes := d.clusterMap.FindHome(state, rep.clusterID)
+		potentialHomes := d.clusterMap.FindHome(state, rep.shardID)
 		if len(potentialHomes) == 0 {
-			log.Debugf("No possible homes found for cluster: %d", rep.clusterID)
+			log.Debugf("No possible homes found for cluster: %d", rep.shardID)
 			continue
 		}
 		sort.Slice(potentialHomes, func(i, j int) bool {
@@ -565,7 +565,7 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 	if toNode == nil {
 		return status.FailedPreconditionErrorf("toNode %q not found", move.to)
 	}
-	rd := state.GetRange(move.replica.clusterID)
+	rd := state.GetRange(move.replica.shardID)
 	if rd == nil {
 		return status.FailedPreconditionErrorf("rd %+v not found", rd)
 	}
@@ -583,8 +583,8 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 	// apply the remove, and if it succeeds, remove the node
 	// from the clusterMap to avoid spuriously doing this again.
 	_, err = d.store.RemoveClusterNode(ctx, &rfpb.RemoveClusterNodeRequest{
-		Range:  rsp.GetRange(),
-		NodeId: move.replica.nodeID,
+		Range:     rsp.GetRange(),
+		ReplicaId: move.replica.replicaID,
 	})
 	if err == nil {
 		log.Printf("Removed %q from range: %+v", toNode, rsp.GetRange())
@@ -678,13 +678,13 @@ func (d *Driver) Statusz(ctx context.Context) string {
 	if len(changes.deadReplicas) > 0 {
 		buf += "Dead Replicas:\n"
 		for rep := range changes.deadReplicas {
-			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
+			buf += fmt.Sprintf("\tc%dn%d\n", rep.shardID, rep.replicaID)
 		}
 	}
 	if len(changes.moveableReplicas) > 0 {
 		buf += "Moveable Replicas:\n"
 		for rep := range changes.moveableReplicas {
-			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
+			buf += fmt.Sprintf("\tc%dn%d\n", rep.shardID, rep.replicaID)
 		}
 	}
 	buf += "</pre>"
