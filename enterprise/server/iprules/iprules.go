@@ -158,7 +158,7 @@ func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
 	clientIP := net.ParseIP(rawClientIP)
 	// Client IP is not parsable.
 	if clientIP == nil {
-		return status.FailedPreconditionErrorf("client IP %q is not valid", clientIP)
+		return status.FailedPreconditionErrorf("client IP %q is not valid", rawClientIP)
 	}
 
 	allowed, ok := s.cache.Get(groupID)
