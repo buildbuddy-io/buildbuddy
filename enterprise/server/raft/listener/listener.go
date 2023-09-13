@@ -1,11 +1,8 @@
 package listener
 
 import (
-	"context"
 	"sync"
-	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4/raftio"
 )
 
