@@ -267,20 +267,6 @@ platform(
     },
 )
 
-# TODO(#2523): remove this once 403 errors pulling private images with
-# streaming are resolved.
-platform(
-    name = "private_workflow_image",
-    constraint_values = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    exec_properties = {
-        "OSFamily": "Linux",
-        "container-image": "docker://gcr.io/flame-private/rbe-ubuntu20-04-workflows:latest",
-    },
-)
-
 # TODO(bduffany): The sh_toolchain config here is a workaround for
 # https://github.com/aspect-build/rules_swc/issues/20
 # We should probably either move these to the buildbuddy-toolchain repo
