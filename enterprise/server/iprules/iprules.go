@@ -143,6 +143,9 @@ func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*net.I
 		}
 		allowed = append(allowed, ipNet)
 	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
 	return allowed, nil
 }
 
