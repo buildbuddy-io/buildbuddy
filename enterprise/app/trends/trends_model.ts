@@ -1,5 +1,3 @@
-import moment from "moment";
-
 import { timestampToDate } from "../../../app/util/proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import { timeHour, timeDay } from "d3-time";

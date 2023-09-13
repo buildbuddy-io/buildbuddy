@@ -28,6 +28,7 @@
     "@types/react-window": "^1.8.5",
     "@types/uuid": "^8.3.0",
     "d3-scale": "^4.0.2",
+    "d3-time": "^3.0.0",
     "dagre-d3-react": "^0.2.4",
     "date-fns": "^2.23.0",
     "diff": "^5.0.0",

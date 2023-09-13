@@ -15,7 +15,7 @@ import { getProtoFilterParams } from "../filter/filter_util";
 import router from "../../../app/router/router";
 import * as proto from "../../../app/util/proto";
 import DrilldownPageComponent from "./drilldown_page";
-import { timeHour, timeDay } from "d3-time";
+import { timeDay } from "d3-time";
 
 const BITS_PER_BYTE = 8;
 
