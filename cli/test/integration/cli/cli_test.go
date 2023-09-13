@@ -305,6 +305,9 @@ func TestTargetPatternFile(t *testing.T) {
 
 	_, err := testcli.CombinedOutput(testcli.Command(t, ws, "build", "--target_pattern_file=targets.txt"))
 	require.NoError(t, err)
+
+	_, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--target_pattern_file=targets.txt"))
+	require.NoError(t, err)
 }
 
 func TestQueryFile(t *testing.T) {
