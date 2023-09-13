@@ -447,7 +447,7 @@ func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 	opts := &pebble.Options{
 		// The amount of L0 read-amplification necessary to trigger an L0 compaction.
 		L0CompactionThreshold:    2,
-		MaxConcurrentCompactions: 12,
+		MaxConcurrentCompactions: func() int { return 12 },
 		MemTableSize:             64 << 20, // 64 MB
 		EventListener: pebble.EventListener{
 			WriteStallBegin: el.WriteStallBegin,

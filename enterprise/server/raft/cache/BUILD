@@ -35,9 +35,9 @@ go_library(
         "//server/util/status",
         "//server/util/statusz",
         "@com_github_google_uuid//:uuid",
-        "@com_github_lni_dragonboat_v3//:dragonboat",
-        "@com_github_lni_dragonboat_v3//config",
-        "@com_github_lni_dragonboat_v3//raftio",
+        "@com_github_lni_dragonboat_v4//:dragonboat",
+        "@com_github_lni_dragonboat_v4//config",
+        "@com_github_lni_dragonboat_v4//raftio",
         "@org_golang_google_protobuf//proto",
     ],
 )

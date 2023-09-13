@@ -6,5 +6,5 @@ go_library(
     name = "config",
     srcs = ["config.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config",
-    deps = ["@com_github_lni_dragonboat_v3//config"],
+    deps = ["@com_github_lni_dragonboat_v4//config"],
 )

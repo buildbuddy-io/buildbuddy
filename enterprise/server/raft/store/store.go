@@ -39,8 +39,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/docker/go-units"
 	"github.com/hashicorp/serf/serf"
-	"github.com/lni/dragonboat/v3"
-	"github.com/lni/dragonboat/v3/raftio"
+	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -51,7 +51,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	dbsm "github.com/lni/dragonboat/v3/statemachine"
+	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
 const (
@@ -661,10 +661,10 @@ func (s *Store) Statusz(ctx context.Context) string {
 }
 
 func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
-	if !s.isLeader(info.ClusterID) {
+	if !s.isLeader(info.ShardID) {
 		return
 	}
-	rd := s.lookupRange(info.ClusterID)
+	rd := s.lookupRange(info.ShardID)
 	if rd == nil {
 		return
 	}
@@ -729,7 +729,7 @@ func (s *Store) dropLeadershipForShutdown() {
 		return
 	}
 	eg := errgroup.Group{}
-	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
+	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
 		clusterInfo := clusterInfo
 		if !clusterInfo.IsLeader {
 			continue
@@ -739,11 +739,11 @@ func (s *Store) dropLeadershipForShutdown() {
 		// random; which is a good thing, it means we're randomly picking
 		// another node in the cluster and requesting they take the lead.
 		for nodeID := range clusterInfo.Nodes {
-			if nodeID == clusterInfo.NodeID {
+			if nodeID == clusterInfo.ReplicaID {
 				continue
 			}
 			eg.Go(func() error {
-				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ClusterID, nodeID); err != nil {
+				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, nodeID); err != nil {
 					log.Warningf("Error transferring leadership: %s", err)
 				}
 				return nil
@@ -1043,9 +1043,9 @@ func (s *Store) isLeader(clusterID uint64) bool {
 	if nodeHostInfo == nil {
 		return false
 	}
-	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
-		if clusterInfo.ClusterID == clusterID {
-			return clusterInfo.IsLeader
+	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
+		if clusterInfo.ShardID == clusterID {
+			return clusterInfo.LeaderID == clusterInfo.ReplicaID && clusterInfo.Term > 0
 		}
 	}
 	return false
@@ -1134,9 +1134,9 @@ func (s *Store) AddPeer(ctx context.Context, sourceClusterID, newClusterID uint6
 
 	s.log.Infof("Starting new raft node c%dn%d", newClusterID, sourceReplica.NodeID)
 	rc := raftConfig.GetRaftConfig(newClusterID, sourceReplica.NodeID)
-	err = s.nodeHost.StartOnDiskCluster(initialMembers, false /*join*/, s.ReplicaFactoryFn, rc)
+	err = s.nodeHost.StartOnDiskReplica(initialMembers, false /*join*/, s.ReplicaFactoryFn, rc)
 	if err != nil {
-		if err == dragonboat.ErrClusterAlreadyExist {
+		if err == dragonboat.ErrShardAlreadyExist {
 			err = status.AlreadyExistsError(err.Error())
 		}
 		return err
@@ -1163,9 +1163,9 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		close(waitErr)
 	}()
 
-	err := s.nodeHost.StartOnDiskCluster(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
+	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
 	if err != nil {
-		if err == dragonboat.ErrClusterAlreadyExist {
+		if err == dragonboat.ErrShardAlreadyExist {
 			err = status.AlreadyExistsError(err.Error())
 		}
 		return nil, err
@@ -1207,7 +1207,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
 	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, req.GetClusterId(), req.GetNodeId())
-		if err == dragonboat.ErrClusterNotStopped {
+		if err == dragonboat.ErrShardNotStopped {
 			err = dragonboat.ErrTimeout
 		}
 		return err
@@ -1229,7 +1229,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 
 	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, batch)
 	if err != nil {
-		if err == dragonboat.ErrClusterNotFound {
+		if err == dragonboat.ErrShardNotFound {
 			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, clusterID)
 		}
 		return nil, err
@@ -1243,7 +1243,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	clusterID := req.GetHeader().GetReplica().GetClusterId()
 	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, clusterID, req.GetBatch())
 	if err != nil {
-		if err == dragonboat.ErrClusterNotFound {
+		if err == dragonboat.ErrShardNotFound {
 			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, clusterID)
 		}
 		return nil, err
@@ -1517,7 +1517,7 @@ func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*
 	var membership *dragonboat.Membership
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		membership, err = s.nodeHost.SyncGetClusterMembership(ctx, clusterID)
+		membership, err = s.nodeHost.SyncGetShardMembership(ctx, clusterID)
 		if err != nil {
 			return err
 		}
@@ -1629,7 +1629,7 @@ func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		// Get the config change index for this cluster.
-		membership, err = s.nodeHost.SyncGetClusterMembership(ctx, clusterID)
+		membership, err = s.nodeHost.SyncGetShardMembership(ctx, clusterID)
 		if err != nil {
 			return err
 		}
@@ -1704,7 +1704,7 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 
 	// Propose the config change (this adds the node to the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		return s.nodeHost.SyncRequestAddNode(ctx, clusterID, newNodeID, node.GetNhid(), configChangeID)
+		return s.nodeHost.SyncRequestAddReplica(ctx, clusterID, newNodeID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
 		return nil, err
@@ -1778,7 +1778,7 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		return s.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
+		return s.nodeHost.SyncRequestDeleteReplica(ctx, clusterID, nodeID, configChangeID)
 	})
 	if err != nil {
 		return nil, err

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/lni/dragonboat/v3/raftio"
+	"github.com/lni/dragonboat/v4/raftio"
 )
 
 var (
@@ -57,6 +57,7 @@ func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
 
 func (rl *RaftListener) NodeHostShuttingDown()                            {}
 func (rl *RaftListener) NodeUnloaded(info raftio.NodeInfo)                {}
+func (rl *RaftListener) NodeDeleted(info raftio.NodeInfo)                 {}
 func (rl *RaftListener) MembershipChanged(info raftio.NodeInfo)           {}
 func (rl *RaftListener) ConnectionEstablished(info raftio.ConnectionInfo) {}
 func (rl *RaftListener) ConnectionFailed(info raftio.ConnectionInfo)      {}
@@ -98,7 +99,7 @@ func (rl *RaftListener) WaitForClusterReady(ctx context.Context, clusterID uint6
 	quitOnce := sync.Once{}
 	quit := make(chan struct{})
 	cb := NodeCB(func(info raftio.NodeInfo) {
-		if info.ClusterID == clusterID {
+		if info.ShardID == clusterID {
 			quitOnce.Do(func() {
 				close(quit)
 			})

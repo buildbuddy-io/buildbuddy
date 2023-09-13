@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	dbcl "github.com/lni/dragonboat/v3/client"
-	sm "github.com/lni/dragonboat/v3/statemachine"
+	dbcl "github.com/lni/dragonboat/v4/client"
+	sm "github.com/lni/dragonboat/v4/statemachine"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"

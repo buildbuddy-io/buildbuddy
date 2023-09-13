@@ -29,15 +29,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/lni/dragonboat/v3"
-	"github.com/lni/dragonboat/v3/raftio"
+	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
-	dbConfig "github.com/lni/dragonboat/v3/config"
+	dbConfig "github.com/lni/dragonboat/v4/config"
 )
 
 func localAddr(t *testing.T) string {

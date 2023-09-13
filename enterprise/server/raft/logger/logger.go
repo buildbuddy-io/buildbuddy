@@ -2,7 +2,7 @@ package logger
 
 import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/lni/dragonboat/v3/logger"
+	"github.com/lni/dragonboat/v4/logger"
 )
 
 // Import this class for the side effect of quieting the

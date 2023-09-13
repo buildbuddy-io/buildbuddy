@@ -14,14 +14,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/lni/dragonboat/v3"
-	"github.com/lni/dragonboat/v3/client"
+	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/client"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
-	dbsm "github.com/lni/dragonboat/v3/statemachine"
+	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
 // If a request is received that will result in a nodehost.Sync{Propose/Read},
