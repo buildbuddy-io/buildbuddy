@@ -16,19 +16,20 @@ import * as format from "../../../app/format/format";
 interface Props {
   title: string;
   id?: string;
-  data: any[];
+  data: number[];
+  ticks?: number[];
   secondaryBarName: string;
-  extractLabel: (datum: any) => string;
-  formatHoverLabel: (datum: any) => string;
-  extractHits: (datum: any) => number;
-  extractSecondary: (datum: any) => number;
+  extractLabel: (datum: number) => string;
+  formatHoverLabel: (datum: number) => string;
+  extractHits: (datum: number) => number;
+  extractSecondary: (datum: number) => number;
 }
 
 interface CacheChartTooltipProps extends TooltipProps<any, any> {
-  labelFormatter: (datum: any) => string;
-  extractHits: (datum: any) => number;
+  labelFormatter: (datum: number) => string;
+  extractHits: (datum: number) => number;
   secondaryBarName: string;
-  extractSecondary: (datum: any) => number;
+  extractSecondary: (datum: number) => number;
 }
 
 const CacheChartTooltip = ({
@@ -68,7 +69,7 @@ export default class CacheChartComponent extends React.Component<Props> {
           <ComposedChart data={this.props.data}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
-            <XAxis dataKey={this.props.extractLabel} />
+            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
             <YAxis yAxisId="hits" tickFormatter={format.count} allowDecimals={false} />
             <YAxis
               domain={[0, 100]}

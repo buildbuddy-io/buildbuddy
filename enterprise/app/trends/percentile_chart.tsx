@@ -16,19 +16,19 @@ import {
 export interface PercentilesChartProps {
   title: string;
   id?: string;
-  data: string[];
-  extractLabel: (datum: string) => string;
-  formatHoverLabel: (datum: string) => string;
-  extractP50: (datum: string) => number;
-  extractP75: (datum: string) => number;
-  extractP90: (datum: string) => number;
-  extractP95: (datum: string) => number;
-  extractP99: (datum: string) => number;
-  onColumnClicked?: (datum: string) => void;
+  data: number[];
+  extractLabel: (datum: number) => string;
+  formatHoverLabel: (datum: number) => string;
+  extractP50: (datum: number) => number;
+  extractP75: (datum: number) => number;
+  extractP90: (datum: number) => number;
+  extractP95: (datum: number) => number;
+  extractP99: (datum: number) => number;
+  onColumnClicked?: (datum: number) => void;
 }
 
 export default class PercentilesChartComponent extends React.Component<PercentilesChartProps> {
-  private lastDataFromHover: string = "";
+  private lastDataFromHover?: number;
 
   handleRowClick() {
     if (!this.props.onColumnClicked || !this.lastDataFromHover) {
@@ -48,7 +48,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
             onClick={this.handleRowClick.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
-            <XAxis dataKey={this.props.extractLabel} />
+            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.data} />
             <YAxis yAxisId="duration" tickFormatter={format.durationSec} allowDecimals={false} width={84} />
             <Tooltip
               content={
@@ -106,13 +106,13 @@ export default class PercentilesChartComponent extends React.Component<Percentil
 }
 
 interface PercentilesChartTooltipProps extends TooltipProps<any, any> {
-  labelFormatter: (datum: string) => string;
-  extractP50: (datum: string) => number;
-  extractP75: (datum: string) => number;
-  extractP90: (datum: string) => number;
-  extractP95: (datum: string) => number;
-  extractP99: (datum: string) => number;
-  triggerCallback: (datum: string) => void;
+  labelFormatter: (datum: number) => string;
+  extractP50: (datum: number) => number;
+  extractP75: (datum: number) => number;
+  extractP90: (datum: number) => number;
+  extractP95: (datum: number) => number;
+  extractP99: (datum: number) => number;
+  triggerCallback: (datum: number) => void;
 }
 
 class PercentilesChartTooltip extends React.Component<PercentilesChartTooltipProps> {

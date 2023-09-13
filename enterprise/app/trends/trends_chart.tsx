@@ -16,18 +16,18 @@ import {
 
 interface Props {
   title: string;
-  data: any[];
+  data: number[];
   id?: string;
 
-  extractLabel: (datum: any) => string;
-  formatHoverLabel: (datum: any) => string;
+  extractLabel: (datum: number) => string;
+  formatHoverLabel: (datum: number) => string;
   formatHoverValue?: (datum: number) => string;
   formatTickValue?: (datum: number, index: number) => string;
-  extractValue: (datum: any) => number;
+  extractValue: (datum: number) => number;
   allowDecimals?: boolean;
   name: string;
 
-  extractSecondaryValue?: (datum: any) => number;
+  extractSecondaryValue?: (datum: number) => number;
   formatSecondaryHoverValue?: (datum: number) => string;
   formatSecondaryTickValue?: (datum: number, index: number) => string;
   secondaryAllowDecimals?: boolean;
@@ -35,8 +35,8 @@ interface Props {
   secondaryLine?: boolean;
   separateAxis?: boolean;
 
-  onBarClicked?: (date: string) => void;
-  onSecondaryBarClicked?: (date: string) => void;
+  onBarClicked?: (date: number) => void;
+  onSecondaryBarClicked?: (date: number) => void;
 }
 
 interface TrendsChartTooltipProps extends TooltipProps<any, any> {
@@ -84,7 +84,7 @@ export default class TrendsChartComponent extends React.Component<Props> {
           <ComposedChart data={this.props.data}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
-            <XAxis dataKey={this.props.extractLabel} />
+            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.data} />
             <YAxis
               yAxisId="primary"
               tickFormatter={this.props.formatTickValue}
