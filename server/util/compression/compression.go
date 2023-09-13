@@ -117,6 +117,20 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
+type wrappedReader struct {
+	pr          *io.PipeReader
+	inputReader io.ReadCloser
+}
+
+func (r *wrappedReader) Read(p []byte) (int, error) {
+	return r.pr.Read(p)
+}
+
+func (r *wrappedReader) Close() error {
+	defer r.inputReader.Close()
+	return r.pr.Close()
+}
+
 // NewZstdCompressingReader returns a reader that reads chunks from the given
 // reader into the read buffer, and makes the zstd-compressed chunks available
 // on the output reader. Each chunk read into the read buffer is immediately
@@ -136,7 +150,7 @@ func (d *zstdDecompressor) Close() error {
 // compression buffer is allocated internally. This scenario should be rare if
 // the data is even modestly compressible and the compression buffer capacity is
 // at least a few hundred bytes.
-func NewZstdCompressingReader(reader io.Reader, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
+func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	go func() {
 		for {
@@ -154,12 +168,15 @@ func NewZstdCompressingReader(reader io.Reader, readBuf []byte, compressBuf []by
 			}
 		}
 	}()
-	return pr, nil
+	return &wrappedReader{
+		pr:          pr,
+		inputReader: reader,
+	}, nil
 }
 
 // NewZstdDecompressingReader reads zstd-compressed data from the input
 // reader and makes the decompressed data available on the output reader
-func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
+func NewZstdDecompressingReader(reader io.ReadCloser) (io.ReadCloser, error) {
 	// Stream data from reader to decoder
 	decoder, err := zstdDecoderPool.Get(reader)
 	if err != nil {
@@ -178,7 +195,10 @@ func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
 		}
 	}()
 
-	return pr, nil
+	return &wrappedReader{
+		pr:          pr,
+		inputReader: reader,
+	}, nil
 }
 
 // DecoderRef wraps a *zstd.Decoder. Since it does not directly start any
