@@ -11,6 +11,7 @@
     "@bazel/jasmine": "^5.4.0",
     "@bazel/typescript": "^5.4.0",
     "@types/d3-scale": "^3.0.0",
+    "@types/d3-time": "^3.0.0",
     "@types/dagre-d3": "^0.4.39",
     "@types/diff": "^5.0.1",
     "@types/diff-match-patch": "^1.0.32",

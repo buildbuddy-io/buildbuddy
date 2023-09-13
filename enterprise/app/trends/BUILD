@@ -22,6 +22,7 @@ ts_library(
         "//enterprise/app/trends:summary_card",
         "//enterprise/app/trends:trends_chart",
         "//proto:stats_ts_proto",
+        "@npm//@types/d3-time",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//d3-time",
@@ -83,6 +84,7 @@ ts_library(
     deps = [
         "//app/util:proto",
         "//proto:stats_ts_proto",
+        "@npm//@types/d3-time",
         "@npm//d3-time",
     ],
 )

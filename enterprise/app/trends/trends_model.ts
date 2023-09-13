@@ -97,8 +97,8 @@ export default class TrendsModel {
 // TODO(jdhollen): support specifying a mod to skip specific ticks
 function computeTimeKeys(domain: [Date, Date]): number[] {
   if (domain[1].getTime() - domain[0].getTime() > 1000 * 60 * 60 * 48) {
-    return timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime());
+    return timeDay.range(timeDay.floor(domain[0]), domain[1]).map((d: Date) => d.getTime());
   } else {
-    return timeHour.range(timeHour.floor(domain[0]), domain[1]).map((v) => v.getTime());
+    return timeHour.range(timeHour.floor(domain[0]), domain[1]).map((d: Date) => d.getTime());
   }
 }
