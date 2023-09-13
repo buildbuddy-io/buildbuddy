@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/metrics",
-        "//server/util/log",
+        "//server/util/alert",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_prometheus_client_golang//prometheus",
