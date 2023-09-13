@@ -135,7 +135,7 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
         <OutlinedButton
           onClick={this.handleGenerateImpersonationAPIKeyClicked.bind(this)}
           className="generate-api-key-button">
-          <span>{this.state.apiKey ? "Copy" : "Generate"} Temporary API Key</span>
+          <span>{this.state.apiKey ? "Copy" : "Generate"} temporary API key</span>
           {this.state.isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
         </OutlinedButton>
         <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)} className="exit-button">
