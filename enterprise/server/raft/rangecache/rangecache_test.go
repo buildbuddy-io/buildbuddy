@@ -61,14 +61,14 @@ func TestMemberEvent(t *testing.T) {
 		Right:      keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
+			{ShardId: 1, ReplicaId: 1},
 		},
 	}))
 
 	// Make sure we get back that range descriptor.
 	rd := rc.Get([]byte("a"))
 	require.NotNil(t, rd)
-	require.Equal(t, uint64(1), rd.GetReplicas()[0].GetClusterId())
+	require.Equal(t, uint64(1), rd.GetReplicas()[0].GetShardId())
 }
 
 func TestMultipleNodesInRange(t *testing.T) {
@@ -84,9 +84,9 @@ func TestMultipleNodesInRange(t *testing.T) {
 		Right:      keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
+			{ShardId: 1, ReplicaId: 1},
+			{ShardId: 1, ReplicaId: 2},
+			{ShardId: 1, ReplicaId: 3},
 		},
 	}
 
@@ -97,9 +97,9 @@ func TestMultipleNodesInRange(t *testing.T) {
 
 	rr := rc.Get([]byte("m"))
 	require.NotNil(t, rr)
-	require.Equal(t, uint64(1), rr.GetReplicas()[0].GetNodeId())
-	require.Equal(t, uint64(2), rr.GetReplicas()[1].GetNodeId())
-	require.Equal(t, uint64(3), rr.GetReplicas()[2].GetNodeId())
+	require.Equal(t, uint64(1), rr.GetReplicas()[0].GetReplicaId())
+	require.Equal(t, uint64(2), rr.GetReplicas()[1].GetReplicaId())
+	require.Equal(t, uint64(3), rr.GetReplicas()[2].GetReplicaId())
 }
 
 func TestRangeUpdatedMemberEvent(t *testing.T) {
@@ -110,9 +110,9 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 		Right:      keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
+			{ShardId: 1, ReplicaId: 1},
+			{ShardId: 1, ReplicaId: 2},
+			{ShardId: 1, ReplicaId: 3},
 		},
 	}
 
@@ -124,9 +124,9 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 		Right:      []byte("z"),
 		Generation: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 2, NodeId: 3},
-			{ClusterId: 2, NodeId: 4},
-			{ClusterId: 2, NodeId: 5},
+			{ShardId: 2, ReplicaId: 3},
+			{ShardId: 2, ReplicaId: 4},
+			{ShardId: 2, ReplicaId: 5},
 		},
 	}
 
@@ -135,9 +135,9 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 
 	rr := rc.Get([]byte("m"))
 	require.NotNil(t, rr)
-	require.Equal(t, uint64(3), rr.GetReplicas()[0].GetNodeId())
-	require.Equal(t, uint64(4), rr.GetReplicas()[1].GetNodeId())
-	require.Equal(t, uint64(5), rr.GetReplicas()[2].GetNodeId())
+	require.Equal(t, uint64(3), rr.GetReplicas()[0].GetReplicaId())
+	require.Equal(t, uint64(4), rr.GetReplicas()[1].GetReplicaId())
+	require.Equal(t, uint64(5), rr.GetReplicas()[2].GetReplicaId())
 }
 
 func TestRangeStaleMemberEvent(t *testing.T) {
@@ -148,9 +148,9 @@ func TestRangeStaleMemberEvent(t *testing.T) {
 		Right:      []byte("b"),
 		Generation: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
+			{ShardId: 1, ReplicaId: 1},
+			{ShardId: 1, ReplicaId: 2},
+			{ShardId: 1, ReplicaId: 3},
 		},
 	}
 
@@ -162,9 +162,9 @@ func TestRangeStaleMemberEvent(t *testing.T) {
 		Right:      []byte("z"),
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 2, NodeId: 3},
-			{ClusterId: 2, NodeId: 4},
-			{ClusterId: 2, NodeId: 5},
+			{ShardId: 2, ReplicaId: 3},
+			{ShardId: 2, ReplicaId: 4},
+			{ShardId: 2, ReplicaId: 5},
 		},
 	}
 

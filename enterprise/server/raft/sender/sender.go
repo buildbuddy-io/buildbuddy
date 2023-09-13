@@ -53,7 +53,7 @@ func makeHeader(rangeDescriptor *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Hea
 }
 
 func (s *Sender) grpcAddrForReplicaDescriptor(rd *rfpb.ReplicaDescriptor) (string, error) {
-	addr, _, err := s.nodeRegistry.ResolveGRPC(rd.GetClusterId(), rd.GetNodeId())
+	addr, _, err := s.nodeRegistry.ResolveGRPC(rd.GetShardId(), rd.GetReplicaId())
 	if err != nil {
 		return "", err
 	}
@@ -168,7 +168,7 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 				log.Debugf("out of range: %s (skipping rangecache)", m)
 				return 0, err
 			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
-				log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetNodeId())
+				log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetReplicaId())
 				continue
 			default:
 				break

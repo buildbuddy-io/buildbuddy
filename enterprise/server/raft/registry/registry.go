@@ -23,11 +23,11 @@ type NodeRegistry interface {
 	raftio.INodeRegistry
 
 	// Used by store.go and sender.go.
-	ResolveGRPC(clusterID uint64, nodeID uint64) (string, string, error)
+	ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error)
 
 	// Used by store.go only.
 	AddNode(target, raftAddress, grpcAddress string)
-	ResolveNHID(clusterID uint64, nodeID uint64) (string, string, error)
+	ResolveNHID(shardID uint64, replicaID uint64) (string, string, error)
 	String() string
 }
 
@@ -38,8 +38,8 @@ type fixedPartitioner struct {
 }
 
 // GetPartitionID returns the partition ID for the specified raft cluster.
-func (p *fixedPartitioner) GetPartitionID(clusterID uint64) uint64 {
-	return clusterID % p.capacity
+func (p *fixedPartitioner) GetPartitionID(shardID uint64) uint64 {
+	return shardID % p.capacity
 }
 
 type connInfo struct {
@@ -69,69 +69,69 @@ func NewStaticNodeRegistry(streamConnections uint64, v dbConfig.TargetValidator)
 }
 
 // Add adds the specified node and its target info to the registry.
-func (n *StaticRegistry) Add(clusterID uint64, nodeID uint64, target string) {
+func (n *StaticRegistry) Add(shardID uint64, replicaID uint64, target string) {
 	if n.validate != nil && !n.validate(target) {
 		log.Errorf("invalid target %s", target)
 		return
 	}
-	key := raftio.GetNodeInfo(clusterID, nodeID)
+	key := raftio.GetNodeInfo(shardID, replicaID)
 	existingTarget, ok := n.nodeTargets.LoadOrStore(key, target)
 	if ok {
 		if existingTarget != target {
-			log.Errorf("inconsistent target for %d %d, %s:%s", clusterID, nodeID, existingTarget, target)
+			log.Errorf("inconsistent target for %d %d, %s:%s", shardID, replicaID, existingTarget, target)
 		}
 	}
 }
 
-func (n *StaticRegistry) getConnectionKey(addr string, clusterID uint64) string {
+func (n *StaticRegistry) getConnectionKey(addr string, shardID uint64) string {
 	if n.partitioner == nil {
 		return addr
 	}
-	return fmt.Sprintf("%s-%d", addr, n.partitioner.GetPartitionID(clusterID))
+	return fmt.Sprintf("%s-%d", addr, n.partitioner.GetPartitionID(shardID))
 }
 
 // Remove removes a remote from the node registry.
-func (n *StaticRegistry) Remove(clusterID uint64, nodeID uint64) {
+func (n *StaticRegistry) Remove(shardID uint64, replicaID uint64) {
 	return
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
-func (n *StaticRegistry) RemoveShard(clusterID uint64) {
+func (n *StaticRegistry) RemoveShard(shardID uint64) {
 	return
 }
 
-func (n *StaticRegistry) Resolve(clusterID uint64, nodeID uint64) (string, string, error) {
-	return n.ResolveRaft(clusterID, nodeID)
+func (n *StaticRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
+	return n.ResolveRaft(shardID, replicaID)
 }
 
 // Resolve looks up the Addr of the specified node.
-func (n *StaticRegistry) ResolveRaft(clusterID uint64, nodeID uint64) (string, string, error) {
-	key := raftio.GetNodeInfo(clusterID, nodeID)
+func (n *StaticRegistry) ResolveRaft(shardID uint64, replicaID uint64) (string, string, error) {
+	key := raftio.GetNodeInfo(shardID, replicaID)
 	if target, ok := n.nodeTargets.Load(key); ok {
 		if r, ok := n.targetRafts.Load(target); ok {
 			raftAddr := r.(string)
-			return raftAddr, n.getConnectionKey(raftAddr, clusterID), nil
+			return raftAddr, n.getConnectionKey(raftAddr, shardID), nil
 		}
 	}
 	return "", "", TargetAddressUnknownError
 }
 
-func (n *StaticRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (string, string, error) {
-	key := raftio.GetNodeInfo(clusterID, nodeID)
+func (n *StaticRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error) {
+	key := raftio.GetNodeInfo(shardID, replicaID)
 	if target, ok := n.nodeTargets.Load(key); ok {
 		if g, ok := n.targetGrpcs.Load(target); ok {
 			grpcAddr := g.(string)
-			return grpcAddr, n.getConnectionKey(grpcAddr, clusterID), nil
+			return grpcAddr, n.getConnectionKey(grpcAddr, shardID), nil
 		}
 	}
 	return "", "", TargetAddressUnknownError
 }
 
-func (n *StaticRegistry) ResolveNHID(clusterID uint64, nodeID uint64) (string, string, error) {
-	key := raftio.GetNodeInfo(clusterID, nodeID)
+func (n *StaticRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, string, error) {
+	key := raftio.GetNodeInfo(shardID, replicaID)
 	if t, ok := n.nodeTargets.Load(key); ok {
 		target := t.(string)
-		return target, n.getConnectionKey(target, clusterID), nil
+		return target, n.getConnectionKey(target, shardID), nil
 	}
 	return "", "", TargetAddressUnknownError
 }
@@ -231,7 +231,7 @@ func (d *DynamicNodeRegistry) handleEvent(event *serf.UserEvent) {
 		d.sReg.AddNode(req.GetNhid(), req.GetRaftAddress(), req.GetGrpcAddress())
 	}
 	for _, r := range req.GetReplicas() {
-		d.sReg.Add(r.GetClusterId(), r.GetNodeId(), req.GetNhid())
+		d.sReg.Add(r.GetShardId(), r.GetReplicaId(), req.GetNhid())
 	}
 }
 
@@ -246,19 +246,19 @@ func (d *DynamicNodeRegistry) handleQuery(query *serf.Query) {
 	if err := proto.Unmarshal(query.Payload, req); err != nil {
 		return
 	}
-	if req.GetClusterId() == 0 || req.GetNodeId() == 0 {
+	if req.GetShardId() == 0 || req.GetReplicaId() == 0 {
 		log.Warningf("Ignoring malformed registry query: %+v", req)
 		return
 	}
-	n, _, err := d.sReg.ResolveNHID(req.GetClusterId(), req.GetNodeId())
+	n, _, err := d.sReg.ResolveNHID(req.GetShardId(), req.GetReplicaId())
 	if err != nil {
 		return
 	}
-	r, _, err := d.sReg.ResolveRaft(req.GetClusterId(), req.GetNodeId())
+	r, _, err := d.sReg.ResolveRaft(req.GetShardId(), req.GetReplicaId())
 	if err != nil {
 		return
 	}
-	g, _, err := d.sReg.ResolveGRPC(req.GetClusterId(), req.GetNodeId())
+	g, _, err := d.sReg.ResolveGRPC(req.GetShardId(), req.GetReplicaId())
 	if err != nil {
 		return
 	}
@@ -302,10 +302,10 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 	}
 }
 
-func (d *DynamicNodeRegistry) queryPeers(clusterID uint64, nodeID uint64) {
+func (d *DynamicNodeRegistry) queryPeers(shardID uint64, replicaID uint64) {
 	req := &rfpb.RegistryQueryRequest{
-		ClusterId: clusterID,
-		NodeId:    nodeID,
+		ShardId:   shardID,
+		ReplicaId: replicaID,
 	}
 	buf, err := proto.Marshal(req)
 	if err != nil {
@@ -325,7 +325,7 @@ func (d *DynamicNodeRegistry) queryPeers(clusterID uint64, nodeID uint64) {
 			log.Warningf("ignoring malformed query response: %+v", rsp)
 			continue
 		}
-		d.sReg.Add(clusterID, nodeID, rsp.GetNhid())
+		d.sReg.Add(shardID, replicaID, rsp.GetNhid())
 		d.sReg.AddNode(rsp.GetNhid(), rsp.GetRaftAddress(), rsp.GetGrpcAddress())
 		stream.Close()
 		return
@@ -333,8 +333,8 @@ func (d *DynamicNodeRegistry) queryPeers(clusterID uint64, nodeID uint64) {
 }
 
 // Add adds the specified node and its target info to the registry.
-func (d *DynamicNodeRegistry) Add(clusterID uint64, nodeID uint64, target string) {
-	d.sReg.Add(clusterID, nodeID, target)
+func (d *DynamicNodeRegistry) Add(shardID uint64, replicaID uint64, target string) {
+	d.sReg.Add(shardID, replicaID, target)
 
 	// Raft library calls this method very often (bug?), so don't gossip
 	// these adds for now. Another option would be to track which ones have
@@ -343,43 +343,43 @@ func (d *DynamicNodeRegistry) Add(clusterID uint64, nodeID uint64, target string
 }
 
 // Remove removes a remote from the node registry.
-func (d *DynamicNodeRegistry) Remove(clusterID uint64, nodeID uint64) {
+func (d *DynamicNodeRegistry) Remove(shardID uint64, replicaID uint64) {
 	return
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
-func (d *DynamicNodeRegistry) RemoveShard(clusterID uint64) {
+func (d *DynamicNodeRegistry) RemoveShard(shardID uint64) {
 	return
 }
 
-func (d *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string, string, error) {
-	return d.ResolveRaft(clusterID, nodeID)
+func (d *DynamicNodeRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
+	return d.ResolveRaft(shardID, replicaID)
 }
 
 // Resolve looks up the Addr of the specified node.
-func (d *DynamicNodeRegistry) ResolveRaft(clusterID uint64, nodeID uint64) (string, string, error) {
-	r, k, err := d.sReg.ResolveRaft(clusterID, nodeID)
+func (d *DynamicNodeRegistry) ResolveRaft(shardID uint64, replicaID uint64) (string, string, error) {
+	r, k, err := d.sReg.ResolveRaft(shardID, replicaID)
 	if err == TargetAddressUnknownError {
-		d.queryPeers(clusterID, nodeID)
-		return d.sReg.ResolveRaft(clusterID, nodeID)
+		d.queryPeers(shardID, replicaID)
+		return d.sReg.ResolveRaft(shardID, replicaID)
 	}
 	return r, k, err
 }
 
-func (d *DynamicNodeRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (string, string, error) {
-	g, k, err := d.sReg.ResolveGRPC(clusterID, nodeID)
+func (d *DynamicNodeRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error) {
+	g, k, err := d.sReg.ResolveGRPC(shardID, replicaID)
 	if err == TargetAddressUnknownError {
-		d.queryPeers(clusterID, nodeID)
-		return d.sReg.ResolveGRPC(clusterID, nodeID)
+		d.queryPeers(shardID, replicaID)
+		return d.sReg.ResolveGRPC(shardID, replicaID)
 	}
 	return g, k, err
 }
 
-func (d *DynamicNodeRegistry) ResolveNHID(clusterID uint64, nodeID uint64) (string, string, error) {
-	n, k, err := d.sReg.ResolveNHID(clusterID, nodeID)
+func (d *DynamicNodeRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, string, error) {
+	n, k, err := d.sReg.ResolveNHID(shardID, replicaID)
 	if err == TargetAddressUnknownError {
-		d.queryPeers(clusterID, nodeID)
-		return d.sReg.ResolveNHID(clusterID, nodeID)
+		d.queryPeers(shardID, replicaID)
+		return d.sReg.ResolveNHID(shardID, replicaID)
 	}
 	return n, k, err
 }

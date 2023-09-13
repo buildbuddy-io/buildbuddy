@@ -65,8 +65,8 @@ type IStore interface {
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	NotifyUsage(ru *rfpb.ReplicaUsage)
 	Sender() *sender.Sender
-	AddPeer(ctx context.Context, sourceClusterID, newClusterID uint64) error
-	SnapshotCluster(ctx context.Context, clusterID uint64) error
+	AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error
+	SnapshotCluster(ctx context.Context, shardID uint64) error
 }
 
 // IOnDiskStateMachine is the interface to be implemented by application's
@@ -98,8 +98,8 @@ type Replica struct {
 
 	rootDir   string
 	fileDir   string
-	ClusterID uint64
-	NodeID    uint64
+	ShardID   uint64
+	ReplicaID uint64
 
 	store               IStore
 	partitions          []disk.Partition
@@ -174,16 +174,16 @@ func batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) {
 	return nil, false
 }
 
-func replicaSpecificSuffix(clusterID, nodeID uint64) []byte {
-	return []byte(fmt.Sprintf("-c%04dn%04d", clusterID, nodeID))
+func replicaSpecificSuffix(shardID, replicaID uint64) []byte {
+	return []byte(fmt.Sprintf("-c%04dn%04d", shardID, replicaID))
 }
 
 func (sm *Replica) replicaSuffix() []byte {
-	return replicaSpecificSuffix(sm.ClusterID, sm.NodeID)
+	return replicaSpecificSuffix(sm.ShardID, sm.ReplicaID)
 }
 
-func replicaSpecificKey(key []byte, clusterID, nodeID uint64) []byte {
-	suffix := replicaSpecificSuffix(clusterID, nodeID)
+func replicaSpecificKey(key []byte, shardID, replicaID uint64) []byte {
+	suffix := replicaSpecificSuffix(shardID, replicaID)
 	if bytes.HasSuffix(key, suffix) {
 		log.Debugf("Key %q already has replica suffix!", key)
 		return key
@@ -192,7 +192,7 @@ func replicaSpecificKey(key []byte, clusterID, nodeID uint64) []byte {
 }
 
 func (sm *Replica) replicaLocalKey(key []byte) []byte {
-	return replicaSpecificKey(key, sm.ClusterID, sm.NodeID)
+	return replicaSpecificKey(key, sm.ShardID, sm.ReplicaID)
 }
 
 func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
@@ -206,8 +206,8 @@ func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
-			ClusterId: sm.ClusterID,
-			NodeId:    sm.NodeID,
+			ShardId:   sm.ShardID,
+			ReplicaId: sm.ReplicaID,
 		},
 	}
 	sm.rangeMu.RLock()
@@ -252,7 +252,7 @@ func (sm *Replica) String() string {
 	rd := sm.rangeDescriptor
 	sm.rangeMu.Unlock()
 
-	return fmt.Sprintf("Replica c%dn%d %s", sm.ClusterID, sm.NodeID, rdString(rd))
+	return fmt.Sprintf("Replica c%dn%d %s", sm.ShardID, sm.ReplicaID, rdString(rd))
 }
 
 func rdString(rd *rfpb.RangeDescriptor) string {
@@ -446,8 +446,8 @@ func (sm *Replica) updateAndFlushPartitionMetadatas(wb pebble.Batch, key, val []
 
 func (sm *Replica) getDBDir() string {
 	return filepath.Join(sm.rootDir,
-		fmt.Sprintf("cluster-%d", sm.ClusterID),
-		fmt.Sprintf("node-%d", sm.NodeID))
+		fmt.Sprintf("cluster-%d", sm.ShardID),
+		fmt.Sprintf("node-%d", sm.ReplicaID))
 }
 
 type ReplicaReader interface {
@@ -778,7 +778,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) ([]byte, erro
 		sm.printRange(db, iterOpts, "unsplittable range")
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
 	}
-	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ClusterID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
+	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ShardID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
 	return splitKey, nil
 }
 
@@ -841,7 +841,7 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 	peerRangeDescriptor.RangeId = req.GetNewRangeId()
 	peerRangeDescriptor.Generation += 1
 	for _, r := range peerRangeDescriptor.GetReplicas() {
-		r.ClusterId = req.GetNewClusterId()
+		r.ShardId = req.GetNewShardId()
 	}
 
 	buf, err := proto.Marshal(peerRangeDescriptor)
@@ -854,11 +854,11 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 		return nil, err
 	}
 	defer db.Close()
-	peerRangeKey := replicaSpecificKey(constants.LocalRangeKey, req.GetNewClusterId(), sm.NodeID)
+	peerRangeKey := replicaSpecificKey(constants.LocalRangeKey, req.GetNewShardId(), sm.ReplicaID)
 	if err := db.Set(peerRangeKey, buf, pebble.Sync); err != nil {
 		return nil, err
 	}
-	if err := sm.store.AddPeer(ctx, sm.ClusterID, req.GetNewClusterId()); err != nil {
+	if err := sm.store.AddPeer(ctx, sm.ShardID, req.GetNewShardId()); err != nil {
 		return nil, err
 	}
 
@@ -867,7 +867,7 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 	// database clone outside of raft. With the raft snapshot in place,
 	// recovery attempts will ask the state machine (replica) to provide a
 	// snapshot which will reflect the cloned data.
-	if err := sm.store.SnapshotCluster(ctx, req.GetNewClusterId()); err != nil {
+	if err := sm.store.SnapshotCluster(ctx, req.GetNewShardId()); err != nil {
 		return nil, err
 	}
 
@@ -1775,16 +1775,16 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(leaser pebble.Leaser, clusterID, nodeID uint64, store IStore, partitions []disk.Partition) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, partitions []disk.Partition) *Replica {
 	return &Replica{
-		ClusterID:           clusterID,
-		NodeID:              nodeID,
+		ShardID:             shardID,
+		ReplicaID:           replicaID,
 		store:               store,
 		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
 		partitions:          partitions,
 		lastUsageCheckIndex: 0,
-		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", shardID, replicaID)),
 		fileStorer:          filestore.New(),
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
 		readQPS:             qps.NewCounter(),

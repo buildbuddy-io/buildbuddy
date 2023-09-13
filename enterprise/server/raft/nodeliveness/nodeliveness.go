@@ -30,7 +30,7 @@ const (
 
 type Liveness struct {
 	sender        sender.ISender
-	nodeID        []byte
+	replicaID     []byte
 	clock         *serf.LamportClock
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
@@ -42,9 +42,9 @@ type Liveness struct {
 	timeUntilLeaseRenewal time.Duration
 }
 
-func New(nodeID string, sender sender.ISender) *Liveness {
+func New(replicaID string, sender sender.ISender) *Liveness {
 	return &Liveness{
-		nodeID:                []byte(nodeID),
+		replicaID:             []byte(replicaID),
 		sender:                sender,
 		clock:                 &serf.LamportClock{},
 		leaseDuration:         defaultLeaseDuration,
@@ -105,14 +105,14 @@ func (h *Liveness) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_Node
 		return nil, err
 	}
 	return &rfpb.RangeLeaseRecord_NodeLiveness{
-		NodeId: h.nodeID,
-		Epoch:  l.GetEpoch(),
+		ReplicaId: h.replicaID,
+		Epoch:     l.GetEpoch(),
 	}, nil
 }
 
 func (h *Liveness) BlockingValidateNodeLiveness(nl *rfpb.RangeLeaseRecord_NodeLiveness) error {
-	if !bytes.Equal(nl.GetNodeId(), h.nodeID) {
-		return status.FailedPreconditionErrorf("Invalid rangeLease: nodeID mismatch")
+	if !bytes.Equal(nl.GetReplicaId(), h.replicaID) {
+		return status.FailedPreconditionErrorf("Invalid rangeLease: replicaID mismatch")
 	}
 	l, err := h.ensureValidLease(false /*=renew*/)
 	if err != nil {
@@ -162,7 +162,7 @@ func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord
 	}
 
 	if !alreadyValid {
-		log.Debugf("Acquired %s", h.string(h.nodeID, h.lastLivenessRecord))
+		log.Debugf("Acquired %s", h.string(h.replicaID, h.lastLivenessRecord))
 	}
 
 	// We just renewed the lease. If there isn't already a background
@@ -176,7 +176,7 @@ func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord
 }
 
 func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (*rfpb.KV, error) {
-	leaseKey := keys.MakeKey(constants.SystemPrefix, h.nodeID)
+	leaseKey := keys.MakeKey(constants.SystemPrefix, h.replicaID)
 	casRequest, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   leaseKey,
@@ -285,19 +285,19 @@ func (h *Liveness) keepLeaseAlive(quitLease chan struct{}) {
 	}
 }
 
-func (h *Liveness) string(nodeID []byte, llr *rfpb.NodeLivenessRecord) string {
+func (h *Liveness) string(replicaID []byte, llr *rfpb.NodeLivenessRecord) string {
 	// Don't lock here (to avoid recursive locking).
 	err := h.verifyLease(llr)
 	if err != nil {
-		return fmt.Sprintf("Liveness(%q): invalid (%s)", string(nodeID), err)
+		return fmt.Sprintf("Liveness(%q): invalid (%s)", string(replicaID), err)
 	}
 	lifetime := time.Unix(0, llr.GetExpiration()).Sub(time.Now())
-	return fmt.Sprintf("Liveness(%q): [epoch: %d, expires in %s]", string(nodeID), llr.GetEpoch(), lifetime)
+	return fmt.Sprintf("Liveness(%q): [epoch: %d, expires in %s]", string(replicaID), llr.GetEpoch(), lifetime)
 }
 
 func (h *Liveness) String() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	return h.string(h.nodeID, h.lastLivenessRecord)
+	return h.string(h.replicaID, h.lastLivenessRecord)
 }

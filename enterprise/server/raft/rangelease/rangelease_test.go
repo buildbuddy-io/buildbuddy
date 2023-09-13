@@ -24,7 +24,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const clusterID = 1
+const shardID = 1
 
 type testingProposer struct {
 	t    testing.TB
@@ -54,8 +54,8 @@ func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) sm.Result {
 	return sm.Result{Data: buf}
 }
 
-func (tp *testingProposer) GetNoOPSession(clusterID uint64) *dbcl.Session {
-	return dbcl.NewNoOPSession(clusterID, random.LockGuardedRand)
+func (tp *testingProposer) GetNoOPSession(shardID uint64) *dbcl.Session {
+	return dbcl.NewNoOPSession(shardID, random.LockGuardedRand)
 }
 
 func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Session, cmd []byte) (sm.Result, error) {
@@ -91,7 +91,7 @@ func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Sessio
 	return sm.Result{}, nil
 }
 
-func (tp *testingProposer) SyncRead(ctx context.Context, clusterID uint64, query interface{}) (interface{}, error) {
+func (tp *testingProposer) SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 
@@ -106,7 +106,7 @@ func (t *testingSender) SyncPropose(ctx context.Context, key []byte, batch *rfpb
 		return nil, err
 	}
 
-	sess := t.tp.GetNoOPSession(clusterID)
+	sess := t.tp.GetNoOPSession(shardID)
 
 	res, err := t.tp.SyncPropose(ctx, sess, buf)
 	if err != nil {
@@ -126,7 +126,7 @@ func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.Ba
 		return nil, err
 	}
 
-	res, err := t.tp.SyncRead(ctx, clusterID, buf)
+	res, err := t.tp.SyncRead(ctx, shardID, buf)
 	if err != nil {
 		return nil, err
 	}
@@ -148,19 +148,19 @@ func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender
 
 func TestAcquireAndRelease(t *testing.T) {
 	proposer, sender := newTestingProposerAndSender(t)
-	liveness := nodeliveness.New("nodeID-1", sender)
+	liveness := nodeliveness.New("replicaID-1", sender)
 
 	rd := &rfpb.RangeDescriptor{
 		Left:    []byte("a"),
 		Right:   []byte("z"),
 		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
+			{ShardId: 1, ReplicaId: 1},
+			{ShardId: 1, ReplicaId: 2},
+			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, clusterID, liveness, rd)
+	l := rangelease.New(proposer, shardID, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
@@ -183,19 +183,19 @@ func TestAcquireAndRelease(t *testing.T) {
 
 func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	proposer, sender := newTestingProposerAndSender(t)
-	liveness := nodeliveness.New("nodeID-2", sender)
+	liveness := nodeliveness.New("replicaID-2", sender)
 
 	rd := &rfpb.RangeDescriptor{
 		Left:    keys.MinByte,
 		Right:   []byte("z"),
 		RangeId: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
+			{ShardId: 1, ReplicaId: 1},
+			{ShardId: 1, ReplicaId: 2},
+			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, clusterID, liveness, rd)
+	l := rangelease.New(proposer, shardID, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
@@ -218,21 +218,21 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 
 func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	proposer, sender := newTestingProposerAndSender(t)
-	liveness := nodeliveness.New("nodeID-3", sender)
+	liveness := nodeliveness.New("replicaID-3", sender)
 
 	rd := &rfpb.RangeDescriptor{
 		Left:    keys.MinByte,
 		Right:   []byte("z"),
 		RangeId: 3,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
+			{ShardId: 1, ReplicaId: 1},
+			{ShardId: 1, ReplicaId: 2},
+			{ShardId: 1, ReplicaId: 3},
 		},
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, clusterID, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, shardID, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
@@ -261,19 +261,19 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 
 func TestNodeEpochInvalidation(t *testing.T) {
 	proposer, sender := newTestingProposerAndSender(t)
-	liveness := nodeliveness.New("nodeID-4", sender)
+	liveness := nodeliveness.New("replicaID-4", sender)
 
 	rd := &rfpb.RangeDescriptor{
 		Left:    []byte("a"),
 		Right:   []byte("z"),
 		RangeId: 4,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
+			{ShardId: 1, ReplicaId: 1},
+			{ShardId: 1, ReplicaId: 2},
+			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, clusterID, liveness, rd)
+	l := rangelease.New(proposer, shardID, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
