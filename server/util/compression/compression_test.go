@@ -12,7 +12,7 @@ func Test_NewZstdDecompressingReader(t *testing.T) {
 	blob := "AAAAAAAAAAAAA"
 	compressedBlob := CompressZstd(nil, []byte(blob))
 	compressedReader := strings.NewReader(string(compressedBlob))
-	decompressedReader, err := NewZstdDecompressingReader(compressedReader)
+	decompressedReader, err := NewZstdDecompressingReader(io.NopCloser(compressedReader))
 	require.NoError(t, err)
 
 	b, err := io.ReadAll(decompressedReader)
