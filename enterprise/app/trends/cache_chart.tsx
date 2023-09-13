@@ -17,7 +17,6 @@ interface Props {
   title: string;
   id?: string;
   data: number[];
-  ticks?: number[];
   secondaryBarName: string;
   extractLabel: (datum: number) => string;
   formatHoverLabel: (datum: number) => string;
@@ -69,7 +68,7 @@ export default class CacheChartComponent extends React.Component<Props> {
           <ComposedChart data={this.props.data}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
-            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
+            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.data} />
             <YAxis yAxisId="hits" tickFormatter={format.count} allowDecimals={false} />
             <YAxis
               domain={[0, 100]}
