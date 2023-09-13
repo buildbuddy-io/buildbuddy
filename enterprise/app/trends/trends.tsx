@@ -200,8 +200,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return time.format("HH:mm");
   }
 
-  onBarClicked(hash: string, sortBy: string, date: number) {
-    // XXX
+  onBarClicked(hash: string, sortBy: string, tsMillis: number) {
+    const date = new Date(tsMillis).toISOString().split("T")[0];
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 

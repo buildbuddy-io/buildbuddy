@@ -65,7 +65,8 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
     return moment(tsMillis).format("MMM D");
   }
 
-  onBarClicked(hash: string, sortBy: string, date: number) {
+  onBarClicked(hash: string, sortBy: string, tsMillis: number) {
+    const date = new Date(tsMillis).toISOString().split("T")[0];
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
