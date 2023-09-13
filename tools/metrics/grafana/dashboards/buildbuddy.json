@@ -2618,7 +2618,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 151
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 1506,
@@ -2639,7 +2639,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2749,7 +2749,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 151
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 1507,
@@ -2770,7 +2770,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2875,6 +2875,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -2922,7 +2924,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 159
+            "y": 15
           },
           "id": 1509,
           "options": {
@@ -2933,7 +2935,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -2943,7 +2946,7 @@
                 "uid": "prom"
               },
               "exemplar": true,
-              "expr": "avg(buildbuddy_raft_ranges) by (node_host_id, pod_name)",
+              "expr": "avg(buildbuddy_raft_ranges{region=\"${region}\"}) by (node_host_id, pod_name)",
               "interval": "",
               "legendFormat": "",
               "refId": "A"
@@ -2964,6 +2967,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -3012,7 +3017,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 159
+            "y": 15
           },
           "id": 1586,
           "options": {
@@ -3023,7 +3028,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -3033,7 +3039,7 @@
                 "uid": "prom"
               },
               "exemplar": true,
-              "expr": "avg(buildbuddy_raft_bytes)/1e6",
+              "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"})/1e6",
               "interval": "",
               "legendFormat": "",
               "refId": "A"
@@ -3044,7 +3050,7 @@
                 "uid": "prom"
               },
               "exemplar": true,
-              "expr": "avg(buildbuddy_raft_bytes/1e6) by (pod_name)",
+              "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"}/1e6) by (pod_name)",
               "hide": false,
               "interval": "",
               "legendFormat": "",
@@ -3066,6 +3072,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -3114,7 +3122,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 167
+            "y": 23
           },
           "id": 1663,
           "options": {
@@ -3125,7 +3133,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -3135,7 +3144,7 @@
                 "uid": "prom"
               },
               "exemplar": true,
-              "expr": "sum(rate(buildbuddy_raft_proposals[${window}])) by (pod_name)",
+              "expr": "sum(rate(buildbuddy_raft_proposals{region=\"${region}\"}[${window}])) by (pod_name)",
               "interval": "",
               "legendFormat": "",
               "refId": "A"
@@ -3156,6 +3165,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -3204,7 +3215,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 167
+            "y": 23
           },
           "id": 1740,
           "options": {
@@ -3215,7 +3226,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -3225,7 +3237,7 @@
                 "uid": "prom"
               },
               "exemplar": true,
-              "expr": "sum(rate(buildbuddy_raft_splits[${window}])) by (pod_name)",
+              "expr": "sum(rate(buildbuddy_raft_splits{region=\"${region}\"}[${window}])) by (pod_name)",
               "interval": "",
               "legendFormat": "",
               "refId": "A"
@@ -3246,6 +3258,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -3294,7 +3308,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 175
+            "y": 31
           },
           "id": 1816,
           "options": {
@@ -3305,7 +3319,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -3315,7 +3330,7 @@
                 "uid": "prom"
               },
               "exemplar": true,
-              "expr": "sum(rate(buildbuddy_raft_moves[${window}])) by (pod_name)",
+              "expr": "sum(rate(buildbuddy_raft_moves{region=\"${region}\"}[${window}])) by (pod_name)",
               "interval": "",
               "legendFormat": "",
               "refId": "A"
@@ -3336,6 +3351,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -3384,7 +3401,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 175
+            "y": 31
           },
           "id": 1893,
           "options": {
@@ -3395,7 +3412,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -3426,6 +3444,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -3474,7 +3494,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 183
+            "y": 39
           },
           "id": 1970,
           "options": {
@@ -3485,7 +3505,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -4572,95 +4593,6 @@
             "show": true
           },
           "yBucketBound": "auto"
-        },
-        {
-          "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  }
-                ]
-              },
-              "unit": "ops"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 73
-          },
-          "id": 1254,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": false
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": true,
-              "expr": "sum(rate(buildbuddy_remote_cache_disk_cache_duplicate_writes{}[${window}]))",
-              "interval": "",
-              "legendFormat": "",
-              "refId": "A"
-            }
-          ],
-          "title": "Disk Cache Duplicate Writes per Second",
-          "type": "timeseries"
         }
       ],
       "targets": [
@@ -14943,7 +14875,7 @@
             "h": 10,
             "w": 12,
             "x": 0,
-            "y": 224
+            "y": 108
           },
           "hiddenSeries": false,
           "id": 2,
@@ -15056,7 +14988,7 @@
             "h": 10,
             "w": 12,
             "x": 12,
-            "y": 224
+            "y": 108
           },
           "hiddenSeries": false,
           "id": 578,
@@ -15129,97 +15061,6 @@
           "yaxis": {
             "align": false
           }
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 234
-          },
-          "id": 1239,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": true,
-              "expr": "sum by (grpc_full_method, quota_key) (rate(buildbuddy_quota_rpcs_handled_total_by_quota_key{region=\"${region}\"}[${window}]))",
-              "interval": "",
-              "legendFormat": "",
-              "refId": "A"
-            }
-          ],
-          "title": "RPCs by Quota Key",
-          "type": "timeseries"
         }
       ],
       "targets": [
