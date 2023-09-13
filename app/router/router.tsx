@@ -380,7 +380,8 @@ class Router {
       !user.selectedGroup.id &&
       capabilities.config.customerSubdomain &&
       // A user may have access to an invocation w/o having access to group.
-      !path.startsWith(Path.invocationPath)
+      !path.startsWith(Path.invocationPath) &&
+      !path.startsWith(Path.joinOrgPath)
     ) {
       const params = new URLSearchParams({ source_url: window.location.href });
       return Path.orgAccessDeniedPath + "?" + params.toString();
@@ -460,6 +461,7 @@ export class Path {
   static settingsOrgDetailsPath = "/settings/org/details";
   static settingsOrgMembersPath = "/settings/org/members";
   static settingsOrgGitHubLinkPath = "/settings/org/github";
+  static joinOrgPath = "/join";
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";
   static orgAccessDeniedPath = "/org/access-denied";

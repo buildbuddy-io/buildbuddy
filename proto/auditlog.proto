@@ -56,6 +56,7 @@ enum Action {
   LINK_GITHUB_REPO = 9;
   UNLINK_GITHUB_REPO = 10;
   EXECUTE_CLEAN_WORKFLOW = 11;
+  CREATE_IMPERSONATION_API_KEY = 12;
 }
 
 message ResourceID {
@@ -90,6 +91,7 @@ message Entry {
     workflow.ExecuteWorkflowRequest execute_workflow = 11;
     secrets.UpdateSecretRequest update_secret = 12;
     api_key.GetApiKeyRequest get_api_key = 13;
+    api_key.CreateImpersonationApiKeyRequest create_impersonation_api_key = 14;
   }
   message Request {
     APIRequest api_request = 1;

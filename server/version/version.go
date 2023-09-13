@@ -1,6 +1,7 @@
 package version
 
 import (
+	_ "embed"
 	"fmt"
 	"runtime"
 
@@ -13,8 +14,12 @@ const (
 	unknownValue = "unknown"
 )
 
-// This is set by x_defs in the BUILD file.
+// The text files are populated by the populate_* genrules
+//
+//go:embed commit.txt
 var commitSha string
+
+//go:embed version.txt
 var versionTag string
 
 func init() {

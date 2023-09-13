@@ -121,8 +121,9 @@ type apiKeyUserProvider func(apiKey string) interfaces.UserInfo
 
 type TestAuthenticator struct {
 	*nullauth.NullAuthenticator
-	UserProvider   userProvider
-	APIKeyProvider apiKeyUserProvider
+	UserProvider       userProvider
+	APIKeyProvider     apiKeyUserProvider
+	ServerAdminGroupID string
 }
 
 func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
@@ -131,6 +132,10 @@ func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthent
 		UserProvider:      func(userID string) interfaces.UserInfo { return testUsers[userID] },
 		APIKeyProvider:    func(apiKey string) interfaces.UserInfo { return testUsers[apiKey] },
 	}
+}
+
+func (a *TestAuthenticator) AdminGroupID() string {
+	return a.ServerAdminGroupID
 }
 
 func (a *TestAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -495,6 +496,10 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 			return "", status.FailedPreconditionError("Secrets requested but secret service not available")
 		}
 		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID)
+		if err != nil {
+			return "", err
+		}
+		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, props.WorkflowID != "")
 		if err != nil {
 			return "", err
 		}

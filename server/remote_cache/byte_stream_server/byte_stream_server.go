@@ -140,7 +140,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 		// Counter for the number of bytes from the original reader containing decompressed bytes
 		counter = &ioutil.Counter{}
-		reader, err = compression.NewZstdCompressingReader(io.TeeReader(reader, counter), rbuf[:bufSize], cbuf[:bufSize])
+		reader, err = compression.NewZstdCompressingReader(io.NopCloser(io.TeeReader(reader, counter)), rbuf[:bufSize], cbuf[:bufSize])
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}

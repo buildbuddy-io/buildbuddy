@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -35,6 +36,7 @@ type MigrationCache struct {
 	src                  interfaces.Cache
 	dest                 interfaces.Cache
 	doubleReadPercentage float64
+	decompressPercentage float64
 	logNotFoundErrors    bool
 
 	eg       *errgroup.Group
@@ -50,7 +52,7 @@ func Register(env environment.Env) error {
 	if cacheMigrationConfig.Src == nil || cacheMigrationConfig.Dest == nil {
 		return nil
 	}
-	log.Infof("Registering Migration Cache")
+	log.Info("Registering Migration Cache")
 
 	srcCache, err := getCacheFromConfig(env, *cacheMigrationConfig.Src)
 	if err != nil {
@@ -64,7 +66,7 @@ func Register(env environment.Env) error {
 	mc := NewMigrationCache(env, cacheMigrationConfig, srcCache, destCache)
 
 	if env.GetCache() != nil {
-		log.Warningf("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
+		log.Warning("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
 			" should be nested under the cache.migration block.")
 	}
 	env.SetCache(mc)
@@ -84,6 +86,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 		src:                         srcCache,
 		dest:                        destCache,
 		doubleReadPercentage:        migrationConfig.DoubleReadPercentage,
+		decompressPercentage:        migrationConfig.DecompressPercentage,
 		logNotFoundErrors:           migrationConfig.LogNotFoundErrors,
 		copyChan:                    make(chan *copyData, migrationConfig.CopyChanBufferSize),
 		maxCopiesPerSec:             migrationConfig.MaxCopiesPerSec,
@@ -443,6 +446,34 @@ type doubleReader struct {
 	bytesReadSrc  int
 	bytesReadDest int
 	lastSrcErr    error
+	lastDestErr   error
+
+	done chan struct{}
+	// Pipe Writer and Reader used to read from decompressor
+	pw               *io.PipeWriter
+	pr               *io.PipeReader
+	decompressor     io.WriteCloser
+	mu               sync.Mutex // protects decompressSrcErr
+	decompressSrcErr error
+}
+
+func (d *doubleReader) shouldVerifyNumBytes() bool {
+	// Don't compare byte differences for AC records, because there could be minor differences in metadata like timestamps
+	if d.r.GetCacheType() != rspb.CacheType_CAS {
+		return false
+	}
+
+	// If there are errors from the source reader, the number of bytes read from source and destination reader will be different.
+	if d.lastSrcErr != io.EOF {
+		return false
+	}
+
+	if d.r.GetCompressor() != repb.Compressor_ZSTD {
+		return true
+	}
+
+	// If compressed data is requested, we only verify some percent of the results.
+	return d.decompressor != nil && d.decompressSrcErr == nil
 }
 
 func (d *doubleReader) Read(p []byte) (n int, err error) {
@@ -461,13 +492,29 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 				dstErr = io.EOF
 			}
 			d.bytesReadDest += dstN
+			d.lastDestErr = dstErr
 			return nil
 		})
 	}
 
 	srcN, srcErr := d.src.Read(p)
-	d.bytesReadSrc += srcN
 	d.lastSrcErr = srcErr
+	if d.decompressor != nil {
+		eg.Go(func() error {
+			_, err = d.decompressor.Write(p[:srcN])
+
+			if err != nil {
+				log.Warningf("Migration unable to decompress for digest %q: %s", d.r.GetDigest().GetHash(), err)
+				d.mu.Lock()
+				defer d.mu.Unlock()
+				d.decompressSrcErr = err
+				return nil
+			}
+			return nil
+		})
+	} else {
+		d.bytesReadSrc += srcN
+	}
 
 	eg.Wait()
 	// Don't log on EOF errors when reading chunks, because the readers from different caches
@@ -482,12 +529,29 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
-		// Don't log on byte differences for AC records, because there could be minor differences in metadata like timestamps
-		if d.r.GetCacheType() == rspb.CacheType_CAS && d.lastSrcErr == io.EOF && d.bytesReadDest != d.bytesReadSrc {
-			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
+		if d.decompressor != nil {
+			eg.Go(func() error {
+				d.pw.Close()
+				decompressErr := d.decompressor.Close()
+				if decompressErr != nil {
+					log.Warningf("Migration decompressor close err: %s", decompressErr)
+					d.mu.Lock()
+					defer d.mu.Unlock()
+					d.decompressSrcErr = decompressErr
+				}
+				return nil
+			})
 		}
 
 		eg.Go(func() error {
+			if d.lastSrcErr == io.EOF && d.lastDestErr != io.EOF {
+				destBuf, err := io.ReadAll(d.dest)
+				if err != nil {
+					log.Warningf("Migration %v read err: failed to read remaining bytes from dest cache: %s", d.r, err)
+				}
+				d.bytesReadDest += len(destBuf)
+			}
+
 			dstErr := d.dest.Close()
 			if dstErr != nil {
 				log.Warningf("Migration dest reader close err: %s", dstErr)
@@ -498,6 +562,13 @@ func (d *doubleReader) Close() error {
 
 	srcErr := d.src.Close()
 	eg.Wait()
+	// Wait till we finish reading from the decompressor
+	if d.decompressor != nil {
+		<-d.done
+	}
+	if d.shouldVerifyNumBytes() && d.bytesReadDest != d.bytesReadSrc {
+		log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
+	}
 
 	return srcErr
 }
@@ -510,16 +581,41 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
+	var decompressor io.WriteCloser
+	pr, pw := io.Pipe()
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+
+	shouldDecompressAndVerify := false
+	if doubleRead && r.GetCompressor() == repb.Compressor_ZSTD {
+		shouldDecompressAndVerify = (rand.Float64() <= mc.decompressPercentage)
+	}
+
 	if doubleRead {
 		eg.Go(func() error {
 			destReader, dstErr = mc.dest.Reader(ctx, r, uncompressedOffset, limit)
-			if dstErr == nil {
-				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
+			if dstErr != nil {
+				return nil
+			}
+			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
+			if shouldDecompressAndVerify {
+				dr, err := compression.NewZstdDecompressingReader(destReader)
+				if err != nil {
+					log.Warningf("Migration failed to get dest decompressing reader for digest %q: %s", r.GetDigest().GetHash(), err)
+				} else {
+					destReader = dr
+				}
 			}
 			return nil
 		})
+
+		if shouldDecompressAndVerify {
+			var err error
+			decompressor, err = compression.NewZstdDecompressor(pw)
+			if err != nil {
+				log.Warningf("Migration failed to get source decompressor for digest %q: %s", r.GetDigest().GetHash(), err)
+			}
+		}
 	}
 
 	srcReader, srcErr := mc.src.Reader(ctx, r, uncompressedOffset, limit)
@@ -549,11 +645,35 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 
 	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
-	return &doubleReader{
-		src:  srcReader,
-		dest: destReader,
-		r:    r,
-	}, nil
+	dr := &doubleReader{
+		src:          srcReader,
+		dest:         destReader,
+		r:            r,
+		decompressor: decompressor,
+		pw:           pw,
+		pr:           pr,
+		mu:           sync.Mutex{},
+		done:         make(chan struct{}, 0),
+	}
+
+	if shouldDecompressAndVerify {
+		// Launch a go routine to read from the contents written to the
+		// decompressor.
+		go func() {
+			defer close(dr.done)
+			srcN, err := io.Copy(io.Discard, pr)
+			if err != nil {
+				log.Warningf("Migration failed to read from decompressor: %s", err)
+				dr.mu.Lock()
+				dr.decompressSrcErr = err
+				dr.mu.Unlock()
+			} else {
+				dr.bytesReadSrc += int(srcN)
+			}
+		}()
+	}
+
+	return dr, nil
 }
 
 type doubleWriter struct {

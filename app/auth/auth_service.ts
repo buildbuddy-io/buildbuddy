@@ -198,9 +198,8 @@ export class AuthService {
 
     this.setCookie(SELECTED_GROUP_ID_COOKIE, groupId);
 
-    // If we're on a subdomain and the new group is on a different subdomain then
-    // we have to use a redirect.
-    if (capabilities.config.customerSubdomain && new URL(groupURL).hostname != window.location.hostname) {
+    // If the new group is on a different subdomain then we have to use a redirect.
+    if (capabilities.config.subdomainsEnabled && new URL(groupURL).hostname != window.location.hostname) {
       window.location.href = groupURL;
       return;
     }

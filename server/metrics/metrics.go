@@ -2031,34 +2031,43 @@ var (
 		Help:      "Number of compactions performed by the underlying Pebble database.",
 	}, []string{
 		CompactionType,
+		CacheNameLabel,
 	})
 
-	PebbleCachePebbleCompactEstimatedDebtBytes = promauto.NewGauge(prometheus.GaugeOpts{
+	PebbleCachePebbleCompactEstimatedDebtBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_pebble_compact_estimated_debt_bytes",
 		Help:      "Estimated number of bytes that need to be compacted for the LMS to reach a stable state.",
+	}, []string{
+		CacheNameLabel,
 	})
 
-	PebbleCachePebbleCompactInProgressBytes = promauto.NewGauge(prometheus.GaugeOpts{
+	PebbleCachePebbleCompactInProgressBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_pebble_compact_in_progress_bytes",
 		Help:      "Number of bytes present in sstables being written by in-progress compactions.",
+	}, []string{
+		CacheNameLabel,
 	})
 
-	PebbleCachePebbleCompactInProgress = promauto.NewGauge(prometheus.GaugeOpts{
+	PebbleCachePebbleCompactInProgress = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_pebble_compact_in_progress",
 		Help:      "Number of compactions that are in-progress",
+	}, []string{
+		CacheNameLabel,
 	})
 
-	PebbleCachePebbleCompactMarkedFiles = promauto.NewGauge(prometheus.GaugeOpts{
+	PebbleCachePebbleCompactMarkedFiles = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_pebble_compact_marked_files",
 		Help:      "Count of files that are marked for compaction.",
+	}, []string{
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelSublevels = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2068,6 +2077,7 @@ var (
 		Help:      "Number of sublevels within the level.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelNumFiles = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2077,6 +2087,7 @@ var (
 		Help:      "The total number of files in the level.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2086,6 +2097,7 @@ var (
 		Help:      "The total size in bytes of the files in the level.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelScore = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -2095,6 +2107,7 @@ var (
 		Help:      "The level's compaction score.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelBytesInCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2104,6 +2117,7 @@ var (
 		Help:      "The number of incoming bytes from other levels read during compactions. This excludes bytes moved and bytes ingested. For L0 this is the bytes written to the WAL.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelBytesIngestedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2113,6 +2127,7 @@ var (
 		Help:      "The number of bytes ingested.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelBytesMovedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2122,6 +2137,7 @@ var (
 		Help:      "The number of bytes moved into the level by a move compaction.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelBytesReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2131,6 +2147,7 @@ var (
 		Help:      "The number of bytes read for compactions at the level. This includes bytes read from other levels (BytesIn), as well as bytes read for the level.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelBytesCompactedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2140,6 +2157,7 @@ var (
 		Help:      "The number of bytes written during compactions.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelBytesFlushedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2149,6 +2167,7 @@ var (
 		Help:      "The number of bytes written during flushes.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelTablesCompactedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2158,6 +2177,7 @@ var (
 		Help:      "The number of sstables compacted to this level.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelTablesFlushedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2167,6 +2187,7 @@ var (
 		Help:      "The number of sstables flushed to this level.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelTablesIngestedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2176,6 +2197,7 @@ var (
 		Help:      "The number of sstables ingested into this level.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleLevelTablesMovedCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2185,6 +2207,7 @@ var (
 		Help:      "The number of sstables ingested into to this level.",
 	}, []string{
 		PebbleLevel,
+		CacheNameLabel,
 	})
 
 	PebbleCachePebbleOpCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -2207,11 +2230,13 @@ var (
 	})
 
 	// Total size of cache that pebble allocate mamually from system memory using malloc.
-	PebbleCachePebbleBlockCacheSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
+	PebbleCachePebbleBlockCacheSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_pebble_block_cache_size_bytes",
 		Help:      "The total size in pebble's block cache.",
+	}, []string{
+		CacheNameLabel,
 	})
 
 	// Temporary metric to verify AC sampling behavior.
@@ -2222,6 +2247,17 @@ var (
 		Help:      "The number of times a group has been selected for key sampling.",
 	}, []string{
 		GroupID,
+		CacheNameLabel,
+	})
+
+	PebbleCacheNumChunksPerFile = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_num_chunks_per_file",
+		Help:      "Number of chunks per file stored in pebble cache",
+		Buckets:   []float64{1.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0},
+	}, []string{
+		CacheNameLabel,
 	})
 
 	// ## Podman metrics

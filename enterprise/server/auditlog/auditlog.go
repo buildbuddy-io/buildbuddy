@@ -159,7 +159,9 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 		entry.AuthAPIKeyLabel = ak.Label
 	}
 
-	if resource.GetType() != alpb.ResourceType_GROUP {
+	if resource.GetType() == alpb.ResourceType_GROUP {
+		entry.GroupID = resource.Id
+	} else {
 		entry.ResourceType = uint8(resource.Type)
 		entry.ResourceID = resource.Id
 		entry.ResourceName = resource.Name

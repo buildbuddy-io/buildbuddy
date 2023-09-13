@@ -544,6 +544,85 @@ func TestSubdomainRestrictions(t *testing.T) {
 	}
 }
 
+func TestImpersonationAPIKeys(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	al := testauditlog.New(t)
+	env.SetAuditLogger(al)
+	adb := env.GetAuthDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if role.Role(u.Groups[0].Role) == role.Admin {
+			admin = u
+			break
+		}
+	}
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	serverAdminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	// Should not be able to create an impersonation key if you're not a server
+	// admin.
+	for _, u := range users {
+		req := &akpb.CreateImpersonationApiKeyRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: u.Groups[0].Group.GroupID},
+		}
+		_, err := env.GetBuildBuddyServer().CreateImpersonationApiKey(serverAdminCtx, req)
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+	}
+
+	// Now treat the random group we picked as the server admin group.
+	// Same user should now be able to create an impersonation key for any
+	// group.
+	auth.ServerAdminGroupID = admin.Groups[0].Group.GroupID
+	for _, u := range users {
+		al.Reset()
+		targetGroupID := u.Groups[0].Group.GroupID
+		targetGroupAdminCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
+		require.NoError(t, err)
+		prevKeys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+		require.NoError(t, err)
+
+		req := &akpb.CreateImpersonationApiKeyRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: targetGroupID},
+		}
+		rsp, err := env.GetBuildBuddyServer().CreateImpersonationApiKey(serverAdminCtx, req)
+		require.NoError(t, err)
+
+		// Verify audit log entry.
+		require.Len(t, al.GetAllEntries(), 1)
+		e := al.GetAllEntries()[0]
+		require.Equal(t, alpb.ResourceType_GROUP, e.Resource.GetType())
+		require.Equal(t, targetGroupID, e.Resource.GetId())
+		require.Equal(t, alpb.Action_CREATE_IMPERSONATION_API_KEY, e.Action)
+		require.Equal(t, req, e.Request)
+
+		// Verify the new API key is usable.
+		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+		require.NoError(t, err)
+
+		// Verify correct key attributes.
+		key, err := adb.GetAPIKey(targetGroupAdminCtx, rsp.GetApiKey().GetId())
+		require.NoError(t, err)
+		require.True(t, key.Impersonation)
+		require.NotEqualValues(t, 0, key.ExpiryUsec)
+
+		// Verify "list" operation does not include the impersonation key.
+		if role.Role(u.Groups[0].Role) == role.Admin {
+			keys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+			require.NoError(t, err)
+			require.Equal(t, prevKeys, keys)
+		}
+	}
+}
+
 func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env) []*tables.APIKey {
 	users := enterprise_testauth.CreateRandomGroups(t, env)
 	var allKeys []*tables.APIKey

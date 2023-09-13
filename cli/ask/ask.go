@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -137,11 +138,15 @@ func getPreviousFlagPath(flagName string) string {
 	if err != nil {
 		return ""
 	}
-	dir, err := os.UserCacheDir()
+	cacheDir, err := storage.CacheDir()
 	if err != nil {
 		return ""
 	}
-	return dir + "/last_bb_" + flagName + "-" + hash.String(workspaceDir) + ".txt"
+	flagsDir := filepath.Join(cacheDir, "last_flag_values", hash.String(workspaceDir))
+	if err := os.MkdirAll(flagsDir, 0755); err != nil {
+		return ""
+	}
+	return filepath.Join(flagsDir, flagName+".txt")
 }
 
 func getPreviousFlag(flag string) (string, error) {

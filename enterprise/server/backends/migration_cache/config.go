@@ -10,6 +10,9 @@ type MigrationConfig struct {
 	Src                  *CacheConfig `yaml:"src"`
 	Dest                 *CacheConfig `yaml:"dest"`
 	DoubleReadPercentage float64      `yaml:"double_read_percentage"`
+	// The percentage of read results we will decompress and compare the number
+	// of bytes when doubel read is turned on.
+	DecompressPercentage float64 `yaml:"decompress_percentage"`
 	// LogNotFoundErrors controls whether to log not found errors in the dest cache when double reading
 	// At the beginning of the migration, we may want this to be false, or it may clog the logs
 	// if a lot of data has not been copied over yet

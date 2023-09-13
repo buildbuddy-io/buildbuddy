@@ -3833,8 +3833,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_merovius_nbd",
         importpath = "github.com/Merovius/nbd",
-        sum = "h1:+K7ZvvUcTZ6OrYnYG0ZTlUWxUmMEm9vOOwBuzdgEgWc=",
-        version = "v0.0.0-20230605051639-7ffd87295813",
+        sum = "h1:+RuruTkdD790c2czCjTKFd/TZAAQ8EPh/7zyqg10ff8=",
+        version = "v0.0.0-20230908150103-a1d15e184887",
     )
 
     go_repository(
@@ -7063,11 +7063,19 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-v0.0.8-linux-amd64",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.8-linux-amd64"],
-        sha256 = "978febe41046d9338e766ddd0a8f3f46d798b7f5b7a537840f4d9c2f814a759a",
+        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.10-linux-amd64"],
+        sha256 = "6c49f9c3eacec7e2d65afec3557bdb5946154ecc9c8d42055fd9e85e4c7bd9c1",
         executable = True,
-        downloaded_file_path = "soci-store-v0.0.8-linux-amd64",
+        downloaded_file_path = "soci-store",
+    )
+
+    http_file(
+        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.10-linux-amd64-race"],
+        sha256 = "c802e1792cd5f59129448b71272d00259e64de6225072b00c0e99621287f1e8f",
+        executable = True,
+        downloaded_file_path = "soci-store-race",
     )
 
     http_file(

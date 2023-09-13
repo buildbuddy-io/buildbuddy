@@ -53,6 +53,10 @@ const ZOOM_BUTTON_ATTRIBUTES = {
   sideMargin: 12,
 };
 
+// If the heatmap we're showing contains more than 49 hours (two daysish) of
+// data, then we'll only show tick marks for days.
+const MINIMUM_DURATION_FOR_DAY_LABELS_MICROS = 1e6 * 60 * 60 * 49;
+
 // This is a magic number that states there will only be one axis label for
 // every N pixels of rendered axis length (currently 100).
 const TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
@@ -195,7 +199,10 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
 
     return (
       <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">Date: {moment(+data.timestamp / 1000).format("YYYY-MM-DD")}</div>
+        <div className="trend-chart-hover-label">Start: {moment(+data.timestamp / 1000).format("lll")}</div>
+        <div className="trend-chart-hover-label">
+          End: {moment(+this.props.heatmapData.timestampBracket[data.timestampBucketIndex + 1] / 1000).format("lll")}
+        </div>
         <div className="trend-chart-hover-label">
           {this.props.metricBucketName}: {metricBucket}
         </div>
@@ -391,27 +398,55 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return interpolator(value, selected);
   }
 
+  private computeXAxisLabel(timestampMicros: number, rounding: moment.unitOfTime.StartOf): string | undefined {
+    const timestampMillis = timestampMicros / 1e3;
+    const time = moment(timestampMillis);
+    const start = moment(timestampMillis).startOf(rounding);
+    if (!time.isSame(start)) {
+      return undefined;
+    }
+    if (rounding === "day") {
+      return time.format("MMM D");
+    }
+    const startOfDay = moment(timestampMillis).startOf("day");
+    if (time.isSame(startOfDay)) {
+      return time.format("MMM D");
+    }
+    return time.format("HH:mm");
+  }
+
   renderXAxis(width: number): JSX.Element | null {
     if (!width) {
       return null;
     }
+
+    const timeBrackets = this.props.heatmapData.timestampBracket;
+    const heatmapTimespan = +timeBrackets[timeBrackets.length - 1] - +timeBrackets[0];
+    const labelType = heatmapTimespan > MINIMUM_DURATION_FOR_DAY_LABELS_MICROS ? "day" : "hour";
+
     const numColumns = this.props.heatmapData.column.length || 1;
-    const xTickMod = Math.ceil(numColumns / Math.min(numColumns, width / TICK_LABEL_SPACING_MAGIC_NUMBER));
+    const labelSpacing = Math.ceil(numColumns / Math.min(numColumns, width / TICK_LABEL_SPACING_MAGIC_NUMBER));
+    let lastLabelDistance = labelSpacing;
 
     return (
       <g color="#666" transform={`translate(${CHART_MARGINS.left}, ${this.getHeight() - CHART_MARGINS.bottom})`}>
         <line stroke="#666" x1="0" y1="0" x2={width} y2="0"></line>
         {this.xScaleBand.domain().map((v, i) => {
-          const tickX = this.xScaleBand.bandwidth() * i;
-
+          lastLabelDistance++;
+          if (lastLabelDistance < labelSpacing) {
+            return null;
+          }
+          const label = this.computeXAxisLabel(v /* micros */, labelType);
+          if (!label) {
+            return null;
+          }
+          lastLabelDistance = 0;
           return (
             <g transform={`translate(${this.xScaleBand.bandwidth() * i}, 0)`}>
-              {i % xTickMod == 0 && (
-                <text fill="#666" x={this.xScaleBand.bandwidth() / 2} y="18" fontSize="12" textAnchor="middle">
-                  {moment(+v / 1000).format("MMM D")}
-                </text>
-              )}
-              <line stroke="#666" x1="0" y1="0" x2="0" y2="4"></line>;
+              <text fill="#666" x={this.xScaleBand.bandwidth() / 2} y="18" fontSize="12" textAnchor="middle">
+                {label}
+              </text>
+              <line stroke="#666" x1="0" y1="0" x2="0" y2="4"></line>
             </g>
           );
         })}

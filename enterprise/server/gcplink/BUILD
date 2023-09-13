@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/util/keystore",
         "//proto:context_go_proto",
+        "//proto:remote_execution_go_proto",
         "//proto:secrets_go_proto",
         "//server/environment",
         "//server/util/cookie",

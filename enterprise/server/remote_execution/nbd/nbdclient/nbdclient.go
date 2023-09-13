@@ -182,7 +182,7 @@ func (d *ClientDevice) Mount(path string) error {
 		return status.WrapError(err, "failed to create device")
 	}
 	fstype := filesystemTypeString(d.metadata.GetFilesystemType())
-	if err := syscall.Mount(d.DevicePath(), path, fstype, syscall.MS_RELATIME, "" /*=data*/); err != nil {
+	if err := syscall.Mount(d.DevicePath(), path, fstype, syscall.MS_NOATIME, "" /*=data*/); err != nil {
 		return status.InternalErrorf("failed to mount %s (type %s) to %s: %s", d.DevicePath(), fstype, path, err)
 	}
 	d.mountPath = path
