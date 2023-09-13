@@ -213,6 +213,13 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 	}
 
 	if stringSliceContains(ServerAdminOnlyRPCs(), rpcName) {
+		// If impersonation is in effect, it implies the user is an admin.
+		// Can't check group membership because impersonation modifies
+		// group information.
+		if u.IsImpersonating() {
+			return nil
+		}
+
 		serverAdminGID := env.GetAuthenticator().AdminGroupID()
 		if serverAdminGID == "" {
 			return status.PermissionDeniedError("Permission Denied.")

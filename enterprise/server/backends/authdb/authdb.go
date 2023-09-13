@@ -633,12 +633,17 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 	if err != nil {
 		return nil, err
 	}
-	adminGroupID := d.env.GetAuthenticator().AdminGroupID()
-	if adminGroupID == "" {
-		return nil, status.PermissionDeniedError("You do not have access to the requested organization")
-	}
-	if err := authutil.AuthorizeGroupRole(u, adminGroupID, role.Admin); err != nil {
-		return nil, err
+	// If impersonation is in effect, it implies the user is an admin.
+	// Can't check group membership because impersonation modifies
+	// group information.
+	if !u.IsImpersonating() {
+		adminGroupID := d.env.GetAuthenticator().AdminGroupID()
+		if adminGroupID == "" {
+			return nil, status.PermissionDeniedError("You do not have access to the requested organization")
+		}
+		if err := authutil.AuthorizeGroupRole(u, adminGroupID, role.Admin); err != nil {
+			return nil, err
+		}
 	}
 	ak := tables.APIKey{
 		GroupID: groupID,
