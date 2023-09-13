@@ -27,5 +27,6 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
+        "//proto:user_ts_proto",
     ],
 )

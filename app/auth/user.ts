@@ -1,11 +1,13 @@
 import { grp } from "../../proto/group_ts_proto";
 import { user_id } from "../../proto/user_id_ts_proto";
 import { BuildBuddyServiceRpcName } from "../service/rpc_service";
+import { user } from "../../proto/user_ts_proto";
 
 export class User {
   displayUser: user_id.DisplayUser;
   groups: grp.Group[];
   selectedGroup: grp.Group;
+  selectedGroupAccess: user.SelectedGroup.Access;
   allowedRpcs: Set<BuildBuddyServiceRpcName>;
   githubLinked: boolean;
   /** Whether the user is temporarily acting as a member of the selected group. */
@@ -20,6 +22,7 @@ export class User {
     // issues in practice since the router will redirect to the "create org"
     // page on initial page load if the user is not a part of any groups.
     this.selectedGroup = init.selectedGroup ?? new grp.Group();
+    this.selectedGroupAccess = init.selectedGroupAccess ?? user.SelectedGroup.Access.ALLOWED;
     this.allowedRpcs = init.allowedRpcs!;
     this.githubLinked = init.githubLinked!;
     this.isImpersonating = init.isImpersonating!;

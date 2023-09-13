@@ -12,6 +12,18 @@ message GetUserRequest {
   user_id.UserId user_id = 1;
 }
 
+message SelectedGroup {
+  string group_id = 1;
+
+  enum Access {
+    UNKNOWN = 0;
+    ALLOWED = 1;
+    DENIED = 2;
+    DENIED_BY_IP_RULES = 3;
+  }
+  Access access = 2;
+}
+
 message GetUserResponse {
   reserved 5;
 
@@ -22,14 +34,18 @@ message GetUserResponse {
   // The groups this user is a member of.
   repeated grp.Group user_group = 2;
 
-  // The ID of the user's currently selected group to be displayed in the UI.
+  // Deprecated, use selected_group instead.
+  string selected_group_id = 3 [deprecated = true];
+
+  // Information about the user's currently selected group to be displayed in
+  // the UI.
   //
   // In most cases, this will match the group_id in the original request
   // context, which should be populated from client preferences. However, if the
   // user no longer has access to the group or if no group_id was set, this will
   // be set to one of the group IDs in user_group as a fallback. If user_group
   // is empty, this will also be empty.
-  string selected_group_id = 3;
+  SelectedGroup selected_group = 9;
 
   // List of BuildBuddyService RPC names that the user is allowed to perform
   // for their currently selected group.

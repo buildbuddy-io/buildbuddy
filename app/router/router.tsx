@@ -3,6 +3,7 @@ import capabilities from "../capabilities/capabilities";
 import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
+import { user as user_proto } from "../../proto/user_ts_proto";
 
 import { GLOBAL_FILTER_PARAM_NAMES, PERSISTENT_URL_PARAMS } from "./router_params";
 
@@ -373,20 +374,28 @@ class Router {
 
     const path = window.location.pathname;
 
-    // No selected group on subdomain means either the group doesn't exist or
-    // the user does not have access to it.
+    // Disallowed access to the selected group means one of two things:
+    // 1) This is a customer subdomain and the user does not have access to
+    //    the group or the subdomain doesn't exist.
+    // 2) User is a member of the group but is being blocked by group
+    //    IP rules.
     if (
       user &&
-      !user.selectedGroup.id &&
-      capabilities.config.customerSubdomain &&
+      user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
       // A user may have access to an invocation w/o having access to group.
       !path.startsWith(Path.invocationPath) &&
       !path.startsWith(Path.joinOrgPath)
     ) {
-      const params = new URLSearchParams({ source_url: window.location.href });
+      const params = new URLSearchParams({
+        source_url: window.location.href,
+        denied_reason: user.selectedGroupAccess.toString(),
+      });
       return Path.orgAccessDeniedPath + "?" + params.toString();
     }
 
+    if (path === Path.orgAccessDeniedPath) {
+      return Path.home;
+    }
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
       return Path.home;
     }
