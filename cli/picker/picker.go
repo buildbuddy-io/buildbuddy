@@ -27,7 +27,7 @@ func HandlePicker(args []string) []string {
 	}
 
 	// Skip using the picker if the user has specified a target pattern file.
-	if command == "build" && arg.Has(args, "target_pattern_file") {
+	if (command == "build" || command == "test") && arg.Has(args, "target_pattern_file") {
 		return args
 	}
 
