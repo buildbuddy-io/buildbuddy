@@ -16,13 +16,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
-	"github.com/lni/dragonboat/v3"
+	"github.com/lni/dragonboat/v4"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	dbsm "github.com/lni/dragonboat/v3/statemachine"
+	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
 type ClusterStarter struct {
@@ -91,14 +91,14 @@ func (cs *ClusterStarter) rejoinConfiguredClusters() (int, error) {
 	nodeHostInfo := cs.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 	clustersAlreadyConfigured := 0
 	for _, logInfo := range nodeHostInfo.LogInfo {
-		if cs.nodeHost.HasNodeInfo(logInfo.ClusterID, logInfo.NodeID) {
-			cs.log.Infof("Had info for cluster: %d, node: %d.", logInfo.ClusterID, logInfo.NodeID)
-			r := raftConfig.GetRaftConfig(logInfo.ClusterID, logInfo.NodeID)
-			if err := cs.nodeHost.StartOnDiskCluster(nil, false /*=join*/, cs.createStateMachineFn, r); err != nil {
+		if cs.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
+			cs.log.Infof("Had info for cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
+			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
+			if err := cs.nodeHost.StartOnDiskReplica(nil, false /*=join*/, cs.createStateMachineFn, r); err != nil {
 				return clustersAlreadyConfigured, err
 			}
 			clustersAlreadyConfigured += 1
-			cs.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ClusterID, logInfo.NodeID)
+			cs.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
 		}
 	}
 	return clustersAlreadyConfigured, nil

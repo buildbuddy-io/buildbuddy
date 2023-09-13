@@ -33,8 +33,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/google/uuid"
-	"github.com/lni/dragonboat/v3"
-	"github.com/lni/dragonboat/v3/raftio"
+	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/raftio"
 	"google.golang.org/protobuf/proto"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
@@ -43,7 +43,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
-	dbConfig "github.com/lni/dragonboat/v3/config"
+	dbConfig "github.com/lni/dragonboat/v4/config"
 )
 
 var (
@@ -457,7 +457,7 @@ func (rc *RaftCache) Stop() error {
 		close(rc.shutdown)
 		rc.driver.Stop()
 		rc.store.Stop(context.Background())
-		rc.nodeHost.Stop()
+		rc.nodeHost.Close()
 		rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
 	})

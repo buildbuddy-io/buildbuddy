@@ -8,6 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger",
     deps = [
         "//server/util/log",
-        "@com_github_lni_dragonboat_v3//logger",
+        "@com_github_lni_dragonboat_v4//logger",
     ],
 )

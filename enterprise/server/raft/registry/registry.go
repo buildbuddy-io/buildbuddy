@@ -10,11 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
-	"github.com/lni/dragonboat/v3/raftio"
+	"github.com/lni/dragonboat/v4/raftio"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	dbConfig "github.com/lni/dragonboat/v3/config"
+	dbConfig "github.com/lni/dragonboat/v4/config"
 )
 
 var TargetAddressUnknownError = status.NotFoundError("target address unknown")
@@ -96,7 +96,7 @@ func (n *StaticRegistry) Remove(clusterID uint64, nodeID uint64) {
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
-func (n *StaticRegistry) RemoveCluster(clusterID uint64) {
+func (n *StaticRegistry) RemoveShard(clusterID uint64) {
 	return
 }
 
@@ -171,10 +171,10 @@ func (n *StaticRegistry) String() string {
 	})
 	for _, clusters := range nodeHostClusters {
 		sort.Slice(clusters, func(i, j int) bool {
-			if clusters[i].ClusterID == clusters[j].ClusterID {
-				return clusters[i].NodeID < clusters[j].NodeID
+			if clusters[i].ShardID == clusters[j].ShardID {
+				return clusters[i].ReplicaID < clusters[j].ReplicaID
 			}
-			return clusters[i].ClusterID < clusters[j].ClusterID
+			return clusters[i].ShardID < clusters[j].ShardID
 		})
 	}
 
@@ -348,7 +348,7 @@ func (d *DynamicNodeRegistry) Remove(clusterID uint64, nodeID uint64) {
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
-func (d *DynamicNodeRegistry) RemoveCluster(clusterID uint64) {
+func (d *DynamicNodeRegistry) RemoveShard(clusterID uint64) {
 	return
 }
 
