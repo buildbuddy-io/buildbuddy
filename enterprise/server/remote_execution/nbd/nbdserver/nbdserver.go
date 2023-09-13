@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -18,13 +18,13 @@ import (
 // Device is a block store exported by a server along with its associated
 // metadata.
 type Device struct {
-	*snaploader.DynamicChunkedFile
+	*blockio.COWStore
 	Metadata *nbdpb.DeviceMetadata
 }
 
-func NewExt4Device(store *snaploader.DynamicChunkedFile, name string) (*Device, error) {
+func NewExt4Device(store *blockio.COWStore, name string) (*Device, error) {
 	return &Device{
-		DynamicChunkedFile: store,
+		COWStore: store,
 		Metadata: &nbdpb.DeviceMetadata{
 			Name:           name,
 			FilesystemType: nbdpb.FilesystemType_EXT4_FILESYSTEM_TYPE,

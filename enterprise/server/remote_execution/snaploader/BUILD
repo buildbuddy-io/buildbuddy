@@ -12,7 +12,6 @@ go_library(
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
-        "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/util/authutil",

@@ -352,7 +352,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 type FirecrackerContainer struct {
 	id          string // a random GUID, unique per-run of firecracker
 	vmIdx       int    // the index of this vm on the host machine
-	loader      snaploader.Loader
+	loader      *snaploader.FileCacheLoader
 	snapshotKey *fcpb.SnapshotKey
 
 	vmConfig         *fcpb.VMConfiguration
@@ -389,11 +389,11 @@ type FirecrackerContainer struct {
 	// When NBD is enabled, this is the running NBD server that serves the VM
 	// disks.
 	nbdServer      *nbdserver.Server
-	scratchStore   *snaploader.DynamicChunkedFile
-	workspaceStore *snaploader.DynamicChunkedFile
+	scratchStore   *blockio.COWStore
+	workspaceStore *blockio.COWStore
 
 	uffdHandler *uffd.Handler
-	memoryStore *snaploader.DynamicChunkedFile
+	memoryStore *blockio.COWStore
 
 	jailerRoot         string            // the root dir the jailer will work in
 	machine            *fcclient.Machine // the firecracker machine object.
@@ -519,7 +519,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 
 // MergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks
 // into the baseSnapshotPath file or the baseSnapshotStore if non-nil.
-func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *snaploader.DynamicChunkedFile, diffSnapshotPath string, concurrency int, bufSize int) error {
+func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *blockio.COWStore, diffSnapshotPath string, concurrency int, bufSize int) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -709,7 +709,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
-		ChunkedFiles:        map[string]*snaploader.DynamicChunkedFile{},
+		ChunkedFiles:        map[string]*blockio.COWStore{},
 	}
 	if *enableNBD {
 		opts.ChunkedFiles[scratchDriveID] = c.scratchStore
@@ -949,12 +949,12 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	return nil
 }
 
-func (c *FirecrackerContainer) convertToCOW(ctx context.Context, fileName, filePath, chunkDir string) (*snaploader.DynamicChunkedFile, error) {
+func (c *FirecrackerContainer) convertToCOW(ctx context.Context, fileName, filePath, chunkDir string) (*blockio.COWStore, error) {
 	start := time.Now()
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
-	cow, err := blockio.ConvertFileToCOW(filePath, cowChunkSizeBytes(), chunkDir)
+	cow, err := c.loader.ConvertFileToLazyCOW(filePath, fileName, cowChunkSizeBytes(), chunkDir)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
@@ -966,7 +966,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, fileName, fileP
 	size, _ := cow.SizeBytes()
 	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
 
-	return snaploader.NewDynamicChunkedFile(cow, c.env.GetFileCache(), fileName), nil
+	return cow, nil
 }
 
 func cowChunkSizeBytes() int64 {

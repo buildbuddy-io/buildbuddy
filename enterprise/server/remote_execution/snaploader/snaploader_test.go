@@ -93,23 +93,20 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	const chunkSize = 512 * 1024
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
-	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-	cowA, err := blockio.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
-	require.NoError(t, err)
-	chunkedFileA := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs")
+	cowA, err := loader.ConvertFileToLazyCOW(originalImagePath, "scratchfs", chunkSize, workDirA)
 	require.NoError(t, err)
 
 	// Overwrite a random range to simulate the disk being written to. This
 	// should create some dirty chunks.
-	writeRandomRange(t, chunkedFileA)
+	writeRandomRange(t, cowA)
 
 	// Now store a snapshot for VM A, including the COW we created.
 	task := &repb.ExecutionTask{}
 	key, err := snaploader.NewKey(task, "config-hash", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA)
-	optsA.ChunkedFiles = map[string]*snaploader.DynamicChunkedFile{
-		"scratchfs": chunkedFileA,
+	optsA.ChunkedFiles = map[string]*blockio.COWStore{
+		"scratchfs": cowA,
 	}
 	snapA, err := loader.CacheSnapshot(ctx, key, optsA)
 	require.NoError(t, err)
@@ -127,7 +124,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 		forkCOW := unpacked.ChunkedFiles["scratchfs"]
 		writeRandomRange(t, forkCOW)
 		forkOpts := makeFakeSnapshot(t, forkWorkDir)
-		forkOpts.ChunkedFiles = map[string]*snaploader.DynamicChunkedFile{
+		forkOpts.ChunkedFiles = map[string]*blockio.COWStore{
 			"scratchfs": forkCOW,
 		}
 		forkSnap, err := loader.CacheSnapshot(ctx, key, forkOpts)
@@ -156,22 +153,20 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-	cowA, err := blockio.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
-	require.NoError(t, err)
-	chunkedFileA := snaploader.NewDynamicChunkedFile(cowA, fc, "scratchfs")
+	cowA, err := loader.ConvertFileToLazyCOW(originalImagePath, "scratchfs", chunkSize, chunkDirA)
 	require.NoError(t, err)
 
 	// Overwrite a random range to simulate the disk being written to. This
 	// should create some dirty chunks.
-	writeRandomRange(t, chunkedFileA)
+	writeRandomRange(t, cowA)
 
 	// Now store a snapshot for VM A, including the COW we created.
 	taskA := &repb.ExecutionTask{}
 	keyA, err := snaploader.NewKey(taskA, "config-hash-a", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA)
-	optsA.ChunkedFiles = map[string]*snaploader.DynamicChunkedFile{
-		"scratchfs": chunkedFileA,
+	optsA.ChunkedFiles = map[string]*blockio.COWStore{
+		"scratchfs": cowA,
 	}
 	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
 	require.NoError(t, err)
@@ -180,7 +175,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 
 	// Read the bytes from cowA now to avoid relying on cowA being immutable
 	// (though it should be).
-	scratchfsBytesA := mustReadFile(t, chunkedFileA)
+	scratchfsBytesA := mustReadFile(t, cowA)
 
 	// Now unpack the snapshot for use by VM B, then make a modification.
 	workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
@@ -192,6 +187,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 	// contents, not the modification made by VM B.
 	workDirC := testfs.MakeDirAll(t, workDir, "VM-C")
 	unpackedC := mustUnpack(t, ctx, loader, snapA, workDirC, optsA)
+
 	// mustUnpack already verifies the contents against cowA, but this will give
 	// us false confidence if cowA was somehow mutated. So check again against
 	// the originally snapshotted bytes, rather than the original COW instance.
@@ -218,7 +214,7 @@ func makeRandomFile(t *testing.T, rootDir, prefix string, size int) string {
 	return filepath.Join(rootDir, name)
 }
 
-func writeRandomRange(t *testing.T, f *snaploader.DynamicChunkedFile) {
+func writeRandomRange(t *testing.T, f *blockio.COWStore) {
 	s, err := f.SizeBytes()
 	require.NoError(t, err)
 	off := rand.Intn(int(s))
@@ -260,9 +256,8 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 	return unpacked
 }
 
-func mustReadFile(t *testing.T, file *snaploader.DynamicChunkedFile) []byte {
-	r := snaploader.Reader(file)
-	b, err := io.ReadAll(r)
+func mustReadFile(t *testing.T, file *blockio.COWStore) []byte {
+	b, err := io.ReadAll(blockio.Reader(file))
 	require.NoError(t, err)
 	return b
 }

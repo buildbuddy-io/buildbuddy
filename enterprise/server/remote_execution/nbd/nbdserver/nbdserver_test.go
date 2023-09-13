@@ -9,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
@@ -27,16 +26,15 @@ func TestNBDServer(t *testing.T) {
 	path := filepath.Join(tmp, "f")
 	err := os.WriteFile(path, make([]byte, fileSizeBytes), 0644)
 	require.NoError(t, err)
-	cow, err := blockio.ConvertFileToCOW(path, 512, tmp)
+	cow, err := blockio.ConvertFileToCOW(path, "f", 512, tmp)
 	require.NoError(t, err)
 	defer cow.Close()
-	f := snaploader.NewDynamicChunkedFile(cow, env.GetFileCache(), "f")
 
 	// Create a server hosting a device backed by the file
 	const deviceName = "test"
 	dev := &nbdserver.Device{
-		DynamicChunkedFile: f,
-		Metadata:           &nbdpb.DeviceMetadata{Name: deviceName},
+		COWStore: cow,
+		Metadata: &nbdpb.DeviceMetadata{Name: deviceName},
 	}
 	s, err := nbdserver.New(ctx, env, dev)
 	require.NoError(t, err)
