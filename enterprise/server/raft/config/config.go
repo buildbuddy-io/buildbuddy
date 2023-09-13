@@ -8,6 +8,7 @@ func GetRaftConfig(shardID, replicaID uint64) dbConfig.Config {
 	rc := dbConfig.Config{
 		ReplicaID:          replicaID,
 		ShardID:            shardID,
+		WaitReady:          true,
 		PreVote:            true,
 		ElectionRTT:        200,
 		HeartbeatRTT:       20,

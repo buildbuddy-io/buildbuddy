@@ -94,27 +94,3 @@ func (rl *RaftListener) UnregisterLeaderUpdatedCB(cb *LeaderCB) {
 	delete(rl.leaderUpdatedCallbacks, cb)
 	rl.mu.Unlock()
 }
-
-func (rl *RaftListener) WaitForClusterReady(ctx context.Context, shardID uint64) error {
-	quitOnce := sync.Once{}
-	quit := make(chan struct{})
-	cb := NodeCB(func(info raftio.NodeInfo) {
-		if info.ShardID == shardID {
-			quitOnce.Do(func() {
-				close(quit)
-			})
-		}
-	})
-
-	rl.RegisterNodeReadyCB(&cb)
-	defer rl.UnregisterNodeReadyCB(&cb)
-
-	start := time.Now()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-quit:
-		log.Printf("Cluster %d was ready after %s", shardID, time.Since(start))
-		return nil
-	}
-}

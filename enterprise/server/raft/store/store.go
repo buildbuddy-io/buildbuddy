@@ -1058,20 +1058,6 @@ func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeader
 	return &rfpb.TransferLeadershipResponse{}, nil
 }
 
-func (s *Store) waitForReplicaOpen(ctx context.Context, shardID uint64) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			if rd := s.lookupRange(shardID); rd != nil {
-				return nil
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
-
 // Snapshots the cluster *on this node*. This is a local operation and does not
 // create a snapshot on other nodes that are members of this cluster.
 func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
@@ -1083,11 +1069,6 @@ func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
 	opts := dragonboat.SnapshotOption{
 		OverrideCompactionOverhead: true,
 		CompactionOverhead:         0,
-	}
-
-	// Wait for the cluster to be opened on this store
-	if err := s.waitForReplicaOpen(ctx, shardID); err != nil {
-		return err
 	}
 
 	// Wait a little longer for the replica to accept the snapshot request
@@ -1123,15 +1104,6 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 		initialMembers[replica.GetReplicaId()] = nhid
 	}
 
-	waitErr := make(chan error, 1)
-	// Wait for the notification that the cluster node is ready on the local
-	// nodehost.
-	go func() {
-		err := listener.DefaultListener().WaitForClusterReady(ctx, newShardID)
-		waitErr <- err
-		close(waitErr)
-	}()
-
 	s.log.Infof("Starting new raft node c%dn%d", newShardID, sourceReplica.ReplicaID)
 	rc := raftConfig.GetRaftConfig(newShardID, sourceReplica.ReplicaID)
 	err = s.nodeHost.StartOnDiskReplica(initialMembers, false /*join*/, s.ReplicaFactoryFn, rc)
@@ -1142,38 +1114,17 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 		return err
 	}
 
-	err, ok := <-waitErr
-	if ok && err != nil {
-		s.log.Errorf("WaitForClusterReady err: %s", err)
-		return err
-	}
-
 	return nil
 }
 
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
 	rc := raftConfig.GetRaftConfig(req.GetShardId(), req.GetReplicaId())
 
-	waitErr := make(chan error, 1)
-	// Wait for the notification that the cluster node is ready on the local
-	// nodehost.
-	go func() {
-		err := listener.DefaultListener().WaitForClusterReady(ctx, req.GetShardId())
-		waitErr <- err
-		close(waitErr)
-	}()
-
 	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
 	if err != nil {
 		if err == dragonboat.ErrShardAlreadyExist {
 			err = status.AlreadyExistsError(err.Error())
 		}
-		return nil, err
-	}
-
-	err, ok := <-waitErr
-	if ok && err != nil {
-		s.log.Errorf("WaitForClusterReady err: %s", err)
 		return nil, err
 	}
 
