@@ -229,6 +229,7 @@ type Group struct {
 	UseGroupOwnedExecutors *bool
 
 	CacheEncryptionEnabled bool `gorm:"not null;default:0"`
+	EnforceIPRules         bool `gorm:"not null;default:0"`
 
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl *string
@@ -727,6 +728,18 @@ func (*EncryptionKeyVersion) TableName() string {
 	return "EncryptionKeyVersions"
 }
 
+type IPRule struct {
+	Model
+	IPRuleID    string `gorm:"primaryKey"`
+	GroupID     string `gorm:"index:ip_rule_group_id_idx"`
+	CIDR        string `gorm:"column:cidr"`
+	Description string
+}
+
+func (*IPRule) TableName() string {
+	return "IPRules"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -1212,6 +1225,7 @@ func RegisterTables() {
 	registerTable("GR", &Group{})
 	registerTable("IE", &InvocationExecution{})
 	registerTable("IN", &Invocation{})
+	registerTable("IR", &IPRule{})
 	registerTable("QB", &QuotaBucket{})
 	registerTable("QG", &QuotaGroup{})
 	registerTable("RE", &GitRepository{})

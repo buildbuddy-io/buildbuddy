@@ -159,4 +159,6 @@ type Env interface {
 	SetPromQuerier(interfaces.PromQuerier)
 	GetAuditLogger() interfaces.AuditLogger
 	SetAuditLogger(logger interfaces.AuditLogger)
+	GetIPRulesService() interfaces.IPRulesService
+	SetIPRulesService(interfaces.IPRulesService)
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"google.golang.org/protobuf/proto"
@@ -470,7 +470,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 		}
 		runtime.SetFinalizer(handle, func(h *refCountedDB) {
 			if !h.refCounter.closed {
-				log.Errorf("DB() handle leak at %s!", location)
+				alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
 			}
 		})
 	}

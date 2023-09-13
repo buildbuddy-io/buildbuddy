@@ -105,6 +105,7 @@ type UserInfo interface {
 	HasCapability(akpb.ApiKey_Capability) bool
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
+	GetEnforceIPRules() bool
 }
 
 // Authenticator constants
@@ -339,6 +340,7 @@ type APIKeyGroup interface {
 	GetGroupID() string
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
+	GetEnforceIPRules() bool
 }
 
 type AuthDB interface {
@@ -1200,4 +1202,14 @@ type ConfigSecretProvider interface {
 type AuditLogger interface {
 	Log(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, request proto.Message)
 	GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error)
+}
+
+type IPRulesService interface {
+	// Authorize checks whether the authenticated user in the context is allowed
+	// to access the group identified in the context.
+	Authorize(ctx context.Context) error
+
+	// Authorize checks whether the authenticated user in the context is allowed
+	// to access the specified groupId.
+	AuthorizeGroup(ctx context.Context, groupID string) error
 }
