@@ -110,6 +110,7 @@ type RealEnv struct {
 	singleFlightDeduper              interfaces.SingleFlightDeduper
 	promQuerier                      interfaces.PromQuerier
 	auditLog                         interfaces.AuditLogger
+	ipRulesService                   interfaces.IPRulesService
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -625,4 +626,12 @@ func (r *RealEnv) GetAuditLogger() interfaces.AuditLogger {
 }
 func (r *RealEnv) SetAuditLogger(l interfaces.AuditLogger) {
 	r.auditLog = l
+}
+
+func (r *RealEnv) GetIPRulesService() interfaces.IPRulesService {
+	return r.ipRulesService
+}
+
+func (r *RealEnv) SetIPRulesService(e interfaces.IPRulesService) {
+	r.ipRulesService = e
 }

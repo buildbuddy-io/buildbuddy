@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -251,6 +252,10 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := auditlog.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	if err := iprules.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

@@ -122,7 +122,11 @@ func CreateRandomGroups(t *testing.T, env environment.Env) []*tables.User {
 func CreateRandomUser(t *testing.T, env environment.Env, domain string) *tables.User {
 	udb := env.GetUserDB()
 	tu := randomUser(t, domain)
-	err := udb.InsertUser(context.Background(), tu)
+	ctx := context.Background()
+	err := udb.InsertUser(ctx, tu)
+	require.NoError(t, err)
+	// Refresh user to pick up default group.
+	tu, err = udb.GetUserByID(ctx, tu.UserID)
 	require.NoError(t, err)
 	return tu
 }

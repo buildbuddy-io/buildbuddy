@@ -48,6 +48,7 @@ type Claims struct {
 	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
+	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
 }
 
 func (c *Claims) GetAPIKeyID() string {
@@ -104,6 +105,10 @@ func (c *Claims) GetCacheEncryptionEnabled() bool {
 	return c.CacheEncryptionEnabled
 }
 
+func (c *Claims) GetEnforceIPRules() bool {
+	return c.EnforceIPRules
+}
+
 func ParseClaims(token string) (*Claims, error) {
 	claims := &Claims{}
 	_, err := jwt.ParseWithClaims(token, claims, jwtKeyFunc)
@@ -126,6 +131,7 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
+		EnforceIPRules:         akg.GetEnforceIPRules(),
 	}
 }
 
@@ -175,6 +181,7 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
+	enforceIPRules := false
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
@@ -183,6 +190,7 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 		})
 		if g.Group.GroupID == effectiveGroup {
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
+			enforceIPRules = g.Group.EnforceIPRules
 		}
 	}
 	return &Claims{
@@ -191,6 +199,7 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 		AllowedGroups:          allowedGroups,
 		GroupID:                effectiveGroup,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
+		EnforceIPRules:         enforceIPRules,
 	}
 }
 

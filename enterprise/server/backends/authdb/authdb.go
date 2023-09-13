@@ -203,6 +203,7 @@ type apiKeyGroup struct {
 	Capabilities           int32
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
+	EnforceIPRules         bool
 }
 
 func (g *apiKeyGroup) GetAPIKeyID() string {
@@ -227,6 +228,10 @@ func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 
 func (g *apiKeyGroup) GetCacheEncryptionEnabled() bool {
 	return g.CacheEncryptionEnabled
+}
+
+func (g *apiKeyGroup) GetEnforceIPRules() bool {
+	return g.EnforceIPRules
 }
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
@@ -443,6 +448,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 				g.user_owned_keys_enabled,
 				g.use_group_owned_executors,
 				g.cache_encryption_enabled,
+				g.enforce_ip_rules,
 				g.saml_idp_metadata_url,
 				ug.role
 			FROM "Groups" AS g, "UserGroups" AS ug
@@ -468,6 +474,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 				&gr.Group.UserOwnedKeysEnabled,
 				&gr.Group.UseGroupOwnedExecutors,
 				&gr.Group.CacheEncryptionEnabled,
+				&gr.Group.EnforceIPRules,
 				&gr.Group.SamlIdpMetadataUrl,
 				&gr.Role,
 			)
@@ -492,7 +499,8 @@ func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) 
 			ak.user_id,
 			g.group_id,
 			g.use_group_owned_executors,
-			g.cache_encryption_enabled
+			g.cache_encryption_enabled,
+			g.enforce_ip_rules
 		FROM "Groups" AS g,
 		"APIKeys" AS ak
 	`)
