@@ -3572,7 +3572,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 9
+            "y": 8
           },
           "hiddenSeries": false,
           "id": 17,
@@ -3663,7 +3663,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 9
+            "y": 8
           },
           "hiddenSeries": false,
           "id": 19,
@@ -3756,7 +3756,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 16
           },
           "hiddenSeries": false,
           "id": 4,
@@ -3866,7 +3866,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 17
+            "y": 16
           },
           "hiddenSeries": false,
           "id": 9,
@@ -3959,7 +3959,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 26
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 646,
@@ -3983,6 +3983,8 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
@@ -4003,7 +4005,7 @@
           ],
           "thresholds": [],
           "timeRegions": [],
-          "title": "Disk Cache Avg Last Evicted Age",
+          "title": "Disk Cache Avg Last Evicted Age (${cache_name})",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -4032,95 +4034,6 @@
           "yaxis": {
             "align": false
           }
-        },
-        {
-          "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  }
-                ]
-              },
-              "unit": "ops"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 26
-          },
-          "id": 1254,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": false
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": true,
-              "expr": "sum(rate(buildbuddy_remote_cache_disk_cache_duplicate_writes{}[${window}]))",
-              "interval": "",
-              "legendFormat": "",
-              "refId": "A"
-            }
-          ],
-          "title": "Disk Cache Duplicate Writes per Second",
-          "type": "timeseries"
         },
         {
           "cards": {
@@ -4159,7 +4072,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 34
+            "y": 33
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -4209,6 +4122,8 @@
             }
           },
           "pluginVersion": "9.3.1",
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "reverseYBuckets": false,
           "targets": [
             {
@@ -4216,15 +4131,17 @@
                 "type": "prometheus",
                 "uid": "prom"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_added_file_size_bytes_bucket[$__interval])) by (le)",
+              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_added_file_size_bytes_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
               "format": "heatmap",
               "interval": "",
               "legendFormat": "{{le}}",
+              "range": true,
               "refId": "A"
             }
           ],
-          "title": "Files Added to Disk Cache by Size",
+          "title": "Files Added to Disk Cache by Size (${cache_name})",
           "tooltip": {
             "show": true,
             "showHistogram": true
@@ -4304,8 +4221,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 34
+            "x": 0,
+            "y": 41
           },
           "id": 1338,
           "options": {
@@ -4320,6 +4237,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -4328,17 +4247,18 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region=\"${region}\",job=\"buildbuddy-app\"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\"}) by (pod_name)",
+              "expr": "max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (pod_name)",
               "interval": "",
               "legendFormat": "{{pod_name}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Disk Cache Filesystem Usage",
+          "title": "Disk Cache Filesystem Usage (${cache_name})",
           "type": "timeseries"
         },
         {
+          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
@@ -4398,7 +4318,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 42
+            "y": 49
           },
           "id": 2135,
           "options": {
@@ -4413,6 +4333,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -4420,13 +4342,13 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=\"buildbuddy-app\"}[10m])) by (pod_name, partition_id)",
+              "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[10m])) by (pod_name, partition_id)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Disk Cache eviction rate",
+          "title": "Disk Cache eviction rate  (${cache_name})",
           "type": "timeseries"
         },
         {
@@ -4492,8 +4414,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 42
+            "x": 0,
+            "y": 57
           },
           "id": 2182,
           "options": {
@@ -4508,6 +4430,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -4516,14 +4440,226 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"buildbuddy-app\"}) by (pod_name, partition_id)",
+              "expr": "max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (pod_name, partition_id)",
               "interval": "",
               "legendFormat": "{{pod_name}} {{partition_id}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Disk Cache Partition Usage",
+          "title": "Disk Cache Partition Usage (${cache_name})",
+          "type": "timeseries"
+        },
+        {
+          "cards": {
+            "cardPadding": 0.25,
+            "cardRound": 2
+          },
+          "collapsed": true,
+          "color": {
+            "cardColor": "#3274D9",
+            "colorScale": "sqrt",
+            "colorScheme": "interpolateOranges",
+            "exponent": 0.5,
+            "mode": "opacity"
+          },
+          "dataFormat": "tsbuckets",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "scaleDistribution": {
+                  "type": "linear"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 65
+          },
+          "heatmap": {},
+          "hideZeroBuckets": false,
+          "highlightCards": true,
+          "id": 6382,
+          "legend": {
+            "show": false
+          },
+          "maxDataPoints": 25,
+          "options": {
+            "calculate": false,
+            "calculation": {},
+            "cellGap": 0,
+            "cellRadius": 2,
+            "cellValues": {},
+            "color": {
+              "exponent": 0.3,
+              "fill": "#3274D9",
+              "mode": "scheme",
+              "reverse": false,
+              "scale": "exponential",
+              "scheme": "RdBu",
+              "steps": 128
+            },
+            "exemplars": {
+              "color": "rgba(255,0,255,0.7)"
+            },
+            "filterValues": {
+              "le": 1e-09
+            },
+            "legend": {
+              "show": false
+            },
+            "rowsFrame": {
+              "layout": "auto"
+            },
+            "showValue": "never",
+            "tooltip": {
+              "show": true,
+              "yHistogram": true
+            },
+            "yAxis": {
+              "axisPlacement": "left",
+              "decimals": 0,
+              "reverse": false,
+              "unit": "none"
+            }
+          },
+          "pluginVersion": "9.3.1",
+          "repeat": "cache_name",
+          "repeatDirection": "h",
+          "reverseYBuckets": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "exemplar": true,
+              "expr": "sum(increase(buildbuddy_remote_cache_pebble_cache_num_chunks_per_file_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
+              "format": "heatmap",
+              "interval": "",
+              "legendFormat": "{{le}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Number of Chunks Per File (${cache_name})",
+          "tooltip": {
+            "show": true,
+            "showHistogram": true
+          },
+          "type": "heatmap",
+          "xAxis": {
+            "show": true
+          },
+          "yAxis": {
+            "decimals": 0,
+            "format": "bytes",
+            "logBase": 1,
+            "show": true
+          },
+          "yBucketBound": "auto"
+        },
+        {
+          "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  }
+                ]
+              },
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 73
+          },
+          "id": 1254,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(rate(buildbuddy_remote_cache_disk_cache_duplicate_writes{}[${window}]))",
+              "interval": "",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Cache Duplicate Writes per Second",
           "type": "timeseries"
         }
       ],
@@ -4613,7 +4749,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 10
+            "y": 9
           },
           "id": 2370,
           "options": {
@@ -4628,6 +4764,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -4636,14 +4774,14 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\",partition_id=\"${partition_id}\"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"buildbuddy-app\",partition_id=\"${partition_id}\"}) by (pod_name)",
+              "expr": "max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\",partition_id=\"${partition_id}\", cache_name=\"${cache_name}\"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"buildbuddy-app\",partition_id=\"${partition_id}\", cache_name=\"${cache_name}\"}) by (pod_name)",
               "interval": "",
               "legendFormat": "{{pod_name}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Usage",
+          "title": "Usage (${cache_name})",
           "type": "timeseries"
         },
         {
@@ -4682,8 +4820,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 10
+            "x": 0,
+            "y": 17
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -4733,6 +4871,8 @@
             }
           },
           "pluginVersion": "9.3.1",
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "reverseYBuckets": false,
           "targets": [
             {
@@ -4742,7 +4882,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_eviction_age_msec_bucket{region=\"$region\", partition_id=\"$partition_id\"}[$__interval])) by (le)",
+              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_eviction_age_msec_bucket{region=\"$region\", partition_id=\"$partition_id\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
               "format": "heatmap",
               "interval": "",
               "legendFormat": "{{le}}",
@@ -4750,7 +4890,7 @@
               "refId": "A"
             }
           ],
-          "title": "Eviction Age",
+          "title": "Eviction Age (${cache_name})",
           "tooltip": {
             "show": true,
             "showHistogram": true
@@ -4770,7 +4910,7 @@
       ],
       "repeat": "partition_id",
       "repeatDirection": "h",
-      "title": "Remote cache (${partition_id})",
+      "title": "Remote cache (partition: ${partition_id})",
       "type": "row"
     },
     {
@@ -4784,6 +4924,7 @@
       "id": 3680,
       "panels": [
         {
+          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
@@ -4843,7 +4984,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 36
+            "y": 12
           },
           "id": 3763,
           "options": {
@@ -4858,6 +4999,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -4865,141 +5008,17 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\"}[1m])) by (compaction_type)\n",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (compaction_type)\n",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Compaction rate (by type)",
+          "title": "Compaction rate (${cache_name}) (by type)",
           "type": "timeseries"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "bytes"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "in progress (count)"
-                },
-                "properties": [
-                  {
-                    "id": "custom.axisPlacement",
-                    "value": "right"
-                  },
-                  {
-                    "id": "unit",
-                    "value": "none"
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "marked files"
-                },
-                "properties": [
-                  {
-                    "id": "custom.axisPlacement",
-                    "value": "right"
-                  },
-                  {
-                    "id": "unit",
-                    "value": "none"
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 36
-          },
-          "id": 3846,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\"})",
-              "legendFormat": "estimated debt",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Compaction estimated debt",
-          "type": "timeseries"
-        },
-        {
+          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
@@ -5093,7 +5112,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 44
+            "y": 20
           },
           "id": 5574,
           "options": {
@@ -5108,6 +5127,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -5115,7 +5136,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\",app=\"buildbuddy-app\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "in progress (bytes)",
               "range": true,
@@ -5127,7 +5148,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\",app=\"buildbuddy-app\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "in progress (count)",
               "range": true,
@@ -5139,17 +5160,146 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\",app=\"buildbuddy-app\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "marked files",
               "range": true,
               "refId": "D"
             }
           ],
-          "title": "Compaction state",
+          "title": "Compaction state (${cache_name})",
           "type": "timeseries"
         },
         {
+          "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "in progress (count)"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "none"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "marked files"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "none"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 28
+          },
+          "id": 3846,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
+              "legendFormat": "estimated debt",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Compaction estimated debt (${cache_name})",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
@@ -5209,8 +5359,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 44
+            "x": 0,
+            "y": 36
           },
           "id": 5160,
           "options": {
@@ -5242,6 +5392,100 @@
           "type": "timeseries"
         },
         {
+          "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "µs"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 36
+          },
+          "id": 5242,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\"}[1m])) by (le,pebble_op))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Op p50 Latency",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
@@ -5302,99 +5546,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 52
-          },
-          "id": 5242,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "editorMode": "code",
-              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\"}[1m])) by (le,pebble_op))",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Op p50 Latency",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "µs"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 52
+            "y": 44
           },
           "id": 5324,
           "options": {
@@ -5426,6 +5578,7 @@
           "type": "timeseries"
         },
         {
+          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
@@ -5486,7 +5639,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 60
+            "y": 44
           },
           "id": 5406,
           "options": {
@@ -5591,7 +5744,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 61
+            "y": 13
           },
           "id": 3929,
           "options": {
@@ -5613,7 +5766,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5683,7 +5836,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 61
+            "y": 13
           },
           "id": 4011,
           "options": {
@@ -5705,7 +5858,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5775,7 +5928,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 69
+            "y": 21
           },
           "id": 4093,
           "options": {
@@ -5797,7 +5950,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5867,7 +6020,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 69
+            "y": 21
           },
           "id": 4175,
           "options": {
@@ -5889,7 +6042,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5959,7 +6112,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 77
+            "y": 29
           },
           "id": 4257,
           "options": {
@@ -5981,7 +6134,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6051,7 +6204,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 77
+            "y": 29
           },
           "id": 4339,
           "options": {
@@ -6073,7 +6226,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6143,7 +6296,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 85
+            "y": 37
           },
           "id": 4421,
           "options": {
@@ -6165,7 +6318,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6235,7 +6388,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 85
+            "y": 37
           },
           "id": 4503,
           "options": {
@@ -6257,7 +6410,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6327,7 +6480,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 93
+            "y": 45
           },
           "id": 4585,
           "options": {
@@ -6349,7 +6502,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6419,7 +6572,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 93
+            "y": 45
           },
           "id": 4667,
           "options": {
@@ -6441,7 +6594,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6511,7 +6664,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 101
+            "y": 53
           },
           "id": 4749,
           "options": {
@@ -6533,7 +6686,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6603,7 +6756,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 101
+            "y": 53
           },
           "id": 4831,
           "options": {
@@ -6625,7 +6778,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6695,7 +6848,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 109
+            "y": 61
           },
           "id": 4913,
           "options": {
@@ -6717,7 +6870,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6727,7 +6880,9 @@
           "type": "timeseries"
         }
       ],
-      "title": "Remote cache pebble levels",
+      "repeat": "cache_name",
+      "repeatDirection": "h",
+      "title": "Remote cache pebble levels (${cache_name})",
       "type": "row"
     },
     {
@@ -6736,7 +6891,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 14
       },
       "id": 3104,
       "panels": [
@@ -6800,7 +6955,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 100
+            "y": 14
           },
           "id": 3187,
           "options": {
@@ -6903,7 +7058,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 100
+            "y": 14
           },
           "id": 3269,
           "options": {
@@ -7018,7 +7173,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 108
+            "y": 22
           },
           "id": 3433,
           "options": {
@@ -7085,7 +7240,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 108
+            "y": 22
           },
           "id": 3597,
           "options": {
@@ -7150,7 +7305,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 15
       },
       "id": 5799,
       "panels": [
@@ -7788,7 +7943,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 16
       },
       "id": 264,
       "panels": [
@@ -8421,7 +8576,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 20
       },
       "id": 38,
       "panels": [
@@ -8441,7 +8596,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 133
+            "y": 93
           },
           "hiddenSeries": false,
           "id": 40,
@@ -8546,7 +8701,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 146
+            "y": 106
           },
           "hiddenSeries": false,
           "id": 76,
@@ -8641,7 +8796,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 160
+            "y": 120
           },
           "hiddenSeries": false,
           "id": 42,
@@ -8733,7 +8888,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 160
+            "y": 120
           },
           "hiddenSeries": false,
           "id": 46,
@@ -8825,7 +8980,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 168
+            "y": 128
           },
           "hiddenSeries": false,
           "id": 44,
@@ -8922,7 +9077,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 21
       },
       "id": 458,
       "panels": [
@@ -9562,7 +9717,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 22
       },
       "id": 48,
       "panels": [
@@ -9974,7 +10129,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 23
       },
       "id": 384,
       "panels": [
@@ -10568,7 +10723,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 24
       },
       "id": 107,
       "panels": [
@@ -11183,7 +11338,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 25
       },
       "id": 28,
       "panels": [
@@ -11205,7 +11360,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 153
+            "y": 141
           },
           "hiddenSeries": false,
           "id": 190,
@@ -11225,7 +11380,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -11310,7 +11465,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 153
+            "y": 141
           },
           "hiddenSeries": false,
           "id": 159,
@@ -11331,7 +11486,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -11431,7 +11586,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 161
+            "y": 149
           },
           "hiddenSeries": false,
           "id": 210,
@@ -11451,7 +11606,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -11518,6 +11673,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -11566,7 +11723,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 161
+            "y": 149
           },
           "id": 1209,
           "options": {
@@ -11577,7 +11734,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "targets": [
@@ -11607,6 +11765,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -11656,7 +11816,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 169
+            "y": 157
           },
           "id": 31,
           "options": {
@@ -11667,7 +11827,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "pluginVersion": "8.3.2",
@@ -11704,7 +11865,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 169
+            "y": 157
           },
           "hiddenSeries": false,
           "id": 178,
@@ -11725,7 +11886,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -11801,6 +11962,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -11849,7 +12012,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 177
+            "y": 165
           },
           "id": 1216,
           "options": {
@@ -11860,7 +12023,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "targets": [
@@ -11926,6 +12090,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -11974,7 +12140,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 177
+            "y": 165
           },
           "id": 1231,
           "options": {
@@ -11985,7 +12151,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "targets": [
@@ -12056,7 +12223,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 185
+            "y": 173
           },
           "hiddenSeries": false,
           "id": 33,
@@ -12076,7 +12243,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -12147,7 +12314,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 185
+            "y": 173
           },
           "hiddenSeries": false,
           "id": 35,
@@ -12167,7 +12334,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -12236,7 +12403,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 193
+            "y": 181
           },
           "hiddenSeries": false,
           "id": 129,
@@ -12256,7 +12423,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -12328,7 +12495,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 193
+            "y": 181
           },
           "hiddenSeries": false,
           "id": 102,
@@ -12349,7 +12516,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -12415,6 +12582,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "axisSoftMax": 1,
@@ -12465,7 +12634,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 201
+            "y": 189
           },
           "id": 1195,
           "options": {
@@ -12476,7 +12645,8 @@
               "showLegend": false
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "targets": [
@@ -12510,7 +12680,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 201
+            "y": 189
           },
           "hiddenSeries": false,
           "id": 180,
@@ -12533,7 +12703,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -12598,6 +12768,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "axisSoftMin": 0,
@@ -12648,7 +12820,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 209
+            "y": 197
           },
           "id": 1202,
           "options": {
@@ -12661,7 +12833,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "targets": [
@@ -12727,6 +12900,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "axisSoftMin": 0,
@@ -12802,7 +12977,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 209
+            "y": 197
           },
           "id": 1196,
           "options": {
@@ -12815,7 +12990,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "targets": [
@@ -12858,7 +13034,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 29
       },
       "id": 83,
       "panels": [
@@ -13260,7 +13436,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 34
       },
       "id": 71,
       "panels": [
@@ -13690,7 +13866,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 35
       },
       "id": 1088,
       "panels": [
@@ -14013,7 +14189,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 38
       },
       "id": 962,
       "panels": [
@@ -14213,7 +14389,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 39
       },
       "id": 1975,
       "panels": [
@@ -14459,7 +14635,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 40
       },
       "id": 1988,
       "panels": [
@@ -14580,7 +14756,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 41
       },
       "id": 1983,
       "panels": [
@@ -14745,7 +14921,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 42
       },
       "id": 8,
       "panels": [
@@ -15068,7 +15244,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 43
       },
       "id": 1346,
       "panels": [
@@ -15582,7 +15758,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 44
       },
       "id": 5641,
       "panels": [
@@ -16378,6 +16554,32 @@
         "options": [],
         "query": {
           "query": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, partition_id)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prom"
+        },
+        "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, cache_name)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": false,
+        "name": "cache_name",
+        "options": [],
+        "query": {
+          "query": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, cache_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
