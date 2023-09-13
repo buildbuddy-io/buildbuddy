@@ -21,8 +21,15 @@ body {
   box-shadow: 0 -1px 1px rgba(0, 0, 0, 0.12) inset;
 }
 
-.impersonation-toolbar button {
+.impersonation-toolbar .exit-button {
   margin-left: auto;
+}
+
+.impersonation-toolbar .generate-api-key-button {
+  margin-left: 32px;
+}
+
+.impersonation-toolbar button {
   min-height: 32px;
   padding: 2px 16px;
   gap: 8px;

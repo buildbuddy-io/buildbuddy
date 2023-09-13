@@ -25,7 +25,7 @@ import Shortcuts from "../../../app/shortcuts/shortcuts";
 import UsageComponent from "../usage/usage";
 import GroupSearchComponent from "../group_search/group_search";
 import AuditLogsComponent from "../auditlogs/auditlogs";
-import { AlertCircle, LogOut } from "lucide-react";
+import { AlertCircle, Check, Copy, LogOut } from "lucide-react";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
@@ -42,6 +42,11 @@ import UserPreferences from "../../../app/preferences/preferences";
 import Modal from "../../../app/components/modal/modal";
 import NewTrendsComponent from "../trends/new_trends";
 import OrgAccessDeniedComponent from "../org/org_access_denied";
+import rpc_service from "../../../app/service/rpc_service";
+import { api_key } from "../../../proto/api_key_ts_proto";
+import { copyToClipboard } from "../../../app/util/clipboard";
+import alert_service from "../../../app/alert/alert_service";
+import InvocationModel from "../../../app/invocation/invocation_model";
 
 interface State {
   user?: User;
@@ -67,6 +72,80 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.tapPath,
   Path.codePath,
 ]);
+
+interface ImpersonationProps {
+  user: User;
+}
+
+interface ImpersonationState {
+  isCopied: boolean;
+  apiKey?: api_key.ApiKey;
+}
+
+class ImpersonationComponent extends React.Component<ImpersonationProps, ImpersonationState> {
+  state: ImpersonationState = {
+    isCopied: false,
+  };
+
+  private copyTimeout?: number;
+
+  private async generateApiKey() {
+    if (this.state.apiKey) {
+      return this.state.apiKey.value;
+    }
+    const response = await rpc_service.service.createImpersonationApiKey(
+      api_key.CreateImpersonationApiKeyRequest.create()
+    );
+    this.setState({
+      apiKey: response.apiKey!,
+    });
+    // Store the generated key for some time to avoid generating a new key if
+    // the user needs the key again.
+    window.setTimeout(() => {
+      this.setState({ apiKey: undefined });
+    }, 45 * 60 * 1000);
+    return response.apiKey!.value;
+  }
+
+  handleGenerateImpersonationAPIKeyClicked() {
+    this.generateApiKey().then((key) => {
+      copyToClipboard(key);
+      this.setState({ isCopied: true }, () => {
+        alert_service.success("Copied API key to clipboard");
+      });
+      clearTimeout(this.copyTimeout);
+      this.copyTimeout = window.setTimeout(() => {
+        this.setState({ isCopied: false });
+      }, 4000);
+    });
+  }
+
+  handleExitImpersonationModeClicked() {
+    authService.exitImpersonationMode();
+  }
+
+  render() {
+    return (
+      <div className="impersonation-toolbar">
+        <AlertCircle className="icon black" />
+        <span>
+          Authenticated as a member of <b>{this.props.user.selectedGroupName()}</b> ({this.props.user.selectedGroup?.id}
+          ). Proceed with caution.
+        </span>
+        <OutlinedButton
+          onClick={this.handleGenerateImpersonationAPIKeyClicked.bind(this)}
+          className="generate-api-key-button">
+          <span>{this.state.apiKey ? "Copy" : "Generate"} temporary API key</span>
+          {this.state.isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
+        </OutlinedButton>
+        <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)} className="exit-button">
+          <span>Exit</span>
+          <LogOut className="icon black" width={16} />
+        </OutlinedButton>
+      </div>
+    );
+  }
+}
 
 export default class EnterpriseRootComponent extends React.Component {
   state: State = {
@@ -114,10 +193,6 @@ export default class EnterpriseRootComponent extends React.Component {
 
   handleOrganizationClicked() {
     router.navigateHome();
-  }
-
-  handleExitImpersonationModeClicked() {
-    authService.exitImpersonationMode();
   }
 
   render() {
@@ -177,19 +252,7 @@ export default class EnterpriseRootComponent extends React.Component {
 
     return (
       <>
-        {this.state.user?.isImpersonating && (
-          <div className="impersonation-toolbar">
-            <AlertCircle className="icon black" />
-            <span>
-              Authenticated as a member of <b>{this.state.user.selectedGroupName()}</b> (
-              {this.state.user.selectedGroup?.id}). Proceed with caution.
-            </span>
-            <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)}>
-              <span>Exit</span>
-              <LogOut className="icon black" width={16} />
-            </OutlinedButton>
-          </div>
-        )}
+        {this.state.user?.isImpersonating && <ImpersonationComponent user={this.state.user} />}
         <div
           className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""}`}>
           <div className={`page ${menu ? "has-menu" : ""}`}>
