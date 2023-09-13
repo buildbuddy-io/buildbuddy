@@ -195,6 +195,28 @@ func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 	}
 }
 
+func ipAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if irs := env.GetIPRulesService(); irs != nil {
+			if err := irs.Authorize(ctx); err != nil {
+				return nil, err
+			}
+		}
+		return handler(ctx, req)
+	}
+}
+
+func ipAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if irs := env.GetIPRulesService(); irs != nil {
+			if err := irs.Authorize(stream.Context()); err != nil {
+				return err
+			}
+		}
+		return handler(srv, stream)
+	}
+}
+
 // requestIDStreamInterceptor is a server interceptor that inserts a request ID
 // into the context if one is not already present.
 func requestIDStreamServerInterceptor() grpc.StreamServerInterceptor {
@@ -387,6 +409,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
+		ipAuthUnaryServerInterceptor(env),
 		roleAuthUnaryServerInterceptor(env),
 		copyHeadersUnaryServerInterceptor(),
 	)
@@ -402,6 +425,7 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
+		ipAuthStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env),
 		copyHeadersStreamServerInterceptor(),
 	)

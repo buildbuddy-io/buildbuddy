@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -203,6 +205,24 @@ func (s *Service) Authorize(ctx context.Context) error {
 	}
 
 	return s.AuthorizeGroup(ctx, u.GetGroupID())
+}
+
+func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
+	// GetUser is used by the frontend to know what the user is allowed to
+	//  do, including whether or not they are allowed access by IP rules.
+	if r.URL.Path == "/rpc/BuildBuddyService/GetUser" {
+		return nil
+	}
+
+	// All other APIs are subject to IP access checks.
+	if strings.HasPrefix(r.URL.Path, "/rpc/") || strings.HasPrefix(r.URL.Path, "/api/") {
+		err := s.Authorize(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) checkAccess(ctx context.Context, groupID string) error {

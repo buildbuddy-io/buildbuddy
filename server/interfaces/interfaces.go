@@ -1212,4 +1212,9 @@ type IPRulesService interface {
 	// Authorize checks whether the authenticated user in the context is allowed
 	// to access the specified groupId.
 	AuthorizeGroup(ctx context.Context, groupID string) error
+
+	// AuthorizeHTTPRequest checks whether the specified HTTP request should be
+	// allowed based on the authenticated user and group information in the
+	// context.
+	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
 }
