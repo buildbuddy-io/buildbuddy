@@ -27,6 +27,7 @@ var (
 )
 
 const (
+	// The number of IP rules (net.IPNet instances) that we will store in memory.
 	cacheSize = 100_000
 )
 
@@ -182,10 +183,10 @@ func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
 
 func (s *Service) Authorize(ctx context.Context) error {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
-	if authutil.IsAnonymousUserError(err) {
-		return nil
-	}
 	if err != nil {
+		if authutil.IsAnonymousUserError(err) {
+			return nil
+		}
 		return err
 	}
 
@@ -201,12 +202,19 @@ func (s *Service) Authorize(ctx context.Context) error {
 	return s.AuthorizeGroup(ctx, u.GetGroupID())
 }
 
-func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error) {
+func (s *Service) checkAccess(ctx context.Context, groupID string) error {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := authutil.AuthorizeGroupRole(u, req.GetRequestContext().GetGroupId(), role.Admin); err != nil {
+	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error) {
+	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 
@@ -226,11 +234,7 @@ func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.
 }
 
 func (s *Service) UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (*irpb.UpdateRuleResponse, error) {
-	u, err := perms.AuthenticatedUser(ctx, s.env)
-	if err != nil {
-		return nil, err
-	}
-	if err := authutil.AuthorizeGroupRole(u, req.GetRequestContext().GetGroupId(), role.Admin); err != nil {
+	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 
@@ -244,11 +248,7 @@ func (s *Service) UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (
 }
 
 func (s *Service) DeleteRule(ctx context.Context, req *irpb.DeleteRuleRequest) (*irpb.DeleteRuleResponse, error) {
-	u, err := perms.AuthenticatedUser(ctx, s.env)
-	if err != nil {
-		return nil, err
-	}
-	if err := authutil.AuthorizeGroupRole(u, req.GetRequestContext().GetGroupId(), role.Admin); err != nil {
+	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 

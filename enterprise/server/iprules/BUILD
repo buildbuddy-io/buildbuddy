@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "iprules",
     srcs = ["iprules.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:iprules_go_proto",
         "//server/environment",
@@ -19,8 +20,6 @@ go_library(
         "//server/util/status",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "iprules_test",
