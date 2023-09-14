@@ -172,6 +172,11 @@ func (d *ClientDevice) waitForReady(ctx context.Context) error {
 	}
 }
 
+// Size returns the block device size in bytes.
+func (d *ClientDevice) Size() int64 {
+	return d.metadata.GetSizeBytes()
+}
+
 // Mount connects the NBD device and mounts it to the given directory path. The
 // directory must already exist.
 func (d *ClientDevice) Mount(path string) error {
