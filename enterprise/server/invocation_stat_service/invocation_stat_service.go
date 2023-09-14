@@ -204,11 +204,14 @@ func (i *InvocationStatService) getTrendTimeSettings(tq *stpb.TrendQuery, timezo
 	}
 }
 
-func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) string {
-	q := ""
+func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
+	var q string
+	var qArgs []interface{}
 	if i.isOLAPDBEnabled() {
 		if i.finerTimeBucketsEnabled() {
-			q = fmt.Sprintf("SELECT %s as bucket_start_time_micros,", i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval()))
+			bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
+			q = fmt.Sprintf("SELECT %s as bucket_start_time_micros,", bucketStr)
+			qArgs = bucketArgs
 		} else {
 			q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
 		}
@@ -244,7 +247,7 @@ func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSett
 	    SUM(total_upload_usec) as total_upload_usec,
 	    SUM(total_cached_action_exec_usec) as total_cpu_micros_saved
 	    FROM "Invocations"`
-	return q
+	return q, qArgs
 }
 
 func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
@@ -406,7 +409,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
 func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stpb.GetTrendRequest, timeSettings *trendTimeSettings) ([]*stpb.TrendStat, error) {
 	reqCtx := req.GetRequestContext()
 
-	q := query_builder.NewQuery(i.getTrendBasicQuery(req.GetQuery(), timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
+	q := query_builder.NewQueryWithArgs(i.getTrendBasicQuery(req.GetQuery(), timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
 	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx); err != nil {
 		return nil, err
 	}
@@ -459,17 +462,19 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	return res, nil
 }
 
-func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) string {
+func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
 	if !i.finerTimeBucketsEnabled() {
 		return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
-		FROM "Executions"`
+		FROM "Executions"`, make([]interface{}, 0)
 	}
 
-	return fmt.Sprintf("SELECT %s as bucket_start_time_micros,", i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())) + `
+	bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
+
+	return fmt.Sprintf("SELECT %s as bucket_start_time_micros,", bucketStr) + `
 	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
 	FROM "Executions"
-	`
+	`, bucketArgs
 }
 
 // The innerQuery is expected to return rows with the following columns:
@@ -503,7 +508,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	}
 	reqCtx := req.GetRequestContext()
 
-	q := query_builder.NewQuery(i.getExecutionTrendQuery(timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
+	q := query_builder.NewQueryWithArgs(i.getExecutionTrendQuery(timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
 	if err := i.addWhereClauses(q, req.GetQuery(), req.GetRequestContext()); err != nil {
 		return nil, err
 	}
