@@ -13,13 +13,13 @@ import (
 
 const (
 	goFileExtensions = ".go"
-	goModFileName = "go.mod"
-	goWorkFileName = "go.work"
+	goModFileName    = "go.mod"
+	goWorkFileName   = "go.work"
 
 	// TODO(siggisim): Make these configurable or infer them from the repo
-	defaultGoVersion = "1.20"
-	defaultRulesGoVersion = "0.36.0"
-	defaultGazelleVersion = "0.26.0"
+	defaultGoVersion         = "1.20"
+	defaultRulesGoVersion    = "0.36.0"
+	defaultGazelleVersion    = "0.26.0"
 	defaultRulesProtoVersion = "5.3.0-21.7"
 )
 
@@ -42,9 +42,9 @@ func NewLanguage() language.Language {
 
 func (g *Golang) Deps() []string {
 	return []string{
-		"github/bazelbuild/rules_go@"+defaultRulesGoVersion,
-		"github/bazelbuild/bazel-gazelle@"+defaultGazelleVersion,
-		"github/bazelbuild/rules_proto@"+defaultRulesProtoVersion,
+		"github/bazelbuild/rules_go@" + defaultRulesGoVersion,
+		"github/bazelbuild/bazel-gazelle@" + defaultGazelleVersion,
+		"github/bazelbuild/rules_proto@" + defaultRulesProtoVersion,
 	}
 }
 
@@ -63,7 +63,7 @@ func (g *Golang) ConsolidateDepFiles(deps map[string][]string) map[string][]stri
 		return deps
 	}
 	if foundGoModFiles && len(goModFiles) > 1 {
-		goWorkContents := "go "+defaultGoVersion+"\n"
+		goWorkContents := "go " + defaultGoVersion + "\n"
 		for _, m := range goModFiles {
 			goWorkContents += "use ./" + path.Dir(m) + "\n"
 		}
