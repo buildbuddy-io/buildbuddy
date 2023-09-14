@@ -8,11 +8,9 @@ option go_package = "raft_service";
 
 service Api {
   // Raft Meta-API.
-  rpc StartShard(raft.StartShardRequest)
-      returns (raft.StartShardResponse);
+  rpc StartShard(raft.StartShardRequest) returns (raft.StartShardResponse);
   rpc RemoveData(raft.RemoveDataRequest) returns (raft.RemoveDataResponse);
-  rpc AddReplica(raft.AddReplicaRequest)
-      returns (raft.AddReplicaResponse);
+  rpc AddReplica(raft.AddReplicaRequest) returns (raft.AddReplicaResponse);
   rpc RemoveReplica(raft.RemoveReplicaRequest)
       returns (raft.RemoveReplicaResponse);
   rpc ListRange(raft.ListRangeRequest) returns (raft.ListRangeResponse);
