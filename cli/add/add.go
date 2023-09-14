@@ -238,7 +238,7 @@ type RegistryResponse struct {
 	LatestReleaseWithModuleSnippet    string           `json:"latest_release_with_module_snippet"`
 	Disambiguation                    []Disambiguation `json:"disambiguation"`
 	Repo                              Repo             `json:"repo"`
-	Releases						  []Release 	   `json:"releases"`
+	Releases                          []Release        `json:"releases"`
 }
 
 type Disambiguation struct {
@@ -252,7 +252,7 @@ type Repo struct {
 
 type Release struct {
 	WorkspaceSnippet string `json:"workspace_snippet"`
-	Name 			 string `json:"name"`
+	Name             string `json:"name"`
 }
 
 // This is a workaround for the bell issue documented in
