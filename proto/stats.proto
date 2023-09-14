@@ -8,9 +8,18 @@ import "google/protobuf/timestamp.proto";
 
 package stats;
 
-// Next tag: 7
+// Next tag: 8
 message ExecutionStat {
+  // When specified, this contains the (local) date that these stats are
+  // aggregated on in YYYY-MM-DD format.  This field will not be set when
+  // bucket_start_time_micros is present.
   string name = 6;
+
+  // The start time that these stats are aggregated in--see StatsInterval
+  // for a specification of the bucket length. The time is expressed as a
+  // unix epoch time in microseconds. If specified, the name field will be
+  // empty.
+  int64 bucket_start_time_micros = 7;
   // The duration between the execution task is queued and the worker starts.
   double queue_duration_usec_p50 = 1;
   double queue_duration_usec_p75 = 2;
@@ -72,9 +81,18 @@ message TrendQuery {
   repeated string tags = 16;
 }
 
+// Next tag: 28
 message TrendStat {
+  // When specified, this contains the (local) date that these stats are
+  // aggregated on in YYYY-MM-DD format.  This field will not be set when
+  // bucket_start_time_micros is present.
   string name = 1;
 
+  // The start time that these stats are aggregated in--see StatsInterval
+  // for a specification of the bucket length. The time is expressed as a
+  // unix epoch time in microseconds. If specified, the name field will be
+  // empty.
+  int64 bucket_start_time_micros = 27;
   // The sum of all invocation durations for this entity.
   int64 total_build_time_usec = 2;
   double build_time_usec_p50 = 21;
@@ -151,8 +169,32 @@ message GetTrendRequest {
   reserved 3;
 }
 
+enum IntervalType {
+  INTERVAL_TYPE_UNKNOWN = 0;
+  INTERVAL_TYPE_MINUTE = 1;
+  INTERVAL_TYPE_HOUR = 2;
+  INTERVAL_TYPE_DAY = 3;
+}
+
+// The time bucket size into which stats were aggregated for a GetTrend call.
+// This is necessary because we don't always find stats for all intervals in
+// the request.  We could make this obsolete someday by instead filling all
+// possible buckets in a GetTrendResponse.
+message StatsInterval {
+  IntervalType type = 1;
+  // The number of the specified IntervalType that each bucket contains--for
+  // example, a value of 30 with INTERVAL_TYPE_MINUTE means each bucket will
+  // start at either :00 or :30 in the local time zone.
+  // Note that we currently *never* specify count > 1 for INTERVAL_TYPE_DAY
+  // and INTERVAL_TYPE_HOUR.
+  int64 count = 2;
+}
+
+// Next tag: 8
 message GetTrendResponse {
   context.ResponseContext response_context = 1;
+
+  StatsInterval interval = 7;
 
   // The list of trend stats found.
   repeated TrendStat trend_stat = 2;
