@@ -353,13 +353,13 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
-			Left:       keys.MinByte,
-			Right:      keys.Key{constants.UnsplittableMaxByte},
+			Start:      keys.MinByte,
+			End:        keys.Key{constants.UnsplittableMaxByte},
 			Generation: 1,
 		},
 		&rfpb.RangeDescriptor{
-			Left:       keys.Key{constants.UnsplittableMaxByte},
-			Right:      keys.MaxByte,
+			Start:      keys.Key{constants.UnsplittableMaxByte},
+			End:        keys.MaxByte,
 			Generation: 1,
 		},
 	}
@@ -407,7 +407,7 @@ func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, 
 			})
 			batch = batch.Add(&rfpb.DirectWriteRequest{
 				Kv: &rfpb.KV{
-					Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
+					Key:   keys.RangeMetaKey(rangeDescriptor.GetEnd()),
 					Value: rdBuf,
 				},
 			})
@@ -434,7 +434,7 @@ func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, 
 		})
 		metaRangeBatch = metaRangeBatch.Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
-				Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
+				Key:   keys.RangeMetaKey(rangeDescriptor.GetEnd()),
 				Value: rdBuf,
 			},
 		})

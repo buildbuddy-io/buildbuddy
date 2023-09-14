@@ -156,8 +156,8 @@ func TestAddGetRemoveRange(t *testing.T) {
 	r1 := s1.NewReplica(1, 1)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    []byte("a"),
-		Right:   []byte("z"),
+		Start:   []byte("a"),
+		End:     []byte("z"),
 		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},
@@ -437,7 +437,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 		readRecord(ctx, t, s3, fr)
 	}
 
-	// // Write some more records to the new right range.
+	// // Write some more records to the new end range.
 	written = append(written, writeNRecords(ctx, t, s1, 50)...)
 
 	rd = s1.GetRange(4)
@@ -566,7 +566,7 @@ func TestPostFactoSplit(t *testing.T) {
 	// Now verify that all keys that should be on the new node are present.
 	for _, fr := range written {
 		fmk := metadataKey(t, fr)
-		if bytes.Compare(fmk, splitResponse.GetLeft().GetRight()) >= 0 {
+		if bytes.Compare(fmk, splitResponse.GetStart().GetEnd()) >= 0 {
 			continue
 		}
 		rd := s4.GetRange(2)

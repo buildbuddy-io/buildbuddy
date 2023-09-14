@@ -823,7 +823,7 @@ func (s *Store) updateUsages(r *replica.Replica) error {
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	s.log.Debugf("Adding range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetLeft(), rd.GetRight(), rd.GetGeneration())
+	s.log.Debugf("Adding range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 	if loaded {
 		s.log.Warningf("AddRange stomped on another range. Did you forget to call RemoveRange?")
@@ -842,7 +842,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	if rd.GetLeft() == nil && rd.GetRight() == nil {
+	if rd.GetStart() == nil && rd.GetEnd() == nil {
 		s.log.Debugf("range %d has no bounds (yet?)", rd.GetRangeId())
 		return
 	}
@@ -865,7 +865,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	s.log.Debugf("Removing range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetLeft(), rd.GetRight(), rd.GetGeneration())
+	s.log.Debugf("Removing range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	s.replicas.Delete(rd.GetRangeId())
 	s.usages.RemoveRange(rd.GetRangeId())
 
@@ -1525,7 +1525,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if err != nil {
 		return nil, err
 	}
-	if err := s.updateMetarange(ctx, sourceRange, simpleSplitRsp.GetNewLeft(), simpleSplitRsp.GetNewRight()); err != nil {
+	if err := s.updateMetarange(ctx, sourceRange, simpleSplitRsp.GetNewStart(), simpleSplitRsp.GetNewEnd()); err != nil {
 		log.Errorf("metarange update error: %s", err)
 		return nil, err
 	}
@@ -1534,8 +1534,8 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, err
 	}
 	return &rfpb.SplitRangeResponse{
-		Left:  simpleSplitRsp.GetNewLeft(),
-		Right: simpleSplitRsp.GetNewRight(),
+		Start: simpleSplitRsp.GetNewStart(),
+		End:   simpleSplitRsp.GetNewEnd(),
 	}, nil
 }
 
@@ -1859,8 +1859,8 @@ func casRangeEdit(key []byte, old, new *rfpb.RangeDescriptor) (*rfpb.CASRequest,
 	}, nil
 }
 
-func addLocalRangeEdits(oldLeft, newLeft *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	cas, err := casRangeEdit(constants.LocalRangeKey, oldLeft, newLeft)
+func addLocalRangeEdits(oldStart, newStart *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
+	cas, err := casRangeEdit(constants.LocalRangeKey, oldStart, newStart)
 	if err != nil {
 		return err
 	}
@@ -1868,23 +1868,23 @@ func addLocalRangeEdits(oldLeft, newLeft *rfpb.RangeDescriptor, b *rbuilder.Batc
 	return nil
 }
 
-func addMetaRangeEdits(oldLeft, newLeft, newRight *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	newLeftBuf, err := proto.Marshal(newLeft)
+func addMetaRangeEdits(oldStart, newStart, newEnd *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
+	newStartBuf, err := proto.Marshal(newStart)
 	if err != nil {
 		return err
 	}
-	oldLeftBuf, err := proto.Marshal(oldLeft)
+	oldStartBuf, err := proto.Marshal(oldStart)
 	if err != nil {
 		return err
 	}
-	newRightBuf, err := proto.Marshal(newRight)
+	newEndBuf, err := proto.Marshal(newEnd)
 	if err != nil {
 		return err
 	}
 
 	// Send a single request that:
-	//  - CAS sets the newLeft value to newNewLeftBuf
-	//  - inserts the new newRightBuf
+	//  - CAS sets the newStart value to newNewStartBuf
+	//  - inserts the new newEndBuf
 	//
 	// if the CAS fails, check the existing value
 	//  if it's generation is past ours, ignore the error, we're out of date
@@ -1892,29 +1892,29 @@ func addMetaRangeEdits(oldLeft, newLeft, newRight *rfpb.RangeDescriptor, b *rbui
 	//  else return an error
 	b.Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newRight.GetRight()),
-			Value: newRightBuf,
+			Key:   keys.RangeMetaKey(newEnd.GetEnd()),
+			Value: newEndBuf,
 		},
-		ExpectedValue: oldLeftBuf,
+		ExpectedValue: oldStartBuf,
 	}).Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newLeft.GetRight()),
-			Value: newLeftBuf,
+			Key:   keys.RangeMetaKey(newStart.GetEnd()),
+			Value: newStartBuf,
 		},
 	})
 	return nil
 }
 
-func (s *Store) updateMetarange(ctx context.Context, oldLeft, left, right *rfpb.RangeDescriptor) error {
+func (s *Store) updateMetarange(ctx context.Context, oldStart, start, end *rfpb.RangeDescriptor) error {
 	b := rbuilder.NewBatchBuilder()
-	if err := addMetaRangeEdits(oldLeft, left, right, b); err != nil {
+	if err := addMetaRangeEdits(oldStart, start, end, b); err != nil {
 		return err
 	}
 	batchProto, err := b.ToProto()
 	if err != nil {
 		return err
 	}
-	rsp, err := s.Sender().SyncPropose(ctx, keys.RangeMetaKey(right.GetRight()), batchProto)
+	rsp, err := s.Sender().SyncPropose(ctx, keys.RangeMetaKey(end.GetEnd()), batchProto)
 	if err != nil {
 		return err
 	}
@@ -1942,7 +1942,7 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, shardID uint64, old, 
 	if err := addLocalRangeEdits(old, new, localBatch); err != nil {
 		return err
 	}
-	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetRight())
+	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetEnd())
 	metaRangeCasReq := &rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   metaRangeDescriptorKey,

@@ -259,7 +259,7 @@ func rdString(rd *rfpb.RangeDescriptor) string {
 	if rd == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("Range(%d) [%q, %q) gen %d", rd.GetRangeId(), rd.GetLeft(), rd.GetRight(), rd.GetGeneration())
+	return fmt.Sprintf("Range(%d) [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 }
 
 func (sm *Replica) setRange(key, val []byte) error {
@@ -282,8 +282,8 @@ func (sm *Replica) setRange(key, val []byte) error {
 	sm.log.Infof("Range descriptor is changing from %s to %s", rdString(sm.rangeDescriptor), rdString(rangeDescriptor))
 	sm.rangeDescriptor = rangeDescriptor
 	sm.mappedRange = &rangemap.Range{
-		Left:  rangeDescriptor.GetLeft(),
-		Right: rangeDescriptor.GetRight(),
+		Start: rangeDescriptor.GetStart(),
+		End:   rangeDescriptor.GetEnd(),
 	}
 	sm.store.AddRange(sm.rangeDescriptor, sm)
 	return nil
@@ -693,13 +693,6 @@ func (sm *Replica) cas(wb pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse
 	}, status.FailedPreconditionError(constants.CASErrorMessage)
 }
 
-type splitPoint struct {
-	left      []byte
-	right     []byte
-	leftSize  int64
-	rightSize int64
-}
-
 func absInt(i int64) int64 {
 	if i < 0 {
 		return -1 * i
@@ -713,8 +706,8 @@ func (sm *Replica) findSplitPoint() ([]byte, error) {
 	sm.rangeMu.Unlock()
 
 	iterOpts := &pebble.IterOptions{
-		LowerBound: rangeDescriptor.GetLeft(),
-		UpperBound: rangeDescriptor.GetRight(),
+		LowerBound: rangeDescriptor.GetStart(),
+		UpperBound: rangeDescriptor.GetEnd(),
 	}
 
 	db, err := sm.leaser.DB()
@@ -776,32 +769,32 @@ func (sm *Replica) findSplitPoint() ([]byte, error) {
 
 	if splitKey == nil {
 		sm.printRange(db, iterOpts, "unsplittable range")
-		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
+		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, start split size: %d", totalSize, leftSize)
 	}
-	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ShardID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
+	sm.log.Debugf("Cluster %d found split @ %q start rows: %d, size: %d, end rows: %d, size: %d", sm.ShardID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
 	return splitKey, nil
 }
 
-func canSplitKeys(leftKey, rightKey []byte) bool {
-	if len(leftKey) == 0 || len(rightKey) == 0 {
+func canSplitKeys(startKey, endKey []byte) bool {
+	if len(startKey) == 0 || len(endKey) == 0 {
 		return false
 	}
 	// Disallow splitting the metarange, or any range before '\x04'.
 	splitStart := []byte{constants.UnsplittableMaxByte}
-	if bytes.Compare(rightKey, splitStart) <= 0 {
-		// left-right is before splitStart
+	if bytes.Compare(endKey, splitStart) <= 0 {
+		// start-end is before splitStart
 		return false
 	}
-	if bytes.Compare(leftKey, splitStart) <= 0 && bytes.Compare(rightKey, splitStart) > 0 {
-		// left-right crosses splitStart boundary
+	if bytes.Compare(startKey, splitStart) <= 0 && bytes.Compare(endKey, splitStart) > 0 {
+		// start-end crosses splitStart boundary
 		return false
 	}
 
 	// Disallow splitting pebble file-metadata from stored-file-data.
 	// File mdata will have a key like /foo/bar/baz
 	// File data will have a key like /foo/bar/baz-{1..n}
-	if bytes.HasPrefix(rightKey, leftKey) {
-		log.Debugf("can't split between %q and %q, prefix match", leftKey, rightKey)
+	if bytes.HasPrefix(endKey, startKey) {
+		log.Debugf("can't split between %q and %q, prefix match", startKey, endKey)
 		return false
 	}
 
@@ -837,7 +830,7 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 	sm.rangeMu.RUnlock()
 
 	peerRangeDescriptor := proto.Clone(rd).(*rfpb.RangeDescriptor)
-	peerRangeDescriptor.Left = splitKey
+	peerRangeDescriptor.Start = splitKey
 	peerRangeDescriptor.RangeId = req.GetNewRangeId()
 	peerRangeDescriptor.Generation += 1
 	for _, r := range peerRangeDescriptor.GetReplicas() {
@@ -871,7 +864,7 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 		return nil, err
 	}
 
-	rd.Right = splitKey
+	rd.End = splitKey
 	rd.Generation += 1
 	buf, err = proto.Marshal(rd)
 	if err != nil {
@@ -881,21 +874,21 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 		return nil, err
 	}
 	return &rfpb.SimpleSplitResponse{
-		NewLeft:  rd,
-		NewRight: peerRangeDescriptor,
+		NewStart: rd,
+		NewEnd:   peerRangeDescriptor,
 	}, err
 }
 
 func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
-	if len(req.GetLeft()) == 0 {
+	if len(req.GetStart()) == 0 {
 		return nil, status.InvalidArgumentError("Scan requires a valid key.")
 	}
 
 	iterOpts := &pebble.IterOptions{}
-	if req.GetRight() != nil {
-		iterOpts.UpperBound = req.GetRight()
+	if req.GetEnd() != nil {
+		iterOpts.UpperBound = req.GetEnd()
 	} else {
-		iterOpts.UpperBound = keys.Key(req.GetLeft()).Next()
+		iterOpts.UpperBound = keys.Key(req.GetStart()).Next()
 	}
 
 	iter := db.NewIter(iterOpts)
@@ -904,18 +897,18 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 
 	switch req.GetScanType() {
 	case rfpb.ScanRequest_SEEKLT_SCAN_TYPE:
-		t = iter.SeekLT(req.GetLeft())
+		t = iter.SeekLT(req.GetStart())
 	case rfpb.ScanRequest_SEEKGE_SCAN_TYPE:
-		t = iter.SeekGE(req.GetLeft())
+		t = iter.SeekGE(req.GetStart())
 	case rfpb.ScanRequest_SEEKGT_SCAN_TYPE:
-		t = iter.SeekGE(req.GetLeft())
-		// If the iter's current key is *equal* to left, go to the next
+		t = iter.SeekGE(req.GetStart())
+		// If the iter's current key is *equal* to start, go to the next
 		// key greater than this one.
-		if t && bytes.Equal(iter.Key(), req.GetLeft()) {
+		if t && bytes.Equal(iter.Key(), req.GetStart()) {
 			t = iter.Next()
 		}
 	default:
-		t = iter.SeekGE(req.GetLeft())
+		t = iter.SeekGE(req.GetStart())
 	}
 
 	rsp := &rfpb.ScanResponse{}
@@ -1575,8 +1568,8 @@ func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
 		return nil
 	}
 	iter := snap.NewIter(&pebble.IterOptions{
-		LowerBound: keys.Key(rd.GetLeft()),
-		UpperBound: keys.Key(rd.GetRight()),
+		LowerBound: keys.Key(rd.GetStart()),
+		UpperBound: keys.Key(rd.GetEnd()),
 	})
 	defer iter.Close()
 	for iter.First(); iter.Valid(); iter.Next() {

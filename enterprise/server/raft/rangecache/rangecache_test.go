@@ -57,8 +57,8 @@ func TestMemberEvent(t *testing.T) {
 
 	// Advertise a (fake) range advertisement.
 	rc.OnEvent(metaRangeEvent(t, "nhid-11", &rfpb.RangeDescriptor{
-		Left:       keys.MinByte,
-		Right:      keys.MaxByte,
+		Start:      keys.MinByte,
+		End:        keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},
@@ -80,8 +80,8 @@ func TestMultipleNodesInRange(t *testing.T) {
 	}
 
 	rd := &rfpb.RangeDescriptor{
-		Left:       keys.MinByte,
-		Right:      keys.MaxByte,
+		Start:      keys.MinByte,
+		End:        keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},
@@ -106,8 +106,8 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 	rc := rangecache.New()
 
 	rd1 := &rfpb.RangeDescriptor{
-		Left:       keys.MinByte,
-		Right:      keys.MaxByte,
+		Start:      keys.MinByte,
+		End:        keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},
@@ -120,8 +120,8 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 	rc.OnEvent(metaRangeEvent(t, "nhid-11", rd1))
 
 	rd2 := &rfpb.RangeDescriptor{
-		Left:       keys.MinByte,
-		Right:      []byte("z"),
+		Start:      keys.MinByte,
+		End:        []byte("z"),
 		Generation: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 2, ReplicaId: 3},
@@ -144,8 +144,8 @@ func TestRangeStaleMemberEvent(t *testing.T) {
 	rc := rangecache.New()
 
 	rd1 := &rfpb.RangeDescriptor{
-		Left:       []byte("a"),
-		Right:      []byte("b"),
+		Start:      []byte("a"),
+		End:        []byte("b"),
 		Generation: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},
@@ -158,8 +158,8 @@ func TestRangeStaleMemberEvent(t *testing.T) {
 	rc.OnEvent(metaRangeEvent(t, "nhid-11", rd1))
 
 	rd2 := &rfpb.RangeDescriptor{
-		Left:       []byte("a"),
-		Right:      []byte("z"),
+		Start:      []byte("a"),
+		End:        []byte("z"),
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 2, ReplicaId: 3},
