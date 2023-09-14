@@ -523,11 +523,6 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 	return s.dirty[chunkOffset]
 }
 
-// ChunkName returns the data file name for the given chunk offset.
-func (s *COWStore) ChunkName(chunkOffset int64) string {
-	return ChunkName(chunkOffset, s.Dirty(chunkOffset))
-}
-
 // ChunkName returns the file name containing the data for the given chunk offset.
 func ChunkName(chunkOffset int64, dirty bool) string {
 	suffix := ""

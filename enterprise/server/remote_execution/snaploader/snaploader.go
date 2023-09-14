@@ -149,7 +149,7 @@ type LazyMmap struct {
 
 func (m *LazyMmap) init() error {
 	if m.lazyDigest == nil {
-		return status.NotFoundErrorf("cannot load chunk without a digest")
+		return status.InternalError("cannot load chunk without a digest")
 	}
 	mmap, err := m.loadFn(m.lazyDigest)
 	if err != nil {
@@ -181,8 +181,11 @@ func (m *LazyMmap) WriteAt(p []byte, off int64) (int, error) {
 		}
 	}
 	n, err := m.Mmap.WriteAt(p, off)
+	if err != nil {
+		return 0, err
+	}
 	m.lazyDigest = nil
-	return n, err
+	return n, nil
 }
 
 func (m *LazyMmap) Sync() error {
@@ -256,6 +259,7 @@ func (m *LazyMmap) digest() (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.lazyDigest = d
 	return d, nil
 }
 
@@ -541,7 +545,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blocki
 
 	dirtyChunkCount := 0
 	var dirtyBytes int64
-	seenOffsets := make(map[int64]struct{})
 
 	// Populate manifest
 	chunks := cow.SortedChunks()
@@ -572,13 +575,13 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blocki
 		}
 
 		node := &repb.FileNode{Digest: d, Name: fmt.Sprintf("%s/%d", name, c.Offset)}
-		chunkPath := filepath.Join(cow.DataDir(), cow.ChunkName(c.Offset))
+		chunkName := blockio.ChunkName(c.Offset, cow.Dirty(c.Offset))
+		chunkPath := filepath.Join(cow.DataDir(), chunkName)
 		l.cacheLocally(node, chunkPath)
 		pb.Chunks = append(pb.Chunks, &fcpb.Chunk{
 			Offset:     c.Offset,
 			DigestHash: d.GetHash(),
 		})
-		seenOffsets[c.Offset] = struct{}{}
 	}
 
 	gid, err := groupID(ctx, l.env)

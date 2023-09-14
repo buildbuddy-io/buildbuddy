@@ -250,7 +250,7 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 		originalContent := mustReadFile(t, originalCOW)
 		unpackedContent := mustReadFile(t, unpacked.ChunkedFiles[name])
 		if !bytes.Equal(originalContent, unpackedContent) {
-			require.FailNowf(t, "unpacked DynamicChunkedFile does not match original snapshot", "file name: %s", name)
+			require.FailNowf(t, "unpacked COW store does not match original snapshot", "file name: %s", name)
 		}
 	}
 	return unpacked
