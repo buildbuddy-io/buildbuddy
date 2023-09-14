@@ -1,8 +1,10 @@
 package blockio_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"strconv"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -20,6 +23,10 @@ import (
 const (
 	backingFileSizeBytes int64 = 32 * 1024
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 func TestFile(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
@@ -122,6 +129,78 @@ func TestCOW_SparseData(t *testing.T) {
 	expectedContent[0] = 1
 	require.Equal(t, expectedContent, b)
 	require.Equal(t, int64(1), numIOBlocks(t, dirtyPath))
+}
+
+func TestCOW_Resize(t *testing.T) {
+	const chunkSize = 2 * 4096
+	for _, test := range []struct {
+		Name             string
+		OldSize, NewSize int64
+		ExpectError      bool
+	}{
+		{Name: "AddNewChunkOnly", OldSize: chunkSize, NewSize: chunkSize + 1},
+		{Name: "RightPadLastChunk", OldSize: chunkSize + 1, NewSize: chunkSize + 2},
+		{Name: "RightPadLastChunkAndAddNewChunk", OldSize: chunkSize + 1, NewSize: chunkSize * 3},
+		{Name: "RightPadLastChunkAndAddMultipleNewChunks", OldSize: chunkSize + 1, NewSize: chunkSize * 4},
+		{Name: "DecreaseSize", OldSize: chunkSize, NewSize: chunkSize - 1, ExpectError: true},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			for i := 0; i < 10; i++ {
+				// Start out with a file containing random data
+				startBuf := randBytes(t, int(test.OldSize))
+				src := makeTempFile(t, startBuf)
+				dir := testfs.MakeTempDir(t)
+				cow, err := blockio.ConvertFileToCOW(src, chunkSize, dir)
+				require.NoError(t, err)
+
+				// Resize the COW
+				oldSize, err := cow.Resize(test.NewSize)
+				if test.ExpectError {
+					require.Error(t, err)
+					continue
+				}
+				require.NoError(t, err)
+				require.Equal(t, test.OldSize, oldSize)
+
+				// Read random ranges; should match startBuf right-padded with
+				// zeroes.
+				startRightPad := append(startBuf, make([]byte, test.NewSize-test.OldSize)...)
+				for i := 0; i < 10; i++ {
+					offset, length := randSubslice(int(test.NewSize))
+					b := make([]byte, length)
+					_, err := cow.ReadAt(b, int64(offset))
+					require.NoError(t, err)
+					for j, b := range b {
+						require.Equal(t, startRightPad[offset+j], b)
+					}
+				}
+
+				endBuf := make([]byte, test.NewSize)
+				copy(endBuf, startBuf)
+				// Fill a random data range in the resized file
+				offset, length := randSubslice(int(test.NewSize))
+				copy(endBuf[offset:offset+length], randBytes(t, length))
+				_, err = cow.WriteAt(endBuf[offset:offset+length], int64(offset))
+				require.NoError(t, err)
+				// Now read back the whole COW and make sure it matches our
+				// expected data.
+				b, err := io.ReadAll(blockio.Reader(cow))
+				require.NoError(t, err)
+				require.True(t, bytes.Equal(endBuf, b))
+
+				// Read random ranges again; should match endBuf this time.
+				for i := 0; i < 10; i++ {
+					offset, length := randSubslice(int(test.NewSize))
+					b := make([]byte, length)
+					_, err := cow.ReadAt(b, int64(offset))
+					require.NoError(t, err)
+					for j, b := range b {
+						require.Equal(t, endBuf[offset+j], b)
+					}
+				}
+			}
+		})
+	}
 }
 
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
@@ -248,20 +327,19 @@ func testStore(t *testing.T, s blockio.Store, path string) {
 		// With equal probability, either (a) read a random range and make sure
 		// it matches expectedContent, or (b) write a random range and update
 		// our expectedContent for subsequent reads.
-		offset := rand.Int63n(int64(len(expectedContent)))
-		length := rand.Int63n(int64(len(expectedContent)) - offset)
+		offset, length := randSubslice(len(expectedContent))
 		if rand.Float64() > 0.5 {
-			n, err := s.ReadAt(buf[:length], offset)
+			n, err := s.ReadAt(buf[:length], int64(offset))
 			require.NoError(t, err)
-			require.Equal(t, length, int64(n))
+			require.Equal(t, int64(length), int64(n))
 			require.Equal(t, expectedContent[offset:offset+length], buf[:length])
 		} else {
 			_, err := rand.Read(buf[:length])
 			require.NoError(t, err)
 
-			n, err := s.WriteAt(buf[:length], offset)
+			n, err := s.WriteAt(buf[:length], int64(offset))
 			require.NoError(t, err)
-			require.Equal(t, length, int64(n))
+			require.Equal(t, int64(length), int64(n))
 
 			copy(expectedContent[offset:offset+length], buf[:length])
 		}
@@ -282,6 +360,21 @@ func testStore(t *testing.T, s blockio.Store, path string) {
 
 	err = s.Close()
 	require.NoError(t, err, "Close failed")
+}
+
+func randBytes(t *testing.T, n int) []byte {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	require.NoError(t, err)
+	return b
+}
+
+// Picks a uniform random subslice of a slice with a given length.
+// Returns the offset and length of the subslice.
+func randSubslice(sliceLength int) (offset, length int) {
+	length = rand.Intn(sliceLength + 1)
+	offset = rand.Intn(sliceLength - length + 1)
+	return
 }
 
 func makeTempFile(t *testing.T, content []byte) string {
