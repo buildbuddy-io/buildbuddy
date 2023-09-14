@@ -477,12 +477,12 @@ message RemoveReplicaResponse {
   RangeDescriptor range = 1;
 }
 
-message SplitClusterRequest {
+message SplitRangeRequest {
   Header header = 1;
   RangeDescriptor range = 2;
 }
 
-message SplitClusterResponse {
+message SplitRangeResponse {
   RangeDescriptor left = 1;
   RangeDescriptor right = 2;
 }

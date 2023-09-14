@@ -1493,7 +1493,7 @@ func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.Repl
 	return replicas, nil
 }
 
-func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
+func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
 	if !*enableSplittingReplicas {
 		return nil, status.FailedPreconditionError("Splitting not enabled")
 	}
@@ -1537,7 +1537,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := s.SnapshotCluster(ctx, shardID); err != nil {
 		return nil, err
 	}
-	return &rfpb.SplitClusterResponse{
+	return &rfpb.SplitRangeResponse{
 		Left:  simpleSplitRsp.GetNewLeft(),
 		Right: simpleSplitRsp.GetNewRight(),
 	}, nil

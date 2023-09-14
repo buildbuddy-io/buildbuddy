@@ -378,7 +378,7 @@ func TestSplitMetaRange(t *testing.T) {
 	writeNRecords(ctx, t, s1, 10)
 
 	// Attempting to Split the metarange should fail.
-	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+	_, err = s1.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Range: rd,
 	})
 	require.Error(t, err)
@@ -420,7 +420,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	rd := s1.GetRange(2)
 	header := headerFromRangeDescriptor(rd)
 	s := getStoreWithRangeLease(t, stores, header)
-	_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: header,
 		Range:  rd,
 	})
@@ -443,7 +443,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	rd = s1.GetRange(4)
 	header = headerFromRangeDescriptor(rd)
 	s = getStoreWithRangeLease(t, stores, header)
-	_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: header,
 		Range:  rd,
 	})
@@ -507,7 +507,7 @@ func TestPostFactoSplit(t *testing.T) {
 	rd := s1.GetRange(2)
 	header := headerFromRangeDescriptor(rd)
 	s := getStoreWithRangeLease(t, stores, header)
-	splitResponse, err := s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+	splitResponse, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: header,
 		Range:  rd,
 	})
@@ -621,7 +621,7 @@ func TestManySplits(t *testing.T) {
 			rd := s1.GetRange(shardID)
 			header := headerFromRangeDescriptor(rd)
 			s := getStoreWithRangeLease(t, stores, header)
-			_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+			_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 				Header: header,
 				Range:  rd,
 			})
