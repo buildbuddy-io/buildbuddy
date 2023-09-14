@@ -265,10 +265,10 @@ func (l *FileCacheLoader) ConvertFileToLazyCOW(filePath string, fileName string,
 	if err != nil {
 		return nil, err
 	}
-	chunks := cow.Chunks()
+	chunks := cow.SortedChunks()
 
 	// Convert all chunks to LazyMmaps
-	lazyChunks := make(map[int64]*blockio.Chunk, len(chunks))
+	lazyChunks := make([]*blockio.Chunk, 0, len(chunks))
 	for _, chunk := range chunks {
 		mmap, ok := chunk.Store.(*blockio.Mmap)
 		if !ok {
@@ -276,18 +276,48 @@ func (l *FileCacheLoader) ConvertFileToLazyCOW(filePath string, fileName string,
 		}
 
 		chunkPath := filepath.Join(cow.DataDir(), blockio.ChunkName(chunk.Offset, false /*dirty*/))
-		lazyChunks[chunk.Offset] = &blockio.Chunk{
+		lazyChunks = append(lazyChunks, &blockio.Chunk{
 			Store: &LazyMmap{
 				Mmap:       mmap,
 				loadFn:     l.chunkLoadFn(chunkPath),
 				lazyDigest: nil,
 			},
 			Offset: chunk.Offset,
-		}
+		})
 	}
 
-	cow.SetChunks(lazyChunks)
-	return cow, nil
+	totalSizeBytes, err := fileSize(filePath)
+	if err != nil {
+		return nil, err
+	}
+	return blockio.NewCOWStore(lazyChunks, chunkSizeBytes, totalSizeBytes, cow.DataDir(), l.initEmptyChunkFn)
+}
+
+// Initializes an empty mmap containing all 0s at `outputPath`
+func (l *FileCacheLoader) initEmptyChunkFn(outputPath string, size int64) (blockio.Store, error) {
+	emptyMmap, err := blockio.InitEmptyMmap(outputPath, size)
+	if err != nil {
+		return nil, err
+	}
+	return &LazyMmap{
+		Mmap:       emptyMmap.(*blockio.Mmap),
+		loadFn:     l.chunkLoadFn(outputPath),
+		lazyDigest: nil,
+	}, nil
+}
+
+func fileSize(filePath string) (int64, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	totalSizeBytes := stat.Size()
+	return totalSizeBytes, nil
 }
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
@@ -491,7 +521,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		})
 	}
 
-	cow, err := blockio.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), cowPath)
+	cow, err := blockio.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), cowPath, l.initEmptyChunkFn)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +544,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blocki
 	seenOffsets := make(map[int64]struct{})
 
 	// Populate manifest
-	chunks := cow.Chunks()
+	chunks := cow.SortedChunks()
 	for _, c := range chunks {
 		if cow.Dirty(c.Offset) {
 			dirtyChunkCount++
