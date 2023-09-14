@@ -27,6 +27,7 @@ go_library(
         "//server/util/status",
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//config",
+        "@com_github_go_git_go_git_v5//plumbing/object",
         "@com_github_go_git_go_git_v5//plumbing/transport/http",
         "@com_github_golang_jwt_jwt//:jwt",
         "@com_github_google_go_github_v43//github",

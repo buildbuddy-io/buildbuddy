@@ -31,6 +31,7 @@ interface RepoComponentState {
 
   repoName: string;
   template: string;
+  templateDirectory: string;
   private: boolean;
   secrets: Map<string, string>;
 
@@ -50,6 +51,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     isDeploying: false,
 
     template: this.getTemplate(),
+    templateDirectory: this.getTemplateDirectory(),
     repoName: this.getRepoName(),
     private: true,
     secrets: new Map<string, string>(),
@@ -70,6 +72,10 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       return referrer;
     }
     return "";
+  }
+
+  getTemplateDirectory() {
+    return this.props.search.get("dir") || "";
   }
 
   getRepoName() {
@@ -172,6 +178,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     r.name = this.state.repoName;
     r.private = this.state.private;
     r.template = this.state.template;
+    r.templateDirectory = this.state.templateDirectory;
 
     if (selectedInstallation?.targetType == "Organization") {
       r.installationId = selectedInstallation.id;

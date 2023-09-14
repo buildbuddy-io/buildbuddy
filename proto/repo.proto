@@ -26,6 +26,10 @@ message CreateRepoRequest {
   // "https://github.com/buildbuddy-io/go-typescript-starter-template.git"
   string template = 5;
 
+  // An optional subdirectory within the template repo to use a the template.
+  // If unset, the root of the template repo will be used.
+  string template_directory = 9;
+
   // If true, the repository will be created as a private repo.
   bool private = 6;
 
