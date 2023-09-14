@@ -51,7 +51,9 @@ class Router {
     });
   }
 
-  private handlePathChanged(pathChangeHandler: VoidFunction) {
+  // checks whether user has access to the current page, and if not returns
+  // URL to redirect to.
+  private checkGroupAccess() {
     const path = window.location.pathname;
     // Disallowed access to the selected group means one of two things:
     // 1) This is a customer subdomain and the user does not have access to
@@ -70,7 +72,15 @@ class Router {
         source_url: window.location.href,
         denied_reason: this.user.selectedGroupAccess.toString(),
       });
-      window.history.replaceState({}, "", Path.orgAccessDeniedPath + "?" + params.toString());
+      return Path.orgAccessDeniedPath + "?" + params.toString();
+    }
+    return "";
+  }
+
+  private handlePathChanged(pathChangeHandler: VoidFunction) {
+    const newUrl = this.checkGroupAccess();
+    if (newUrl) {
+      window.history.replaceState({}, "", newUrl);
       return;
     }
     pathChangeHandler();
@@ -402,6 +412,11 @@ class Router {
     // an org.
     if (user && !user.groups?.length) {
       return Path.createOrgPath;
+    }
+
+    const newUrl = this.checkGroupAccess();
+    if (newUrl) {
+      return newUrl;
     }
 
     const path = window.location.pathname;
