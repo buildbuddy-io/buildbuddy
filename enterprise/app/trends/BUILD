@@ -23,8 +23,10 @@ ts_library(
         "//enterprise/app/trends:summary_card",
         "//enterprise/app/trends:trends_chart",
         "//proto:stats_ts_proto",
+        "@npm//@types/long",
         "@npm//@types/moment",
         "@npm//@types/react",
+        "@npm//long",
         "@npm//moment",
         "@npm//react",
         "@npm//rxjs",
@@ -39,7 +41,7 @@ ts_library(
         "//proto:stats_ts_proto",
         "@npm//@types/d3-time",
         "@npm//d3-time",
-    ]
+    ],
 )
 
 ts_library(
@@ -57,6 +59,7 @@ ts_library(
         "//enterprise/app/trends:trends_chart",
         "//enterprise/app/trends:trends_model",
         "//enterprise/app/trends:trends_requests",
+        "//proto:stats_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//moment",
@@ -89,6 +92,8 @@ ts_library(
         "//app/util:proto",
         "//enterprise/app/trends:common",
         "//proto:stats_ts_proto",
+        "@npm//@types/long",
+        "@npm//long",
     ],
 )
 

@@ -50,9 +50,9 @@ export function computeTimeKeys(
     const keyDates = timeMinute.range(domain[0], domain[1], +interval.count);
 
     // We can't show too many ticks on the graph, and recharts does a bad
-    // job with selecting ticks (for example, it might always pick noon
+    // job with selecting ticks (for example, it might always pick 12:30
     // instead of midnight).  So we progressively search through "good"
-    // intervals (midnight, midnight+noon, 0-6-12-18, etc.) until we find
+    // intervals (12 hours, 6h, 3h, 1h, 30 minutes) until we find
     // a tick gap that gives us at least 4 ticks in the graph.
     const minuteMods = [720, 360, 180, 60, 30];
     let ticks: number[] = [];
