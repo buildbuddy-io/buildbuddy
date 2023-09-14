@@ -458,6 +458,11 @@ type doubleReader struct {
 }
 
 func (d *doubleReader) shouldVerifyNumBytes() bool {
+	// Don't compare when the double read is off.
+	if d.dest == nil {
+		return false
+	}
+
 	// Don't compare byte differences for AC records, because there could be minor differences in metadata like timestamps
 	if d.r.GetCacheType() != rspb.CacheType_CAS {
 		return false
