@@ -656,7 +656,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 }
 
 // TODO(siggisim): consider moving template cloning to a remote action if it causes us troubles doing this on apps.
-func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir string) error {	
+func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir string) error {
 	// Make a temporary directory for the template
 	tmpDir, err := scratchspace.MkdirTemp(tmpDirName)
 	if err != nil {
@@ -705,7 +705,7 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir string) err
 	}
 	_, err = gitWorkTree.Commit("Initial commit", &git.CommitOptions{All: true, Author: &gitobject.Signature{
 		Email: email,
-		When: time.Now(),
+		When:  time.Now(),
 	}})
 	if err != nil {
 		return err
