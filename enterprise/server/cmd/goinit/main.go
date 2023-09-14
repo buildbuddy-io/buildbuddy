@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -39,12 +40,21 @@ const (
 
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
+
+	// File that is written by the rootfs nbdclient background process to signal
+	// that the rootfs has been mounted successfully.
+	rootfsReadySignalFile = "/.rootfs_ready"
+
+	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
+	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
+	EXT4_IOC_RESIZE_FS = 0x40086610
 )
 
 var (
 	path                    = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort              = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
 	enableNBD               = flag.Bool("enable_nbd", false, "Whether to enable network block devices (nbd)")
+	enableRootfs            = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
 	debugMode               = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
@@ -52,8 +62,9 @@ var (
 	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 
-	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
-	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
+	isVMExec       = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
+	isVMVFS        = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
+	isRootFSClient = flag.Bool("rootfs_client", false, "Whether to run as the rootfs NBD client binary.")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -237,6 +248,10 @@ func main() {
 		die(vmvfs.Run())
 		return
 	}
+	if *isRootFSClient {
+		die(runRootfsClient(rootContext))
+		return
+	}
 
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
@@ -263,22 +278,30 @@ func main() {
 	die(mkdirp("/sys", 0555))
 	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
 
-	die(mkdirp("/container", 0755))
-	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
-
-	die(mkdirp("/scratch", 0755))
-	if *enableNBD {
-		scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
-		die(err)
-		die(scratchNBD.Mount("/scratch"))
+	if *enableRootfs {
+		// Serve the rootfs using a background process, so that it can focus
+		// only on serving NBD requests without being interrupted by other
+		// syscalls made in this process (which can lead to deadlocks if those
+		// syscalls themselves require NBD reads).
+		die(startRootfsClientProcess())
 	} else {
-		die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
-	}
-	die(mkdirp("/scratch/bbvmroot", 0755))
-	die(mkdirp("/scratch/bbvmwork", 0755))
+		die(mkdirp("/container", 0755))
 
-	die(mkdirp("/mnt", 0755))
-	die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
+		die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
+		die(mkdirp("/scratch", 0755))
+		if *enableNBD {
+			scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
+			die(err)
+			die(scratchNBD.Mount("/scratch"))
+		} else {
+			die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
+		}
+		die(mkdirp("/scratch/bbvmroot", 0755))
+		die(mkdirp("/scratch/bbvmwork", 0755))
+
+		die(mkdirp("/mnt", 0755))
+		die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
+	}
 
 	die(mkdirp("/mnt/workspace", 0755))
 	if !*enableNBD {
@@ -450,6 +473,80 @@ func main() {
 
 	// Halt the system explicitly to prevent a kernel panic.
 	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+}
+
+// Resizes the ext4 filesystem mounted at the given path to the given size.
+func resizeExt4FS(mountPath string, size int64) error {
+	s := &syscall.Statfs_t{}
+	if err := syscall.Statfs(mountPath, s); err != nil {
+		return status.InternalErrorf("statfs %s: %s", mountPath, err)
+	}
+	blocks := size / s.Bsize
+	fd, err := syscall.Open(mountPath, syscall.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		uintptr(EXT4_IOC_RESIZE_FS),
+		uintptr(unsafe.Pointer(&blocks)),
+	)
+	if errno != 0 {
+		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
+	}
+	return nil
+}
+
+// startRootfsClientProcess starts a background process that acts as the NBD
+// client for the rootfs. It creates the rootfs NBD device and handles all IO
+// requests to it. This function returns when the rootfs is mounted. It returns
+// an error if the background process fails for any reason.
+func startRootfsClientProcess() error {
+	cmd := exec.Command(os.Args[0], append(os.Args[1:], "--rootfs_client")...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	errCh := make(chan error)
+	go func() { errCh <- cmd.Wait() }()
+	for {
+		// TODO(bduffany): Do something better than file polling here.
+		_, err := os.Stat(rootfsReadySignalFile)
+		if err == nil {
+			break
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		select {
+		case err := <-errCh:
+			return status.InternalErrorf("rootfs client exited unexpectedly: %s", err)
+		default:
+		}
+		time.Sleep(1 * time.Millisecond)
+		continue
+	}
+	return nil
+}
+
+// runRootfsClient is the background process implementation for the rootfs
+// client.
+// See startRootfsClientProcess.
+func runRootfsClient(ctx context.Context) error {
+	rootNBD, err := nbdclient.NewClientDevice(ctx, "rootfs")
+	die(err)
+	die(mkdirp("/mnt", 0755))
+	die(rootNBD.Mount("/mnt"))
+	// Initially, the rootfs will only be as large as the containerfs.
+	// Resize it to fill the available disk space.
+	die(resizeExt4FS("/mnt", rootNBD.Size()))
+	// Signal to the parent that the rootfs is ready.
+	die(os.WriteFile(rootfsReadySignalFile, nil, 0755))
+	log.Infof("rootfs client started successfully")
+	select {}
 }
 
 func runVMExecServer(ctx context.Context) error {
