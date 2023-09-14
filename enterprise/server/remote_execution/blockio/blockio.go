@@ -45,7 +45,7 @@ type ClonableStore interface {
 	Store
 
 	// Clone returns a clone of the store
-	Clone(copyBuf []byte, copyPath string, chunkSize int64, ioBlockSize int64) (Store, error)
+	Clone(copyBuf *[]byte, destPath string, destSize int64, ioBlockSize int64) (Store, error)
 }
 
 // File implements the Store interface using standard file operations.
@@ -184,8 +184,16 @@ func (m *Mmap) SizeBytes() (int64, error) {
 	return int64(len(m.data)), nil
 }
 
-func (m *Mmap) Clone(copyBuf []byte, copyPath string, chunkSize int64, ioBlockSize int64) (Store, error) {
-	mmap, err := InitEmptyMmap(copyPath, chunkSize)
+func (m *Mmap) Clone(copyBufPtr *[]byte, destPath string, destSize int64, ioBlockSize int64) (Store, error) {
+	srcSize, err := m.SizeBytes()
+	if err != nil {
+		return nil, err
+	}
+	if srcSize > destSize {
+		return nil, status.InternalErrorf("chunk source size %d is greater than dest size %d; this is a bug", srcSize, destSize)
+	}
+
+	mmap, err := InitEmptyMmap(destPath, destSize)
 	if err != nil {
 		return nil, err
 	}
@@ -193,13 +201,14 @@ func (m *Mmap) Clone(copyBuf []byte, copyPath string, chunkSize int64, ioBlockSi
 	// TODO: avoid a full read here in the case where the chunk contains holes.
 	// Can achieve this by having the Mmap keep around the underlying file
 	// descriptor and use fseek (SEEK_DATA) on it.
+	copyBuf := (*copyBufPtr)[:srcSize]
 	if _, err := readFullAt(m, copyBuf, 0); err != nil {
 		return nil, status.WrapError(err, "read mmap for copy")
 	}
 	// Copy to the mmap but skip holes to avoid materializing them as blocks.
-	for off := int64(0); off < chunkSize; off += ioBlockSize {
+	for off := int64(0); off < srcSize; off += ioBlockSize {
 		blockSize := ioBlockSize
-		if remainder := chunkSize - off; blockSize > remainder {
+		if remainder := srcSize - off; blockSize > remainder {
 			blockSize = remainder
 		}
 		dataBlock := copyBuf[off : off+blockSize]
@@ -600,11 +609,10 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	}
 
 	dstChunkSize := s.calculateChunkSize(chunkStartOffset)
-	copyPath := filepath.Join(s.DataDir(), ChunkName(chunkStartOffset, true /*dirty*/))
+	dstPath := filepath.Join(s.DataDir(), ChunkName(chunkStartOffset, true /*dirty*/))
 
 	b := s.copyBufPool.Get().(*[]byte)
 	defer s.copyBufPool.Put(b)
-	copyBuf := (*b)[:srcChunksize]
 
 	s.mu.RLock()
 	original := s.chunks[chunkStartOffset]
@@ -613,7 +621,7 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	var newChunk Store
 	if original == nil {
 		// We had no data at this offset; nothing to copy.
-		emptyChunk, err := s.initEmptyChunkFn(copyPath, dstChunkSize)
+		emptyChunk, err := s.initEmptyChunkFn(dstPath, dstChunkSize)
 		if err != nil {
 			return err
 		}
@@ -628,7 +636,7 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 			return status.InternalErrorf("chunk must be clonable (chunk is of type %T)", original.Store)
 		}
 
-		chunkCopy, err := clonableChunk.Clone(copyBuf, copyPath, dstChunkSize, s.ioBlockSize)
+		chunkCopy, err := clonableChunk.Clone(b, dstPath, dstChunkSize, s.ioBlockSize)
 		if err != nil {
 			return err
 		}

@@ -230,14 +230,14 @@ func (m *LazyMmap) StartAddress() (uintptr, error) {
 	return m.Mmap.StartAddress()
 }
 
-func (m *LazyMmap) Clone(copyBuf []byte, copyPath string, chunkSize int64, ioBlockSize int64) (blockio.Store, error) {
+func (m *LazyMmap) Clone(copyBuf *[]byte, destPath string, destSize int64, ioBlockSize int64) (blockio.Store, error) {
 	if m.Mmap == nil {
 		err := m.init()
 		if err != nil {
 			return nil, status.WrapError(err, "fetch missing chunk")
 		}
 	}
-	mmapCopy, err := m.Mmap.Clone(copyBuf, copyPath, chunkSize, ioBlockSize)
+	mmapCopy, err := m.Mmap.Clone(copyBuf, destPath, destSize, ioBlockSize)
 	if err != nil {
 		return nil, err
 	}
