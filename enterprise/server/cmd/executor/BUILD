@@ -28,6 +28,7 @@ go_library(
         "//enterprise/server/remote_execution/runner",
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//enterprise/server/scheduling/scheduler_client",
+        "//enterprise/server/serveridentity",
         "//enterprise/server/tasksize",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",

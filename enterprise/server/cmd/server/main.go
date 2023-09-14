@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/serveridentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
@@ -254,8 +255,10 @@ func main() {
 	if err := auditlog.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-
 	if err := iprules.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := serveridentity.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

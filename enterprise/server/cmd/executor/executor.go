@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/serveridentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -118,6 +119,9 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 	}
 	if err := redis_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
+	}
+	if err := serveridentity.Register(realEnv); err != nil {
+		log.Fatalf(err.Error())
 	}
 
 	// Identify ourselves as an executor client in gRPC requests to the app.

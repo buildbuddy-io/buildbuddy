@@ -220,6 +220,19 @@ func (s *Service) Authorize(ctx context.Context) error {
 		return nil
 	}
 
+	if sis := s.env.GetServerIdentityService(); sis != nil {
+		si, err := sis.IdentityFromContext(ctx)
+		// Trusted clients with signed identity.
+		if err == nil && (si.Client == interfaces.ServerIdentityClientExecutor ||
+			si.Client == interfaces.ServerIdentityClientApp ||
+			si.Client == interfaces.ServerIdentityClientWorkflow) {
+			return nil
+		}
+		if err != nil && !status.IsNotFoundError(err) {
+			return err
+		}
+	}
+
 	return s.authorize(ctx, u.GetGroupID())
 }
 
