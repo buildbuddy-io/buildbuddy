@@ -72,7 +72,7 @@ export class AuthService {
   }
 
   setCookie(name: string, value: string) {
-    let cookie = `${name}=${value}; max-age=31536000;`;
+    let cookie = `${name}=${value}; max-age=31536000; path=/;`;
     if (capabilities.config.subdomainsEnabled) {
       cookie += ` domain=${capabilities.config.domain};`;
     }
