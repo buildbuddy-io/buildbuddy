@@ -1600,12 +1600,12 @@ func (s *Store) getConfigChangeID(ctx context.Context, shardID uint64) (uint64, 
 	return membership.ConfigChangeID, nil
 }
 
-// AddClusterNode adds a new node to the specified cluster if pre-reqs are met.
+// AddReplica adds a new node to the specified cluster if pre-reqs are met.
 // Pre-reqs are:
 //   - The request must be valid and contain all information
 //   - This node must be a member of the cluster that is being added to
 //   - The provided range descriptor must be up to date
-func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequest) (*rfpb.AddClusterNodeResponse, error) {
+func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error) {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
 		return nil, status.FailedPreconditionErrorf("No replicas in range: %+v", req.GetRange())
@@ -1687,17 +1687,17 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 		metrics.RaftMoveLabel:       "add",
 	}).Inc()
 
-	return &rfpb.AddClusterNodeResponse{
+	return &rfpb.AddReplicaResponse{
 		Range: rd,
 	}, nil
 }
 
-// RemoveClusterNode removes a new node from the specified cluster if pre-reqs are
+// RemoveReplica removes a new node from the specified cluster if pre-reqs are
 // met. Pre-reqs are:
 //   - The request must be valid and contain all information
 //   - This node must be a member of the cluster that is being removed from
 //   - The provided range descriptor must be up to date
-func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNodeRequest) (*rfpb.RemoveClusterNodeResponse, error) {
+func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error) {
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()
 	rd, rangeOK := s.openRanges[req.GetRange().GetRangeId()]
@@ -1767,7 +1767,7 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 		metrics.RaftMoveLabel:       "remove",
 	}).Inc()
 
-	return &rfpb.RemoveClusterNodeResponse{
+	return &rfpb.RemoveReplicaResponse{
 		Range: rd,
 	}, nil
 }

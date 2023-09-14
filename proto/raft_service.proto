@@ -11,10 +11,10 @@ service Api {
   rpc StartShard(raft.StartShardRequest)
       returns (raft.StartShardResponse);
   rpc RemoveData(raft.RemoveDataRequest) returns (raft.RemoveDataResponse);
-  rpc AddClusterNode(raft.AddClusterNodeRequest)
-      returns (raft.AddClusterNodeResponse);
-  rpc RemoveClusterNode(raft.RemoveClusterNodeRequest)
-      returns (raft.RemoveClusterNodeResponse);
+  rpc AddReplica(raft.AddReplicaRequest)
+      returns (raft.AddReplicaResponse);
+  rpc RemoveReplica(raft.RemoveReplicaRequest)
+      returns (raft.RemoveReplicaResponse);
   rpc ListCluster(raft.ListClusterRequest) returns (raft.ListClusterResponse);
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);

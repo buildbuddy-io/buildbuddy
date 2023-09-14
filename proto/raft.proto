@@ -459,20 +459,20 @@ message RemoveDataRequest {
 
 message RemoveDataResponse {}
 
-message AddClusterNodeRequest {
+message AddReplicaRequest {
   RangeDescriptor range = 1;
   NodeDescriptor node = 2;
 }
-message AddClusterNodeResponse {
+message AddReplicaResponse {
   // The range with the new node added.
   RangeDescriptor range = 1;
 }
 
-message RemoveClusterNodeRequest {
+message RemoveReplicaRequest {
   RangeDescriptor range = 1;
   uint64 replica_id = 2;
 }
-message RemoveClusterNodeResponse {
+message RemoveReplicaResponse {
   // The range with the specified node removed.
   RangeDescriptor range = 1;
 }

@@ -225,7 +225,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	require.NoError(t, err)
 
 	rd := s1.GetRange(1)
-	_, err = s1.AddClusterNode(ctx, &rfpb.AddClusterNodeRequest{
+	_, err = s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: rd,
 		Node: &rfpb.NodeDescriptor{
 			Nhid:        nh4.ID(),
@@ -258,7 +258,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	require.NoError(t, err)
 
 	rd := s1.GetRange(1)
-	_, err = s1.RemoveClusterNode(ctx, &rfpb.RemoveClusterNodeRequest{
+	_, err = s1.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 		Range:     rd,
 		ReplicaId: 4,
 	})
@@ -524,7 +524,7 @@ func TestPostFactoSplit(t *testing.T) {
 	}
 
 	// Now bring up a new replica in the original cluster.
-	_, err = s1.AddClusterNode(ctx, &rfpb.AddClusterNodeRequest{
+	_, err = s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: s1.GetRange(2),
 		Node: &rfpb.NodeDescriptor{
 			Nhid:        nh4.ID(),
