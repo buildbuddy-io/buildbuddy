@@ -32,7 +32,6 @@ build:cache --experimental_remote_cache_compression
 build:remote-shared --remote_upload_local_results
 build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
-build:remote-shared --experimental_repo_remote_exec
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
 build:remote-shared --platforms=@buildbuddy_toolchain//:platform_linux
@@ -68,8 +67,10 @@ build:target-linux --host_cpu=k8
 #   bazel test --config=x //...
 build:remote-target-linux --config=target-linux
 build:remote-target-linux --config=remote
+build:remote-target-linux --experimental_platform_in_output_dir
 build:remote-target-linux-dev --config=target-linux
 build:remote-target-linux-dev --config=remote-dev
+build:remote-target-linux-dev --experimental_platform_in_output_dir
 
 # Configuration used for GitHub actions-based CI
 build:ci --config=remote
