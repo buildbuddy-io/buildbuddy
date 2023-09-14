@@ -215,62 +215,19 @@ message SimpleSplitResponse {
   RangeDescriptor new_right = 2;
 }
 
-// A request to find a split point in a range.
-message FindSplitPointRequest {}
-
-message FindSplitPointResponse {
-  bytes split = 1;
-
-  int64 left_size_bytes = 3;
-  int64 right_size_bytes = 4;
-
-  uint64 range_generation = 5;
-}
-
-// A request to hold or renew the split lock, blocking all writes. The split
-// lock will be reverted if it is not renewed within the specified duration.
-message SplitLeaseRequest {
-  // This CAS will be executed if the lease *expires*. If SplitRelease is called
-  // before expiry, this request will not be applied.
-  CASRequest cas_on_expiry = 1;
-
-  // How long the lease should be valid for. If the lease is already valid, it
-  // will be extended by this much.
-  int64 duration_seconds = 2;
-
-  // A unique SplitTag. Subsequent commands to the statemachine after a
-  // successful SplitLease will fail to apply *unless* they carry this tag in
-  // the header.
-  string split_tag = 3;
-}
-
-message SplitLeaseResponse {}
-
-// A request to release the split lock, unblocking all writes.
-message SplitReleaseRequest {
-  // This batch will be executed *before* the lease is released.
-  // Because it's part of the splitRelease, it will ignore the
-  // fact that the lease is held.
-  BatchCmdRequest batch = 1;
-}
-message SplitReleaseResponse {}
-
 // Raft CMD API, used to encode raft commands that are replicated via raft and
 // written to a log. Everything written via SyncPropose must be a RequestUnion
 // wrapped in a BatchCmdRequest..
 message RequestUnion {
-  reserved 1, 8, 13;
+  reserved 1, 7, 8, 11, 12, 13;
   oneof value {
     DirectWriteRequest direct_write = 2;
     DirectReadRequest direct_read = 3;
     IncrementRequest increment = 4;
     ScanRequest scan = 5;
     CASRequest cas = 6;
-    FindSplitPointRequest find_split_point = 7;
     FileDeleteRequest file_delete = 9;
     FileUpdateMetadataRequest file_update_metadata = 10;
-    SplitLeaseRequest split_lease = 11;
-    SplitReleaseRequest split_release = 12;
     DeleteRangeRequest delete_range = 14;
     SimpleSplitRequest simple_split = 15;
   }
@@ -281,7 +238,7 @@ message RequestUnion {
 // wrapped in a BatchCmdRequest and everything returned will be a
 // BatchCmdResponse.
 message ResponseUnion {
-  reserved 2, 9, 14;
+  reserved 2, 8, 9, 12, 13, 14;
   google.rpc.Status status = 1;
 
   oneof value {
@@ -290,11 +247,8 @@ message ResponseUnion {
     IncrementResponse increment = 5;
     ScanResponse scan = 6;
     CASResponse cas = 7;
-    FindSplitPointResponse find_split_point = 8;
     FileDeleteResponse file_delete = 10;
     FileUpdateMetadataResponse file_update_metadata = 11;
-    SplitLeaseResponse split_lease = 12;
-    SplitReleaseResponse split_release = 13;
     DeleteRangeResponse delete_range = 15;
     SimpleSplitResponse simple_split = 16;
   }
@@ -358,7 +312,7 @@ message RegistryPushRequest {
 // startup, the first node in the sorted "join" set will query other nodes
 // until it finds all other members of the join set. If they have previous data
 // then they do not respond to the bringup query. If all nodes respond, then
-// the first node sends them a StartCluster request and provisions the initial
+// the first node sends them a StartShard request and provisions the initial
 // cluster.
 message BringupResponse {
   string nhid = 1;
@@ -479,7 +433,7 @@ message SyncReadResponse {
   BatchCmdResponse batch = 1;
 }
 
-message StartClusterRequest {
+message StartShardRequest {
   uint64 shard_id = 1;
   uint64 replica_id = 2;
   map<uint64, string> initial_member = 3;
@@ -494,7 +448,7 @@ message StartClusterRequest {
   uint64 last_applied_index = 6;
 }
 
-message StartClusterResponse {
+message StartShardResponse {
   BatchCmdResponse batch = 1;
 }
 
@@ -505,35 +459,35 @@ message RemoveDataRequest {
 
 message RemoveDataResponse {}
 
-message AddClusterNodeRequest {
+message AddReplicaRequest {
   RangeDescriptor range = 1;
   NodeDescriptor node = 2;
 }
-message AddClusterNodeResponse {
+message AddReplicaResponse {
   // The range with the new node added.
   RangeDescriptor range = 1;
 }
 
-message RemoveClusterNodeRequest {
+message RemoveReplicaRequest {
   RangeDescriptor range = 1;
   uint64 replica_id = 2;
 }
-message RemoveClusterNodeResponse {
+message RemoveReplicaResponse {
   // The range with the specified node removed.
   RangeDescriptor range = 1;
 }
 
-message SplitClusterRequest {
+message SplitRangeRequest {
   Header header = 1;
   RangeDescriptor range = 2;
 }
 
-message SplitClusterResponse {
+message SplitRangeResponse {
   RangeDescriptor left = 1;
   RangeDescriptor right = 2;
 }
 
-message ListClusterRequest {
+message ListRangeRequest {
   // If true, only return the clusters that this node holds the rangelease for.
   bool leased_only = 1;
 }
@@ -543,7 +497,7 @@ message RangeReplica {
   ReplicaUsage replica_usage = 2;
 }
 
-message ListClusterResponse {
+message ListRangeResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
 }

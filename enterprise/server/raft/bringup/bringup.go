@@ -242,7 +242,7 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		if len(bootstrapInfo) == len(cs.join) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			return SendStartClusterRequests(ctx, cs.nodeHost, cs.apiClient, bootstrapInfo)
+			return SendStartShardRequests(ctx, cs.nodeHost, cs.apiClient, bootstrapInfo)
 		}
 	}
 	return status.FailedPreconditionErrorf("Unable to find other join nodes: %+s", bootstrapInfo)
@@ -307,8 +307,8 @@ func MakeBootstrapInfo(shardID, firstReplicaID uint64, nodeGrpcAddrs map[string]
 	return bi
 }
 
-func StartCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
-	log.Debugf("StartCluster called with bootstrapInfo: %+v", bootstrapInfo)
+func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
+	log.Debugf("StartShard called with bootstrapInfo: %+v", bootstrapInfo)
 	rangeSetupTime := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.LocalRangeSetupTimeKey,
@@ -329,7 +329,7 @@ func StartCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInf
 			if err != nil {
 				return err
 			}
-			_, err = apiClient.StartCluster(ctx, &rfpb.StartClusterRequest{
+			_, err = apiClient.StartShard(ctx, &rfpb.StartShardRequest{
 				ShardId:       bootstrapInfo.shardID,
 				ReplicaId:     node.index,
 				InitialMember: bootstrapInfo.initialMembers,
@@ -350,7 +350,7 @@ func StartCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInf
 
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
-func SendStartClusterRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
+func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
 			Left:       keys.MinByte,
@@ -413,7 +413,7 @@ func SendStartClusterRequests(ctx context.Context, nodeHost *dragonboat.NodeHost
 			})
 		}
 		log.Debugf("Attempting to start cluster %d on: %+v", shardID, bootstrapInfo)
-		if err := StartCluster(ctx, apiClient, bootstrapInfo, batch); err != nil {
+		if err := StartShard(ctx, apiClient, bootstrapInfo, batch); err != nil {
 			return err
 		}
 		log.Debugf("Cluster %d started on: %+v", shardID, bootstrapInfo)

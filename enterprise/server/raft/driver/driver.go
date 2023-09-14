@@ -469,7 +469,7 @@ func (cs *clusterState) GetRange(shardID uint64) *rfpb.RangeDescriptor {
 }
 
 func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
-	rsp, err := d.store.ListCluster(ctx, &rfpb.ListClusterRequest{
+	rsp, err := d.store.ListRange(ctx, &rfpb.ListRangeRequest{
 		LeasedOnly: true,
 	})
 	if err != nil {
@@ -569,12 +569,12 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 	if rd == nil {
 		return status.FailedPreconditionErrorf("rd %+v not found", rd)
 	}
-	rsp, err := d.store.AddClusterNode(ctx, &rfpb.AddClusterNodeRequest{
+	rsp, err := d.store.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: rd,
 		Node:  toNode,
 	})
 	if err != nil {
-		log.Errorf("AddClusterNode err: %s", err)
+		log.Errorf("AddReplica err: %s", err)
 		// if the move failed, don't try the remove
 		return err
 	}
@@ -582,7 +582,7 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 
 	// apply the remove, and if it succeeds, remove the node
 	// from the clusterMap to avoid spuriously doing this again.
-	_, err = d.store.RemoveClusterNode(ctx, &rfpb.RemoveClusterNodeRequest{
+	_, err = d.store.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 		Range:     rsp.GetRange(),
 		ReplicaId: move.replica.replicaID,
 	})

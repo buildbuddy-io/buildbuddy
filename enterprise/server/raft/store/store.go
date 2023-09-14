@@ -1117,7 +1117,7 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 	return nil
 }
 
-func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
+func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
 	rc := raftConfig.GetRaftConfig(req.GetShardId(), req.GetReplicaId())
 
 	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
@@ -1134,7 +1134,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		}
 	}
 
-	rsp := &rfpb.StartClusterResponse{}
+	rsp := &rfpb.StartShardResponse{}
 	if req.GetBatch() == nil || len(req.GetInitialMember()) == 0 {
 		return rsp, nil
 	}
@@ -1464,7 +1464,7 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 	}
 }
 
-func (s *Store) GetClusterMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
+func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
 	var membership *dragonboat.Membership
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
@@ -1493,7 +1493,7 @@ func (s *Store) GetClusterMembership(ctx context.Context, shardID uint64) ([]*rf
 	return replicas, nil
 }
 
-func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
+func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
 	if !*enableSplittingReplicas {
 		return nil, status.FailedPreconditionError("Splitting not enabled")
 	}
@@ -1537,7 +1537,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := s.SnapshotCluster(ctx, shardID); err != nil {
 		return nil, err
 	}
-	return &rfpb.SplitClusterResponse{
+	return &rfpb.SplitRangeResponse{
 		Left:  simpleSplitRsp.GetNewLeft(),
 		Right: simpleSplitRsp.GetNewRight(),
 	}, nil
@@ -1600,12 +1600,12 @@ func (s *Store) getConfigChangeID(ctx context.Context, shardID uint64) (uint64, 
 	return membership.ConfigChangeID, nil
 }
 
-// AddClusterNode adds a new node to the specified cluster if pre-reqs are met.
+// AddReplica adds a new node to the specified cluster if pre-reqs are met.
 // Pre-reqs are:
 //   - The request must be valid and contain all information
 //   - This node must be a member of the cluster that is being added to
 //   - The provided range descriptor must be up to date
-func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequest) (*rfpb.AddClusterNodeResponse, error) {
+func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error) {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
 		return nil, status.FailedPreconditionErrorf("No replicas in range: %+v", req.GetRange())
@@ -1666,7 +1666,7 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 	if err != nil {
 		return nil, err
 	}
-	_, err = c.StartCluster(ctx, &rfpb.StartClusterRequest{
+	_, err = c.StartShard(ctx, &rfpb.StartShardRequest{
 		ShardId:          shardID,
 		ReplicaId:        newReplicaID,
 		Join:             true,
@@ -1687,17 +1687,17 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 		metrics.RaftMoveLabel:       "add",
 	}).Inc()
 
-	return &rfpb.AddClusterNodeResponse{
+	return &rfpb.AddReplicaResponse{
 		Range: rd,
 	}, nil
 }
 
-// RemoveClusterNode removes a new node from the specified cluster if pre-reqs are
+// RemoveReplica removes a new node from the specified cluster if pre-reqs are
 // met. Pre-reqs are:
 //   - The request must be valid and contain all information
 //   - This node must be a member of the cluster that is being removed from
 //   - The provided range descriptor must be up to date
-func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNodeRequest) (*rfpb.RemoveClusterNodeResponse, error) {
+func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error) {
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()
 	rd, rangeOK := s.openRanges[req.GetRange().GetRangeId()]
@@ -1767,12 +1767,12 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 		metrics.RaftMoveLabel:       "remove",
 	}).Inc()
 
-	return &rfpb.RemoveClusterNodeResponse{
+	return &rfpb.RemoveReplicaResponse{
 		Range: rd,
 	}, nil
 }
 
-func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (*rfpb.ListClusterResponse, error) {
+func (s *Store) ListRange(ctx context.Context, req *rfpb.ListRangeRequest) (*rfpb.ListRangeResponse, error) {
 	s.rangeMu.RLock()
 	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
 	for _, rd := range s.openRanges {
@@ -1780,7 +1780,7 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 	}
 	s.rangeMu.RUnlock()
 
-	rsp := &rfpb.ListClusterResponse{
+	rsp := &rfpb.ListRangeResponse{
 		Node: s.NodeDescriptor(),
 	}
 	for _, rd := range openRanges {

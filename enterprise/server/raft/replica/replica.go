@@ -707,7 +707,7 @@ func absInt(i int64) int64 {
 	return i
 }
 
-func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) ([]byte, error) {
+func (sm *Replica) findSplitPoint() ([]byte, error) {
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
 	sm.rangeMu.Unlock()
@@ -827,7 +827,7 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*rfpb.SimpleSplitResponse, error) {
 	ctx := context.Background()
 
-	splitKey, err := sm.findSplitPoint(&rfpb.FindSplitPointRequest{})
+	splitKey, err := sm.findSplitPoint()
 	if err != nil {
 		return nil, err
 	}
