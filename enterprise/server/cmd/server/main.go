@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
@@ -254,8 +255,10 @@ func main() {
 	if err := auditlog.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-
 	if err := iprules.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := clientidentity.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

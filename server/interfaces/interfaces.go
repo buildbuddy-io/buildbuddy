@@ -1221,6 +1221,37 @@ type IPRulesService interface {
 	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
 }
 
+type ClientIdentity struct {
+	Origin string
+	Client string
+}
+
+const (
+	ClientIdentityExecutor = "executor"
+	ClientIdentityApp      = "app"
+	ClientIdentityWorkflow = "workflow"
+)
+
+type ClientIdentityService interface {
+	// AddIdentityToContext adds the identity of the current client to the
+	// outgoing context.
+	AddIdentityToContext(ctx context.Context) (context.Context, error)
+
+	// IdentityHeader generates a signed header value for the specified
+	// identity.
+	IdentityHeader(si *ClientIdentity, expiration time.Duration) (string, error)
+
+	// ValidateIncomingIdentity validates the incoming identity and adds the
+	// authenticated identity information to the context. This function is
+	// called automatically via an interceptor.
+	ValidateIncomingIdentity(ctx context.Context) (context.Context, error)
+
+	// IdentityFromContext returns the previously-validated context information
+	// from the context. Returns a NotFound error if the context does not
+	// contain validated server identity.
+	IdentityFromContext(ctx context.Context) (*ClientIdentity, error)
+}
+
 // Store models a block-level storage system, which is useful as a backend
 type Store interface {
 	io.ReaderAt

@@ -217,6 +217,32 @@ func ipAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterce
 	}
 }
 
+func identityUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if cis := env.GetClientIdentityService(); cis != nil {
+			newCtx, err := cis.ValidateIncomingIdentity(ctx)
+			if err != nil {
+				return nil, err
+			}
+			ctx = newCtx
+		}
+		return handler(ctx, req)
+	}
+}
+
+func identityStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if cis := env.GetClientIdentityService(); cis != nil {
+			newCtx, err := cis.ValidateIncomingIdentity(stream.Context())
+			if err != nil {
+				return err
+			}
+			stream = &wrappedServerStreamWithContext{stream, newCtx}
+		}
+		return handler(srv, stream)
+	}
+}
+
 // requestIDStreamInterceptor is a server interceptor that inserts a request ID
 // into the context if one is not already present.
 func requestIDStreamServerInterceptor() grpc.StreamServerInterceptor {
@@ -409,9 +435,10 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
+		copyHeadersUnaryServerInterceptor(),
+		identityUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
 		roleAuthUnaryServerInterceptor(env),
-		copyHeadersUnaryServerInterceptor(),
 	)
 }
 
@@ -425,9 +452,10 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
+		copyHeadersStreamServerInterceptor(),
+		identityStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env),
-		copyHeadersStreamServerInterceptor(),
 	)
 }
 

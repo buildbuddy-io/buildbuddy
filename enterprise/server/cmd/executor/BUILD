@@ -22,6 +22,7 @@ go_library(
         "//enterprise/server/backends/memcache",
         "//enterprise/server/backends/redis_cache",
         "//enterprise/server/backends/s3_cache",
+        "//enterprise/server/clientidentity",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/filecache",
