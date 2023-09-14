@@ -469,7 +469,7 @@ func (cs *clusterState) GetRange(shardID uint64) *rfpb.RangeDescriptor {
 }
 
 func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
-	rsp, err := d.store.ListCluster(ctx, &rfpb.ListClusterRequest{
+	rsp, err := d.store.ListRange(ctx, &rfpb.ListRangeRequest{
 		LeasedOnly: true,
 	})
 	if err != nil {

@@ -461,7 +461,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	}
 }
 
-func TestListCluster(t *testing.T) {
+func TestListRange(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -475,7 +475,7 @@ func TestListCluster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	list, err := s1.ListCluster(ctx, &rfpb.ListClusterRequest{})
+	list, err := s1.ListRange(ctx, &rfpb.ListRangeRequest{})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(list.GetRangeReplicas()))
 }
@@ -601,7 +601,7 @@ func TestManySplits(t *testing.T) {
 
 		var clusters []uint64
 		var seen = make(map[uint64]struct{})
-		list, err := s1.ListCluster(ctx, &rfpb.ListClusterRequest{})
+		list, err := s1.ListRange(ctx, &rfpb.ListRangeRequest{})
 		require.NoError(t, err)
 
 		for _, rangeReplica := range list.GetRangeReplicas() {

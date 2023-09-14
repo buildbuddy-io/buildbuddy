@@ -1772,7 +1772,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	}, nil
 }
 
-func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (*rfpb.ListClusterResponse, error) {
+func (s *Store) ListRange(ctx context.Context, req *rfpb.ListRangeRequest) (*rfpb.ListRangeResponse, error) {
 	s.rangeMu.RLock()
 	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
 	for _, rd := range s.openRanges {
@@ -1780,7 +1780,7 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 	}
 	s.rangeMu.RUnlock()
 
-	rsp := &rfpb.ListClusterResponse{
+	rsp := &rfpb.ListRangeResponse{
 		Node: s.NodeDescriptor(),
 	}
 	for _, rd := range openRanges {

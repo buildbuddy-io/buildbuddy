@@ -487,7 +487,7 @@ message SplitRangeResponse {
   RangeDescriptor right = 2;
 }
 
-message ListClusterRequest {
+message ListRangeRequest {
   // If true, only return the clusters that this node holds the rangelease for.
   bool leased_only = 1;
 }
@@ -497,7 +497,7 @@ message RangeReplica {
   ReplicaUsage replica_usage = 2;
 }
 
-message ListClusterResponse {
+message ListRangeResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
 }

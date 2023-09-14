@@ -15,7 +15,7 @@ service Api {
       returns (raft.AddReplicaResponse);
   rpc RemoveReplica(raft.RemoveReplicaRequest)
       returns (raft.RemoveReplicaResponse);
-  rpc ListCluster(raft.ListClusterRequest) returns (raft.ListClusterResponse);
+  rpc ListRange(raft.ListRangeRequest) returns (raft.ListRangeResponse);
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
   rpc TransferLeadership(TransferLeadershipRequest)
