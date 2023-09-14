@@ -1104,22 +1104,18 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 		initialMembers[replica.GetReplicaId()] = nhid
 	}
 
-	s.log.Infof("Starting new raft node c%dn%d", newShardID, sourceReplica.ReplicaID)
-	rc := raftConfig.GetRaftConfig(newShardID, sourceReplica.ReplicaID)
-	err = s.nodeHost.StartOnDiskReplica(initialMembers, false /*join*/, s.ReplicaFactoryFn, rc)
-	if err != nil {
-		if err == dragonboat.ErrShardAlreadyExist {
-			err = status.AlreadyExistsError(err.Error())
-		}
-		return err
-	}
-
-	return nil
+	_, err = s.StartShard(ctx, &rfpb.StartShardRequest{
+		ShardId:       newShardID,
+		ReplicaId:     sourceReplica.ReplicaID,
+		InitialMember: initialMembers,
+		Join:          false,
+	})
+	return err
 }
 
 func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
+	s.log.Infof("Starting new raft node c%dn%d", req.GetShardId(), req.GetReplicaId())
 	rc := raftConfig.GetRaftConfig(req.GetShardId(), req.GetReplicaId())
-
 	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
 	if err != nil {
 		if err == dragonboat.ErrShardAlreadyExist {
