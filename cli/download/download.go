@@ -86,7 +86,7 @@ func downloadFile(uri string) error {
 		return err
 	}
 
-	conn, err := grpc_client.DialTarget(*target)
+	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
 		return err
 	}

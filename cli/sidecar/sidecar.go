@@ -235,7 +235,7 @@ func stripProtocol(target string) string {
 // sidecar alive as long as this process is alive by issuing background ping
 // requests.
 func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
-	conn, err := grpc_client.DialTarget("unix://" + sidecarSocket)
+	conn, err := grpc_client.DialSimple("unix://" + sidecarSocket)
 	if err != nil {
 		return err
 	}

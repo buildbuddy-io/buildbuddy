@@ -6,16 +6,28 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/keepalive"
 )
 
-// DialTarget handles some of the logic around detecting the correct GRPC
+// DialSimple handles some of the logic around detecting the correct GRPC
 // connection type and applying relevant options when connecting.
-func DialTarget(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
-	dialOptions := CommonGRPCClientOptions()
+//
+// NOTE: Clients within BuildBuddy servers (i.e. executor) should use the Dial
+// variant with an env argument.
+func DialSimple(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return Dial(nil, target, extraOptions...)
+}
+
+// Dial is similar to DialSimple, but it adds additional interceptors
+// (such as client identity) based on the specified environment.
+//
+// Outside of BuildBuddy servers, DialSimple may be used instead.
+func Dial(env environment.Env, target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	dialOptions := CommonGRPCClientOptions(env)
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
 	if err == nil {
@@ -61,10 +73,10 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 	return false
 }
 
-func CommonGRPCClientOptions() []grpc.DialOption {
+func CommonGRPCClientOptions(env environment.Env) []grpc.DialOption {
 	return []grpc.DialOption{
-		interceptors.GetUnaryClientInterceptor(),
-		interceptors.GetStreamClientInterceptor(),
+		interceptors.GetUnaryClientInterceptor(env),
+		interceptors.GetStreamClientInterceptor(env),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			// After a duration of this time if the client doesn't see any activity it

@@ -138,18 +138,18 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 			grpcPort = strconv.Itoa(p)
 		}
 		localURL.Host = "localhost:" + grpcPort
-		err = streamFromUrl(ctx, localURL, false, offset, limit, writer)
+		err = streamFromUrl(ctx, env, localURL, false, offset, limit, writer)
 	}
 
 	// If the local cache did not work, maybe a remote cache is being used.
 	// Try to connect to that, first over grpcs.
 	if err != nil || env.GetCache() == nil {
-		err = streamFromUrl(ctx, url, true, offset, limit, writer)
+		err = streamFromUrl(ctx, env, url, true, offset, limit, writer)
 	}
 
 	// If that didn't work, try plain old grpc.
 	if err != nil {
-		err = streamFromUrl(ctx, url, false, offset, limit, writer)
+		err = streamFromUrl(ctx, env, url, false, offset, limit, writer)
 	}
 
 	// Sanitize the error so as to not expose internal services via the
@@ -177,14 +177,14 @@ func grpcTargetForFileURL(u *url.URL, grpcs bool) string {
 	return target.String()
 }
 
-func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) error {
+func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) error {
 	if url.Port() == "" && grpcs {
 		url.Host = url.Hostname() + ":443"
 	} else if url.Port() == "" {
 		url.Host = url.Hostname() + ":80"
 	}
 
-	conn, err := grpc_client.DialTarget(grpcTargetForFileURL(url, grpcs))
+	conn, err := grpc_client.Dial(env, grpcTargetForFileURL(url, grpcs))
 	if err != nil {
 		return err
 	}

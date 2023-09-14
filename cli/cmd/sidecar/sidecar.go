@@ -177,7 +177,7 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 
 func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	cacheTarget := normalizeGrpcTarget(*remoteCache)
-	conn, err := grpc_client.DialTarget(cacheTarget)
+	conn, err := grpc_client.DialSimple(cacheTarget)
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}

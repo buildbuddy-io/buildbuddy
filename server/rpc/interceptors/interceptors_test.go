@@ -84,7 +84,7 @@ func BenchmarkInstrumentedClient(b *testing.B) {
 		grpcServer.Serve(lis)
 	}()
 
-	conn, err := grpc_client.DialTarget("grpc://" + listenAddr)
+	conn, err := grpc_client.DialSimple("grpc://" + listenAddr)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func BenchmarkInstrumentedAll(b *testing.B) {
 		grpcServer.Serve(lis)
 	}()
 
-	conn, err := grpc_client.DialTarget("grpc://" + listenAddr)
+	conn, err := grpc_client.DialSimple("grpc://" + listenAddr)
 	if err != nil {
 		b.Fatal(err)
 	}

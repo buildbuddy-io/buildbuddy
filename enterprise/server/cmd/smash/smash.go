@@ -95,7 +95,7 @@ func writeBlobsForReading(ctx context.Context, numBlobs int) []*repb.Digest {
 	if *ssl {
 		prefix = "grpcs://"
 	}
-	conn, err := grpc_client.DialTarget(prefix + *cacheTarget)
+	conn, err := grpc_client.DialSimple(prefix + *cacheTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", *cacheTarget, err)
 	}

@@ -90,7 +90,7 @@ func main() {
 		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType(), ind.GetDigestFunction())
 	}
 
-	conn, err := grpc_client.DialTarget(*target)
+	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
 		log.Fatalf("Error dialing CAS target: %s", err)
 	}

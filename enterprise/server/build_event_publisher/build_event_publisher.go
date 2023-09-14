@@ -86,7 +86,7 @@ func (p *Publisher) Start(ctx context.Context) {
 // run performs a single attempt to stream any currently buffered events
 // as well as all subsequently published events to the BES backend.
 func (p *Publisher) run(ctx context.Context) error {
-	conn, err := grpc_client.DialTarget(p.besBackend)
+	conn, err := grpc_client.DialSimple(p.besBackend)
 	if err != nil {
 		return status.WrapError(err, "error dialing bes_backend")
 	}

@@ -60,7 +60,7 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 	if client, ok := c.clients[peer]; ok {
 		return client, nil
 	}
-	conn, err := grpc_client.DialTarget("grpc://" + peer)
+	conn, err := grpc_client.DialSimple("grpc://" + peer)
 	if err != nil {
 		return nil, err
 	}

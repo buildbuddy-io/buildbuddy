@@ -57,7 +57,7 @@ func getToolEnv() *real_environment.RealEnv {
 	fc.WaitForDirectoryScanToComplete()
 	re.SetFileCache(fc)
 
-	conn, err := grpc_client.DialTarget(*cacheTarget)
+	conn, err := grpc_client.DialSimple(*cacheTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", *cacheTarget, err)
 	}

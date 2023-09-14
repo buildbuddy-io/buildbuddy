@@ -214,7 +214,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 }
 
 func intializeSociArtifactStoreClient(env environment.Env, target string) (socipb.SociArtifactStoreClient, error) {
-	conn, err := grpc_client.DialTarget(target)
+	conn, err := grpc_client.DialSimple(target)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func intializeSociArtifactStoreClient(env environment.Env, target string) (socip
 }
 
 func initializeSociStoreKeychainClient(env environment.Env, target string) (sspb.LocalKeychainClient, error) {
-	conn, err := grpc_client.DialTarget(target)
+	conn, err := grpc_client.DialSimple(target)
 	if err != nil {
 		return nil, err
 	}
