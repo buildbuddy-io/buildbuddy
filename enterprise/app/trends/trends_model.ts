@@ -1,6 +1,7 @@
+import Long from "long";
 import { timestampToDate } from "../../../app/util/proto";
 import { stats } from "../../../proto/stats_ts_proto";
-import { timeHour, timeDay } from "d3-time";
+import { computeTimeKeys } from "./common";
 
 /**
  * This is a shared model class for "trends" data, which currently just means
@@ -17,6 +18,7 @@ export default class TrendsModel {
   private error?: string;
   private data: stats.GetTrendResponse;
   private timeKeys: number[];
+  private ticks: number[];
   private timeToStatMap: Map<number, stats.ITrendStat>;
   private timeToExecutionStatMap: Map<number, stats.IExecutionStat>;
 
@@ -32,19 +34,30 @@ export default class TrendsModel {
         // End date may not be defined -- default to today.
         request?.query?.updatedBefore ? timestampToDate(request.query.updatedBefore) : new Date(),
       ];
-      this.timeKeys = computeTimeKeys(domain);
+      const interval =
+        this.data.interval ??
+        stats.StatsInterval.create({ type: stats.IntervalType.INTERVAL_TYPE_DAY, count: Long.fromNumber(1) });
+
+      const computed = computeTimeKeys(interval, domain);
+      this.timeKeys = computed.timeKeys;
+      this.ticks = computed.ticks;
     } else {
       this.timeKeys = [];
+      this.ticks = [];
     }
 
     this.timeToStatMap = new Map<number, stats.ITrendStat>();
     for (let stat of response?.trendStat ?? []) {
-      const time = new Date(stat.name + " 00:00").getTime();
+      const time = stat.bucketStartTimeMicros
+        ? +stat.bucketStartTimeMicros / 1000
+        : new Date(stat.name + " 00:00").getTime();
       this.timeToStatMap.set(time, stat);
     }
     this.timeToExecutionStatMap = new Map<number, stats.IExecutionStat>();
     for (let stat of response?.executionStat ?? []) {
-      const time = new Date(stat.name + " 00:00").getTime();
+      const time = stat.bucketStartTimeMicros
+        ? +stat.bucketStartTimeMicros / 1000
+        : new Date(stat.name + " 00:00").getTime();
       this.timeToExecutionStatMap.set(time, stat);
     }
   }
@@ -73,6 +86,14 @@ export default class TrendsModel {
     return this.timeKeys;
   }
 
+  public getTicks() {
+    return this.ticks;
+  }
+
+  public getInterval() {
+    return this.data.interval || stats.IntervalType.INTERVAL_TYPE_DAY;
+  }
+
   public getCurrentSummary() {
     return this.data.currentSummary;
   }
@@ -91,14 +112,5 @@ export default class TrendsModel {
 
   public getError() {
     return this.error;
-  }
-}
-
-// TODO(jdhollen): support specifying a mod to skip specific ticks
-function computeTimeKeys(domain: [Date, Date]): number[] {
-  if (domain[1].getTime() - domain[0].getTime() > 1000 * 60 * 60 * 48) {
-    return timeDay.range(timeDay.floor(domain[0]), domain[1]).map((d: Date) => d.getTime());
-  } else {
-    return timeHour.range(timeHour.floor(domain[0]), domain[1]).map((d: Date) => d.getTime());
   }
 }

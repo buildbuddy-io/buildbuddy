@@ -17,15 +17,16 @@ ts_library(
         "//enterprise/app/filter",
         "//enterprise/app/filter:filter_util",
         "//enterprise/app/trends:cache_chart",
+        "//enterprise/app/trends:common",
         "//enterprise/app/trends:drilldown_page",
         "//enterprise/app/trends:percentile_chart",
         "//enterprise/app/trends:summary_card",
         "//enterprise/app/trends:trends_chart",
         "//proto:stats_ts_proto",
-        "@npm//@types/d3-time",
+        "@npm//@types/long",
         "@npm//@types/moment",
         "@npm//@types/react",
-        "@npm//d3-time",
+        "@npm//long",
         "@npm//moment",
         "@npm//react",
         "@npm//rxjs",
@@ -36,6 +37,11 @@ ts_library(
 ts_library(
     name = "common",
     srcs = ["common.ts"],
+    deps = [
+        "//proto:stats_ts_proto",
+        "@npm//@types/d3-time",
+        "@npm//d3-time",
+    ],
 )
 
 ts_library(
@@ -53,6 +59,7 @@ ts_library(
         "//enterprise/app/trends:trends_chart",
         "//enterprise/app/trends:trends_model",
         "//enterprise/app/trends:trends_requests",
+        "//proto:stats_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//moment",
@@ -83,9 +90,10 @@ ts_library(
     srcs = ["trends_model.ts"],
     deps = [
         "//app/util:proto",
+        "//enterprise/app/trends:common",
         "//proto:stats_ts_proto",
-        "@npm//@types/d3-time",
-        "@npm//d3-time",
+        "@npm//@types/long",
+        "@npm//long",
     ],
 )
 

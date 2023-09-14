@@ -17,6 +17,7 @@ export interface PercentilesChartProps {
   title: string;
   id?: string;
   data: number[];
+  ticks: number[];
   extractLabel: (datum: number) => string;
   formatHoverLabel: (datum: number) => string;
   extractP50: (datum: number) => number;
@@ -48,7 +49,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
             onClick={this.handleRowClick.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
-            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.data} />
+            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
             <YAxis yAxisId="duration" tickFormatter={format.durationSec} allowDecimals={false} width={84} />
             <Tooltip
               content={

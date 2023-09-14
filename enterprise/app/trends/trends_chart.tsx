@@ -17,6 +17,7 @@ import {
 interface Props {
   title: string;
   data: number[];
+  ticks: number[];
   id?: string;
 
   extractLabel: (datum: number) => string;
@@ -84,7 +85,7 @@ export default class TrendsChartComponent extends React.Component<Props> {
           <ComposedChart data={this.props.data}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
-            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.data} />
+            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
             <YAxis
               yAxisId="primary"
               tickFormatter={this.props.formatTickValue}
