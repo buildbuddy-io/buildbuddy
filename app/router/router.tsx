@@ -8,23 +8,25 @@ import { user as user_proto } from "../../proto/user_ts_proto";
 import { GLOBAL_FILTER_PARAM_NAMES, PERSISTENT_URL_PARAMS } from "./router_params";
 
 class Router {
+  user?: User;
+
   register(pathChangeHandler: VoidFunction) {
     const oldPushState = history.pushState;
     history.pushState = (data: any, unused: string, url?: string | URL): void => {
       oldPushState.apply(history, [data, unused, url]);
-      pathChangeHandler();
+      this.handlePathChanged(pathChangeHandler);
       return undefined;
     };
 
     const oldReplaceState = history.replaceState;
     history.replaceState = (data: any, unused: string, url?: string | URL): void => {
       oldReplaceState.apply(history, [data, unused, url]);
-      pathChangeHandler();
+      this.handlePathChanged(pathChangeHandler);
       return undefined;
     };
 
     window.addEventListener("popstate", () => {
-      pathChangeHandler();
+      this.handlePathChanged(pathChangeHandler);
     });
 
     // The router is only created once, so no need to keep the handles and
@@ -47,6 +49,26 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
+  }
+
+  private handlePathChanged(pathChangeHandler: VoidFunction) {
+    const path = window.location.pathname;
+    if (
+      this.user &&
+      this.user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
+      // A user may have access to an invocation w/o having access to group.
+      !path.startsWith(Path.invocationPath) &&
+      !path.startsWith(Path.joinOrgPath) &&
+      !path.startsWith(Path.orgAccessDeniedPath)
+    ) {
+      const params = new URLSearchParams({
+        source_url: window.location.href,
+        denied_reason: this.user.selectedGroupAccess.toString(),
+      });
+      window.history.replaceState({}, "", Path.orgAccessDeniedPath + "?" + params.toString());
+      return;
+    }
+    pathChangeHandler();
   }
 
   /**
@@ -363,6 +385,11 @@ class Router {
 
     const newUrl = getModifiedUrl({ path: fallbackPath });
     window.history.replaceState({}, "", newUrl);
+  }
+
+  setUser(user?: User) {
+    this.user = user;
+    this.rerouteIfNecessary(user);
   }
 
   private getFallbackPath(user?: User): string | null {
