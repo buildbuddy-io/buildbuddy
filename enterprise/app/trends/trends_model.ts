@@ -1,16 +1,6 @@
-import moment from "moment";
-
 import { timestampToDate } from "../../../app/util/proto";
 import { stats } from "../../../proto/stats_ts_proto";
-
-function getDatesBetween(start: Date, end: Date): string[] {
-  const endMoment = moment(end);
-  const formattedDates: string[] = [];
-  for (let date = moment(start); date.isBefore(endMoment); date = date.add(1, "days")) {
-    formattedDates.push(date.format("YYYY-MM-DD"));
-  }
-  return formattedDates;
-}
+import { timeHour, timeDay } from "d3-time";
 
 /**
  * This is a shared model class for "trends" data, which currently just means
@@ -26,29 +16,36 @@ export default class TrendsModel {
   private loading: boolean;
   private error?: string;
   private data: stats.GetTrendResponse;
-  private dates: string[];
-  private dateToStatMap: Map<string, stats.ITrendStat>;
-  private dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
+  private timeKeys: number[];
+  private timeToStatMap: Map<number, stats.ITrendStat>;
+  private timeToExecutionStatMap: Map<number, stats.IExecutionStat>;
 
   constructor(loading: boolean, error?: string, request?: stats.GetTrendRequest, response?: stats.GetTrendResponse) {
     this.loading = loading;
     this.error = error;
     this.data = response ?? stats.GetTrendResponse.create({});
 
-    this.dates = getDatesBetween(
-      // Note that start date should always be defined, even though we aren't asserting here.
-      timestampToDate(request?.query?.updatedAfter ?? {}),
-      // End date may not be defined -- default to today.
-      request?.query?.updatedBefore ? timestampToDate(request.query.updatedBefore) : new Date()
-    );
-
-    this.dateToStatMap = new Map<string, stats.ITrendStat>();
-    for (let stat of response?.trendStat ?? []) {
-      this.dateToStatMap.set(stat.name, stat);
+    if (request) {
+      const domain: [Date, Date] = [
+        // Note that start date should always be defined, even though we aren't asserting here.
+        timestampToDate(request.query?.updatedAfter ?? {}),
+        // End date may not be defined -- default to today.
+        request?.query?.updatedBefore ? timestampToDate(request.query.updatedBefore) : new Date(),
+      ];
+      this.timeKeys = computeTimeKeys(domain);
+    } else {
+      this.timeKeys = [];
     }
-    this.dateToExecutionStatMap = new Map<string, stats.IExecutionStat>();
+
+    this.timeToStatMap = new Map<number, stats.ITrendStat>();
+    for (let stat of response?.trendStat ?? []) {
+      const time = new Date(stat.name + " 00:00").getTime();
+      this.timeToStatMap.set(time, stat);
+    }
+    this.timeToExecutionStatMap = new Map<number, stats.IExecutionStat>();
     for (let stat of response?.executionStat ?? []) {
-      this.dateToExecutionStatMap.set(stat.name, stat);
+      const time = new Date(stat.name + " 00:00").getTime();
+      this.timeToExecutionStatMap.set(time, stat);
     }
   }
 
@@ -60,20 +57,20 @@ export default class TrendsModel {
     return this.data.trendStat;
   }
 
-  public getStat(date: string): stats.ITrendStat {
-    return this.dateToStatMap.get(date) || {};
+  public getStat(time: number): stats.ITrendStat {
+    return this.timeToStatMap.get(time) || {};
   }
 
   public hasExecutionStats() {
-    return this.dateToExecutionStatMap.size > 0;
+    return this.timeToExecutionStatMap.size > 0;
   }
 
-  public getExecutionStat(date: string): stats.IExecutionStat {
-    return this.dateToExecutionStatMap.get(date) || {};
+  public getExecutionStat(time: number): stats.IExecutionStat {
+    return this.timeToExecutionStatMap.get(time) || {};
   }
 
-  public getDates() {
-    return this.dates;
+  public getTimeKeys() {
+    return this.timeKeys;
   }
 
   public getCurrentSummary() {
@@ -94,5 +91,14 @@ export default class TrendsModel {
 
   public getError() {
     return this.error;
+  }
+}
+
+// TODO(jdhollen): support specifying a mod to skip specific ticks
+function computeTimeKeys(domain: [Date, Date]): number[] {
+  if (domain[1].getTime() - domain[0].getTime() > 1000 * 60 * 60 * 48) {
+    return timeDay.range(timeDay.floor(domain[0]), domain[1]).map((d: Date) => d.getTime());
+  } else {
+    return timeHour.range(timeHour.floor(domain[0]), domain[1]).map((d: Date) => d.getTime());
   }
 }

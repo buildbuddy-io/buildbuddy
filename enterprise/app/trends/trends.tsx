@@ -15,6 +15,7 @@ import { getProtoFilterParams } from "../filter/filter_util";
 import router from "../../../app/router/router";
 import * as proto from "../../../app/util/proto";
 import DrilldownPageComponent from "./drilldown_page";
+import { timeDay } from "d3-time";
 
 const BITS_PER_BYTE = 8;
 
@@ -27,12 +28,12 @@ interface Props {
 interface State {
   stats: stats.ITrendStat[];
   loading: boolean;
-  dateToStatMap: Map<string, stats.ITrendStat>;
-  dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
+  timeToStatMap: Map<number, stats.ITrendStat>;
+  timeToExecutionStatMap: Map<number, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
   currentSummary?: stats.Summary;
   previousSummary?: stats.Summary;
-  dates: string[];
+  timeKeys: number[];
 }
 
 const SECONDS_PER_MICROSECOND = 1e-6;
@@ -41,10 +42,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
   state: State = {
     stats: [],
     loading: true,
-    dateToStatMap: new Map<string, stats.ITrendStat>(),
-    dateToExecutionStatMap: new Map<string, stats.IExecutionStat>(),
+    timeToStatMap: new Map<number, stats.ITrendStat>(),
+    timeToExecutionStatMap: new Map<number, stats.IExecutionStat>(),
     enableInvocationPercentileCharts: false,
-    dates: [],
+    timeKeys: [],
   };
 
   subscription?: Subscription;
@@ -149,49 +150,58 @@ export default class TrendsComponent extends React.Component<Props, State> {
     this.setState({ loading: true });
     rpcService.service.getTrend(request).then((response) => {
       console.log(response);
-      const dateToStatMap = new Map<string, stats.ITrendStat>();
+      const timeToStatMap = new Map<number, stats.ITrendStat>();
       for (let stat of response.trendStat) {
-        dateToStatMap.set(stat.name ?? "", stat);
+        const time = new Date(stat.name + " 00:00").getTime();
+        timeToStatMap.set(time, stat);
       }
-      const dateToExecutionStatMap = new Map<string, stats.IExecutionStat>();
+      const timeToExecutionStatMap = new Map<number, stats.IExecutionStat>();
       for (let stat of response.executionStat) {
-        dateToExecutionStatMap.set(stat.name ?? "", stat);
+        const time = new Date(stat.name + " 00:00").getTime();
+        timeToExecutionStatMap.set(time, stat);
       }
+      const domain: [Date, Date] = [
+        proto.timestampToDate(request.query!.updatedAfter!),
+        request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date(),
+      ];
+
       this.setState({
         stats: response.trendStat,
-        dates: getDatesBetween(
-          // Start date should always be defined.
-          proto.timestampToDate(request.query!.updatedAfter || {}),
-          // End date may not be defined -- default to today.
-          request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date()
-        ),
+        timeKeys: computeTimeKeys(domain),
         currentSummary: response.currentSummary || undefined,
         previousSummary: response.previousSummary || undefined,
-        dateToStatMap,
-        dateToExecutionStatMap,
+        timeToStatMap,
+        timeToExecutionStatMap,
         enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
         loading: false,
       });
     });
   }
 
-  getStat(date: string): stats.ITrendStat {
-    return this.state.dateToStatMap.get(date) || {};
+  getStat(timestampMillis: number): stats.ITrendStat {
+    return this.state.timeToStatMap.get(timestampMillis) || {};
   }
 
-  getExecutionStat(date: string): stats.IExecutionStat {
-    return this.state.dateToExecutionStatMap.get(date) || {};
+  getExecutionStat(timestampMillis: number): stats.IExecutionStat {
+    return this.state.timeToExecutionStatMap.get(timestampMillis) || {};
   }
 
-  formatLongDate(date: any) {
-    return moment(date).format("dddd, MMMM Do YYYY");
+  formatLongDate(timestampMillis: number) {
+    return moment(timestampMillis).format("dddd, MMMM Do YYYY");
   }
 
-  formatShortDate(date: any) {
-    return moment(date).format("MMM D");
+  formatShortDate(timestampMillis: number) {
+    const time = moment(timestampMillis);
+
+    if (time.hour() === 0) {
+      return time.format("MMM D");
+    }
+
+    return time.format("HH:mm");
   }
 
-  onBarClicked(hash: string, sortBy: string, date: string) {
+  onBarClicked(hash: string, sortBy: string, tsMillis: number) {
+    const date = new Date(tsMillis).toISOString().split("T")[0];
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
@@ -236,15 +246,15 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <TrendsChartComponent
                 title="Builds"
                 id="builds"
-                data={this.state.dates}
-                extractValue={(date) => +(this.getStat(date).totalNumBuilds ?? 0)}
-                extractSecondaryValue={(date) => {
-                  let stat = this.getStat(date);
+                data={this.state.timeKeys}
+                extractValue={(tsMillis) => +(this.getStat(tsMillis).totalNumBuilds ?? 0)}
+                extractSecondaryValue={(tsMillis) => {
+                  let stat = this.getStat(tsMillis);
                   return (
                     (+(stat.totalBuildTimeUsec ?? 0) * SECONDS_PER_MICROSECOND) / +(stat.completedInvocationCount ?? 0)
                   );
                 }}
-                extractLabel={this.formatShortDate}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatTickValue={format.count}
                 allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
@@ -261,14 +271,14 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <PercentilesChartComponent
                   title="Build duration"
                   id="duration"
-                  data={this.state.dates}
-                  extractLabel={this.formatShortDate}
+                  data={this.state.timeKeys}
+                  extractLabel={this.formatShortDate.bind(this)}
                   formatHoverLabel={this.formatLongDate}
-                  extractP50={(date) => +(this.getStat(date).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
-                  extractP75={(date) => +(this.getStat(date).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
-                  extractP90={(date) => +(this.getStat(date).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
-                  extractP95={(date) => +(this.getStat(date).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
-                  extractP99={(date) => +(this.getStat(date).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP50={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP75={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP90={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP95={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP99={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
                   onColumnClicked={this.onBarClicked.bind(this, "", "duration")}
                 />
               )}
@@ -276,13 +286,13 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <TrendsChartComponent
                   title="Build duration"
                   id="duration"
-                  data={this.state.dates}
-                  extractValue={(date) => {
-                    let stat = this.getStat(date);
+                  data={this.state.timeKeys}
+                  extractValue={(tsMillis) => {
+                    let stat = this.getStat(tsMillis);
                     return +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0) / 1000000;
                   }}
-                  extractSecondaryValue={(date) => +(this.getStat(date).maxDurationUsec ?? 0) / 1000000}
-                  extractLabel={this.formatShortDate}
+                  extractSecondaryValue={(tsMillis) => +(this.getStat(tsMillis).maxDurationUsec ?? 0) / 1000000}
+                  extractLabel={this.formatShortDate.bind(this)}
                   formatTickValue={format.durationSec}
                   formatHoverLabel={this.formatLongDate}
                   formatHoverValue={(value) => `${format.durationSec(value || 0)} average`}
@@ -297,32 +307,32 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <CacheChartComponent
                 title="Action Cache"
                 id="cache"
-                data={this.state.dates}
-                extractLabel={this.formatShortDate}
+                data={this.state.timeKeys}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatHoverLabel={this.formatLongDate}
-                extractHits={(date) => +(this.getStat(date).actionCacheHits ?? 0)}
+                extractHits={(tsMillis) => +(this.getStat(tsMillis).actionCacheHits ?? 0)}
                 secondaryBarName="misses"
-                extractSecondary={(date) => +(this.getStat(date).actionCacheMisses ?? 0)}
+                extractSecondary={(tsMillis) => +(this.getStat(tsMillis).actionCacheMisses ?? 0)}
               />
               <CacheChartComponent
                 title="Content Addressable Store"
-                data={this.state.dates}
-                extractLabel={this.formatShortDate}
+                data={this.state.timeKeys}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatHoverLabel={this.formatLongDate}
-                extractHits={(date) => +(this.getStat(date).casCacheHits ?? 0)}
+                extractHits={(tsMillis) => +(this.getStat(tsMillis).casCacheHits ?? 0)}
                 secondaryBarName="writes"
-                extractSecondary={(date) => +(this.getStat(date).casCacheUploads ?? 0)}
+                extractSecondary={(tsMillis) => +(this.getStat(tsMillis).casCacheUploads ?? 0)}
               />
 
               <TrendsChartComponent
                 title="Cache read throughput"
-                data={this.state.dates}
-                extractValue={(date) => +(this.getStat(date).totalDownloadSizeBytes ?? 0)}
-                extractSecondaryValue={(date) =>
-                  (+(this.getStat(date).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
-                  (+(this.getStat(date).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND)
+                data={this.state.timeKeys}
+                extractValue={(tsMillis) => +(this.getStat(tsMillis).totalDownloadSizeBytes ?? 0)}
+                extractSecondaryValue={(tsMillis) =>
+                  (+(this.getStat(tsMillis).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
+                  (+(this.getStat(tsMillis).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND)
                 }
-                extractLabel={this.formatShortDate}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatTickValue={format.bytes}
                 allowDecimals={false}
                 formatSecondaryTickValue={format.bitsPerSecond}
@@ -337,13 +347,13 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
               <TrendsChartComponent
                 title="Cache write throughput"
-                data={this.state.dates}
-                extractValue={(date) => +(this.getStat(date).totalUploadSizeBytes ?? 0)}
-                extractSecondaryValue={(date) =>
-                  (+(this.getStat(date).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
-                  (+(this.getStat(date).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND)
+                data={this.state.timeKeys}
+                extractValue={(tsMillis) => +(this.getStat(tsMillis).totalUploadSizeBytes ?? 0)}
+                extractSecondaryValue={(tsMillis) =>
+                  (+(this.getStat(tsMillis).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
+                  (+(this.getStat(tsMillis).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND)
                 }
-                extractLabel={this.formatShortDate}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatTickValue={format.bytes}
                 formatSecondaryTickValue={format.bitsPerSecond}
                 formatHoverLabel={this.formatLongDate}
@@ -359,9 +369,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <TrendsChartComponent
                   title="Saved CPU Time"
                   id="savings"
-                  data={this.state.dates}
-                  extractValue={(date) => +(this.getStat(date).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND}
-                  extractLabel={this.formatShortDate}
+                  data={this.state.timeKeys}
+                  extractValue={(tsMillis) =>
+                    +(this.getStat(tsMillis).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND
+                  }
+                  extractLabel={this.formatShortDate.bind(this)}
                   formatTickValue={format.durationSec}
                   allowDecimals={false}
                   formatHoverLabel={this.formatLongDate}
@@ -372,9 +384,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
               <TrendsChartComponent
                 title="Users with builds"
-                data={this.state.dates}
-                extractValue={(date) => +(this.getStat(date).userCount ?? 0)}
-                extractLabel={this.formatShortDate}
+                data={this.state.timeKeys}
+                extractValue={(tsMillis) => +(this.getStat(tsMillis).userCount ?? 0)}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatTickValue={format.count}
                 allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
@@ -384,9 +396,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
               />
               <TrendsChartComponent
                 title="Commits with builds"
-                data={this.state.dates}
-                extractValue={(date) => +(this.getStat(date).commitCount ?? 0)}
-                extractLabel={this.formatShortDate}
+                data={this.state.timeKeys}
+                extractValue={(tsMillis) => +(this.getStat(tsMillis).commitCount ?? 0)}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatTickValue={format.count}
                 allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
@@ -396,9 +408,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
               />
               <TrendsChartComponent
                 title="Branches with builds"
-                data={this.state.dates}
-                extractValue={(date) => +(this.getStat(date).branchCount ?? 0)}
-                extractLabel={this.formatShortDate}
+                data={this.state.timeKeys}
+                extractValue={(tsMillis) => +(this.getStat(tsMillis).branchCount ?? 0)}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatTickValue={format.count}
                 allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
@@ -407,9 +419,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
               />
               <TrendsChartComponent
                 title="Hosts with builds"
-                data={this.state.dates}
-                extractValue={(date) => +(this.getStat(date).hostCount ?? 0)}
-                extractLabel={this.formatShortDate}
+                data={this.state.timeKeys}
+                extractValue={(tsMillis) => +(this.getStat(tsMillis).hostCount ?? 0)}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatTickValue={format.count}
                 allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
@@ -419,9 +431,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
               />
               <TrendsChartComponent
                 title="Repos with builds"
-                data={this.state.dates}
-                extractValue={(date) => +(this.getStat(date).repoCount ?? 0)}
-                extractLabel={this.formatShortDate}
+                data={this.state.timeKeys}
+                extractValue={(tsMillis) => +(this.getStat(tsMillis).repoCount ?? 0)}
+                extractLabel={this.formatShortDate.bind(this)}
                 formatTickValue={format.count}
                 allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
@@ -429,26 +441,26 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 name="repos with builds"
                 onBarClicked={this.onBarClicked.bind(this, "#repos", "")}
               />
-              {this.state.dateToExecutionStatMap.size > 0 && (
+              {this.state.timeToExecutionStatMap.size > 0 && (
                 <PercentilesChartComponent
                   title="Remote Execution Queue Duration"
-                  data={this.state.dates}
-                  extractLabel={this.formatShortDate}
+                  data={this.state.timeKeys}
+                  extractLabel={this.formatShortDate.bind(this)}
                   formatHoverLabel={this.formatLongDate}
-                  extractP50={(date) =>
-                    +(this.getExecutionStat(date).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
+                  extractP50={(tsMillis) =>
+                    +(this.getExecutionStat(tsMillis).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
                   }
-                  extractP75={(date) =>
-                    +(this.getExecutionStat(date).queueDurationUsecP75 ?? 0) * SECONDS_PER_MICROSECOND
+                  extractP75={(tsMillis) =>
+                    +(this.getExecutionStat(tsMillis).queueDurationUsecP75 ?? 0) * SECONDS_PER_MICROSECOND
                   }
-                  extractP90={(date) =>
-                    +(this.getExecutionStat(date).queueDurationUsecP90 ?? 0) * SECONDS_PER_MICROSECOND
+                  extractP90={(tsMillis) =>
+                    +(this.getExecutionStat(tsMillis).queueDurationUsecP90 ?? 0) * SECONDS_PER_MICROSECOND
                   }
-                  extractP95={(date) =>
-                    +(this.getExecutionStat(date).queueDurationUsecP95 ?? 0) * SECONDS_PER_MICROSECOND
+                  extractP95={(tsMillis) =>
+                    +(this.getExecutionStat(tsMillis).queueDurationUsecP95 ?? 0) * SECONDS_PER_MICROSECOND
                   }
-                  extractP99={(date) =>
-                    +(this.getExecutionStat(date).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
+                  extractP99={(tsMillis) =>
+                    +(this.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
                   }
                 />
               )}
@@ -460,11 +472,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 }
 
-function getDatesBetween(start: Date, end: Date): string[] {
-  const endMoment = moment(end);
-  const formattedDates: string[] = [];
-  for (let date = moment(start); date.isBefore(endMoment); date = date.add(1, "days")) {
-    formattedDates.push(date.format("YYYY-MM-DD"));
-  }
-  return formattedDates;
+// TODO(jdhollen): support smaller time ranges.
+function computeTimeKeys(domain: [Date, Date]): number[] {
+  return timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime());
 }

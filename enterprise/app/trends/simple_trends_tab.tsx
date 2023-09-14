@@ -57,15 +57,16 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
     );
   }
 
-  formatLongDate(date: any) {
-    return moment(date).format("dddd, MMMM Do YYYY");
+  formatLongDate(tsMillis: number) {
+    return moment(tsMillis).format("dddd, MMMM Do YYYY");
   }
 
-  formatShortDate(date: any) {
-    return moment(date).format("MMM D");
+  formatShortDate(tsMillis: number) {
+    return moment(tsMillis).format("MMM D");
   }
 
-  onBarClicked(hash: string, sortBy: string, date: string) {
+  onBarClicked(hash: string, sortBy: string, tsMillis: number) {
+    const date = new Date(tsMillis).toISOString().split("T")[0];
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
@@ -89,10 +90,10 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <TrendsChartComponent
           title="Builds"
           id="builds"
-          data={model.getDates()}
-          extractValue={(date) => +(model.getStat(date).totalNumBuilds ?? 0)}
-          extractSecondaryValue={(date) => {
-            let stat = model.getStat(date);
+          data={model.getTimeKeys()}
+          extractValue={(tsMillis) => +(model.getStat(tsMillis).totalNumBuilds ?? 0)}
+          extractSecondaryValue={(tsMillis) => {
+            let stat = model.getStat(tsMillis);
             return (+(stat.totalBuildTimeUsec ?? 0) * SECONDS_PER_MICROSECOND) / +(stat.completedInvocationCount ?? 0);
           }}
           extractLabel={this.formatShortDate}
@@ -112,14 +113,14 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           <PercentilesChartComponent
             title="Build duration"
             id="duration"
-            data={model.getDates()}
+            data={model.getTimeKeys()}
             extractLabel={this.formatShortDate}
             formatHoverLabel={this.formatLongDate}
-            extractP50={(date) => +(model.getStat(date).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
-            extractP75={(date) => +(model.getStat(date).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
-            extractP90={(date) => +(model.getStat(date).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
-            extractP95={(date) => +(model.getStat(date).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
-            extractP99={(date) => +(model.getStat(date).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
+            extractP50={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
+            extractP75={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
+            extractP90={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
+            extractP95={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
+            extractP99={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
             onColumnClicked={this.onBarClicked.bind(this, "", "duration")}
           />
         )}
@@ -127,12 +128,12 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           <TrendsChartComponent
             title="Build duration"
             id="duration"
-            data={model.getDates()}
-            extractValue={(date) => {
-              let stat = model.getStat(date);
+            data={model.getTimeKeys()}
+            extractValue={(tsMillis) => {
+              let stat = model.getStat(tsMillis);
               return +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0) / 1000000;
             }}
-            extractSecondaryValue={(date) => +(model.getStat(date).maxDurationUsec ?? 0) / 1000000}
+            extractSecondaryValue={(tsMillis) => +(model.getStat(tsMillis).maxDurationUsec ?? 0) / 1000000}
             extractLabel={this.formatShortDate}
             formatTickValue={format.durationSec}
             formatHoverLabel={this.formatLongDate}
@@ -147,8 +148,8 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
 
         <TrendsChartComponent
           title="Users with builds"
-          data={model.getDates()}
-          extractValue={(date) => +(model.getStat(date).userCount ?? 0)}
+          data={model.getTimeKeys()}
+          extractValue={(tsMillis) => +(model.getStat(tsMillis).userCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
@@ -159,8 +160,8 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         />
         <TrendsChartComponent
           title="Commits with builds"
-          data={model.getDates()}
-          extractValue={(date) => +(model.getStat(date).commitCount ?? 0)}
+          data={model.getTimeKeys()}
+          extractValue={(tsMillis) => +(model.getStat(tsMillis).commitCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
@@ -171,8 +172,8 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         />
         <TrendsChartComponent
           title="Branches with builds"
-          data={model.getDates()}
-          extractValue={(date) => +(model.getStat(date).branchCount ?? 0)}
+          data={model.getTimeKeys()}
+          extractValue={(tsMillis) => +(model.getStat(tsMillis).branchCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
@@ -182,8 +183,8 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         />
         <TrendsChartComponent
           title="Hosts with builds"
-          data={model.getDates()}
-          extractValue={(date) => +(model.getStat(date).hostCount ?? 0)}
+          data={model.getTimeKeys()}
+          extractValue={(tsMillis) => +(model.getStat(tsMillis).hostCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
@@ -194,8 +195,8 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         />
         <TrendsChartComponent
           title="Repos with builds"
-          data={model.getDates()}
-          extractValue={(date) => +(model.getStat(date).repoCount ?? 0)}
+          data={model.getTimeKeys()}
+          extractValue={(tsMillis) => +(model.getStat(tsMillis).repoCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
@@ -214,29 +215,29 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <CacheChartComponent
           title="Action Cache"
           id="cache"
-          data={model.getDates()}
+          data={model.getTimeKeys()}
           extractLabel={this.formatShortDate}
           formatHoverLabel={this.formatLongDate}
-          extractHits={(date) => +(model.getStat(date).actionCacheHits ?? 0)}
+          extractHits={(tsMillis) => +(model.getStat(tsMillis).actionCacheHits ?? 0)}
           secondaryBarName="misses"
-          extractSecondary={(date) => +(model.getStat(date).actionCacheMisses ?? 0)}
+          extractSecondary={(tsMillis) => +(model.getStat(tsMillis).actionCacheMisses ?? 0)}
         />
         <CacheChartComponent
           title="Content Addressable Store"
-          data={model.getDates()}
+          data={model.getTimeKeys()}
           extractLabel={this.formatShortDate}
           formatHoverLabel={this.formatLongDate}
-          extractHits={(date) => +(model.getStat(date).casCacheHits ?? 0)}
+          extractHits={(tsMillis) => +(model.getStat(tsMillis).casCacheHits ?? 0)}
           secondaryBarName="writes"
-          extractSecondary={(date) => +(model.getStat(date).casCacheUploads ?? 0)}
+          extractSecondary={(tsMillis) => +(model.getStat(tsMillis).casCacheUploads ?? 0)}
         />
         <TrendsChartComponent
           title="Cache read throughput"
-          data={model.getDates()}
-          extractValue={(date) => +(model.getStat(date).totalDownloadSizeBytes ?? 0)}
-          extractSecondaryValue={(date) =>
-            (+(model.getStat(date).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
-            (+(model.getStat(date).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND)
+          data={model.getTimeKeys()}
+          extractValue={(tsMillis) => +(model.getStat(tsMillis).totalDownloadSizeBytes ?? 0)}
+          extractSecondaryValue={(tsMillis) =>
+            (+(model.getStat(tsMillis).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
+            (+(model.getStat(tsMillis).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND)
           }
           extractLabel={this.formatShortDate}
           formatTickValue={format.bytes}
@@ -253,11 +254,11 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
 
         <TrendsChartComponent
           title="Cache write throughput"
-          data={model.getDates()}
-          extractValue={(date) => +(model.getStat(date).totalUploadSizeBytes ?? 0)}
-          extractSecondaryValue={(date) =>
-            (+(model.getStat(date).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
-            (+(model.getStat(date).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND)
+          data={model.getTimeKeys()}
+          extractValue={(tsMillis) => +(model.getStat(tsMillis).totalUploadSizeBytes ?? 0)}
+          extractSecondaryValue={(tsMillis) =>
+            (+(model.getStat(tsMillis).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
+            (+(model.getStat(tsMillis).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND)
           }
           extractLabel={this.formatShortDate}
           formatTickValue={format.bytes}
@@ -275,8 +276,8 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           <TrendsChartComponent
             title="Saved CPU Time"
             id="savings"
-            data={model.getDates()}
-            extractValue={(date) => +(model.getStat(date).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND}
+            data={model.getTimeKeys()}
+            extractValue={(tsMillis) => +(model.getStat(tsMillis).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND}
             extractLabel={this.formatShortDate}
             formatTickValue={format.durationSec}
             allowDecimals={false}
@@ -294,14 +295,24 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
       model.hasExecutionStats() && (
         <PercentilesChartComponent
           title="Remote Execution Queue Duration"
-          data={model.getDates()}
+          data={model.getTimeKeys()}
           extractLabel={this.formatShortDate}
           formatHoverLabel={this.formatLongDate}
-          extractP50={(date) => +(model.getExecutionStat(date).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
-          extractP75={(date) => +(model.getExecutionStat(date).queueDurationUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
-          extractP90={(date) => +(model.getExecutionStat(date).queueDurationUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
-          extractP95={(date) => +(model.getExecutionStat(date).queueDurationUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
-          extractP99={(date) => +(model.getExecutionStat(date).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
+          extractP50={(tsMillis) =>
+            +(model.getExecutionStat(tsMillis).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
+          }
+          extractP75={(tsMillis) =>
+            +(model.getExecutionStat(tsMillis).queueDurationUsecP75 ?? 0) * SECONDS_PER_MICROSECOND
+          }
+          extractP90={(tsMillis) =>
+            +(model.getExecutionStat(tsMillis).queueDurationUsecP90 ?? 0) * SECONDS_PER_MICROSECOND
+          }
+          extractP95={(tsMillis) =>
+            +(model.getExecutionStat(tsMillis).queueDurationUsecP95 ?? 0) * SECONDS_PER_MICROSECOND
+          }
+          extractP99={(tsMillis) =>
+            +(model.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
+          }
         />
       )
     );
