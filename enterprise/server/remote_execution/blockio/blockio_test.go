@@ -46,7 +46,7 @@ func TestCOW_Basic(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
-	s, err := blockio.ConvertFileToCOW(path, chunkSizeBytes, dataDir)
+	s, err := blockio.ConvertFileToCOW(path, "f", chunkSizeBytes, dataDir)
 	require.NoError(t, err)
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
@@ -88,7 +88,7 @@ func TestCOW_SparseData(t *testing.T) {
 	outDir := testfs.MakeTempDir(t)
 
 	// Now split the file.
-	c, err := blockio.ConvertFileToCOW(dataFilePath, chunkSize, outDir)
+	c, err := blockio.ConvertFileToCOW(dataFilePath, "data", chunkSize, outDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -100,7 +100,7 @@ func TestCOW_SparseData(t *testing.T) {
 
 	// Inspect the chunk files and ensure they have the expected physical size.
 	for i := 0; i < len(chunks); i++ {
-		chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
+		chunkPath := filepath.Join(c.DataDir(), strconv.Itoa(i*int(chunkSize)))
 		// We wrote one data block per chunk except for the one chunk that was
 		// all empty. The empty chunk should not have written a file.
 		if i == 0 {
@@ -122,7 +122,7 @@ func TestCOW_SparseData(t *testing.T) {
 
 	// Make sure we wrote a dirty chunk with the expected contents, and only a
 	// single IO block on disk (since we only wrote 1 byte).
-	dirtyPath := filepath.Join(outDir, "0.dirty")
+	dirtyPath := filepath.Join(c.DataDir(), "0.dirty")
 	b, err := os.ReadFile(dirtyPath)
 	require.NoError(t, err)
 	expectedContent := make([]byte, len(chunks[0]))
@@ -274,7 +274,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				}
 				chunkDir, err := os.MkdirTemp(tmp, "")
 				require.NoError(b, err)
-				cow, err := blockio.ConvertFileToCOW(f.Name(), chunkSize, chunkDir)
+				cow, err := blockio.ConvertFileToCOW(f.Name(), "f", chunkSize, chunkDir)
 				require.NoError(b, err)
 				err = os.Remove(f.Name())
 				require.NoError(b, err)
