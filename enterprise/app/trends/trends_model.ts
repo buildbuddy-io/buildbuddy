@@ -1,3 +1,4 @@
+import Long from "long";
 import { timestampToDate } from "../../../app/util/proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import { computeTimeKeys } from "./common";
@@ -33,7 +34,11 @@ export default class TrendsModel {
         // End date may not be defined -- default to today.
         request?.query?.updatedBefore ? timestampToDate(request.query.updatedBefore) : new Date(),
       ];
-      const computed = computeTimeKeys(this.data.interval, domain);
+      const interval =
+        this.data.interval ??
+        stats.StatsInterval.create({ type: stats.IntervalType.INTERVAL_TYPE_DAY, count: Long.fromNumber(1) });
+
+      const computed = computeTimeKeys(interval, domain);
       this.timeKeys = computed.timeKeys;
       this.ticks = computed.ticks;
     } else {
@@ -86,7 +91,7 @@ export default class TrendsModel {
   }
 
   public getInterval() {
-    return this.data.interval ?? stats.IntervalType.INTERVAL_TYPE_DAY;
+    return this.data.interval || stats.IntervalType.INTERVAL_TYPE_DAY;
   }
 
   public getCurrentSummary() {

@@ -16,6 +16,7 @@ import router from "../../../app/router/router";
 import * as proto from "../../../app/util/proto";
 import DrilldownPageComponent from "./drilldown_page";
 import { computeTimeKeys } from "./common";
+import Long from "long";
 
 const BITS_PER_BYTE = 8;
 
@@ -173,14 +174,18 @@ export default class TrendsComponent extends React.Component<Props, State> {
         request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date(),
       ];
 
+      const interval =
+        response.interval ??
+        stats.StatsInterval.create({ type: stats.IntervalType.INTERVAL_TYPE_DAY, count: Long.fromNumber(1) });
+
       this.setState({
         stats: response.trendStat,
-        ...computeTimeKeys(response.interval, domain),
+        ...computeTimeKeys(interval, domain),
         currentSummary: response.currentSummary || undefined,
         previousSummary: response.previousSummary || undefined,
         timeToStatMap,
         timeToExecutionStatMap,
-        interval: response.interval ? response.interval.type : stats.IntervalType.INTERVAL_TYPE_DAY,
+        interval: interval.type,
         enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
         loading: false,
       });
