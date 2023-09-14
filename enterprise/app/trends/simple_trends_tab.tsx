@@ -7,11 +7,12 @@ import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import PercentilesChartComponent from "./percentile_chart";
 import { CancelablePromise } from "../../../app/util/async";
-import TrendsTab from "./common";
+import { TrendsTab } from "./common";
 import TrendsSummaryCard from "./summary_card";
 import capabilities from "../../../app/capabilities/capabilities";
 import CacheChartComponent from "./cache_chart";
 import { fetchTrends, TrendsRpcCache } from "./trends_requests";
+import { stats } from "../../../proto/stats_ts_proto";
 
 interface Props {
   search: URLSearchParams;
@@ -58,7 +59,10 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
   }
 
   formatLongDate(tsMillis: number) {
-    return moment(tsMillis).format("dddd, MMMM Do YYYY");
+    if (!this.state.trendsModel || this.state.trendsModel.getInterval() == stats.IntervalType.INTERVAL_TYPE_DAY) {
+      return moment(tsMillis).format("dddd, MMMM Do YYYY");
+    }
+    return moment(tsMillis).format("dddd, MMMM Do YYYY HH:mm");
   }
 
   formatShortDate(tsMillis: number) {
@@ -91,6 +95,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           title="Builds"
           id="builds"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractValue={(tsMillis) => +(model.getStat(tsMillis).totalNumBuilds ?? 0)}
           extractSecondaryValue={(tsMillis) => {
             let stat = model.getStat(tsMillis);
@@ -114,6 +119,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             title="Build duration"
             id="duration"
             data={model.getTimeKeys()}
+            ticks={model.getTicks()}
             extractLabel={this.formatShortDate}
             formatHoverLabel={this.formatLongDate}
             extractP50={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
@@ -129,6 +135,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             title="Build duration"
             id="duration"
             data={model.getTimeKeys()}
+            ticks={model.getTicks()}
             extractValue={(tsMillis) => {
               let stat = model.getStat(tsMillis);
               return +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0) / 1000000;
@@ -149,6 +156,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <TrendsChartComponent
           title="Users with builds"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractValue={(tsMillis) => +(model.getStat(tsMillis).userCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
@@ -161,6 +169,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <TrendsChartComponent
           title="Commits with builds"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractValue={(tsMillis) => +(model.getStat(tsMillis).commitCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
@@ -173,6 +182,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <TrendsChartComponent
           title="Branches with builds"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractValue={(tsMillis) => +(model.getStat(tsMillis).branchCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
@@ -184,6 +194,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <TrendsChartComponent
           title="Hosts with builds"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractValue={(tsMillis) => +(model.getStat(tsMillis).hostCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
@@ -196,6 +207,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <TrendsChartComponent
           title="Repos with builds"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractValue={(tsMillis) => +(model.getStat(tsMillis).repoCount ?? 0)}
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
@@ -216,6 +228,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           title="Action Cache"
           id="cache"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractLabel={this.formatShortDate}
           formatHoverLabel={this.formatLongDate}
           extractHits={(tsMillis) => +(model.getStat(tsMillis).actionCacheHits ?? 0)}
@@ -225,6 +238,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <CacheChartComponent
           title="Content Addressable Store"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractLabel={this.formatShortDate}
           formatHoverLabel={this.formatLongDate}
           extractHits={(tsMillis) => +(model.getStat(tsMillis).casCacheHits ?? 0)}
@@ -234,6 +248,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <TrendsChartComponent
           title="Cache read throughput"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractValue={(tsMillis) => +(model.getStat(tsMillis).totalDownloadSizeBytes ?? 0)}
           extractSecondaryValue={(tsMillis) =>
             (+(model.getStat(tsMillis).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
@@ -255,6 +270,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <TrendsChartComponent
           title="Cache write throughput"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractValue={(tsMillis) => +(model.getStat(tsMillis).totalUploadSizeBytes ?? 0)}
           extractSecondaryValue={(tsMillis) =>
             (+(model.getStat(tsMillis).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
@@ -277,6 +293,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             title="Saved CPU Time"
             id="savings"
             data={model.getTimeKeys()}
+            ticks={model.getTicks()}
             extractValue={(tsMillis) => +(model.getStat(tsMillis).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND}
             extractLabel={this.formatShortDate}
             formatTickValue={format.durationSec}
@@ -296,6 +313,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
         <PercentilesChartComponent
           title="Remote Execution Queue Duration"
           data={model.getTimeKeys()}
+          ticks={model.getTicks()}
           extractLabel={this.formatShortDate}
           formatHoverLabel={this.formatLongDate}
           extractP50={(tsMillis) =>
