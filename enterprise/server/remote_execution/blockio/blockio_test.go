@@ -28,13 +28,6 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func TestFile(t *testing.T) {
-	path := makeEmptyTempFile(t, backingFileSizeBytes)
-	s, err := blockio.NewFile(path)
-	require.NoError(t, err)
-	testStore(t, s, path)
-}
-
 func TestMmap(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	s, err := blockio.NewMmap(path)
@@ -319,6 +312,28 @@ func testStore(t *testing.T, s blockio.Store, path string) {
 	size, err := s.SizeBytes()
 	require.NoError(t, err, "SizeBytes failed")
 	require.Equal(t, backingFileSizeBytes, size, "unexpected SizeBytes")
+
+	// Try writing out of bounds; these should all fail.
+	for _, bounds := range []struct{ Offset, Length int64 }{
+		{Offset: -1, Length: 0},
+		{Offset: -1, Length: 1},
+		{Offset: -1, Length: 2},
+		{Offset: -1, Length: size + 1},
+		{Offset: -1, Length: size + 2},
+		{Offset: size, Length: 1},
+		{Offset: size, Length: 2},
+		{Offset: size - 1, Length: 2},
+		{Offset: size - 1, Length: 3},
+	} {
+		msg := fmt.Sprintf("offset=%d length=%d, file_size=%d should fail and return n=0", bounds.Offset, bounds.Length, size)
+		b := make([]byte, bounds.Length)
+		n, err := s.ReadAt(b, bounds.Offset)
+		require.Equal(t, 0, n, "%s", msg)
+		require.Error(t, err, "%s", msg)
+		n, err = s.WriteAt(b, bounds.Offset)
+		require.Equal(t, 0, n, "%s", msg)
+		require.Error(t, err, "%s", msg)
+	}
 
 	expectedContent := make([]byte, int(size))
 	buf := make([]byte, int(size))

@@ -25,7 +25,7 @@ func TestNBDServer(t *testing.T) {
 	path := filepath.Join(tmp, "f")
 	err := os.WriteFile(path, make([]byte, fileSizeBytes), 0644)
 	require.NoError(t, err)
-	f, err := blockio.NewFile(path)
+	f, err := blockio.NewMmap(path)
 	require.NoError(t, err)
 	defer f.Close()
 	// Create a server hosting a device backed by the file

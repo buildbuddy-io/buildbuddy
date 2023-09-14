@@ -34,22 +34,6 @@ type Store interface {
 	SizeBytes() (int64, error)
 }
 
-// File implements the Store interface using standard file operations.
-type File struct{ *os.File }
-
-// NewFile returns a File store for an existing file.
-func NewFile(path string) (*File, error) {
-	f, err := os.OpenFile(path, os.O_RDWR, 0)
-	if err != nil {
-		return nil, err
-	}
-	return &File{File: f}, nil
-}
-
-func (f *File) SizeBytes() (int64, error) {
-	return fileSizeBytes(f.File)
-}
-
 // Mmap implements the Store interface using a memory-mapped file. This allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
 type Mmap struct {
@@ -125,8 +109,8 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 			return 0, err
 		}
 	}
-	if off < 0 || int(off)+len(p) > len(m.data) {
-		return 0, status.InvalidArgumentErrorf("invalid read at offset 0x%x length 0x%x", off, len(p))
+	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
+		return 0, err
 	}
 	copy(p, m.data[int(off):int(off)+len(p)])
 	return len(p), nil
@@ -138,8 +122,8 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 			return 0, err
 		}
 	}
-	if off < 0 || int(off)+len(p) > len(m.data) {
-		return 0, status.InvalidArgumentErrorf("invalid write at offset 0x%x length 0x%x", off, len(p))
+	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
+		return 0, err
 	}
 	copy(m.data[int(off):int(off)+len(p)], p)
 	return len(p), nil
@@ -346,6 +330,10 @@ func (c *COWStore) chunkStartOffset(off int64) int64 {
 }
 
 func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
+	if err := checkBounds("read", c.totalSizeBytes, p, off); err != nil {
+		return 0, err
+	}
+
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
 	for len(p) > 0 {
@@ -411,6 +399,10 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
+	if err := checkBounds("write", c.totalSizeBytes, p, off); err != nil {
+		return 0, err
+	}
+
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
 	for len(p) > 0 {
@@ -800,4 +792,12 @@ func (r *storeReader) Read(p []byte) (n int, err error) {
 // memoryAddress returns the memory address of the first byte of a slice
 func memoryAddress(s []byte) uintptr {
 	return uintptr(unsafe.Pointer(&s[0]))
+}
+
+// checkBounds checks whether a read or write operation is safe.
+func checkBounds(opName string, storeSize int64, p []byte, off int64) error {
+	if off < 0 || off+int64(len(p)) > storeSize {
+		return status.InvalidArgumentErrorf("invalid %s at offset 0x%x, length 0x%x", opName, off, len(p))
+	}
+	return nil
 }
