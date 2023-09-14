@@ -151,8 +151,8 @@ func TestAcquireAndRelease(t *testing.T) {
 	liveness := nodeliveness.New("replicaID-1", sender)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    []byte("a"),
-		Right:   []byte("z"),
+		Start:   []byte("a"),
+		End:     []byte("z"),
 		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},
@@ -186,8 +186,8 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	liveness := nodeliveness.New("replicaID-2", sender)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    keys.MinByte,
-		Right:   []byte("z"),
+		Start:   keys.MinByte,
+		End:     []byte("z"),
 		RangeId: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},
@@ -221,8 +221,8 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	liveness := nodeliveness.New("replicaID-3", sender)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    keys.MinByte,
-		Right:   []byte("z"),
+		Start:   keys.MinByte,
+		End:     []byte("z"),
 		RangeId: 3,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},
@@ -264,8 +264,8 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	liveness := nodeliveness.New("replicaID-4", sender)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    []byte("a"),
-		Right:   []byte("z"),
+		Start:   []byte("a"),
+		End:     []byte("z"),
 		RangeId: 4,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ShardId: 1, ReplicaId: 1},

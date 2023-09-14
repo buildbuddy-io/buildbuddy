@@ -61,16 +61,16 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		metrics.RaftRangeCacheEventTypeLabel: "update",
 	}).Inc()
 
-	left := rangeDescriptor.GetLeft()
-	right := rangeDescriptor.GetRight()
+	start := rangeDescriptor.GetStart()
+	end := rangeDescriptor.GetEnd()
 	newDescriptor := proto.Clone(rangeDescriptor).(*rfpb.RangeDescriptor)
 
-	r := rc.rangeMap.Get(left, right)
+	r := rc.rangeMap.Get(start, end)
 	if r == nil {
 		// If this range overlaps, we'll check it against the overlapping
 		// ranges and possibly delete them or if they are newer, then we'll
 		// ignore this update.
-		for _, overlappingRange := range rc.rangeMap.GetOverlapping(left, right) {
+		for _, overlappingRange := range rc.rangeMap.GetOverlapping(start, end) {
 			lr, ok := overlappingRange.Val.(*lockingRangeDescriptor)
 			if !ok {
 				continue
@@ -84,12 +84,12 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 		// If we got here, all overlapping ranges are older, so we're gonna
 		// delete them and replace with the new one.
-		for _, overlappingRange := range rc.rangeMap.GetOverlapping(left, right) {
-			log.Debugf("Removing (outdated) overlapping range: [%q, %q)", overlappingRange.Left, overlappingRange.Right)
-			rc.rangeMap.Remove(overlappingRange.Left, overlappingRange.Right)
+		for _, overlappingRange := range rc.rangeMap.GetOverlapping(start, end) {
+			log.Debugf("Removing (outdated) overlapping range: [%q, %q)", overlappingRange.Start, overlappingRange.End)
+			rc.rangeMap.Remove(overlappingRange.Start, overlappingRange.End)
 		}
-		log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), left, right)
-		_, err := rc.rangeMap.Add(left, right, newLockingRangeDescriptor(newDescriptor))
+		log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), start, end)
+		_, err := rc.rangeMap.Add(start, end, newLockingRangeDescriptor(newDescriptor))
 		return err
 	} else {
 		lr, ok := r.Val.(*lockingRangeDescriptor)
@@ -99,7 +99,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		v := lr.Get()
 		if newDescriptor.GetGeneration() > v.GetGeneration() {
 			lr.Update(newDescriptor)
-			log.Debugf("Updated rangelease generation: [%q, %q) (%d -> %d)", left, right, v.GetGeneration(), newDescriptor.GetGeneration())
+			log.Debugf("Updated rangelease generation: [%q, %q) (%d -> %d)", start, end, v.GetGeneration(), newDescriptor.GetGeneration())
 		}
 	}
 	return nil
@@ -135,7 +135,7 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
 
-	r := rc.rangeMap.Get(rng.GetLeft(), rng.GetRight())
+	r := rc.rangeMap.Get(rng.GetStart(), rng.GetEnd())
 	if r == nil {
 		log.Errorf("SetPreferredReplica called but range %+v not in cache", rng)
 		return

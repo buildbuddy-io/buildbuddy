@@ -31,7 +31,7 @@ const (
 )
 
 func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
-	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
+	r := rangemap.Range{Start: rd.Start, End: rd.End}
 	return r.Contains(keys.MinByte) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
 }
 
@@ -311,7 +311,7 @@ func (l *Lease) Valid() bool {
 
 func (l *Lease) string(rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) string {
 	// Don't lock here (to avoid recursive locking).
-	leaseName := fmt.Sprintf("RangeLease(%d) [%q, %q)", rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
+	leaseName := fmt.Sprintf("RangeLease(%d) [%q, %q)", rd.GetRangeId(), rd.GetStart(), rd.GetEnd())
 	err := l.verifyLease(lr)
 	if err != nil {
 		return fmt.Sprintf("%s invalid (%s)", leaseName, err)

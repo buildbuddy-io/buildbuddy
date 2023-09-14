@@ -70,8 +70,8 @@ func (s *Sender) connectionForReplicaDescriptor(ctx context.Context, rd *rfpb.Re
 
 func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, key []byte) (*rfpb.RangeDescriptor, error) {
 	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     keys.RangeMetaKey(key),
-		Right:    constants.SystemPrefix,
+		Start:    keys.RangeMetaKey(key),
+		End:      constants.SystemPrefix,
 		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
 	}).ToProto()
 	if err != nil {

@@ -173,8 +173,8 @@ message IncrementResponse {
 }
 
 message ScanRequest {
-  bytes left = 1;
-  bytes right = 2;
+  bytes start = 1;
+  bytes end = 2;
 
   enum ScanType {
     UNDEFINED_SCAN_TYPE = 0;
@@ -211,8 +211,8 @@ message SimpleSplitRequest {
 }
 
 message SimpleSplitResponse {
-  RangeDescriptor new_left = 1;
-  RangeDescriptor new_right = 2;
+  RangeDescriptor new_start = 1;
+  RangeDescriptor new_end = 2;
 }
 
 // Raft CMD API, used to encode raft commands that are replicated via raft and
@@ -404,8 +404,8 @@ message RangeSet {
 }
 
 message RangeDescriptor {
-  bytes left = 1;
-  bytes right = 2;
+  bytes start = 1;
+  bytes end = 2;
 
   uint64 range_id = 3;
   repeated ReplicaDescriptor replicas = 4;
@@ -483,8 +483,8 @@ message SplitRangeRequest {
 }
 
 message SplitRangeResponse {
-  RangeDescriptor left = 1;
-  RangeDescriptor right = 2;
+  RangeDescriptor start = 1;
+  RangeDescriptor end = 2;
 }
 
 message ListRangeRequest {

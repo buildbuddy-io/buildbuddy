@@ -168,8 +168,8 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 
 func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
 	writeLocalRangeDescriptor(t, em, r, &rfpb.RangeDescriptor{
-		Left:       keys.Key{constants.UnsplittableMaxByte},
-		Right:      keys.MaxByte,
+		Start:      keys.Key{constants.UnsplittableMaxByte},
+		End:        keys.MaxByte,
 		RangeId:    1,
 		Generation: 1,
 	})
@@ -401,8 +401,8 @@ func TestReplicaScan(t *testing.T) {
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
 	writeLocalRangeDescriptor(t, em, repl, &rfpb.RangeDescriptor{
-		Left:       keys.Key{constants.UnsplittableMaxByte},
-		Right:      keys.MaxByte,
+		Start:      keys.Key{constants.UnsplittableMaxByte},
+		End:        keys.MaxByte,
 		RangeId:    1,
 		Generation: 1,
 	})
@@ -435,8 +435,8 @@ func TestReplicaScan(t *testing.T) {
 	// Ensure that scan reads just the ranges we want.
 	// Scan b-c.
 	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     []byte("b"),
-		Right:    []byte("c"),
+		Start:    []byte("b"),
+		End:      []byte("c"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	require.NoError(t, err)
@@ -450,8 +450,8 @@ func TestReplicaScan(t *testing.T) {
 
 	// Scan c-d.
 	buf, err = rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     []byte("c"),
-		Right:    []byte("d"),
+		Start:    []byte("c"),
+		End:      []byte("d"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	require.NoError(t, err)
@@ -465,8 +465,8 @@ func TestReplicaScan(t *testing.T) {
 
 	// Scan d-*.
 	buf, err = rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     []byte("d"),
-		Right:    []byte("z"),
+		Start:    []byte("d"),
+		End:      []byte("z"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	require.NoError(t, err)
@@ -480,8 +480,8 @@ func TestReplicaScan(t *testing.T) {
 
 	// Scan the full range.
 	buf, err = rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     []byte("a"),
-		Right:    []byte("z"),
+		Start:    []byte("a"),
+		End:      []byte("z"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	require.NoError(t, err)
