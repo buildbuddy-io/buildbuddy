@@ -53,6 +53,11 @@ class Router {
 
   private handlePathChanged(pathChangeHandler: VoidFunction) {
     const path = window.location.pathname;
+    // Disallowed access to the selected group means one of two things:
+    // 1) This is a customer subdomain and the user does not have access to
+    //    the group or the subdomain doesn't exist.
+    // 2) User is a member of the group but is being blocked by group
+    //    IP rules.
     if (
       this.user &&
       this.user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
@@ -400,26 +405,6 @@ class Router {
     }
 
     const path = window.location.pathname;
-
-    // Disallowed access to the selected group means one of two things:
-    // 1) This is a customer subdomain and the user does not have access to
-    //    the group or the subdomain doesn't exist.
-    // 2) User is a member of the group but is being blocked by group
-    //    IP rules.
-    if (
-      user &&
-      user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
-      // A user may have access to an invocation w/o having access to group.
-      !path.startsWith(Path.invocationPath) &&
-      !path.startsWith(Path.joinOrgPath)
-    ) {
-      const params = new URLSearchParams({
-        source_url: window.location.href,
-        denied_reason: user.selectedGroupAccess.toString(),
-      });
-      return Path.orgAccessDeniedPath + "?" + params.toString();
-    }
-
     if (path === Path.orgAccessDeniedPath) {
       return Path.home;
     }
