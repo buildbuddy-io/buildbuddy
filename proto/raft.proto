@@ -358,7 +358,7 @@ message RegistryPushRequest {
 // startup, the first node in the sorted "join" set will query other nodes
 // until it finds all other members of the join set. If they have previous data
 // then they do not respond to the bringup query. If all nodes respond, then
-// the first node sends them a StartCluster request and provisions the initial
+// the first node sends them a StartShard request and provisions the initial
 // cluster.
 message BringupResponse {
   string nhid = 1;
@@ -479,7 +479,7 @@ message SyncReadResponse {
   BatchCmdResponse batch = 1;
 }
 
-message StartClusterRequest {
+message StartShardRequest {
   uint64 shard_id = 1;
   uint64 replica_id = 2;
   map<uint64, string> initial_member = 3;
@@ -494,7 +494,7 @@ message StartClusterRequest {
   uint64 last_applied_index = 6;
 }
 
-message StartClusterResponse {
+message StartShardResponse {
   BatchCmdResponse batch = 1;
 }
 

@@ -8,8 +8,8 @@ option go_package = "raft_service";
 
 service Api {
   // Raft Meta-API.
-  rpc StartCluster(raft.StartClusterRequest)
-      returns (raft.StartClusterResponse);
+  rpc StartShard(raft.StartShardRequest)
+      returns (raft.StartShardResponse);
   rpc RemoveData(raft.RemoveDataRequest) returns (raft.RemoveDataResponse);
   rpc AddClusterNode(raft.AddClusterNodeRequest)
       returns (raft.AddClusterNodeResponse);

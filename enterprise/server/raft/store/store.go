@@ -1117,7 +1117,7 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 	return nil
 }
 
-func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
+func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
 	rc := raftConfig.GetRaftConfig(req.GetShardId(), req.GetReplicaId())
 
 	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
@@ -1134,7 +1134,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		}
 	}
 
-	rsp := &rfpb.StartClusterResponse{}
+	rsp := &rfpb.StartShardResponse{}
 	if req.GetBatch() == nil || len(req.GetInitialMember()) == 0 {
 		return rsp, nil
 	}
@@ -1464,7 +1464,7 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 	}
 }
 
-func (s *Store) GetClusterMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
+func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
 	var membership *dragonboat.Membership
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
@@ -1666,7 +1666,7 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 	if err != nil {
 		return nil, err
 	}
-	_, err = c.StartCluster(ctx, &rfpb.StartClusterRequest{
+	_, err = c.StartShard(ctx, &rfpb.StartShardRequest{
 		ShardId:          shardID,
 		ReplicaId:        newReplicaID,
 		Join:             true,

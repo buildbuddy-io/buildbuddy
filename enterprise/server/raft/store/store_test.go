@@ -175,14 +175,14 @@ func TestAddGetRemoveRange(t *testing.T) {
 	require.Nil(t, gotRd)
 }
 
-func TestStartCluster(t *testing.T) {
+func TestStartShard(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
 	s3, nh3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
@@ -190,21 +190,21 @@ func TestStartCluster(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestGetClusterMembership(t *testing.T) {
+func TestGetMembership(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
 	s3, nh3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
 	})
 	require.NoError(t, err)
 
-	replicas, err := s1.GetClusterMembership(ctx, 1)
+	replicas, err := s1.GetMembership(ctx, 1)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 }
@@ -217,7 +217,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	s4, nh4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
@@ -235,7 +235,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicas, err := s1.GetClusterMembership(ctx, 1)
+	replicas, err := s1.GetMembership(ctx, 1)
 	require.NoError(t, err)
 	require.Equal(t, 4, len(replicas))
 }
@@ -249,7 +249,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	s4, nh4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
@@ -264,7 +264,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicas, err := s1.GetClusterMembership(ctx, 1)
+	replicas, err := s1.GetMembership(ctx, 1)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 }
@@ -364,7 +364,7 @@ func TestSplitMetaRange(t *testing.T) {
 	s3, nh3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
@@ -406,7 +406,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*TestingStore{s1, s2, s3}
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
@@ -428,7 +428,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Expect that a new cluster was added with shardID = 4
 	// having 3 replicas.
-	replicas, err := s1.GetClusterMembership(ctx, 4)
+	replicas, err := s1.GetMembership(ctx, 4)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 
@@ -451,7 +451,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Expect that a new cluster was added with shardID = 4
 	// having 3 replicas.
-	replicas, err = s1.GetClusterMembership(ctx, 5)
+	replicas, err = s1.GetMembership(ctx, 5)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 
@@ -468,7 +468,7 @@ func TestListCluster(t *testing.T) {
 	s3, nh3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
@@ -493,7 +493,7 @@ func TestPostFactoSplit(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*TestingStore{s1, s2, s3, s4}
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
@@ -514,7 +514,7 @@ func TestPostFactoSplit(t *testing.T) {
 	require.NoError(t, err)
 
 	// Expect that a new cluster was added with 3 replicas.
-	replicas, err := s1.GetClusterMembership(ctx, 4)
+	replicas, err := s1.GetMembership(ctx, 4)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 
@@ -588,7 +588,7 @@ func TestManySplits(t *testing.T) {
 	ctx := context.Background()
 	stores := []*TestingStore{s1, s2, s3}
 
-	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
 		nh3.ID(): s3.GRPCAddress,
@@ -630,7 +630,7 @@ func TestManySplits(t *testing.T) {
 
 			// Expect that a new cluster was added with the new
 			// shardID and 3 replicas.
-			replicas, err := s.GetClusterMembership(ctx, shardID)
+			replicas, err := s.GetMembership(ctx, shardID)
 			require.NoError(t, err)
 			require.Equal(t, 3, len(replicas))
 		}
