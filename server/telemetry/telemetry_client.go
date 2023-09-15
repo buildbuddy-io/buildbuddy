@@ -68,7 +68,7 @@ func (t *TelemetryClient) Start() {
 				t.logTelemetryData()
 			case <-t.quit:
 				log.Debugf("Telemetry task %d exiting.", 0)
-				break
+				return
 			}
 		}
 	}()
