@@ -275,17 +275,16 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 
 		buildRoot: p.buildRoot,
 		options: &PodmanOptions{
-			ForceRoot:            props.DockerForceRoot,
-			Init:                 props.DockerInit,
-			User:                 props.DockerUser,
-			Network:              props.DockerNetwork,
-			DefaultNetworkMode:   networkMode,
-			CapAdd:               capAdd,
-			Devices:              devices,
-			Volumes:              volumes,
-			Runtime:              *podmanRuntime,
-			EnableStats:          *podmanEnableStats,
-			EnableImageStreaming: props.EnablePodmanImageStreaming,
+			ForceRoot:          props.DockerForceRoot,
+			Init:               props.DockerInit,
+			User:               props.DockerUser,
+			Network:            props.DockerNetwork,
+			DefaultNetworkMode: networkMode,
+			CapAdd:             capAdd,
+			Devices:            devices,
+			Volumes:            volumes,
+			Runtime:            *podmanRuntime,
+			EnableStats:        *podmanEnableStats,
 		},
 	}, nil
 }
@@ -302,8 +301,7 @@ type PodmanOptions struct {
 	Runtime            string
 	// EnableStats determines whether to enable the stats API. This also enables
 	// resource monitoring while tasks are in progress.
-	EnableStats          bool
-	EnableImageStreaming bool
+	EnableStats bool
 }
 
 // podmanCommandContainer containerizes a single command's execution using a Podman container.

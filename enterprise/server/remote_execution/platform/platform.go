@@ -83,7 +83,6 @@ const (
 	extraArgsPropertyName                = "extra-args"
 	EnvOverridesPropertyName             = "env-overrides"
 	EnvOverridesBase64PropertyName       = "env-overrides-base64"
-	podmanImageStreamingPropertyName     = "podman-enable-image-streaming"
 	IncludeSecretsPropertyName           = "include-secrets"
 
 	OperatingSystemPropertyName = "OSFamily"
@@ -123,25 +122,24 @@ const (
 
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
-	OS                         string
-	Arch                       string
-	Pool                       string
-	EstimatedComputeUnits      int64
-	EstimatedMilliCPU          int64
-	EstimatedMemoryBytes       int64
-	EstimatedFreeDiskBytes     int64
-	ContainerImage             string
-	ContainerRegistryUsername  string
-	ContainerRegistryPassword  string
-	WorkloadIsolationType      string
-	DockerForceRoot            bool
-	DockerInit                 bool
-	DockerUser                 string
-	DockerNetwork              string
-	RecycleRunner              bool
-	EnableVFS                  bool
-	EnablePodmanImageStreaming bool
-	IncludeSecrets             bool
+	OS                        string
+	Arch                      string
+	Pool                      string
+	EstimatedComputeUnits     int64
+	EstimatedMilliCPU         int64
+	EstimatedMemoryBytes      int64
+	EstimatedFreeDiskBytes    int64
+	ContainerImage            string
+	ContainerRegistryUsername string
+	ContainerRegistryPassword string
+	WorkloadIsolationType     string
+	DockerForceRoot           bool
+	DockerInit                bool
+	DockerUser                string
+	DockerNetwork             string
+	RecycleRunner             bool
+	EnableVFS                 bool
+	IncludeSecrets            bool
 
 	// InitDockerd specifies whether to initialize dockerd within the execution
 	// environment if it is available in the execution image, allowing Docker
@@ -237,40 +235,39 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	}
 
 	return &Properties{
-		OS:                         strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
-		Arch:                       strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
-		Pool:                       strings.ToLower(pool),
-		EstimatedComputeUnits:      int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
-		EstimatedMemoryBytes:       iecBytesProp(m, EstimatedMemoryPropertyName, 0),
-		EstimatedMilliCPU:          milliCPUProp(m, EstimatedCPUPropertyName, 0),
-		EstimatedFreeDiskBytes:     iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
-		ContainerImage:             stringProp(m, containerImagePropertyName, ""),
-		ContainerRegistryUsername:  stringProp(m, containerRegistryUsernamePropertyName, ""),
-		ContainerRegistryPassword:  stringProp(m, containerRegistryPasswordPropertyName, ""),
-		WorkloadIsolationType:      stringProp(m, workloadIsolationPropertyName, ""),
-		InitDockerd:                boolProp(m, initDockerdPropertyName, false),
-		EnableDockerdTCP:           boolProp(m, enableDockerdTCPPropertyName, false),
-		DockerForceRoot:            boolProp(m, dockerRunAsRootPropertyName, false),
-		DockerInit:                 boolProp(m, DockerInitPropertyName, false),
-		DockerUser:                 stringProp(m, DockerUserPropertyName, ""),
-		DockerNetwork:              stringProp(m, dockerNetworkPropertyName, ""),
-		RecycleRunner:              boolProp(m, RecycleRunnerPropertyName, false),
-		EnableVFS:                  vfsEnabled,
-		EnablePodmanImageStreaming: boolProp(m, podmanImageStreamingPropertyName, false),
-		IncludeSecrets:             boolProp(m, IncludeSecretsPropertyName, false),
-		PreserveWorkspace:          boolProp(m, preserveWorkspacePropertyName, false),
-		NonrootWorkspace:           boolProp(m, nonrootWorkspacePropertyName, false),
-		CleanWorkspaceInputs:       stringProp(m, cleanWorkspaceInputsPropertyName, ""),
-		PersistentWorker:           boolProp(m, persistentWorkerPropertyName, false),
-		PersistentWorkerKey:        stringProp(m, persistentWorkerKeyPropertyName, ""),
-		PersistentWorkerProtocol:   stringProp(m, persistentWorkerProtocolPropertyName, ""),
-		WorkflowID:                 stringProp(m, WorkflowIDPropertyName, ""),
-		HostedBazelAffinityKey:     stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
-		UseSelfHostedExecutors:     boolProp(m, useSelfHostedExecutorsPropertyName, false),
-		DisableMeasuredTaskSize:    boolProp(m, disableMeasuredTaskSizePropertyName, false),
-		DisablePredictedTaskSize:   boolProp(m, disablePredictedTaskSizePropertyName, false),
-		ExtraArgs:                  stringListProp(m, extraArgsPropertyName),
-		EnvOverrides:               envOverrides,
+		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
+		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
+		Pool:                      strings.ToLower(pool),
+		EstimatedComputeUnits:     int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
+		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
+		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
+		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
+		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
+		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
+		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
+		InitDockerd:               boolProp(m, initDockerdPropertyName, false),
+		EnableDockerdTCP:          boolProp(m, enableDockerdTCPPropertyName, false),
+		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
+		DockerInit:                boolProp(m, DockerInitPropertyName, false),
+		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
+		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
+		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
+		EnableVFS:                 vfsEnabled,
+		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
+		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
+		NonrootWorkspace:          boolProp(m, nonrootWorkspacePropertyName, false),
+		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
+		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
+		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
+		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
+		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
+		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
+		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
+		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
+		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
+		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
+		EnvOverrides:              envOverrides,
 	}, nil
 }
 
