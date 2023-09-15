@@ -155,14 +155,6 @@ func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*net.I
 }
 
 func (s *Service) checkRules(ctx context.Context, groupID string) error {
-	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
-	if err != nil {
-		return err
-	}
-	if !g.EnforceIPRules {
-		return nil
-	}
-
 	rawClientIP := clientip.Get(ctx)
 	clientIP := net.ParseIP(rawClientIP)
 	// Client IP is not parsable.
@@ -189,13 +181,25 @@ func (s *Service) checkRules(ctx context.Context, groupID string) error {
 	return status.PermissionDeniedErrorf("Client %q is not allowed by Organization IP rules", rawClientIP)
 }
 
-func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
+func (s *Service) authorize(ctx context.Context, groupID string) error {
 	start := time.Now()
 	err := s.checkRules(ctx, groupID)
 	metrics.IPRulesCheckLatencyUsec.With(
 		prometheus.Labels{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)},
 	).Observe(float64(time.Since(start).Microseconds()))
 	return err
+}
+
+func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	if !g.EnforceIPRules {
+		return nil
+	}
+
+	return s.authorize(ctx, groupID)
 }
 
 func (s *Service) Authorize(ctx context.Context) error {
@@ -216,7 +220,7 @@ func (s *Service) Authorize(ctx context.Context) error {
 		return nil
 	}
 
-	return s.AuthorizeGroup(ctx, u.GetGroupID())
+	return s.authorize(ctx, u.GetGroupID())
 }
 
 func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
