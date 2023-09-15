@@ -1897,21 +1897,19 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			}
 		}
 
-		if err := cdcw.Close(); err != nil {
+		if err := cdcw.chunker.Close(); err != nil {
 			return err
 		}
 		if err := cdcw.eg.Wait(); err != nil {
 			return err
 		}
 		cdcw.mu.Lock()
+		defer cdcw.mu.Unlock()
 		isSingleChunk := cdcw.numChunks == 1
-		cdcw.mu.Unlock()
 
 		if isSingleChunk {
-			cdcw.mu.Lock()
 			firstChunk := cdcw.firstChunk
 			cdcw.fileType = rfpb.FileMetadata_COMPLETE_FILE_TYPE
-			cdcw.mu.Unlock()
 			// When there is only one single chunk, we want to store the original
 			// file record with the original key instead of computed digest from
 			// the chunkData. This is because the chunkData can be compressed or
@@ -1944,13 +1942,11 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 
 func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 	cdcw.mu.Lock()
+	defer cdcw.mu.Unlock()
 	cdcw.numChunks++
 	numChunks := cdcw.numChunks
-	cdcw.mu.Unlock()
 
 	if numChunks == 1 {
-		cdcw.mu.Lock()
-		defer cdcw.mu.Unlock()
 		// We will wait to write the first chunk until either cdcw.Commit() is
 		// called or the second chunk is encountered.
 		// In the former case, there is only one chunk, we don't want to write a
@@ -1961,12 +1957,10 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 	}
 
 	if numChunks == 2 {
-		cdcw.mu.Lock()
 		cdcw.fileType = rfpb.FileMetadata_CHUNK_FILE_TYPE
 		firstChunk := cdcw.firstChunk
 		// We no longer need the first chunk anymore.
 		cdcw.firstChunk = nil
-		cdcw.mu.Unlock()
 		if err := cdcw.writeChunkWhenMultiple(firstChunk); err != nil {
 			return err
 		}
@@ -1983,9 +1977,7 @@ func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.
 	p := cdcw.pc
 	inlineWriter := p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
 
-	cdcw.mu.Lock()
 	fileType := cdcw.fileType
-	cdcw.mu.Unlock()
 
 	wcm, err := p.newWrappedWriter(ctx, inlineWriter, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed, fileType)
 	if err != nil {
@@ -2036,9 +2028,7 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	// We use cdcw.writtenChunks for the file-level metadata, and this needs to
 	// be in order. Otherwise, when we read the file, the chunks will be
 	// read out of order.
-	cdcw.mu.Lock()
 	cdcw.writtenChunks = append(cdcw.writtenChunks, rn)
-	cdcw.mu.Unlock()
 
 	cdcw.eg.Go(func() error {
 		return cdcw.writeRawChunk(fileRecord, key, chunkData)
@@ -2056,9 +2046,6 @@ func (cdcw *cdcWriter) Close() error {
 }
 
 func (cdcw *cdcWriter) Metadata() *rfpb.StorageMetadata {
-	cdcw.mu.Lock()
-	defer cdcw.mu.Unlock()
-
 	return &rfpb.StorageMetadata{
 		ChunkedMetadata: &rfpb.StorageMetadata_ChunkedMetadata{
 			Resource: cdcw.writtenChunks,
