@@ -34,6 +34,7 @@ def go_web_test_suite(
         visibility = None,
         web_test_data = None,
         wrapped_test_tags = DEFAULT_WRAPPED_TEST_TAGS,
+        exec_properties = {},
         **kwargs):
     # TODO(bduffany): Generate a test to automatically enforce `shard_count == number of tests`
     if not shard_count:
@@ -50,9 +51,10 @@ def go_web_test_suite(
     size = size or "large"
     wrapped_test_name = name + "_wrapped_test"
 
-    exec_properties = {
+    test_exec_properties = {
         "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04-webtest@sha256:754fee72cee06fc72215b5d7edf31ef45116a4468cf5a5ccd4301acd83cba531",
     }
+    test_exec_properties.update(exec_properties)
 
     go_test(
         name = wrapped_test_name,
@@ -64,7 +66,7 @@ def go_web_test_suite(
         tags = wrapped_test_tags,
         timeout = timeout,
         visibility = ["//visibility:private"],
-        exec_properties = exec_properties,
+        exec_properties = test_exec_properties,
         **kwargs
     )
 
@@ -93,5 +95,5 @@ def go_web_test_suite(
         # browser-overrides map, it can be wrapped in a map like so:
         #
         # {"default": { "your_map_key": "your_map_value" }}.
-        exec_properties = {"default": exec_properties},
+        exec_properties = {"default": test_exec_properties},
     )
