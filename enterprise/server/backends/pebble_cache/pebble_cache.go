@@ -1897,6 +1897,12 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		}
 
 		if err := cdcw.chunker.Close(); err != nil {
+			// When there is an error when we close the chunker for example
+			// context cancelled, we want to wait the existing pebble cache
+			// writes to finish.
+			if egErr := cdcw.eg.Wait(); egErr != nil {
+				return egErr
+			}
 			return err
 		}
 		if err := cdcw.eg.Wait(); err != nil {
