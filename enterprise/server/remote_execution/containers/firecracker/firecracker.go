@@ -939,7 +939,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 // cheap (just updates size metadata). Also note that this does not update the
 // ext4 superblock to be aware of the increased block device size - instead, the
 // guest does that by issuing an EXT4_IOC_RESIZE_FS syscall.
-func (c *FirecrackerContainer) resizeRootfs(ctx context.Context, cf *snaploader.ChunkedFile) error {
+func (c *FirecrackerContainer) resizeRootfs(ctx context.Context, cf *blockio.COWStore) error {
 	curSize, err := cf.SizeBytes()
 	if err != nil {
 		return status.WrapError(err, "get container image size")
