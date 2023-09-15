@@ -1,15 +1,18 @@
 package nbdclient
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/Merovius/nbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -27,7 +30,188 @@ const (
 
 	// How often to poll for an NBD to become ready.
 	readyCheckPollInterval = 500 * time.Microsecond
+
+	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
+	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
+	EXT4_IOC_RESIZE_FS = 0x40086610
 )
+
+// nbdclient ProcessHandle commands. The parent sends these to the child, and
+// the child responds with "OK".
+//
+// We don't use gRPC for this communication because we want the NBD client
+// process to be as simple as possible in order to maximize reliability and
+// prevent stuck NBD requests.
+const (
+	initCmd    = "INIT"
+	mountCmd   = "MOUNT"
+	unmountCmd = "UNMOUNT"
+)
+
+// Process represents an nbdclient process.
+//
+// nbd clients are run in dedicated processes to prevent interference from other
+// goroutines running in the same binary. For example, if all goroutines enter a
+// syscall which depends on an NBD read (such as a read() or execve()), then it
+// will lead to deadlock, because the nbd client goroutine would not be able to
+// run.
+type Process struct {
+	name   string
+	input  *os.File
+	output *bufio.Scanner
+	err    error
+}
+
+// Start starts an nbdclient as a background process. The returned object can be
+// used to communicate with the process.
+func Start(name, mountPath string) (*Process, error) {
+	inR, inW, err := os.Pipe()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create pipe: %s", err)
+	}
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create pipe: %s", err)
+	}
+	cmd := exec.Command(os.Args[0], append(os.Args[1:], "--nbdclient")...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.ExtraFiles = []*os.File{inR, outW}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	// Close input reader and output writer handles; these are only used by the
+	// child.
+	inR.Close()
+	outW.Close()
+
+	scanner := bufio.NewScanner(outR)
+	h := &Process{name: name, input: inW, output: scanner}
+	go func() {
+		err := cmd.Wait()
+		// Any exit here is considered an error since the client process should
+		// run indefinitely.
+		h.err = status.InternalErrorf("child exited: %s", err)
+		log.Error(h.err.Error())
+		inW.Close()
+		outR.Close()
+	}()
+
+	if err := h.Init(name, mountPath); err != nil {
+		return nil, err
+	}
+
+	return h, nil
+}
+
+// Init initializes the ClientDevice in the client process.
+func (h *Process) Init(name, mountPath string) error {
+	return h.send(initCmd, name, mountPath)
+}
+
+// Mount mounts the ClientDevice in the client process.
+func (h *Process) Mount() error {
+	return h.send(mountCmd)
+}
+
+// Unmount unmounts the ClientDevice in the client process.
+func (h *Process) Unmount() error {
+	return h.send(unmountCmd)
+}
+
+func (h *Process) send(cmd string, args ...string) error {
+	msg := strings.Join(append([]string{cmd}, args...), " ")
+	log.Infof("nbdclient %s: sending control message %q", h.name, msg)
+	if _, err := h.input.WriteString(msg + "\n"); err != nil {
+		return err
+	}
+	if !h.output.Scan() {
+		return status.WrapError(h.err, "recv")
+	}
+	if reply := h.output.Text(); reply != "OK" {
+		return status.InternalErrorf("unexpected reply: %s", reply)
+	}
+	log.Infof("nbdclient %s: OK", h.name)
+	return nil
+}
+
+// Run is the background process implementation for the process spawned by
+// StartProcess. The init binary checks the "--nbdclient" flag and passes
+// control to this function if present.
+func Run(ctx context.Context) error {
+	ctx = log.EnrichContext(ctx, "pid", fmt.Sprint(os.Getpid()))
+	log.CtxInfof(ctx, "nbdclient child process started")
+	// fds 3 and 4 are the files passed to us via ExtraFiles.
+	in := os.NewFile(3, "in")
+	out := os.NewFile(4, "out")
+	scanner := bufio.NewScanner(in)
+
+	var device *ClientDevice
+	var mountPath string
+
+	for scanner.Scan() {
+		message := scanner.Text()
+		parts := strings.Fields(message)
+		cmd := parts[0]
+		args := parts[1:]
+		switch cmd {
+		case initCmd:
+			name := args[0]
+			mountPath = args[1]
+			ctx = log.EnrichContext(ctx, "device", name)
+			d, err := NewClientDevice(ctx, name)
+			if err != nil {
+				return err
+			}
+			device = d
+		case mountCmd:
+			if err := os.MkdirAll(mountPath, 0755); err != nil {
+				return err
+			}
+			if err := device.Mount(mountPath); err != nil {
+				return err
+			}
+			// After mounting, resize the FS to fill the available space in the
+			// block device.
+			if err := resizeExt4FS(mountPath, device.Size()); err != nil {
+				return err
+			}
+		case unmountCmd:
+			if err := device.Unmount(); err != nil {
+				return err
+			}
+		}
+		if _, err := out.WriteString("OK\n"); err != nil {
+			return status.InternalErrorf("failed to write control message reply: %s", err)
+		}
+	}
+	return scanner.Err()
+}
+
+// Resizes the ext4 filesystem mounted at the given path to the given size.
+func resizeExt4FS(mountPath string, size int64) error {
+	s := &syscall.Statfs_t{}
+	if err := syscall.Statfs(mountPath, s); err != nil {
+		return status.InternalErrorf("statfs %s: %s", mountPath, err)
+	}
+	blocks := size / s.Bsize
+	fd, err := syscall.Open(mountPath, syscall.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		uintptr(EXT4_IOC_RESIZE_FS),
+		uintptr(unsafe.Pointer(&blocks)),
+	)
+	if errno != 0 {
+		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
+	}
+	return nil
+}
 
 type device struct {
 	// Index is the nbd index assigned to the device.
