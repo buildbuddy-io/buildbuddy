@@ -158,10 +158,13 @@ export class AuthService {
   }
 
   userFromResponse(response: user.GetUserResponse) {
+    const selectedGroupId = response.selectedGroup?.groupId ? response.selectedGroup.groupId : response.selectedGroupId;
+
     return new User({
       displayUser: response.displayUser as user_id.DisplayUser,
       groups: response.userGroup as grp.Group[],
-      selectedGroup: response.userGroup.find((group) => group.id === response.selectedGroupId) as grp.Group,
+      selectedGroup: response.userGroup.find((group) => group.id === selectedGroupId) as grp.Group,
+      selectedGroupAccess: response.selectedGroup?.access,
       githubLinked: response.githubLinked,
       allowedRpcs: new Set(
         response.allowedRpc.map(
@@ -181,7 +184,7 @@ export class AuthService {
     this.updateRequestContext();
     // Ensure that the user we are about to emit will see a route they are
     // authorized to view.
-    router.rerouteIfNecessary(user);
+    router.setUser(user);
     this.userStream.next(user);
   }
 
