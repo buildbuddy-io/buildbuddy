@@ -66,6 +66,15 @@ func NewQuery(baseQuery string) *Query {
 	}
 }
 
+// For those who simply can't help but use args in SELECT clauses
+func NewQueryWithArgs(baseQuery string, baseArgs []interface{}) *Query {
+	return &Query{
+		baseQuery:    baseQuery,
+		whereClauses: make([]string, 0),
+		arguments:    baseArgs,
+	}
+}
+
 func (q *Query) AddWhereClause(clause string, args ...interface{}) *Query {
 	clause = pad(clause)
 	q.whereClauses = append(q.whereClauses, clause)

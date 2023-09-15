@@ -39,7 +39,7 @@ var (
 	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", true, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
-	finerDrilldownTimeBuckets      = flag.Bool("app.finer_drilldown_time_buckets", false, "If enabled, split drilldowns into smaller time buckets when the user has a smaller date range selected.")
+	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", false, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
 )
 
 type InvocationStatService struct {
@@ -81,10 +81,140 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 	}
 }
 
-func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) string {
-	q := ""
+type StatInterval int
+
+const (
+	StatInterval5Minutes StatInterval = iota
+	StatInterval15Minutes
+	StatInterval30Minutes
+	StatInterval1Hour
+	StatInterval1Day
+)
+
+func (s StatInterval) Duration() time.Duration {
+	switch s {
+	case StatInterval5Minutes:
+		return 5 * time.Minute
+	case StatInterval15Minutes:
+		return 15 * time.Minute
+	case StatInterval30Minutes:
+		return 30 * time.Minute
+	case StatInterval1Hour:
+		return 1 * time.Hour
+	case StatInterval1Day:
+		return 24 * time.Hour
+	}
+	return 24 * time.Hour
+}
+
+func (s StatInterval) IntervalProto() *stpb.StatsInterval {
+	switch s {
+	case StatInterval5Minutes:
+		return &stpb.StatsInterval{
+			Type:  stpb.IntervalType_INTERVAL_TYPE_MINUTE,
+			Count: 5,
+		}
+	case StatInterval15Minutes:
+		return &stpb.StatsInterval{
+			Type:  stpb.IntervalType_INTERVAL_TYPE_MINUTE,
+			Count: 15,
+		}
+	case StatInterval30Minutes:
+		return &stpb.StatsInterval{
+			Type:  stpb.IntervalType_INTERVAL_TYPE_MINUTE,
+			Count: 30,
+		}
+	case StatInterval1Hour:
+		return &stpb.StatsInterval{
+			Type:  stpb.IntervalType_INTERVAL_TYPE_HOUR,
+			Count: 1,
+		}
+	case StatInterval1Day:
+		return &stpb.StatsInterval{
+			Type:  stpb.IntervalType_INTERVAL_TYPE_DAY,
+			Count: 1,
+		}
+	}
+	return &stpb.StatsInterval{
+		Type:  stpb.IntervalType_INTERVAL_TYPE_DAY,
+		Count: 1,
+	}
+}
+
+func (s StatInterval) ClickhouseInterval() string {
+	switch s {
+	case StatInterval5Minutes:
+		return "5 MINUTE"
+	case StatInterval15Minutes:
+		return "15 MINUTE"
+	case StatInterval30Minutes:
+		return "30 MINUTE"
+	case StatInterval1Hour:
+		return "1 HOUR"
+	case StatInterval1Day:
+		return "1 DAY"
+	}
+	return "1 DAY"
+}
+
+type trendTimeSettings struct {
+	start    *time.Time
+	end      *time.Time
+	interval StatInterval
+	location *time.Location
+}
+
+func computeTrendsInterval(d time.Duration) StatInterval {
+	if d <= 4*24*time.Hour {
+		return StatInterval30Minutes
+	}
+	if d <= 8*24*time.Hour {
+		return StatInterval1Hour
+	}
+	return StatInterval1Day
+}
+
+func (i *InvocationStatService) getTrendTimeSettings(tq *stpb.TrendQuery, timezone string) *trendTimeSettings {
+	endTime := time.Now()
+	if end := tq.GetUpdatedBefore(); end.IsValid() {
+		endTime = end.AsTime()
+	}
+	startTime := endTime.Add(-ONE_WEEK)
+	if start := tq.GetUpdatedAfter(); start.IsValid() {
+		startTime = start.AsTime()
+	}
+
+	location, err := time.LoadLocation(timezone)
+	if err != nil || location.String() == time.Local.String() {
+		location = time.UTC
+	}
+
+	var interval StatInterval
+	if !i.finerTimeBucketsEnabled() {
+		interval = StatInterval1Day
+	} else {
+		interval = computeTrendsInterval(endTime.Sub(startTime))
+	}
+
+	return &trendTimeSettings{
+		start:    &startTime,
+		end:      &endTime,
+		interval: interval,
+		location: location,
+	}
+}
+
+func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
+	var q string
+	var qArgs []interface{}
 	if i.isOLAPDBEnabled() {
-		q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
+		if i.finerTimeBucketsEnabled() {
+			bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
+			q = fmt.Sprintf("SELECT %s as bucket_start_time_micros,", bucketStr)
+			qArgs = bucketArgs
+		} else {
+			q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
+		}
 	} else {
 		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
 	}
@@ -117,11 +247,17 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	    SUM(total_upload_usec) as total_upload_usec,
 	    SUM(total_cached_action_exec_usec) as total_cpu_micros_saved
 	    FROM "Invocations"`
-	return q
+	return q, qArgs
 }
 
-func flattenTrendsQuery(innerQuery string) string {
-	return `SELECT name,
+func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
+	var q string
+	if i.finerTimeBucketsEnabled() {
+		q = "SELECT bucket_start_time_micros,"
+	} else {
+		q = "SELECT name,"
+	}
+	return q + `
 	total_num_builds,
 	total_build_time_usec,
 	completed_invocation_count,
@@ -270,18 +406,22 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
 	return row, nil
 }
 
-func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stpb.GetTrendRequest) ([]*stpb.TrendStat, error) {
+func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stpb.GetTrendRequest, timeSettings *trendTimeSettings) ([]*stpb.TrendStat, error) {
 	reqCtx := req.GetRequestContext()
 
-	q := query_builder.NewQuery(i.getTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
+	q := query_builder.NewQueryWithArgs(i.getTrendBasicQuery(req.GetQuery(), timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
 	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx); err != nil {
 		return nil, err
 	}
-	q.SetGroupBy("name")
+	if i.finerTimeBucketsEnabled() {
+		q.SetGroupBy("bucket_start_time_micros")
+	} else {
+		q.SetGroupBy("name")
+	}
 
 	qStr, qArgs := q.Build()
 	if i.isInvocationPercentilesEnabled() {
-		qStr = flattenTrendsQuery(qStr)
+		qStr = i.flattenTrendsQuery(qStr)
 	}
 
 	var rows *sql.Rows
@@ -322,11 +462,19 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	return res, nil
 }
 
-func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int32) string {
-	return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
+func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
+	if !i.finerTimeBucketsEnabled() {
+		return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
+		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
+		FROM "Executions"`, make([]interface{}, 0)
+	}
+
+	bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
+
+	return fmt.Sprintf("SELECT %s as bucket_start_time_micros,", bucketStr) + `
 	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
 	FROM "Executions"
-	`
+	`, bucketArgs
 }
 
 // The innerQuery is expected to return rows with the following columns:
@@ -339,7 +487,13 @@ func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int
 //
 //	name | p50 | ... | p99
 func getQueryWithFlattenedArray(innerQuery string) string {
-	return `SELECT name, 
+	var q string
+	if *finerTimeBuckets {
+		q = "SELECT bucket_start_time_micros,"
+	} else {
+		q = "SELECT name,"
+	}
+	return q + `
 	arrayElement(queue_duration_usec_quantiles, 1) as queue_duration_usec_p50,
 	arrayElement(queue_duration_usec_quantiles, 2) as queue_duration_usec_p75,
 	arrayElement(queue_duration_usec_quantiles, 3) as queue_duration_usec_p90,
@@ -348,17 +502,21 @@ func getQueryWithFlattenedArray(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb.GetTrendRequest) ([]*stpb.ExecutionStat, error) {
+func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb.GetTrendRequest, timeSettings *trendTimeSettings) ([]*stpb.ExecutionStat, error) {
 	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled {
 		return nil, nil
 	}
 	reqCtx := req.GetRequestContext()
 
-	q := query_builder.NewQuery(i.getExecutionTrendQuery(reqCtx.GetTimezoneOffsetMinutes()))
+	q := query_builder.NewQueryWithArgs(i.getExecutionTrendQuery(timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
 	if err := i.addWhereClauses(q, req.GetQuery(), req.GetRequestContext()); err != nil {
 		return nil, err
 	}
-	q.SetGroupBy("name")
+	if *finerTimeBuckets {
+		q.SetGroupBy("bucket_start_time_micros")
+	} else {
+		q.SetGroupBy("name")
+	}
 
 	qStr, qArgs := q.Build()
 	qStr = getQueryWithFlattenedArray(qStr)
@@ -394,6 +552,9 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 	}
 
 	rsp := &stpb.GetTrendResponse{}
+
+	timeSettings := i.getTrendTimeSettings(req.GetQuery(), req.GetRequestContext().GetTimezone())
+	rsp.Interval = timeSettings.interval.IntervalProto()
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -431,14 +592,14 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 	})
 	eg.Go(func() error {
 		var err error
-		if rsp.TrendStat, err = i.getInvocationTrend(ctx, req); err != nil {
+		if rsp.TrendStat, err = i.getInvocationTrend(ctx, req, timeSettings); err != nil {
 			return err
 		}
 		return nil
 	})
 	eg.Go(func() error {
 		var err error
-		if rsp.ExecutionStat, err = i.getExecutionTrend(ctx, req); err != nil {
+		if rsp.ExecutionStat, err = i.getExecutionTrend(ctx, req, timeSettings); err != nil {
 			return err
 		}
 		return nil
@@ -566,7 +727,7 @@ func computeTimeBucketSize(duration time.Duration) time.Duration {
 
 const ONE_WEEK = 7 * 24 * time.Hour
 
-func getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContext) ([]int64, string, error) {
+func (i *InvocationStatService) getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContext) ([]int64, string, error) {
 	lowTime := q.GetUpdatedAfter()
 	highTime := q.GetUpdatedBefore()
 	if lowTime != nil && !lowTime.IsValid() {
@@ -607,7 +768,7 @@ func getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContex
 	// When the queried time range is less than eight days, we show smaller buckets.
 	const eightDays = 8 * 24 * time.Hour
 	queriedDuration := end.Sub(start)
-	if *finerDrilldownTimeBuckets && queriedDuration <= eightDays {
+	if i.finerTimeBucketsEnabled() && queriedDuration <= eightDays {
 		increment := computeTimeBucketSize(time.Duration(endSec-startSec) * time.Second)
 		current := start.Round(increment)
 		for current.Before(start) || current.Equal(start) {
@@ -648,7 +809,7 @@ type HeatmapQueryInputs = struct {
 }
 
 func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, requestContext *ctxpb.RequestContext) (*HeatmapQueryInputs, error) {
-	timestampBuckets, timestampArrayStr, err := getTimestampBuckets(q, requestContext)
+	timestampBuckets, timestampArrayStr, err := i.getTimestampBuckets(q, requestContext)
 	if err != nil {
 		return nil, err
 	}
@@ -1163,6 +1324,10 @@ func toStatusClauses(statuses []inspb.OverallStatus) *query_builder.OrClauses {
 
 func (i *InvocationStatService) isOLAPDBEnabled() bool {
 	return i.olapdbh != nil && *readFromOLAPDBEnabled
+}
+
+func (i *InvocationStatService) finerTimeBucketsEnabled() bool {
+	return i.isOLAPDBEnabled() && *finerTimeBuckets
 }
 
 func (i *InvocationStatService) isInvocationPercentilesEnabled() bool {
