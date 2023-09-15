@@ -3,6 +3,7 @@ package role_filter
 import (
 	"context"
 	"flag"
+	"path"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -199,6 +200,10 @@ func ServerAdminOnlyRPCs() []string {
 // If the RPC accesses any specific resources within the org, further
 // authorization checks may be needed beyond this coarse-grained filter.
 func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) error {
+	// Strip off the service name since it varies depending on whether it was
+	// accessed via protolet or gRPC.
+	rpcName = path.Base(rpcName)
+
 	if stringSliceContains(RoleIndependentRPCs(), rpcName) {
 		return nil
 	}

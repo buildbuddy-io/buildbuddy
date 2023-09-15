@@ -10,6 +10,7 @@ go_library(
         "//proto:iprules_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/tables",
         "//server/util/alert",
         "//server/util/authutil",
@@ -18,6 +19,7 @@ go_library(
         "//server/util/perms",
         "//server/util/role",
         "//server/util/status",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 
