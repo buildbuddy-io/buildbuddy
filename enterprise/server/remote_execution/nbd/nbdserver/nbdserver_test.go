@@ -25,7 +25,7 @@ func TestNBDServer(t *testing.T) {
 	path := filepath.Join(tmp, "f")
 	err := os.WriteFile(path, make([]byte, fileSizeBytes), 0644)
 	require.NoError(t, err)
-	cow, err := copy_on_write.ConvertFileToCOW(path, 200, tmp)
+	cow, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), path, 200, tmp)
 	require.NoError(t, err)
 
 	// Create a server hosting a device backed by the file

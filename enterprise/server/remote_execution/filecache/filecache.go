@@ -183,8 +183,7 @@ func (c *fileCache) scanDir() {
 		if err != nil {
 			return err
 		}
-		c.AddFile(node, path)
-		return nil
+		return c.AddFile(node, path)
 	}
 	if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
 		log.Errorf("Error reading existing filecache dir: %q: %s", c.rootDir, err)
@@ -230,7 +229,7 @@ func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) (hit bo
 	return true
 }
 
-func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
+func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -243,8 +242,7 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 
 	fp := c.filecachePath(node)
 	if err := fastcopy.FastCopy(existingFilePath, fp); err != nil {
-		log.Warningf("Error adding file to filecache: %s", err.Error())
-		return
+		return status.WrapError(err, "adding file to filecache")
 	}
 	e := &entry{
 		addedAtUsec: time.Now().UnixMicro(),
@@ -252,7 +250,11 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 		value:       fp,
 	}
 	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))
-	c.l.Add(k, e)
+	success := c.l.Add(k, e)
+	if !success {
+		return status.InternalErrorf("could not add key %s to filecache lru", k)
+	}
+	return nil
 }
 
 func (c *fileCache) ContainsFile(node *repb.FileNode) bool {
