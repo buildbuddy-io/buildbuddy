@@ -5,7 +5,7 @@ go_library(
     srcs = ["nbdserver.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver",
     deps = [
-        "//enterprise/server/remote_execution/blockio",
+        "//enterprise/server/remote_execution/copy_on_write",
         "//proto:nbd_go_proto",
         "//server/environment",
         "//server/util/grpc_server",
@@ -22,7 +22,7 @@ go_test(
     srcs = ["nbdserver_test.go"],
     deps = [
         ":nbdserver",
-        "//enterprise/server/remote_execution/blockio",
+        "//enterprise/server/remote_execution/copy_on_write",
         "//proto:nbd_go_proto",
         "//server/testutil/testenv",
         "//server/testutil/testfs",

@@ -20,10 +20,10 @@ go_library(
         "@platforms//os:linux",
     ],
     deps = [
-        "//enterprise/server/remote_execution/blockio",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/docker",
+        "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/nbd/nbdserver",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaploader",

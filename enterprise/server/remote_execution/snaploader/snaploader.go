@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -133,13 +133,13 @@ type CacheSnapshotOptions struct {
 	ScratchFSPath   string
 	WorkspaceFSPath string
 
-	// Labeled map of chunked artifacts backed by blockio.COWStore storage.
-	ChunkedFiles map[string]*blockio.COWStore
+	// Labeled map of chunked artifacts backed by copy_on_write.COWStore storage.
+	ChunkedFiles map[string]*copy_on_write.COWStore
 }
 
 type UnpackedSnapshot struct {
 	// ChunkedFiles holds any chunked files that were part of the snapshot.
-	ChunkedFiles map[string]*blockio.COWStore
+	ChunkedFiles map[string]*copy_on_write.COWStore
 }
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
@@ -231,7 +231,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	}
 
 	unpacked := &UnpackedSnapshot{
-		ChunkedFiles: make(map[string]*blockio.COWStore, len(snapshot.manifest.ChunkedFiles)),
+		ChunkedFiles: make(map[string]*copy_on_write.COWStore, len(snapshot.manifest.ChunkedFiles)),
 	}
 	// Construct COWs from chunks.
 	for _, cf := range snapshot.manifest.ChunkedFiles {
@@ -324,12 +324,12 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 	return nil
 }
 
-func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cf *blockio.COWStore, err error) {
+func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cf *copy_on_write.COWStore, err error) {
 	dataDir := filepath.Join(outputDirectory, file.GetName())
 	if err := os.Mkdir(dataDir, 0755); err != nil {
 		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
 	}
-	var chunks []*blockio.Mmap
+	var chunks []*copy_on_write.Mmap
 	defer func() {
 		// If there was an error, clean up any chunks we created.
 		if err == nil {
@@ -350,7 +350,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		if !l.env.GetFileCache().FastLinkFile(node, path) {
 			return nil, status.UnavailableErrorf("snapshot chunk %s/%d not found in local cache", file.GetName(), chunk.GetOffset())
 		}
-		c, err := blockio.NewLazyMmap(path, chunk.GetOffset())
+		c, err := copy_on_write.NewLazyMmap(path, chunk.GetOffset())
 		if err != nil {
 			return nil, status.WrapError(err, "create mmap for chunk")
 		}
@@ -359,14 +359,14 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		c.SetDigest(d)
 		chunks = append(chunks, c)
 	}
-	cow, err := blockio.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
+	cow, err := copy_on_write.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
 	if err != nil {
 		return nil, err
 	}
 	return cow, nil
 }
 
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blockio.COWStore) (*fcpb.ChunkedFile, error) {
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *copy_on_write.COWStore) (*fcpb.ChunkedFile, error) {
 	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err

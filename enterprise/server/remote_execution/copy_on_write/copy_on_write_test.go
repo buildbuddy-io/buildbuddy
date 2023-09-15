@@ -1,4 +1,4 @@
-package blockio_test
+package copy_on_write_test
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -34,14 +34,14 @@ func init() {
 
 func TestMmap(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
-	s, err := blockio.NewMmap(path, 0)
+	s, err := copy_on_write.NewMmap(path, 0)
 	require.NoError(t, err)
 	testStore(t, s, path)
 }
 
 func TestMmap_Digest(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
-	s, err := blockio.NewMmap(path, 0)
+	s, err := copy_on_write.NewMmap(path, 0)
 	require.NoError(t, err)
 	actualDigest1, err := s.Digest()
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestCOW_Basic(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
-	s, err := blockio.ConvertFileToCOW(path, chunkSizeBytes, dataDir)
+	s, err := copy_on_write.ConvertFileToCOW(path, chunkSizeBytes, dataDir)
 	require.NoError(t, err)
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
@@ -113,7 +113,7 @@ func TestCOW_SparseData(t *testing.T) {
 	outDir := testfs.MakeTempDir(t)
 
 	// Now split the file.
-	c, err := blockio.ConvertFileToCOW(dataFilePath, chunkSize, outDir)
+	c, err := copy_on_write.ConvertFileToCOW(dataFilePath, chunkSize, outDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -175,7 +175,7 @@ func TestCOW_Resize(t *testing.T) {
 				startBuf := randBytes(t, int(test.OldSize))
 				src := makeTempFile(t, startBuf)
 				dir := testfs.MakeTempDir(t)
-				cow, err := blockio.ConvertFileToCOW(src, chunkSize, dir)
+				cow, err := copy_on_write.ConvertFileToCOW(src, chunkSize, dir)
 				require.NoError(t, err)
 
 				// Resize the COW
@@ -301,7 +301,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				}
 				chunkDir, err := os.MkdirTemp(tmp, "")
 				require.NoError(b, err)
-				cow, err := blockio.ConvertFileToCOW(f.Name(), chunkSize, chunkDir)
+				cow, err := copy_on_write.ConvertFileToCOW(f.Name(), chunkSize, chunkDir)
 				require.NoError(b, err)
 				err = os.Remove(f.Name())
 				require.NoError(b, err)
@@ -454,7 +454,7 @@ func writeSparseFile(t *testing.T, path string, b []byte, ioBlockSize int64) {
 		if int64(len(data)) > ioBlockSize {
 			data = data[:ioBlockSize]
 		}
-		if blockio.IsEmptyOrAllZero(data) {
+		if copy_on_write.IsEmptyOrAllZero(data) {
 			continue
 		}
 		_, err := f.WriteAt(data, off)

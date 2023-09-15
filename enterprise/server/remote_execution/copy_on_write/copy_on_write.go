@@ -1,4 +1,4 @@
-package blockio
+package copy_on_write
 
 import (
 	"fmt"
@@ -23,175 +23,6 @@ const (
 	// Suffix used for dirtied chunks.
 	dirtySuffix = ".dirty"
 )
-
-// Mmap uses a memory-mapped file to represent a section of a larger composite
-// COW store at a specific offset.
-//
-// It allows processes to read/write to the file as if it
-// was memory, as opposed to having to interact with it via I/O file operations.
-type Mmap struct {
-	Offset int64
-
-	data       []byte
-	mapped     bool
-	closed     bool
-	path       string
-	lazyDigest *repb.Digest
-}
-
-// NewMmap returns an Mmap for an existing file.
-func NewMmap(path string, offset int64) (*Mmap, error) {
-	f, err := os.OpenFile(path, os.O_RDWR, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	s, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	return NewMmapFd(int(f.Fd()), int(s.Size()), offset)
-}
-
-// NewLazyMmap returns an mmap that is set up only when the file is read or
-// written to.
-func NewLazyMmap(path string, offset int64) (*Mmap, error) {
-	if path == "" {
-		return nil, status.FailedPreconditionError("missing path")
-	}
-	return &Mmap{
-		Offset: offset,
-		data:   nil,
-		mapped: false,
-		path:   path,
-	}, nil
-}
-
-func NewMmapFd(fd, size int, offset int64) (*Mmap, error) {
-	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
-	if err != nil {
-		return nil, fmt.Errorf("mmap: %s", err)
-	}
-	return &Mmap{
-		Offset: offset,
-		data:   data,
-		mapped: true,
-	}, nil
-}
-
-func (m *Mmap) initMap() error {
-	if m.closed {
-		return status.InternalError("store is closed")
-	}
-	if m.mapped {
-		return status.InternalError("already mapped")
-	}
-	if m.path == "" {
-		return status.InternalError("missing file path")
-	}
-	f, err := os.OpenFile(m.path, os.O_RDWR, 0)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	s, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	data, err := syscall.Mmap(int(f.Fd()), 0, int(s.Size()), syscall.PROT_WRITE, syscall.MAP_SHARED)
-	if err != nil {
-		return status.InternalErrorf("mmap: %s", err)
-	}
-	m.data = data
-	m.mapped = true
-	m.path = ""
-	return nil
-}
-
-func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
-	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
-		return 0, err
-	}
-	copy(p, m.data[int(off):int(off)+len(p)])
-	return len(p), nil
-}
-
-func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
-	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
-		return 0, err
-	}
-	copy(m.data[int(off):int(off)+len(p)], p)
-	m.lazyDigest = nil
-	return len(p), nil
-}
-
-func (m *Mmap) Sync() error {
-	if !m.mapped {
-		return nil
-	}
-	return unix.Msync(m.data, unix.MS_SYNC)
-}
-
-func (m *Mmap) Close() error {
-	m.closed = true
-	if !m.mapped {
-		return nil
-	}
-	m.mapped = false
-	return syscall.Munmap(m.data)
-}
-
-func (m *Mmap) SizeBytes() (int64, error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
-	return int64(len(m.data)), nil
-}
-
-// StartAddress returns the address of the first mapped byte. If this is a lazy
-// mmap, calling this func will force an mmap if not already mapped.
-func (m *Mmap) StartAddress() (uintptr, error) {
-	if !m.mapped {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
-	return memoryAddress(m.data), nil
-}
-
-func (m *Mmap) SetDigest(d *repb.Digest) {
-	m.lazyDigest = d
-}
-
-func (m *Mmap) Digest() (*repb.Digest, error) {
-	if m.lazyDigest != nil {
-		return m.lazyDigest, nil
-	}
-
-	// Otherwise compute the digest.
-	chunkReader, err := interfaces.StoreReader(m)
-	if err != nil {
-		return nil, err
-	}
-	d, err := digest.Compute(chunkReader, repb.DigestFunction_BLAKE3)
-	if err != nil {
-		return nil, err
-	}
-	m.lazyDigest = d
-	return d, nil
-}
 
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
@@ -736,6 +567,175 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 	}
 
 	return NewCOWStore(chunks, chunkSizeBytes, totalSizeBytes, dataDir)
+}
+
+// Mmap uses a memory-mapped file to represent a section of a larger composite
+// COW store at a specific offset.
+//
+// It allows processes to read/write to the file as if it
+// was memory, as opposed to having to interact with it via I/O file operations.
+type Mmap struct {
+	Offset int64
+
+	data       []byte
+	mapped     bool
+	closed     bool
+	path       string
+	lazyDigest *repb.Digest
+}
+
+// NewMmap returns an Mmap for an existing file.
+func NewMmap(path string, offset int64) (*Mmap, error) {
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	s, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	return NewMmapFd(int(f.Fd()), int(s.Size()), offset)
+}
+
+// NewLazyMmap returns an mmap that is set up only when the file is read or
+// written to.
+func NewLazyMmap(path string, offset int64) (*Mmap, error) {
+	if path == "" {
+		return nil, status.FailedPreconditionError("missing path")
+	}
+	return &Mmap{
+		Offset: offset,
+		data:   nil,
+		mapped: false,
+		path:   path,
+	}, nil
+}
+
+func NewMmapFd(fd, size int, offset int64) (*Mmap, error) {
+	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		return nil, fmt.Errorf("mmap: %s", err)
+	}
+	return &Mmap{
+		Offset: offset,
+		data:   data,
+		mapped: true,
+	}, nil
+}
+
+func (m *Mmap) initMap() error {
+	if m.closed {
+		return status.InternalError("store is closed")
+	}
+	if m.mapped {
+		return status.InternalError("already mapped")
+	}
+	if m.path == "" {
+		return status.InternalError("missing file path")
+	}
+	f, err := os.OpenFile(m.path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	s, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	data, err := syscall.Mmap(int(f.Fd()), 0, int(s.Size()), syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		return status.InternalErrorf("mmap: %s", err)
+	}
+	m.data = data
+	m.mapped = true
+	m.path = ""
+	return nil
+}
+
+func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
+	if !m.mapped {
+		if err := m.initMap(); err != nil {
+			return 0, err
+		}
+	}
+	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
+		return 0, err
+	}
+	copy(p, m.data[int(off):int(off)+len(p)])
+	return len(p), nil
+}
+
+func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
+	if !m.mapped {
+		if err := m.initMap(); err != nil {
+			return 0, err
+		}
+	}
+	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
+		return 0, err
+	}
+	copy(m.data[int(off):int(off)+len(p)], p)
+	m.lazyDigest = nil
+	return len(p), nil
+}
+
+func (m *Mmap) Sync() error {
+	if !m.mapped {
+		return nil
+	}
+	return unix.Msync(m.data, unix.MS_SYNC)
+}
+
+func (m *Mmap) Close() error {
+	m.closed = true
+	if !m.mapped {
+		return nil
+	}
+	m.mapped = false
+	return syscall.Munmap(m.data)
+}
+
+func (m *Mmap) SizeBytes() (int64, error) {
+	if !m.mapped {
+		if err := m.initMap(); err != nil {
+			return 0, err
+		}
+	}
+	return int64(len(m.data)), nil
+}
+
+// StartAddress returns the address of the first mapped byte. If this is a lazy
+// mmap, calling this func will force an mmap if not already mapped.
+func (m *Mmap) StartAddress() (uintptr, error) {
+	if !m.mapped {
+		if err := m.initMap(); err != nil {
+			return 0, err
+		}
+	}
+	return memoryAddress(m.data), nil
+}
+
+func (m *Mmap) SetDigest(d *repb.Digest) {
+	m.lazyDigest = d
+}
+
+func (m *Mmap) Digest() (*repb.Digest, error) {
+	if m.lazyDigest != nil {
+		return m.lazyDigest, nil
+	}
+
+	// Otherwise compute the digest.
+	chunkReader, err := interfaces.StoreReader(m)
+	if err != nil {
+		return nil, err
+	}
+	d, err := digest.Compute(chunkReader, repb.DigestFunction_BLAKE3)
+	if err != nil {
+		return nil, err
+	}
+	m.lazyDigest = d
+	return d, nil
 }
 
 func IsEmptyOrAllZero(data []byte) bool {
