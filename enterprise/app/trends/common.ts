@@ -22,6 +22,8 @@ export function computeTimeKeys(
     const hourMultiple = Math.floor(domain[0].getHours() / +interval.count);
     domain[0].setHours(hourMultiple * +interval.count);
     domain[0].setMinutes(0);
+    domain[0].setSeconds(0);
+    domain[0].setMilliseconds(0);
 
     // These are the keys that we expect to have data for in the graph.
     const keyDates = timeHour.range(domain[0], domain[1], +interval.count);
@@ -44,7 +46,11 @@ export function computeTimeKeys(
     // First, round down to the nearest interval in the local time.
     // For example, for a 15-minute interval, this will round 3:53 to 3:45.
     const minuteMultiple = Math.floor(domain[0].getMinutes() / +interval.count);
+    console.log("SETTING: " + minuteMultiple * +interval.count);
     domain[0].setMinutes(minuteMultiple * +interval.count);
+    domain[0].setSeconds(0);
+    domain[0].setMilliseconds(0);
+    console.log(domain[0]);
 
     // These are the keys that we expect to have data for in the graph.
     const keyDates = timeMinute.range(domain[0], domain[1], +interval.count);
