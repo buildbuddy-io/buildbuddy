@@ -25,13 +25,13 @@ func TestNBDServer(t *testing.T) {
 	path := filepath.Join(tmp, "f")
 	err := os.WriteFile(path, make([]byte, fileSizeBytes), 0644)
 	require.NoError(t, err)
-	f, err := blockio.NewMmap(path)
+	cow, err := blockio.ConvertFileToCOW(path, 200, tmp)
 	require.NoError(t, err)
-	defer f.Close()
+
 	// Create a server hosting a device backed by the file
 	const deviceName = "test"
 	dev := &nbdserver.Device{
-		Store:    f,
+		COWStore: cow,
 		Metadata: &nbdpb.DeviceMetadata{Name: deviceName},
 	}
 	s, err := nbdserver.New(ctx, env, dev)

@@ -18,13 +18,13 @@ import (
 // Device is a block store exported by a server along with its associated
 // metadata.
 type Device struct {
-	blockio.Store
+	*blockio.COWStore
 	Metadata *nbdpb.DeviceMetadata
 }
 
-func NewExt4Device(store blockio.Store, name string) (*Device, error) {
+func NewExt4Device(store *blockio.COWStore, name string) (*Device, error) {
 	return &Device{
-		Store: store,
+		COWStore: store,
 		Metadata: &nbdpb.DeviceMetadata{
 			Name:           name,
 			FilesystemType: nbdpb.FilesystemType_EXT4_FILESYSTEM_TYPE,
