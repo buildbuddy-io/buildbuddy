@@ -11,7 +11,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [
-            "//enterprise/server/remote_execution/blockio",
+            "//enterprise/server/remote_execution/copy_on_write",
             "//server/util/log",
             "//server/util/status",
             "@org_golang_x_sys//unix",

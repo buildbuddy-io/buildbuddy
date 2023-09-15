@@ -7,7 +7,7 @@ go_library(
     srcs = ["snaploader.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader",
     deps = [
-        "//enterprise/server/remote_execution/blockio",
+        "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/util/filecacheutil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
@@ -30,7 +30,7 @@ go_test(
     srcs = ["snaploader_test.go"],
     deps = [
         ":snaploader",
-        "//enterprise/server/remote_execution/blockio",
+        "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",

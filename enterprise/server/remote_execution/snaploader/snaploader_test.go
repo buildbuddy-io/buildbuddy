@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -95,7 +95,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-	cowA, err := blockio.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
+	cowA, err := copy_on_write.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
 	require.NoError(t, err)
 	// Overwrite a random range to simulate the disk being written to. This
 	// should create some dirty chunks.
@@ -105,7 +105,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	keyA, err := snaploader.NewKey(taskA, "config-hash-a", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA)
-	optsA.ChunkedFiles = map[string]*blockio.COWStore{
+	optsA.ChunkedFiles = map[string]*copy_on_write.COWStore{
 		"scratchfs": cowA,
 	}
 	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
@@ -155,7 +155,7 @@ func makeRandomFile(t *testing.T, rootDir, prefix string, size int) string {
 	return filepath.Join(rootDir, name)
 }
 
-func writeRandomRange(t *testing.T, store *blockio.COWStore) {
+func writeRandomRange(t *testing.T, store *copy_on_write.COWStore) {
 	s, err := store.SizeBytes()
 	require.NoError(t, err)
 	off := rand.Intn(int(s))
@@ -198,7 +198,7 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 	return unpacked
 }
 
-func mustReadStore(t *testing.T, store *blockio.COWStore) []byte {
+func mustReadStore(t *testing.T, store *copy_on_write.COWStore) []byte {
 	r, err := interfaces.StoreReader(store)
 	require.NoError(t, err)
 	b, err := io.ReadAll(r)

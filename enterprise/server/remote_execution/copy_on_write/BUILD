@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "blockio",
-    srcs = ["blockio.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio",
+    name = "copy_on_write",
+    srcs = ["copy_on_write.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
@@ -18,10 +18,10 @@ go_library(
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
-    name = "blockio_test",
-    srcs = ["blockio_test.go"],
+    name = "copy_on_write_test",
+    srcs = ["copy_on_write_test.go"],
     deps = [
-        ":blockio",
+        ":copy_on_write",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
@@ -32,8 +32,8 @@ go_test(
 )
 
 go_test(
-    name = "blockio_benchmark_test",
-    srcs = ["blockio_test.go"],
+    name = "copy_on_write_benchmark_test",
+    srcs = ["copy_on_write_test.go"],
     args = [
         "-test.skip=^Test",
         "-test.bench=.",
@@ -43,7 +43,7 @@ go_test(
     ],
     tags = ["performance"],
     deps = [
-        ":blockio",
+        ":copy_on_write",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",

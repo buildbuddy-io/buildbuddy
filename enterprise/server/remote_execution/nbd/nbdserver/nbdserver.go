@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -18,11 +18,11 @@ import (
 // Device is a block store exported by a server along with its associated
 // metadata.
 type Device struct {
-	*blockio.COWStore
+	*copy_on_write.COWStore
 	Metadata *nbdpb.DeviceMetadata
 }
 
-func NewExt4Device(store *blockio.COWStore, name string) (*Device, error) {
+func NewExt4Device(store *copy_on_write.COWStore, name string) (*Device, error) {
 	return &Device{
 		COWStore: store,
 		Metadata: &nbdpb.DeviceMetadata{
