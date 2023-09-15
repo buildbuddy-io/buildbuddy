@@ -1933,6 +1933,16 @@ var (
 		APIKeyLookupStatus,
 	})
 
+	IPRulesCheckLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "auth",
+		Name:      "ip_rules_check_latency_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 5*time.Second, 2),
+		Help:      "Latency of IP authorization checks.",
+	}, []string{
+		StatusHumanReadableLabel,
+	})
+
 	EncryptionKeyRefreshCount = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "encryption",

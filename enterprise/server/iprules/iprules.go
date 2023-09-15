@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 )
@@ -106,6 +108,7 @@ func New(env environment.Env) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &Service{
 		env:   env,
 		cache: cache,
@@ -151,7 +154,7 @@ func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*net.I
 	return allowed, nil
 }
 
-func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
+func (s *Service) checkRules(ctx context.Context, groupID string) error {
 	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
 	if err != nil {
 		return err
@@ -184,6 +187,15 @@ func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
 	}
 
 	return status.PermissionDeniedErrorf("Client %q is not allowed by Organization IP rules", rawClientIP)
+}
+
+func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
+	start := time.Now()
+	err := s.checkRules(ctx, groupID)
+	metrics.IPRulesCheckLatencyUsec.With(
+		prometheus.Labels{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)},
+	).Observe(float64(time.Since(start).Microseconds()))
+	return err
 }
 
 func (s *Service) Authorize(ctx context.Context) error {
