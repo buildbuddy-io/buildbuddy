@@ -1227,7 +1227,16 @@ type Store interface {
 	io.WriterAt
 	io.Closer
 
-	Reader() (io.Reader, error)
 	Sync() error
 	SizeBytes() (int64, error)
+}
+
+// StoreReader returns an io.Reader that reads all bytes from the given store,
+// starting at offset 0 and ending at SizeBytes.
+func StoreReader(store Store) (io.Reader, error) {
+	size, err := store.SizeBytes()
+	if err != nil {
+		return nil, err
+	}
+	return io.NewSectionReader(store, 0, size), nil
 }

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
@@ -107,16 +108,6 @@ func (m *Mmap) initMap() error {
 	return nil
 }
 
-// Reader returns an io.Reader that reads all bytes from the given store,
-// starting at offset 0 and ending at SizeBytes.
-func (m *Mmap) Reader() (io.Reader, error) {
-	size, err := m.SizeBytes()
-	if err != nil {
-		return nil, err
-	}
-	return io.NewSectionReader(m, 0, size), nil
-}
-
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 	if !m.mapped {
 		if err := m.initMap(); err != nil {
@@ -190,7 +181,7 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 	}
 
 	// Otherwise compute the digest.
-	chunkReader, err := m.Reader()
+	chunkReader, err := interfaces.StoreReader(m)
 	if err != nil {
 		return nil, err
 	}
@@ -346,16 +337,6 @@ func (c *COWStore) SortedChunks() []*Mmap {
 // store.
 func (c *COWStore) chunkStartOffset(off int64) int64 {
 	return (off / c.chunkSizeBytes) * c.chunkSizeBytes
-}
-
-// Reader returns an io.Reader that reads all bytes from the given store,
-// starting at offset 0 and ending at SizeBytes.
-func (c *COWStore) Reader() (io.Reader, error) {
-	size, err := c.SizeBytes()
-	if err != nil {
-		return nil, err
-	}
-	return io.NewSectionReader(c, 0, size), nil
 }
 
 func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {

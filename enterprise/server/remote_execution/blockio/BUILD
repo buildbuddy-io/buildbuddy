@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/status",
         "@org_golang_x_exp//maps",

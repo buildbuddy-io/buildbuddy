@@ -33,6 +33,7 @@ go_test(
         "//enterprise/server/remote_execution/blockio",
         "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/random",

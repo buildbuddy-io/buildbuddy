@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -129,7 +130,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	// mustUnpack already verifies the contents against cowA, but this will give
 	// us false confidence if cowA was somehow mutated. So check again against
 	// the originally snapshotted bytes, rather than the original COW instance.
-	r, err := unpackedC.ChunkedFiles["scratchfs"].Reader()
+	r, err := interfaces.StoreReader(unpackedC.ChunkedFiles["scratchfs"])
 	require.NoError(t, err)
 	scratchfsBytesC, err := io.ReadAll(r)
 	require.NoError(t, err)
@@ -198,7 +199,7 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 }
 
 func mustReadStore(t *testing.T, store *blockio.COWStore) []byte {
-	r, err := store.Reader()
+	r, err := interfaces.StoreReader(store)
 	require.NoError(t, err)
 	b, err := io.ReadAll(r)
 	require.NoError(t, err)

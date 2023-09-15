@@ -45,7 +45,7 @@ func TestMmap_Digest(t *testing.T) {
 	require.NoError(t, err)
 	actualDigest1, err := s.Digest()
 	require.NoError(t, err)
-	r, err := s.Reader()
+	r, err := interfaces.StoreReader(s)
 	require.NoError(t, err)
 	expectedDigest, err := digest.Compute(r, repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestMmap_Digest(t *testing.T) {
 	require.Equal(t, len(randomBuf), n)
 	actualDigest2, err := s.Digest()
 	require.NoError(t, err)
-	r, err = s.Reader()
+	r, err = interfaces.StoreReader(s)
 	require.NoError(t, err)
 	expectedDigest, err = digest.Compute(r, repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
@@ -209,7 +209,7 @@ func TestCOW_Resize(t *testing.T) {
 				require.NoError(t, err)
 				// Now read back the whole COW and make sure it matches our
 				// expected data.
-				cowReader, err := cow.Reader()
+				cowReader, err := interfaces.StoreReader(cow)
 				require.NoError(t, err)
 				b, err := io.ReadAll(cowReader)
 				require.NoError(t, err)
