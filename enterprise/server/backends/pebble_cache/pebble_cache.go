@@ -1955,10 +1955,10 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 
 	if cdcw.numChunks == 2 {
 		cdcw.fileType = rfpb.FileMetadata_CHUNK_FILE_TYPE
-		// We no longer need the first chunk anymore.
 		if err := cdcw.writeChunkWhenMultiple(cdcw.firstChunk); err != nil {
 			return err
 		}
+		// We no longer need the first chunk anymore.
 		cdcw.firstChunk = nil
 	}
 	// we need to copy the data because once the chunker calls Next, chunkData
@@ -1972,7 +1972,6 @@ func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.
 	ctx := cdcw.ctx
 	p := cdcw.pc
 	inlineWriter := p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
-
 	wcm, err := p.newWrappedWriter(ctx, inlineWriter, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed, cdcw.fileType)
 	if err != nil {
 		return err
