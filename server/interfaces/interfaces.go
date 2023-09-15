@@ -1209,8 +1209,9 @@ type IPRulesService interface {
 	// to access the group identified in the context.
 	Authorize(ctx context.Context) error
 
-	// Authorize checks whether the authenticated user in the context is allowed
-	// to access the specified groupId.
+	// AuthorizeGroup checks whether the authenticated user in the context is
+	// allowed to access the specified groupId. This function should not be used
+	// in performance sensitive code paths.
 	AuthorizeGroup(ctx context.Context, groupID string) error
 
 	// AuthorizeHTTPRequest checks whether the specified HTTP request should be
