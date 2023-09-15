@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
@@ -15,8 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
@@ -25,6 +28,11 @@ import (
 )
 
 var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
+
+const (
+	// File name used for the rootfs snapshot artifact.
+	rootfsFileName = "rootfs.ext4"
+)
 
 // NewKey returns the cache key for a snapshot.
 // TODO: include a version number in the key somehow, so that
@@ -107,24 +115,22 @@ func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {
 	return s.manifest.GetVmConfiguration()
 }
 
+// CacheSnapshotOptions contains any assets or configuration to be associated
+// with a stored snapshot.
+//
+// All fields are optional, as snapshots may represent different things, such as
+// an asset shared across VMs (such as the containerfs), or a fully snapshotted
+// VM.
 type CacheSnapshotOptions struct {
-	// The following fields are all required.
 	VMConfiguration     *fcpb.VMConfiguration
 	VMStateSnapshotPath string
 	KernelImagePath     string
 	InitrdImagePath     string
-	ContainerFSPath     string
+	MemSnapshotPath     string
 
-	// MemSnapshotPath is the memory snapshot file path. It is required if the
-	// memory file is not represented as a ChunkedFile.
-	MemSnapshotPath string
-
-	// This field is optional -- a snapshot may have a scratch filesystem
-	// attached or it may have one attached at runtime.
-	ScratchFSPath string
-
-	// This field is optional -- a snapshot may have a filesystem
-	// stored with it or it may have one attached at runtime.
+	// TODO: remove these 3 in favor of a single rootfs.
+	ContainerFSPath string
+	ScratchFSPath   string
 	WorkspaceFSPath string
 
 	// Labeled map of chunked artifacts backed by blockio.COWStore storage.
@@ -144,32 +150,39 @@ type ChunkedFile struct {
 }
 
 func (cf *ChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, error) {
+	if cf.digests == nil {
+		cf.digests = make(map[int64]*repb.Digest)
+	}
 	// If we already know the original chunk digest and the chunk hasn't
 	// changed, return the original digest.
 	if d := cf.digests[chunk.Offset]; d != nil && !cf.COWStore.Dirty(chunk.Offset) {
 		return d, nil
 	}
-	// Otherwise compute the digest.
-	return digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
+	// Otherwise compute the digest and memoize it.
+	d, err := digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
+	if err != nil {
+		return nil, err
+	}
+	cf.digests[chunk.Offset] = d
+	return d, nil
 }
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
-	files := []string{
+	var out []string
+	for _, p := range []string{
 		snapOpts.VMStateSnapshotPath,
 		snapOpts.KernelImagePath,
 		snapOpts.InitrdImagePath,
+		snapOpts.MemSnapshotPath,
 		snapOpts.ContainerFSPath,
+		snapOpts.ScratchFSPath,
+		snapOpts.WorkspaceFSPath,
+	} {
+		if p != "" {
+			out = append(out, p)
+		}
 	}
-	if snapOpts.MemSnapshotPath != "" {
-		files = append(files, snapOpts.MemSnapshotPath)
-	}
-	if snapOpts.ScratchFSPath != "" {
-		files = append(files, snapOpts.ScratchFSPath)
-	}
-	if snapOpts.WorkspaceFSPath != "" {
-		files = append(files, snapOpts.WorkspaceFSPath)
-	}
-	return files
+	return out
 }
 
 // Loader loads and stores snapshot artifacts to cache. Only a single loader
@@ -202,7 +215,7 @@ type FileCacheLoader struct {
 	env environment.Env
 }
 
-func New(env environment.Env) (Loader, error) {
+func New(env environment.Env) (*FileCacheLoader, error) {
 	if env.GetFileCache() == nil {
 		return nil, status.InvalidArgumentError("missing FileCache in env")
 	}
@@ -466,4 +479,54 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 		return "", err
 	}
 	return gid, nil
+}
+
+// UnpackContainerImage returns a ChunkedFile representing the given container
+// image. The chunk dir is stored as a child directory of the given outDir.
+//
+// If the image is not cached, this func will split up the given ext4 image
+// file and create a new ChunkedFile from it, then add that to cache.
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*ChunkedFile, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	// TODO: use an Action for this key instead (to allow remote snapshot
+	// sharing).
+	key := &fcpb.SnapshotKey{
+		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
+	}
+
+	snap, err := l.GetSnapshot(ctx, key)
+	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
+		return nil, err
+	}
+	if snap != nil {
+		unpacked, err := l.UnpackSnapshot(ctx, snap, outDir)
+		if err != nil {
+			return nil, err
+		}
+		cf := unpacked.ChunkedFiles[rootfsFileName]
+		if cf == nil {
+			return nil, status.InternalError("missing rootfs artifact in snapshot")
+		}
+		return cf, nil
+	}
+	// containerfs is not available in cache; convert the EXT4 image to a
+	// ChunkedFile then add it to cache.
+	// TODO(bduffany): single-flight this.
+	start := time.Now()
+	cow, err := blockio.ConvertFileToCOW(imageExt4Path, chunkSize, outDir)
+	if err != nil {
+		return nil, status.WrapError(err, "convert image to COW")
+	}
+	// Add the COW to cache. This will also compute chunk digests.
+	cf := &ChunkedFile{COWStore: cow}
+	opts := &CacheSnapshotOptions{
+		ChunkedFiles: map[string]*ChunkedFile{rootfsFileName: cf},
+	}
+	if _, err := l.CacheSnapshot(ctx, key, opts); err != nil {
+		return nil, status.WrapError(err, "cache containerfs snapshot")
+	}
+	log.CtxDebugf(ctx, "Converted containerfs to COW in %s", time.Since(start))
+	return cf, nil
 }
