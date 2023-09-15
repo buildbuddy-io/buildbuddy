@@ -1220,3 +1220,14 @@ type IPRulesService interface {
 	// context.
 	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
 }
+
+// Store models a block-level storage system, which is useful as a backend
+type Store interface {
+	io.ReaderAt
+	io.WriterAt
+	io.Closer
+
+	Reader() (io.Reader, error)
+	Sync() error
+	SizeBytes() (int64, error)
+}

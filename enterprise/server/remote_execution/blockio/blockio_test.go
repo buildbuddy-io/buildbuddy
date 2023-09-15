@@ -15,9 +15,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -30,9 +34,37 @@ func init() {
 
 func TestMmap(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
-	s, err := blockio.NewMmap(path)
+	s, err := blockio.NewMmap(path, 0)
 	require.NoError(t, err)
 	testStore(t, s, path)
+}
+
+func TestMmap_Digest(t *testing.T) {
+	path := makeEmptyTempFile(t, backingFileSizeBytes)
+	s, err := blockio.NewMmap(path, 0)
+	require.NoError(t, err)
+	actualDigest1, err := s.Digest()
+	require.NoError(t, err)
+	r, err := s.Reader()
+	require.NoError(t, err)
+	expectedDigest, err := digest.Compute(r, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, actualDigest1)
+
+	// Write random bytes and test digest again
+	randomBuf := randBytes(t, 1024)
+	n, err := s.WriteAt(randomBuf, 100)
+	require.NoError(t, err)
+	require.Equal(t, len(randomBuf), n)
+	actualDigest2, err := s.Digest()
+	require.NoError(t, err)
+	r, err = s.Reader()
+	require.NoError(t, err)
+	expectedDigest, err = digest.Compute(r, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, actualDigest2)
+	require.NotEqual(t, actualDigest1, actualDigest2)
+
 }
 
 func TestCOW_Basic(t *testing.T) {
@@ -110,7 +142,7 @@ func TestCOW_SparseData(t *testing.T) {
 	n, err = c.WriteAt([]byte{1}, 0)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
-	err = c.Chunks()[0].Sync()
+	err = c.SortedChunks()[0].Sync()
 	require.NoError(t, err)
 
 	// Make sure we wrote a dirty chunk with the expected contents, and only a
@@ -177,7 +209,9 @@ func TestCOW_Resize(t *testing.T) {
 				require.NoError(t, err)
 				// Now read back the whole COW and make sure it matches our
 				// expected data.
-				b, err := io.ReadAll(blockio.Reader(cow))
+				cowReader, err := cow.Reader()
+				require.NoError(t, err)
+				b, err := io.ReadAll(cowReader)
 				require.NoError(t, err)
 				require.True(t, bytes.Equal(endBuf, b))
 
@@ -308,7 +342,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 	}
 }
 
-func testStore(t *testing.T, s blockio.Store, path string) {
+func testStore(t *testing.T, s interfaces.Store, path string) {
 	size, err := s.SizeBytes()
 	require.NoError(t, err, "SizeBytes failed")
 	require.Equal(t, backingFileSizeBytes, size, "unexpected SizeBytes")

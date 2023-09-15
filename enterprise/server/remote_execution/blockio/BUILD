@@ -6,6 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
         "//server/util/status",
         "@org_golang_x_exp//maps",
         "@org_golang_x_sys//unix",
@@ -19,6 +21,9 @@ go_test(
     srcs = ["blockio_test.go"],
     deps = [
         ":blockio",
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/remote_cache/digest",
         "//server/testutil/testfs",
         "//server/util/disk",
         "@com_github_stretchr_testify//require",
@@ -38,6 +43,9 @@ go_test(
     tags = ["performance"],
     deps = [
         ":blockio",
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/remote_cache/digest",
         "//server/testutil/testfs",
         "//server/util/disk",
         "@com_github_stretchr_testify//require",

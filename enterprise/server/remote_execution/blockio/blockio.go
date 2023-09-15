@@ -10,9 +10,12 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sys/unix"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -20,31 +23,23 @@ const (
 	dirtySuffix = ".dirty"
 )
 
-// Store models a block-level storage system, which is useful as a backend for a
-// Network Block Device (NBD) or userfaultfd(2).
-type Store interface {
-	io.ReaderAt
-	io.WriterAt
-	io.Closer
-
-	// Sync flushes any buffered pages to the store, if applicable.
-	Sync() error
-
-	// Size returns the total addressable size of the store in bytes.
-	SizeBytes() (int64, error)
-}
-
-// Mmap implements the Store interface using a memory-mapped file. This allows processes to read/write to the file as if it
+// Mmap uses a memory-mapped file to represent a section of a larger composite
+// COW store at a specific offset.
+//
+// It allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
 type Mmap struct {
-	data   []byte
-	mapped bool
-	closed bool
-	path   string
+	Offset int64
+
+	data       []byte
+	mapped     bool
+	closed     bool
+	path       string
+	lazyDigest *repb.Digest
 }
 
 // NewMmap returns an Mmap for an existing file.
-func NewMmap(path string) (*Mmap, error) {
+func NewMmap(path string, offset int64) (*Mmap, error) {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
@@ -54,24 +49,33 @@ func NewMmap(path string) (*Mmap, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewMmapFd(int(f.Fd()), int(s.Size()))
+	return NewMmapFd(int(f.Fd()), int(s.Size()), offset)
 }
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
 // written to.
-func NewLazyMmap(path string) (*Mmap, error) {
+func NewLazyMmap(path string, offset int64) (*Mmap, error) {
 	if path == "" {
 		return nil, status.FailedPreconditionError("missing path")
 	}
-	return &Mmap{data: nil, mapped: false, path: path}, nil
+	return &Mmap{
+		Offset: offset,
+		data:   nil,
+		mapped: false,
+		path:   path,
+	}, nil
 }
 
-func NewMmapFd(fd, size int) (*Mmap, error) {
+func NewMmapFd(fd, size int, offset int64) (*Mmap, error) {
 	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
-	return &Mmap{data: data, mapped: true}, nil
+	return &Mmap{
+		Offset: offset,
+		data:   data,
+		mapped: true,
+	}, nil
 }
 
 func (m *Mmap) initMap() error {
@@ -103,6 +107,16 @@ func (m *Mmap) initMap() error {
 	return nil
 }
 
+// Reader returns an io.Reader that reads all bytes from the given store,
+// starting at offset 0 and ending at SizeBytes.
+func (m *Mmap) Reader() (io.Reader, error) {
+	size, err := m.SizeBytes()
+	if err != nil {
+		return nil, err
+	}
+	return io.NewSectionReader(m, 0, size), nil
+}
+
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 	if !m.mapped {
 		if err := m.initMap(); err != nil {
@@ -126,6 +140,7 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 		return 0, err
 	}
 	copy(m.data[int(off):int(off)+len(p)], p)
+	m.lazyDigest = nil
 	return len(p), nil
 }
 
@@ -165,22 +180,30 @@ func (m *Mmap) StartAddress() (uintptr, error) {
 	return memoryAddress(m.data), nil
 }
 
-func fileSizeBytes(f *os.File) (int64, error) {
-	s, err := f.Stat()
-	if err != nil {
-		return 0, err
+func (m *Mmap) SetDigest(d *repb.Digest) {
+	m.lazyDigest = d
+}
+
+func (m *Mmap) Digest() (*repb.Digest, error) {
+	if m.lazyDigest != nil {
+		return m.lazyDigest, nil
 	}
-	return s.Size(), nil
+
+	// Otherwise compute the digest.
+	chunkReader, err := m.Reader()
+	if err != nil {
+		return nil, err
+	}
+	d, err := digest.Compute(chunkReader, repb.DigestFunction_BLAKE3)
+	if err != nil {
+		return nil, err
+	}
+	m.lazyDigest = d
+	return d, nil
 }
 
-// Chunk represents a section of a larger composite store at a given offset.
-type Chunk struct {
-	Store
-	Offset int64
-}
-
-// COWStore implements copy-on-write for a Store that has been split into chunks
-// of equal size. Just before a chunk is first written to, the chunk is first
+// COWStore To enable copy-on-write support for a file, it can be split into
+// chunks of equal size. Just before a chunk is first written to, the chunk is first
 // copied, and the write is then applied to the copy.
 //
 // A COWStore can be created either by splitting a file into chunks, or loading
@@ -190,8 +213,8 @@ type Chunk struct {
 type COWStore struct {
 	mu sync.RWMutex // Protects chunks and dirty
 
-	// Chunks is a mapping of chunk offset to Store implementation.
-	chunks map[int64]*Chunk
+	// chunks is a mapping of chunk offset to the backing data store
+	chunks map[int64]*Mmap
 	// Indexes of chunks which have been copied from the original chunks due to
 	// writes.
 	dirty map[int64]bool
@@ -219,12 +242,12 @@ type COWStore struct {
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(chunks []*Chunk, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COWStore, error) {
+func NewCOWStore(chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
 	}
-	chunkMap := make(map[int64]*Chunk, len(chunks))
+	chunkMap := make(map[int64]*Mmap, len(chunks))
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
 	}
@@ -300,19 +323,15 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 	// Non-empty chunk; initialize the lazy mmap (if applicable) and return
 	// the offset relative to the memory start address.
-	mm, ok := chunk.Store.(*Mmap)
-	if !ok {
-		return 0, status.InternalErrorf("failed to map page address: only supported for Mmap chunk store type (chunk is of type %T)", chunk)
-	}
-	start, err := mm.StartAddress()
+	start, err := chunk.StartAddress()
 	if err != nil {
 		return 0, status.WrapError(err, "mmap start adddress")
 	}
 	return start + chunkRelativeAddress, nil
 }
 
-// Chunks returns all chunks sorted by offset.
-func (c *COWStore) Chunks() []*Chunk {
+// SortedChunks returns all chunks sorted by offset.
+func (c *COWStore) SortedChunks() []*Mmap {
 	c.mu.RLock()
 	chunks := maps.Values(c.chunks)
 	c.mu.RUnlock()
@@ -327,6 +346,16 @@ func (c *COWStore) Chunks() []*Chunk {
 // store.
 func (c *COWStore) chunkStartOffset(off int64) int64 {
 	return (off / c.chunkSizeBytes) * c.chunkSizeBytes
+}
+
+// Reader returns an io.Reader that reads all bytes from the given store,
+// starting at offset 0 and ending at SizeBytes.
+func (c *COWStore) Reader() (io.Reader, error) {
+	size, err := c.SizeBytes()
+	if err != nil {
+		return nil, err
+	}
+	return io.NewSectionReader(c, 0, size), nil
 }
 
 func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
@@ -599,7 +628,7 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 }
 
 // Writes a new dirty chunk containing all 0s for the given chunk index.
-func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Chunk, error) {
+func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
 	path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", offset, dirtySuffix))
 	fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
@@ -609,14 +638,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Chunk, error) {
 	if err := syscall.Ftruncate(fd, size); err != nil {
 		return nil, err
 	}
-	store, err := NewMmapFd(fd, int(size))
-	if err != nil {
-		return nil, err
-	}
-	return &Chunk{
-		Offset: offset,
-		Store:  store,
-	}, nil
+	return NewMmapFd(fd, int(size), offset)
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -646,14 +668,14 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 	}
 	totalSizeBytes := stat.Size()
 	fd := int(f.Fd())
-	var chunks []*Chunk
+	var chunks []*Mmap
 	defer func() {
 		// If there's an error, clean up any Store instances we created.
 		if err == nil {
 			return
 		}
-		for _, b := range chunks {
-			b.Close()
+		for _, c := range chunks {
+			c.Close()
 		}
 	}()
 
@@ -671,7 +693,7 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 		return nil, status.InternalErrorf("initial data seek failed: %s", err)
 	}
 
-	createStoreForChunk := func(chunkStartOffset int64) (Store, error) {
+	createChunk := func(chunkStartOffset int64) (*Mmap, error) {
 		chunkFileSize := chunkSizeBytes
 		if remainder := totalSizeBytes - chunkStartOffset; chunkFileSize > remainder {
 			chunkFileSize = remainder
@@ -718,18 +740,17 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 				return nil, err
 			}
 		}
-		return NewMmapFd(int(chunkFile.Fd()), int(chunkFileSize))
+		return NewMmapFd(int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset)
 	}
 
 	// TODO: iterate through the file with multiple goroutines
 	for chunkStartOffset := int64(0); chunkStartOffset < totalSizeBytes; chunkStartOffset += chunkSizeBytes {
-		store, err := createStoreForChunk(chunkStartOffset)
+		c, err := createChunk(chunkStartOffset)
 		if err != nil {
 			return nil, status.WrapError(err, "failed to create chunk")
 		}
-		if store != nil {
-			chunk := &Chunk{Offset: chunkStartOffset, Store: store}
-			chunks = append(chunks, chunk)
+		if c != nil {
+			chunks = append(chunks, c)
 		}
 	}
 
@@ -754,39 +775,8 @@ func IsEmptyOrAllZero(data []byte) bool {
 	return true
 }
 
-func blockCount(totalSizeBytes, blockSizeBytes int64) int64 {
-	b := totalSizeBytes / blockSizeBytes
-	if totalSizeBytes%blockSizeBytes > 0 {
-		b++
-	}
-	return b
-}
-
 func readFullAt(r io.ReaderAt, p []byte, off int64) (n int, err error) {
 	return io.ReadFull(io.NewSectionReader(r, off, int64(len(p))), p)
-}
-
-type storeReader struct {
-	store Store
-	sr    *io.SectionReader
-}
-
-// Reader returns an io.Reader that reads all bytes from the given store,
-// starting at offset 0 and ending at SizeBytes.
-func Reader(store Store) io.Reader {
-	return &storeReader{store: store}
-}
-
-func (r *storeReader) Read(p []byte) (n int, err error) {
-	if r.sr == nil {
-		size, err := r.store.SizeBytes()
-		if err != nil {
-			return 0, err
-		}
-		r.sr = io.NewSectionReader(r.store, 0, size)
-		r.store = nil
-	}
-	return r.sr.Read(p)
 }
 
 // memoryAddress returns the memory address of the first byte of a slice

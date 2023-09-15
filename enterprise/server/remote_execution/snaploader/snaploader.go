@@ -134,37 +134,12 @@ type CacheSnapshotOptions struct {
 	WorkspaceFSPath string
 
 	// Labeled map of chunked artifacts backed by blockio.COWStore storage.
-	ChunkedFiles map[string]*ChunkedFile
+	ChunkedFiles map[string]*blockio.COWStore
 }
 
 type UnpackedSnapshot struct {
 	// ChunkedFiles holds any chunked files that were part of the snapshot.
-	ChunkedFiles map[string]*ChunkedFile
-}
-
-type ChunkedFile struct {
-	*blockio.COWStore
-
-	// digests caches any known digests for *non-dirty* chunks, keyed by offset.
-	digests map[int64]*repb.Digest
-}
-
-func (cf *ChunkedFile) chunkDigest(chunk *blockio.Chunk) (*repb.Digest, error) {
-	if cf.digests == nil {
-		cf.digests = make(map[int64]*repb.Digest)
-	}
-	// If we already know the original chunk digest and the chunk hasn't
-	// changed, return the original digest.
-	if d := cf.digests[chunk.Offset]; d != nil && !cf.COWStore.Dirty(chunk.Offset) {
-		return d, nil
-	}
-	// Otherwise compute the digest and memoize it.
-	d, err := digest.Compute(blockio.Reader(chunk), repb.DigestFunction_BLAKE3)
-	if err != nil {
-		return nil, err
-	}
-	cf.digests[chunk.Offset] = d
-	return d, nil
+	ChunkedFiles map[string]*blockio.COWStore
 }
 
 func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
@@ -256,7 +231,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	}
 
 	unpacked := &UnpackedSnapshot{
-		ChunkedFiles: make(map[string]*ChunkedFile, len(snapshot.manifest.ChunkedFiles)),
+		ChunkedFiles: make(map[string]*blockio.COWStore, len(snapshot.manifest.ChunkedFiles)),
 	}
 	// Construct COWs from chunks.
 	for _, cf := range snapshot.manifest.ChunkedFiles {
@@ -349,12 +324,12 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 	return nil
 }
 
-func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cf *ChunkedFile, err error) {
+func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cf *blockio.COWStore, err error) {
 	dataDir := filepath.Join(outputDirectory, file.GetName())
 	if err := os.Mkdir(dataDir, 0755); err != nil {
 		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
 	}
-	var chunks []*blockio.Chunk
+	var chunks []*blockio.Mmap
 	defer func() {
 		// If there was an error, clean up any chunks we created.
 		if err == nil {
@@ -364,7 +339,6 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 			c.Close()
 		}
 	}()
-	cf = &ChunkedFile{digests: make(map[int64]*repb.Digest, len(file.Chunks))}
 	for _, chunk := range file.Chunks {
 		size := file.GetChunkSize()
 		if remainder := file.GetSize() - chunk.GetOffset(); size > remainder {
@@ -376,39 +350,37 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		if !l.env.GetFileCache().FastLinkFile(node, path) {
 			return nil, status.UnavailableErrorf("snapshot chunk %s/%d not found in local cache", file.GetName(), chunk.GetOffset())
 		}
-		mm, err := blockio.NewLazyMmap(path)
+		c, err := blockio.NewLazyMmap(path, chunk.GetOffset())
 		if err != nil {
 			return nil, status.WrapError(err, "create mmap for chunk")
 		}
-		c := &blockio.Chunk{Offset: chunk.GetOffset(), Store: mm}
-		chunks = append(chunks, c)
 		// Memoize the original digest so that if the chunk doesn't change we
 		// don't have to recompute it later when adding back to cache.
-		cf.digests[chunk.GetOffset()] = d
+		c.SetDigest(d)
+		chunks = append(chunks, c)
 	}
 	cow, err := blockio.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
 	if err != nil {
 		return nil, err
 	}
-	cf.COWStore = cow
-	return cf, nil
+	return cow, nil
 }
 
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *ChunkedFile) (*fcpb.ChunkedFile, error) {
-	size, err := cf.SizeBytes()
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *blockio.COWStore) (*fcpb.ChunkedFile, error) {
+	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err
 	}
 	pb := &fcpb.ChunkedFile{
 		Name:      name,
 		Size:      size,
-		ChunkSize: cf.ChunkSizeBytes(),
+		ChunkSize: cow.ChunkSizeBytes(),
 	}
 	dirtyChunkCount := 0
 	var dirtyBytes int64
-	chunks := cf.Chunks()
+	chunks := cow.SortedChunks()
 	for _, c := range chunks {
-		if cf.Dirty(c.Offset) {
+		if cow.Dirty(c.Offset) {
 			dirtyChunkCount++
 			chunkSize, err := c.SizeBytes()
 			if err != nil {
@@ -422,12 +394,12 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cf *Chunked
 				return nil, status.WrapError(err, "sync dirty chunk")
 			}
 		}
-		d, err := cf.chunkDigest(c)
+		d, err := c.Digest()
 		if err != nil {
 			return nil, err
 		}
 		node := &repb.FileNode{Digest: d}
-		path := filepath.Join(cf.DataDir(), cf.ChunkName(c.Offset))
+		path := filepath.Join(cow.DataDir(), cow.ChunkName(c.Offset))
 		// TODO: if the file is already cached, then instead of adding the file,
 		// just record a file access (to avoid the syscall overhead of
 		// unlink/relink).
