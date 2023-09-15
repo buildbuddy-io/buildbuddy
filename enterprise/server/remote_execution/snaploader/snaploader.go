@@ -458,7 +458,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 //
 // If the image is not cached, this func will split up the given ext4 image
 // file and create a new ChunkedFile from it, then add that to cache.
-func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*blockio.COWStore, error) {
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -487,13 +487,13 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	// ChunkedFile then add it to cache.
 	// TODO(bduffany): single-flight this.
 	start := time.Now()
-	cow, err := blockio.ConvertFileToCOW(imageExt4Path, chunkSize, outDir)
+	cow, err := copy_on_write.ConvertFileToCOW(imageExt4Path, chunkSize, outDir)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
 	// Add the COW to cache. This will also compute chunk digests.
 	opts := &CacheSnapshotOptions{
-		ChunkedFiles: map[string]*blockio.COWStore{rootfsFileName: cow},
+		ChunkedFiles: map[string]*copy_on_write.COWStore{rootfsFileName: cow},
 	}
 	if _, err := l.CacheSnapshot(ctx, key, opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")
