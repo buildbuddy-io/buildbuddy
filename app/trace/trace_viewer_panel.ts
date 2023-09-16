@@ -9,6 +9,9 @@ import { LinePlotModel, PanelModel, SectionModel, TrackModel } from "./trace_vie
  * Draws the data from a `PanelModel` to a canvas.
  */
 export default class Panel {
+  /** The element containing the canvas. */
+  readonly container: HTMLElement;
+
   private ctx: CanvasRenderingContext2D;
   private dpr = window.devicePixelRatio;
 
@@ -31,6 +34,7 @@ export default class Panel {
 
   constructor(readonly model: PanelModel, readonly canvas: HTMLCanvasElement, private fontFamily: string) {
     this.ctx = canvas.getContext("2d")!;
+    this.container = canvas.parentElement!;
   }
 
   private isSectionVisible(section: SectionModel) {
@@ -49,10 +53,6 @@ export default class Panel {
     );
   }
 
-  container() {
-    return this.canvas.parentElement!;
-  }
-
   containsClientXY(c: ClientXY) {
     return domRectContains(this.canvas.getBoundingClientRect(), c.clientX, c.clientY);
   }
@@ -64,8 +64,8 @@ export default class Panel {
    */
   resize() {
     this.dpr = window.devicePixelRatio;
-    this.canvasWidth = this.container().clientWidth;
-    this.canvasHeight = this.container().clientHeight;
+    this.canvasWidth = this.container.clientWidth;
+    this.canvasHeight = this.container.clientHeight;
     this.canvas.width = this.canvasWidth * this.dpr;
     this.canvas.height = this.canvasHeight * this.dpr;
     this.canvas.style.width = `${this.canvasWidth}px`;

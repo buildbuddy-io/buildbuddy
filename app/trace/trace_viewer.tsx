@@ -19,7 +19,12 @@ export interface TraceViewProps {
 /**
  * Renders an interactive trace profile viewer for an invocation.
  */
-export default class TraceViewer extends React.Component<TraceViewProps> {
+export default class TraceViewer extends React.Component<TraceViewProps, {}> {
+  /*
+   * NOTE: this component intentionally does not using React state.
+   * Component updates are done manually by drawing to a Canvas.
+   */
+
   private model = buildTraceViewerModel(this.props.profile);
   private rootRef = React.createRef<HTMLDivElement>();
   private canvasRefs: React.RefObject<HTMLCanvasElement>[] = this.model.panels.map((_) =>
@@ -29,6 +34,12 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
 
   private animation = new AnimationLoop((dt: number) => this.update(dt));
 
+  /**
+   * Current X axis scaling, which is smoothly animated as the user zooms in and
+   * out. "canvasX" means canvas X coordinates, which are basically equivalent
+   * to screen pixels. "modelX" means model X coordinates. These are in
+   * microseconds.
+   */
   private canvasXPerModelX = new AnimatedValue(0, { min: 0, max: 1 });
   private zoomOriginModelX = 0;
   private zoomOriginClientX = 0;
@@ -62,7 +73,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
       // Need to register a non-passive event listener because we may want to
       // prevent the default scrolling behavior on wheel (for scroll-to-zoom
       // functionality).
-      panel.container().addEventListener("wheel", (e: WheelEvent) => this.onWheel(e), {
+      panel.container.addEventListener("wheel", (e: WheelEvent) => this.onWheel(e), {
         passive: false,
       });
     }
@@ -77,36 +88,39 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
   }
 
   private update(dt = 0) {
-    this.canvasXPerModelX.min = this.panels[0].container().clientWidth / this.model.xMax;
+    this.canvasXPerModelX.min = this.panels[0].container.clientWidth / this.model.xMax;
     this.canvasXPerModelX.step(dt, { threshold: 1e-9 });
 
     for (const panel of this.panels) {
       panel.resize();
 
-      // If actively zooming or panning, set scrollX so that the zoom origin stays fixed.
       if (!this.canvasXPerModelX.isAtTarget || this.panning) {
-        panel.scrollX =
-          this.zoomOriginModelX * this.canvasXPerModelX.value -
-          (this.zoomOriginClientX - panel.container().getBoundingClientRect().left);
+        // If actively zooming or panning, set the panel's scrollX so that the
+        // zoom origin stays fixed.
+        const zoomOriginScrollX = this.zoomOriginModelX * this.canvasXPerModelX.value;
+        const zoomOriginCanvasXDistanceFromPanelLeftEdge =
+          this.zoomOriginClientX - panel.container.getBoundingClientRect().left;
+        panel.scrollX = zoomOriginScrollX - zoomOriginCanvasXDistanceFromPanelLeftEdge;
       }
       // Set panel x scale
       panel.canvasXPerModelX = this.canvasXPerModelX.value;
 
-      // Set sizer div width
-      const sizer = panel.container().getElementsByClassName("sizer")[0] as HTMLDivElement;
+      // Set sizer div width so that the horizontal scrollbar renders
+      // appropriately.
+      const sizer = panel.container.getElementsByClassName("sizer")[0] as HTMLDivElement;
       sizer.style.width = `${this.canvasXPerModelX.value * this.model.xMax}px`;
 
       panel.scrollX = clamp(
         panel.scrollX,
         0,
-        this.canvasXPerModelX.value * this.model.xMax - panel.container().clientWidth
+        this.canvasXPerModelX.value * this.model.xMax - panel.container.clientWidth
       );
-      panel.container().scrollLeft = panel.scrollX;
+      panel.container.scrollLeft = panel.scrollX;
 
       if (this.panning === panel) {
-        const scrollTop = this.mouseScrollTop - this.mouse.clientY + panel.container().getBoundingClientRect().top;
-        panel.scrollY = clamp(scrollTop, 0, panel.container().scrollHeight - panel.container().clientHeight);
-        panel.container().scrollTop = panel.scrollY;
+        const scrollTop = this.mouseScrollTop - this.mouse.clientY + panel.container.getBoundingClientRect().top;
+        panel.scrollY = clamp(scrollTop, 0, panel.container.scrollHeight - panel.container.clientHeight);
+        panel.container.scrollTop = panel.scrollY;
       }
 
       panel.draw();
@@ -121,14 +135,14 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
     // When panning, keep mouseModelX fixed.
     if (!this.panning) {
       const mouseCanvasX =
-        this.panels[0].scrollX + (mouse.clientX - this.panels[0].container().getBoundingClientRect().left);
+        this.panels[0].scrollX + (mouse.clientX - this.panels[0].container.getBoundingClientRect().left);
       this.mouseModelX = mouseCanvasX / this.panels[0].canvasXPerModelX;
     }
     this.zoomOriginClientX = mouse.clientX;
     this.zoomOriginModelX = this.mouseModelX;
-    // When using zoom buttons, set zoom origin to the center.
+    // When using zoom buttons, set the zoom origin to the center.
     if (this.isUsingZoomButtons) {
-      const boundingRect = this.panels[0].container().getBoundingClientRect();
+      const boundingRect = this.panels[0].container.getBoundingClientRect();
       this.zoomOriginClientX = boundingRect.left + boundingRect.width / 2;
       this.zoomOriginModelX = (this.panels[0].scrollX + boundingRect.width / 2) / this.canvasXPerModelX.value;
     }
@@ -167,7 +181,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
       const panel = this.panels[i];
       panel.scrollX = (e.target as HTMLDivElement).scrollLeft;
       if (i !== panelIndex) {
-        panel.container().scrollLeft = panel.scrollX;
+        panel.container.scrollLeft = panel.scrollX;
       }
       panel.draw();
     }
@@ -209,7 +223,7 @@ export default class TraceViewer extends React.Component<TraceViewProps> {
   private onCanvasMouseDown(e: React.MouseEvent, panelIndex: number) {
     this.panning = this.panels[panelIndex];
     document.body.style.cursor = "grabbing";
-    const container = this.panning.container();
+    const container = this.panning.container;
     this.updateMouse(e);
     // Capture mouseScrollTop so we can keep it fixed while panning.
     this.mouseScrollTop = container.scrollTop + (this.mouse.clientY - container.getBoundingClientRect().top);
