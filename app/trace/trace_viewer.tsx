@@ -193,6 +193,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
   }
 
   private onWheel(e: WheelEvent) {
+    this.isUsingZoomButtons = false;
     if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
@@ -274,14 +275,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
               <button
                 className="button icon-button"
                 onClick={(e) => this.onClickZoom(e, -1)}
-                onMouseOut={() => (this.isUsingZoomButtons = false)}
                 title={`Zoom out (${modifierKey()}+scroll)`}>
                 <ZoomOut className="icon" />
               </button>
               <button
                 className="button icon-button"
                 onClick={(e) => this.onClickZoom(e, +1)}
-                onMouseOut={() => (this.isUsingZoomButtons = false)}
                 title={`Zoom in (${modifierKey()}+scroll)`}>
                 <ZoomIn className="icon" />
               </button>
