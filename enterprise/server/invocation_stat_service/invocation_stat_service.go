@@ -88,6 +88,8 @@ const (
 	StatInterval15Minutes
 	StatInterval30Minutes
 	StatInterval1Hour
+	StatInterval2Hours
+	StatInterval4Hours
 	StatInterval1Day
 )
 
@@ -101,6 +103,10 @@ func (s StatInterval) Duration() time.Duration {
 		return 30 * time.Minute
 	case StatInterval1Hour:
 		return 1 * time.Hour
+	case StatInterval2Hours:
+		return 2 * time.Hour
+	case StatInterval4Hours:
+		return 4 * time.Hour
 	case StatInterval1Day:
 		return 24 * time.Hour
 	}
@@ -129,6 +135,16 @@ func (s StatInterval) IntervalProto() *stpb.StatsInterval {
 			Type:  stpb.IntervalType_INTERVAL_TYPE_HOUR,
 			Count: 1,
 		}
+	case StatInterval2Hours:
+		return &stpb.StatsInterval{
+			Type:  stpb.IntervalType_INTERVAL_TYPE_HOUR,
+			Count: 2,
+		}
+	case StatInterval4Hours:
+		return &stpb.StatsInterval{
+			Type:  stpb.IntervalType_INTERVAL_TYPE_HOUR,
+			Count: 4,
+		}
 	case StatInterval1Day:
 		return &stpb.StatsInterval{
 			Type:  stpb.IntervalType_INTERVAL_TYPE_DAY,
@@ -151,6 +167,10 @@ func (s StatInterval) ClickhouseInterval() string {
 		return "30 MINUTE"
 	case StatInterval1Hour:
 		return "1 HOUR"
+	case StatInterval2Hours:
+		return "2 HOUR"
+	case StatInterval4Hours:
+		return "4 HOUR"
 	case StatInterval1Day:
 		return "1 DAY"
 	}
@@ -164,12 +184,28 @@ type trendTimeSettings struct {
 	location *time.Location
 }
 
+// These values are currently set to keep us under ~50 intervals in a response.
+// We need to make some visual improvements to cache charts so that they're
+// easier to read with lots of small intervals before we can do more than this.
 func computeTrendsInterval(d time.Duration) StatInterval {
-	if d <= 4*24*time.Hour {
+	if d <= 3*time.Hour {
+		return StatInterval5Minutes
+	}
+	if d <= 12*time.Hour {
+		return StatInterval15Minutes
+	}
+	// 25 hours so that even when crossing DST, we still show 30-min intervals.
+	if d <= 25*time.Hour {
 		return StatInterval30Minutes
 	}
-	if d <= 8*24*time.Hour {
+	if d <= 48*time.Hour {
 		return StatInterval1Hour
+	}
+	if d <= 4*24*time.Hour {
+		return StatInterval2Hours
+	}
+	if d <= 8*24*time.Hour {
+		return StatInterval4Hours
 	}
 	return StatInterval1Day
 }
