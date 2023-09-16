@@ -14,25 +14,6 @@ ts_library(
 )
 
 ts_library(
-    name = "panel",
-    srcs = ["panel.ts"],
-    deps = [
-        "//app/trace:constants",
-        "//app/trace:trace_events",
-        "//app/trace:trace_viewer_model",
-        "//app/util:canvas",
-        "//app/util:dom",
-        "//app/util:math",
-        "@npm//tslib",
-    ],
-)
-
-ts_library(
-    name = "trace",
-    srcs = ["trace.ts"],
-)
-
-ts_library(
     name = "trace_viewer",
     srcs = ["trace_viewer.tsx"],
     deps = [
@@ -72,12 +53,6 @@ ts_library(
 )
 
 ts_library(
-    name = "trace_test",
-    srcs = ["trace_test.ts"],
-    deps = ["//app/trace:profile_model"],
-)
-
-ts_library(
     name = "trace_events",
     srcs = ["trace_events.ts"],
 )
@@ -85,7 +60,7 @@ ts_library(
 ts_jasmine_node_test(
     name = "trace_events_test",
     srcs = ["trace_events_test.ts"],
-    deps = ["//app/trace:profile_model"],
+    deps = [":trace_events"],
 )
 
 ts_library(

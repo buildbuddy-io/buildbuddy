@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
+load("//rules/typescript:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -21,12 +21,6 @@ ts_library(
         "@npm//rxjs",
         "@npm//tslib",
     ],
-)
-
-ts_jasmine_node_test(
-    name = "profile_model_test",
-    srcs = ["profile_model_test.ts"],
-    deps = [":flame_chart"],
 )
 
 ts_library(
