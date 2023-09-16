@@ -87,6 +87,17 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     document.body.style.cursor = "";
   }
 
+  /**
+   * Main update loop called in each animation frame by `this.animation`. This
+   * steps the zoom animation if applicable and re-renders the canvas contents.
+   * If the user is not interacting with the canvas or the zoom animation is at
+   * its target value, this stops running.
+   *
+   * It can also be called with a time delta of zero just to do a one-off
+   * re-render of the canvas (e.g. if the browser window is resized).
+   *
+   * @param dt the time elapsed since the previous animation frame.
+   */
   private update(dt = 0) {
     this.canvasXPerModelX.min = this.panels[0].container.clientWidth / this.model.xMax;
     this.canvasXPerModelX.step(dt, { threshold: 1e-9 });
@@ -147,6 +158,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
       this.zoomOriginModelX = (this.panels[0].scrollX + boundingRect.width / 2) / this.canvasXPerModelX.value;
     }
 
+    // Update hover state.
     let isHoveringAnyPanel = false;
     let hoveredEvent: TraceEvent | null = null;
     for (const panel of this.panels) {
@@ -188,6 +200,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
   }
 
   private adjustZoom(amount: number) {
+    // When zooming, the desired behavior is that each successive order of
+    // magnitude difference in the duration of time that's currently displayed
+    // should take the same amount of time to reach by scrolling. For example,
+    // the scroll distance between 1/1e5 (pixels per microsecond) and 1/1e4
+    // should be the same as the scroll distance between 1/1e4 and 1/1e3. The
+    // power formula here achieves that.
     this.canvasXPerModelX.target *= Math.pow(0.92, -amount);
     this.animation.start();
   }
@@ -256,10 +274,11 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
               }}
               onScroll={(e) => this.onScroll(e, i)}>
               <canvas ref={this.canvasRefs[i]} onMouseDown={(e) => this.onCanvasMouseDown(e, i)} />
-              {/* This next div is just to make the total content height
-                match the size of the panel contents. We can't use very
-                large heights on the canvas directly due to browser
-                limitations. */}
+              {/*
+               * This sizer div is used to make the total scrollable area
+               * match the size of the panel contents. We can't use a very
+               * large canvas directly due to browser limitations.
+               */}
               <div
                 className="sizer"
                 style={{

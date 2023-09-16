@@ -4,7 +4,7 @@ export function fillCircle(
   xCenter: number,
   yCenter: number,
   radius: number,
-  fillColor: string = 'black'
+  fillColor: string = "black"
 ): void {
   ctx.beginPath();
   ctx.arc(xCenter, yCenter, radius, 0, 2 * Math.PI);
@@ -23,7 +23,7 @@ export type TextBoxProps = {
    * x position anchoring. If 'right', the right edge of the text is anchored to
    * the x position rather than the left edge.
    */
-  xAnchor?: 'left' | 'right';
+  xAnchor?: "left" | "right";
 };
 
 /**
@@ -37,18 +37,12 @@ export function fillTextBox(
   text: string,
   x: number,
   y: number,
-  {
-    textColor = 'black',
-    boxColor = 'white',
-    boxRadius = 0,
-    boxPadding = 0,
-    xAnchor = 'left',
-  }: TextBoxProps = {}
+  { textColor = "black", boxColor = "white", boxRadius = 0, boxPadding = 0, xAnchor = "left" }: TextBoxProps = {}
 ) {
   const textMetrics = ctx.measureText(text);
   const radiusPadding = boxRadius / 2;
   const boxWidth = textMetrics.width + boxPadding * 2 + radiusPadding * 2;
-  const xOffset = xAnchor === 'right' ? -textMetrics.width : 0;
+  const xOffset = xAnchor === "right" ? -textMetrics.width : 0;
   fillRoundedRect(
     ctx,
     x - boxPadding - radiusPadding + xOffset,
@@ -108,7 +102,7 @@ export function fillRoundedRect(
   width: number,
   height: number,
   radius: number,
-  fillStyle: string = ''
+  fillStyle: string = ""
 ) {
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
