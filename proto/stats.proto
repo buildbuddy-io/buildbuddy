@@ -185,8 +185,7 @@ message StatsInterval {
   // The number of the specified IntervalType that each bucket contains--for
   // example, a value of 30 with INTERVAL_TYPE_MINUTE means each bucket will
   // start at either :00 or :30 in the local time zone.
-  // Note that we currently *never* specify count > 1 for INTERVAL_TYPE_DAY
-  // and INTERVAL_TYPE_HOUR.
+  // Note that we currently *never* specify count > 1 for INTERVAL_TYPE_DAY.
   int64 count = 2;
 }
 
