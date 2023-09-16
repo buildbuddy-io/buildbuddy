@@ -43,6 +43,7 @@ ts_library(
         "@npm//@types/moment",
         "@npm//d3-time",
         "@npm//moment",
+        "@npm//tslib",
     ],
 )
 
