@@ -40,7 +40,10 @@ ts_library(
     deps = [
         "//proto:stats_ts_proto",
         "@npm//@types/d3-time",
+        "@npm//@types/moment",
         "@npm//d3-time",
+        "@npm//moment",
+        "@npm//tslib",
     ],
 )
 

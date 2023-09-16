@@ -1,5 +1,6 @@
+import moment from "moment";
 import { stats } from "../../../proto/stats_ts_proto";
-import { timeHour, timeDay, timeMinute } from "d3-time";
+import { timeDay, timeMinute } from "d3-time";
 
 export enum TrendsTab {
   OVERVIEW,
@@ -7,6 +8,31 @@ export enum TrendsTab {
   CACHE,
   EXECUTIONS,
   DRILLDOWN,
+}
+
+// Okay, so, hear me out: d3-time doesn't care about dst boundaries, so when
+// you tell it to skip "intervals of 2 hours" and pass over a DST boundary, it
+// will count, for example, [20, 22, 0, 3, 5, 7] or [20, 22, 0, 1, 3, 5].
+// Clickhouse... disagrees.  This function matches clickhouse by iterating one
+// hour at a time and checking the modulus of the hour number, and in this
+// author's (humble?) opinion, better matches user intuition: the graph counts
+// 3 hours (or 1 hour) in a single bucket, but the grouping of buckets stays
+// on even-numbered hours throughout the chart.
+function timeHourRangeWithDst(startToCopy: Date, end: Date, step: number): Date[] {
+  const start = new Date(startToCopy);
+  const hourMultiple = Math.floor(start.getHours() / step);
+  start.setHours(hourMultiple * step);
+  start.setMinutes(0);
+  start.setSeconds(0);
+  start.setMilliseconds(0);
+
+  const out: Date[] = [];
+  for (let current = moment(start); current.isBefore(end); current = current.add(1, "hour")) {
+    if (current.get("hour") % step === 0) {
+      out.push(current.toDate());
+    }
+  }
+  return out;
 }
 
 export function computeTimeKeys(
@@ -26,7 +52,7 @@ export function computeTimeKeys(
     domain[0].setMilliseconds(0);
 
     // These are the keys that we expect to have data for in the graph.
-    const keyDates = timeHour.range(domain[0], domain[1], +interval.count);
+    const keyDates = timeHourRangeWithDst(domain[0], domain[1], +interval.count);
 
     // We can't show too many ticks on the graph, and recharts does a bad
     // job with selecting ticks (for example, it might always pick noon
