@@ -66,7 +66,7 @@ func Start(t testing.TB, reuseServer bool) string {
 			"--env", "MYSQL_DATABASE="+dbName,
 			"--publish", fmt.Sprintf("%d:3306", port),
 			"--name", containerName,
-			"mysql:8.0",
+			"gcr.io/flame-public/mysql:8.0",
 		)
 		cmd.Stderr = &logWriter{"docker run mysql"}
 		err := cmd.Run()

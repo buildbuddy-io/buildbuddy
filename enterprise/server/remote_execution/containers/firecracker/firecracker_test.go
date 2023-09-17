@@ -1657,20 +1657,20 @@ func TestFirecrackerStressIO(t *testing.T) {
 		fileSize = 10 * 1024
 		// Whether to execute each run inside a docker container in the VM.
 		// Requires dockerd.
-		dockerize = false
+		dockerize = true
 	)
 	// VM lifecycle options
 	const (
 		// Max number of times a single VM can be used before it is removed
-		maxRunsPerVM = 1
+		maxRunsPerVM = 10
 	)
 	// VM configuration
 	const (
 		cpus       = 4
 		memoryMB   = 800
 		scratchMB  = 800
-		dockerd    = false
-		networking = false
+		dockerd    = true
+		networking = true
 	)
 
 	if dockerize && (!dockerd || !networking) {

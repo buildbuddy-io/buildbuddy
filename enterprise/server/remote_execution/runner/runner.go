@@ -886,11 +886,11 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
-	if props.RecycleRunner && err != nil {
-		return nil, status.InvalidArgumentError(
-			"runner recycling is not supported for anonymous builds " +
-				`(recycling was requested via platform property "recycle-runner=true")`)
-	}
+	// if props.RecycleRunner && err != nil {
+	// 	return nil, status.InvalidArgumentError(
+	// 		"runner recycling is not supported for anonymous builds " +
+	// 			`(recycling was requested via platform property "recycle-runner=true")`)
+	// }
 	if props.RecycleRunner && props.EnableVFS {
 		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
 	}
