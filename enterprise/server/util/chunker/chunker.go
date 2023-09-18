@@ -28,12 +28,7 @@ func (c *Chunker) Close() error {
 		return err
 	}
 
-	select {
-	case <-c.ctx.Done():
-		return c.ctx.Err()
-	case <-c.done:
-		break
-	}
+	<-c.done
 	return nil
 }
 
@@ -84,6 +79,11 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 				return
 			}
 		}
+	}()
+
+	go func() {
+		<-ctx.Done()
+		pw.Close()
 	}()
 
 	return c, nil
