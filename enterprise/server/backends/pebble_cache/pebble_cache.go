@@ -481,7 +481,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	if opts.ClearCacheBeforeMigration {
-		log.Infof("Removing directory %q", opts.RootDirectory)
+		log.Infof("Removing directory %q before starting cache %s", opts.RootDirectory, opts.Name)
 		if err := os.RemoveAll(opts.RootDirectory); err != nil {
 			return nil, err
 		}
