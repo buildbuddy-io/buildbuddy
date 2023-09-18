@@ -1,7 +1,7 @@
 FROM gcr.io/cloud-marketplace/google/debian11@sha256:69e2789c9f3d28c6a0f13b25062c240ee7772be1f5e6d41bb4680b63eae6b304
 
-RUN apt-get update && apt-get install -y \
-  rpm curl apt-transport-https ca-certificates gnupg-agent software-properties-common fuse
+RUN apt-get update && \
+    apt-get install -y rpm curl apt-transport-https ca-certificates gnupg-agent software-properties-common fuse
 
 RUN curl https://github.com/krallin/tini/releases/download/v0.19.0/tini -o /tini -s -L && \
     echo "93dcc18adc78c65a028a84799ecf8ad40c936fdfc5f2a57b1acda5a8117fa82c tini" | sha256sum -c && \
@@ -13,13 +13,14 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
     apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io
 
 # Install umoci which we use to unpack OCI images when we're not using docker.
-# Also install iproute2 ("ip" command) to configure networking on host.
-RUN apt-get update && apt-get install -y umoci iproute2
+# Install iproute2 ("ip" command) to configure networking on host.
+RUN apt-get update && apt-get install -y umoci iproute2 amazon-ecr-credential-helper
 
 # Install podman and skopeo
 RUN echo 'deb https://downloadcontent.opensuse.org/repositories/home:/alvistack/Debian_11/ /' >> /etc/apt/sources.list.d/home:alvistack.list && \
     curl -fsSL https://download.opensuse.org/repositories/home:/alvistack/Debian_11/Release.key | gpg --dearmor >> /etc/apt/trusted.gpg.d/home_alvistack_debian11.gpg && \
-    apt-get update && apt-get -y upgrade && apt-get install -y podman=100:4.6.2-1 skopeo=100:1.13.3-1
+    apt-get update && apt-get -y upgrade && apt-get install -y podman=100:4.6.2-1 skopeo=100:1.13.3-1 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy podman registries configuration.
 COPY data/registries.conf /etc/containers/registries.conf
