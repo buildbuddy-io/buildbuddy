@@ -48,6 +48,7 @@ type PebbleCacheConfig struct {
 	MinEvictionAge              *time.Duration          `yaml:"min_eviction_age"`
 	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression"`
 	AverageChunkSizeBytes       int                     `yaml:"average_chunk_size_bytes"`
+	ClearCacheBeforeMigration   bool                    `yaml:"clear_cache_before_migration"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {

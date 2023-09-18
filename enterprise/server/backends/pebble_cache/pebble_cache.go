@@ -176,6 +176,8 @@ type Options struct {
 	IncludeMetadataSize bool
 
 	Clock clockwork.Clock
+
+	ClearCacheBeforeMigration bool
 }
 
 type sizeUpdate struct {
@@ -237,6 +239,8 @@ type PebbleCache struct {
 
 	oldMetrics    pebble.Metrics
 	eventListener *pebbleEventListener
+
+	clearCacheBeforeMigration bool
 }
 
 type pebbleEventListener struct {
@@ -477,6 +481,12 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	SetOptionDefaults(opts)
 	if err := validateOpts(opts); err != nil {
 		return nil, err
+	}
+	if opts.ClearCacheBeforeMigration {
+		log.Infof("Removing directory %q", opts.RootDirectory)
+		if err := os.RemoveAll(opts.RootDirectory); err != nil {
+			return nil, err
+		}
 	}
 	if err := disk.EnsureDirectoryExists(opts.RootDirectory); err != nil {
 		return nil, err
