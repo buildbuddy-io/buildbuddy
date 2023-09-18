@@ -1325,7 +1325,6 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 func TestCompression_ParallelRequests(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
-	ctx := getAnonContext(t, te)
 	maxSizeBytes := int64(1000)
 
 	testCases := []struct {
@@ -1357,6 +1356,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			ctx := getAnonContext(t, te)
 			opts := &pebble_cache.Options{
 				RootDirectory:          testfs.MakeTempDir(t),
 				MaxSizeBytes:           maxSizeBytes,
