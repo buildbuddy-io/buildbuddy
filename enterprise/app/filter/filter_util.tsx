@@ -106,8 +106,13 @@ export function getDefaultStartDate(now?: moment.Moment): Date {
 }
 
 export function getStartDate(search: URLSearchParams, now?: moment.Moment): Date {
-  if (search.get(START_DATE_PARAM_NAME)) {
-    return moment(search.get(START_DATE_PARAM_NAME)).toDate();
+  const dateString = search.get(START_DATE_PARAM_NAME);
+  if (dateString) {
+    const dateNumber = Number(dateString);
+    if (Number.isInteger(dateNumber)) {
+      return new Date(dateNumber);
+    }
+    return moment(dateString).toDate();
   }
   if (search.get(LAST_N_DAYS_PARAM_NAME)) {
     return (now ? moment(now) : moment()).add(-Number(search.get(LAST_N_DAYS_PARAM_NAME)) + 1, "days").toDate();
@@ -119,13 +124,27 @@ export function getDisplayDateRange(search: URLSearchParams): { startDate: Date;
   // Not using `getEndDate` here because it's set to "start of day after the one specified
   // in the URL" which causes an off-by-one error if we were to render that directly in
   // the calendar.
-  const endDate = search.get(END_DATE_PARAM_NAME) ? moment(search.get(END_DATE_PARAM_NAME)).toDate() : new Date();
+  let endDate = new Date();
+  const dateString = search.get(END_DATE_PARAM_NAME);
+  if (dateString) {
+    const dateNumber = Number(dateString);
+    if (Number.isInteger(dateNumber)) {
+      endDate = new Date(dateNumber);
+    } else {
+      endDate = moment(dateString).toDate();
+    }
+  }
   return { startDate: getStartDate(search), endDate };
 }
 
 export function getEndDate(search: URLSearchParams): Date | undefined {
-  if (!search.get(END_DATE_PARAM_NAME)) {
+  const dateString = search.get(END_DATE_PARAM_NAME);
+  if (!dateString) {
     return undefined;
+  }
+  const dateNumber = Number(dateString);
+  if (Number.isInteger(dateNumber)) {
+    return new Date(dateNumber);
   }
   return moment(search.get(END_DATE_PARAM_NAME)).add(1, "days").toDate();
 }
