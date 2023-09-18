@@ -23,7 +23,7 @@ import (
 var (
 	dockerSocket               = flag.String("executor.docker_socket", "", "If set, run execution commands in docker using the provided socket.")
 	defaultXcodeVersion        = flag.String("executor.default_xcode_version", "", "Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used.")
-	defaultIsolationType       = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, firecracker, podman, or barerunner")
+	defaultIsolationType       = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, podman, firecracker, or none (bare).")
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
@@ -321,19 +321,20 @@ func GetExecutorProperties() *ExecutorProperties {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, DockerContainerType)
 		}
 	}
-	if *enableFirecracker {
-		if runtime.GOOS == "darwin" {
-			log.Warning("Firecracker was enabled, but is unsupported on darwin. Ignoring.")
-		} else {
-			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
-		}
-	}
 
 	if *enablePodman {
 		if runtime.GOOS == "darwin" {
 			log.Warning("Podman was enabled, but is unsupported on darwin. Ignoring.")
 		} else {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, PodmanContainerType)
+		}
+	}
+
+	if *enableFirecracker {
+		if runtime.GOOS == "darwin" {
+			log.Warning("Firecracker was enabled, but is unsupported on darwin. Ignoring.")
+		} else {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
 		}
 	}
 
