@@ -2046,7 +2046,7 @@ func (cdcw *cdcWriter) closeChunkerAndWait() error {
 }
 
 func (cdcw *cdcWriter) Close() error {
-	if cdcw.isChunkerClosed {
+	if !cdcw.isChunkerClosed {
 		return cdcw.closeChunkerAndWait()
 	}
 
