@@ -682,7 +682,7 @@ type RemoteExecutionService interface {
 type FileCache interface {
 	FastLinkFile(f *repb.FileNode, outputPath string) bool
 	DeleteFile(f *repb.FileNode) bool
-	AddFile(f *repb.FileNode, existingFilePath string)
+	AddFile(f *repb.FileNode, existingFilePath string) error
 	ContainsFile(node *repb.FileNode) bool
 	WaitForDirectoryScanToComplete()
 

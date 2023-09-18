@@ -276,10 +276,8 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		fileNode.Name = filepath.Base(f)
 		manifest.Files = append(manifest.Files, fileNode)
 
-		// If EnableLocalSnapshotSharing=true and we're computing real digests,
-		// the files will be immutable. We won't need to re-save them to file cache
-		if !*EnableLocalSnapshotSharing || !l.env.GetFileCache().ContainsFile(fileNode) {
-			l.env.GetFileCache().AddFile(fileNode, f)
+		if err := l.cacheLocally(fileNode, f); err != nil {
+			return nil, err
 		}
 	}
 	for name, cow := range opts.ChunkedFiles {
@@ -345,21 +343,13 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 			size = remainder
 		}
 		d := &repb.Digest{Hash: chunk.GetDigestHash(), SizeBytes: size}
-		node := &repb.FileNode{Digest: d}
-		path := filepath.Join(dataDir, fmt.Sprintf("%d", chunk.GetOffset()))
-		if !l.env.GetFileCache().FastLinkFile(node, path) {
-			return nil, status.UnavailableErrorf("snapshot chunk %s/%d not found in local cache", file.GetName(), chunk.GetOffset())
-		}
-		c, err := copy_on_write.NewLazyMmap(path, chunk.GetOffset())
+		c, err := copy_on_write.NewLazyMmap(l.env.GetFileCache(), dataDir, chunk.GetOffset(), d)
 		if err != nil {
 			return nil, status.WrapError(err, "create mmap for chunk")
 		}
-		// Memoize the original digest so that if the chunk doesn't change we
-		// don't have to recompute it later when adding back to cache.
-		c.SetDigest(d)
 		chunks = append(chunks, c)
 	}
-	cow, err := copy_on_write.NewCOWStore(chunks, file.GetChunkSize(), file.GetSize(), dataDir)
+	cow, err := copy_on_write.NewCOWStore(l.env.GetFileCache(), chunks, file.GetChunkSize(), file.GetSize(), dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -398,12 +388,14 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *copy_o
 		if err != nil {
 			return nil, err
 		}
-		node := &repb.FileNode{Digest: d}
-		path := filepath.Join(cow.DataDir(), cow.ChunkName(c.Offset))
-		// TODO: if the file is already cached, then instead of adding the file,
-		// just record a file access (to avoid the syscall overhead of
-		// unlink/relink).
-		l.env.GetFileCache().AddFile(node, path)
+
+		if c.Mapped() {
+			node := &repb.FileNode{Digest: d, Name: fmt.Sprintf("%d", c.Offset)}
+			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
+			if err := l.cacheLocally(node, path); err != nil {
+				return nil, err
+			}
+		}
 		pb.Chunks = append(pb.Chunks, &fcpb.Chunk{
 			Offset:     c.Offset,
 			DigestHash: d.GetHash(),
@@ -424,6 +416,17 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *copy_o
 	}).Add(float64(dirtyBytes))
 
 	return pb, nil
+}
+
+// cacheLocally copies the data at `path` to the local filecache with
+// the given `key`
+func (l *FileCacheLoader) cacheLocally(key *repb.FileNode, path string) error {
+	// If EnableLocalSnapshotSharing=true and we're computing real unloadedChunks,
+	// the files will be immutable. We won't need to re-save them to file cache
+	if !*EnableLocalSnapshotSharing || !l.env.GetFileCache().ContainsFile(key) {
+		return l.env.GetFileCache().AddFile(key, path)
+	}
+	return nil
 }
 
 func chunkDigestSize(chunkedFile *fcpb.ChunkedFile, chunk *fcpb.Chunk) int64 {
@@ -487,7 +490,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	// ChunkedFile then add it to cache.
 	// TODO(bduffany): single-flight this.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(imageExt4Path, chunkSize, outDir)
+	cow, err := copy_on_write.ConvertFileToCOW(l.env.GetFileCache(), imageExt4Path, chunkSize, outDir)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}

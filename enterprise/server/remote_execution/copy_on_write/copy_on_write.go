@@ -33,6 +33,8 @@ const (
 //
 // A COWStore supports concurrent reads/writes, as long as they are to different chunks
 type COWStore struct {
+	localCache interfaces.FileCache
+
 	mu sync.RWMutex // Protects chunks and dirty
 
 	// chunks is a mapping of chunk offset to the backing data store
@@ -64,7 +66,7 @@ type COWStore struct {
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COWStore, error) {
+func NewCOWStore(fileCache interfaces.FileCache, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -75,9 +77,10 @@ func NewCOWStore(chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir s
 	}
 
 	return &COWStore{
-		chunks:  chunkMap,
-		dirty:   make(map[int64]bool, 0),
-		dataDir: dataDir,
+		localCache: fileCache,
+		chunks:     chunkMap,
+		dirty:      make(map[int64]bool, 0),
+		dataDir:    dataDir,
 		copyBufPool: sync.Pool{
 			New: func() any {
 				b := make([]byte, chunkSizeBytes)
@@ -311,10 +314,10 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 	return s.dirty[chunkOffset]
 }
 
-// ChunkName returns the data file name for the given chunk offset.
-func (s *COWStore) ChunkName(chunkOffset int64) string {
+// ChunkName returns the file name containing the data for the given chunk offset.
+func ChunkName(chunkOffset int64, dirty bool) string {
 	suffix := ""
-	if s.Dirty(chunkOffset) {
+	if dirty {
 		suffix = dirtySuffix
 	}
 	return fmt.Sprintf("%d%s", chunkOffset, suffix)
@@ -450,7 +453,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
 	if err := syscall.Ftruncate(fd, size); err != nil {
 		return nil, err
 	}
-	return NewMmapFd(fd, int(size), offset)
+	return NewMmapFd(s.localCache, s.DataDir(), fd, int(size), offset)
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -468,7 +471,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (store *COWStore, err error) {
+func ConvertFileToCOW(fileCache interfaces.FileCache, filePath string, chunkSizeBytes int64, dataDir string) (store *COWStore, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -552,7 +555,7 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 				return nil, err
 			}
 		}
-		return NewMmapFd(int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset)
+		return NewMmapFd(fileCache, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset)
 	}
 
 	// TODO: iterate through the file with multiple goroutines
@@ -566,7 +569,7 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 		}
 	}
 
-	return NewCOWStore(chunks, chunkSizeBytes, totalSizeBytes, dataDir)
+	return NewCOWStore(fileCache, chunks, chunkSizeBytes, totalSizeBytes, dataDir)
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite
@@ -575,17 +578,52 @@ func ConvertFileToCOW(filePath string, chunkSizeBytes int64, dataDir string) (st
 // It allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
 type Mmap struct {
+	localCache interfaces.FileCache
+
 	Offset int64
 
 	data       []byte
 	mapped     bool
 	closed     bool
-	path       string
+	dataDir    string
 	lazyDigest *repb.Digest
 }
 
-// NewMmap returns an Mmap for an existing file.
-func NewMmap(path string, offset int64) (*Mmap, error) {
+// NewLazyMmap returns an mmap that is set up only when the file is read or
+// written to.
+func NewLazyMmap(fileCache interfaces.FileCache, dataDir string, offset int64, digest *repb.Digest) (*Mmap, error) {
+	if dataDir == "" {
+		return nil, status.FailedPreconditionError("missing dataDir")
+	}
+	if digest == nil {
+		return nil, status.FailedPreconditionError("missing digest")
+	}
+	return &Mmap{
+		localCache: fileCache,
+		Offset:     offset,
+		data:       nil,
+		mapped:     false,
+		dataDir:    dataDir,
+		lazyDigest: digest,
+	}, nil
+}
+
+func NewMmapFd(fileCache interfaces.FileCache, dataDir string, fd, size int, offset int64) (*Mmap, error) {
+	data, err := mmapDataFromFd(fd, size)
+	if err != nil {
+		return nil, err
+	}
+	return &Mmap{
+		localCache: fileCache,
+		Offset:     offset,
+		data:       data,
+		mapped:     true,
+		dataDir:    dataDir,
+	}, nil
+}
+
+// mmapDataFromPath memory maps a file and returns the data
+func mmapDataFromPath(path string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
@@ -595,33 +633,16 @@ func NewMmap(path string, offset int64) (*Mmap, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewMmapFd(int(f.Fd()), int(s.Size()), offset)
+	return mmapDataFromFd(int(f.Fd()), int(s.Size()))
 }
 
-// NewLazyMmap returns an mmap that is set up only when the file is read or
-// written to.
-func NewLazyMmap(path string, offset int64) (*Mmap, error) {
-	if path == "" {
-		return nil, status.FailedPreconditionError("missing path")
-	}
-	return &Mmap{
-		Offset: offset,
-		data:   nil,
-		mapped: false,
-		path:   path,
-	}, nil
-}
-
-func NewMmapFd(fd, size int, offset int64) (*Mmap, error) {
+// mmapDataFromFd memory maps a file descriptor and returns the data
+func mmapDataFromFd(fd, size int) ([]byte, error) {
 	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
-	return &Mmap{
-		Offset: offset,
-		data:   data,
-		mapped: true,
-	}, nil
+	return data, nil
 }
 
 func (m *Mmap) initMap() error {
@@ -629,27 +650,28 @@ func (m *Mmap) initMap() error {
 		return status.InternalError("store is closed")
 	}
 	if m.mapped {
-		return status.InternalError("already mapped")
+		return nil
 	}
-	if m.path == "" {
-		return status.InternalError("missing file path")
+	if m.lazyDigest == nil {
+		return status.InternalError("cannot initialize chunk without a digest")
 	}
-	f, err := os.OpenFile(m.path, os.O_RDWR, 0)
+
+	// Fetch from local cache
+	outputPath := filepath.Join(m.dataDir, ChunkName(m.Offset, false /*dirty*/))
+	node := &repb.FileNode{Digest: m.lazyDigest}
+	inLocalCache := m.localCache.FastLinkFile(node, outputPath)
+	if !inLocalCache {
+		// TODO(Maggie) - Fetch chunk remotely if remote snapshot sharing is on
+		return status.NotFoundErrorf("snapshot chunk for digest %s not found in local cache", m.lazyDigest.GetHash())
+	}
+
+	data, err := mmapDataFromPath(outputPath)
 	if err != nil {
-		return err
+		return status.WrapErrorf(err, "create mmap for path %s", outputPath)
 	}
-	defer f.Close()
-	s, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	data, err := syscall.Mmap(int(f.Fd()), 0, int(s.Size()), syscall.PROT_WRITE, syscall.MAP_SHARED)
-	if err != nil {
-		return status.InternalErrorf("mmap: %s", err)
-	}
+
 	m.data = data
 	m.mapped = true
-	m.path = ""
 	return nil
 }
 
@@ -675,8 +697,8 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
-	copy(m.data[int(off):int(off)+len(p)], p)
 	m.lazyDigest = nil
+	copy(m.data[int(off):int(off)+len(p)], p)
 	return len(p), nil
 }
 
@@ -714,6 +736,10 @@ func (m *Mmap) StartAddress() (uintptr, error) {
 		}
 	}
 	return memoryAddress(m.data), nil
+}
+
+func (m *Mmap) Mapped() bool {
+	return m.mapped
 }
 
 func (m *Mmap) SetDigest(d *repb.Digest) {

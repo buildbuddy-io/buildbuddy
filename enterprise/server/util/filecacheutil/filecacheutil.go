@@ -49,7 +49,9 @@ func Write(fc interfaces.FileCache, node *repb.FileNode, b []byte) (n int, err e
 	if err != nil {
 		return n, err
 	}
-	fc.AddFile(node, tmp)
+	if err := fc.AddFile(node, tmp); err != nil {
+		return 0, err
+	}
 	return n, nil
 }
 
