@@ -42,7 +42,9 @@ http_archive(
     ],
 )
 
-load(":deps.bzl", "install_go_mod_dependencies")
+load(":deps.bzl", "install_go_mod_dependencies", "install_static_dependencies")
+
+install_static_dependencies()
 
 # Install gazelle and go_rules dependencies after ours so that our go module versions take precedence.
 
@@ -192,9 +194,6 @@ http_archive(
 )
 
 load("@com_google_googletest//:googletest_deps.bzl", "googletest_deps")
-
-# gazelle:repository_macro deps.bzl%install_go_mod_dependencies
-install_go_mod_dependencies()
 
 googletest_deps()
 

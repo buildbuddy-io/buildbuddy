@@ -7049,6 +7049,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v3.3.0",
     )
 
+# Manually created
+def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
         name = "com_github_buildbuddy_io_firecracker_firecracker-v1.4.0-20230720-cf5f56f",
         sha256 = "b36d9ad62ca467d2794635c4f19b0993c11bb46ed3b575037287964f9c82cc9b",
