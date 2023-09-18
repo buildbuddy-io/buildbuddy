@@ -87,7 +87,7 @@ func (s *Server) Start(lis net.Listener) error {
 }
 
 func (s *Server) Stop() error {
-	s.server.Stop()
+	s.server.GracefulStop()
 	return nil
 }
 

@@ -2073,7 +2073,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return err
 	}
 
-	// Stop the VM and UFFD page fault handler to ensure nothing is modifying the snapshot files as we save them
+	// Stop the VM, UFFD page fault handler, and NBD server to ensure nothing is
+	// modifying the snapshot files as we save them
 	if c.machine != nil {
 		// Note: we don't attempt any kind of clean shutdown here because we have already taken
 		// a snapshot
@@ -2089,6 +2090,13 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 			return err
 		}
 		c.uffdHandler = nil
+	}
+	if c.nbdServer != nil {
+		if err := c.nbdServer.Stop(); err != nil {
+			log.CtxErrorf(ctx, "Error stopping NBD server: %s", err)
+			return err
+		}
+		c.nbdServer = nil
 	}
 
 	if err = c.saveSnapshot(ctx, snapDetails); err != nil {
