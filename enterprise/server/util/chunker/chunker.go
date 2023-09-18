@@ -1,6 +1,7 @@
 package chunker
 
 import (
+	"context"
 	"io"
 
 	"github.com/jotfs/fastcdc-go"
@@ -9,8 +10,9 @@ import (
 type WriteFunc func([]byte) error
 
 type Chunker struct {
-	pw *io.PipeWriter
-	pr *io.PipeReader
+	ctx context.Context
+	pw  *io.PipeWriter
+	pr  *io.PipeReader
 
 	done chan struct{}
 
@@ -34,9 +36,10 @@ func (c *Chunker) Close() error {
 // averageSize is typically a power of 2. It must be in the range 256B to 256MB.
 // The minimum allowed chunk size is averageSize / 4, and the maximum allowed
 // chunk size is averageSize * 4.
-func New(averageSize int, writeChunkFn WriteFunc) (*Chunker, error) {
+func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker, error) {
 	pr, pw := io.Pipe()
 	c := &Chunker{
+		ctx:          ctx,
 		pr:           pr,
 		pw:           pw,
 		done:         make(chan struct{}, 0),
@@ -76,6 +79,11 @@ func New(averageSize int, writeChunkFn WriteFunc) (*Chunker, error) {
 				return
 			}
 		}
+	}()
+
+	go func() {
+		<-ctx.Done()
+		pw.Close()
 	}()
 
 	return c, nil

@@ -1882,7 +1882,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		wc = decompressor
 	}
 
-	chunker, err := chunker.New(p.averageChunkSizeBytes, cdcw.writeChunk)
+	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
 	if err != nil {
 		return nil, err
 	}
