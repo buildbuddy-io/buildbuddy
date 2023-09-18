@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver",
     deps = [
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/registry",
+        "//enterprise/server/raft/store",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/gossip",
@@ -17,5 +17,16 @@ go_library(
         "//server/util/statusz",
         "@com_github_hashicorp_serf//serf",
         "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "driver_test",
+    srcs = ["driver_test.go"],
+    deps = [
+        ":driver",
+        "//proto:raft_go_proto",
+        "@com_github_hashicorp_serf//serf",
+        "@com_github_stretchr_testify//require",
     ],
 )

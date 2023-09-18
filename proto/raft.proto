@@ -355,9 +355,11 @@ message RangeLeaseRecord {
 }
 
 message ReplicaUsage {
+  reserved 3;
+
+  // The replica this usage data was sampled from.
   ReplicaDescriptor replica = 1;
   uint64 range_id = 2;
-  uint64 generation = 3;
 
   int64 estimated_disk_bytes_used = 4;
   int64 read_qps = 5;
@@ -487,19 +489,28 @@ message SplitRangeResponse {
   RangeDescriptor end = 2;
 }
 
-message ListRangeRequest {
-  // If true, only return the clusters that this node holds the rangelease for.
-  bool leased_only = 1;
+message NodeReplica {
+  string nhid = 1;
+  uint64 shard_id = 2;
+  uint64 replica_id = 3;
 }
 
-message RangeReplica {
+message RangeUsage {
+  // The range this usage data pertains to.
   RangeDescriptor range = 1;
+
+  // The usage data for the range (same for all replicas).
   ReplicaUsage replica_usage = 2;
+
+  // The set of nodes that hold this range.
+  repeated NodeReplica node_replicas = 3;
 }
 
-message ListRangeResponse {
+message ListReplicasRequest {}
+
+message ListReplicasResponse {
   NodeDescriptor node = 1;
-  repeated RangeReplica range_replicas = 2;
+  repeated ReplicaDescriptor replicas = 2;
 }
 
 message CreateSnapshotRequest {

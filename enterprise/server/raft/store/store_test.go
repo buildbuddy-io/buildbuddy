@@ -461,7 +461,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	}
 }
 
-func TestListRange(t *testing.T) {
+func TestListReplicas(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -475,9 +475,9 @@ func TestListRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	list, err := s1.ListRange(ctx, &rfpb.ListRangeRequest{})
+	list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 	require.NoError(t, err)
-	require.Equal(t, 2, len(list.GetRangeReplicas()))
+	require.Equal(t, 2, len(list.GetReplicas()))
 }
 
 func bytesToUint64(buf []byte) uint64 {
@@ -601,16 +601,14 @@ func TestManySplits(t *testing.T) {
 
 		var clusters []uint64
 		var seen = make(map[uint64]struct{})
-		list, err := s1.ListRange(ctx, &rfpb.ListRangeRequest{})
+		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
 
-		for _, rangeReplica := range list.GetRangeReplicas() {
-			for _, replica := range rangeReplica.GetRange().GetReplicas() {
-				shardID := replica.GetShardId()
-				if _, ok := seen[shardID]; !ok {
-					clusters = append(clusters, shardID)
-					seen[shardID] = struct{}{}
-				}
+		for _, replica := range list.GetReplicas() {
+			shardID := replica.GetShardId()
+			if _, ok := seen[shardID]; !ok {
+				clusters = append(clusters, shardID)
+				seen[shardID] = struct{}{}
 			}
 		}
 

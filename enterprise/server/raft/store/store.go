@@ -442,7 +442,7 @@ func (ut *usageTracker) RemoveRange(rangeID uint64) {
 	ut.removeRangePartitions(rangeID)
 }
 
-func (ut *usageTracker) RangeUsages() []*rfpb.ReplicaUsage {
+func (ut *usageTracker) ReplicaUsages() []*rfpb.ReplicaUsage {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
 
@@ -563,9 +563,10 @@ type Store struct {
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
 
-	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
-	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
-	usages   *usageTracker
+	leases              sync.Map // map of uint64 rangeID -> *rangelease.Lease
+	replicas            sync.Map // map of uint64 rangeID -> *replica.Replica
+	usages              *usageTracker
+	rangeUsageListeners []RangeUsageListener
 
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
@@ -587,8 +588,9 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		liveness:      nodeliveness.New(nodeHost.ID(), sender),
 		log:           log.NamedSubLogger(nodeHost.ID()),
 
-		rangeMu:    sync.RWMutex{},
-		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
+		rangeMu:             sync.RWMutex{},
+		openRanges:          make(map[uint64]*rfpb.RangeDescriptor),
+		rangeUsageListeners: make([]RangeUsageListener, 0),
 
 		leases:   sync.Map{},
 		replicas: sync.Map{},
@@ -624,8 +626,17 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 func (s *Store) Statusz(ctx context.Context) string {
 	buf := "<pre>"
-	buf += fmt.Sprintf("NHID: %s\n", s.nodeHost.ID())
-	buf += fmt.Sprintf("Liveness lease: %s\n", s.liveness)
+	buf += s.liveness.String() + "\n"
+
+	su := s.Usage()
+	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
+		su.GetNode().GetNhid(),
+		su.GetReplicaCount(),
+		su.GetLeaseCount(),
+		su.GetReadQps(),
+		su.GetRaftProposeQps(),
+		su.GetTotalBytesUsed()/1e6,
+	)
 
 	replicas := make([]*replica.Replica, 0)
 	s.replicas.Range(func(key, value any) bool {
@@ -637,23 +648,25 @@ func (s *Store) Statusz(ctx context.Context) string {
 	sort.Slice(replicas, func(i, j int) bool {
 		return replicas[i].ShardID < replicas[j].ShardID
 	})
-	buf += "Replicas:\n"
 	for _, r := range replicas {
-		cluster := fmt.Sprintf("(c%03dn%03d)", r.ShardID, r.ReplicaID)
-
-		usage, err := r.Usage()
+		replicaName := fmt.Sprintf("  Shard: %5d   Replica: %5d", r.ShardID, r.ReplicaID)
+		ru, err := r.Usage()
 		if err != nil {
-			buf += fmt.Sprintf("\t%s error: %s\n", cluster, err)
+			buf += fmt.Sprintf("%s error: %s\n", replicaName, err)
 			continue
 		}
-
-		extra := ""
+		isLeader := 0
 		if rd := s.lookupRange(r.ShardID); rd != nil {
 			if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok && rlIface.(*rangelease.Lease).Valid() {
-				extra += "Leaseholder"
+				isLeader = 1
 			}
 		}
-		buf += fmt.Sprintf("\t%s Usage: %s %s\n", cluster, units.BytesSize(float64(usage.GetEstimatedDiskBytesUsed())), extra)
+		buf += fmt.Sprintf("%36s |                | Leader: %4d | QPS (R): %5d | (W): %5d\n",
+			replicaName,
+			isLeader,
+			ru.GetReadQps(),
+			ru.GetRaftProposeQps(),
+		)
 	}
 	buf += s.usages.Statusz(ctx)
 	buf += "</pre>"
@@ -666,13 +679,33 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 	}
 	rd := s.lookupRange(info.ShardID)
 	if rd == nil {
+		log.Errorf("Got callback for shard %d but range not found", info.ShardID)
 		return
 	}
 	go s.maybeAcquireRangeLease(rd)
 }
 
-func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
-	// TODO(tylerw): do something with usage here. Split?
+func (s *Store) NotifyUsage(replicaUsage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {
+	ru := &rfpb.RangeUsage{
+		Range:        rd,
+		ReplicaUsage: replicaUsage,
+	}
+	for _, rep := range rd.GetReplicas() {
+		nhid, _, err := s.registry.ResolveNHID(rep.GetShardId(), rep.GetReplicaId())
+		if err != nil {
+			log.Errorf("Error resolving nhid: %s", err)
+			return
+		}
+		ru.NodeReplicas = append(ru.NodeReplicas, &rfpb.NodeReplica{
+			Nhid:      nhid,
+			ShardId:   rep.GetShardId(),
+			ReplicaId: rep.GetReplicaId(),
+		})
+	}
+	for _, rul := range s.rangeUsageListeners {
+		rul.OnRangeUsageUpdate(ru)
+	}
+	s.updateTags()
 }
 
 func (s *Store) Start() error {
@@ -786,7 +819,13 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 		}
 		s.log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
 	}
-	s.updateTags()
+
+	if rl.Valid() {
+		for _, rul := range s.rangeUsageListeners {
+			rul.OnRangeLeaseAcquired(rd)
+		}
+		s.updateTags()
+	}
 }
 
 func (s *Store) releaseRangeLease(rangeID uint64) {
@@ -800,10 +839,16 @@ func (s *Store) releaseRangeLease(rangeID uint64) {
 		return
 	}
 	s.leases.Delete(rangeID)
-	if rl.Valid() {
-		rl.Release()
-		s.updateTags()
+	if !rl.Valid() {
+		return
 	}
+
+	rl.Release()
+	for _, rul := range s.rangeUsageListeners {
+		rul.OnRangeLeaseDropped(rl.GetRangeDescriptor())
+	}
+	s.updateTags()
+
 }
 
 func (s *Store) GetRange(shardID uint64) *rfpb.RangeDescriptor {
@@ -817,6 +862,16 @@ func (s *Store) updateUsages(r *replica.Replica) error {
 	}
 	s.usages.LocalUpdate(usage.GetRangeId(), usage)
 	return nil
+}
+
+type RangeUsageListener interface {
+	OnRangeUsageUpdate(ru *rfpb.RangeUsage)
+	OnRangeLeaseAcquired(rd *rfpb.RangeDescriptor)
+	OnRangeLeaseDropped(rd *rfpb.RangeDescriptor)
+}
+
+func (s *Store) AddRangeUsageListener(rul RangeUsageListener) {
+	s.rangeUsageListeners = append(s.rangeUsageListeners, rul)
 }
 
 // We need to implement the Add/RemoveRange interface so that stores opened and
@@ -1084,6 +1139,20 @@ func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest) (*rfpb.ListReplicasResponse, error) {
+	rsp := &rfpb.ListReplicasResponse{
+		Node: s.NodeDescriptor(),
+	}
+	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
+	for _, shardInfo := range nhInfo.ShardInfoList {
+		rsp.Replicas = append(rsp.Replicas, &rfpb.ReplicaDescriptor{
+			ShardId:   shardInfo.ShardID,
+			ReplicaId: shardInfo.ReplicaID,
+		})
+	}
+	return rsp, nil
 }
 
 func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error {
@@ -1399,11 +1468,22 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 		return true
 	})
 
-	for _, ru := range s.usages.RangeUsages() {
+	for _, ru := range s.usages.ReplicaUsages() {
 		su.ReadQps += ru.GetReadQps()
 		su.RaftProposeQps += ru.GetRaftProposeQps()
 		su.TotalBytesUsed += ru.GetEstimatedDiskBytesUsed()
 	}
+
+	db, err := s.leaser.DB()
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+	diskEstimateBytes, err := db.EstimateDiskUsage(keys.MinByte, keys.MaxByte)
+	if err != nil {
+		return nil
+	}
+	su.TotalBytesUsed = int64(diskEstimateBytes)
 	return su
 }
 
@@ -1766,41 +1846,6 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	return &rfpb.RemoveReplicaResponse{
 		Range: rd,
 	}, nil
-}
-
-func (s *Store) ListRange(ctx context.Context, req *rfpb.ListRangeRequest) (*rfpb.ListRangeResponse, error) {
-	s.rangeMu.RLock()
-	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
-	for _, rd := range s.openRanges {
-		openRanges = append(openRanges, rd)
-	}
-	s.rangeMu.RUnlock()
-
-	rsp := &rfpb.ListRangeResponse{
-		Node: s.NodeDescriptor(),
-	}
-	for _, rd := range openRanges {
-		if req.GetLeasedOnly() {
-			header := &rfpb.Header{
-				RangeId:    rd.GetRangeId(),
-				Generation: rd.GetGeneration(),
-			}
-			if _, err := s.LeasedRange(header); err != nil {
-				continue
-			}
-		}
-		rr := &rfpb.RangeReplica{
-			Range: rd,
-		}
-		if replica, err := s.GetReplica(rd.GetRangeId()); err == nil {
-			usage, err := replica.Usage()
-			if err == nil {
-				rr.ReplicaUsage = usage
-			}
-		}
-		rsp.RangeReplicas = append(rsp.RangeReplicas, rr)
-	}
-	return rsp, nil
 }
 
 func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) {
