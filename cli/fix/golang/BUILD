@@ -7,8 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/log",
+        "//cli/workspace",
         "@bazel_gazelle//language:go_default_library",
         "@bazel_gazelle//language/go:go_default_library",
+        "@org_golang_x_mod//modfile",
     ],
 )
 
