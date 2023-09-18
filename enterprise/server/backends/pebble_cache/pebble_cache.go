@@ -239,8 +239,6 @@ type PebbleCache struct {
 
 	oldMetrics    pebble.Metrics
 	eventListener *pebbleEventListener
-
-	clearCacheBeforeMigration bool
 }
 
 type pebbleEventListener struct {
