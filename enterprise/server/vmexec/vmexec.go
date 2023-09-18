@@ -35,10 +35,10 @@ const (
 )
 
 type execServer struct {
-	workspaceNBD *nbdclient.ClientDevice
+	workspaceNBD *nbdclient.Process
 }
 
-func NewServer(workspaceNBD *nbdclient.ClientDevice) (*execServer, error) {
+func NewServer(workspaceNBD *nbdclient.Process) (*execServer, error) {
 	return &execServer{workspaceNBD: workspaceNBD}, nil
 }
 
@@ -113,7 +113,7 @@ func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWor
 
 func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
 	if x.workspaceNBD != nil {
-		if err := x.workspaceNBD.Mount(workspaceMountPath); err != nil {
+		if err := x.workspaceNBD.Mount(); err != nil {
 			return nil, err
 		}
 		return &vmxpb.MountWorkspaceResponse{}, nil

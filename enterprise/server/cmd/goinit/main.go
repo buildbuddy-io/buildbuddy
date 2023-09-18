@@ -12,11 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -40,14 +38,6 @@ const (
 
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
-
-	// File that is written by the rootfs nbdclient background process to signal
-	// that the rootfs has been mounted successfully.
-	rootfsReadySignalFile = "/.rootfs_ready"
-
-	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
-	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
-	EXT4_IOC_RESIZE_FS = 0x40086610
 )
 
 var (
@@ -62,9 +52,9 @@ var (
 	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 
-	isVMExec       = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
-	isVMVFS        = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
-	isRootFSClient = flag.Bool("rootfs_client", false, "Whether to run as the rootfs NBD client binary.")
+	isVMExec    = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
+	isVMVFS     = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
+	isNBDClient = flag.Bool("nbdclient", false, "Whether to run as an NBD client binary.")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -208,26 +198,6 @@ func waitForDockerd(ctx context.Context) error {
 // This is mostly cribbed from github.com/superfly/init-snapshot
 // which was very helpful <3!
 func main() {
-	// Set GOMAXPROCS to at least 2 to ensure that the nbdclient can always make
-	// progress. Otherwise, while calling forkExec to execute commands in the
-	// VM, the Go runtime can get stuck in the raw syscall[1] here[2] while
-	// trying to write to its child process, but meanwhile the child process
-	// cannot actually start because it depends on the NBD client in order to
-	// load the executable, but the NBD client cannot make progress because it's
-	// stuck in the raw syscall.
-	//
-	// [1] "Regular" syscalls will yield execution to another goroutine while
-	// "raw" syscalls will just block the current OS thread, which is why the
-	// NBD client cannot make progress when there's only one OS thread available
-	// to the Go runtime.
-	// [2] https://cs.opensource.google/go/go/+/master:src/syscall/exec_linux.go;drc=729f214e3afd61afd924b946745798a8d144aad6;l=151
-	//
-	// TODO(bduffany): run the nbdclient netlink server in a separate process
-	// and remove this workaround.
-	if runtime.GOMAXPROCS(-1 /* read the current value */) < 2 {
-		runtime.GOMAXPROCS(2)
-	}
-
 	start := time.Now()
 	rootContext := context.Background()
 
@@ -238,18 +208,19 @@ func main() {
 	}
 
 	flag.Parse()
-	// If we are the vmexec process forked from the parent goinit process, run
-	// the vmexec server instead of the init logic.
+
+	// If we were re-exec'd by the init binary as a child process, run the
+	// appropriate handler.
+	if *isNBDClient {
+		die(nbdclient.Run(rootContext))
+		return
+	}
 	if *isVMExec {
 		die(runVMExecServer(rootContext))
 		return
 	}
 	if *isVMVFS {
 		die(vmvfs.Run())
-		return
-	}
-	if *isRootFSClient {
-		die(runRootfsClient(rootContext))
 		return
 	}
 
@@ -283,7 +254,9 @@ func main() {
 		// only on serving NBD requests without being interrupted by other
 		// syscalls made in this process (which can lead to deadlocks if those
 		// syscalls themselves require NBD reads).
-		die(startRootfsClientProcess())
+		rootfs, err := nbdclient.Start("rootfs", "/mnt")
+		die(err)
+		die(rootfs.Mount())
 	} else {
 		die(mkdirp("/container", 0755))
 
@@ -475,80 +448,6 @@ func main() {
 	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 
-// Resizes the ext4 filesystem mounted at the given path to the given size.
-func resizeExt4FS(mountPath string, size int64) error {
-	s := &syscall.Statfs_t{}
-	if err := syscall.Statfs(mountPath, s); err != nil {
-		return status.InternalErrorf("statfs %s: %s", mountPath, err)
-	}
-	blocks := size / s.Bsize
-	fd, err := syscall.Open(mountPath, syscall.O_RDONLY, 0)
-	if err != nil {
-		return err
-	}
-	defer syscall.Close(fd)
-	_, _, errno := syscall.Syscall(
-		syscall.SYS_IOCTL,
-		uintptr(fd),
-		uintptr(EXT4_IOC_RESIZE_FS),
-		uintptr(unsafe.Pointer(&blocks)),
-	)
-	if errno != 0 {
-		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
-	}
-	return nil
-}
-
-// startRootfsClientProcess starts a background process that acts as the NBD
-// client for the rootfs. It creates the rootfs NBD device and handles all IO
-// requests to it. This function returns when the rootfs is mounted. It returns
-// an error if the background process fails for any reason.
-func startRootfsClientProcess() error {
-	cmd := exec.Command(os.Args[0], append(os.Args[1:], "--rootfs_client")...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	errCh := make(chan error)
-	go func() { errCh <- cmd.Wait() }()
-	for {
-		// TODO(bduffany): Do something better than file polling here.
-		_, err := os.Stat(rootfsReadySignalFile)
-		if err == nil {
-			break
-		}
-		if !os.IsNotExist(err) {
-			return err
-		}
-		select {
-		case err := <-errCh:
-			return status.InternalErrorf("rootfs client exited unexpectedly: %s", err)
-		default:
-		}
-		time.Sleep(1 * time.Millisecond)
-		continue
-	}
-	return nil
-}
-
-// runRootfsClient is the background process implementation for the rootfs
-// client.
-// See startRootfsClientProcess.
-func runRootfsClient(ctx context.Context) error {
-	rootNBD, err := nbdclient.NewClientDevice(ctx, "rootfs")
-	die(err)
-	die(mkdirp("/mnt", 0755))
-	die(rootNBD.Mount("/mnt"))
-	// Initially, the rootfs will only be as large as the containerfs.
-	// Resize it to fill the available disk space.
-	die(resizeExt4FS("/mnt", rootNBD.Size()))
-	// Signal to the parent that the rootfs is ready.
-	die(os.WriteFile(rootfsReadySignalFile, nil, 0755))
-	log.Infof("rootfs client started successfully")
-	select {}
-}
-
 func runVMExecServer(ctx context.Context) error {
 	listener, err := vsock.NewGuestListener(ctx, uint32(*vmExecPort))
 	if err != nil {
@@ -560,11 +459,11 @@ func runVMExecServer(ctx context.Context) error {
 	// When NBD is enabled, the VMExec server needs a handle on the workspacefs
 	// ClientDevice so that it can mount/unmount the workspace between actions.
 	// Create the device now and mount it.
-	var workspaceNBD *nbdclient.ClientDevice
+	var workspaceNBD *nbdclient.Process
 	if *enableNBD {
-		nbd, err := nbdclient.NewClientDevice(ctx, "workspacefs")
+		nbd, err := nbdclient.Start("workspacefs", "/workspace")
 		die(err)
-		die(nbd.Mount("/workspace"))
+		die(nbd.Mount())
 		workspaceNBD = nbd
 	}
 	vmService, err := vmexec.NewServer(workspaceNBD)
