@@ -388,10 +388,13 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *copy_o
 		if err != nil {
 			return nil, err
 		}
-		node := &repb.FileNode{Digest: d, Name: fmt.Sprintf("%d", c.Offset)}
-		path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-		if err := l.cacheLocally(node, path); err != nil {
-			return nil, err
+
+		if c.Mapped() {
+			node := &repb.FileNode{Digest: d, Name: fmt.Sprintf("%d", c.Offset)}
+			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
+			if err := l.cacheLocally(node, path); err != nil {
+				return nil, err
+			}
 		}
 		pb.Chunks = append(pb.Chunks, &fcpb.Chunk{
 			Offset:     c.Offset,

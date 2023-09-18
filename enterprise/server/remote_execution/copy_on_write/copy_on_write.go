@@ -646,12 +646,11 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 }
 
 func (m *Mmap) initMap() error {
-	if m.mapped {
-		return nil
-	}
-
 	if m.closed {
 		return status.InternalError("store is closed")
+	}
+	if m.mapped {
+		return nil
 	}
 	if m.lazyDigest == nil {
 		return status.InternalError("cannot initialize chunk without a digest")
@@ -737,6 +736,10 @@ func (m *Mmap) StartAddress() (uintptr, error) {
 		}
 	}
 	return memoryAddress(m.data), nil
+}
+
+func (m *Mmap) Mapped() bool {
+	return m.mapped
 }
 
 func (m *Mmap) SetDigest(d *repb.Digest) {
