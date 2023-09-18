@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdserver"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -19,19 +19,19 @@ import (
 func TestNBDServer(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	// Make a blockio.Store from an empty file
+	// Make a copy_on_write.Store from an empty file
 	const fileSizeBytes = 1000
 	tmp := testfs.MakeTempDir(t)
 	path := filepath.Join(tmp, "f")
 	err := os.WriteFile(path, make([]byte, fileSizeBytes), 0644)
 	require.NoError(t, err)
-	f, err := blockio.NewFile(path)
+	cow, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), path, 200, tmp)
 	require.NoError(t, err)
-	defer f.Close()
+
 	// Create a server hosting a device backed by the file
 	const deviceName = "test"
 	dev := &nbdserver.Device{
-		Store:    f,
+		COWStore: cow,
 		Metadata: &nbdpb.DeviceMetadata{Name: deviceName},
 	}
 	s, err := nbdserver.New(ctx, env, dev)

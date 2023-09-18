@@ -20,10 +20,10 @@ go_library(
         "@platforms//os:linux",
     ],
     deps = [
-        "//enterprise/server/remote_execution/blockio",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/docker",
+        "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/nbd/nbdserver",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaploader",
@@ -123,6 +123,7 @@ go_test(
     srcs = ["firecracker_test.go"],
     args = [
         "--executor.firecracker_enable_nbd=true",
+        "--executor.firecracker_enable_merged_rootfs=true",
         "--executor.firecracker_enable_uffd=true",
         "--executor.enable_local_snapshot_sharing=true",
     ],

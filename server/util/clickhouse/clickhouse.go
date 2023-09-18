@@ -86,6 +86,15 @@ func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 	return dbh.db.WithContext(ctx)
 }
 
+// BucketFromUsecTimestamp returns a SQL expression compatible with clickhouse
+// that converts the value of the given field from an epoch value in micros to
+// another epoch in micros rounded down to the supplied clickhouse interval
+// string (e.g., "1 HOUR", "30 MINUTE").  More about clickhouse intervals:
+// https://clickhouse.com/docs/en/sql-reference/data-types/special-data-types/interval
+func (h *DBHandle) BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{}) {
+	return fmt.Sprintf("toUnixTimestamp(toStartOfInterval(toDateTime64(%s / 1000000, 6, ?), INTERVAL %s)) * 1000000", fieldName, interval), []interface{}{loc.String()}
+}
+
 // DateFromUsecTimestamp returns an SQL expression compatible with clickhouse
 // that converts the value of the given field from a Unix timestamp (in
 // microseconds since the Unix Epoch) to a date offset by the given UTC offset.

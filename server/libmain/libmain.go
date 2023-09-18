@@ -300,7 +300,7 @@ func StartAndRunServices(env environment.Env) {
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).
-	protoletHandler, err := protolet.GenerateHTTPHandlers(env.GetBuildBuddyServer())
+	protoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/BuildBuddyService/", env.GetBuildBuddyServer())
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
@@ -370,7 +370,7 @@ func StartAndRunServices(env environment.Env) {
 
 	// Register API as an HTTP service.
 	if api := env.GetAPIService(); api != nil {
-		apiProtoHandlers, err := protolet.GenerateHTTPHandlers(api)
+		apiProtoHandlers, err := protolet.GenerateHTTPHandlers("/api/v1/", api)
 		if err != nil {
 			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
 		}

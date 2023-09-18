@@ -791,5 +791,6 @@ func addToFileCache(t *testing.T, env *testenv.TestEnv, tempDir, data string) {
 		t.Fatal(err)
 	}
 	t.Logf("Added digest %s/%d to filecache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
-	env.GetFileCache().AddFile(&repb.FileNode{Name: filepath.Base(path), Digest: d}, path)
+	err = env.GetFileCache().AddFile(&repb.FileNode{Name: filepath.Base(path), Digest: d}, path)
+	require.NoError(t, err)
 }

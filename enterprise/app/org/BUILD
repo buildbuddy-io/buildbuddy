@@ -117,6 +117,7 @@ ts_library(
         "//app/auth:user",
         "//app/components/button",
         "//app/router",
+        "//proto:user_ts_proto",
         "@npm//@types/react",
         "@npm//react",
     ],

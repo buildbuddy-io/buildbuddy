@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -45,6 +44,7 @@ var (
 	path                    = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort              = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
 	enableNBD               = flag.Bool("enable_nbd", false, "Whether to enable network block devices (nbd)")
+	enableRootfs            = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
 	debugMode               = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
@@ -52,8 +52,9 @@ var (
 	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 
-	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
-	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
+	isVMExec    = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
+	isVMVFS     = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
+	isNBDClient = flag.Bool("nbdclient", false, "Whether to run as an NBD client binary.")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -197,26 +198,6 @@ func waitForDockerd(ctx context.Context) error {
 // This is mostly cribbed from github.com/superfly/init-snapshot
 // which was very helpful <3!
 func main() {
-	// Set GOMAXPROCS to at least 2 to ensure that the nbdclient can always make
-	// progress. Otherwise, while calling forkExec to execute commands in the
-	// VM, the Go runtime can get stuck in the raw syscall[1] here[2] while
-	// trying to write to its child process, but meanwhile the child process
-	// cannot actually start because it depends on the NBD client in order to
-	// load the executable, but the NBD client cannot make progress because it's
-	// stuck in the raw syscall.
-	//
-	// [1] "Regular" syscalls will yield execution to another goroutine while
-	// "raw" syscalls will just block the current OS thread, which is why the
-	// NBD client cannot make progress when there's only one OS thread available
-	// to the Go runtime.
-	// [2] https://cs.opensource.google/go/go/+/master:src/syscall/exec_linux.go;drc=729f214e3afd61afd924b946745798a8d144aad6;l=151
-	//
-	// TODO(bduffany): run the nbdclient netlink server in a separate process
-	// and remove this workaround.
-	if runtime.GOMAXPROCS(-1 /* read the current value */) < 2 {
-		runtime.GOMAXPROCS(2)
-	}
-
 	start := time.Now()
 	rootContext := context.Background()
 
@@ -227,8 +208,13 @@ func main() {
 	}
 
 	flag.Parse()
-	// If we are the vmexec process forked from the parent goinit process, run
-	// the vmexec server instead of the init logic.
+
+	// If we were re-exec'd by the init binary as a child process, run the
+	// appropriate handler.
+	if *isNBDClient {
+		die(nbdclient.Run(rootContext))
+		return
+	}
 	if *isVMExec {
 		die(runVMExecServer(rootContext))
 		return
@@ -263,22 +249,32 @@ func main() {
 	die(mkdirp("/sys", 0555))
 	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
 
-	die(mkdirp("/container", 0755))
-	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
-
-	die(mkdirp("/scratch", 0755))
-	if *enableNBD {
-		scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
+	if *enableRootfs {
+		// Serve the rootfs using a background process, so that it can focus
+		// only on serving NBD requests without being interrupted by other
+		// syscalls made in this process (which can lead to deadlocks if those
+		// syscalls themselves require NBD reads).
+		rootfs, err := nbdclient.Start("rootfs", "/mnt")
 		die(err)
-		die(scratchNBD.Mount("/scratch"))
+		die(rootfs.Mount())
 	} else {
-		die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
-	}
-	die(mkdirp("/scratch/bbvmroot", 0755))
-	die(mkdirp("/scratch/bbvmwork", 0755))
+		die(mkdirp("/container", 0755))
 
-	die(mkdirp("/mnt", 0755))
-	die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
+		die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
+		die(mkdirp("/scratch", 0755))
+		if *enableNBD {
+			scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
+			die(err)
+			die(scratchNBD.Mount("/scratch"))
+		} else {
+			die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
+		}
+		die(mkdirp("/scratch/bbvmroot", 0755))
+		die(mkdirp("/scratch/bbvmwork", 0755))
+
+		die(mkdirp("/mnt", 0755))
+		die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
+	}
 
 	die(mkdirp("/mnt/workspace", 0755))
 	if !*enableNBD {
@@ -463,11 +459,11 @@ func runVMExecServer(ctx context.Context) error {
 	// When NBD is enabled, the VMExec server needs a handle on the workspacefs
 	// ClientDevice so that it can mount/unmount the workspace between actions.
 	// Create the device now and mount it.
-	var workspaceNBD *nbdclient.ClientDevice
+	var workspaceNBD *nbdclient.Process
 	if *enableNBD {
-		nbd, err := nbdclient.NewClientDevice(ctx, "workspacefs")
+		nbd, err := nbdclient.Start("workspacefs", "/workspace")
 		die(err)
-		die(nbd.Mount("/workspace"))
+		die(nbd.Mount())
 		workspaceNBD = nbd
 	}
 	vmService, err := vmexec.NewServer(workspaceNBD)

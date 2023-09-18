@@ -2,4 +2,4 @@
 set -e
 cd "$(dirname "$(realpath "$0")")/.."
 bazelisk run \
-    //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_buildbuddy_dependencies
+    //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies

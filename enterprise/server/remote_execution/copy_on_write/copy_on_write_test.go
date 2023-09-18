@@ -1,8 +1,10 @@
-package blockio_test
+package copy_on_write_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -10,36 +12,64 @@ import (
 	"strconv"
 	"syscall"
 	"testing"
+	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
 	backingFileSizeBytes int64 = 32 * 1024
 )
 
-func TestFile(t *testing.T) {
-	path := makeEmptyTempFile(t, backingFileSizeBytes)
-	s, err := blockio.NewFile(path)
-	require.NoError(t, err)
-	testStore(t, s, path)
+func init() {
+	rand.Seed(time.Now().UnixNano())
 }
 
 func TestMmap(t *testing.T) {
-	path := makeEmptyTempFile(t, backingFileSizeBytes)
-	s, err := blockio.NewMmap(path)
-	require.NoError(t, err)
+	s, path := newMmap(t)
 	testStore(t, s, path)
 }
 
+func TestMmap_Digest(t *testing.T) {
+	s, _ := newMmap(t)
+	actualDigest1, err := s.Digest()
+	require.NoError(t, err)
+	r, err := interfaces.StoreReader(s)
+	require.NoError(t, err)
+	expectedDigest, err := digest.Compute(r, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, actualDigest1)
+
+	// Write random bytes and test digest again
+	randomBuf := randBytes(t, 1024)
+	n, err := s.WriteAt(randomBuf, 100)
+	require.NoError(t, err)
+	require.Equal(t, len(randomBuf), n)
+	actualDigest2, err := s.Digest()
+	require.NoError(t, err)
+	r, err = interfaces.StoreReader(s)
+	require.NoError(t, err)
+	expectedDigest, err = digest.Compute(r, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, actualDigest2)
+	require.NotEqual(t, actualDigest1, actualDigest2)
+
+}
+
 func TestCOW_Basic(t *testing.T) {
+	env := testenv.GetTestEnv(t)
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
-	s, err := blockio.ConvertFileToCOW(path, chunkSizeBytes, dataDir)
+	s, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), path, chunkSizeBytes, dataDir)
 	require.NoError(t, err)
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
@@ -52,6 +82,7 @@ func TestCOW_SparseData(t *testing.T) {
 		t.SkipNow()
 	}
 
+	env := testenv.GetTestEnv(t)
 	// Figure out the IO block size (number of bytes transferred to/from disk
 	// for each IO operation). This is the minimum seek size when using seek()
 	// with SEEK_DATA.
@@ -81,7 +112,7 @@ func TestCOW_SparseData(t *testing.T) {
 	outDir := testfs.MakeTempDir(t)
 
 	// Now split the file.
-	c, err := blockio.ConvertFileToCOW(dataFilePath, chunkSize, outDir)
+	c, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), dataFilePath, chunkSize, outDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -110,7 +141,7 @@ func TestCOW_SparseData(t *testing.T) {
 	n, err = c.WriteAt([]byte{1}, 0)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
-	err = c.Chunks()[0].Sync()
+	err = c.SortedChunks()[0].Sync()
 	require.NoError(t, err)
 
 	// Make sure we wrote a dirty chunk with the expected contents, and only a
@@ -124,6 +155,81 @@ func TestCOW_SparseData(t *testing.T) {
 	require.Equal(t, int64(1), numIOBlocks(t, dirtyPath))
 }
 
+func TestCOW_Resize(t *testing.T) {
+	const chunkSize = 2 * 4096
+	env := testenv.GetTestEnv(t)
+	for _, test := range []struct {
+		Name             string
+		OldSize, NewSize int64
+		ExpectError      bool
+	}{
+		{Name: "AddNewChunkOnly", OldSize: chunkSize, NewSize: chunkSize + 1},
+		{Name: "RightPadLastChunk", OldSize: chunkSize + 1, NewSize: chunkSize + 2},
+		{Name: "RightPadLastChunkAndAddNewChunk", OldSize: chunkSize + 1, NewSize: chunkSize * 3},
+		{Name: "RightPadLastChunkAndAddMultipleNewChunks", OldSize: chunkSize + 1, NewSize: chunkSize * 4},
+		{Name: "DecreaseSize", OldSize: chunkSize, NewSize: chunkSize - 1, ExpectError: true},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			for i := 0; i < 10; i++ {
+				// Start out with a file containing random data
+				startBuf := randBytes(t, int(test.OldSize))
+				src := makeTempFile(t, startBuf)
+				dir := testfs.MakeTempDir(t)
+				cow, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), src, chunkSize, dir)
+				require.NoError(t, err)
+
+				// Resize the COW
+				oldSize, err := cow.Resize(test.NewSize)
+				if test.ExpectError {
+					require.Error(t, err)
+					continue
+				}
+				require.NoError(t, err)
+				require.Equal(t, test.OldSize, oldSize)
+
+				// Read random ranges; should match startBuf right-padded with
+				// zeroes.
+				startRightPad := append(startBuf, make([]byte, test.NewSize-test.OldSize)...)
+				for i := 0; i < 10; i++ {
+					offset, length := randSubslice(int(test.NewSize))
+					b := make([]byte, length)
+					_, err := cow.ReadAt(b, int64(offset))
+					require.NoError(t, err)
+					for j, b := range b {
+						require.Equal(t, startRightPad[offset+j], b)
+					}
+				}
+
+				endBuf := make([]byte, test.NewSize)
+				copy(endBuf, startBuf)
+				// Fill a random data range in the resized file
+				offset, length := randSubslice(int(test.NewSize))
+				copy(endBuf[offset:offset+length], randBytes(t, length))
+				_, err = cow.WriteAt(endBuf[offset:offset+length], int64(offset))
+				require.NoError(t, err)
+				// Now read back the whole COW and make sure it matches our
+				// expected data.
+				cowReader, err := interfaces.StoreReader(cow)
+				require.NoError(t, err)
+				b, err := io.ReadAll(cowReader)
+				require.NoError(t, err)
+				require.True(t, bytes.Equal(endBuf, b))
+
+				// Read random ranges again; should match endBuf this time.
+				for i := 0; i < 10; i++ {
+					offset, length := randSubslice(int(test.NewSize))
+					b := make([]byte, length)
+					_, err := cow.ReadAt(b, int64(offset))
+					require.NoError(t, err)
+					for j, b := range b {
+						require.Equal(t, endBuf[offset+j], b)
+					}
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 	const chunkSize = 512 * 1024 // 512K
 	// TODO: figure out a more realistic distribution of read/write size
@@ -133,6 +239,8 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 	// Read/write a total volume equal to the disk size so that sequential
 	// read/write tests don't touch the same block twice.
 	const ioCountPerBenchOp = diskSize / ioSize
+
+	env := testenv.GetTestEnv(b)
 
 	for _, test := range []struct {
 		name string
@@ -195,7 +303,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				}
 				chunkDir, err := os.MkdirTemp(tmp, "")
 				require.NoError(b, err)
-				cow, err := blockio.ConvertFileToCOW(f.Name(), chunkSize, chunkDir)
+				cow, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), f.Name(), chunkSize, chunkDir)
 				require.NoError(b, err)
 				err = os.Remove(f.Name())
 				require.NoError(b, err)
@@ -236,10 +344,32 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 	}
 }
 
-func testStore(t *testing.T, s blockio.Store, path string) {
+func testStore(t *testing.T, s interfaces.Store, path string) {
 	size, err := s.SizeBytes()
 	require.NoError(t, err, "SizeBytes failed")
 	require.Equal(t, backingFileSizeBytes, size, "unexpected SizeBytes")
+
+	// Try writing out of bounds; these should all fail.
+	for _, bounds := range []struct{ Offset, Length int64 }{
+		{Offset: -1, Length: 0},
+		{Offset: -1, Length: 1},
+		{Offset: -1, Length: 2},
+		{Offset: -1, Length: size + 1},
+		{Offset: -1, Length: size + 2},
+		{Offset: size, Length: 1},
+		{Offset: size, Length: 2},
+		{Offset: size - 1, Length: 2},
+		{Offset: size - 1, Length: 3},
+	} {
+		msg := fmt.Sprintf("offset=%d length=%d, file_size=%d should fail and return n=0", bounds.Offset, bounds.Length, size)
+		b := make([]byte, bounds.Length)
+		n, err := s.ReadAt(b, bounds.Offset)
+		require.Equal(t, 0, n, "%s", msg)
+		require.Error(t, err, "%s", msg)
+		n, err = s.WriteAt(b, bounds.Offset)
+		require.Equal(t, 0, n, "%s", msg)
+		require.Error(t, err, "%s", msg)
+	}
 
 	expectedContent := make([]byte, int(size))
 	buf := make([]byte, int(size))
@@ -248,20 +378,19 @@ func testStore(t *testing.T, s blockio.Store, path string) {
 		// With equal probability, either (a) read a random range and make sure
 		// it matches expectedContent, or (b) write a random range and update
 		// our expectedContent for subsequent reads.
-		offset := rand.Int63n(int64(len(expectedContent)))
-		length := rand.Int63n(int64(len(expectedContent)) - offset)
+		offset, length := randSubslice(len(expectedContent))
 		if rand.Float64() > 0.5 {
-			n, err := s.ReadAt(buf[:length], offset)
+			n, err := s.ReadAt(buf[:length], int64(offset))
 			require.NoError(t, err)
-			require.Equal(t, length, int64(n))
+			require.Equal(t, int64(length), int64(n))
 			require.Equal(t, expectedContent[offset:offset+length], buf[:length])
 		} else {
 			_, err := rand.Read(buf[:length])
 			require.NoError(t, err)
 
-			n, err := s.WriteAt(buf[:length], offset)
+			n, err := s.WriteAt(buf[:length], int64(offset))
 			require.NoError(t, err)
-			require.Equal(t, length, int64(n))
+			require.Equal(t, int64(length), int64(n))
 
 			copy(expectedContent[offset:offset+length], buf[:length])
 		}
@@ -282,6 +411,40 @@ func testStore(t *testing.T, s blockio.Store, path string) {
 
 	err = s.Close()
 	require.NoError(t, err, "Close failed")
+}
+
+func randBytes(t *testing.T, n int) []byte {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	require.NoError(t, err)
+	return b
+}
+
+// Picks a uniform random subslice of a slice with a given length.
+// Returns the offset and length of the subslice.
+func randSubslice(sliceLength int) (offset, length int) {
+	length = rand.Intn(sliceLength + 1)
+	offset = rand.Intn(sliceLength - length + 1)
+	return
+}
+
+func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
+	env := testenv.GetTestEnv(t)
+
+	root := testfs.MakeTempDir(t)
+	path := filepath.Join(root, "f")
+	err := os.WriteFile(path, make([]byte, backingFileSizeBytes), 0644)
+	require.NoError(t, err, "write empty file")
+
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	require.NoError(t, err)
+	defer f.Close()
+	s, err := f.Stat()
+	require.NoError(t, err)
+
+	mmap, err := copy_on_write.NewMmapFd(env.GetFileCache(), root, int(f.Fd()), int(s.Size()), 0)
+	require.NoError(t, err)
+	return mmap, path
 }
 
 func makeTempFile(t *testing.T, content []byte) string {
@@ -312,7 +475,7 @@ func writeSparseFile(t *testing.T, path string, b []byte, ioBlockSize int64) {
 		if int64(len(data)) > ioBlockSize {
 			data = data[:ioBlockSize]
 		}
-		if blockio.IsEmptyOrAllZero(data) {
+		if copy_on_write.IsEmptyOrAllZero(data) {
 			continue
 		}
 		_, err := f.WriteAt(data, off)

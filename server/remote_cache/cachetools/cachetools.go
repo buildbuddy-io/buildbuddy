@@ -536,7 +536,9 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 
 	// Add output files to the filecache.
 	if ul.env.GetFileCache() != nil {
-		ul.env.GetFileCache().AddFile(&repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path)
+		if err := ul.env.GetFileCache().AddFile(&repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path); err != nil {
+			log.Warningf("Error adding file to filecache: %s", err)
+		}
 	}
 
 	// Note: uploader.Upload will close the file.

@@ -317,9 +317,19 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 
 	selectedGroupID := ""
 	selectedGroupRole := role.None
+	selectedGroupAccess := uspb.SelectedGroup_DENIED
 	if g := selectedGroup(ctx, req.GetRequestContext().GetGroupId(), tu.Groups); g != nil {
 		selectedGroupID = g.Group.GroupID
 		selectedGroupRole = role.Role(g.Role)
+		selectedGroupAccess = uspb.SelectedGroup_ALLOWED
+		if irs := s.env.GetIPRulesService(); irs != nil {
+			err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
+			if status.IsPermissionDeniedError(err) {
+				selectedGroupAccess = uspb.SelectedGroup_DENIED_BY_IP_RULES
+			} else if err != nil {
+				return nil, err
+			}
+		}
 	}
 	allowedRPCs := role_filter.RoleIndependentRPCs()
 	if selectedGroupRole&role.Admin > 0 {
@@ -345,9 +355,13 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 	}
 
 	return &uspb.GetUserResponse{
-		DisplayUser:      tu.ToProto(),
-		UserGroup:        makeGroups(tu.Groups),
-		SelectedGroupId:  selectedGroupID,
+		DisplayUser:     tu.ToProto(),
+		UserGroup:       makeGroups(tu.Groups),
+		SelectedGroupId: selectedGroupID,
+		SelectedGroup: &uspb.SelectedGroup{
+			GroupId: selectedGroupID,
+			Access:  selectedGroupAccess,
+		},
 		AllowedRpc:       allowedRPCs,
 		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,

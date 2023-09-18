@@ -42,12 +42,14 @@ http_archive(
     ],
 )
 
-load(":deps.bzl", "install_buildbuddy_dependencies")
+load(":deps.bzl", "install_go_mod_dependencies", "install_static_dependencies")
+
+install_static_dependencies()
 
 # Install gazelle and go_rules dependencies after ours so that our go module versions take precedence.
 
-# gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
-install_buildbuddy_dependencies()
+# gazelle:repository_macro deps.bzl%install_go_mod_dependencies
+install_go_mod_dependencies()
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
@@ -356,9 +358,9 @@ dockerfile_image(
 
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "e899f235b36cb901b678bd6f55c1229df23fcbc7921ac7a3585d29bff2bf9cfd",
-    strip_prefix = "buildbuddy-toolchain-fd351ca8f152d66fc97f9d98009e0ae000854e8f",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/fd351ca8f152d66fc97f9d98009e0ae000854e8f.tar.gz"],
+    sha256 = "1cab6ef3ae9b4211ab9d57826edd4bbc34e5b9e5cb1927c97f0788d8e7ad0442",
+    strip_prefix = "buildbuddy-toolchain-b043878a82f266fd78369b794a105b57dc0b2600",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/b043878a82f266fd78369b794a105b57dc0b2600.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")

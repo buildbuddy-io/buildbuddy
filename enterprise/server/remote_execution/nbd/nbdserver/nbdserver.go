@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -18,13 +18,13 @@ import (
 // Device is a block store exported by a server along with its associated
 // metadata.
 type Device struct {
-	blockio.Store
+	*copy_on_write.COWStore
 	Metadata *nbdpb.DeviceMetadata
 }
 
-func NewExt4Device(store blockio.Store, name string) (*Device, error) {
+func NewExt4Device(store *copy_on_write.COWStore, name string) (*Device, error) {
 	return &Device{
-		Store: store,
+		COWStore: store,
 		Metadata: &nbdpb.DeviceMetadata{
 			Name:           name,
 			FilesystemType: nbdpb.FilesystemType_EXT4_FILESYSTEM_TYPE,
@@ -87,7 +87,7 @@ func (s *Server) Start(lis net.Listener) error {
 }
 
 func (s *Server) Stop() error {
-	s.server.Stop()
+	s.server.GracefulStop()
 	return nil
 }
 

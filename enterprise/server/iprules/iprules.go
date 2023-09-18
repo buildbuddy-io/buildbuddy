@@ -4,11 +4,14 @@ import (
 	"context"
 	"flag"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -17,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 )
@@ -104,6 +108,7 @@ func New(env environment.Env) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &Service{
 		env:   env,
 		cache: cache,
@@ -149,15 +154,7 @@ func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*net.I
 	return allowed, nil
 }
 
-func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
-	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
-	if err != nil {
-		return err
-	}
-	if !g.EnforceIPRules {
-		return nil
-	}
-
+func (s *Service) checkRules(ctx context.Context, groupID string) error {
 	rawClientIP := clientip.Get(ctx)
 	clientIP := net.ParseIP(rawClientIP)
 	// Client IP is not parsable.
@@ -184,6 +181,27 @@ func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
 	return status.PermissionDeniedErrorf("Client %q is not allowed by Organization IP rules", rawClientIP)
 }
 
+func (s *Service) authorize(ctx context.Context, groupID string) error {
+	start := time.Now()
+	err := s.checkRules(ctx, groupID)
+	metrics.IPRulesCheckLatencyUsec.With(
+		prometheus.Labels{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)},
+	).Observe(float64(time.Since(start).Microseconds()))
+	return err
+}
+
+func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	if !g.EnforceIPRules {
+		return nil
+	}
+
+	return s.authorize(ctx, groupID)
+}
+
 func (s *Service) Authorize(ctx context.Context) error {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
@@ -202,7 +220,25 @@ func (s *Service) Authorize(ctx context.Context) error {
 		return nil
 	}
 
-	return s.AuthorizeGroup(ctx, u.GetGroupID())
+	return s.authorize(ctx, u.GetGroupID())
+}
+
+func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
+	// GetUser is used by the frontend to know what the user is allowed to
+	//  do, including whether or not they are allowed access by IP rules.
+	if r.URL.Path == "/rpc/BuildBuddyService/GetUser" {
+		return nil
+	}
+
+	// All other APIs are subject to IP access checks.
+	if strings.HasPrefix(r.URL.Path, "/rpc/") || strings.HasPrefix(r.URL.Path, "/api/") {
+		err := s.Authorize(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) checkAccess(ctx context.Context, groupID string) error {

@@ -58,9 +58,13 @@ func HandleAdd(args []string) (int, error) {
 		return 1, nil
 	}
 
-	module, resp, err := FetchModuleOrDisambiguate(flags.Args()[0])
+	module, version, resp, err := FetchModuleOrDisambiguate(flags.Args()[0])
 	if err != nil {
 		return 1, err
+	}
+
+	if version == "" {
+		version = resp.LatestReleaseWithWorkspaceSnippet
 	}
 
 	// TODO(siggisim): Support MODULE.bazel
@@ -79,13 +83,13 @@ func HandleAdd(args []string) (int, error) {
 	for _, m := range matches {
 		existingModule := m[1]
 		existingVersion := m[2]
-		if module == existingModule && resp.LatestReleaseWithWorkspaceSnippet == existingVersion {
-			return 1, fmt.Errorf("WORKSPACE already contains %s at the latest version (%s)",
+		if module == existingModule && version == existingVersion {
+			return 1, fmt.Errorf("WORKSPACE already contains %s at the requested version (%s)",
 				existingModule, existingVersion)
 		}
 		if module == existingModule {
-			return 1, fmt.Errorf("WORKSPACE already contains %s at version %s (the latest version is %s)",
-				existingModule, existingVersion, resp.LatestReleaseWithWorkspaceSnippet)
+			return 1, fmt.Errorf("WORKSPACE already contains %s at version %s (the requested version is %s)",
+				existingModule, existingVersion, version)
 		}
 	}
 	if strings.Contains(string(contents), resp.Repo.FullName) {
@@ -93,7 +97,7 @@ func HandleAdd(args []string) (int, error) {
 			resp.Repo.FullName, module)
 	}
 
-	addition := GenerateSnippet(module, resp)
+	addition := GenerateSnippet(module, version, resp)
 
 	if _, err := f.WriteString(addition); err != nil {
 		return 1, err
@@ -105,44 +109,56 @@ func HandleAdd(args []string) (int, error) {
 }
 
 // TODO(siggisim): Support specifying a version.
-func FetchModuleOrDisambiguate(module string) (string, *RegistryResponse, error) {
-	module = strings.Replace(module, "https://", "", 1)
-	module = strings.Replace(module, "github.com/", "github/", 1)
-	module = strings.TrimRight(module, "/")
-
-	res, err := fetch(module)
+func FetchModuleOrDisambiguate(moduleInput string) (string, string, *RegistryResponse, error) {
+	moduleAndVersion := strings.Replace(moduleInput, "https://", "", 1)
+	moduleAndVersion = strings.Replace(moduleAndVersion, "github.com/", "github/", 1)
+	moduleAndVersion = strings.TrimRight(moduleAndVersion, "/")
+	moduleParts := strings.Split(moduleAndVersion, "@")
+	moduleName := moduleParts[0]
+	moduleVersion := ""
+	if len(moduleParts) > 1 {
+		moduleVersion = moduleParts[1]
+	}
+	res, err := fetch(moduleName)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	if len(res.Disambiguation) == 0 && res.Name == "" {
-		return "", nil, fmt.Errorf("module %q not found", module)
+		return "", "", nil, fmt.Errorf("module %q not found", moduleName)
 	}
 	if len(res.Disambiguation) == 1 && res.Name == "" {
-		module = res.Disambiguation[0].Path
-		res, err = fetch(module)
+		moduleName = res.Disambiguation[0].Path
+		res, err = fetch(moduleName)
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
 	}
 	if len(res.Disambiguation) > 1 && res.Name == "" {
 		pickedModule, err := showPicker(res.Disambiguation)
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
-		module = pickedModule
-		res, err = fetch(module)
+		moduleName = pickedModule
+		res, err = fetch(moduleName)
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
 	}
-	return module, res, nil
+	return moduleName, moduleVersion, res, nil
 }
 
-func GenerateSnippet(module string, resp *RegistryResponse) string {
-	versionKey := fmt.Sprintf("[https://registry.build/%s@%s]", module, resp.LatestReleaseWithWorkspaceSnippet)
+func GenerateSnippet(module, version string, resp *RegistryResponse) string {
+	versionKey := fmt.Sprintf("[https://registry.build/%s@%s]", module, version)
 	header := fmt.Sprintf(headerTemplate, versionKey)
 	footer := fmt.Sprintf(footerTemplate, versionKey)
-	return fmt.Sprintf("\n%s\n\n%+v\n\n%s\n", header, strings.TrimSpace(resp.WorkspaceSnippet), footer)
+	snippet := resp.WorkspaceSnippet
+	for _, r := range resp.Releases {
+		if r.Name == "v"+version || r.Name == version {
+			snippet = r.WorkspaceSnippet
+			break
+		}
+	}
+	return fmt.Sprintf("\n%s\n\n%+v\n\n%s\n", header, strings.TrimSpace(snippet), footer)
 }
 
 func fetch(module string) (*RegistryResponse, error) {
@@ -222,6 +238,7 @@ type RegistryResponse struct {
 	LatestReleaseWithModuleSnippet    string           `json:"latest_release_with_module_snippet"`
 	Disambiguation                    []Disambiguation `json:"disambiguation"`
 	Repo                              Repo             `json:"repo"`
+	Releases                          []Release        `json:"releases"`
 }
 
 type Disambiguation struct {
@@ -231,6 +248,11 @@ type Disambiguation struct {
 
 type Repo struct {
 	FullName string `json:"full_name"`
+}
+
+type Release struct {
+	WorkspaceSnippet string `json:"workspace_snippet"`
+	Name             string `json:"name"`
 }
 
 // This is a workaround for the bell issue documented in

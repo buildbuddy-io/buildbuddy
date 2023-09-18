@@ -10,9 +10,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/blockio"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -93,8 +94,68 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	const chunkSize = 512 * 1024
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
+	cowA, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), originalImagePath, chunkSize, workDirA)
+	require.NoError(t, err)
+
+	// Overwrite a random range to simulate the disk being written to. This
+	// should create some dirty chunks.
+	writeRandomRange(t, cowA)
+
+	// Now store a snapshot for VM A, including the COW we created.
+	task := &repb.ExecutionTask{}
+	key, err := snaploader.NewKey(task, "config-hash", "")
+	require.NoError(t, err)
+	optsA := makeFakeSnapshot(t, workDirA)
+	optsA.ChunkedFiles = map[string]*copy_on_write.COWStore{
+		"scratchfs": cowA,
+	}
+	snapA, err := loader.CacheSnapshot(ctx, key, optsA)
+	require.NoError(t, err)
+	// Note: we'd normally close cowA here, but we keep it open so that
+	// mustUnpack() can verify the original contents.
+
+	// We want to make sure we can save/unpack snapshots that were also
+	// unpacked from a snapshot.
+	// i.e. For SnapA -> ForkA -> ForkA' we want to make sure ForkA' functions
+	// correctly
+	originalSnap := snapA
+	originalOpts := optsA
+	for i := 0; i < 3; i++ {
+		forkWorkDir := testfs.MakeDirAll(t, workDir, fmt.Sprintf("VM-%d", i))
+		unpacked := mustUnpack(t, ctx, loader, originalSnap, forkWorkDir, originalOpts)
+		forkCOW := unpacked.ChunkedFiles["scratchfs"]
+		writeRandomRange(t, forkCOW)
+		forkOpts := makeFakeSnapshot(t, forkWorkDir)
+		forkOpts.ChunkedFiles = map[string]*copy_on_write.COWStore{
+			"scratchfs": forkCOW,
+		}
+		forkSnap, err := loader.CacheSnapshot(ctx, key, forkOpts)
+		require.NoError(t, err)
+		originalSnap = forkSnap
+		originalOpts = forkOpts
+	}
+}
+
+func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
+	const maxFilecacheSizeBytes = 20_000_000 // 20 MB
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	filecacheDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+
+	// Create an initial chunked file for VM A.
+	workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
+	const chunkSize = 512 * 1024
+	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
+	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-	cowA, err := blockio.ConvertFileToCOW(originalImagePath, chunkSize, chunkDirA)
+	cowA, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), originalImagePath, chunkSize, chunkDirA)
 	require.NoError(t, err)
 	// Overwrite a random range to simulate the disk being written to. This
 	// should create some dirty chunks.
@@ -104,8 +165,8 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	keyA, err := snaploader.NewKey(taskA, "config-hash-a", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA)
-	optsA.ChunkedFiles = map[string]*snaploader.ChunkedFile{
-		"scratchfs": {COWStore: cowA},
+	optsA.ChunkedFiles = map[string]*copy_on_write.COWStore{
+		"scratchfs": cowA,
 	}
 	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
 	require.NoError(t, err)
@@ -129,7 +190,9 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	// mustUnpack already verifies the contents against cowA, but this will give
 	// us false confidence if cowA was somehow mutated. So check again against
 	// the originally snapshotted bytes, rather than the original COW instance.
-	scratchfsBytesC, err := io.ReadAll(blockio.Reader(unpackedC.ChunkedFiles["scratchfs"]))
+	r, err := interfaces.StoreReader(unpackedC.ChunkedFiles["scratchfs"])
+	require.NoError(t, err)
+	scratchfsBytesC, err := io.ReadAll(r)
 	require.NoError(t, err)
 	if !bytes.Equal(scratchfsBytesA, scratchfsBytesC) {
 		require.FailNow(t, "scratchfs bytes for VM C should match original contents from snapshot A")
@@ -152,7 +215,7 @@ func makeRandomFile(t *testing.T, rootDir, prefix string, size int) string {
 	return filepath.Join(rootDir, name)
 }
 
-func writeRandomRange(t *testing.T, store blockio.Store) {
+func writeRandomRange(t *testing.T, store *copy_on_write.COWStore) {
 	s, err := store.SizeBytes()
 	require.NoError(t, err)
 	off := rand.Intn(int(s))
@@ -195,8 +258,9 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 	return unpacked
 }
 
-func mustReadStore(t *testing.T, store blockio.Store) []byte {
-	r := blockio.Reader(store)
+func mustReadStore(t *testing.T, store *copy_on_write.COWStore) []byte {
+	r, err := interfaces.StoreReader(store)
+	require.NoError(t, err)
 	b, err := io.ReadAll(r)
 	require.NoError(t, err)
 	return b

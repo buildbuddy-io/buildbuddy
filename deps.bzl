@@ -1,8 +1,8 @@
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
-# bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_buildbuddy_dependencies
-def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
+# bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies
+def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "cc_mvdan_gofumpt",
         importpath = "mvdan.cc/gofumpt",
@@ -7049,6 +7049,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v3.3.0",
     )
 
+# Manually created
+def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
         name = "com_github_buildbuddy_io_firecracker_firecracker-v1.4.0-20230720-cf5f56f",
         sha256 = "b36d9ad62ca467d2794635c4f19b0993c11bb46ed3b575037287964f9c82cc9b",

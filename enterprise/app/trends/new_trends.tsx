@@ -4,7 +4,7 @@ import FilterComponent from "../filter/filter";
 import capabilities from "../../../app/capabilities/capabilities";
 import DrilldownPageComponent from "./drilldown_page";
 import TrendsModel from "./trends_model";
-import TrendsTab from "./common";
+import { TrendsTab } from "./common";
 import SimpleTrendsTabComponent from "./simple_trends_tab";
 import { TrendsRpcCache } from "./trends_requests";
 

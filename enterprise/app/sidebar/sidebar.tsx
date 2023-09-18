@@ -33,6 +33,7 @@ import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import rpc_service from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
+import { user } from "../../../proto/user_ts_proto";
 
 interface Props {
   user?: User;

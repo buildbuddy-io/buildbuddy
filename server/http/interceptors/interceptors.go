@@ -131,6 +131,18 @@ func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Han
 	})
 }
 
+func AuthorizeIP(env environment.Env, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if irs := env.GetIPRulesService(); irs != nil {
+			if err := irs.AuthorizeHTTPRequest(r.Context(), r); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func ClientIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientIP := r.RemoteAddr
@@ -308,12 +320,11 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 	return wrapHandler(env, handlers.RequestHandler, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return AuthorizeSelectedGroupRole(env, h) },
+		func(h http.Handler) http.Handler { return AuthorizeIP(env, h) },
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
 		// The request message is parsed before authentication since the request_context
 		// field needs to be authenticated if it's present.
-		func(h http.Handler) http.Handler {
-			return http.StripPrefix(httpPrefix, handlers.BodyParserMiddleware(h))
-		},
+		func(h http.Handler) http.Handler { return handlers.BodyParserMiddleware(h) },
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
@@ -342,6 +353,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	// called last before the handler itself is called.
 	return wrapHandler(env, next, &[]wrapFn{
 		Gzip,
+		func(h http.Handler) http.Handler { return AuthorizeIP(env, h) },
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
 		RequestContextFromURL,
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },

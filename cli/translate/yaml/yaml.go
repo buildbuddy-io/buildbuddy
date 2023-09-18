@@ -200,13 +200,12 @@ func (y *yamlTranslator) translateDeps(m []interface{}) string {
 			log.Warnf("unknown dep type: %T", dep)
 			continue
 		}
-		module, resp, err := add.FetchModuleOrDisambiguate(strings.Split(depString, "@")[0])
+		module, version, resp, err := add.FetchModuleOrDisambiguate(strings.Split(depString, "@")[0])
 		if err != nil {
 			log.Warnf("error fetching module: %s", err)
 			continue
 		}
-		output += add.GenerateSnippet(module, resp)
-
+		output += add.GenerateSnippet(module, version, resp)
 	}
 	return output
 }

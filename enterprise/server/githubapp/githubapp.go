@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -37,6 +39,7 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	gh_oauth "github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
@@ -48,6 +51,8 @@ var (
 	publicLink    = flag.String("github.app.public_link", "", "GitHub app installation URL.")
 	privateKey    = flagutil.New("github.app.private_key", "", "GitHub app private key.", flagutil.SecretTag)
 	webhookSecret = flagutil.New("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flagutil.SecretTag)
+
+	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/]*$`)
 )
 
 const (
@@ -626,7 +631,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	// If we have a template, copy the template contents to the new repo
 	if req.Template != "" {
 		tmpDirName := fmt.Sprintf("template-repo-%d-%s-*", req.InstallationId, req.Name)
-		err = cloneTemplate(tmpDirName, token, req.Template, *repo.CloneURL)
+		err = cloneTemplate(tu.Email, tmpDirName, token, req.Template, *repo.CloneURL, req.TemplateDirectory)
 		if err != nil {
 			return nil, err
 		}
@@ -651,7 +656,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 }
 
 // TODO(siggisim): consider moving template cloning to a remote action if it causes us troubles doing this on apps.
-func cloneTemplate(tmpDirName, token, srcURL, destURL string) error {
+func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir string) error {
 	// Make a temporary directory for the template
 	tmpDir, err := scratchspace.MkdirTemp(tmpDirName)
 	if err != nil {
@@ -664,24 +669,58 @@ func cloneTemplate(tmpDirName, token, srcURL, destURL string) error {
 		Username: "github",
 		Password: token,
 	}
-	gitRepo, err := git.PlainClone(tmpDir, false, &git.CloneOptions{
+
+	_, err = git.PlainClone(tmpDir, false, &git.CloneOptions{
 		URL:  srcURL,
 		Auth: auth,
 	})
 	if err != nil {
 		return err
 	}
+	// Remove existing git information so we can create a single initial commit
+	err = os.RemoveAll(filepath.Join(tmpDir, ".git"))
+	if err != nil {
+		return err
+	}
+	// Don't allow paths with dots or other non alphanumeric path components
+	if !validPathRegex.MatchString(srcDir) {
+		return status.FailedPreconditionErrorf("invalid template path: %q", srcDir)
+	}
+	path := filepath.Join(tmpDir, srcDir)
+	// Intentionally using Lstat to avoid following symlinks
+	if fileInfo, err := os.Lstat(path); err != nil || !fileInfo.IsDir() {
+		return status.FailedPreconditionErrorf("not a valid directory: %q", srcDir)
+	}
+	gitRepo, err := git.PlainInit(path, false)
+	if err != nil {
+		return err
+	}
+	gitWorkTree, err := gitRepo.Worktree()
+	if err != nil {
+		return err
+	}
+	_, err = gitWorkTree.Add(".")
+	if err != nil {
+		return err
+	}
+	_, err = gitWorkTree.Commit("Initial commit", &git.CommitOptions{All: true, Author: &gitobject.Signature{
+		Email: email,
+		When:  time.Now(),
+	}})
+	if err != nil {
+		return err
+	}
 
 	// Create a new remote and push to it
 	remote, err := gitRepo.CreateRemote(&config.RemoteConfig{
-		Name: "new-repo",
+		Name: "origin",
 		URLs: []string{destURL},
 	})
 	if err != nil {
 		return err
 	}
 	return remote.Push(&git.PushOptions{
-		RemoteName: "new-repo",
+		RemoteName: "origin",
 		Auth:       auth,
 		Force:      true,
 	})

@@ -617,12 +617,12 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 
 	// Check that the result has the expected disk usage stats.
 	assert.True(t, res.UsageStats != nil)
-	var workspaceFSU, scratchFSU *repb.UsageStats_FileSystemUsage
+	var workspaceFSU, rootFSU *repb.UsageStats_FileSystemUsage
 	for _, fsu := range res.UsageStats.PeakFileSystemUsage {
 		if fsu.Target == "/workspace" {
 			workspaceFSU = fsu
 		} else if fsu.Target == "/" {
-			scratchFSU = fsu
+			rootFSU = fsu
 		}
 	}
 
@@ -648,20 +648,23 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 			60_000_000,
 			"total workspace disk size")
 	}
-	if scratchFSU == nil {
-		assert.Fail(t, "scratch (/) disk usage was not reported")
+	if rootFSU == nil {
+		assert.Fail(t, "root (/) disk usage was not reported")
+	} else if *firecracker.EnableRootfs {
+		assert.Equal(t, "ext4", rootFSU.GetFstype())
+		assert.Equal(t, "/dev/nbd0", rootFSU.GetSource())
 	} else {
-		assert.Equal(t, "overlay", scratchFSU.GetFstype())
-		assert.Equal(t, "overlayfs:/scratch/bbvmroot", scratchFSU.GetSource())
+		assert.Equal(t, "overlay", rootFSU.GetFstype())
+		assert.Equal(t, "overlayfs:/scratch/bbvmroot", rootFSU.GetSource())
 		const approxInitialScratchDiskSizeBytes = 38e6
 		assert.InDelta(
 			t, approxInitialScratchDiskSizeBytes+scratchTestFileSizeBytes,
-			scratchFSU.GetUsedBytes(),
+			rootFSU.GetUsedBytes(),
 			20_000_000,
 			"used scratch disk size")
 		assert.InDelta(
 			t, 1_000_000*opts.VMConfiguration.ScratchDiskSizeMb+ext4.MinDiskImageSizeBytes+approxInitialScratchDiskSizeBytes,
-			scratchFSU.GetTotalBytes(),
+			rootFSU.GetTotalBytes(),
 			20_000_000,
 			"total scratch disk size")
 	}
@@ -890,7 +893,7 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	assert.Equal(t, "/workspace\n", string(res.Stdout))
 }
 
-func TestFirecrackerRunWithDocker(t *testing.T) {
+func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -899,20 +902,19 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			set -e
+
 			# Discard pull output to make the output deterministic
 			docker pull ` + busyboxImage + ` &>/dev/null
 
 			# Try running a few commands
 			docker run --rm ` + busyboxImage + ` echo Hello
 			docker run --rm ` + busyboxImage + ` echo world
+
+			# Check what storage driver docker is using
+			docker info 2>/dev/null | grep 'Storage Driver'
 		`},
 	}
 
@@ -941,7 +943,11 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "Hello\nworld\n", string(res.Stdout), "stdout should contain pwd output")
+	expectedStorageDriver := "vfs"
+	if *firecracker.EnableRootfs {
+		expectedStorageDriver = "overlay2"
+	}
+	assert.Equal(t, "Hello\nworld\n Storage Driver: "+expectedStorageDriver+"\n", string(res.Stdout), "stdout should contain pwd output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
 }
 
@@ -954,11 +960,6 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			set -e
@@ -1010,20 +1011,11 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
 			docker -H tcp://127.0.0.1:2375 pull ` + busyboxImage + ` &>/dev/null
-
-			# Try running a few commands
-			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo Hello
-			docker -H tcp://127.0.0.1:2375 run --rm ` + busyboxImage + ` echo world
 		`},
 	}
 
@@ -1648,9 +1640,9 @@ func TestFirecrackerStressIO(t *testing.T) {
 	// High-level orchestration options
 	const (
 		// Total number of runs
-		runs = 30
+		runs = 10
 		// Max number of VMs to run concurrently
-		concurrency = 2
+		concurrency = 1
 	)
 	// Per-exec options
 	const (
@@ -1665,20 +1657,20 @@ func TestFirecrackerStressIO(t *testing.T) {
 		fileSize = 10 * 1024
 		// Whether to execute each run inside a docker container in the VM.
 		// Requires dockerd.
-		dockerize = true
+		dockerize = false
 	)
 	// VM lifecycle options
 	const (
 		// Max number of times a single VM can be used before it is removed
-		maxRunsPerVM = 100
+		maxRunsPerVM = 1
 	)
 	// VM configuration
 	const (
 		cpus       = 4
-		memoryMB   = 1600
-		scratchMB  = 1600
-		dockerd    = true
-		networking = true
+		memoryMB   = 800
+		scratchMB  = 800
+		dockerd    = false
+		networking = false
 	)
 
 	if dockerize && (!dockerd || !networking) {

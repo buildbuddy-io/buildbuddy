@@ -273,7 +273,9 @@ func uploadFiles(uploader *cachetools.BatchCASUploader, fc interfaces.FileCache,
 		// Add output files to the filecache.
 		if fc != nil && uploadableFile.dir == nil {
 			node := uploadableFile.FileNode()
-			fc.AddFile(node, uploadableFile.fullFilePath)
+			if err := fc.AddFile(node, uploadableFile.fullFilePath); err != nil {
+				log.Warningf("Error adding file to filecache: %s", err)
+			}
 		}
 
 		rsc, err := uploadableFile.ReadSeekCloser()
@@ -659,7 +661,9 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 			return err
 		}
 		if fileCache != nil {
-			fileCache.AddFile(ptr.FileNode, ptr.FullPath)
+			if err := fileCache.AddFile(ptr.FileNode, ptr.FullPath); err != nil {
+				log.Warningf("Error adding file to filecache: %s", err)
+			}
 		}
 		// Only need to write the first file explicitly; the rest of the files can
 		// be fast-copied from the first.
@@ -813,7 +817,9 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	}
 	fileCache := ff.env.GetFileCache()
 	if fileCache != nil {
-		fileCache.AddFile(fp.FileNode, fp.FullPath)
+		if err := fileCache.AddFile(fp.FileNode, fp.FullPath); err != nil {
+			log.Warningf("Error adding file to filecache: %s", err)
+		}
 	}
 
 	// The rest of the files in the list all have the same digest, so we can

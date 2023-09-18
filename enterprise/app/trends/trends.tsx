@@ -15,7 +15,8 @@ import { getProtoFilterParams } from "../filter/filter_util";
 import router from "../../../app/router/router";
 import * as proto from "../../../app/util/proto";
 import DrilldownPageComponent from "./drilldown_page";
-import { timeDay } from "d3-time";
+import { computeTimeKeys } from "./common";
+import Long from "long";
 
 const BITS_PER_BYTE = 8;
 
@@ -30,10 +31,12 @@ interface State {
   loading: boolean;
   timeToStatMap: Map<number, stats.ITrendStat>;
   timeToExecutionStatMap: Map<number, stats.IExecutionStat>;
+  interval: stats.IntervalType;
   enableInvocationPercentileCharts: boolean;
   currentSummary?: stats.Summary;
   previousSummary?: stats.Summary;
   timeKeys: number[];
+  ticks: number[];
 }
 
 const SECONDS_PER_MICROSECOND = 1e-6;
@@ -44,8 +47,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
     loading: true,
     timeToStatMap: new Map<number, stats.ITrendStat>(),
     timeToExecutionStatMap: new Map<number, stats.IExecutionStat>(),
+    interval: stats.IntervalType.INTERVAL_TYPE_DAY,
     enableInvocationPercentileCharts: false,
     timeKeys: [],
+    ticks: [],
   };
 
   subscription?: Subscription;
@@ -152,12 +157,16 @@ export default class TrendsComponent extends React.Component<Props, State> {
       console.log(response);
       const timeToStatMap = new Map<number, stats.ITrendStat>();
       for (let stat of response.trendStat) {
-        const time = new Date(stat.name + " 00:00").getTime();
+        const time = stat.bucketStartTimeMicros
+          ? +stat.bucketStartTimeMicros / 1000
+          : new Date(stat.name + " 00:00").getTime();
         timeToStatMap.set(time, stat);
       }
       const timeToExecutionStatMap = new Map<number, stats.IExecutionStat>();
       for (let stat of response.executionStat) {
-        const time = new Date(stat.name + " 00:00").getTime();
+        const time = stat.bucketStartTimeMicros
+          ? +stat.bucketStartTimeMicros / 1000
+          : new Date(stat.name + " 00:00").getTime();
         timeToExecutionStatMap.set(time, stat);
       }
       const domain: [Date, Date] = [
@@ -165,13 +174,18 @@ export default class TrendsComponent extends React.Component<Props, State> {
         request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date(),
       ];
 
+      const interval =
+        response.interval ??
+        stats.StatsInterval.create({ type: stats.IntervalType.INTERVAL_TYPE_DAY, count: Long.fromNumber(1) });
+
       this.setState({
         stats: response.trendStat,
-        timeKeys: computeTimeKeys(domain),
+        ...computeTimeKeys(interval, domain),
         currentSummary: response.currentSummary || undefined,
         previousSummary: response.previousSummary || undefined,
         timeToStatMap,
         timeToExecutionStatMap,
+        interval: interval.type,
         enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
         loading: false,
       });
@@ -187,7 +201,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   formatLongDate(timestampMillis: number) {
-    return moment(timestampMillis).format("dddd, MMMM Do YYYY");
+    if (this.state.interval == stats.IntervalType.INTERVAL_TYPE_DAY) {
+      return moment(timestampMillis).format("dddd, MMMM Do YYYY");
+    }
+    return moment(timestampMillis).format("dddd, MMMM Do YYYY HH:mm");
   }
 
   formatShortDate(timestampMillis: number) {
@@ -255,9 +272,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   );
                 }}
                 extractLabel={this.formatShortDate.bind(this)}
+                ticks={this.state.ticks}
                 formatTickValue={format.count}
                 allowDecimals={false}
-                formatHoverLabel={this.formatLongDate}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 formatHoverValue={(value) => (value || 0) + " builds"}
                 formatSecondaryHoverValue={(value) => `${format.durationSec(value)} average`}
                 formatSecondaryTickValue={format.durationSec}
@@ -272,8 +290,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   title="Build duration"
                   id="duration"
                   data={this.state.timeKeys}
+                  ticks={this.state.ticks}
                   extractLabel={this.formatShortDate.bind(this)}
-                  formatHoverLabel={this.formatLongDate}
+                  formatHoverLabel={this.formatLongDate.bind(this)}
                   extractP50={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP75={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP90={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
@@ -293,8 +312,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   }}
                   extractSecondaryValue={(tsMillis) => +(this.getStat(tsMillis).maxDurationUsec ?? 0) / 1000000}
                   extractLabel={this.formatShortDate.bind(this)}
+                  ticks={this.state.ticks}
                   formatTickValue={format.durationSec}
-                  formatHoverLabel={this.formatLongDate}
+                  formatHoverLabel={this.formatLongDate.bind(this)}
                   formatHoverValue={(value) => `${format.durationSec(value || 0)} average`}
                   formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
                   name="average build duration"
@@ -309,7 +329,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 id="cache"
                 data={this.state.timeKeys}
                 extractLabel={this.formatShortDate.bind(this)}
-                formatHoverLabel={this.formatLongDate}
+                ticks={this.state.ticks}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).actionCacheHits ?? 0)}
                 secondaryBarName="misses"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).actionCacheMisses ?? 0)}
@@ -318,7 +339,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 title="Content Addressable Store"
                 data={this.state.timeKeys}
                 extractLabel={this.formatShortDate.bind(this)}
-                formatHoverLabel={this.formatLongDate}
+                ticks={this.state.ticks}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).casCacheHits ?? 0)}
                 secondaryBarName="writes"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).casCacheUploads ?? 0)}
@@ -333,10 +355,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   (+(this.getStat(tsMillis).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND)
                 }
                 extractLabel={this.formatShortDate.bind(this)}
+                ticks={this.state.ticks}
                 formatTickValue={format.bytes}
                 allowDecimals={false}
                 formatSecondaryTickValue={format.bitsPerSecond}
-                formatHoverLabel={this.formatLongDate}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 formatHoverValue={(value) => `${format.bytes(value || 0)} downloaded`}
                 formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
                 name="total download size"
@@ -354,9 +377,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   (+(this.getStat(tsMillis).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND)
                 }
                 extractLabel={this.formatShortDate.bind(this)}
+                ticks={this.state.ticks}
                 formatTickValue={format.bytes}
                 formatSecondaryTickValue={format.bitsPerSecond}
-                formatHoverLabel={this.formatLongDate}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 formatHoverValue={(value) => `${format.bytes(value || 0)} uploaded`}
                 formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
                 name="total upload size"
@@ -374,9 +398,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     +(this.getStat(tsMillis).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND
                   }
                   extractLabel={this.formatShortDate.bind(this)}
+                  ticks={this.state.ticks}
                   formatTickValue={format.durationSec}
                   allowDecimals={false}
-                  formatHoverLabel={this.formatLongDate}
+                  formatHoverLabel={this.formatLongDate.bind(this)}
                   formatHoverValue={(value) => `${format.durationSec(value || 0)} CPU time saved`}
                   name="saved cpu time"
                 />
@@ -387,9 +412,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 extractValue={(tsMillis) => +(this.getStat(tsMillis).userCount ?? 0)}
                 extractLabel={this.formatShortDate.bind(this)}
+                ticks={this.state.ticks}
                 formatTickValue={format.count}
                 allowDecimals={false}
-                formatHoverLabel={this.formatLongDate}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
                 onBarClicked={this.onBarClicked.bind(this, "#users", "")}
@@ -399,9 +425,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 extractValue={(tsMillis) => +(this.getStat(tsMillis).commitCount ?? 0)}
                 extractLabel={this.formatShortDate.bind(this)}
+                ticks={this.state.ticks}
                 formatTickValue={format.count}
                 allowDecimals={false}
-                formatHoverLabel={this.formatLongDate}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
                 onBarClicked={this.onBarClicked.bind(this, "#commits", "")}
@@ -411,9 +438,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 extractValue={(tsMillis) => +(this.getStat(tsMillis).branchCount ?? 0)}
                 extractLabel={this.formatShortDate.bind(this)}
+                ticks={this.state.ticks}
                 formatTickValue={format.count}
                 allowDecimals={false}
-                formatHoverLabel={this.formatLongDate}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 formatHoverValue={(value) => (value || 0) + " branches"}
                 name="branches with builds"
               />
@@ -422,9 +450,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 extractValue={(tsMillis) => +(this.getStat(tsMillis).hostCount ?? 0)}
                 extractLabel={this.formatShortDate.bind(this)}
+                ticks={this.state.ticks}
                 formatTickValue={format.count}
                 allowDecimals={false}
-                formatHoverLabel={this.formatLongDate}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
                 onBarClicked={this.onBarClicked.bind(this, "#hosts", "")}
@@ -434,9 +463,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 extractValue={(tsMillis) => +(this.getStat(tsMillis).repoCount ?? 0)}
                 extractLabel={this.formatShortDate.bind(this)}
+                ticks={this.state.ticks}
                 formatTickValue={format.count}
                 allowDecimals={false}
-                formatHoverLabel={this.formatLongDate}
+                formatHoverLabel={this.formatLongDate.bind(this)}
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"
                 onBarClicked={this.onBarClicked.bind(this, "#repos", "")}
@@ -446,7 +476,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   title="Remote Execution Queue Duration"
                   data={this.state.timeKeys}
                   extractLabel={this.formatShortDate.bind(this)}
-                  formatHoverLabel={this.formatLongDate}
+                  ticks={this.state.ticks}
+                  formatHoverLabel={this.formatLongDate.bind(this)}
                   extractP50={(tsMillis) =>
                     +(this.getExecutionStat(tsMillis).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
                   }
@@ -470,9 +501,4 @@ export default class TrendsComponent extends React.Component<Props, State> {
       </div>
     );
   }
-}
-
-// TODO(jdhollen): support smaller time ranges.
-function computeTimeKeys(domain: [Date, Date]): number[] {
-  return timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime());
 }

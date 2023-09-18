@@ -14,6 +14,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
+        "//proto:user_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",

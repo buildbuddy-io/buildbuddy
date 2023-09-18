@@ -3,27 +3,30 @@ import capabilities from "../capabilities/capabilities";
 import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
+import { user as user_proto } from "../../proto/user_ts_proto";
 
 import { GLOBAL_FILTER_PARAM_NAMES, PERSISTENT_URL_PARAMS } from "./router_params";
 
 class Router {
+  user?: User;
+
   register(pathChangeHandler: VoidFunction) {
     const oldPushState = history.pushState;
     history.pushState = (data: any, unused: string, url?: string | URL): void => {
       oldPushState.apply(history, [data, unused, url]);
-      pathChangeHandler();
+      this.handlePathChanged(pathChangeHandler);
       return undefined;
     };
 
     const oldReplaceState = history.replaceState;
     history.replaceState = (data: any, unused: string, url?: string | URL): void => {
       oldReplaceState.apply(history, [data, unused, url]);
-      pathChangeHandler();
+      this.handlePathChanged(pathChangeHandler);
       return undefined;
     };
 
     window.addEventListener("popstate", () => {
-      pathChangeHandler();
+      this.handlePathChanged(pathChangeHandler);
     });
 
     // The router is only created once, so no need to keep the handles and
@@ -46,6 +49,41 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
+  }
+
+  // checks whether user has access to the current page, and if not returns
+  // URL to redirect to.
+  private checkGroupAccess() {
+    const path = window.location.pathname;
+    // Disallowed access to the selected group means one of two things:
+    // 1) This is a customer subdomain and the user does not have access to
+    //    the group or the subdomain doesn't exist.
+    // 2) User is a member of the group but is being blocked by group
+    //    IP rules.
+    if (
+      this.user &&
+      this.user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
+      // A user may have access to an invocation w/o having access to group.
+      !path.startsWith(Path.invocationPath) &&
+      !path.startsWith(Path.joinOrgPath) &&
+      !path.startsWith(Path.orgAccessDeniedPath)
+    ) {
+      const params = new URLSearchParams({
+        source_url: window.location.href,
+        denied_reason: this.user.selectedGroupAccess.toString(),
+      });
+      return Path.orgAccessDeniedPath + "?" + params.toString();
+    }
+    return "";
+  }
+
+  private handlePathChanged(pathChangeHandler: VoidFunction) {
+    const newUrl = this.checkGroupAccess();
+    if (newUrl) {
+      window.history.replaceState({}, "", newUrl);
+      return;
+    }
+    pathChangeHandler();
   }
 
   /**
@@ -364,6 +402,11 @@ class Router {
     window.history.replaceState({}, "", newUrl);
   }
 
+  setUser(user?: User) {
+    this.user = user;
+    this.rerouteIfNecessary(user);
+  }
+
   private getFallbackPath(user?: User): string | null {
     // Require the user to create an org if they are logged in but not part of
     // an org.
@@ -371,22 +414,15 @@ class Router {
       return Path.createOrgPath;
     }
 
-    const path = window.location.pathname;
-
-    // No selected group on subdomain means either the group doesn't exist or
-    // the user does not have access to it.
-    if (
-      user &&
-      !user.selectedGroup.id &&
-      capabilities.config.customerSubdomain &&
-      // A user may have access to an invocation w/o having access to group.
-      !path.startsWith(Path.invocationPath) &&
-      !path.startsWith(Path.joinOrgPath)
-    ) {
-      const params = new URLSearchParams({ source_url: window.location.href });
-      return Path.orgAccessDeniedPath + "?" + params.toString();
+    const newUrl = this.checkGroupAccess();
+    if (newUrl) {
+      return newUrl;
     }
 
+    const path = window.location.pathname;
+    if (path === Path.orgAccessDeniedPath) {
+      return Path.home;
+    }
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
       return Path.home;
     }

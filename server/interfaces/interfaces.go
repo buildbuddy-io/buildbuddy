@@ -316,6 +316,7 @@ type OLAPDBHandle interface {
 	FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
+	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{})
 }
 
 type InvocationDB interface {
@@ -681,7 +682,7 @@ type RemoteExecutionService interface {
 type FileCache interface {
 	FastLinkFile(f *repb.FileNode, outputPath string) bool
 	DeleteFile(f *repb.FileNode) bool
-	AddFile(f *repb.FileNode, existingFilePath string)
+	AddFile(f *repb.FileNode, existingFilePath string) error
 	ContainsFile(node *repb.FileNode) bool
 	WaitForDirectoryScanToComplete()
 
@@ -1209,7 +1210,33 @@ type IPRulesService interface {
 	// to access the group identified in the context.
 	Authorize(ctx context.Context) error
 
-	// Authorize checks whether the authenticated user in the context is allowed
-	// to access the specified groupId.
+	// AuthorizeGroup checks whether the authenticated user in the context is
+	// allowed to access the specified groupId. This function should not be used
+	// in performance sensitive code paths.
 	AuthorizeGroup(ctx context.Context, groupID string) error
+
+	// AuthorizeHTTPRequest checks whether the specified HTTP request should be
+	// allowed based on the authenticated user and group information in the
+	// context.
+	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
+}
+
+// Store models a block-level storage system, which is useful as a backend
+type Store interface {
+	io.ReaderAt
+	io.WriterAt
+	io.Closer
+
+	Sync() error
+	SizeBytes() (int64, error)
+}
+
+// StoreReader returns an io.Reader that reads all bytes from the given store,
+// starting at offset 0 and ending at SizeBytes.
+func StoreReader(store Store) (io.Reader, error) {
+	size, err := store.SizeBytes()
+	if err != nil {
+		return nil, err
+	}
+	return io.NewSectionReader(store, 0, size), nil
 }

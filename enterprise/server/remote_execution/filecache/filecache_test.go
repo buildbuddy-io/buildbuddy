@@ -55,7 +55,8 @@ func TestFilecache(t *testing.T) {
 
 	// Add a file and make sure we can hardlink it
 	node := nodeFromString("my/fun/file", false)
-	fc.AddFile(node, filepath.Join(baseDir, "my/fun/file"))
+	err = fc.AddFile(node, filepath.Join(baseDir, "my/fun/file"))
+	require.NoError(t, err)
 	linked := fc.FastLinkFile(node, filepath.Join(baseDir, "my/fun/fastlinked-file"))
 	assert.True(t, linked, "existing file should link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-file"))
@@ -76,7 +77,8 @@ func TestFilecache(t *testing.T) {
 	// Replace the original file with an executable one
 	os.Remove(filepath.Join(baseDir, "my/fun/file"))
 	writeFile(t, baseDir, "my/fun/file", true)
-	fc.AddFile(executableNode, filepath.Join(baseDir, "my/fun/file"))
+	err = fc.AddFile(executableNode, filepath.Join(baseDir, "my/fun/file"))
+	require.NoError(t, err)
 
 	// Make sure the link now works
 	linkedExecutable := fc.FastLinkFile(executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
@@ -110,7 +112,8 @@ func TestFileCacheOverwrite(t *testing.T) {
 			node := nodeFromString("file1-content", test.Executable)
 			{
 				// Add node for the first time
-				fc.AddFile(node, filepath.Join(tempDir, "file1"))
+				err = fc.AddFile(node, filepath.Join(tempDir, "file1"))
+				require.NoError(t, err)
 				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file1-link1"))
 				require.True(t, linked, "expected cache hit after writing file")
 				// Verify all file contents
@@ -121,7 +124,8 @@ func TestFileCacheOverwrite(t *testing.T) {
 			}
 			{
 				// Overwrite existing node entry
-				fc.AddFile(node, filepath.Join(tempDir, "file1"))
+				err = fc.AddFile(node, filepath.Join(tempDir, "file1"))
+				require.NoError(t, err)
 				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file1-link2"))
 				require.True(t, linked, "expected cache hit after overwriting file")
 				// Verify all file contents
@@ -136,7 +140,8 @@ func TestFileCacheOverwrite(t *testing.T) {
 				// Overwrite again, this time the contents don't match the
 				// digest (filecache supports this, similar to AC).
 				writeFileContent(t, tempDir, "file2", "file2-content", test.Executable)
-				fc.AddFile(node, filepath.Join(tempDir, "file2"))
+				err = fc.AddFile(node, filepath.Join(tempDir, "file2"))
+				require.NoError(t, err)
 				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file2-link1"))
 				require.True(t, linked, "expected cache hit after overwriting file with different digest")
 				// Verify all file contents

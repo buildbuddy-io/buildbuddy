@@ -101,7 +101,7 @@ type HTTPHandlers struct {
 	RequestHandler http.Handler
 }
 
-func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
+func GenerateHTTPHandlers(servicePrefix string, server interface{}) (*HTTPHandlers, error) {
 	if reflect.ValueOf(server).Type().Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("GenerateHTTPHandlers must be called with a pointer to an RPC service implementation")
 	}
@@ -113,7 +113,7 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 		if !isRPCMethod(method) {
 			continue
 		}
-		handlerFns[method.Name] = method.Func
+		handlerFns[servicePrefix+method.Name] = method.Func
 	}
 
 	bodyParserMiddleware := func(next http.Handler) http.Handler {
