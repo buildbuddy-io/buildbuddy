@@ -52,7 +52,7 @@ var (
 	privateKey    = flagutil.New("github.app.private_key", "", "GitHub app private key.", flagutil.SecretTag)
 	webhookSecret = flagutil.New("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flagutil.SecretTag)
 
-	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/]*$`)
+	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
 
 const (
