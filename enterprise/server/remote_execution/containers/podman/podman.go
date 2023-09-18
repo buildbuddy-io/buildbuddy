@@ -922,14 +922,13 @@ func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerStat
 }
 
 func runPodman(ctx context.Context, subCommand string, stdio *container.Stdio, args ...string) *interfaces.CommandResult {
-	command := []string{
-		"podman",
+	command := []string{"podman"}
+	if *transientStore {
 		// Use transient store to reduce contention.
 		// See https://github.com/containers/podman/issues/19824
-		fmt.Sprintf("--transient-store=%t", *transientStore),
-		subCommand,
+		command = append(command, "--transient-store")
 	}
-
+	command = append(command, subCommand)
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
