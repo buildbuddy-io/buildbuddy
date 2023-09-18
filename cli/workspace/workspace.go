@@ -88,3 +88,18 @@ func CreateWorkspaceFileIfNotExists() (string, string, error) {
 	log.Debugf("Created workspace file at %s/%s", pathVal, basename)
 	return pathVal, basename, nil
 }
+
+func GetBuildFileContents(dir string) (string, string) {
+	for _, basename := range []string{"BUILD", "BUILD.bazel"} {
+		path := filepath.Join(dir, basename)
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		bytes, err := os.ReadFile(path)
+		if err == nil {
+			return string(bytes), path
+		}
+	}
+	return "", filepath.Join(dir, "BUILD.bazel")
+}

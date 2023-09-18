@@ -7,9 +7,13 @@ go_library(
     # keep
     deps = [
         ":gazelle",
+        ":langs",
+        ":language",
+        "//cli/add",
         "//cli/arg",
         "//cli/log",
         "//cli/translate",
+        "//cli/workspace",
         "@com_github_bazelbuild_buildtools//buildifier:go_default_library",
     ],
 )
@@ -30,6 +34,7 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/cmd/gazelle",
     tags = ["manual"],
     deps = [
+        "//cli/fix/golang",
         "//cli/fix/typescript",
         "@bazel_gazelle//config",
         "@bazel_gazelle//flag",
@@ -46,6 +51,21 @@ go_library(
         "@bazel_gazelle//rule",
         "@bazel_gazelle//walk",
         "@com_github_pmezard_go_difflib//difflib",
+    ],
+)
+
+go_library(
+    name = "langs",
+    srcs = ["langs.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix/langs",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cli/fix/golang",
+        "//cli/fix/typescript",
+        "@bazel_gazelle//language",
+        "@bazel_gazelle//language/bazel/visibility",
+        "@bazel_gazelle//language/go",
+        "@bazel_gazelle//language/proto",
     ],
 )
 

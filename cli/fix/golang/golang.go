@@ -1,12 +1,16 @@
 package golang
 
 import (
+	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
+	"golang.org/x/mod/modfile"
 
 	gazelleGolang "github.com/bazelbuild/bazel-gazelle/language/go"
 )
@@ -15,6 +19,7 @@ const (
 	goFileExtensions = ".go"
 	goModFileName    = "go.mod"
 	goWorkFileName   = "go.work"
+	gazellePrefix    = "gazelle:prefix"
 
 	// TODO(siggisim): Make these configurable or infer them from the repo
 	defaultGoVersion         = "1.20"
@@ -59,6 +64,9 @@ func (g *Golang) IsDepFile(path string) bool {
 func (g *Golang) ConsolidateDepFiles(deps map[string][]string) map[string][]string {
 	goModFiles, foundGoModFiles := deps[goModFileName]
 	goWorkFiles, foundGoWorkFiles := deps[goWorkFileName]
+
+	g.ensureModulePrefixesAreSet(goModFiles)
+
 	if foundGoModFiles && len(goModFiles) == 1 {
 		return deps
 	}
@@ -77,4 +85,31 @@ func (g *Golang) ConsolidateDepFiles(deps map[string][]string) map[string][]stri
 		delete(deps, goModFileName)
 	}
 	return deps
+}
+
+func (g *Golang) ensureModulePrefixesAreSet(goModFiles []string) {
+	for _, f := range goModFiles {
+		fileContents, err := os.ReadFile(f)
+		if err != nil {
+			log.Warnf("error reading go.mod file %q: %s", f, err)
+			continue
+		}
+		moduleName := modfile.ModulePath(fileContents)
+		contents, filename := workspace.GetBuildFileContents(filepath.Dir(f))
+		if !strings.Contains(contents, gazellePrefix) {
+			appendToFile(filename, fmt.Sprintf("\n\n# %s %s\n", gazellePrefix, moduleName))
+		}
+	}
+}
+
+func appendToFile(fileName, contents string) error {
+	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(contents); err != nil {
+		return err
+	}
+	return nil
 }
