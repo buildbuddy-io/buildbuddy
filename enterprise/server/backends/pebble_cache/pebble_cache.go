@@ -177,7 +177,7 @@ type Options struct {
 
 	Clock clockwork.Clock
 
-	ClearCacheBeforeMigration bool
+	ClearCacheOnStartup bool
 }
 
 type sizeUpdate struct {
@@ -480,7 +480,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := validateOpts(opts); err != nil {
 		return nil, err
 	}
-	if opts.ClearCacheBeforeMigration {
+	if opts.ClearCacheOnStartup {
 		log.Infof("Removing directory %q before starting cache %s", opts.RootDirectory, opts.Name)
 		if err := os.RemoveAll(opts.RootDirectory); err != nil {
 			return nil, err
