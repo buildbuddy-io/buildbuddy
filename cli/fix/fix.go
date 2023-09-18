@@ -40,7 +40,7 @@ func HandleFix(args []string) (exitCode int, err error) {
 
 	err = walk()
 	if err != nil {
-		log.Printf("Error fixing: %+v", err)
+		log.Printf("Error fixing: %s", err)
 	}
 
 	runGazelle()
