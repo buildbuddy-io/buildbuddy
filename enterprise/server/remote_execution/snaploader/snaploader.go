@@ -168,15 +168,9 @@ type Loader interface {
 	// snapshot configuration and artifact paths specified by opts.
 	CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) (*Snapshot, error)
 
-	// GetSnapshot loads the metadata for the snapshot. It does not
-	// unpack any snapshot artifacts.
+	// GetSnapshot unpacks snapshot artifacts to the given directory.
 	// It returns UnavailableError if the metadata has expired from cache.
-	GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (*Snapshot, error)
-
-	// UnpackSnapshot unpacks a snapshot to the given directory.
-	// It returns UnavailableError if any snapshot artifacts have expired
-	// from cache.
-	UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) (*UnpackedSnapshot, error)
+	GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey, outputDirectory string) (*UnpackedSnapshot, error)
 
 	// DeleteSnapshot removes the snapshot artifacts from cache
 	// as well as the manifest entry.
@@ -197,7 +191,7 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 	return &FileCacheLoader{env: env}, nil
 }
 
-func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (*Snapshot, error) {
+func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey, outputDirectory string) (*UnpackedSnapshot, error) {
 	manifestNode := manifestFileCacheKey(ctx, l.env, key)
 	buf, err := filecacheutil.Read(l.env.GetFileCache(), manifestNode)
 	if err != nil {
@@ -216,25 +210,17 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		return nil, err
 	}
 
-	return &Snapshot{key: key, manifest: manifest}, nil
-}
-
-func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) (*UnpackedSnapshot, error) {
-	if snapshot == nil {
-		return nil, status.InvalidArgumentErrorf("no snapshot to unpack")
-	}
-
-	for _, fileNode := range snapshot.manifest.Files {
+	for _, fileNode := range manifest.Files {
 		if !l.env.GetFileCache().FastLinkFile(fileNode, filepath.Join(outputDirectory, fileNode.GetName())) {
 			return nil, status.UnavailableErrorf("snapshot artifact %q not found in local cache", fileNode.GetName())
 		}
 	}
 
 	unpacked := &UnpackedSnapshot{
-		ChunkedFiles: make(map[string]*copy_on_write.COWStore, len(snapshot.manifest.ChunkedFiles)),
+		ChunkedFiles: make(map[string]*copy_on_write.COWStore, len(manifest.ChunkedFiles)),
 	}
 	// Construct COWs from chunks.
-	for _, cf := range snapshot.manifest.ChunkedFiles {
+	for _, cf := range manifest.ChunkedFiles {
 		cow, err := l.unpackCOW(ctx, cf, outputDirectory)
 		if err != nil {
 			return nil, status.WrapError(err, "unpack COW")
@@ -471,16 +457,12 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
 	}
 
-	snap, err := l.GetSnapshot(ctx, key)
+	snap, err := l.GetSnapshot(ctx, key, outDir)
 	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
 		return nil, err
 	}
 	if snap != nil {
-		unpacked, err := l.UnpackSnapshot(ctx, snap, outDir)
-		if err != nil {
-			return nil, err
-		}
-		cf := unpacked.ChunkedFiles[rootfsFileName]
+		cf := snap.ChunkedFiles[rootfsFileName]
 		if cf == nil {
 			return nil, status.InternalError("missing rootfs artifact in snapshot")
 		}

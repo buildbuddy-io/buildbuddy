@@ -138,7 +138,7 @@ shows the directories relevant to a firecracker container instance:
         #
         # When resuming a VM from snapshot, these files are expected to
         # already be here. Since we delete the chroot across runs of the
-        # VM, we write these files using loader.UnpackSnapshot().
+        # VM, we write these files using loader.GetSnapshot().
         - vmlinux # Linux kernel image
         - initrd.cpio # initial RAM disk, mounted when booting the VM
         - full-mem.snap # full memory snapshot

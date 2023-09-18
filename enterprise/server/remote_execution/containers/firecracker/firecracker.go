@@ -510,10 +510,7 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		// Create(), load the snapshot instead of creating a new VM.
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
-		if recyclingEnabled && *snaploader.EnableLocalSnapshotSharing {
-			_, err := loader.GetSnapshot(ctx, c.snapshotKey)
-			c.createFromSnapshot = (err == nil)
-		}
+		c.createFromSnapshot = recyclingEnabled && *snaploader.EnableLocalSnapshotSharing
 	} else {
 		c.snapshotKey = opts.SavedState.GetSnapshotKey()
 
@@ -832,18 +829,14 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey, c.getChroot())
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
-	unpacked, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot())
-	if err != nil {
-		return err
-	}
-	if len(unpacked.ChunkedFiles) > 0 && !(*enableNBD || *enableUFFD) {
+	if len(snap.ChunkedFiles) > 0 && !(*enableNBD || *enableUFFD) {
 		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
 	}
-	for name, cow := range unpacked.ChunkedFiles {
+	for name, cow := range snap.ChunkedFiles {
 		switch name {
 		case rootDriveID:
 			c.rootStore = cow
@@ -1627,8 +1620,12 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	c.actionWorkingDir = actionWorkingDir
 
 	if c.createFromSnapshot {
-		log.Debugf("Create: will unpause snapshot")
-		return c.Unpause(ctx)
+		log.Debugf("Create will attempt to unpause snapshot")
+		if err := c.Unpause(ctx); err != nil {
+			log.Debugf("Unpause from snapshot failed with err: %s. Creating a new container.", err)
+		} else {
+			return nil
+		}
 	}
 
 	ctx, span := tracing.StartSpan(ctx)
