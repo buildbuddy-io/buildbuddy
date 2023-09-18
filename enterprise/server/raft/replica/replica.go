@@ -63,7 +63,7 @@ var (
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
-	NotifyUsage(ru *rfpb.ReplicaUsage)
+	NotifyUsage(ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor)
 	Sender() *sender.Sender
 	AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error
 	SnapshotCluster(ctx context.Context, shardID uint64) error
@@ -210,14 +210,6 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 			ReplicaId: sm.ReplicaID,
 		},
 	}
-	sm.rangeMu.RLock()
-	rd := sm.rangeDescriptor
-	sm.rangeMu.RUnlock()
-	if rd == nil {
-		return nil, status.FailedPreconditionError("range descriptor is not set")
-	}
-	ru.Generation = rd.GetGeneration()
-	ru.RangeId = rd.GetRangeId()
 
 	var numFileRecords, sizeBytes int64
 	sm.partitionMetadataMu.Lock()
@@ -233,14 +225,6 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	sm.partitionMetadataMu.Unlock()
 
 	ru.EstimatedDiskBytesUsed = sizeBytes
-	metrics.RaftBytes.With(prometheus.Labels{
-		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
-	}).Set(float64(sizeBytes))
-
-	metrics.RaftRecords.With(prometheus.Labels{
-		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
-	}).Set(float64(numFileRecords))
-
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
 
@@ -286,6 +270,10 @@ func (sm *Replica) setRange(key, val []byte) error {
 		End:   rangeDescriptor.GetEnd(),
 	}
 	sm.store.AddRange(sm.rangeDescriptor, sm)
+
+	if usage, err := sm.Usage(); err == nil {
+		sm.store.NotifyUsage(usage, sm.rangeDescriptor)
+	}
 	return nil
 }
 
@@ -1417,7 +1405,10 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
 		} else {
-			sm.store.NotifyUsage(usage)
+			sm.rangeMu.RLock()
+			rd := sm.rangeDescriptor
+			sm.rangeMu.RUnlock()
+			sm.store.NotifyUsage(usage, rd)
 		}
 		sm.lastUsageCheckIndex = sm.lastAppliedIndex
 	}
