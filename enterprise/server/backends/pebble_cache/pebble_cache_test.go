@@ -1026,7 +1026,7 @@ func TestWriteCancel(t *testing.T) {
 			require.NoError(t, err)
 			cancel()
 			err = wc.Commit()
-			require.ErrorContains(t, err, "context canceled")
+			require.NoError(t, err)
 			err = wc.Close()
 			require.NoError(t, err)
 

@@ -1840,14 +1840,15 @@ type cdcWriter struct {
 	shouldCompress bool
 	isCompressed   bool
 
-	chunker       *chunker.Chunker
+	chunker         *chunker.Chunker
+	isChunkerClosed bool
+
+	mu            sync.Mutex // protects writtenChunks, numChunks, firstChunk, fileType
+	numChunks     int
+	firstChunk    []byte
+	fileType      rfpb.FileMetadata_FileType
 	writtenChunks []*rspb.ResourceName
 
-	numChunks  int
-	firstChunk []byte
-	fileType   rfpb.FileMetadata_FileType
-
-	mu sync.Mutex // protects writtenChunks, numChunks, firstChunk, fileType
 	eg *errgroup.Group
 }
 
@@ -1881,7 +1882,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		wc = decompressor
 	}
 
-	chunker, err := chunker.New(ctx, p.averageChunkSizeBytes, cdcw.writeChunk)
+	chunker, err := chunker.New(p.averageChunkSizeBytes, cdcw.writeChunk)
 	if err != nil {
 		return nil, err
 	}
@@ -1896,18 +1897,10 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			}
 		}
 
-		if err := cdcw.chunker.Close(); err != nil {
-			// When there is an error when we close the chunker for example
-			// context cancelled, we want to wait the existing pebble cache
-			// writes to finish.
-			if egErr := cdcw.eg.Wait(); egErr != nil {
-				return egErr
-			}
+		if err := cdcw.closeChunkerAndWait(); err != nil {
 			return err
 		}
-		if err := cdcw.eg.Wait(); err != nil {
-			return err
-		}
+
 		cdcw.mu.Lock()
 		defer cdcw.mu.Unlock()
 
@@ -2039,8 +2032,24 @@ func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
 	return cdcw.chunker.Write(buf)
 }
 
+// closeChunkerAndWait closes the chunker and waiting for the data that has
+// already been passed to the chunker to be processed.
+func (cdcw *cdcWriter) closeChunkerAndWait() error {
+	closeErr := cdcw.chunker.Close()
+	if closeErr == nil {
+		cdcw.isChunkerClosed = true
+	}
+	if err := cdcw.eg.Wait(); err != nil {
+		return err
+	}
+	return closeErr
+}
+
 func (cdcw *cdcWriter) Close() error {
-	defer cdcw.chunker.Close()
+	if cdcw.isChunkerClosed {
+		return cdcw.closeChunkerAndWait()
+	}
+
 	return nil
 }
 
