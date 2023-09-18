@@ -1529,7 +1529,6 @@ func (s *Store) updateTags() error {
 	}
 	storeTags[constants.StoreUsageTag] = base64.StdEncoding.EncodeToString(buf)
 	err = s.gossipManager.SetTags(storeTags)
-	log.Errorf("Setting usage tag: %+v", su)
 	return err
 }
 
