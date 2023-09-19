@@ -1,4 +1,5 @@
 import React from "react";
+import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
 import { auditlog } from "../../../proto/auditlog_ts_proto";
 import * as proto from "../../../app/util/proto";
@@ -12,7 +13,6 @@ import error_service from "../../../app/errors/error_service";
 import Spinner from "../../../app/components/spinner/spinner";
 import { User } from "../../../app/auth/user";
 import Action = auditlog.Action;
-import moment = require("moment");
 
 interface AuditLogsComponentProps {
   user: User;
