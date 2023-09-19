@@ -510,7 +510,10 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		// Create(), load the snapshot instead of creating a new VM.
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
-		c.createFromSnapshot = recyclingEnabled && *snaploader.EnableLocalSnapshotSharing
+		if recyclingEnabled && *snaploader.EnableLocalSnapshotSharing {
+			snapshotExists, _ := loader.HasValidSnapshot(ctx, c.snapshotKey)
+			c.createFromSnapshot = snapshotExists
+		}
 	} else {
 		c.snapshotKey = opts.SavedState.GetSnapshotKey()
 
@@ -836,6 +839,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if len(snap.ChunkedFiles) > 0 && !(*enableNBD || *enableUFFD) {
 		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
 	}
+
 	for name, cow := range snap.ChunkedFiles {
 		switch name {
 		case rootDriveID:
@@ -1620,12 +1624,8 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	c.actionWorkingDir = actionWorkingDir
 
 	if c.createFromSnapshot {
-		log.Debugf("Create will attempt to unpause snapshot")
-		if err := c.Unpause(ctx); err != nil {
-			log.Debugf("Unpause from snapshot failed with err: %s. Creating a new container.", err)
-		} else {
-			return nil
-		}
+		log.Debugf("Create: will unpause snapshot")
+		return c.Unpause(ctx)
 	}
 
 	ctx, span := tracing.StartSpan(ctx)

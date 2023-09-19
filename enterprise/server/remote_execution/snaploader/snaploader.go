@@ -191,6 +191,20 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 	return &FileCacheLoader{env: env}, nil
 }
 
+func (l *FileCacheLoader) HasValidSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (bool, error) {
+	manifestNode := manifestFileCacheKey(ctx, l.env, key)
+	buf, err := filecacheutil.Read(l.env.GetFileCache(), manifestNode)
+	if err != nil {
+		return false, status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
+	}
+	manifest := &fcpb.SnapshotManifest{}
+	if err := proto.Unmarshal(buf, manifest); err != nil {
+		return false, status.UnavailableErrorf("failed to unmarshal snapshot manifest: %s", status.Message(err))
+	}
+
+	return l.checkAllArtifactsExist(ctx, manifest) == nil, nil
+}
+
 func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey, outputDirectory string) (*UnpackedSnapshot, error) {
 	manifestNode := manifestFileCacheKey(ctx, l.env, key)
 	buf, err := filecacheutil.Read(l.env.GetFileCache(), manifestNode)
