@@ -2,7 +2,6 @@ package chunker
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -73,11 +72,11 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 				return
 			}
 			if err != nil {
-				pr.CloseWithError(fmt.Errorf("failed to get the next chunk: %s", err))
+				pr.CloseWithError(status.InternalErrorf("failed to get the next chunk: %s", err))
 				return
 			}
 			if err := c.writeChunkFn(chunk.Data); err != nil {
-				pr.CloseWithError(fmt.Errorf("writeChunkFn failed: %s", err))
+				pr.CloseWithError(status.InternalErrorf("writeChunkFn failed: %s", err))
 				return
 			}
 		}

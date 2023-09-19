@@ -1984,13 +1984,13 @@ func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.
 	}
 	_, err = wcm.Write(chunkData)
 	if err != nil {
-		return fmt.Errorf("failed to write raw chunk: %s", err)
+		return status.InternalErrorf("failed to write raw chunk: %s", err)
 	}
 	if err := wcm.Close(); err != nil {
-		return fmt.Errorf("failed to close while writing raw chunk: %s", err)
+		return status.InternalErrorf("failed to close while writing raw chunk: %s", err)
 	}
 	if err := wcm.Commit(); err != nil {
-		return fmt.Errorf("failed to commit while writing raw chunk: %s", err)
+		return status.InternalErrorf("failed to commit while writing raw chunk: %s", err)
 	}
 	return nil
 }
