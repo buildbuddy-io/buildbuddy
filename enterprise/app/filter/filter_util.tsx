@@ -115,16 +115,19 @@ export function getStartDate(search: URLSearchParams, now?: moment.Moment): Date
     return moment(dateString).toDate();
   }
   if (search.get(LAST_N_DAYS_PARAM_NAME)) {
-    return (now ? moment(now) : moment()).add(-Number(search.get(LAST_N_DAYS_PARAM_NAME)) + 1, "days").toDate();
+    return (now ? moment(now) : moment())
+      .add(-Number(search.get(LAST_N_DAYS_PARAM_NAME)) + 1, "days")
+      .startOf("day")
+      .toDate();
   }
   return getDefaultStartDate(now);
 }
 
-export function getDisplayDateRange(search: URLSearchParams): { startDate: Date; endDate: Date } {
+export function getDisplayDateRange(search: URLSearchParams): { startDate: Date; endDate?: Date } {
   // Not using `getEndDate` here because it's set to "start of day after the one specified
   // in the URL" which causes an off-by-one error if we were to render that directly in
   // the calendar.
-  let endDate = new Date();
+  let endDate = undefined;
   const dateString = search.get(END_DATE_PARAM_NAME);
   if (dateString) {
     const dateNumber = Number(dateString);
@@ -198,7 +201,7 @@ export function formatPreviousDateRangeFromSearchParams(search: URLSearchParams)
 
 export function getDayCountStringFromSearchParams(search: URLSearchParams): string {
   const { startDate, endDate } = getDisplayDateRange(search);
-  const diff = differenceInCalendarDays(startDate, endDate) + 1;
+  const diff = differenceInCalendarDays(startDate, endDate ?? new Date()) + 1;
   return diff == 1 ? "1 day" : `${diff} days`;
 }
 
