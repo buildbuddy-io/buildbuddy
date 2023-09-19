@@ -62,7 +62,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
 
   async fetchAuditLogs(dateRange: RangeWithKey) {
     // Default start time to the midnight today, local time.
-    const start = dateRange.startDate || moment().startOf("day").toDate();
+    const start = dateRange.startDate ?? moment().startOf("day").toDate();
     // Default end time to the end of today, local time (regardless of start date).
     const end = moment(dateRange.endDate ?? new Date())
       .add(1, "day")
