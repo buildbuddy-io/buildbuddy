@@ -279,8 +279,8 @@ export function formatDateRange(startDate: Date, endDate?: Date, { now = new Dat
     return `${start} ${DATE_RANGE_SEPARATOR} ${end}`;
   }
 
-  // Start time is at midnight, end date isn't defined.
-  if (!endDate) {
+  // Start time is at midnight, end date is (implicitly or explicitly) today.
+  if (!endDate || isSameDay(now, endDate)) {
     if (isSameDay(now, startDate)) {
       return "Today";
     }
