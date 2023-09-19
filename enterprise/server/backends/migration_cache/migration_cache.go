@@ -694,7 +694,7 @@ func (d *doubleWriter) Write(data []byte) (int, error) {
 		eg.Go(func() error {
 			_, dstErr := d.dest.Write(data)
 			if dstErr != nil {
-				log.Warningf("Migration failure writing digest %v to dest cache: %s", d, dstErr)
+				log.Warningf("Migration failure writing digest to dest cache: %s", dstErr)
 			}
 			return dstErr
 		})
