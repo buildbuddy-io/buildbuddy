@@ -851,17 +851,14 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 	}
 
 	log.Debugf("Migration attempting copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
-	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
-		d:         r,
-		ctx:       ctx,
-		ctxCancel: cancel,
+		d:   r,
+		ctx: ctx,
 	}:
 	default:
 		log.Debugf("Migration dropping copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
 		*mc.numCopiesDropped++
-		cancel()
 	}
 }
 
@@ -903,9 +900,8 @@ func (mc *MigrationCache) Set(ctx context.Context, r *rspb.ResourceName, data []
 }
 
 type copyData struct {
-	d         *rspb.ResourceName
-	ctx       context.Context
-	ctxCancel context.CancelFunc
+	d   *rspb.ResourceName
+	ctx context.Context
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
@@ -958,7 +954,9 @@ func (mc *MigrationCache) monitorCopyChanFullness() {
 }
 
 func (mc *MigrationCache) copy(c *copyData) {
-	defer c.ctxCancel()
+	ctx, cancel := background.ExtendContextForFinalization(c.ctx, 10*time.Second)
+	c.ctx = ctx
+	defer cancel()
 
 	destContains, err := mc.dest.Contains(c.ctx, c.d)
 	if err != nil {
