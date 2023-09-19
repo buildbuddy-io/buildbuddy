@@ -223,7 +223,13 @@ export function formatDate(date: Date): string {
 
 const DATE_RANGE_SEPARATOR = "\u2013";
 
-export function formatPreviousDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}): string {
+export function formatPreviousDateRange(startDate: Date, endDate?: Date, { now = new Date() } = {}): string {
+  if (usingSubDayTimeRange(startDate, endDate)) {
+    return "the previous time period";
+  }
+  if (!endDate) {
+    endDate = now;
+  }
   if (isSameDay(now, endDate)) {
     if (isSameDay(startDate, LOCAL_EPOCH)) {
       return "";
@@ -240,20 +246,51 @@ export function formatPreviousDateRange(startDate: Date, endDate: Date, { now = 
   return `the previous ${differenceInCalendarDays(startDate, endDate) + 1} days`;
 }
 
-export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {
+function usingSubDayTimeRange(startDate: Date, endDate?: Date): boolean {
+  const startCopy = new Date(startDate);
+  startCopy.setHours(0, 0, 0, 0);
+  if (+startCopy !== +startDate) {
+    return true;
+  }
+  if (!endDate) {
+    return false;
+  }
+  const endCopy = new Date(endDate);
+  endCopy.setHours(0, 0, 0, 0);
+  return +endCopy !== +endDate;
+}
+
+export function formatDateRange(startDate: Date, endDate?: Date, { now = new Date() } = {}) {
   let startFormat, endFormat;
 
-  // Special cases for date range picker default options
-  if (isSameDay(now, endDate)) {
+  // Time range isn't just midnight-midnight--maybe 8:30-12:30 or something like that.
+  if (usingSubDayTimeRange(startDate, endDate)) {
+    startFormat = "MMM Do HH:mm";
+    if (endDate) {
+      if (isSameDay(startDate, endDate)) {
+        endFormat = "HH:mm";
+      } else {
+        endFormat = "MMM Do HH:mm";
+      }
+    }
+
+    let start = moment(startDate).format(startFormat);
+    let end = endDate ? moment(endDate).format(endFormat) : "Now";
+    return `${start} ${DATE_RANGE_SEPARATOR} ${end}`;
+  }
+
+  // Start time is at midnight, end date is (implicitly or explicitly) today.
+  if (!endDate || isSameDay(now, endDate)) {
     if (isSameDay(now, startDate)) {
       return "Today";
     }
     if (isSameDay(startDate, LOCAL_EPOCH)) {
       return "All time";
     }
-    return `Last ${differenceInCalendarDays(startDate, endDate) + 1} days`;
+    return `Last ${differenceInCalendarDays(startDate, new Date()) + 1} days`;
   }
 
+  // Date ranges probably from the date picker -- midnight to midnight.
   if (startDate.getFullYear() === endDate.getFullYear()) {
     startFormat = "MMMM Do";
     endFormat = "MMMM Do, YYYY";

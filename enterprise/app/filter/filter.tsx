@@ -361,9 +361,10 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       const now = new Date();
       const start = moment(now)
         .add(-n + 1, "days")
+        .startOf("day")
         .toDate();
       return {
-        label: formatDateRange(start, now, { now }),
+        label: formatDateRange(start, undefined, { now }),
         isSelected: () =>
           this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
           (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS),
@@ -652,7 +653,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             onRequestClose={this.onCloseDatePicker.bind(this)}
             className="date-picker-popup">
             <DateRangePicker
-              ranges={[{ startDate, endDate, key: "selection" }]}
+              // Just for rendering's sake, treat undefined endDate as "now"--this has
+              // no impact on the user's actual selection.
+              ranges={[{ startDate, endDate: endDate ?? new Date(), key: "selection" }]}
               onChange={this.onDateChange.bind(this)}
               // When showing "All time" we don't want to set the currently
               // visible month to the Unix epoch... so always show the end
