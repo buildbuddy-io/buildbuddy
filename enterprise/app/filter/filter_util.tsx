@@ -102,7 +102,10 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
 }
 
 export function getDefaultStartDate(now?: moment.Moment): Date {
-  return (now ? moment(now) : moment()).add(-DEFAULT_LAST_N_DAYS + 1, "days").toDate();
+  return (now ? moment(now) : moment())
+    .add(-DEFAULT_LAST_N_DAYS + 1, "days")
+    .startOf("day")
+    .toDate();
 }
 
 export function getStartDate(search: URLSearchParams, now?: moment.Moment): Date {
