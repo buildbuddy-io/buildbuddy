@@ -224,6 +224,9 @@ export function formatDate(date: Date): string {
 const DATE_RANGE_SEPARATOR = "\u2013";
 
 export function formatPreviousDateRange(startDate: Date, endDate?: Date, { now = new Date() } = {}): string {
+  if (usingSubDayTimeRange(startDate, endDate)) {
+    return "the previous time period";
+  }
   if (!endDate) {
     endDate = now;
   }
