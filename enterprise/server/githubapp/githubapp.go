@@ -683,6 +683,11 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir string) err
 	if err != nil {
 		return err
 	}
+	// Remove any github workflows directories, because we won't have permission to create them
+	err = os.RemoveAll(filepath.Join(tmpDir, ".github/workflows"))
+	if err != nil {
+		return err
+	}
 	// Don't allow paths with dots or other non alphanumeric path components
 	if !validPathRegex.MatchString(srcDir) {
 		return status.FailedPreconditionErrorf("invalid template path: %q", srcDir)
