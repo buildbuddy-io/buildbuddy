@@ -12,6 +12,7 @@ import error_service from "../../../app/errors/error_service";
 import Spinner from "../../../app/components/spinner/spinner";
 import { User } from "../../../app/auth/user";
 import Action = auditlog.Action;
+import moment = require("moment");
 
 interface AuditLogsComponentProps {
   user: User;
@@ -53,18 +54,24 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
 
   componentDidMount() {
     const today = new Date();
-    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const todayEndDate = new Date(todayDate.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-    const dateRange: RangeWithKey = { startDate: todayDate, endDate: todayEndDate, key: "selection" };
+    today.setHours(0, 0, 0, 0);
+    const dateRange: RangeWithKey = { startDate: today, endDate: today, key: "selection" };
     this.setState({ dateRange: dateRange });
     this.fetchAuditLogs(dateRange);
   }
 
   async fetchAuditLogs(dateRange: RangeWithKey) {
+    // Default start time to the midnight today, local time.
+    const start = dateRange.startDate || moment().startOf("day").toDate();
+    // Default end time to the end of today, local time (regardless of start date).
+    const end = moment(dateRange.endDate ?? new Date())
+      .add(1, "day")
+      .startOf("day")
+      .toDate();
     let req = auditlog.GetAuditLogsRequest.create({
       pageToken: this.state.nextPageToken,
-      timestampAfter: proto.dateToTimestamp(dateRange.startDate!),
-      timestampBefore: proto.dateToTimestamp(dateRange.endDate!),
+      timestampAfter: proto.dateToTimestamp(start),
+      timestampBefore: proto.dateToTimestamp(end),
     });
     try {
       const response = await rpcService.service.getAuditLogs(req);
