@@ -1,4 +1,4 @@
-package serveridentity
+package clientidentity
 
 import (
 	"context"
@@ -24,20 +24,20 @@ import (
 )
 
 const (
-	IdentityHeaderName          = "x-buildbuddy-server-identity"
-	validatedIdentityContextKey = "validatedServerIdentity"
+	IdentityHeaderName          = "x-buildbuddy-client-identity"
+	validatedIdentityContextKey = "validatedClientIdentity"
 	DefaultAgeTolerance         = 5 * time.Minute
 	workflowAgeTolerance        = 6 * time.Hour
 )
 
 var (
-	enabled        = flag.Bool("app.server_identity.enabled", false, "If true, signed headers will be used to identify servers communicating over gRPC.")
-	privateKey     = flag.String("app.server_identity.private_key", "", "PEM encoded private key file in PKCS#8 format used to sign identity headers.")
-	privateKeyFile = flag.String("app.server_identity.private_key_file", "", "PEM encoded private key in PKCS#8 format used to sign identity headers.")
-	publicKey      = flag.String("app.server_identity.public_key", "", "PEM encoded public key file in PKIX format used to verify identity headers.")
-	publicKeyFile  = flag.String("app.server_identity.public_key_file", "", "PEM encoded public key in PKIX format used to verify identity headers.")
-	client         = flag.String("app.server_identity.client", "", "The client identifier to place in the identity header.")
-	origin         = flag.String("app.server_identity.origin", "", "The origin identifier to place in the indentity header.")
+	enabled        = flag.Bool("app.client_identity.enabled", false, "If true, signed headers will be used to identify servers communicating over gRPC.")
+	privateKey     = flag.String("app.client_identity.private_key", "", "PEM encoded private key file in PKCS#8 format used to sign identity headers.")
+	privateKeyFile = flag.String("app.client_identity.private_key_file", "", "PEM encoded private key in PKCS#8 format used to sign identity headers.")
+	publicKey      = flag.String("app.client_identity.public_key", "", "PEM encoded public key file in PKIX format used to verify identity headers.")
+	publicKeyFile  = flag.String("app.client_identity.public_key_file", "", "PEM encoded public key in PKIX format used to verify identity headers.")
+	client         = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
+	origin         = flag.String("app.client_identity.origin", "", "The origin identifier to place in the indentity header.")
 )
 
 type Service struct {
@@ -114,7 +114,7 @@ func digest(attrs []string) []byte {
 	return d[:]
 }
 
-func (s *Service) AddCustomIdentityToContext(ctx context.Context, si *interfaces.ServerIdentity) (context.Context, error) {
+func (s *Service) IdentityHeader(si *interfaces.ServerIdentity) (string, error) {
 	ts := s.clock.Now()
 	attrs := []string{
 		"origin=" + si.Origin,
@@ -124,18 +124,22 @@ func (s *Service) AddCustomIdentityToContext(ctx context.Context, si *interfaces
 	d := digest(attrs)
 	signature, err := rsa.SignPSS(rand.Reader, s.privateKey, crypto.SHA256, d, &rsa.PSSOptions{})
 	if err != nil {
-		return ctx, status.UnknownErrorf("could not sign identity data: %s", err)
+		return "", status.UnknownErrorf("could not sign identity data: %s", err)
 	}
 
 	attrs = append(attrs, fmt.Sprintf("signature=%x", signature))
-	return metadata.AppendToOutgoingContext(ctx, IdentityHeaderName, strings.Join(attrs, "; ")), nil
+	return strings.Join(attrs, "; "), nil
 }
 
 func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
-	return s.AddCustomIdentityToContext(ctx, &interfaces.ServerIdentity{
+	header, err := s.IdentityHeader(&interfaces.ServerIdentity{
 		Origin: *origin,
 		Client: *client,
 	})
+	if err != nil {
+		return ctx, err
+	}
+	return metadata.AppendToOutgoingContext(ctx, IdentityHeaderName, header), nil
 }
 
 func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {

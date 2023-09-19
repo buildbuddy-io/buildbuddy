@@ -1237,9 +1237,9 @@ type ServerIdentityService interface {
 	// outgoing context.
 	AddIdentityToContext(ctx context.Context) (context.Context, error)
 
-	// AddCustomIdentityToContext adds the specified identity to the outgoing
-	// context.
-	AddCustomIdentityToContext(ctx context.Context, si *ServerIdentity) (context.Context, error)
+	// IdentityHeader generates a signed header value for the specified
+	// identity.
+	IdentityHeader(si *ServerIdentity) (string, error)
 
 	// ValidateIncomingIdentity validates the incoming identity and adds the
 	// authenticated identity information to the context. This function is

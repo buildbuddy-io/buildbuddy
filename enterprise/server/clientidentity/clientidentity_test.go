@@ -1,4 +1,4 @@
-package serveridentity_test
+package clientidentity_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/serveridentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-func newService(t *testing.T, clock clockwork.Clock) *serveridentity.Service {
+func newService(t *testing.T, clock clockwork.Clock) *clientidentity.Service {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	bs, err := x509.MarshalPKCS8PrivateKey(privateKey)
@@ -28,7 +28,7 @@ func newService(t *testing.T, clock clockwork.Clock) *serveridentity.Service {
 		Type:  "PRIVATE KEY",
 		Bytes: bs,
 	})
-	flags.Set(t, "app.server_identity.private_key", string(privateKeyBytes))
+	flags.Set(t, "app.client_identity.private_key", string(privateKeyBytes))
 
 	bs, err = x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	require.NoError(t, err)
@@ -36,9 +36,9 @@ func newService(t *testing.T, clock clockwork.Clock) *serveridentity.Service {
 		Type:  "BEGIN PUBLIC KEY",
 		Bytes: bs,
 	})
-	flags.Set(t, "app.server_identity.public_key", string(publicKeyBytes))
+	flags.Set(t, "app.client_identity.public_key", string(publicKeyBytes))
 
-	si, err := serveridentity.New(clock)
+	si, err := clientidentity.New(clock)
 	require.NoError(t, err)
 	return si
 }
@@ -49,15 +49,13 @@ func TestIdentity(t *testing.T) {
 
 	origin := "space"
 	client := "aliens"
-	ctx, err := sis.AddCustomIdentityToContext(context.Background(), &interfaces.ServerIdentity{
+	headerValue, err := sis.IdentityHeader(&interfaces.ServerIdentity{
 		Origin: origin,
 		Client: client,
 	})
 	require.NoError(t, err)
 
-	md, _ := metadata.FromOutgoingContext(ctx)
-	require.NotNil(t, md)
-	ctx = metadata.NewIncomingContext(context.Background(), md)
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientidentity.IdentityHeaderName, headerValue))
 	ctx, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 
@@ -66,10 +64,9 @@ func TestIdentity(t *testing.T) {
 	require.Equal(t, origin, si.Origin)
 	require.Equal(t, client, si.Client)
 
-	header := md.Get(serveridentity.IdentityHeaderName)[0]
 	signature := ""
 	timestamp := int64(0)
-	for _, kvPair := range strings.Split(header, ";") {
+	for _, kvPair := range strings.Split(headerValue, ";") {
 		pts := strings.Split(strings.TrimSpace(kvPair), "=")
 		switch pts[0] {
 		case "signature":
@@ -81,26 +78,27 @@ func TestIdentity(t *testing.T) {
 	}
 	require.NotEmpty(t, signature, "could not find signature")
 
+	md := metadata.MD{}
 	// Valid header, same as above.
-	md.Set(serveridentity.IdentityHeaderName, fmt.Sprintf("origin=%s; client=%s; timestamp=%d; signature=%s", origin, client, timestamp, signature))
+	md.Set(clientidentity.IdentityHeaderName, fmt.Sprintf("origin=%s; client=%s; timestamp=%d; signature=%s", origin, client, timestamp, signature))
 	ctx = metadata.NewIncomingContext(context.Background(), md)
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 
 	// Modified origin, verification should fail.
-	md.Set(serveridentity.IdentityHeaderName, fmt.Sprintf("origin=earth; client=%s; timestamp=%d; signature=%s", client, timestamp, signature))
+	md.Set(clientidentity.IdentityHeaderName, fmt.Sprintf("origin=earth; client=%s; timestamp=%d; signature=%s", client, timestamp, signature))
 	ctx = metadata.NewIncomingContext(context.Background(), md)
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.ErrorContains(t, err, "could not verify signature")
 
 	// Modified client, verification should fail.
-	md.Set(serveridentity.IdentityHeaderName, fmt.Sprintf("origin=%s; client=zelda; timestamp=%d; signature=%s", origin, timestamp, signature))
+	md.Set(clientidentity.IdentityHeaderName, fmt.Sprintf("origin=%s; client=zelda; timestamp=%d; signature=%s", origin, timestamp, signature))
 	ctx = metadata.NewIncomingContext(context.Background(), md)
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.ErrorContains(t, err, "could not verify signature")
 
 	// Modified timestamp, verification should fail.
-	md.Set(serveridentity.IdentityHeaderName, fmt.Sprintf("origin=%s; client=%s; timestamp=%d; signature=%s", origin, client, timestamp+1, signature))
+	md.Set(clientidentity.IdentityHeaderName, fmt.Sprintf("origin=%s; client=%s; timestamp=%d; signature=%s", origin, client, timestamp+1, signature))
 	ctx = metadata.NewIncomingContext(context.Background(), md)
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.ErrorContains(t, err, "could not verify signature")
@@ -112,17 +110,15 @@ func TestStaleIdentity(t *testing.T) {
 
 	origin := "space"
 	client := "aliens"
-	ctx, err := sis.AddCustomIdentityToContext(context.Background(), &interfaces.ServerIdentity{
+	headerValue, err := sis.IdentityHeader(&interfaces.ServerIdentity{
 		Origin: origin,
 		Client: client,
 	})
 	require.NoError(t, err)
 
-	clock.Advance(serveridentity.DefaultAgeTolerance)
+	clock.Advance(clientidentity.DefaultAgeTolerance)
 
-	md, _ := metadata.FromOutgoingContext(ctx)
-	require.NotNil(t, md)
-	ctx = metadata.NewIncomingContext(context.Background(), md)
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientidentity.IdentityHeaderName, headerValue))
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
 }
