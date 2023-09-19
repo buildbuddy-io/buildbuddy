@@ -1,4 +1,4 @@
-package snaploader_test
+package snaploader_utils_test
 
 import (
 	"bytes"
@@ -41,7 +41,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	const chunkSize = 512 * 1024
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
-	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA)
+	cowA, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), originalImagePath, chunkSize, workDirA)
 	require.NoError(t, err)
 
 	// Overwrite a random range to simulate the disk being written to. This
@@ -100,7 +100,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA)
+	cowA, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), originalImagePath, chunkSize, chunkDirA)
 	require.NoError(t, err)
 	// Overwrite a random range to simulate the disk being written to. This
 	// should create some dirty chunks.

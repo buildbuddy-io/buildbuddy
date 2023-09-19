@@ -1,6 +1,7 @@
 package copy_on_write
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader_utils"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -33,7 +36,8 @@ const (
 //
 // A COWStore supports concurrent reads/writes, as long as they are to different chunks
 type COWStore struct {
-	localCache interfaces.FileCache
+	ctx context.Context
+	env environment.Env
 
 	mu sync.RWMutex // Protects chunks and dirty
 
@@ -66,7 +70,7 @@ type COWStore struct {
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(fileCache interfaces.FileCache, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COWStore, error) {
+func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -77,10 +81,11 @@ func NewCOWStore(fileCache interfaces.FileCache, chunks []*Mmap, chunkSizeBytes,
 	}
 
 	return &COWStore{
-		localCache: fileCache,
-		chunks:     chunkMap,
-		dirty:      make(map[int64]bool, 0),
-		dataDir:    dataDir,
+		ctx:     ctx,
+		env:     env,
+		chunks:  chunkMap,
+		dirty:   make(map[int64]bool, 0),
+		dataDir: dataDir,
 		copyBufPool: sync.Pool{
 			New: func() any {
 				b := make([]byte, chunkSizeBytes)
@@ -453,7 +458,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
 	if err := syscall.Ftruncate(fd, size); err != nil {
 		return nil, err
 	}
-	return NewMmapFd(s.localCache, s.DataDir(), fd, int(size), offset)
+	return NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset)
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -471,7 +476,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(fileCache interfaces.FileCache, filePath string, chunkSizeBytes int64, dataDir string) (store *COWStore, err error) {
+func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string) (store *COWStore, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -555,7 +560,7 @@ func ConvertFileToCOW(fileCache interfaces.FileCache, filePath string, chunkSize
 				return nil, err
 			}
 		}
-		return NewMmapFd(fileCache, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset)
+		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset)
 	}
 
 	// TODO: iterate through the file with multiple goroutines
@@ -569,7 +574,7 @@ func ConvertFileToCOW(fileCache interfaces.FileCache, filePath string, chunkSize
 		}
 	}
 
-	return NewCOWStore(fileCache, chunks, chunkSizeBytes, totalSizeBytes, dataDir)
+	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir)
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite
@@ -578,7 +583,8 @@ func ConvertFileToCOW(fileCache interfaces.FileCache, filePath string, chunkSize
 // It allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
 type Mmap struct {
-	localCache interfaces.FileCache
+	ctx context.Context
+	env environment.Env
 
 	Offset int64
 
@@ -591,7 +597,7 @@ type Mmap struct {
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
 // written to.
-func NewLazyMmap(fileCache interfaces.FileCache, dataDir string, offset int64, digest *repb.Digest) (*Mmap, error) {
+func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest) (*Mmap, error) {
 	if dataDir == "" {
 		return nil, status.FailedPreconditionError("missing dataDir")
 	}
@@ -599,7 +605,8 @@ func NewLazyMmap(fileCache interfaces.FileCache, dataDir string, offset int64, d
 		return nil, status.FailedPreconditionError("missing digest")
 	}
 	return &Mmap{
-		localCache: fileCache,
+		ctx:        ctx,
+		env:        env,
 		Offset:     offset,
 		data:       nil,
 		mapped:     false,
@@ -608,17 +615,18 @@ func NewLazyMmap(fileCache interfaces.FileCache, dataDir string, offset int64, d
 	}, nil
 }
 
-func NewMmapFd(fileCache interfaces.FileCache, dataDir string, fd, size int, offset int64) (*Mmap, error) {
+func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64) (*Mmap, error) {
 	data, err := mmapDataFromFd(fd, size)
 	if err != nil {
 		return nil, err
 	}
 	return &Mmap{
-		localCache: fileCache,
-		Offset:     offset,
-		data:       data,
-		mapped:     true,
-		dataDir:    dataDir,
+		ctx:     ctx,
+		env:     env,
+		Offset:  offset,
+		data:    data,
+		mapped:  true,
+		dataDir: dataDir,
 	}, nil
 }
 
@@ -645,6 +653,7 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 	return data, nil
 }
 
+// TODO(Maggie): Pre-emptively initialize chunks in the background on startup
 func (m *Mmap) initMap() error {
 	if m.closed {
 		return status.InternalError("store is closed")
@@ -656,13 +665,9 @@ func (m *Mmap) initMap() error {
 		return status.InternalError("cannot initialize chunk without a digest")
 	}
 
-	// Fetch from local cache
 	outputPath := filepath.Join(m.dataDir, ChunkName(m.Offset, false /*dirty*/))
-	node := &repb.FileNode{Digest: m.lazyDigest}
-	inLocalCache := m.localCache.FastLinkFile(node, outputPath)
-	if !inLocalCache {
-		// TODO(Maggie) - Fetch chunk remotely if remote snapshot sharing is on
-		return status.NotFoundErrorf("snapshot chunk for digest %s not found in local cache", m.lazyDigest.GetHash())
+	if err := snaploader_utils.FetchArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, outputPath); err != nil {
+		return status.WrapErrorf(err, "fetch snapshot chunk for offset %d digest %s", m.Offset, m.lazyDigest.Hash)
 	}
 
 	data, err := mmapDataFromPath(outputPath)

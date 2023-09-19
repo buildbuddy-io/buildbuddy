@@ -21,7 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader_utils"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
@@ -394,7 +394,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
-	if !*snaploader.EnableLocalSnapshotSharing {
+	if !*snaploader_utils.EnableLocalSnapshotSharing {
 		t.Skip("Snapshot sharing is not enabled")
 	}
 
