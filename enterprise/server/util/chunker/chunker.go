@@ -2,8 +2,10 @@ package chunker
 
 import (
 	"context"
+	"fmt"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jotfs/fastcdc-go"
 )
 
@@ -25,7 +27,7 @@ func (c *Chunker) Write(buf []byte) (int, error) {
 
 func (c *Chunker) Close() error {
 	if err := c.pw.Close(); err != nil {
-		return err
+		return status.InternalErrorf("failed to close chunker: %s", err)
 	}
 
 	<-c.done
@@ -71,11 +73,11 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 				return
 			}
 			if err != nil {
-				pr.CloseWithError(err)
+				pr.CloseWithError(fmt.Errorf("failed to get the next chunk: %s", err))
 				return
 			}
 			if err := c.writeChunkFn(chunk.Data); err != nil {
-				pr.CloseWithError(err)
+				pr.CloseWithError(fmt.Errorf("writeChunkFn failed: %s", err))
 				return
 			}
 		}
