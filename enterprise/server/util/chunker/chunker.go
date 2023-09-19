@@ -83,7 +83,7 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 
 	go func() {
 		<-ctx.Done()
-		pw.Close()
+		pw.CloseWithError(ctx.Err())
 	}()
 
 	return c, nil
