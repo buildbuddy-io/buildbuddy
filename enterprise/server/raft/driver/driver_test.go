@@ -51,19 +51,10 @@ func (tn *testNode) flush() {
 		storeUsage.RaftProposeQps += ru.GetRaftProposeQps()
 		storeUsage.TotalBytesUsed += ru.GetEstimatedDiskBytesUsed()
 
-		rangeUsage := &rfpb.RangeUsage{
-			Range: &rfpb.RangeDescriptor{
-				RangeId: ru.GetReplica().GetShardId(),
-			},
-			NodeReplicas: []*rfpb.NodeReplica{
-				{
-					Nhid:      tn.nhid,
-					ShardId:   ru.GetReplica().GetShardId(),
-					ReplicaId: ru.GetReplica().GetReplicaId(),
-				},
-			},
+		rd := &rfpb.RangeDescriptor{
+			RangeId: ru.GetReplica().GetShardId(),
 		}
-		require.NoError(tn.state.tb, tn.state.cm.ObserveLocalRangeUsage(rangeUsage))
+		require.NoError(tn.state.tb, tn.state.cm.ObserveLocalReplicaUsage(tn.nhid, ru, rd))
 	}
 	require.NoError(tn.state.tb, tn.state.cm.ObserveNode(tn.nhid, storeUsage, serf.StatusAlive))
 }
