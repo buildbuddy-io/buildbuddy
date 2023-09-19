@@ -853,8 +853,8 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 	log.Debugf("Migration attempting copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
 	select {
 	case mc.copyChan <- &copyData{
-		d:         r,
-		ctx:       ctx,
+		d:   r,
+		ctx: ctx,
 	}:
 	default:
 		log.Debugf("Migration dropping copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
@@ -900,8 +900,8 @@ func (mc *MigrationCache) Set(ctx context.Context, r *rspb.ResourceName, data []
 }
 
 type copyData struct {
-	d         *rspb.ResourceName
-	ctx       context.Context
+	d   *rspb.ResourceName
+	ctx context.Context
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
