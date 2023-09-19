@@ -53,6 +53,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
   };
 
   componentDidMount() {
+    document.title = "Audit logs | BuildBuddy";
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const dateRange: RangeWithKey = { startDate: today, endDate: today, key: "selection" };

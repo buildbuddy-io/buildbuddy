@@ -224,7 +224,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
             </SidebarLink>
           )}
           {router.canAccessAuditLogsPage(this.props.user) && capabilities.config.auditLogsUiEnabled && (
-            <SidebarLink selected={this.isAuditLogsSelected()} href={Path.auditLogsPath}>
+            <SidebarLink selected={this.isAuditLogsSelected()} href={Path.auditLogsPath} title="Audit logs">
               <Fingerprint className="icon" />
               <span className="sidebar-item-text">Audit logs</span>
             </SidebarLink>
