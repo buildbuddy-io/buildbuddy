@@ -46,27 +46,16 @@ func rkey(r *rfpb.ReplicaDescriptor) string {
 	return fmt.Sprintf("s%05dr%05d", r.GetShardId(), r.GetReplicaId())
 }
 
-func nrkey(nr *rfpb.NodeReplica) string {
-	return fmt.Sprintf("s%05dr%05d", nr.GetShardId(), nr.GetReplicaId())
-}
+type replicaSet map[string]*rfpb.ReplicaDescriptor
 
-type replicaSet map[string]*rfpb.NodeReplica
-
-func (rs replicaSet) Add(nr *rfpb.NodeReplica)    { rs[nrkey(nr)] = nr }
-func (rs replicaSet) Remove(nr *rfpb.NodeReplica) { delete(rs, nrkey(nr)) }
-func (rs replicaSet) Get(nr *rfpb.NodeReplica) (*rfpb.NodeReplica, bool) {
-	r, ok := rs[nrkey(nr)]
+func (rs replicaSet) Add(nr *rfpb.ReplicaDescriptor)    { rs[rkey(nr)] = nr }
+func (rs replicaSet) Remove(nr *rfpb.ReplicaDescriptor) { delete(rs, rkey(nr)) }
+func (rs replicaSet) Get(nr *rfpb.ReplicaDescriptor) (*rfpb.ReplicaDescriptor, bool) {
+	r, ok := rs[rkey(nr)]
 	return r, ok
 }
-func (rs replicaSet) List() []*rfpb.NodeReplica {
-	values := make([]*rfpb.NodeReplica, 0, len(rs))
-	for _, v := range rs {
-		values = append(values, v)
-	}
-	return values
-}
 func NewReplicaSet() replicaSet {
-	return make(map[string]*rfpb.NodeReplica)
+	return make(map[string]*rfpb.ReplicaDescriptor)
 }
 
 func variance(samples []float64, mean float64) float64 {
@@ -137,7 +126,7 @@ func (cm *ClusterMap) ObserveNode(nhid string, usage *rfpb.StoreUsage, nodeStatu
 	return nil
 }
 
-func (cm *ClusterMap) ObserveLocalRangeUsage(usage *rfpb.RangeUsage) error {
+func (cm *ClusterMap) ObserveLocalReplicaUsage(nhid string, usage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) error {
 	if usage == nil {
 		return status.FailedPreconditionError("nil range usage")
 	}
@@ -145,21 +134,18 @@ func (cm *ClusterMap) ObserveLocalRangeUsage(usage *rfpb.RangeUsage) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	cm.rangeUsage[usage.GetRange().GetRangeId()] = usage.GetReplicaUsage()
+	cm.rangeUsage[rd.GetRangeId()] = usage
 
-	for _, nr := range usage.GetNodeReplicas() {
-		nhid := nr.GetNhid()
-		if _, ok := cm.replicas[nhid]; !ok {
-			cm.replicas[nhid] = NewReplicaSet()
-		}
-		cm.replicas[nhid].Add(nr)
+	if _, ok := cm.replicas[nhid]; !ok {
+		cm.replicas[nhid] = NewReplicaSet()
 	}
+	cm.replicas[nhid].Add(usage.GetReplica())
 
 	return nil
 }
 
-func (cm *ClusterMap) OnRangeUsageUpdate(ru *rfpb.RangeUsage) {
-	if err := cm.ObserveLocalRangeUsage(ru); err != nil {
+func (cm *ClusterMap) OnReplicaUsageUpdate(nhid string, ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {
+	if err := cm.ObserveLocalReplicaUsage(nhid, ru, rd); err != nil {
 		log.Errorf("Error observing local range usage: %s", err)
 	}
 }

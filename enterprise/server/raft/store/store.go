@@ -686,24 +686,18 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 }
 
 func (s *Store) NotifyUsage(replicaUsage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {
-	ru := &rfpb.RangeUsage{
-		Range:        rd,
-		ReplicaUsage: replicaUsage,
-	}
 	for _, rep := range rd.GetReplicas() {
+		ru := proto.Clone(replicaUsage).(*rfpb.ReplicaUsage)
+		ru.Replica = rep
+
 		nhid, _, err := s.registry.ResolveNHID(rep.GetShardId(), rep.GetReplicaId())
 		if err != nil {
 			log.Errorf("Error resolving nhid: %s", err)
 			return
 		}
-		ru.NodeReplicas = append(ru.NodeReplicas, &rfpb.NodeReplica{
-			Nhid:      nhid,
-			ShardId:   rep.GetShardId(),
-			ReplicaId: rep.GetReplicaId(),
-		})
-	}
-	for _, rul := range s.rangeUsageListeners {
-		rul.OnRangeUsageUpdate(ru)
+		for _, rul := range s.rangeUsageListeners {
+			rul.OnReplicaUsageUpdate(nhid, ru, rd)
+		}
 	}
 	s.updateTags()
 }
@@ -865,7 +859,7 @@ func (s *Store) updateUsages(r *replica.Replica) error {
 }
 
 type RangeUsageListener interface {
-	OnRangeUsageUpdate(ru *rfpb.RangeUsage)
+	OnReplicaUsageUpdate(nhid string, ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor)
 	OnRangeLeaseAcquired(rd *rfpb.RangeDescriptor)
 	OnRangeLeaseDropped(rd *rfpb.RangeDescriptor)
 }

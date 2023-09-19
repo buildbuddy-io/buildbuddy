@@ -489,23 +489,6 @@ message SplitRangeResponse {
   RangeDescriptor end = 2;
 }
 
-message NodeReplica {
-  string nhid = 1;
-  uint64 shard_id = 2;
-  uint64 replica_id = 3;
-}
-
-message RangeUsage {
-  // The range this usage data pertains to.
-  RangeDescriptor range = 1;
-
-  // The usage data for the range (same for all replicas).
-  ReplicaUsage replica_usage = 2;
-
-  // The set of nodes that hold this range.
-  repeated NodeReplica node_replicas = 3;
-}
-
 message ListReplicasRequest {}
 
 message ListReplicasResponse {
