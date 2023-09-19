@@ -73,7 +73,7 @@ type ClusterMap struct {
 	mu *sync.RWMutex
 
 	// a map of nhid -> *StoreUsage
-	lastUsage map[string]*rfpb.StoreUsage
+	lastUsage map[string]timestampedUsage
 
 	// a map of nhid -> last seen time. Cleared when
 	// a node is seen, set when it disappears.
@@ -94,11 +94,16 @@ type ClusterMap struct {
 	replicas map[string]replicaSet
 }
 
+type timestampedUsage struct {
+	*rfpb.StoreUsage
+	timestamp time.Time
+}
+
 func NewClusterMap() *ClusterMap {
 	return &ClusterMap{
 		mu: &sync.RWMutex{},
 
-		lastUsage:    make(map[string]*rfpb.StoreUsage),
+		lastUsage:    make(map[string]timestampedUsage),
 		leaveTime:    make(map[string]time.Time),
 		leasedRanges: make(map[uint64]*rfpb.RangeDescriptor),
 		rangeUsage:   make(map[uint64]*rfpb.ReplicaUsage),
@@ -119,7 +124,7 @@ func (cm *ClusterMap) ObserveNode(nhid string, usage *rfpb.StoreUsage, nodeStatu
 
 	if nodeStatus == serf.StatusAlive {
 		delete(cm.leaveTime, nhid)
-		cm.lastUsage[nhid] = usage
+		cm.lastUsage[nhid] = timestampedUsage{usage, time.Now()}
 	} else {
 		cm.leaveTime[nhid] = time.Now()
 	}
@@ -156,18 +161,15 @@ func (cm *ClusterMap) OnRangeLeaseDropped(rd *rfpb.RangeDescriptor) {
 	delete(cm.leasedRanges, rd.GetRangeId())
 }
 
-type nodeStatus struct {
-	su *rfpb.StoreUsage
-}
-
-func (n nodeStatus) String() string {
-	buf := fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB",
-		n.su.GetNode().GetNhid(),
-		n.su.GetReplicaCount(),
-		n.su.GetLeaseCount(),
-		n.su.GetReadQps(),
-		n.su.GetRaftProposeQps(),
-		n.su.GetTotalBytesUsed()/1e6,
+func (t timestampedUsage) String() string {
+	buf := fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB | Age: %2.2f",
+		t.GetNode().GetNhid(),
+		t.GetReplicaCount(),
+		t.GetLeaseCount(),
+		t.GetReadQps(),
+		t.GetRaftProposeQps(),
+		t.GetTotalBytesUsed()/1e6,
+		time.Since(t.timestamp).Seconds(),
 	)
 	return buf
 }
@@ -176,20 +178,14 @@ func (cm *ClusterMap) String() string {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	nodeStatuses := make(map[string]nodeStatus)
 	nhids := make([]string, 0)
-	for nhid, lastUsage := range cm.lastUsage {
+	for nhid := range cm.lastUsage {
 		nhids = append(nhids, nhid)
-		ns := nodeStatus{
-			su: lastUsage,
-		}
-		nodeStatuses[nhid] = ns
 	}
 	sort.Strings(nhids)
 	buf := ""
 	for i, nhid := range nhids {
-		nodeStatus := nodeStatuses[nhid]
-		buf += nodeStatus.String()
+		buf += cm.lastUsage[nhid].String()
 		// if this is not the last one; add a newline.
 		if i < len(nhids)-1 {
 			buf += "\n"
