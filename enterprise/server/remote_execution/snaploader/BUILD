@@ -22,6 +22,7 @@ go_library(
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )
 
@@ -32,6 +33,7 @@ go_test(
         ":snaploader",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
+        "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",

@@ -19,62 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/stretchr/testify/require"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
-
-func TestPackAndUnpack(t *testing.T) {
-	const maxFilecacheSizeBytes = 1_000_000 // 1MB
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	filecacheDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
-	env.SetFileCache(fc)
-	workDir := testfs.MakeTempDir(t)
-
-	// Create two snapshots, A and B, each with artifacts totaling 100KB,
-	// and add them to the cache. Note, the snapshot digests don't actually
-	// correspond to any real content; they just need to be unique cache
-	// keys.
-	loader, err := snaploader.New(env)
-	require.NoError(t, err)
-	taskA := &repb.ExecutionTask{}
-	keyA, err := snaploader.NewKey(taskA, "vm-config-hash-A", "runner-A")
-	require.NoError(t, err)
-	optsA := makeFakeSnapshot(t, workDir)
-	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
-	require.NoError(t, err)
-
-	require.NoError(t, err)
-	taskB := &repb.ExecutionTask{}
-	keyB, err := snaploader.NewKey(taskB, "vm-config-hash-B", "runner-B")
-	require.NoError(t, err)
-	optsB := makeFakeSnapshot(t, workDir)
-	snapB, err := loader.CacheSnapshot(ctx, keyB, optsB)
-	require.NoError(t, err)
-
-	// We should be able to unpack snapshot A, delete it, and then replace it
-	// with a new snapshot several times, without evicting snapshot B.
-	for i := 0; i < 20; i++ {
-		// Unpack (this should also evict from cache).
-		outDir := testfs.MakeDirAll(t, workDir, fmt.Sprintf("unpack-a-%d", i))
-		mustUnpack(t, ctx, loader, snapA, outDir, optsA)
-
-		// Delete, since it's no longer needed.
-		err = loader.DeleteSnapshot(ctx, snapA)
-		require.NoError(t, err)
-
-		// Re-add to cache with the same key, but with new contents.
-		optsA = makeFakeSnapshot(t, workDir)
-		snapA, err = loader.CacheSnapshot(ctx, keyA, optsA)
-		require.NoError(t, err)
-	}
-
-	// Snapshot B should not have been evicted.
-	outDir := testfs.MakeDirAll(t, workDir, "unpack-b")
-	mustUnpack(t, ctx, loader, snapB, outDir, optsB)
-}
 
 func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	const maxFilecacheSizeBytes = 20_000_000 // 20 MB
@@ -109,7 +56,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	optsA.ChunkedFiles = map[string]*copy_on_write.COWStore{
 		"scratchfs": cowA,
 	}
-	snapA, err := loader.CacheSnapshot(ctx, key, optsA)
+	err = loader.CacheSnapshot(ctx, key, optsA)
 	require.NoError(t, err)
 	// Note: we'd normally close cowA here, but we keep it open so that
 	// mustUnpack() can verify the original contents.
@@ -118,20 +65,18 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	// unpacked from a snapshot.
 	// i.e. For SnapA -> ForkA -> ForkA' we want to make sure ForkA' functions
 	// correctly
-	originalSnap := snapA
 	originalOpts := optsA
 	for i := 0; i < 3; i++ {
 		forkWorkDir := testfs.MakeDirAll(t, workDir, fmt.Sprintf("VM-%d", i))
-		unpacked := mustUnpack(t, ctx, loader, originalSnap, forkWorkDir, originalOpts)
+		unpacked := mustUnpack(t, ctx, loader, key, forkWorkDir, originalOpts)
 		forkCOW := unpacked.ChunkedFiles["scratchfs"]
 		writeRandomRange(t, forkCOW)
 		forkOpts := makeFakeSnapshot(t, forkWorkDir)
 		forkOpts.ChunkedFiles = map[string]*copy_on_write.COWStore{
 			"scratchfs": forkCOW,
 		}
-		forkSnap, err := loader.CacheSnapshot(ctx, key, forkOpts)
+		err := loader.CacheSnapshot(ctx, key, forkOpts)
 		require.NoError(t, err)
-		originalSnap = forkSnap
 		originalOpts = forkOpts
 	}
 }
@@ -168,7 +113,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 	optsA.ChunkedFiles = map[string]*copy_on_write.COWStore{
 		"scratchfs": cowA,
 	}
-	snapA, err := loader.CacheSnapshot(ctx, keyA, optsA)
+	err = loader.CacheSnapshot(ctx, keyA, optsA)
 	require.NoError(t, err)
 	// Note: we'd normally close cowA here, but we keep it open so that
 	// mustUnpack() can verify the original contents.
@@ -179,14 +124,14 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 
 	// Now unpack the snapshot for use by VM B, then make a modification.
 	workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
-	unpackedB := mustUnpack(t, ctx, loader, snapA, workDirB, optsA)
+	unpackedB := mustUnpack(t, ctx, loader, keyA, workDirB, optsA)
 	cowB := unpackedB.ChunkedFiles["scratchfs"]
 	writeRandomRange(t, cowB)
 
 	// Unpack the snapshot again for use by VM C. It should see the original
 	// contents, not the modification made by VM B.
 	workDirC := testfs.MakeDirAll(t, workDir, "VM-C")
-	unpackedC := mustUnpack(t, ctx, loader, snapA, workDirC, optsA)
+	unpackedC := mustUnpack(t, ctx, loader, keyA, workDirC, optsA)
 	// mustUnpack already verifies the contents against cowA, but this will give
 	// us false confidence if cowA was somehow mutated. So check again against
 	// the originally snapshotted bytes, rather than the original COW instance.
@@ -228,7 +173,9 @@ func writeRandomRange(t *testing.T, store *copy_on_write.COWStore) {
 
 // Unpacks a snapshot to outDir and asserts that the contents match the
 // originally cached contents.
-func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, snap *snaploader.Snapshot, outDir string, originalSnapshot *snaploader.CacheSnapshotOptions) *snaploader.UnpackedSnapshot {
+func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, snapshotKey *fcpb.SnapshotKey, outDir string, originalSnapshot *snaploader.CacheSnapshotOptions) *snaploader.UnpackedSnapshot {
+	snap, err := loader.GetSnapshot(ctx, snapshotKey)
+	require.NoError(t, err)
 	unpacked, err := loader.UnpackSnapshot(ctx, snap, outDir)
 	require.NoError(t, err)
 

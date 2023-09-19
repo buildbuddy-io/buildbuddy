@@ -738,8 +738,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	snaploaderStart := time.Now()
-	_, err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts)
-	if err != nil {
+	if err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
 		return status.WrapError(err, "add snapshot to cache")
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
