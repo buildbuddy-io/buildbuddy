@@ -105,7 +105,7 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return err
 	}
-	env.SetServerIdentityService(s)
+	env.SetClientIdentityService(s)
 	return nil
 }
 
@@ -114,7 +114,7 @@ func digest(attrs []string) []byte {
 	return d[:]
 }
 
-func (s *Service) IdentityHeader(si *interfaces.ServerIdentity) (string, error) {
+func (s *Service) IdentityHeader(si *interfaces.ClientIdentity) (string, error) {
 	ts := s.clock.Now()
 	attrs := []string{
 		"origin=" + si.Origin,
@@ -132,7 +132,7 @@ func (s *Service) IdentityHeader(si *interfaces.ServerIdentity) (string, error) 
 }
 
 func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
-	header, err := s.IdentityHeader(&interfaces.ServerIdentity{
+	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: *origin,
 		Client: *client,
 	})
@@ -151,7 +151,7 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 		return ctx, status.NotFoundError("multiple identity headers present")
 	}
 	headerValue := vals[0]
-	identity := &interfaces.ServerIdentity{}
+	identity := &interfaces.ClientIdentity{}
 	var attrs []string
 	kvs := make(map[string]string)
 	for _, attr := range strings.Split(headerValue, ";") {
@@ -182,7 +182,7 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 			}
 			age := s.clock.Since(time.UnixMicro(tsMicros))
 			ageTolerance := DefaultAgeTolerance
-			if identity.Client == interfaces.ServerIdentityClientWorkflow {
+			if identity.Client == interfaces.ClientIdentityWorkflow {
 				ageTolerance = workflowAgeTolerance
 			}
 			if age > ageTolerance {
@@ -197,8 +197,8 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 	return ctx, status.InvalidArgumentErrorf("identity header could not be parsed")
 }
 
-func (s *Service) IdentityFromContext(ctx context.Context) (*interfaces.ServerIdentity, error) {
-	v, ok := ctx.Value(validatedIdentityContextKey).(*interfaces.ServerIdentity)
+func (s *Service) IdentityFromContext(ctx context.Context) (*interfaces.ClientIdentity, error) {
+	v, ok := ctx.Value(validatedIdentityContextKey).(*interfaces.ClientIdentity)
 	if !ok {
 		return nil, status.NotFoundError("identity not presented")
 	}

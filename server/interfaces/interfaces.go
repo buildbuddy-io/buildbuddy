@@ -1221,25 +1221,25 @@ type IPRulesService interface {
 	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
 }
 
-type ServerIdentity struct {
+type ClientIdentity struct {
 	Origin string
 	Client string
 }
 
 const (
-	ServerIdentityClientExecutor = "executor"
-	ServerIdentityClientApp      = "app"
-	ServerIdentityClientWorkflow = "bazel"
+	ClientIdentityExecutor = "executor"
+	ClientIdentityApp      = "app"
+	ClientIdentityWorkflow = "workflow"
 )
 
-type ServerIdentityService interface {
-	// AddIdentityToContext adds the identity of the current server to the
+type ClientIdentityService interface {
+	// AddIdentityToContext adds the identity of the current client to the
 	// outgoing context.
 	AddIdentityToContext(ctx context.Context) (context.Context, error)
 
 	// IdentityHeader generates a signed header value for the specified
 	// identity.
-	IdentityHeader(si *ServerIdentity) (string, error)
+	IdentityHeader(si *ClientIdentity) (string, error)
 
 	// ValidateIncomingIdentity validates the incoming identity and adds the
 	// authenticated identity information to the context. This function is
@@ -1249,7 +1249,7 @@ type ServerIdentityService interface {
 	// IdentityFromContext returns the previously-validated context information
 	// from the context. Returns a NotFound error if the context does not
 	// contain validated server identity.
-	IdentityFromContext(ctx context.Context) (*ServerIdentity, error)
+	IdentityFromContext(ctx context.Context) (*ClientIdentity, error)
 }
 
 // Store models a block-level storage system, which is useful as a backend

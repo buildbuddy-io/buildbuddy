@@ -111,7 +111,7 @@ type RealEnv struct {
 	promQuerier                      interfaces.PromQuerier
 	auditLog                         interfaces.AuditLogger
 	ipRulesService                   interfaces.IPRulesService
-	serverIdentityService            interfaces.ServerIdentityService
+	serverIdentityService            interfaces.ClientIdentityService
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -637,10 +637,10 @@ func (r *RealEnv) SetIPRulesService(e interfaces.IPRulesService) {
 	r.ipRulesService = e
 }
 
-func (r *RealEnv) GetServerIdentityService() interfaces.ServerIdentityService {
+func (r *RealEnv) GetClientIdentityService() interfaces.ClientIdentityService {
 	return r.serverIdentityService
 }
 
-func (r *RealEnv) SetServerIdentityService(s interfaces.ServerIdentityService) {
+func (r *RealEnv) SetClientIdentityService(s interfaces.ClientIdentityService) {
 	r.serverIdentityService = s
 }

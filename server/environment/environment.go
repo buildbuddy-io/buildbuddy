@@ -161,6 +161,6 @@ type Env interface {
 	SetAuditLogger(logger interfaces.AuditLogger)
 	GetIPRulesService() interfaces.IPRulesService
 	SetIPRulesService(interfaces.IPRulesService)
-	SetServerIdentityService(service interfaces.ServerIdentityService)
-	GetServerIdentityService() interfaces.ServerIdentityService
+	SetClientIdentityService(service interfaces.ClientIdentityService)
+	GetClientIdentityService() interfaces.ClientIdentityService
 }

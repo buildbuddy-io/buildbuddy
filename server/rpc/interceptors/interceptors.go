@@ -219,8 +219,8 @@ func ipAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterce
 
 func identityUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if sis := env.GetServerIdentityService(); sis != nil {
-			newCtx, err := sis.ValidateIncomingIdentity(ctx)
+		if cis := env.GetClientIdentityService(); cis != nil {
+			newCtx, err := cis.ValidateIncomingIdentity(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -232,8 +232,8 @@ func identityUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 
 func identityStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if sis := env.GetServerIdentityService(); sis != nil {
-			newCtx, err := sis.ValidateIncomingIdentity(stream.Context())
+		if cis := env.GetClientIdentityService(); cis != nil {
+			newCtx, err := cis.ValidateIncomingIdentity(stream.Context())
 			if err != nil {
 				return err
 			}

@@ -49,7 +49,7 @@ func TestIdentity(t *testing.T) {
 
 	origin := "space"
 	client := "aliens"
-	headerValue, err := sis.IdentityHeader(&interfaces.ServerIdentity{
+	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: origin,
 		Client: client,
 	})
@@ -110,7 +110,7 @@ func TestStaleIdentity(t *testing.T) {
 
 	origin := "space"
 	client := "aliens"
-	headerValue, err := sis.IdentityHeader(&interfaces.ServerIdentity{
+	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: origin,
 		Client: client,
 	})
