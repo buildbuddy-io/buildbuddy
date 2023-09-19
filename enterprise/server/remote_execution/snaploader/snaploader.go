@@ -1,7 +1,6 @@
 package snaploader
 
 import (
-	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -80,13 +79,7 @@ func fileDigest(filePath string) (*repb.Digest, error) {
 		return nil, err
 	}
 	defer file.Close()
-
-	fileReader := bufio.NewReader(file)
-	d, err := digest.Compute(fileReader, repb.DigestFunction_BLAKE3)
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
+	return digest.Compute(file, repb.DigestFunction_BLAKE3)
 }
 
 // Snapshot holds a snapshot manifest along with the corresponding cache key.
