@@ -10,7 +10,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//server/config",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "@com_github_prometheus_client_golang//api",

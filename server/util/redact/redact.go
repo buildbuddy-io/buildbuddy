@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -17,12 +17,12 @@ import (
 )
 
 var (
-	apiKey = flagutil.New(
+	apiKey = flag.String(
 		"api.api_key",
 		"",
 		"The default API key to use for on-prem enterprise deploys with a single organization/group.",
-		flagutil.SecretTag,
-		flagutil.DeprecatedTag(
+		flag.Secret,
+		flag.Deprecated(
 			"Manual API key specification is no longer supported; to retrieve specific API keys programmatically, please use the API key table. This field will still specify an API key to redact in case a manual API key was specified when buildbuddy was first set up.",
 		),
 	)

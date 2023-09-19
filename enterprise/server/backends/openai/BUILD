@@ -5,7 +5,7 @@ go_library(
     srcs = ["openai.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/openai",
     deps = [
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
     ],

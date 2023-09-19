@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -27,7 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -49,12 +48,12 @@ import (
 var (
 	rootDirectory       = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
 	listenAddr          = flag.String("cache.raft.listen_addr", "", "The address to listen for local gossip traffic on. Ex. 'localhost:1991")
-	join                = flagutil.New("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+	join                = flag.Slice("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
 	httpAddr            = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
 	gRPCAddr            = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
 	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
-	partitions          = flagutil.New("cache.raft.partitions", []disk.Partition{}, "")
-	partitionMappings   = flagutil.New("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
+	partitions          = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
+	partitionMappings   = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
 )
 
 const (

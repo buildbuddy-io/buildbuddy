@@ -14,7 +14,7 @@ go_library(
         "//proto:runner_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",

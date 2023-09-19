@@ -13,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -24,7 +24,7 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var memcacheTargets = flagutil.New("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+var memcacheTargets = flag.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
 
 const (
 	mcCutoffSizeBytes = 134217728 - 1 // 128 MB

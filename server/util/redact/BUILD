@@ -9,7 +9,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
         "//server/environment",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/git",
         "@org_golang_google_protobuf//encoding/prototext",
     ],

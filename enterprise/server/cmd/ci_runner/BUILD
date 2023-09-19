@@ -26,7 +26,7 @@ go_library(
         "//server/util/bazel",
         "//server/util/bazelisk",
         "//server/util/disk",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/healthcheck",

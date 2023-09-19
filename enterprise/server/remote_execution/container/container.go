@@ -2,7 +2,6 @@ package container
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"sync"
@@ -13,7 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -41,7 +40,7 @@ var (
 	// accounting across container instances.
 	Metrics = NewContainerMetrics()
 
-	containerRegistries     = flagutil.New("executor.container_registries", []ContainerRegistry{}, "")
+	containerRegistries     = flag.Slice("executor.container_registries", []ContainerRegistry{}, "")
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 )
 

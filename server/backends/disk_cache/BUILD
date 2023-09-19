@@ -15,7 +15,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/disk",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/lru",

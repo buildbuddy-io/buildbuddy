@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -23,7 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/crewjam/saml"
 	"github.com/crewjam/saml/samlsp"
@@ -32,9 +31,9 @@ import (
 
 var (
 	certFile = flag.String("auth.saml.cert_file", "", "Path to a PEM encoded certificate file used for SAML auth.")
-	cert     = flagutil.New("auth.saml.cert", "", "PEM encoded certificate used for SAML auth.", flagutil.SecretTag)
+	cert     = flag.String("auth.saml.cert", "", "PEM encoded certificate used for SAML auth.", flag.Secret)
 	keyFile  = flag.String("auth.saml.key_file", "", "Path to a PEM encoded certificate key file used for SAML auth.")
-	key      = flagutil.New("auth.saml.key", "", "PEM encoded certificate key used for SAML auth.", flagutil.SecretTag)
+	key      = flag.String("auth.saml.key", "", "PEM encoded certificate key used for SAML auth.", flag.Secret)
 )
 
 const (

@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/environment",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "//server/util/usageutil",

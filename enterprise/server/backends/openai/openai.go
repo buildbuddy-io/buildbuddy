@@ -3,16 +3,15 @@ package openai
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"io"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-var apiKey = flagutil.New("openai.api_key", "", "OpenAI API key", flagutil.SecretTag)
+var apiKey = flag.String("openai.api_key", "", "OpenAI API key", flag.Secret)
 var Model = flag.String("openai.model", "gpt-3.5-turbo", "OpenAI model name to use. Find them here: https://platform.openai.com/docs/models")
 
 const (

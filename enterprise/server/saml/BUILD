@@ -14,7 +14,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/cookie",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/status",
         "@com_github_crewjam_saml//:saml",
         "@com_github_crewjam_saml//samlsp",

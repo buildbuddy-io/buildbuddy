@@ -14,7 +14,7 @@ go_library(
         "//server/metrics",
         "//server/tables",
         "//server/util/clickhouse/schema",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/gormutil",
         "//server/util/log",
         "//server/util/retry",

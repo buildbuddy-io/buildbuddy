@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/endpoint_urls/build_buddy_url",
-        "//server/util/flagutil",
+        "//server/util/flag",
         "//server/util/urlutil",
     ],
 )
