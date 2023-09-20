@@ -375,16 +375,20 @@ func (idb *instrumentedDB) NewIndexedBatch() Batch {
 	return &instrumentedBatch{batch, batch, idb}
 }
 
-func Open(dbDir string, options *pebble.Options) (IPebbleDB, error) {
+func Open(dbDir string, id string, options *pebble.Options) (IPebbleDB, error) {
 	db, err := pebble.Open(dbDir, options)
 	if err != nil {
 		return nil, err
 	}
 
 	opMetrics := func(op string) *opMetrics {
+		metricsLabels := prometheus.Labels{
+			metrics.PebbleOperation: op,
+			metrics.PebbleID:        id,
+		}
 		return &opMetrics{
-			count: metrics.PebbleCachePebbleOpCount.With(prometheus.Labels{metrics.PebbleOperation: op}),
-			hist:  metrics.PebbleCachePebbleOpLatencyUsec.With(prometheus.Labels{metrics.PebbleOperation: op}),
+			count: metrics.PebbleCachePebbleOpCount.With(metricsLabels),
+			hist:  metrics.PebbleCachePebbleOpLatencyUsec.With(metricsLabels),
 		}
 	}
 	idb := &instrumentedDB{

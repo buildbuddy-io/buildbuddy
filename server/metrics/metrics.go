@@ -189,6 +189,9 @@ const (
 	// Pebble DB operation type.
 	PebbleOperation = "pebble_op"
 
+	// Pebble DB ID
+	PebbleID = "pebble_id"
+
 	// Name of service the health check is running for (Ex "distributed_cache" or "sql_primary").
 	HealthCheckName = "health_check_name"
 
@@ -2226,6 +2229,7 @@ var (
 		Name:      "pebble_cache_pebble_op_count",
 		Help:      "The number of operations performed against the pebble database.",
 	}, []string{
+		PebbleID,
 		PebbleOperation,
 	})
 
@@ -2236,6 +2240,7 @@ var (
 		Buckets:   durationUsecBuckets(1*time.Microsecond, 30*time.Second, 10),
 		Help:      "The latency of operations performed against the pebble database, in microseconds.",
 	}, []string{
+		PebbleID,
 		PebbleOperation,
 	})
 
