@@ -77,9 +77,6 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	}
 	defer file.Close()
 	_, err = cachetools.UploadFromReader(ctx, bsClient, rn, file)
-	if err != nil {
-		return err
-	}
 	return err
 }
 
