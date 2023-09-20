@@ -64,7 +64,7 @@ func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 }
 
 func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, store replica.IStore) *replica.Replica {
-	db, err := pebble.Open(rootDir, &pebble.Options{})
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
 	require.NoError(t, err)
 
 	leaser := pebble.NewDBLeaser(db)
