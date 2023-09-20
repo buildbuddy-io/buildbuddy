@@ -4016,7 +4016,8 @@
                 "type": "prometheus",
                 "uid": "prom"
               },
-              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\"}/1e6) by (partition_id)",
+              "editorMode": "code",
+              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\", cache_name=\"${cache_name}\"}/1e6) by (partition_id)",
               "instant": false,
               "interval": "",
               "legendFormat": "",
@@ -7330,7 +7331,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 15
+            "y": 16
           },
           "id": 5720,
           "options": {
@@ -7425,7 +7426,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 15
+            "y": 16
           },
           "id": 5955,
           "options": {
@@ -7520,7 +7521,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 23
+            "y": 24
           },
           "id": 5877,
           "options": {
@@ -7615,7 +7616,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 23
+            "y": 24
           },
           "id": 6111,
           "options": {
@@ -7735,7 +7736,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 31
+            "y": 32
           },
           "id": 6033,
           "options": {
@@ -7830,7 +7831,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 31
+            "y": 32
           },
           "id": 6189,
           "options": {
