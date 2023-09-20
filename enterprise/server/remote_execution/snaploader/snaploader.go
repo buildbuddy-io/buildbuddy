@@ -89,6 +89,14 @@ func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {
 	return s.manifest.GetVmConfiguration()
 }
 
+func (s *Snapshot) GetFiles() []*repb.FileNode {
+	return s.manifest.GetFiles()
+}
+
+func (s *Snapshot) GetChunkedFiles() []*fcpb.ChunkedFile {
+	return s.manifest.GetChunkedFiles()
+}
+
 // CacheSnapshotOptions contains any assets or configuration to be associated
 // with a stored snapshot.
 //
@@ -402,7 +410,6 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		return err
 	}
 	manifestNode := &repb.FileNode{Digest: d}
-	// TODO: Upload to remote cache too
 	_, localCacheErr := filecacheutil.Write(l.env.GetFileCache(), manifestNode, b)
 	if !*snaploader_utils.EnableRemoteSnapshotSharing {
 		return localCacheErr
