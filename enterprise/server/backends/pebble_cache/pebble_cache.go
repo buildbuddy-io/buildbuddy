@@ -1900,12 +1900,12 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 	cwc.CommitFn = func(bytesWritten int64) error {
 		if decompressor != nil {
 			if err := decompressor.Close(); err != nil {
-				return err
+				return status.InternalErrorf("failed to close decompressor: %s", err)
 			}
 		}
 
 		if err := cdcw.closeChunkerAndWait(); err != nil {
-			return err
+			return status.InternalErrorf("failed to close chunker: %s", err)
 		}
 
 		cdcw.mu.Lock()
@@ -1984,13 +1984,13 @@ func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.
 	}
 	_, err = wcm.Write(chunkData)
 	if err != nil {
-		return err
+		return status.InternalErrorf("failed to write raw chunk: %s", err)
 	}
 	if err := wcm.Close(); err != nil {
-		return err
+		return status.InternalErrorf("failed to close while writing raw chunk: %s", err)
 	}
 	if err := wcm.Commit(); err != nil {
-		return err
+		return status.InternalErrorf("failed to commit while writing raw chunk: %s", err)
 	}
 	return nil
 }
