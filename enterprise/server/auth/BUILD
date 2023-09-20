@@ -15,6 +15,7 @@ go_library(
         "//server/tables",
         "//server/util/authutil",
         "//server/util/claims",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_golang_jwt_jwt//:jwt",
     ],
