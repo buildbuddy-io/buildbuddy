@@ -230,20 +230,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
     if (highBucketIndex === -1) {
       return;
     }
-    const params: Record<string, string> = { start: "" + low };
 
+    let end: number | undefined = undefined;
     if (highBucketIndex === this.state.timeKeys.length - 1) {
       // If no end date is specified and the user chose to include the last
       // bucket, this will technically update the end time and fetch a bit of
       // new data, but that's probably a good thing in this case.
       const endDate = getEndDate(this.props.search);
       if (endDate) {
-        params.end = "" + endDate.getTime();
+        end = endDate.getTime();
       }
     } else {
-      params.end = "" + this.state.timeKeys[highBucketIndex + 1];
+      end = this.state.timeKeys[highBucketIndex + 1];
     }
-    router.navigateToQueryParamsPreserveHash(params);
+    router.navigateToDatePreserveHash(low, end);
   }
 
   showingDrilldown(tab: string): boolean {

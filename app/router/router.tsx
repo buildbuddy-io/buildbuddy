@@ -5,7 +5,13 @@ import format from "../format/format";
 import rpc_service from "../service/rpc_service";
 import { user as user_proto } from "../../proto/user_ts_proto";
 
-import { GLOBAL_FILTER_PARAM_NAMES, PERSISTENT_URL_PARAMS } from "./router_params";
+import {
+  END_DATE_PARAM_NAME,
+  GLOBAL_FILTER_PARAM_NAMES,
+  LAST_N_DAYS_PARAM_NAME,
+  PERSISTENT_URL_PARAMS,
+  START_DATE_PARAM_NAME,
+} from "./router_params";
 
 class Router {
   user?: User;
@@ -144,15 +150,22 @@ class Router {
   }
 
   /**
-   * Sets the given query params.
+   * Sets the date to the specified start and end times. A missing end time
+   * will cause the end of the range to be left open (i.e., "until now").
    *
    * - Creates a new browser history entry.
-   * - Preserves global filter params.
+   * - Preserves global filter params except "days" if set.
    * - Preserves the current `path` *and* `hash`.
    */
-  navigateToQueryParamsPreserveHash(newParams: Record<string, string>) {
+  navigateToDatePreserveHash(startTimeMillis: number, endTimeMillis?: number) {
     const url = new URL(window.location.href);
-    Object.entries(newParams).forEach(([name, value]) => url.searchParams.set(name, value));
+    url.searchParams.set(START_DATE_PARAM_NAME, String(startTimeMillis));
+    if (end) {
+      url.searchParams.set(END_DATE_PARAM_NAME, String(endTimeMillis));
+    } else {
+      url.searchParams.delete(END_DATE_PARAM_NAME);
+    }
+    url.searchParams.delete(LAST_N_DAYS_PARAM_NAME);
     url.hash = window.location.hash;
     window.history.pushState({}, "", url.href);
   }
