@@ -144,6 +144,20 @@ class Router {
   }
 
   /**
+   * Sets the given query params.
+   *
+   * - Creates a new browser history entry.
+   * - Preserves global filter params.
+   * - Preserves the current `path` *and* `hash`.
+   */
+  navigateToQueryParamsPreserveHash(newParams: Record<string, string>) {
+    const url = new URL(window.location.href);
+    Object.entries(newParams).forEach(([name, value]) => url.searchParams.set(name, value));
+    url.hash = window.location.hash;
+    window.history.pushState({}, "", url.href);
+  }
+
+  /**
    * Replaces the current URL query.
    *
    * - Does not create a new browser history entry.

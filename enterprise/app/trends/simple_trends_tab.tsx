@@ -13,6 +13,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import CacheChartComponent from "./cache_chart";
 import { fetchTrends, TrendsRpcCache } from "./trends_requests";
 import { stats } from "../../../proto/stats_ts_proto";
+import { getEndDate } from "../filter/filter_util";
 
 interface Props {
   search: URLSearchParams;
@@ -88,6 +89,34 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
     return <div>Overview...</div>;
   }
 
+  onChartZoomed(low: number, high: number) {
+    if (!this.state.trendsModel) {
+      return;
+    }
+    const timeKeys = this.state.trendsModel.getTimeKeys();
+    // Low is the start point, but high is actually the low bound of the bucket
+    // that the user selected, so we need to compute the high bound of that
+    // bucket using our list of keys.
+    const highBucketIndex = timeKeys.indexOf(high);
+    if (highBucketIndex === -1) {
+      return;
+    }
+    const params: Record<string, string> = { start: "" + low };
+
+    if (highBucketIndex === timeKeys.length - 1) {
+      // If no end date is specified and the user chose to include the last
+      // bucket, this will technically update the end time and fetch a bit of
+      // new data, but that's probably a good thing in this case.
+      const endDate = getEndDate(this.props.search);
+      if (endDate) {
+        params.end = "" + endDate.getTime();
+      }
+    } else {
+      params.end = "" + timeKeys[highBucketIndex + 1];
+    }
+    router.navigateToQueryParamsPreserveHash(params);
+  }
+
   renderBuilds(model: TrendsModel) {
     return (
       <>
@@ -104,7 +133,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           formatHoverValue={(value) => (value || 0) + " builds"}
           formatSecondaryHoverValue={(value) => `${format.durationSec(value)} average`}
           formatSecondaryTickValue={format.durationSec}
@@ -113,6 +142,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           secondaryLine={true}
           separateAxis={true}
           onBarClicked={this.onBarClicked.bind(this, "", "")}
+          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
         />
         {model.hasInvocationStatPercentiles() && (
           <PercentilesChartComponent
@@ -121,13 +151,16 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             data={model.getTimeKeys()}
             ticks={model.getTicks()}
             extractLabel={this.formatShortDate}
-            formatHoverLabel={this.formatLongDate}
+            formatHoverLabel={this.formatLongDate.bind(this)}
             extractP50={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
             extractP75={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
             extractP90={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
             extractP95={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
             extractP99={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
             onColumnClicked={this.onBarClicked.bind(this, "", "duration")}
+            onZoomSelection={
+              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+            }
           />
         )}
         {!model.hasInvocationStatPercentiles() && (
@@ -143,13 +176,16 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             extractSecondaryValue={(tsMillis) => +(model.getStat(tsMillis).maxDurationUsec ?? 0) / 1000000}
             extractLabel={this.formatShortDate}
             formatTickValue={format.durationSec}
-            formatHoverLabel={this.formatLongDate}
+            formatHoverLabel={this.formatLongDate.bind(this)}
             formatHoverValue={(value) => `${format.durationSec(value || 0)} average`}
             formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
             name="average build duration"
             secondaryName="slowest build duration"
             onBarClicked={this.onBarClicked.bind(this, "", "")}
             onSecondaryBarClicked={this.onBarClicked.bind(this, "", "duration")}
+            onZoomSelection={
+              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+            }
           />
         )}
 
@@ -161,7 +197,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           formatHoverValue={(value) => (value || 0) + " users"}
           name="users with builds"
           onBarClicked={this.onBarClicked.bind(this, "#users", "")}
@@ -174,7 +210,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           formatHoverValue={(value) => (value || 0) + " commits"}
           name="commits with builds"
           onBarClicked={this.onBarClicked.bind(this, "#commits", "")}
@@ -187,7 +223,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           formatHoverValue={(value) => (value || 0) + " branches"}
           name="branches with builds"
         />
@@ -199,7 +235,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           formatHoverValue={(value) => (value || 0) + " hosts"}
           name="hosts with builds"
           onBarClicked={this.onBarClicked.bind(this, "#hosts", "")}
@@ -212,7 +248,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractLabel={this.formatShortDate}
           formatTickValue={format.count}
           allowDecimals={false}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           formatHoverValue={(value) => (value || 0) + " repos"}
           name="repos with builds"
           onBarClicked={this.onBarClicked.bind(this, "#repos", "")}
@@ -230,20 +266,22 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           data={model.getTimeKeys()}
           ticks={model.getTicks()}
           extractLabel={this.formatShortDate}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           extractHits={(tsMillis) => +(model.getStat(tsMillis).actionCacheHits ?? 0)}
           secondaryBarName="misses"
           extractSecondary={(tsMillis) => +(model.getStat(tsMillis).actionCacheMisses ?? 0)}
+          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
         />
         <CacheChartComponent
           title="Content Addressable Store"
           data={model.getTimeKeys()}
           ticks={model.getTicks()}
           extractLabel={this.formatShortDate}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           extractHits={(tsMillis) => +(model.getStat(tsMillis).casCacheHits ?? 0)}
           secondaryBarName="writes"
           extractSecondary={(tsMillis) => +(model.getStat(tsMillis).casCacheUploads ?? 0)}
+          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
         />
         <TrendsChartComponent
           title="Cache read throughput"
@@ -258,13 +296,14 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           formatTickValue={format.bytes}
           allowDecimals={false}
           formatSecondaryTickValue={format.bitsPerSecond}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           formatHoverValue={(value) => `${format.bytes(value || 0)} downloaded`}
           formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
           name="total download size"
           secondaryName="download rate"
           secondaryLine={true}
           separateAxis={true}
+          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
         />
 
         <TrendsChartComponent
@@ -279,13 +318,14 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractLabel={this.formatShortDate}
           formatTickValue={format.bytes}
           formatSecondaryTickValue={format.bitsPerSecond}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           formatHoverValue={(value) => `${format.bytes(value || 0)} uploaded`}
           formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
           name="total upload size"
           secondaryName="upload rate"
           secondaryLine={true}
           separateAxis={true}
+          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
         />
 
         {capabilities.config.trendsSummaryEnabled && (
@@ -298,9 +338,12 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             extractLabel={this.formatShortDate}
             formatTickValue={format.durationSec}
             allowDecimals={false}
-            formatHoverLabel={this.formatLongDate}
+            formatHoverLabel={this.formatLongDate.bind(this)}
             formatHoverValue={(value) => `${format.durationSec(value || 0)} CPU time saved`}
             name="saved cpu time"
+            onZoomSelection={
+              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+            }
           />
         )}
       </>
@@ -315,7 +358,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           data={model.getTimeKeys()}
           ticks={model.getTicks()}
           extractLabel={this.formatShortDate}
-          formatHoverLabel={this.formatLongDate}
+          formatHoverLabel={this.formatLongDate.bind(this)}
           extractP50={(tsMillis) =>
             +(model.getExecutionStat(tsMillis).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
           }
@@ -331,6 +374,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractP99={(tsMillis) =>
             +(model.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
           }
+          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
         />
       )
     );

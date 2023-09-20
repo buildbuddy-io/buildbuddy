@@ -126,4 +126,6 @@ message FrontendConfig {
 
   // The domain for this installation (e.g. buildbuddy.io)
   string domain = 41;
+
+  bool trends_range_selection_enabled = 42;
 }

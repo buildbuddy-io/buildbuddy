@@ -11,7 +11,7 @@ import TrendsSummaryCard from "./summary_card";
 import { Subscription } from "rxjs";
 import FilterComponent from "../filter/filter";
 import capabilities from "../../../app/capabilities/capabilities";
-import { getProtoFilterParams } from "../filter/filter_util";
+import { getProtoFilterParams, getEndDate } from "../filter/filter_util";
 import router from "../../../app/router/router";
 import * as proto from "../../../app/util/proto";
 import DrilldownPageComponent from "./drilldown_page";
@@ -222,6 +222,30 @@ export default class TrendsComponent extends React.Component<Props, State> {
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
+  onChartZoomed(low: number, high: number) {
+    // Low is the start point, but high is actually the low bound of the bucket
+    // that the user selected, so we need to compute the high bound of that
+    // bucket using our list of keys.
+    const highBucketIndex = this.state.timeKeys.indexOf(high);
+    if (highBucketIndex === -1) {
+      return;
+    }
+    const params: Record<string, string> = { start: "" + low };
+
+    if (highBucketIndex === this.state.timeKeys.length - 1) {
+      // If no end date is specified and the user chose to include the last
+      // bucket, this will technically update the end time and fetch a bit of
+      // new data, but that's probably a good thing in this case.
+      const endDate = getEndDate(this.props.search);
+      if (endDate) {
+        params.end = "" + endDate.getTime();
+      }
+    } else {
+      params.end = "" + this.state.timeKeys[highBucketIndex + 1];
+    }
+    router.navigateToQueryParamsPreserveHash(params);
+  }
+
   showingDrilldown(tab: string): boolean {
     return (capabilities.config.trendsHeatmapEnabled || false) && tab === "#drilldown";
   }
@@ -284,6 +308,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryLine={true}
                 separateAxis={true}
                 onBarClicked={this.onBarClicked.bind(this, "", "")}
+                onZoomSelection={
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                }
               />
               {this.state.enableInvocationPercentileCharts && (
                 <PercentilesChartComponent
@@ -299,6 +326,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   extractP95={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP99={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
                   onColumnClicked={this.onBarClicked.bind(this, "", "duration")}
+                  onZoomSelection={
+                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                  }
                 />
               )}
               {!this.state.enableInvocationPercentileCharts && (
@@ -321,6 +351,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   secondaryName="slowest build duration"
                   onBarClicked={this.onBarClicked.bind(this, "", "")}
                   onSecondaryBarClicked={this.onBarClicked.bind(this, "", "duration")}
+                  onZoomSelection={
+                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                  }
                 />
               )}
 
@@ -334,6 +367,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).actionCacheHits ?? 0)}
                 secondaryBarName="misses"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).actionCacheMisses ?? 0)}
+                onZoomSelection={
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                }
               />
               <CacheChartComponent
                 title="Content Addressable Store"
@@ -344,6 +380,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).casCacheHits ?? 0)}
                 secondaryBarName="writes"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).casCacheUploads ?? 0)}
+                onZoomSelection={
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                }
               />
 
               <TrendsChartComponent
@@ -366,6 +405,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryName="download rate"
                 secondaryLine={true}
                 separateAxis={true}
+                onZoomSelection={
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                }
               />
 
               <TrendsChartComponent
@@ -387,6 +429,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryName="upload rate"
                 secondaryLine={true}
                 separateAxis={true}
+                onZoomSelection={
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                }
               />
 
               {capabilities.config.trendsSummaryEnabled && (
@@ -404,6 +449,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatHoverLabel={this.formatLongDate.bind(this)}
                   formatHoverValue={(value) => `${format.durationSec(value || 0)} CPU time saved`}
                   name="saved cpu time"
+                  onZoomSelection={
+                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                  }
                 />
               )}
 
@@ -492,6 +540,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   }
                   extractP99={(tsMillis) =>
                     +(this.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
+                  }
+                  onZoomSelection={
+                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
                   }
                 />
               )}

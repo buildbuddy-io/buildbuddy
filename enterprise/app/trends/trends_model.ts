@@ -91,7 +91,7 @@ export default class TrendsModel {
   }
 
   public getInterval() {
-    return this.data.interval || stats.IntervalType.INTERVAL_TYPE_DAY;
+    return this.data.interval?.type || stats.IntervalType.INTERVAL_TYPE_DAY;
   }
 
   public getCurrentSummary() {

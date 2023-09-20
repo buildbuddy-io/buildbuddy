@@ -10,8 +10,10 @@ import {
   Legend,
   Tooltip,
   TooltipProps,
+  ReferenceArea,
 } from "recharts";
 import * as format from "../../../app/format/format";
+import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
 
 interface Props {
   title: string;
@@ -23,10 +25,17 @@ interface Props {
   formatHoverLabel: (datum: number) => string;
   extractHits: (datum: number) => number;
   extractSecondary: (datum: number) => number;
+  onZoomSelection?: (startDate: number, endDate: number) => void;
+}
+
+interface State {
+  refAreaLeft?: string;
+  refAreaRight?: string;
 }
 
 interface CacheChartTooltipProps extends TooltipProps<any, any> {
   labelFormatter: (datum: number) => string;
+  shouldRender: () => boolean;
   extractHits: (datum: number) => number;
   secondaryBarName: string;
   extractSecondary: (datum: number) => number;
@@ -36,11 +45,12 @@ const CacheChartTooltip = ({
   active,
   payload,
   labelFormatter,
+  shouldRender,
   extractHits,
   secondaryBarName,
   extractSecondary,
 }: CacheChartTooltipProps) => {
-  if (!active || !payload || payload.length < 1) {
+  if (!active || !payload || payload.length < 1 || !shouldRender()) {
     return null;
   }
   let data = payload[0].payload;
@@ -60,13 +70,64 @@ const CacheChartTooltip = ({
   );
 };
 
-export default class CacheChartComponent extends React.Component<Props> {
+export default class CacheChartComponent extends React.Component<Props, State> {
+  state: State = {};
+
+  onMouseDown(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
+  }
+
+  onMouseMove(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    if (!this.state.refAreaLeft) {
+      return;
+    }
+    this.state.refAreaLeft && this.setState({ refAreaRight: e.activeLabel });
+  }
+
+  onMouseUp(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    const finalRightValue = e.activeLabel;
+    if (this.state.refAreaLeft && finalRightValue) {
+      let v1 = Number(this.state.refAreaLeft);
+      let v2 = Number(finalRightValue);
+      if (v1 > v2) {
+        // Aaahh!!! Real Javascript
+        [v1, v2] = [v2, v1];
+      }
+      this.props.onZoomSelection(v1, v2);
+    }
+    this.state.refAreaLeft = undefined;
+    this.state.refAreaRight = undefined;
+  }
+
+  shouldRenderTooltip(): boolean {
+    return !Boolean(this.state.refAreaLeft);
+  }
+
   render() {
     return (
-      <div id={this.props.id} className="trend-chart">
+      <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={this.props.data}>
+          <ComposedChart
+            data={this.props.data}
+            onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
+            onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
+            onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
@@ -81,6 +142,7 @@ export default class CacheChartComponent extends React.Component<Props> {
               content={
                 <CacheChartTooltip
                   labelFormatter={this.props.formatHoverLabel}
+                  shouldRender={() => this.shouldRenderTooltip()}
                   extractHits={this.props.extractHits}
                   secondaryBarName={this.props.secondaryBarName}
                   extractSecondary={this.props.extractSecondary}
@@ -104,6 +166,14 @@ export default class CacheChartComponent extends React.Component<Props> {
               }
               stroke="#03A9F4"
             />
+            {this.state.refAreaLeft && this.state.refAreaRight ? (
+              <ReferenceArea
+                yAxisId="percent"
+                x1={Math.min(+this.state.refAreaLeft, +this.state.refAreaRight)}
+                x2={Math.max(+this.state.refAreaLeft, +this.state.refAreaRight)}
+                strokeOpacity={0.3}
+              />
+            ) : null}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
