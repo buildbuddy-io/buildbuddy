@@ -42,6 +42,8 @@ go_test(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
+        "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/digest",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
@@ -49,5 +51,7 @@ go_test(
         "//server/util/random",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )
