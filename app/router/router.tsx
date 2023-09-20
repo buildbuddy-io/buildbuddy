@@ -160,7 +160,7 @@ class Router {
   navigateToDatePreserveHash(startTimeMillis: number, endTimeMillis?: number) {
     const url = new URL(window.location.href);
     url.searchParams.set(START_DATE_PARAM_NAME, String(startTimeMillis));
-    if (end) {
+    if (endTimeMillis) {
       url.searchParams.set(END_DATE_PARAM_NAME, String(endTimeMillis));
     } else {
       url.searchParams.delete(END_DATE_PARAM_NAME);
