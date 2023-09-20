@@ -409,18 +409,15 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
-	manifestNode := &repb.FileNode{Digest: d}
-	_, localCacheErr := filecacheutil.Write(l.env.GetFileCache(), manifestNode, b)
-	if !*snaploader_utils.EnableRemoteSnapshotSharing {
-		return localCacheErr
-	}
-	if localCacheErr != nil {
-		log.Warningf("saving action result for key %v to local filecache failed: %s", key, localCacheErr)
+
+	if *snaploader_utils.EnableRemoteSnapshotSharing {
+		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+		return cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar)
 	}
 
-	// Save to remote cache
-	acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
-	return cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar)
+	manifestNode := &repb.FileNode{Digest: d}
+	_, localCacheErr := filecacheutil.Write(l.env.GetFileCache(), manifestNode, b)
+	return localCacheErr
 }
 
 // TODO(Maggie): We can delete this with remote snapshot sharing because
