@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -118,6 +119,9 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 	}
 	if err := redis_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
+	}
+	if err := clientidentity.Register(realEnv); err != nil {
+		log.Fatalf(err.Error())
 	}
 
 	// Identify ourselves as an executor client in gRPC requests to the app.
