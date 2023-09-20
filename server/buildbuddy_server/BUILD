@@ -18,6 +18,7 @@ go_library(
         "//proto:github_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:iprules_go_proto",
         "//proto:quota_go_proto",
         "//proto:repo_go_proto",
         "//proto:runner_go_proto",

@@ -150,6 +150,13 @@ var (
 		"GetAuditLogs",
 		// Repo management
 		"CreateRepo",
+		// IP Rules.
+		"GetIPRules",
+		"AddIPRule",
+		"UpdateIPRule",
+		"DeleteIPRule",
+		"GetIPRulesConfig",
+		"SetIPRulesConfig",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different

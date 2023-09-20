@@ -54,3 +54,23 @@ message GetRulesResponse {
 
   repeated IPRule ip_rules = 2;
 }
+
+message GetRulesConfigRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetRulesConfigResponse {
+  context.ResponseContext response_context = 1;
+
+  bool enforce_ip_rules = 2;
+}
+
+message SetRulesConfigRequest {
+  context.RequestContext request_context = 1;
+
+  bool enforce_ip_rules = 2;
+}
+
+message SetRulesConfigResponse {
+  context.ResponseContext response_context = 1;
+}

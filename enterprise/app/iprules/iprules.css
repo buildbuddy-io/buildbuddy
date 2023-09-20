@@ -1,0 +1,93 @@
+.ip-rules > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.ip-rules .ip-rules-list {
+  padding: 8px 0;
+}
+
+.ip-rules .ip-rules-list > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.ip-rules .ip-rules-list-item {
+  display: flex;
+  align-items: baseline;
+  min-height: 40px;
+}
+
+.ip-rules .ip-rules-list-item button {
+  flex-shrink: 0;
+}
+
+.ip-rules .ip-rule-cidr,
+.ip-rules .ip-rule-description {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+}
+
+.ip-rules .ip-rule-cidr,
+.ip-rules .ip-rule-description {
+  display: flex;
+}
+
+.ip-rules .ip-rule-cidr {
+  width: 200px;
+}
+
+.ip-rules .ip-rule-description {
+  width: 400px;
+}
+
+.ip-rules .ip-rules-list-item {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+  max-width: 816px;
+}
+
+.ip-rules .ip-rules-list-item > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.ip-rule-form .form-error {
+  margin-bottom: 16px;
+  color: #f44336;
+}
+
+.ip-rule-form .field-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.ip-rule-form label,
+.ip-rule-form input {
+  margin-bottom: 8px;
+}
+
+.ip-rule-delete-modal .propagation-note,
+.ip-rule-edit-modal .propagation-note,
+.ip-rules .propagation-note {
+  color: #666;
+  margin-top: 16px;
+}
+
+.ip-rule-delete-modal .delete-modal-rule {
+  font-weight: bold;
+}
+
+.ip-rules .enforcement {
+  display: flex;
+  border-top: 1px solid #eee;
+  border-bottom: 1px solid #eee;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.ip-rules .enforcement-state {
+  width: 600px;
+}
+
+.ip-rules .ip-rules-table {
+  margin-top: 40px;
+}

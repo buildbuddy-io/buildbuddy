@@ -27,6 +27,7 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1219,6 +1220,15 @@ type IPRulesService interface {
 	// allowed based on the authenticated user and group information in the
 	// context.
 	AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error
+
+	GetRule(ctx context.Context, groupID string, ruleID string) (*tables.IPRule, error)
+
+	GetIPRuleConfig(ctx context.Context, request *irpb.GetRulesConfigRequest) (*irpb.GetRulesConfigResponse, error)
+	SetIPRuleConfig(ctx context.Context, request *irpb.SetRulesConfigRequest) (*irpb.SetRulesConfigResponse, error)
+	GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error)
+	AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error)
+	UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (*irpb.UpdateRuleResponse, error)
+	DeleteRule(ctx context.Context, req *irpb.DeleteRuleRequest) (*irpb.DeleteRuleResponse, error)
 }
 
 type ClientIdentity struct {

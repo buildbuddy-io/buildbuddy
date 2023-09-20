@@ -46,6 +46,7 @@ genrule(
         "//enterprise/app/auditlogs:auditlogs.css",
         "//enterprise/app/encryption:encryption.css",
         "//enterprise/app/history:history.css",
+        "//enterprise/app/iprules:iprules.css",
         "//enterprise/app/org:org.css",
         "//enterprise/app/settings:settings.css",
         "//enterprise/app/quota:quota.css",

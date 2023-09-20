@@ -38,20 +38,6 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     },
   };
 
-  methods: { [key: string]: string } = {
-    "apiKeys.create": "Create",
-    "apiKeys.update": "Update",
-    "apiKeys.list": "List",
-    "apiKeys.delete": "Delete",
-    "groups.update": "Update",
-    "groups.updateMembership": "Update Membership",
-    "secrets.create": "Create",
-    "secrets.update": "Update",
-    "secrets.delete": "Delete",
-    "invocations.update": "Update",
-    "invocations.delete": "Delete",
-  };
-
   componentDidMount() {
     document.title = "Audit logs | BuildBuddy";
     const today = new Date();
@@ -140,6 +126,9 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
       case auditlog.ResourceType.INVOCATION:
         res = "Invocation";
         break;
+      case auditlog.ResourceType.IP_RULE:
+        res = "IP Rule";
+        break;
     }
     return (
       <>
@@ -174,6 +163,8 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
         return "Execute Clean Workflow";
       case Action.CREATE_IMPERSONATION_API_KEY:
         return "Create Impersonation API Key";
+      case Action.UPDATE_IP_RULES_CONFIG:
+        return "Update IP Rules Config";
     }
     return "";
   }

@@ -17,6 +17,7 @@ import Banner from "../../../app/components/banner/banner";
 import Link from "../../../app/components/link/link";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
 import EncryptionComponent from "../encryption/encryption";
+import IpRulesComponent from "../iprules/iprules";
 
 export interface SettingsProps {
   user: User;
@@ -32,6 +33,7 @@ enum TabId {
   OrgApiKeys = "org/api-keys",
   OrgSecrets = "org/secrets",
   OrgCacheEncryption = "org/cache-encryption",
+  OrgIpRules = "org/ip-rules",
 
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
@@ -152,6 +154,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       Encryption keys
                     </SettingsTab>
                   )}
+                {capabilities.config.ipRulesEnabled && router.canAccessIpRulesPage(this.props.user) && (
+                  <SettingsTab id={TabId.OrgIpRules} activeTabId={activeTabId}>
+                    IP rules
+                  </SettingsTab>
+                )}
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
@@ -319,6 +326,15 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                         keys that are used for the encryption of your BuildBuddy cache artifacts.
                       </div>
                       <EncryptionComponent />
+                    </>
+                  )}
+                  {activeTabId == TabId.OrgIpRules && (
+                    <>
+                      <div className="settings-option-title">IP rules</div>
+                      <div className="settings-option-description">
+                        IP rules give you the ability to restrict organization access to specific IP ranges.
+                      </div>
+                      <IpRulesComponent user={this.props.user} />
                     </>
                   )}
                 </>
