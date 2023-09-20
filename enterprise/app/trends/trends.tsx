@@ -153,6 +153,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
     }
 
     this.setState({ loading: true });
+    if (capabilities.config.trendsRangeSelectionEnabled) {
+      this.setState({ timeKeys: [] });
+    }
     rpcService.service.getTrend(request).then((response) => {
       console.log(response);
       const timeToStatMap = new Map<number, stats.ITrendStat>();
@@ -275,8 +278,15 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.showingDrilldown(this.props.tab) && (
             <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
           )}
-          {!this.showingDrilldown(this.props.tab) && this.state.loading && <div className="loading"></div>}
-          {!this.showingDrilldown(this.props.tab) && !this.state.loading && (
+          {capabilities.config.trendsRangeSelectionEnabled && (
+            <div className="sticky-loading-overlay">
+              {!this.showingDrilldown(this.props.tab) && this.state.loading && <div className="loading"></div>}
+            </div>
+          )}
+          {!capabilities.config.trendsRangeSelectionEnabled &&
+            !this.showingDrilldown(this.props.tab) &&
+            this.state.loading && <div className="loading"></div>}
+          {!this.showingDrilldown(this.props.tab) && (
             <>
               {capabilities.config.trendsSummaryEnabled && this.state.currentSummary && (
                 <TrendsSummaryCard
