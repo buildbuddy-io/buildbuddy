@@ -70,7 +70,11 @@ func TestCOW_Basic(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
+<<<<<<< HEAD
 	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "")
+=======
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir)
+>>>>>>> 47d375f86 (Add snaploader_utils test)
 	require.NoError(t, err)
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
@@ -178,7 +182,11 @@ func TestCOW_Resize(t *testing.T) {
 				startBuf := randBytes(t, int(test.OldSize))
 				src := makeTempFile(t, startBuf)
 				dir := testfs.MakeTempDir(t)
+<<<<<<< HEAD
 				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir, "")
+=======
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir)
+>>>>>>> 47d375f86 (Add snaploader_utils test)
 				require.NoError(t, err)
 
 				// Resize the COW
@@ -307,7 +315,11 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				}
 				chunkDir, err := os.MkdirTemp(tmp, "")
 				require.NoError(b, err)
+<<<<<<< HEAD
 				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, f.Name(), chunkSize, chunkDir, "")
+=======
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, f.Name(), chunkSize, chunkDir)
+>>>>>>> 47d375f86 (Add snaploader_utils test)
 				require.NoError(b, err)
 				err = os.Remove(f.Name())
 				require.NoError(b, err)
@@ -447,7 +459,11 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	s, err := f.Stat()
 	require.NoError(t, err)
 
+<<<<<<< HEAD
 	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, int(f.Fd()), int(s.Size()), 0, "")
+=======
+	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, int(f.Fd()), int(s.Size()), 0)
+>>>>>>> 47d375f86 (Add snaploader_utils test)
 	require.NoError(t, err)
 	return mmap, path
 }
