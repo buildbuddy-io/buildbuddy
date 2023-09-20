@@ -51,7 +51,5 @@ go_test(
         "//server/util/random",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:go_default_library",
     ],
 )
