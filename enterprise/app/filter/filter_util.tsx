@@ -1,5 +1,5 @@
 import capabilities from "../../../app/capabilities/capabilities";
-import { differenceInCalendarDays, formatDateRange, formatPreviousDateRange } from "../../../app/format/format";
+import { differenceInCalendarDays, durationMillis, formatDateRange } from "../../../app/format/format";
 import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -197,15 +197,22 @@ export function isExecutionMetric(m: stat_filter.Metric): boolean {
   return m.execution !== null && m.execution !== undefined;
 }
 
-export function formatPreviousDateRangeFromSearchParams(search: URLSearchParams): string {
-  const { startDate, endDate } = getDisplayDateRange(search);
-  return formatPreviousDateRange(startDate, endDate);
-}
+export function formatDateRangeDurationFromSearchParams(search: URLSearchParams): string {
+  const startDate = getStartDate(search);
+  const endDate = getEndDate(search) ?? moment(new Date()).add(1, "days").startOf("day").toDate();
+  const deltaMillis = endDate.getTime() - startDate.getTime();
 
-export function getDayCountStringFromSearchParams(search: URLSearchParams): string {
-  const { startDate, endDate } = getDisplayDateRange(search);
-  const diff = differenceInCalendarDays(startDate, endDate ?? new Date()) + 1;
-  return diff == 1 ? "1 day" : `${diff} days`;
+  if (
+    startDate.getMinutes() != 0 ||
+    endDate?.getMinutes() != 0 ||
+    startDate.getHours() != 0 ||
+    endDate?.getHours() != 0
+  ) {
+    return durationMillis(deltaMillis);
+  }
+
+  const diff = differenceInCalendarDays(startDate, endDate ?? new Date());
+  return diff == 1 ? "day" : `${diff} days`;
 }
 
 export function formatDateRangeFromSearchParams(search: URLSearchParams): string {
