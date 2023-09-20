@@ -8,13 +8,14 @@ import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
 import router from "../router/router";
 import { User } from "./user";
+import rpc_service from "../service/rpc_service";
 
 export { User };
 
 const SELECTED_GROUP_ID_COOKIE = "Selected-Group-ID";
 // Group ID used to be stored in local storage, but has been transitioned to being stored in a cookie.
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
-const IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY = "impersonating_group_id";
+const IMPERSONATING_GROUP_ID_COOKIE = "Impersonating-Group-ID";
 const AUTO_LOGIN_ATTEMPTED_STORAGE_KEY = "auto_login_attempted";
 const TOKEN_REFRESH_INTERVAL_SECONDS = 30 * 60; // 30 minutes
 
@@ -35,10 +36,8 @@ export class AuthService {
     // Store the group ID in a cookie in case it was loaded from the old
     // local storage location.
     this.setCookie(SELECTED_GROUP_ID_COOKIE, preferredGroupId);
-    // Set impersonating group ID from session storage, so impersonation doesn't
-    // persist across different sessions.
-    rpcService.requestContext.impersonatingGroupId =
-      window.sessionStorage.getItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY) || "";
+
+    rpcService.requestContext.impersonatingGroupId = this.getCookie(IMPERSONATING_GROUP_ID_COOKIE) || "";
 
     let request = new user.GetUserRequest();
     this.getUser(request)
@@ -71,8 +70,12 @@ export class AuthService {
     if (match) return match[2];
   }
 
-  setCookie(name: string, value: string) {
-    let cookie = `${name}=${value}; max-age=31536000; path=/;`;
+  // sets a cookie with a default age of 1 year.
+  setCookie(name: string, value: string, { maxAge = 31536000 } = {}) {
+    let cookie = `${name}=${value}; path=/;`;
+    if (maxAge > 0) {
+      cookie += ` max-age=${maxAge};`;
+    }
     if (capabilities.config.subdomainsEnabled) {
       cookie += ` domain=${capabilities.config.domain};`;
     }
@@ -218,13 +221,21 @@ export class AuthService {
     await this.refreshUser();
   }
 
-  async enterImpersonationMode(groupId: string) {
-    window.sessionStorage.setItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY, groupId);
-    window.location.reload();
+  // Enters impersonation for the given group, which may either be a group ID or a URL identifier.
+  async enterImpersonationMode(query: string) {
+    const request = grp.GetGroupRequest.create(query.startsWith("GR") ? { groupId: query } : { urlIdentifier: query });
+    const response = await rpc_service.service.getGroup(request);
+    this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, response.id, { maxAge: 0 });
+    // If the new group is on a different subdomain then we have to use a redirect.
+    if (capabilities.config.subdomainsEnabled && new URL(response.url).hostname != window.location.hostname) {
+      window.location.href = response.url;
+    } else {
+      window.location.reload();
+    }
   }
 
   async exitImpersonationMode() {
-    window.sessionStorage.removeItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY);
+    this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, "", { maxAge: 0 });
     window.location.reload();
   }
 

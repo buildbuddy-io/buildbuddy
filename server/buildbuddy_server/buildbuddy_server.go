@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -391,18 +392,41 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
-	if urlIdentifier == "" {
-		if sd := subdomain.Get(ctx); sd != "" {
-			urlIdentifier = sd
-		} else {
-			return nil, status.InvalidArgumentError("URL identifier is required.")
-		}
-	}
 
-	group, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier)
-	if err != nil {
-		return nil, err
+	var group *tables.Group
+	if req.GetGroupId() != "" {
+		// Looking up by group ID is restricted to server admins.
+		u, err := perms.AuthenticatedUser(ctx, s.env)
+		if err != nil {
+			return nil, err
+		}
+		adminGroupID := s.env.GetAuthenticator().AdminGroupID()
+		if adminGroupID == "" {
+			return nil, status.PermissionDeniedError("Access denied")
+		}
+		if err := authutil.AuthorizeGroupRole(u, adminGroupID, role.Admin); err != nil {
+			return nil, err
+		}
+		g, err := userDB.GetGroupByID(ctx, req.GetGroupId())
+		if err != nil {
+			return nil, err
+		}
+		group = g
+	} else {
+		urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+		if urlIdentifier == "" {
+			if sd := subdomain.Get(ctx); sd != "" {
+				urlIdentifier = sd
+			} else {
+				return nil, status.InvalidArgumentError("URL identifier is required.")
+			}
+		}
+
+		g, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier)
+		if err != nil {
+			return nil, err
+		}
+		group = g
 	}
 	return &grpb.GetGroupResponse{
 		Id: group.GroupID,

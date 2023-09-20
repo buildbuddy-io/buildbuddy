@@ -34,19 +34,9 @@ export default class GroupSearchComponent extends React.Component<{}, State> {
 
   private onSearch() {
     const query = this.state.query.trim();
-
-    // If the query looks like a group ID, navigate directly to it.
-    if (query.startsWith("GR")) {
-      const groupId = query;
-      auth_service.enterImpersonationMode(groupId);
-      return;
-    }
-
-    // Otherwise try to look up the group by its exact URL identifier.
     this.setState({ loading: true });
-    rpc_service.service
-      .getGroup(grp.GetGroupRequest.create({ urlIdentifier: query }))
-      .then((response) => auth_service.enterImpersonationMode(response.id))
+    auth_service
+      .enterImpersonationMode(query)
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
