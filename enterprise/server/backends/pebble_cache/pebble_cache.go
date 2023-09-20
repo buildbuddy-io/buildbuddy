@@ -498,7 +498,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		pebbleOptions.Cache = c
 	}
 
-	db, err := pebble.Open(opts.RootDirectory, pebbleOptions)
+	db, err := pebble.Open(opts.RootDirectory, opts.Name, pebbleOptions)
 	if err != nil {
 		return nil, err
 	}

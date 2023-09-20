@@ -600,7 +600,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		eg:            &errgroup.Group{},
 	}
 
-	db, err := pebble.Open(rootDir, &pebble.Options{})
+	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
 	if err != nil {
 		return nil, err
 	}
