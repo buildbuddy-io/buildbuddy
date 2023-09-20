@@ -12,7 +12,9 @@ import {
   Tooltip,
   TooltipProps,
   Cell,
+  ReferenceArea,
 } from "recharts";
+import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
 
 interface Props {
   title: string;
@@ -38,10 +40,17 @@ interface Props {
 
   onBarClicked?: (date: number) => void;
   onSecondaryBarClicked?: (date: number) => void;
+  onZoomSelection?: (startDate: number, endDate: number) => void;
+}
+
+interface State {
+  refAreaLeft?: string;
+  refAreaRight?: string;
 }
 
 interface TrendsChartTooltipProps extends TooltipProps<any, any> {
   labelFormatter: (datum: any) => string;
+  shouldRender: () => boolean;
   valueFormatter?: (datum: number) => string;
   secondaryValueFormatter?: (datum: number) => string;
   extractSecondaryValue?: (datum: any) => number;
@@ -51,11 +60,12 @@ function TrendsChartTooltip({
   active,
   payload,
   labelFormatter,
+  shouldRender,
   valueFormatter,
   secondaryValueFormatter,
   extractSecondaryValue,
 }: TrendsChartTooltipProps) {
-  if (!active || !payload || payload.length < 1) {
+  if (!active || !payload || payload.length < 1 || !shouldRender()) {
     return null;
   }
   return (
@@ -75,14 +85,65 @@ function TrendsChartTooltip({
   );
 }
 
-export default class TrendsChartComponent extends React.Component<Props> {
+export default class TrendsChartComponent extends React.Component<Props, State> {
+  state: State = {};
+
+  onMouseDown(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
+  }
+
+  onMouseMove(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    if (!this.state.refAreaLeft) {
+      return;
+    }
+    this.state.refAreaLeft && this.setState({ refAreaRight: e.activeLabel });
+  }
+
+  onMouseUp(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    const finalRightValue = e.activeLabel;
+    if (this.state.refAreaLeft && finalRightValue) {
+      let v1 = Number(this.state.refAreaLeft);
+      let v2 = Number(finalRightValue);
+      if (v1 > v2) {
+        // Aaahh!!! Real Javascript
+        [v1, v2] = [v2, v1];
+      }
+      this.props.onZoomSelection(v1, v2);
+    }
+    this.state.refAreaLeft = undefined;
+    this.state.refAreaRight = undefined;
+  }
+
+  shouldRenderTooltip(): boolean {
+    return !Boolean(this.state.refAreaLeft);
+  }
+
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
     return (
-      <div id={this.props.id} className="trend-chart">
+      <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={this.props.data}>
+          <ComposedChart
+            data={this.props.data}
+            onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
+            onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
+            onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
@@ -107,6 +168,7 @@ export default class TrendsChartComponent extends React.Component<Props> {
               content={
                 <TrendsChartTooltip
                   labelFormatter={this.props.formatHoverLabel}
+                  shouldRender={() => this.shouldRenderTooltip()}
                   valueFormatter={this.props.formatHoverValue}
                   extractSecondaryValue={this.props.extractSecondaryValue}
                   secondaryValueFormatter={this.props.formatSecondaryHoverValue}
@@ -123,7 +185,11 @@ export default class TrendsChartComponent extends React.Component<Props> {
                 <Cell
                   cursor={this.props.onBarClicked ? "pointer" : "default"}
                   key={`cell-${index}`}
-                  onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : undefined}
+                  onClick={
+                    !this.props.onZoomSelection && this.props.onBarClicked
+                      ? this.props.onBarClicked.bind(this, date)
+                      : undefined
+                  }
                 />
               ))}
             </Bar>
@@ -151,7 +217,9 @@ export default class TrendsChartComponent extends React.Component<Props> {
                     cursor={this.props.onBarClicked || this.props.onSecondaryBarClicked ? "pointer" : "default"}
                     key={`cell-${index}`}
                     onClick={
-                      this.props.onSecondaryBarClicked
+                      this.props.onZoomSelection !== undefined
+                        ? undefined
+                        : this.props.onSecondaryBarClicked
                         ? this.props.onSecondaryBarClicked.bind(this, date)
                         : this.props.onBarClicked
                         ? this.props.onBarClicked.bind(this, date)
@@ -161,6 +229,14 @@ export default class TrendsChartComponent extends React.Component<Props> {
                 ))}
               </Bar>
             )}
+            {this.state.refAreaLeft && this.state.refAreaRight ? (
+              <ReferenceArea
+                yAxisId="primary"
+                x1={Math.min(+this.state.refAreaLeft, +this.state.refAreaRight)}
+                x2={Math.max(+this.state.refAreaLeft, +this.state.refAreaRight)}
+                strokeOpacity={0.3}
+              />
+            ) : null}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

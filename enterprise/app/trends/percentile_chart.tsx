@@ -11,7 +11,9 @@ import {
   Legend,
   Tooltip,
   TooltipProps,
+  ReferenceArea,
 } from "recharts";
+import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
 
 export interface PercentilesChartProps {
   title: string;
@@ -26,9 +28,16 @@ export interface PercentilesChartProps {
   extractP95: (datum: number) => number;
   extractP99: (datum: number) => number;
   onColumnClicked?: (datum: number) => void;
+  onZoomSelection?: (startDate: number, endDate: number) => void;
 }
 
-export default class PercentilesChartComponent extends React.Component<PercentilesChartProps> {
+interface State {
+  refAreaLeft?: string;
+  refAreaRight?: string;
+}
+
+export default class PercentilesChartComponent extends React.Component<PercentilesChartProps, State> {
+  state: State = {};
   private lastDataFromHover?: number;
 
   handleRowClick() {
@@ -38,15 +47,63 @@ export default class PercentilesChartComponent extends React.Component<Percentil
     this.props.onColumnClicked(this.lastDataFromHover);
   }
 
+  onMouseDown(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
+  }
+
+  onMouseMove(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    if (!this.state.refAreaLeft) {
+      return;
+    }
+    this.state.refAreaLeft && this.setState({ refAreaRight: e.activeLabel });
+  }
+
+  onMouseUp(e: CategoricalChartState) {
+    if (!this.props.onZoomSelection || !e) {
+      this.state.refAreaLeft = undefined;
+      this.state.refAreaRight = undefined;
+      return;
+    }
+    const finalRightValue = e.activeLabel;
+    if (this.state.refAreaLeft && finalRightValue) {
+      let v1 = Number(this.state.refAreaLeft);
+      let v2 = Number(finalRightValue);
+      if (v1 > v2) {
+        // Aaahh!!! Real Javascript
+        [v1, v2] = [v2, v1];
+      }
+      this.props.onZoomSelection(v1, v2);
+    }
+    this.state.refAreaLeft = undefined;
+    this.state.refAreaRight = undefined;
+  }
+
+  shouldRenderTooltip(): boolean {
+    return !Boolean(this.state.refAreaLeft);
+  }
+
   render() {
     return (
-      <div id={this.props.id} className="trend-chart">
+      <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
             data={this.props.data}
             style={this.props.onColumnClicked ? { cursor: "pointer" } : {}}
-            onClick={this.handleRowClick.bind(this)}>
+            onClick={this.props.onZoomSelection ? undefined : this.handleRowClick.bind(this)}
+            onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
+            onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
+            onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
@@ -55,6 +112,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
               content={
                 <PercentilesChartTooltip
                   labelFormatter={this.props.formatHoverLabel}
+                  shouldRender={() => this.shouldRenderTooltip()}
                   extractP50={this.props.extractP50}
                   extractP75={this.props.extractP75}
                   extractP90={this.props.extractP90}
@@ -99,6 +157,14 @@ export default class PercentilesChartComponent extends React.Component<Percentil
               stroke="#D56062"
               dot={false}
             />
+            {this.state.refAreaLeft && this.state.refAreaRight ? (
+              <ReferenceArea
+                yAxisId="duration"
+                x1={Math.min(+this.state.refAreaLeft, +this.state.refAreaRight)}
+                x2={Math.max(+this.state.refAreaLeft, +this.state.refAreaRight)}
+                strokeOpacity={0.3}
+              />
+            ) : null}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -108,6 +174,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
 
 interface PercentilesChartTooltipProps extends TooltipProps<any, any> {
   labelFormatter: (datum: number) => string;
+  shouldRender: () => boolean;
   extractP50: (datum: number) => number;
   extractP75: (datum: number) => number;
   extractP90: (datum: number) => number;
@@ -124,7 +191,9 @@ class PercentilesChartTooltip extends React.Component<PercentilesChartTooltipPro
   }
 
   render() {
-    if (!this.props.active || !this.props.payload || this.props.payload.length < 1) return null;
+    if (!this.props.active || !this.props.payload || this.props.payload.length < 1 || !this.props.shouldRender()) {
+      return null;
+    }
 
     const data = this.props.payload[0].payload;
     if (!data) {

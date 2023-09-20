@@ -24,6 +24,19 @@
   border-top: 1px solid #eee;
 }
 
+.trend-chart.zoomable {
+  user-select: none;
+}
+
+/*
+ * A hack: cursor is not configurable in recharts, so in we go. This could be
+ * better (it currently sets cursor:pointer on the axis grid, too, but there
+ * isn't a ton to be done.
+ */
+.trend-chart.zoomable .recharts-surface {
+  cursor: pointer;
+}
+
 .trend-chart-title {
   font-weight: 600;
   font-size: 20px;

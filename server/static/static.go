@@ -52,6 +52,7 @@ var (
 	workflowHistoryEnabled                 = flag.Bool("app.workflow_history_enabled", true, "If set, information about past action runs for workflows will be shown on the workflows page.")
 	auditLogsUIEnabled                     = flag.Bool("app.audit_logs_ui_enabled", false, "If set, the audit logs UI will be accessible from the sidebar.")
 	newTrendsUIEnabled                     = flag.Bool("app.new_trends_ui_enabled", false, "If set, show a new trends UI with a bit more organization.")
+	trendsRangeSelectionEnabled            = flag.Bool("app.trends_range_selection", false, "If set, let users drag to select time ranges in the trends UI.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -180,6 +181,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		WorkflowHistoryEnabled:                 *workflowHistoryEnabled,
 		AuditLogsUiEnabled:                     *auditLogsUIEnabled,
 		NewTrendsUiEnabled:                     *newTrendsUIEnabled,
+		TrendsRangeSelectionEnabled:            *trendsRangeSelectionEnabled && env.GetOLAPDBHandle() != nil,
 		SubdomainsEnabled:                      subdomain.Enabled(),
 		CustomerSubdomain:                      subdomain.Get(ctx) != "",
 		Domain:                                 build_buddy_url.Domain(),

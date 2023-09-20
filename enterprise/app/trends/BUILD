@@ -55,6 +55,7 @@ ts_library(
         "//app/format",
         "//app/router",
         "//app/util:async",
+        "//enterprise/app/filter:filter_util",
         "//enterprise/app/trends:cache_chart",
         "//enterprise/app/trends:common",
         "//enterprise/app/trends:percentile_chart",
