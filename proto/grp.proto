@@ -94,6 +94,9 @@ message GetGroupRequest {
   //
   // Ex: "iteration-inc"
   string url_identifier = 1;
+
+  // Look up group by its unique ID.
+  string group_id = 3;
 }
 
 // Publicly visible group info.

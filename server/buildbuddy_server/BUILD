@@ -48,6 +48,7 @@ go_library(
         "//server/tables",
         "//server/target",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/flagutil",
         "//server/util/log",
