@@ -12,6 +12,7 @@ import {
   PERSISTENT_URL_PARAMS,
   START_DATE_PARAM_NAME,
 } from "./router_params";
+import { getStartDate, getEndDate } from "../../enterprise/app/filter/filter_util";
 
 class Router {
   user?: User;
@@ -151,7 +152,8 @@ class Router {
 
   /**
    * Sets the date to the specified start and end times. A missing end time
-   * will cause the end of the range to be left open (i.e., "until now").
+   * will cause the end of the range to be left open (i.e., "until now"). If
+   * the new date range matches the current selection, this is a no-op.
    *
    * - Creates a new browser history entry.
    * - Preserves global filter params except "days" if set.
@@ -159,6 +161,13 @@ class Router {
    */
   navigateToDatePreserveHash(startTimeMillis: number, endTimeMillis?: number) {
     const url = new URL(window.location.href);
+
+    const currentStart = getStartDate(url.searchParams).getTime();
+    const currentEnd = getEndDate(url.searchParams)?.getTime();
+    if (currentStart === startTimeMillis && currentEnd === endTimeMillis) {
+      return;
+    }
+
     url.searchParams.set(START_DATE_PARAM_NAME, String(startTimeMillis));
     if (endTimeMillis) {
       url.searchParams.set(END_DATE_PARAM_NAME, String(endTimeMillis));

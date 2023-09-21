@@ -49,8 +49,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
 
   onMouseDown(e: CategoricalChartState) {
     if (!this.props.onZoomSelection || !e) {
-      this.state.refAreaLeft = undefined;
-      this.state.refAreaRight = undefined;
+      this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
     this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
@@ -58,20 +57,18 @@ export default class PercentilesChartComponent extends React.Component<Percentil
 
   onMouseMove(e: CategoricalChartState) {
     if (!this.props.onZoomSelection || !e) {
-      this.state.refAreaLeft = undefined;
-      this.state.refAreaRight = undefined;
+      this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
     if (!this.state.refAreaLeft) {
       return;
     }
-    this.state.refAreaLeft && this.setState({ refAreaRight: e.activeLabel });
+    this.setState({ refAreaRight: e.activeLabel });
   }
 
   onMouseUp(e: CategoricalChartState) {
     if (!this.props.onZoomSelection || !e) {
-      this.state.refAreaLeft = undefined;
-      this.state.refAreaRight = undefined;
+      this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
     const finalRightValue = e.activeLabel;
@@ -84,8 +81,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
       }
       this.props.onZoomSelection(v1, v2);
     }
-    this.state.refAreaLeft = undefined;
-    this.state.refAreaRight = undefined;
+    this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
   }
 
   shouldRenderTooltip(): boolean {
