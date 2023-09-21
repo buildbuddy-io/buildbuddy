@@ -46,6 +46,7 @@ type MigrationCache struct {
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *int64
+	asyncDestWrites             bool
 }
 
 func Register(env environment.Env) error {
@@ -93,6 +94,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &zero,
+		asyncDestWrites:             migrationConfig.AsyncDestWrites,
 	}
 }
 
@@ -752,6 +754,12 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 		return nil, err
 	}
 
+	if mc.asyncDestWrites {
+		// We will write to the destination cache in the background.
+		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
+		return mc.src.Writer(ctx, r)
+	}
+
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destWriter interfaces.CommittedWriteCloser
@@ -863,40 +871,15 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 }
 
 func (mc *MigrationCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
+	wc, err := mc.Writer(ctx, r)
+	if err != nil {
 		return err
 	}
-
-	eg, gctx := errgroup.WithContext(ctx)
-	var srcErr, dstErr error
-
-	// Double write data to both caches
-	eg.Go(func() error {
-		srcErr = mc.src.Set(gctx, r, data)
-		return srcErr
-	})
-
-	eg.Go(func() error {
-		dstErr = mc.dest.Set(gctx, r, data)
-		return nil // don't fail if there's an error from this cache
-	})
-
-	if err := eg.Wait(); err != nil {
-		if dstErr == nil {
-			// If error during write to source cache (source of truth), must delete from destination cache
-			deleteErr := mc.dest.Delete(ctx, r)
-			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
-			}
-		}
+	defer wc.Close()
+	if _, err := wc.Write(data); err != nil {
 		return err
 	}
-
-	if dstErr != nil {
-		log.Warningf("Migration double write err: failure writing digest %v to dest cache: %s", r.GetDigest(), dstErr)
-	}
-
-	return srcErr
+	return wc.Commit()
 }
 
 type copyData struct {
