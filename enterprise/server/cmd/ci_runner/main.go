@@ -1469,9 +1469,15 @@ func (ws *workspace) sync(ctx context.Context) error {
 		*commitSHA = headCommitSHA
 	}
 
-	// Merge the target branch (if different from the pushed branch) so that the
-	// workflow can pick up any changes not yet incorporated into the pushed branch.
-	if *pushedRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
+	action, err := getActionToRun()
+	if err != nil {
+		return err
+	}
+	merge := action.GetTriggers().GetPullRequestTrigger().GetMergeWithBase()
+	// If enabled by the config, merge the target branch (if different from the
+	// pushed branch) so that the workflow can pick up any changes not yet
+	// incorporated into the pushed branch.
+	if merge && *pushedRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output

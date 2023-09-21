@@ -39,9 +39,23 @@ type Action struct {
 	BazelCommands     []string          `yaml:"bazel_commands"`
 }
 
+func (a *Action) GetTriggers() *Triggers {
+	if a.Triggers == nil {
+		return &Triggers{}
+	}
+	return a.Triggers
+}
+
 type Triggers struct {
 	Push        *PushTrigger        `yaml:"push"`
 	PullRequest *PullRequestTrigger `yaml:"pull_request"`
+}
+
+func (t *Triggers) GetPullRequestTrigger() *PullRequestTrigger {
+	if t.PullRequest == nil {
+		return &PullRequestTrigger{}
+	}
+	return t.PullRequest
 }
 
 type PushTrigger struct {
@@ -50,6 +64,12 @@ type PushTrigger struct {
 
 type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
+	// NOTE: If nil, defaults to true.
+	MergeWithBase *bool `yaml:"merge_with_base"`
+}
+
+func (t *PullRequestTrigger) GetMergeWithBase() bool {
+	return t.MergeWithBase == nil || *t.MergeWithBase
 }
 
 type ResourceRequests struct {
