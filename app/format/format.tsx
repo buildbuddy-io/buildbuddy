@@ -260,7 +260,7 @@ export function formatDateRange(startDate: Date, endDate?: Date, { now = new Dat
   // act like the user has selected a range that includes that day--rewind to
   // the day before _for rendering purposes only_.
   // ANNOYING NOTE: because we still set dates based on YYYY-MM-DD strings in
-  // a few places, we still need to guard for the 1-day cause where start and
+  // a few places, we still need to guard for the 1-day case where start and
   // end are both the same YYYY-MM-DD string.
   if (endDate && endDate.getTime() > startDate.getTime()) {
     const startOfDay = moment(endDate).startOf("day").toDate();
