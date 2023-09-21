@@ -2068,10 +2068,9 @@ code .comment {
 }
 
 .sticky-loading-overlay .loading {
-  opacity: 90%;
   height: 100vh;
   position: absolute;
-  background: #fff;
+  background: #fffc;
 }
 
 .loading:before {
