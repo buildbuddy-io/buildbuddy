@@ -130,6 +130,22 @@ actions:
 `,
 	}
 
+	workspaceContentsWithExitScriptAndMergeDisabled = map[string]string{
+		"WORKSPACE": "",
+		"BUILD":     `sh_binary(name = "exit", srcs = ["exit.sh"])`,
+		"exit.sh":   `exit "$1"`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      pull_request:
+        branches: [ master ]
+        merge_with_base: false
+    bazel_commands:
+      - run :exit -- 0
+`,
+	}
+
 	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
@@ -880,4 +896,37 @@ func TestFailedGitSetup_StillPublishesBuildMetadata(t *testing.T) {
 	require.Equal(
 		t, "CI_RUNNER", runnerInvocation.GetRole(),
 		"should publish workflow invocation metadata to BES despite failed repo setup")
+}
+
+func TestDisableBaseBranchMerging(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithExitScriptAndMergeDisabled)
+	testshell.Run(t, repoPath, `
+		# Create a PR branch
+		git checkout -b pr-branch
+
+		# Add a bad commit to the master branch;
+		# this should not break our CI run on the PR branch which doesn't have
+		# this change yet.
+		git checkout master
+		echo 'exit 1' > exit.sh
+		git add .
+		git commit -m "Fail"
+	`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
 }
