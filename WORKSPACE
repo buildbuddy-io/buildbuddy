@@ -72,10 +72,10 @@ zig_toolchains()
 register_toolchains(
     "@zig_sdk//toolchain:linux_amd64_musl",
     "@zig_sdk//toolchain:linux_arm64_musl",
-    "@zig_sdk//toolchain:darwin_amd64",
-    "@zig_sdk//toolchain:darwin_arm64",
-    "@zig_sdk//toolchain:windows_amd64",
-    "@zig_sdk//toolchain:windows_arm64",
+    # "@zig_sdk//toolchain:darwin_amd64",
+    # "@zig_sdk//toolchain:darwin_arm64",
+    # "@zig_sdk//toolchain:windows_amd64",
+    # "@zig_sdk//toolchain:windows_arm64",
 )
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
