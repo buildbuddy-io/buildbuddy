@@ -41,8 +41,8 @@ build:remote-shared --platforms=@buildbuddy_toolchain//:platform_bare_linux
 build:remote-shared --host_platform=@buildbuddy_toolchain//:platform_bare_linux
 # build:remote-shared --platforms=@hermetic_cc_toolchain//toolchain/platform:linux_amd64
 # build:remote-shared --host_platform=@hermetic_cc_toolchain//toolchain/platform:linux_amd64
-build:remote-shared --crosstool_top=@buildbuddy_toolchain//:ubuntu_cc_toolchain_suite
-build:remote-shared --extra_toolchains=@buildbuddy_toolchain//:ubuntu_cc_toolchain
+# build:remote-shared --crosstool_top=@buildbuddy_toolchain//:ubuntu_cc_toolchain_suite
+# build:remote-shared --extra_toolchains=@buildbuddy_toolchain//:ubuntu_cc_toolchain
 build:remote-shared --extra_toolchains=//:sh_toolchain
 # build:remote-shared --host_javabase=@bazel_tools//tools/jdk:absolute_javabase
 # build:remote-shared --define=ABSOLUTE_JAVABASE=/path/to/my/jdk
@@ -116,7 +116,7 @@ build:workflows --config=buildbuddy_bes_results_url
 build:workflows --config=buildbuddy_remote_cache
 # Temporarily disabled while testing blake3.
 #build:workflows --config=buildbuddy_experimental_remote_downloader
-# build:workflows --@io_bazel_rules_go//go/config:race
+build:workflows --@io_bazel_rules_go//go/config:race
 
 # Configuration used for Linux workflows
 build:linux-workflows --config=remote-shared
