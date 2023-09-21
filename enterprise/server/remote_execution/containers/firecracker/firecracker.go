@@ -59,6 +59,7 @@ import (
 
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
+	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
@@ -77,6 +78,8 @@ var EnableRootfs = flag.Bool("executor.firecracker_enable_merged_rootfs", false,
 var enableUFFD = flag.Bool("executor.firecracker_enable_uffd", false, "Enables userfaultfd for firecracker VMs.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
+var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
+var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 
 const (
 	// How long to wait for the VMM to listen on the firecracker socket.
@@ -1793,13 +1796,46 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 	defer conn.Close()
 
 	client := vmxpb.NewExecClient(conn)
+	health := hlpb.NewHealthClient(conn)
 
 	defer container.Metrics.Unregister(c)
 	statsListener := func(stats *repb.UsageStats) {
 		container.Metrics.Observe(c, stats)
 	}
-	log.CtxDebug(ctx, "Starting Execute stream.")
-	return vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
+
+	resultCh := make(chan *interfaces.CommandResult, 1)
+	healthCheckErrCh := make(chan error, 1)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		log.CtxDebug(ctx, "Starting Execute stream.")
+		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
+		resultCh <- res
+	}()
+	go func() {
+		for {
+			select {
+			case <-time.After(*healthCheckInterval):
+			case <-ctx.Done():
+				// Task completed; stop health checking.
+				return
+			}
+			ctx, cancel := context.WithTimeout(ctx, *healthCheckTimeout)
+			_, err := health.Check(ctx, &hlpb.HealthCheckRequest{Service: "vmexec"})
+			cancel()
+			if err != nil {
+				healthCheckErrCh <- err
+				return
+			}
+			continue
+		}
+	}()
+	select {
+	case res := <-resultCh:
+		return res
+	case err := <-healthCheckErrCh:
+		return commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
+	}
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
