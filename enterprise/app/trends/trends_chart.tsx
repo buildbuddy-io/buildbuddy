@@ -135,9 +135,6 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
 
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
-    console.log("DATA: ");
-    console.log(this.props.data);
-    console.log(this.state.refAreaLeft + " " + this.state.refAreaRight);
     return (
       <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
         <div className="trend-chart-title">{this.props.title}</div>
