@@ -24,13 +24,22 @@ func (c *Chunker) Write(buf []byte) (int, error) {
 	return c.pw.Write(buf)
 }
 
-func (c *Chunker) Close() error {
+func (c *Chunker) Close() (bool, error) {
+	var ctxErr error
+	select {
+	case <-c.ctx.Done():
+		ctxErr = c.ctx.Err()
+	default:
+		break
+	}
+
 	if err := c.pw.Close(); err != nil {
-		return status.InternalErrorf("failed to close chunker: %s", err)
+		return false, status.InternalErrorf("failed to close chunker: %s", err)
 	}
 
 	<-c.done
-	return nil
+
+	return true, ctxErr
 }
 
 // New returns an io.WriteCloser that split file into chunks of average size.
@@ -84,7 +93,7 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 
 	go func() {
 		<-ctx.Done()
-		pw.CloseWithError(ctx.Err())
+		pr.CloseWithError(ctx.Err())
 	}()
 
 	return c, nil
