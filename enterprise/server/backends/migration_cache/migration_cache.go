@@ -46,7 +46,7 @@ type MigrationCache struct {
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *int64
-	rateLimitWriteToDest        bool
+	asyncDestWrites             bool
 }
 
 func Register(env environment.Env) error {
@@ -94,7 +94,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &zero,
-		rateLimitWriteToDest:        migrationConfig.RateLimitWriteToDest,
+		asyncDestWrites:             migrationConfig.AsyncDestWrites,
 	}
 }
 
@@ -754,8 +754,8 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 		return nil, err
 	}
 
-	if mc.rateLimitWriteToDest {
-		// We will write to the destination cache in the background
+	if mc.asyncDestWrites {
+		// We will write to the destination cache in the background.
 		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
 		return mc.src.Writer(ctx, r)
 	}

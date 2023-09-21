@@ -21,9 +21,8 @@ type MigrationConfig struct {
 	// CopyChanFullWarningIntervalMin controls how often we should log when the copy chan is full
 	CopyChanFullWarningIntervalMin int64 `yaml:"copy_chan_full_warning_interval_min"`
 	MaxCopiesPerSec                int   `yaml:"max_copies_per_sec"`
-	// Whether we rate limit Write(). If so, we will write to destination cache
-	// in the background and use MaxCopiesPerSec to control the speed.
-	RateLimitWriteToDest bool `yaml:"rate_limit_writes"`
+	// AsyncDestWrites controls whether we write to destination cache in the background
+	AsyncDestWrites bool `yaml:"async_dest_writes"`
 }
 
 type CacheConfig struct {
