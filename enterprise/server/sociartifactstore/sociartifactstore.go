@@ -233,6 +233,7 @@ func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platfo
 }
 
 func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArtifactsRequest) (*socipb.GetArtifactsResponse, error) {
+	ctx = log.EnrichContext(ctx, "group_id", getGroupIdForDebugging(ctx, s.env))
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
@@ -249,6 +250,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
 		resp, err := s.getArtifactsFromCache(ctx, configHash)
 		if status.IsNotFoundError(err) {
+			log.CtxDebugf(ctx, "soci artifacts for image %s missing from cache: %s", targetImageRef.DigestStr(), err)
 			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)
 			if err != nil {
 				return nil, err
@@ -327,12 +329,16 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 }
 
 func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, configHash v1.Hash, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
-	log.Infof("soci artifacts not found, generating them for image %s", imageRef.DigestStr())
+	log.CtxInfof(ctx, "soci artifacts not found, generating them for image %s", imageRef.DigestStr())
 	image, err := fetchImageDescriptor(ctx, imageRef, credentials)
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.indexImage(ctx, image, configHash)
+	index, ztocs, err := s.indexImage(ctx, image, configHash)
+	if err != nil {
+		log.CtxWarningf(ctx, "error indexing image %s : %s", imageRef.DigestStr(), err)
+	}
+	return index, ztocs, err
 }
 
 func fetchImageDescriptor(ctx context.Context, imageRef ctrname.Digest, credentials *rgpb.Credentials) (v1.Image, error) {
@@ -593,4 +599,17 @@ func getArtifactsResponse(imageConfigHash v1.Hash, sociIndexDigest *repb.Digest,
 		resp.Artifacts = append(resp.Artifacts, &socipb.Artifact{Digest: ztocDigest, Type: socipb.Type_ZTOC})
 	}
 	return &resp
+}
+
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/2673): delete debugging log statements
+func getGroupIdForDebugging(ctx context.Context, env environment.Env) string {
+	auth := env.GetAuthenticator()
+	if auth == nil {
+		return ""
+	}
+	userInfo, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return userInfo.GetGroupID()
 }
