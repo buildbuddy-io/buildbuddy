@@ -132,7 +132,6 @@ go_test(
         "--executor.firecracker_enable_merged_rootfs=true",
         "--executor.firecracker_enable_uffd=true",
         "--executor.enable_local_snapshot_sharing=true",
-        "--executor.enable_remote_snapshot_sharing=true",
     ],
     exec_properties = {
         "test.Pool": "bare",
