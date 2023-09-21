@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
+	"github.com/prometheus/client_golang/prometheus"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 )
@@ -160,6 +162,27 @@ func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.
 	}, nil
 }
 
+// emitMetrics emit metrics that are eventually exposed to consumers.
+func (ut *tracker) emitMetrics(groupID string, uc *tables.UsageCounts) {
+	labels := prometheus.Labels{metrics.GroupID: groupID}
+	if uc.TotalDownloadSizeBytes > 0 {
+		metrics.CacheDownloadSizeBytesExported.With(labels).Add(float64(uc.TotalDownloadSizeBytes))
+	}
+
+	if uc.TotalUploadSizeBytes > 0 {
+		metrics.CacheUploadSizeBytesExported.With(labels).Add(float64(uc.TotalUploadSizeBytes))
+	}
+
+	if uc.CASCacheHits > 0 {
+		hitLabels := prometheus.Labels{metrics.GroupID: groupID, metrics.CacheTypeLabel: "cas"}
+		metrics.CacheNumHitsExported.With(hitLabels).Add(float64(uc.CASCacheHits))
+	}
+	if uc.ActionCacheHits > 0 {
+		hitLabels := prometheus.Labels{metrics.GroupID: groupID, metrics.CacheTypeLabel: "action"}
+		metrics.CacheNumHitsExported.With(hitLabels).Add(float64(uc.ActionCacheHits))
+	}
+}
+
 func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc *tables.UsageCounts) error {
 	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
 	if err != nil {
@@ -195,6 +218,7 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		return status.WrapError(err, "add collection hash to set in redis")
 	}
 
+	ut.emitMetrics(groupID, uc)
 	return nil
 }
 

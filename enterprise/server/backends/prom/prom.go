@@ -50,13 +50,40 @@ var (
 				Type: dto.MetricType_HISTOGRAM.Enum(),
 			},
 		},
+		{
+			sourceMetricName: "buildbuddy_remote_cache_num_hits_exported",
+			labelNames:       []string{metrics.CacheTypeLabel},
+			exportedFamily: &dto.MetricFamily{
+				Name: proto.String("exported_buildbuddy_remote_cache_num_hits"),
+				Help: proto.String("Number of cache hits"),
+				Type: dto.MetricType_GAUGE.Enum(),
+			},
+		},
+		{
+			sourceMetricName: "buildbuddy_remote_cache_download_size_bytes_exported",
+			labelNames:       []string{},
+			exportedFamily: &dto.MetricFamily{
+				Name: proto.String("exported_buildbuddy_remote_cache_download_size_bytes"),
+				Help: proto.String("Number of bytes downloaded from the remote cache"),
+				Type: dto.MetricType_GAUGE.Enum(),
+			},
+		},
+		{
+			sourceMetricName: "buildbuddy_remote_cache_upload_size_bytes_exported",
+			labelNames:       []string{},
+			exportedFamily: &dto.MetricFamily{
+				Name: proto.String("exported_buildbuddy_remote_cache_upload_size_bytes"),
+				Help: proto.String("Number of bytes uploaded to the remote cache"),
+				Type: dto.MetricType_GAUGE.Enum(),
+			},
+		},
 	}
 )
 
 const (
 	redisMetricsKeyPrefix = "exportedMetrics"
 	// The version in redis cache, as part of the redis key.
-	version = "v1"
+	version = "v2"
 	// The time for the metrics to expire in redis.
 	metricsExpiration = 30*time.Second - 50*time.Millisecond
 
