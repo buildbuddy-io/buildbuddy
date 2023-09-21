@@ -128,6 +128,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
               dataKey={(datum) => this.props.extractP50(datum)}
               stroke="#067BC2"
               dot={false}
+              isAnimationActive={false}
             />
             <Line
               yAxisId="duration"
@@ -135,6 +136,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
               dataKey={(datum) => this.props.extractP75(datum)}
               stroke="#84BCDA"
               dot={false}
+              isAnimationActive={false}
             />
             <Line
               yAxisId="duration"
@@ -142,6 +144,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
               dataKey={(datum) => this.props.extractP90(datum)}
               stroke="#ECC30B"
               dot={false}
+              isAnimationActive={false}
             />
             <Line
               yAxisId="duration"
@@ -149,6 +152,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
               dataKey={(datum) => this.props.extractP95(datum)}
               stroke="#F37748"
               dot={false}
+              isAnimationActive={false}
             />
             <Line
               yAxisId="duration"
@@ -156,6 +160,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
               dataKey={(datum) => this.props.extractP99(datum)}
               stroke="#D56062"
               dot={false}
+              isAnimationActive={false}
             />
             {this.state.refAreaLeft && this.state.refAreaRight ? (
               <ReferenceArea

@@ -149,12 +149,19 @@ export default class CacheChartComponent extends React.Component<Props, State> {
                 />
               }
             />
-            <Bar yAxisId="hits" name="hits" dataKey={(datum) => this.props.extractHits(datum)} fill="#8BC34A" />
+            <Bar
+              yAxisId="hits"
+              name="hits"
+              dataKey={(datum) => this.props.extractHits(datum)}
+              fill="#8BC34A"
+              isAnimationActive={false}
+            />
             <Bar
               yAxisId="hits"
               name={this.props.secondaryBarName}
               dataKey={(datum) => this.props.extractSecondary(datum)}
               fill="#f44336"
+              isAnimationActive={false}
             />
             <Line
               yAxisId="percent"
@@ -165,6 +172,7 @@ export default class CacheChartComponent extends React.Component<Props, State> {
                 (this.props.extractHits(datum) + this.props.extractSecondary(datum))
               }
               stroke="#03A9F4"
+              isAnimationActive={false}
             />
             {this.state.refAreaLeft && this.state.refAreaRight ? (
               <ReferenceArea
