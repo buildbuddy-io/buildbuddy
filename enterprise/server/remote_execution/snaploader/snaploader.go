@@ -333,7 +333,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 
 	for _, fileNode := range snapshot.manifest.Files {
 		outputPath := filepath.Join(outputDirectory, fileNode.GetName())
-		if err := snaploader_utils.FetchArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), fileNode.GetDigest(), outputPath); err != nil {
+		if err := snaploader_utils.FetchArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
 			return nil, err
 		}
 	}
@@ -343,7 +343,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	}
 	// Construct COWs from chunks.
 	for _, cf := range snapshot.manifest.ChunkedFiles {
-		cow, err := l.unpackCOW(ctx, cf, outputDirectory)
+		cow, err := l.unpackCOW(ctx, cf, snapshot.key.InstanceName, outputDirectory)
 		if err != nil {
 			return nil, status.WrapError(err, "unpack COW")
 		}
@@ -380,12 +380,12 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 			IsExecutable: false,
 		})
 
-		if err := snaploader_utils.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, filePath); err != nil {
+		if err := snaploader_utils.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath); err != nil {
 			return err
 		}
 	}
 	for name, cow := range opts.ChunkedFiles {
-		treeDigest, err := l.cacheCOW(ctx, name, cow)
+		treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow)
 		if err != nil {
 			return status.WrapErrorf(err, "cache %q COW", name)
 		}
@@ -441,7 +441,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 	return nil
 }
 
-func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, outputDirectory string) (cf *copy_on_write.COWStore, err error) {
+func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, remoteInstanceName string, outputDirectory string) (cf *copy_on_write.COWStore, err error) {
 	dataDir := filepath.Join(outputDirectory, file.GetName())
 	if err := os.Mkdir(dataDir, 0755); err != nil {
 		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
@@ -460,13 +460,13 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		// TODO: Make a unit test where there is less data in a chunk than the chunk size
 		// But when we fetch from the remote cache, it will need the actual
 		// data size in the digest
-		c, err := copy_on_write.NewLazyMmap(ctx, l.env, dataDir, chunk.GetOffset(), chunk.GetDigest())
+		c, err := copy_on_write.NewLazyMmap(ctx, l.env, dataDir, chunk.GetOffset(), chunk.GetDigest(), remoteInstanceName)
 		if err != nil {
 			return nil, status.WrapError(err, "create mmap for chunk")
 		}
 		chunks = append(chunks, c)
 	}
-	cow, err := copy_on_write.NewCOWStore(ctx, l.env, chunks, file.GetChunkSize(), file.GetSize(), dataDir)
+	cow, err := copy_on_write.NewCOWStore(ctx, l.env, chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +475,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *copy_on_write.COWStore) (*repb.Digest, error) {
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore) (*repb.Digest, error) {
 	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err
@@ -524,7 +524,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *copy_o
 
 		if c.Mapped() {
 			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-			if err := snaploader_utils.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, path); err != nil {
+			if err := snaploader_utils.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
 				return nil, err
 			}
 		}
@@ -545,7 +545,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, cow *copy_o
 	if err != nil {
 		return nil, err
 	}
-	if err := snaploader_utils.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, treeBytes, cow.DataDir()); err != nil {
+	if err := snaploader_utils.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, remoteInstanceName, treeBytes, cow.DataDir()); err != nil {
 		return nil, err
 	}
 
@@ -618,7 +618,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	// ChunkedFile then add it to cache.
 	// TODO(bduffany): single-flight this.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, key.InstanceName)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}

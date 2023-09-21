@@ -1003,7 +1003,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, c.env, filePath, cowChunkSizeBytes(), chunkDir)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}

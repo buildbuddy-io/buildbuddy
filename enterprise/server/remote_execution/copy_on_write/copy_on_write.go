@@ -36,8 +36,9 @@ const (
 //
 // A COWStore supports concurrent reads/writes, as long as they are to different chunks
 type COWStore struct {
-	ctx context.Context
-	env environment.Env
+	ctx                context.Context
+	env                environment.Env
+	remoteInstanceName string
 
 	mu sync.RWMutex // Protects chunks and dirty
 
@@ -70,7 +71,7 @@ type COWStore struct {
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string) (*COWStore, error) {
+func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -81,11 +82,12 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 	}
 
 	return &COWStore{
-		ctx:     ctx,
-		env:     env,
-		chunks:  chunkMap,
-		dirty:   make(map[int64]bool, 0),
-		dataDir: dataDir,
+		ctx:                ctx,
+		env:                env,
+		remoteInstanceName: remoteInstanceName,
+		chunks:             chunkMap,
+		dirty:              make(map[int64]bool, 0),
+		dataDir:            dataDir,
 		copyBufPool: sync.Pool{
 			New: func() any {
 				b := make([]byte, chunkSizeBytes)
@@ -458,7 +460,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
 	if err := syscall.Ftruncate(fd, size); err != nil {
 		return nil, err
 	}
-	return NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset)
+	return NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, s.remoteInstanceName)
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -476,7 +478,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string) (store *COWStore, err error) {
+func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string) (store *COWStore, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -560,7 +562,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 				return nil, err
 			}
 		}
-		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset)
+		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset, remoteInstanceName)
 	}
 
 	// TODO: iterate through the file with multiple goroutines
@@ -574,7 +576,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		}
 	}
 
-	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir)
+	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName)
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite
@@ -583,8 +585,9 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 // It allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
 type Mmap struct {
-	ctx context.Context
-	env environment.Env
+	ctx                context.Context
+	env                environment.Env
+	remoteInstanceName string
 
 	Offset int64
 
@@ -597,7 +600,7 @@ type Mmap struct {
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
 // written to.
-func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest) (*Mmap, error) {
+func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest, remoteInstanceName string) (*Mmap, error) {
 	if dataDir == "" {
 		return nil, status.FailedPreconditionError("missing dataDir")
 	}
@@ -605,28 +608,30 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 		return nil, status.FailedPreconditionError("missing digest")
 	}
 	return &Mmap{
-		ctx:        ctx,
-		env:        env,
-		Offset:     offset,
-		data:       nil,
-		mapped:     false,
-		dataDir:    dataDir,
-		lazyDigest: digest,
+		ctx:                ctx,
+		env:                env,
+		remoteInstanceName: remoteInstanceName,
+		Offset:             offset,
+		data:               nil,
+		mapped:             false,
+		dataDir:            dataDir,
+		lazyDigest:         digest,
 	}, nil
 }
 
-func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64) (*Mmap, error) {
+func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64, remoteInstanceName string) (*Mmap, error) {
 	data, err := mmapDataFromFd(fd, size)
 	if err != nil {
 		return nil, err
 	}
 	return &Mmap{
-		ctx:     ctx,
-		env:     env,
-		Offset:  offset,
-		data:    data,
-		mapped:  true,
-		dataDir: dataDir,
+		remoteInstanceName: remoteInstanceName,
+		ctx:                ctx,
+		env:                env,
+		Offset:             offset,
+		data:               data,
+		mapped:             true,
+		dataDir:            dataDir,
 	}, nil
 }
 
@@ -666,7 +671,7 @@ func (m *Mmap) initMap() error {
 	}
 
 	outputPath := filepath.Join(m.dataDir, ChunkName(m.Offset, false /*dirty*/))
-	if err := snaploader_utils.FetchArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, outputPath); err != nil {
+	if err := snaploader_utils.FetchArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, m.remoteInstanceName, outputPath); err != nil {
 		return status.WrapErrorf(err, "fetch snapshot chunk for offset %d digest %s", m.Offset, m.lazyDigest.Hash)
 	}
 
