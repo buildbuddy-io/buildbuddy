@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -1482,6 +1483,7 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 		require.NoError(t, err)
 		fc.WaitForDirectoryScanToComplete()
 		env.SetFileCache(fc)
+		testcache.Setup(t, env)
 		pool, err = runner.NewPool(env, &runner.PoolOptions{})
 		require.NoError(t, err)
 		ctxUS1, err = ta.WithAuthenticatedUser(ctx, "US1")
