@@ -123,6 +123,10 @@ func ContextBasedShutdownEnabled() bool {
 	return *contextBasedShutdown
 }
 
+func GetBuildRoot() string {
+	return *rootDirectory
+}
+
 // WarmupConfig specifies an image to be warmed up, for a specific isolation
 // type.
 type WarmupConfig struct {
