@@ -73,6 +73,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	}
 
 	rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+	rn.SetCompressor(repb.Compressor_ZSTD)
 	file, err := os.Open(path)
 	if err != nil {
 		return err
