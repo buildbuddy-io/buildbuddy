@@ -180,6 +180,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               yAxisId="primary"
               name={this.props.name}
               dataKey={this.props.extractValue}
+              isAnimationActive={false}
               fill="#607D8B">
               {this.props.data.map((date, index) => (
                 <Cell
@@ -200,6 +201,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
                 name={this.props.secondaryName}
                 dot={false}
                 dataKey={this.props.extractSecondaryValue}
+                isAnimationActive={false}
                 stroke="#03A9F4"
               />
             )}
@@ -211,6 +213,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}
+                isAnimationActive={false}
                 fill="#03A9F4">
                 {this.props.data.map((date, index) => (
                   <Cell
