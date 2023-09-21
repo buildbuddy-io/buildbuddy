@@ -190,6 +190,9 @@ test:webdriver-debug --test_output=streamed
 #   $ open cover/index.html
 coverage --combined_report=lcov
 
+# Use BLAKE3 digest function.
+startup --digest_function=BLAKE3
+
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
 # cp template-user.bazelrc user.bazelrc
