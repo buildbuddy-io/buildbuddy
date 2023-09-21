@@ -43,10 +43,10 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test caching and fetching
-	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, b, tmpDir)
+	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, "", b, tmpDir)
 	require.NoError(t, err)
 	outputPath := filepath.Join(tmpDir, "fetch")
-	err = snaploader_utils.FetchArtifact(ctx, fc, env.GetByteStreamClient(), d, outputPath)
+	err = snaploader_utils.FetchArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPath)
 	require.NoError(t, err)
 
 	// Read bytes from outputPath and validate with original bytes
@@ -54,7 +54,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	require.Equal(t, randomStr, fetchedStr)
 
 	// Test rewriting same digest
-	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, b, tmpDir)
+	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, "", b, tmpDir)
 	require.NoError(t, err)
 
 	// Delete from remote cache, make sure we can still read
@@ -62,24 +62,24 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	err = env.GetCache().Delete(ctx, rn)
 	require.NoError(t, err)
 	outputPathLocalFetch := filepath.Join(tmpDir, "fetch_local")
-	err = snaploader_utils.FetchArtifact(ctx, fc, env.GetByteStreamClient(), d, outputPathLocalFetch)
+	err = snaploader_utils.FetchArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPathLocalFetch)
 	require.NoError(t, err)
 	fetchedStr = testfs.ReadFileAsString(t, tmpDir, "fetch_local")
 	require.Equal(t, randomStr, fetchedStr)
 
 	// Rewrite artifact and delete from local cache, make sure we can still read
-	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, b, tmpDir)
+	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, "", b, tmpDir)
 	require.NoError(t, err)
 	deleted := fc.DeleteFile(&repb.FileNode{Digest: d})
 	require.True(t, deleted)
 	outputPathRemoteFetch := filepath.Join(tmpDir, "fetch_remote")
-	err = snaploader_utils.FetchArtifact(ctx, fc, env.GetByteStreamClient(), d, outputPathRemoteFetch)
+	err = snaploader_utils.FetchArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPathRemoteFetch)
 	require.NoError(t, err)
 	fetchedStr = testfs.ReadFileAsString(t, tmpDir, "fetch_remote")
 	require.Equal(t, randomStr, fetchedStr)
 
 	// Test writing bogus digest
 	bogusDigest, _ := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, "")
-	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), bogusDigest.Digest, b, tmpDir)
+	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), bogusDigest.Digest, "", b, tmpDir)
 	require.Error(t, err)
 }

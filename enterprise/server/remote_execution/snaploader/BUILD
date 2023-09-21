@@ -41,6 +41,7 @@ go_test(
         "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",

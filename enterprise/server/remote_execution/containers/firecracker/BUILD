@@ -168,6 +168,7 @@ go_test(
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/testutil/testauth",
+        "//server/testutil/testcache",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
