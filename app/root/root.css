@@ -2049,6 +2049,12 @@ code .comment {
   }
 }
 
+.sticky-loading-overlay {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 .loading {
   width: 100%;
   display: flex;
@@ -2059,6 +2065,12 @@ code .comment {
 
 .loading:not(.loading-slim) {
   height: 100%;
+}
+
+.sticky-loading-overlay .loading {
+  height: 100vh;
+  position: absolute;
+  background: #fffc;
 }
 
 .loading:before {
