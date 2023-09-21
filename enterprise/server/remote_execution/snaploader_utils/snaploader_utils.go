@@ -23,7 +23,7 @@ import (
 var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
 var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd and executor.firecracker_enable_uffd are true.")
 
-func FetchArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, outputPath string) error {
+func FetchArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) error {
 	node := &repb.FileNode{Digest: d}
 	fetchedLocally := localCache.FastLinkFile(node, outputPath)
 	if fetchedLocally {
@@ -36,7 +36,7 @@ func FetchArtifact(ctx context.Context, localCache interfaces.FileCache, bsClien
 
 	// Fetch from remote cache
 	buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
-	r := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 	if err := cachetools.GetBlob(ctx, bsClient, r, buf); err != nil {
 		return status.WrapError(err, "remote fetch snapshot artifact")
 	}
@@ -66,13 +66,13 @@ func writeFile(path string, b []byte) error {
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, path string) error {
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, path string) error {
 	localCacheErr := CacheLocally(localCache, d, path)
 	if !*EnableRemoteSnapshotSharing {
 		return localCacheErr
 	}
 
-	rn := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+	rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -84,7 +84,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, b []byte, tmpDir string) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, b []byte, tmpDir string) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
@@ -100,7 +100,7 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	return Cache(ctx, localCache, bsClient, d, tmpPath)
+	return Cache(ctx, localCache, bsClient, d, remoteInstanceName, tmpPath)
 }
 
 // CacheLocally copies the data at `path` to the local filecache with
