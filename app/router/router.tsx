@@ -12,7 +12,6 @@ import {
   PERSISTENT_URL_PARAMS,
   START_DATE_PARAM_NAME,
 } from "./router_params";
-import { getStartDate, getEndDate } from "../../enterprise/app/filter/filter_util";
 
 class Router {
   user?: User;
@@ -162,12 +161,6 @@ class Router {
   navigateToDatePreserveHash(startTimeMillis: number, endTimeMillis?: number) {
     const url = new URL(window.location.href);
 
-    const currentStart = getStartDate(url.searchParams).getTime();
-    const currentEnd = getEndDate(url.searchParams)?.getTime();
-    if (currentStart === startTimeMillis && currentEnd === endTimeMillis) {
-      return;
-    }
-
     url.searchParams.set(START_DATE_PARAM_NAME, String(startTimeMillis));
     if (endTimeMillis) {
       url.searchParams.set(END_DATE_PARAM_NAME, String(endTimeMillis));
@@ -176,7 +169,8 @@ class Router {
     }
     url.searchParams.delete(LAST_N_DAYS_PARAM_NAME);
     url.hash = window.location.hash;
-    window.history.pushState({}, "", url.href);
+
+    this.navigateTo(url.href);
   }
 
   /**
