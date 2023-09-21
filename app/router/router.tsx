@@ -151,7 +151,8 @@ class Router {
 
   /**
    * Sets the date to the specified start and end times. A missing end time
-   * will cause the end of the range to be left open (i.e., "until now").
+   * will cause the end of the range to be left open (i.e., "until now"). If
+   * the new date range matches the current selection, this is a no-op.
    *
    * - Creates a new browser history entry.
    * - Preserves global filter params except "days" if set.
@@ -167,7 +168,8 @@ class Router {
     }
     url.searchParams.delete(LAST_N_DAYS_PARAM_NAME);
     url.hash = window.location.hash;
-    window.history.pushState({}, "", url.href);
+
+    this.navigateTo(url.href);
   }
 
   /**

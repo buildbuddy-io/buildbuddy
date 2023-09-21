@@ -89,7 +89,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
     return <div>Overview...</div>;
   }
 
-  onChartZoomed(low: number, high: number) {
+  onChartZoomed(sortBy: string, low: number, high: number) {
     if (!this.state.trendsModel) {
       return;
     }
@@ -114,6 +114,14 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
     } else {
       end = timeKeys[highBucketIndex + 1];
     }
+
+    // If the user selects a time range 5 minutes or smaller, short-circuit
+    // and take them straight to the build history page because the chart
+    // can't get any more detailed than this.
+    if ((end ?? new Date().getTime()) - low <= 5 * 60 * 1000) {
+      router.navigateTo("/?start=" + low + "&end=" + end + "&sort-by=" + sortBy);
+    }
+
     router.navigateToDatePreserveHash(low, end);
   }
 
@@ -142,7 +150,9 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           secondaryLine={true}
           separateAxis={true}
           onBarClicked={this.onBarClicked.bind(this, "", "")}
-          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
+          onZoomSelection={
+            capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+          }
         />
         {model.hasInvocationStatPercentiles() && (
           <PercentilesChartComponent
@@ -159,7 +169,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             extractP99={(tsMillis) => +(model.getStat(tsMillis).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
             onColumnClicked={this.onBarClicked.bind(this, "", "duration")}
             onZoomSelection={
-              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "duration") : undefined
             }
           />
         )}
@@ -184,7 +194,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             onBarClicked={this.onBarClicked.bind(this, "", "")}
             onSecondaryBarClicked={this.onBarClicked.bind(this, "", "duration")}
             onZoomSelection={
-              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
             }
           />
         )}
@@ -270,7 +280,9 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractHits={(tsMillis) => +(model.getStat(tsMillis).actionCacheHits ?? 0)}
           secondaryBarName="misses"
           extractSecondary={(tsMillis) => +(model.getStat(tsMillis).actionCacheMisses ?? 0)}
-          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
+          onZoomSelection={
+            capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+          }
         />
         <CacheChartComponent
           title="Content Addressable Store"
@@ -281,7 +293,9 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractHits={(tsMillis) => +(model.getStat(tsMillis).casCacheHits ?? 0)}
           secondaryBarName="writes"
           extractSecondary={(tsMillis) => +(model.getStat(tsMillis).casCacheUploads ?? 0)}
-          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
+          onZoomSelection={
+            capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+          }
         />
         <TrendsChartComponent
           title="Cache read throughput"
@@ -303,7 +317,9 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           secondaryName="download rate"
           secondaryLine={true}
           separateAxis={true}
-          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
+          onZoomSelection={
+            capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+          }
         />
 
         <TrendsChartComponent
@@ -325,7 +341,9 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           secondaryName="upload rate"
           secondaryLine={true}
           separateAxis={true}
-          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
+          onZoomSelection={
+            capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+          }
         />
 
         {capabilities.config.trendsSummaryEnabled && (
@@ -342,7 +360,7 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
             formatHoverValue={(value) => `${format.durationSec(value || 0)} CPU time saved`}
             name="saved cpu time"
             onZoomSelection={
-              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+              capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
             }
           />
         )}
@@ -374,7 +392,9 @@ export default class SimpleTrendsTabComponent extends React.Component<Props, Sta
           extractP99={(tsMillis) =>
             +(model.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
           }
-          onZoomSelection={capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined}
+          onZoomSelection={
+            capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+          }
         />
       )
     );

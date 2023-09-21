@@ -225,7 +225,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
-  onChartZoomed(low: number, high: number) {
+  onChartZoomed(sortBy: string, low: number, high: number) {
     // Low is the start point, but high is actually the low bound of the bucket
     // that the user selected, so we need to compute the high bound of that
     // bucket using our list of keys.
@@ -246,6 +246,14 @@ export default class TrendsComponent extends React.Component<Props, State> {
     } else {
       end = this.state.timeKeys[highBucketIndex + 1];
     }
+
+    // If the user selects a time range 5 minutes or smaller, short-circuit
+    // and take them straight to the build history page because the chart
+    // can't get any more detailed than this.
+    if ((end ?? new Date().getTime()) - low <= 5 * 60 * 1000) {
+      router.navigateTo("/?start=" + low + "&end=" + end + "&sort-by=" + sortBy);
+    }
+
     router.navigateToDatePreserveHash(low, end);
   }
 
@@ -319,7 +327,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 separateAxis={true}
                 onBarClicked={this.onBarClicked.bind(this, "", "")}
                 onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                 }
               />
               {this.state.enableInvocationPercentileCharts && (
@@ -337,7 +345,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   extractP99={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
                   onColumnClicked={this.onBarClicked.bind(this, "", "duration")}
                   onZoomSelection={
-                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                    capabilities.config.trendsRangeSelectionEnabled
+                      ? this.onChartZoomed.bind(this, "duration")
+                      : undefined
                   }
                 />
               )}
@@ -362,7 +372,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   onBarClicked={this.onBarClicked.bind(this, "", "")}
                   onSecondaryBarClicked={this.onBarClicked.bind(this, "", "duration")}
                   onZoomSelection={
-                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                    capabilities.config.trendsRangeSelectionEnabled
+                      ? this.onChartZoomed.bind(this, "duration")
+                      : undefined
                   }
                 />
               )}
@@ -378,7 +390,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryBarName="misses"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).actionCacheMisses ?? 0)}
                 onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                 }
               />
               <CacheChartComponent
@@ -391,7 +403,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryBarName="writes"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).casCacheUploads ?? 0)}
                 onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                 }
               />
 
@@ -416,7 +428,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryLine={true}
                 separateAxis={true}
                 onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                 }
               />
 
@@ -440,7 +452,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryLine={true}
                 separateAxis={true}
                 onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                 }
               />
 
@@ -460,7 +472,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatHoverValue={(value) => `${format.durationSec(value || 0)} CPU time saved`}
                   name="saved cpu time"
                   onZoomSelection={
-                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                   }
                 />
               )}
@@ -552,7 +564,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     +(this.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
                   }
                   onZoomSelection={
-                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this) : undefined
+                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                   }
                 />
               )}
