@@ -165,6 +165,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
             {this.state.refAreaLeft && this.state.refAreaRight ? (
               <ReferenceArea
                 yAxisId="duration"
+                ifOverflow="visible"
                 x1={Math.min(+this.state.refAreaLeft, +this.state.refAreaRight)}
                 x2={Math.max(+this.state.refAreaLeft, +this.state.refAreaRight)}
                 strokeOpacity={0.3}
