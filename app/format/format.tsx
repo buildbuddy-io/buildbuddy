@@ -223,29 +223,6 @@ export function formatDate(date: Date): string {
 
 const DATE_RANGE_SEPARATOR = "\u2013";
 
-export function formatPreviousDateRange(startDate: Date, endDate?: Date, { now = new Date() } = {}): string {
-  if (usingSubDayTimeRange(startDate, endDate)) {
-    return "the previous time period";
-  }
-  if (!endDate) {
-    endDate = now;
-  }
-  if (isSameDay(now, endDate)) {
-    if (isSameDay(startDate, LOCAL_EPOCH)) {
-      return "";
-    }
-  }
-
-  if (isSameDay(startDate, endDate)) {
-    if (isSameDay(startDate, now)) {
-      return "yesterday";
-    }
-    return "the day before";
-  }
-
-  return `the previous ${differenceInCalendarDays(startDate, endDate) + 1} days`;
-}
-
 function usingSubDayTimeRange(startDate: Date, endDate?: Date): boolean {
   const startCopy = new Date(startDate);
   startCopy.setHours(0, 0, 0, 0);
