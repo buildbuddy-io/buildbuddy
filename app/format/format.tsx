@@ -256,6 +256,19 @@ export function formatDateRange(startDate: Date, endDate?: Date, { now = new Dat
     return `${start} ${DATE_RANGE_SEPARATOR} ${end}`;
   }
 
+  // If the end date is explicitly set to midnight on a given day, we shouldn't
+  // act like the user has selected a range that includes that day--rewind to
+  // the day before _for rendering purposes only_.
+  // ANNOYING NOTE: because we still set dates based on YYYY-MM-DD strings in
+  // a few places, we still need to guard for the 1-day case where start and
+  // end are both the same YYYY-MM-DD string.
+  if (endDate && endDate.getTime() > startDate.getTime()) {
+    const startOfDay = moment(endDate).startOf("day").toDate();
+    if (startOfDay.getTime() === endDate.getTime()) {
+      endDate = moment(startOfDay).subtract(1, "day").toDate();
+    }
+  }
+
   // Start time is at midnight, end date is (implicitly or explicitly) today.
   if (!endDate || isSameDay(now, endDate)) {
     if (isSameDay(now, startDate)) {
