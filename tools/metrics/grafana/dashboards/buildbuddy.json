@@ -5308,6 +5308,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -5315,106 +5317,13 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\"}[1m])) by (pebble_op)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\", pebble_id=\"${cache_name}\"}[1m])) by (pebble_op)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Op Rate",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "µs"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 36
-          },
-          "id": 5242,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "editorMode": "code",
-              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\"}[1m])) by (le,pebble_op))",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Op p50 Latency",
+          "title": "Op Rate (${cache_name})",
           "type": "timeseries"
         },
         {
@@ -5481,7 +5390,7 @@
             "x": 0,
             "y": 44
           },
-          "id": 5324,
+          "id": 5242,
           "options": {
             "legend": {
               "calcs": [],
@@ -5494,6 +5403,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -5501,13 +5412,13 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Op p95 Latency",
+          "title": "Op p50 Latency (${cache_name})",
           "type": "timeseries"
         },
         {
@@ -5571,8 +5482,103 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 44
+            "x": 0,
+            "y": 52
+          },
+          "id": 5324,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Op p95 Latency (${cache_name})",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "µs"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 60
           },
           "id": 5406,
           "options": {
@@ -5587,6 +5593,8 @@
               "sort": "none"
             }
           },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -5594,13 +5602,13 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Op p99 Latency",
+          "title": "Op p99 Latency (${cache_name})",
           "type": "timeseries"
         }
       ],
