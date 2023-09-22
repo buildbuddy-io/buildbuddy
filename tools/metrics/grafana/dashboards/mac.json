@@ -1419,7 +1419,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -1511,7 +1512,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -1707,7 +1709,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -1835,7 +1838,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -2329,7 +2333,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -2515,7 +2520,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -2647,7 +2653,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -3105,7 +3112,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -3144,7 +3152,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "1 - (avg by(mode,nodename) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\"})))",
+              "expr": "1 - (avg by(mode,inventory_hostname) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"})))",
               "hide": false,
               "interval": "",
               "legendFormat": "{{nodename}}",
@@ -3201,7 +3209,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -3240,9 +3249,9 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max by (nodename) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\"}))",
+              "expr": "max by (inventory_hostname) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"}))",
               "interval": "",
-              "legendFormat": "reads {{nodename}}",
+              "legendFormat": "reads {{inventory_hostname}}",
               "range": true,
               "refId": "A"
             },
@@ -3253,10 +3262,10 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max by (nodename) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\"}))\n",
+              "expr": "max by (inventory_hostname) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"}))\n",
               "hide": false,
               "interval": "",
-              "legendFormat": "writes {{nodename}}",
+              "legendFormat": "writes {{inventory_hostname}}",
               "range": true,
               "refId": "B"
             }
@@ -3310,7 +3319,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -3349,9 +3359,9 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\"})\n",
+              "expr": "rate(node_network_receive_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"})\n",
               "interval": "",
-              "legendFormat": "rx {{nodename}}",
+              "legendFormat": "rx {{inventory_hostname}} {{device}}",
               "range": true,
               "refId": "A"
             },
@@ -3362,10 +3372,10 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\"})\n",
+              "expr": "rate(node_network_transmit_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"})\n",
               "hide": false,
               "interval": "",
-              "legendFormat": "tx {{nodename}}",
+              "legendFormat": "tx {{inventory_hostname}} {{device}}",
               "range": true,
               "refId": "B"
             }
@@ -3449,8 +3459,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -3662,8 +3671,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -3921,8 +3929,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -4046,8 +4053,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -4169,7 +4175,7 @@
           "text": "global",
           "value": "global"
         },
-        "hide": 1,
+        "hide": 2,
         "includeAll": false,
         "multi": false,
         "name": "region",
@@ -4289,7 +4295,7 @@
       },
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": "All",
           "value": "$__all"
         },
@@ -4320,32 +4326,24 @@
       {
         "current": {
           "selected": false,
-          "text": "All",
-          "value": "$__all"
+          "text": "mac-executor",
+          "value": "mac-executor"
         },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prom"
-        },
-        "definition": "label_values(up{region=\"$region\"}, job)",
-        "hide": 0,
-        "includeAll": true,
+        "hide": 2,
+        "includeAll": false,
         "label": "Executor pool",
         "multi": false,
         "name": "pool",
-        "options": [],
-        "query": {
-          "query": "label_values(up{region=\"$region\"}, job)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 1,
-        "regex": "executor.*",
+        "options": [
+          {
+            "selected": true,
+            "text": "mac-executor",
+            "value": "mac-executor"
+          }
+        ],
+        "query": "mac-executor",
         "skipUrlSync": false,
-        "sort": 0,
-        "tagValuesQuery": "",
-        "tagsQuery": "",
-        "type": "query",
-        "useTags": false
+        "type": "custom"
       },
       {
         "current": {
@@ -4455,7 +4453,7 @@
   "timezone": "",
   "title": "BuildBuddy Mac Metrics",
   "uid": "U-ICDemSz",
-  "version": 9,
+  "version": 12,
   "weekStart": ""
 }
 
