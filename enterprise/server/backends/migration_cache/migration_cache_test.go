@@ -378,6 +378,7 @@ func TestCopyDataInBackground(t *testing.T) {
 	numTests := 1000
 	config := &migration_cache.MigrationConfig{
 		CopyChanBufferSize: numTests + 1,
+		NumCopyWorkers:     2,
 	}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
@@ -466,6 +467,7 @@ func TestCopyDataInBackground_RateLimitMax(t *testing.T) {
 	config := &migration_cache.MigrationConfig{
 		CopyChanBufferSize: 10,
 		MaxCopiesPerSec:    1,
+		NumCopyWorkers:     2,
 	}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
@@ -567,6 +569,7 @@ func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
 	config := &migration_cache.MigrationConfig{
 		CopyChanBufferSize: 10,
 		MaxCopiesPerSec:    1,
+		NumCopyWorkers:     2,
 	}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
