@@ -317,7 +317,7 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     });
   }
 
-  private onBulkAddEntryChanged(e: React.ChangeEvent<HTMLInputElement>) {
+  private onBulkAddEntryChanged(e: React.ChangeEvent<HTMLTextAreaElement>) {
     this.setState({
       bulkModalText: e.target.value,
     });
