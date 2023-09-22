@@ -306,7 +306,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
     });
-    this.roundDateRangesAndAddZoomFiltersToQuery(drilldownRequest.query);
+    this.roundEndDateAndAddZoomFiltersToQuery(drilldownRequest.query);
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
     rpcService.service
@@ -347,7 +347,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       pageToken: "",
       count: 25,
     });
-    this.roundDateRangesAndAddZoomFiltersToQuery(request.query!);
+    this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
     rpcService.service
       .searchExecution(request)
@@ -393,7 +393,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       pageToken: "",
       count: 25,
     });
-    this.roundDateRangesAndAddZoomFiltersToQuery(request.query!);
+    this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
     rpcService.service
       .searchInvocation(request)
@@ -447,7 +447,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       maximumDuration: isExecution ? undefined : filterParams.maximumDuration,
       status: filterParams.status,
     });
-    this.roundDateRangesAndAddZoomFiltersToQuery(heatmapRequest.query);
+    this.roundEndDateAndAddZoomFiltersToQuery(heatmapRequest.query);
 
     rpcService.service
       .getStatHeatmap(heatmapRequest)
@@ -528,15 +528,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
   }
 
-  roundDateRangesAndAddZoomFiltersToQuery(query: CommonQueryFields) {
-    // updatedAfter should always be set, but typescript can't know that.
-    if (query.updatedAfter) {
-      query.updatedAfter = usecToTimestamp(
-        moment(+query.updatedAfter.seconds * 1000)
-          .startOf("day")
-          .unix() * 1e6
-      );
-    }
+  roundEndDateAndAddZoomFiltersToQuery(query: CommonQueryFields) {
     if (!query.updatedBefore) {
       // Always explicitly set "now" to the start of the next day so that the
       // length of the last bucket doesn't change on page refresh.  This

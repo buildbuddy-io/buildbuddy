@@ -12,7 +12,7 @@ import { Subscription } from "rxjs";
 import FilterComponent from "../filter/filter";
 import capabilities from "../../../app/capabilities/capabilities";
 import { getProtoFilterParams, getEndDate } from "../filter/filter_util";
-import router from "../../../app/router/router";
+import router, { Path } from "../../../app/router/router";
 import * as proto from "../../../app/util/proto";
 import DrilldownPageComponent from "./drilldown_page";
 import { computeTimeKeys } from "./common";
@@ -79,7 +79,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   updateSelectedTab(tab: "charts" | "drilldown") {
-    window.location.hash = "#" + tab;
+    router.navigateTo(Path.trendsPath + "#" + tab);
   }
 
   getSelectedTab(): "charts" | "drilldown" {
