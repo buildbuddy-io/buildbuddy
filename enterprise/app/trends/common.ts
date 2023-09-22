@@ -21,10 +21,7 @@ export enum TrendsTab {
 function timeHourRangeWithDst(startToCopy: Date, end: Date, step: number): Date[] {
   const start = new Date(startToCopy);
   const hourMultiple = Math.floor(start.getHours() / step);
-  start.setHours(hourMultiple * step);
-  start.setMinutes(0);
-  start.setSeconds(0);
-  start.setMilliseconds(0);
+  start.setHours(hourMultiple * step, 0, 0, 0);
 
   const out: Date[] = [];
   for (let current = moment(start); current.isBefore(end); current = current.add(1, "hour")) {
@@ -46,10 +43,7 @@ export function computeTimeKeys(
     // First, round down to the nearest interval in the local time.
     // For example, for a 2-hour interval, this will round 3:30 to 2:00.
     const hourMultiple = Math.floor(domain[0].getHours() / +interval.count);
-    domain[0].setHours(hourMultiple * +interval.count);
-    domain[0].setMinutes(0);
-    domain[0].setSeconds(0);
-    domain[0].setMilliseconds(0);
+    domain[0].setHours(hourMultiple * +interval.count, 0, 0, 0);
 
     // These are the keys that we expect to have data for in the graph.
     const keyDates = timeHourRangeWithDst(domain[0], domain[1], +interval.count);
@@ -72,9 +66,7 @@ export function computeTimeKeys(
     // First, round down to the nearest interval in the local time.
     // For example, for a 15-minute interval, this will round 3:53 to 3:45.
     const minuteMultiple = Math.floor(domain[0].getMinutes() / +interval.count);
-    domain[0].setMinutes(minuteMultiple * +interval.count);
-    domain[0].setSeconds(0);
-    domain[0].setMilliseconds(0);
+    domain[0].setMinutes(minuteMultiple * +interval.count, 0, 0);
 
     // These are the keys that we expect to have data for in the graph.
     const keyDates = timeMinute.range(domain[0], domain[1], +interval.count);
