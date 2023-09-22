@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -412,22 +414,6 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		}
 	})
 
-	// Returns a task that appends the message to a logfile, then prints the logfile so far
-	appendToLog := func(message string) *repb.Command {
-		return &repb.Command{
-			Arguments: []string{"sh", "-c", `
-				# Write to the scratchfs, which should be persisted in the snapshot
-				cd /root
-				# Clear the memory page cache to ensure the file is read from disk
-				# NBD has unlocked immutable disk snapshots, which is what we
-				# want to test here
-				echo 3 > /proc/sys/vm/drop_caches
-				echo ` + message + ` >> ./log
-				cat ./log
-			`},
-		}
-	}
-
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -589,18 +575,6 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		}
 	})
 
-	// Returns a task that appends the message to a logfile, then prints the logfile so far
-	appendToLog := func(message string) *repb.Command {
-		return &repb.Command{
-			Arguments: []string{"sh", "-c", `
-				# Write to the scratchfs, which should be persisted in the snapshot
-				cd /root
-				echo ` + message + ` >> ./log
-				cat ./log
-			`},
-		}
-	}
-
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -703,6 +677,228 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	// and the current VM, but not from any of the other VMs sharing
 	// the same original snapshot
 	require.Equal(t, "Base\nFork remote fetch\n", string(res.Stdout))
+}
+
+// Run with `bazel test  //enterprise/server/remote_execution/containers/firecracker:firecracker_test_manual  --test_output=streamed --test_filter=TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking`
+func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
+	if os.Getenv("RUN_MANUAL_TEST") != "true" {
+		t.Skip("Skipping TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking")
+	}
+
+	// Silence the logs so output is easier to read
+	flags.Set(t, "app.log_level", "error")
+	log.Configure()
+
+	rand.Seed(time.Now().UnixNano())
+
+	var containersToCleanup []*firecracker.FirecrackerContainer
+	t.Cleanup(func() {
+		for _, vm := range containersToCleanup {
+			err := vm.Remove(context.Background())
+			assert.NoError(t, err)
+		}
+	})
+
+	var (
+		env        *testenv.TestEnv
+		ctx        context.Context
+		c          *firecracker.FirecrackerContainer
+		task       *repb.ExecutionTask
+		opts       firecracker.ContainerOpts
+		jailerRoot string
+	)
+
+	setup := func() {
+		var err error
+		env = testenv.GetTestEnv(t)
+		flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+		flags.Set(t, "executor.firecracker_enable_nbd", true)
+		flags.Set(t, "executor.firecracker_enable_uffd", true)
+
+		ctx = context.Background()
+		env = getTestEnv(ctx, t)
+		rootDir := testfs.MakeTempDir(t)
+		jailerRoot = tempJailerRoot(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+		filecacheRoot := testfs.MakeDirAll(t, jailerRoot, "filecache")
+		fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+		require.NoError(t, err)
+		fc.WaitForDirectoryScanToComplete()
+		env.SetFileCache(fc)
+		cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+		task = &repb.ExecutionTask{
+			Command: &repb.Command{
+				// Note: platform must match in order to share snapshots
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "recycle-runner", Value: "true"},
+				}},
+			},
+		}
+		opts = firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+				EnableNetworking:  false,
+				ScratchDiskSizeMb: 100,
+			},
+			JailerRoot: jailerRoot,
+		}
+
+		c, err = firecracker.NewContainer(ctx, env, cacheAuth, task, opts)
+		require.NoError(t, err)
+		containersToCleanup = append(containersToCleanup, c)
+		err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
+		require.NoError(t, err)
+		err = c.Create(ctx, opts.ActionWorkingDirectory)
+		require.NoError(t, err)
+	}
+
+	// Pausing a new VM
+	for _, enableRemote := range []bool{true, false} {
+		{
+			setup()
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+
+			start := time.Now()
+			err := c.Pause(ctx)
+			require.NoError(t, err)
+			fmt.Printf("(remote_snapshot_sharing=%v) Pausing a new VM took %s.\n", enableRemote, time.Since(start))
+		}
+	}
+
+	// Pausing a VM that had started from a snapshot.
+	// No changes to the VM other than running for a bit.
+	for _, enableRemote := range []bool{true, false} {
+		{
+			setup()
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+
+			// Create a snapshot
+			err := c.Pause(ctx)
+			require.NoError(t, err)
+
+			// Load the snapshot
+			err = c.Unpause(ctx)
+			require.NoError(t, err)
+
+			start := time.Now()
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+			fmt.Printf("(remote_snapshot_sharing=%v) Pausing a VM that had started from a snapshot and had no non-metadata changes took %s.\n", enableRemote, time.Since(start))
+		}
+	}
+
+	// Pausing a VM that had started from a snapshot.
+	// Execute a command in the VM before saving the new snapshot.
+	for _, enableRemote := range []bool{true, false} {
+		{
+			setup()
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+
+			// Create a snapshot
+			err := c.Pause(ctx)
+			require.NoError(t, err)
+
+			// Load the snapshot and exec a command in the VM
+			err = c.Unpause(ctx)
+			require.NoError(t, err)
+			cmd := appendToLog("Executing")
+			res := c.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+
+			start := time.Now()
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+			fmt.Printf("(remote_snapshot_sharing=%v) Pausing a VM that had started from a snapshot and had execution-related changes took %s.\n", enableRemote, time.Since(start))
+		}
+	}
+
+	// Loading a snapshot for a VM.
+	for _, enableRemote := range []bool{true, false} {
+		{
+			setup()
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+
+			// Create a snapshot
+			err := c.Pause(ctx)
+			require.NoError(t, err)
+
+			start := time.Now()
+			err = c.Unpause(ctx)
+			require.NoError(t, err)
+			fmt.Printf("(remote_snapshot_sharing=%v) Unpausing a VM that is fully cached in filecache took %s.\n", enableRemote, time.Since(start))
+		}
+	}
+
+	// Loading a snapshot for a VM where ~30% of artifacts were evicted from filecache
+	// and must be fetched remotely.
+	{
+		setup()
+		flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
+		// Create a snapshot
+		err := c.Pause(ctx)
+		require.NoError(t, err)
+
+		// Delete 30% of artifacts from the filecache
+		loader, err := snaploader.New(env)
+		require.NoError(t, err)
+		configHash, err := digest.ComputeForMessage(opts.VMConfiguration, repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		snapshotKey, err := snaploader.NewKey(task, configHash.GetHash(), "")
+		require.NoError(t, err)
+		snapMetadata, err := loader.GetSnapshot(ctx, snapshotKey)
+		require.NoError(t, err)
+		for _, f := range snapMetadata.GetFiles() {
+			if rand.Intn(100) < 30 {
+				deleted := env.GetFileCache().DeleteFile(f)
+				require.True(t, deleted)
+			}
+		}
+		for _, f := range snapMetadata.GetChunkedFiles() {
+			for _, c := range f.GetChunks() {
+				if rand.Intn(100) < 30 {
+					_ = env.GetFileCache().DeleteFile(&repb.FileNode{Digest: c.Digest})
+				}
+			}
+		}
+		start := time.Now()
+		err = c.Unpause(ctx)
+		require.NoError(t, err)
+
+		fmt.Printf("(remote_snapshot_sharing=true) Unpausing a VM where ~30%% of artifacts were evicted from filecache and must be fetched remotely. Took %s.\n", time.Since(start))
+	}
+
+	// Loading a snapshot for a VM where all artifacts were evicted from filecache
+	// and must be fetched remotely.
+	{
+		setup()
+		flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
+		// Create a snapshot
+		err := c.Pause(ctx)
+		require.NoError(t, err)
+
+		// Clear the filecache
+		err = os.RemoveAll(filepath.Join(jailerRoot, "filecache"))
+		require.NoError(t, err)
+		filecacheRoot2 := testfs.MakeDirAll(t, jailerRoot, "filecache2")
+		fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
+		require.NoError(t, err)
+		fc2.WaitForDirectoryScanToComplete()
+		env.SetFileCache(fc2)
+
+		start := time.Now()
+		err = c.Unpause(ctx)
+		require.NoError(t, err)
+
+		fmt.Printf("(remote_snapshot_sharing=true) Unpausing a VM where all artifacts were evicted from filecache and must be fetched remotely. Took %s.\n", time.Since(start))
+	}
 }
 
 func TestFirecrackerComplexFileMapping(t *testing.T) {
@@ -2001,4 +2197,20 @@ func tree(label string) {
 		fmt.Println("error:", err)
 	}
 	fmt.Println(string(b))
+}
+
+// Returns a task that appends the message to a logfile, then prints the logfile so far
+func appendToLog(message string) *repb.Command {
+	return &repb.Command{
+		Arguments: []string{"sh", "-c", `
+				# Write to the scratchfs, which should be persisted in the snapshot
+				cd /root
+				# Clear the memory page cache to ensure the file is read from disk
+				# NBD has unlocked immutable disk snapshots, which is what we
+				# want to test here
+				echo 3 > /proc/sys/vm/drop_caches
+				echo ` + message + ` >> ./log
+				cat ./log
+			`},
+	}
 }
