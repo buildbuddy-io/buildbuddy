@@ -107,16 +107,14 @@ export default class IpRulesComponent extends React.Component<Props, State> {
   private onEditModalCidrChanged(e: React.ChangeEvent<HTMLInputElement>) {
     const newValue = e.target.value;
     this.setState((prevState) => {
-      prevState.editModalRule.cidr = newValue;
-      return { editModalRule: prevState.editModalRule };
+      return { editModalRule: iprules.IPRule.create({ ...prevState.editModalRule, cidr: newValue }) };
     });
   }
 
   private onEditModalDescriptionChanged(e: React.ChangeEvent<HTMLInputElement>) {
     const newValue = e.target.value;
     this.setState((prevState) => {
-      prevState.editModalRule.description = newValue;
-      return { editModalRule: prevState.editModalRule };
+      return { editModalRule: iprules.IPRule.create({ ...prevState.editModalRule, description: newValue }) };
     });
   }
 
