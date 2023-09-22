@@ -572,7 +572,6 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	jailerRoot := tempJailerRoot(t)
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	testcache.Setup(t, env)
 	filecacheRoot := testfs.MakeDirAll(t, jailerRoot, "filecache")
 	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
 	require.NoError(t, err)
@@ -670,6 +669,11 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	// by pulling artifacts from the remote cache
 	err = os.RemoveAll(filecacheRoot)
 	require.NoError(t, err)
+	filecacheRoot2 := testfs.MakeDirAll(t, jailerRoot, "filecache2")
+	fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
+	require.NoError(t, err)
+	fc2.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc2)
 
 	workDirForkRemoteFetch := testfs.MakeDirAll(t, rootDir, "work-fork-remote-fetch")
 	opts = firecracker.ContainerOpts{
