@@ -83,3 +83,38 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), bogusDigest.Digest, "", b, tmpDir)
 	require.Error(t, err)
 }
+
+func TestCacheAndFetchBytes(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
+	env := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	require.NoError(t, err)
+	tmpDir := testfs.MakeTempDir(t)
+
+	fc, err := filecache.NewFileCache(tmpDir, 100000, false)
+	require.NoError(t, err)
+	testcache.Setup(t, env)
+
+	length := rand.Intn(1000)
+	randomStr, err := random.RandomString(length)
+	require.NoError(t, err)
+	b := []byte(randomStr)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	// Test caching and fetching
+	err = snaploader_utils.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, "", b, tmpDir)
+	require.NoError(t, err)
+	fetchedBytes, err := snaploader_utils.FetchBytes(ctx, fc, env.GetByteStreamClient(), d, "", tmpDir)
+	require.NoError(t, err)
+	require.Equal(t, randomStr, string(fetchedBytes))
+
+	// Delete from local cache, make sure we can still read
+	deleted := fc.DeleteFile(&repb.FileNode{Digest: d})
+	require.True(t, deleted)
+	fetchedBytes, err = snaploader_utils.FetchBytes(ctx, fc, env.GetByteStreamClient(), d, "", tmpDir)
+	require.NoError(t, err)
+	require.Equal(t, randomStr, string(fetchedBytes))
+
+}

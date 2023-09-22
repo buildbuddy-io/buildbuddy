@@ -178,12 +178,12 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if *snaploader_utils.EnableRemoteSnapshotSharing {
 		manifest, err = l.fetchRemoteManifest(ctx, key)
 		if err != nil {
-			return nil, err
+			return nil, status.WrapError(err, "fetch remote manifest")
 		}
 	} else {
 		manifest, err = l.fetchLocalManifest(ctx, key)
 		if err != nil {
-			return nil, err
+			return nil, status.WrapError(err, "fetch local manifest")
 		}
 	}
 
@@ -205,7 +205,8 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 		return nil, err
 	}
 
-	return l.actionResultToManifest(acResult)
+	tmpDir := l.env.GetFileCache().TempDir()
+	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
 }
 
 func (l *FileCacheLoader) fetchLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
@@ -223,7 +224,8 @@ func (l *FileCacheLoader) fetchLocalManifest(ctx context.Context, key *fcpb.Snap
 		return nil, status.UnavailableErrorf("failed to unmarshal snapshot manifest: %s", status.Message(err))
 	}
 
-	manifest, err := l.actionResultToManifest(acResult)
+	tmpDir := l.env.GetFileCache().TempDir()
+	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +240,7 @@ func (l *FileCacheLoader) fetchLocalManifest(ctx context.Context, key *fcpb.Snap
 	return manifest, nil
 }
 
-func (l *FileCacheLoader) actionResultToManifest(snapshotActionResult *repb.ActionResult) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string) (*fcpb.SnapshotManifest, error) {
 	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
 	if len(snapMetadata) != 1 {
 		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
@@ -263,7 +265,7 @@ func (l *FileCacheLoader) actionResultToManifest(snapshotActionResult *repb.Acti
 	}
 
 	for _, chunkedFileMetadata := range snapshotActionResult.OutputDirectories {
-		tree, err := l.chunkedFileTree(chunkedFileMetadata)
+		tree, err := l.chunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir)
 		if err != nil {
 			return nil, err
 		}
@@ -313,14 +315,13 @@ func chunkedFileProperty(chunkedFileTree *repb.Tree, propertyName string) (int64
 	return 0, status.InternalErrorf("chunked file metadata missing %s property", propertyName)
 }
 
-func (l *FileCacheLoader) chunkedFileTree(chunkedFileMetadata *repb.OutputDirectory) (*repb.Tree, error) {
-	node := &repb.FileNode{Digest: chunkedFileMetadata.GetTreeDigest()}
-	buf, err := filecacheutil.Read(l.env.GetFileCache(), node)
+func (l *FileCacheLoader) chunkedFileTree(ctx context.Context, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string) (*repb.Tree, error) {
+	b, err := snaploader_utils.FetchBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read chunked file tree: %s", status.Message(err))
 	}
 	tree := &repb.Tree{}
-	if err := proto.Unmarshal(buf, tree); err != nil {
+	if err := proto.Unmarshal(b, tree); err != nil {
 		return nil, status.WrapError(err, "unmarshall chunked file tree")
 	}
 	return tree, nil

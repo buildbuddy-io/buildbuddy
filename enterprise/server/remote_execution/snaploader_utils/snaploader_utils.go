@@ -52,6 +52,25 @@ func FetchArtifact(ctx context.Context, localCache interfaces.FileCache, bsClien
 	return writeErr
 }
 
+func FetchBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
+	randStr, err := random.RandomString(10)
+	if err != nil {
+		return nil, err
+	}
+	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("%s.%s.tmp", d.Hash, randStr))
+	defer func() {
+		if err := os.Remove(tmpPath); err != nil {
+			log.Warningf("Failed to remove temp file in snaploader_utils::FetchBytes: %s", err)
+		}
+	}()
+
+	if err := FetchArtifact(ctx, localCache, bsClient, d, instanceName, tmpPath); err != nil {
+		return nil, err
+	}
+
+	return os.ReadFile(tmpPath)
+}
+
 func writeFile(path string, b []byte) error {
 	f, err := os.Create(path)
 	if err != nil {

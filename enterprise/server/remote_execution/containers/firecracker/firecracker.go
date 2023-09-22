@@ -832,7 +832,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	unpacked, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot())
 	if err != nil {
-		return err
+		return status.WrapError(err, "failed to unpack snapshot")
 	}
 	if len(unpacked.ChunkedFiles) > 0 && !(*enableVBD || *enableUFFD) {
 		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
