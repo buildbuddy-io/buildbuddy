@@ -560,6 +560,7 @@ func (h *HitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 	if err != nil {
 		return status.WrapError(err, "get usage labels")
 	}
+
 	return h.usage.Increment(h.ctx, labels, c)
 }
 

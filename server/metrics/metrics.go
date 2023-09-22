@@ -368,6 +368,16 @@ var (
 		CacheEventTypeLabel,
 	})
 
+	CacheNumHitsExported = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "num_hits_exported",
+		Help:      "Number of cache hits.",
+	}, []string{
+		CacheTypeLabel,
+		GroupID,
+	})
+
 	CacheDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -377,6 +387,15 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+	})
+
+	CacheDownloadSizeBytesExported = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "download_size_bytes_exported",
+		Help:      "Number of bytes downloaded from the remote cache.",
+	}, []string{
+		GroupID,
 	})
 
 	// #### Examples
@@ -415,6 +434,15 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+	})
+
+	CacheUploadSizeBytesExported = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "upload_size_bytes_exported",
+		Help:      "Number of bytes uploaded to the remote cache",
+	}, []string{
+		GroupID,
 	})
 
 	// #### Examples

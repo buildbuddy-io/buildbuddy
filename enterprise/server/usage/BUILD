@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/util/redisutil",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/tables",
         "//server/util/alert",
         "//server/util/authutil",
@@ -20,6 +21,7 @@ go_library(
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 
