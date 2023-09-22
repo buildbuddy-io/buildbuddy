@@ -530,7 +530,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   roundDateRangesAndAddZoomFiltersToQuery(query: CommonQueryFields) {
     // updatedAfter should always be set, but typescript can't know that.
-    if (query.updatedAfter) {
+    if (!capabilities.config.trendsRangeSelectionEnabled && query.updatedAfter) {
       query.updatedAfter = usecToTimestamp(
         moment(+query.updatedAfter.seconds * 1000)
           .startOf("day")
