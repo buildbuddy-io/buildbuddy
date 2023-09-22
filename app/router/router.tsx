@@ -419,6 +419,10 @@ class Router {
     return Boolean(user?.canCall("getEncryptionConfig"));
   }
 
+  canAccessIpRulesPage(user?: User) {
+    return Boolean(user?.canCall("getIPRules"));
+  }
+
   /**
    * Routes the user to a new page if they don't have the ability to access the
    * current page.

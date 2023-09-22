@@ -128,4 +128,7 @@ message FrontendConfig {
   string domain = 41;
 
   bool trends_range_selection_enabled = 42;
+
+  // Whether IP rules UI is enabled.
+  bool ip_rules_enabled = 43;
 }

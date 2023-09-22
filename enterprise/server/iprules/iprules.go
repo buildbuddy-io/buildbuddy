@@ -5,6 +5,8 @@ import (
 	"flag"
 	"net"
 	"net/http"
+	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +30,7 @@ import (
 var (
 	enableIPRules = flag.Bool("auth.ip_rules.enable", false, "If true, IP rules will be checked during auth.")
 	cacheTTL      = flag.Duration("auth.ip_rules.cache_ttl", 5*time.Minute, "Duration of time IP rules will be cached in memory.")
+	allowIPV6     = flag.Bool("auth.ip_rules.allow_ipv6", false, "If true, IPv6 rules will be allowed.")
 )
 
 const (
@@ -128,18 +131,37 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*net.IPNet, error) {
+func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*tables.IPRule, error) {
 	rows, err := s.env.GetDBHandle().DB(ctx).Raw(
-		`SELECT * FROM "IPRules" WHERE group_id = ?`, groupID).Rows()
+		`SELECT * FROM "IPRules" WHERE group_id = ? ORDER BY created_at_usec`, groupID).Rows()
+	if err != nil {
+		return nil, err
+	}
+
+	var rules []*tables.IPRule
+	for rows.Next() {
+		r := &tables.IPRule{}
+		if err := s.env.GetDBHandle().DB(ctx).ScanRows(rows, r); err != nil {
+			return nil, err
+		}
+		rules = append(rules, r)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+	return rules, nil
+}
+
+func (s *Service) loadParsedRulesFromDB(ctx context.Context, groupID string, skipRuleID string) ([]*net.IPNet, error) {
+	rs, err := s.loadRulesFromDB(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
 
 	var allowed []*net.IPNet
-	for rows.Next() {
-		r := &tables.IPRule{}
-		if err := s.env.GetDBHandle().DB(ctx).ScanRows(rows, r); err != nil {
-			return nil, err
+	for _, r := range rs {
+		if r.IPRuleID == skipRuleID {
+			continue
 		}
 		_, ipNet, err := net.ParseCIDR(r.CIDR)
 		if err != nil {
@@ -148,13 +170,10 @@ func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*net.I
 		}
 		allowed = append(allowed, ipNet)
 	}
-	if rows.Err() != nil {
-		return nil, rows.Err()
-	}
 	return allowed, nil
 }
 
-func (s *Service) checkRules(ctx context.Context, groupID string) error {
+func (s *Service) checkRules(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error {
 	rawClientIP := clientip.Get(ctx)
 	clientIP := net.ParseIP(rawClientIP)
 	// Client IP is not parsable.
@@ -163,13 +182,16 @@ func (s *Service) checkRules(ctx context.Context, groupID string) error {
 	}
 
 	allowed, ok := s.cache.Get(groupID)
-	if !ok {
-		rs, err := s.loadRulesFromDB(ctx, groupID)
+	if !ok || skipCache {
+		pr, err := s.loadParsedRulesFromDB(ctx, groupID, skipRuleID)
 		if err != nil {
 			return err
 		}
-		s.cache.Add(groupID, rs)
-		allowed = rs
+		// if skipRuleID is set, the retrieved rule list maye be incomplete.
+		if skipRuleID == "" {
+			s.cache.Add(groupID, pr)
+		}
+		allowed = pr
 	}
 
 	for _, a := range allowed {
@@ -183,7 +205,7 @@ func (s *Service) checkRules(ctx context.Context, groupID string) error {
 
 func (s *Service) authorize(ctx context.Context, groupID string) error {
 	start := time.Now()
-	err := s.checkRules(ctx, groupID)
+	err := s.checkRules(ctx, groupID, false /*=skipCache*/, "" /*skipRuleID*/)
 	metrics.IPRulesCheckLatencyUsec.With(
 		prometheus.Labels{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)},
 	).Observe(float64(time.Since(start).Microseconds()))
@@ -265,8 +287,111 @@ func (s *Service) checkAccess(ctx context.Context, groupID string) error {
 	return nil
 }
 
+func (s *Service) GetRule(ctx context.Context, groupID string, ruleID string) (*tables.IPRule, error) {
+	if err := s.checkAccess(ctx, groupID); err != nil {
+		return nil, err
+	}
+
+	rows, err := s.env.GetDBHandle().DB(ctx).Raw(
+		`SELECT * FROM "IPRules" WHERE group_id = ? AND ip_rule_id = ?`, groupID, ruleID).Rows()
+	if err != nil {
+		return nil, err
+	}
+
+	if !rows.Next() {
+		return nil, status.NotFoundErrorf("rule %q not found", ruleID)
+	}
+
+	r := &tables.IPRule{}
+	if err := s.env.GetDBHandle().DB(ctx).ScanRows(rows, r); err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
+
+func (s *Service) GetIPRuleConfig(ctx context.Context, req *irpb.GetRulesConfigRequest) (*irpb.GetRulesConfigResponse, error) {
+	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, req.GetRequestContext().GetGroupId())
+	if err != nil {
+		return nil, err
+	}
+
+	return &irpb.GetRulesConfigResponse{EnforceIpRules: g.EnforceIPRules}, nil
+}
+
+func (s *Service) SetIPRuleConfig(ctx context.Context, req *irpb.SetRulesConfigRequest) (*irpb.SetRulesConfigResponse, error) {
+	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	if req.GetEnforceIpRules() {
+		err := s.checkRules(ctx, req.GetRequestContext().GetGroupId(), true /*=skipCache*/, "" /*=skipRuleID*/)
+		if err != nil {
+			if status.IsPermissionDeniedError(err) {
+				return nil, status.InvalidArgumentErrorf("Enabling IP rule enforcement would block your IP (%s) from accessing the organization.", clientip.Get(ctx))
+			}
+			return nil, err
+		}
+	}
+
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, req.GetRequestContext().GetGroupId())
+	if err != nil {
+		return nil, err
+	}
+	g.EnforceIPRules = req.GetEnforceIpRules()
+	if _, err := s.env.GetUserDB().InsertOrUpdateGroup(ctx, g); err != nil {
+		return nil, err
+	}
+	return &irpb.SetRulesConfigResponse{}, nil
+}
+
+func (s *Service) GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irpb.GetRulesResponse, error) {
+	rules, err := s.loadRulesFromDB(ctx, req.GetRequestContext().GetGroupId())
+	if err != nil {
+		return nil, err
+	}
+
+	rsp := &irpb.GetRulesResponse{}
+	for _, r := range rules {
+		rsp.IpRules = append(rsp.IpRules, &irpb.IPRule{
+			IpRuleId:    r.IPRuleID,
+			Cidr:        r.CIDR,
+			Description: r.Description,
+		})
+	}
+	return rsp, nil
+}
+
+func validateIPRange(value string) (string, error) {
+	prefix, err := netip.ParsePrefix(value)
+	if err == nil {
+		if prefix.Addr().Is6() && !*allowIPV6 {
+			return "", status.InvalidArgumentErrorf("IPv6 addresses are not supported")
+		}
+		return prefix.String(), nil
+	}
+
+	if addr, err := netip.ParseAddr(value); err == nil {
+		if addr.Is6() && !*allowIPV6 {
+			return "", status.InvalidArgumentErrorf("IPv6 addresses are not supported")
+		}
+		return addr.String() + "/" + strconv.Itoa(addr.BitLen()), nil
+	}
+
+	return "", status.InvalidArgumentErrorf("Invalid IP range %q", value)
+}
+
 func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error) {
 	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	cidr, err := validateIPRange(req.GetRule().GetCidr())
+	if err != nil {
 		return nil, err
 	}
 
@@ -278,7 +403,7 @@ func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.
 	groupID := req.GetRequestContext().GetGroupId()
 	r := req.GetRule()
 	q := `INSERT INTO "IPRules" (created_at_usec, ip_rule_id, group_id, cidr, description) VALUES (?, ?, ?, ?, ?)`
-	if err := s.env.GetDBHandle().DB(ctx).Exec(q, time.Now().UnixMicro(), id, groupID, r.GetCidr(), r.GetDescription()).Error; err != nil {
+	if err := s.env.GetDBHandle().DB(ctx).Exec(q, time.Now().UnixMicro(), id, groupID, cidr, r.GetDescription()).Error; err != nil {
 		return nil, err
 	}
 	r.IpRuleId = id
@@ -290,10 +415,15 @@ func (s *Service) UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (
 		return nil, err
 	}
 
+	cidr, err := validateIPRange(req.GetRule().GetCidr())
+	if err != nil {
+		return nil, err
+	}
+
 	groupID := req.GetRequestContext().GetGroupId()
 	r := req.GetRule()
 	q := `UPDATE "IPRules" SET cidr = ?, description = ? WHERE group_id = ? AND ip_rule_id = ?`
-	if err := s.env.GetDBHandle().DB(ctx).Exec(q, r.GetCidr(), r.GetDescription(), groupID, r.GetIpRuleId()).Error; err != nil {
+	if err := s.env.GetDBHandle().DB(ctx).Exec(q, cidr, r.GetDescription(), groupID, r.GetIpRuleId()).Error; err != nil {
 		return nil, err
 	}
 	return &irpb.UpdateRuleResponse{}, nil
@@ -302,6 +432,22 @@ func (s *Service) UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (
 func (s *Service) DeleteRule(ctx context.Context, req *irpb.DeleteRuleRequest) (*irpb.DeleteRuleResponse, error) {
 	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
+	}
+
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, req.GetRequestContext().GetGroupId())
+	if err != nil {
+		return nil, err
+	}
+	if g.EnforceIPRules {
+		// Check if deleting the rule would lock out the client calling this
+		// API.
+		err := s.checkRules(ctx, req.GetRequestContext().GetGroupId(), true /*=skipCache*/, req.GetIpRuleId())
+		if err != nil {
+			if status.IsPermissionDeniedError(err) {
+				return nil, status.InvalidArgumentErrorf("Deleting this rule would block your IP (%s) from accessing the organization.", clientip.Get(ctx))
+			}
+			return nil, err
+		}
 	}
 
 	groupID := req.GetRequestContext().GetGroupId()

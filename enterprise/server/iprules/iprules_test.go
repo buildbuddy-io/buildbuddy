@@ -133,10 +133,16 @@ func TestEnforcement(t *testing.T) {
 	require.NoError(t, err)
 
 	// Delete rule2. Its value should no longer apply.
+	g.EnforceIPRules = false
+	_, err = env.GetUserDB().InsertOrUpdateGroup(authCtx, &g)
+	require.NoError(t, err)
 	_, err = irs.DeleteRule(authCtx, &irpb.DeleteRuleRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 		IpRuleId:       rule2.IpRuleId,
 	})
+	require.NoError(t, err)
+	g.EnforceIPRules = true
+	_, err = env.GetUserDB().InsertOrUpdateGroup(authCtx, &g)
 	require.NoError(t, err)
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "8.8.8.8")
 	err = irs.Authorize(authCtx)

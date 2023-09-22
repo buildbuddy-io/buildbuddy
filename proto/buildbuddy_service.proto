@@ -9,6 +9,7 @@ import "proto/execution_stats.proto";
 import "proto/encryption.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
+import "proto/iprules.proto";
 import "proto/runner.proto";
 import "proto/stats.proto";
 import "proto/target.proto";
@@ -203,6 +204,18 @@ service BuildBuddyService {
   // Audit log API.
   rpc GetAuditLogs(auditlog.GetAuditLogsRequest)
       returns (auditlog.GetAuditLogsResponse);
+
+  // IP rule API.
+  rpc GetIPRules(iprules.GetRulesRequest) returns (iprules.GetRulesResponse);
+  rpc AddIPRule(iprules.AddRuleRequest) returns (iprules.AddRuleResponse);
+  rpc UpdateIPRule(iprules.UpdateRuleRequest)
+      returns (iprules.UpdateRuleResponse);
+  rpc DeleteIPRule(iprules.DeleteRuleRequest)
+      returns (iprules.DeleteRuleResponse);
+  rpc GetIPRulesConfig(iprules.GetRulesConfigRequest)
+      returns (iprules.GetRulesConfigResponse);
+  rpc SetIPRulesConfig(iprules.SetRulesConfigRequest)
+      returns (iprules.SetRulesConfigResponse);
 
   // Repo API.
   rpc CreateRepo(repo.CreateRepoRequest) returns (repo.CreateRepoResponse);

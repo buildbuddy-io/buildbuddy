@@ -18,6 +18,7 @@ ts_library(
         "//app/service:rpc_service",
         "//enterprise/app/api_keys",
         "//enterprise/app/encryption",
+        "//enterprise/app/iprules",
         "//enterprise/app/org:edit_org",
         "//enterprise/app/org:org_members",
         "//enterprise/app/quota",

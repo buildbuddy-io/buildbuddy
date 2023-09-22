@@ -69,6 +69,9 @@ message Group {
   // Whether the "run workflow from clean workspace" button should be
   // admin-only.
   bool restrict_clean_workflow_runs_to_admins = 13;
+
+  // Whether IP rules are being enforced for this organization.
+  bool enforce_ip_rules = 14;
 }
 
 message JoinGroupRequest {

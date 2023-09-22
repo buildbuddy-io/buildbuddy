@@ -8,6 +8,7 @@ import "proto/encryption.proto";
 import "proto/github.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
+import "proto/iprules.proto";
 import "proto/secrets.proto";
 import "proto/workflow.proto";
 import "google/protobuf/timestamp.proto";
@@ -41,6 +42,7 @@ enum ResourceType {
   GROUP = 3;
   SECRET = 4;
   INVOCATION = 5;
+  IP_RULE = 6;
 }
 
 enum Action {
@@ -57,6 +59,7 @@ enum Action {
   UNLINK_GITHUB_REPO = 10;
   EXECUTE_CLEAN_WORKFLOW = 11;
   CREATE_IMPERSONATION_API_KEY = 12;
+  UPDATE_IP_RULES_CONFIG = 13;
 }
 
 message ResourceID {
@@ -92,6 +95,10 @@ message Entry {
     secrets.UpdateSecretRequest update_secret = 12;
     api_key.GetApiKeyRequest get_api_key = 13;
     api_key.CreateImpersonationApiKeyRequest create_impersonation_api_key = 14;
+    iprules.AddRuleRequest add_ip_rule = 15;
+    iprules.UpdateRuleRequest update_ip_rule = 16;
+    iprules.DeleteRuleRequest delete_ip_rule = 17;
+    iprules.SetRulesConfigRequest set_rules_config = 18;
   }
   message Request {
     APIRequest api_request = 1;

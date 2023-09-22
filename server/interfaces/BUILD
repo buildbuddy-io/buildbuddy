@@ -16,6 +16,7 @@ go_library(
         "//proto:group_go_proto",
         "//proto:health_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:iprules_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:quota_go_proto",
         "//proto:raft_go_proto",
