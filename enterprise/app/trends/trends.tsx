@@ -51,6 +51,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     enableInvocationPercentileCharts: false,
     timeKeys: [],
     ticks: [],
+    currentSummary: capabilities.config.trendsSummaryEnabled ? stats.Summary.create({}) : undefined,
   };
 
   subscription?: Subscription;
