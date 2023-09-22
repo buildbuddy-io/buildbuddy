@@ -3,6 +3,7 @@ package snaploader
 import (
 	"context"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader_utils"
 	"os"
 	"path/filepath"
 	"strconv"
