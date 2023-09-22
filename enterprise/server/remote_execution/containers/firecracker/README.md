@@ -33,6 +33,42 @@ to `bazel test`.
 It's useful to use debug mode whenever the executor can't connect
 to the VM (indicating the VM might have crashed).
 
+### SSH into a VM
+
+You can run arbitrary commands inside a VM either by running a custom
+`sh_test` action or via `enterprise/tools/vmstart`. But sometimes it can
+be useful to get an interactive shell within a VM to debug problems with a
+regular Bazel action, such as a go test.
+
+To enable SSH access within the VM, the VM needs to have networking
+enabled (this is true by default when running the VM via the executor).
+You'll also need to instrument the VM with the following setup commands,
+e.g. as a setup command in your Go test action:
+
+```shell
+# Set the root password to 'root'
+export PATH="$PATH:/sbin/:/usr/sbin/"
+printf 'root:root' | chpasswd
+# Install openssh-server (with apt, assuming the VM is running ubuntu)
+apt update && apt install -y openssh-server
+# Permit SSH root login
+echo >>/etc/ssh/sshd_config 'PermitRootLogin yes'
+# Start sshd
+/etc/init.d/ssh start
+```
+
+Then, you can SSH into the VM from the host using its local IP address. If
+you run `ip route` on the host, you will see two `veth*` entries like the
+following:
+
+```
+192.168.0.11 via 192.168.0.14 dev veth1p6FEh
+192.168.0.12/30 dev veth1p6FEh proto kernel scope link src 192.168.0.13
+```
+
+In this example, the `192.168.0.11` IP is the one you can use for SSH
+access. So you can run `ssh root@192.168.0.11` with the password `root`.
+
 ### Networking issues
 
 Occasionally, you might wind up force-killing firecracker or the executor
