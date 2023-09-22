@@ -39,6 +39,11 @@ interface State {
   deleteModalOpen: boolean;
   deleteModalRule: iprules.IPRule;
   deleteModalSubmitting: boolean;
+
+  bulkModalOpen: boolean;
+  bulkModalSubmitting: boolean;
+  bulkModalText: string;
+  bulkModalError: string;
 }
 
 export default class IpRulesComponent extends React.Component<Props, State> {
@@ -56,6 +61,11 @@ export default class IpRulesComponent extends React.Component<Props, State> {
     deleteModalOpen: false,
     deleteModalRule: iprules.IPRule.create(),
     deleteModalSubmitting: false,
+
+    bulkModalOpen: false,
+    bulkModalSubmitting: false,
+    bulkModalText: "",
+    bulkModalError: "",
   };
 
   componentDidMount() {
@@ -254,6 +264,128 @@ export default class IpRulesComponent extends React.Component<Props, State> {
       .catch((e) => errorService.handleError(e));
   }
 
+  private onCloseBulkAddModal() {
+    this.setState({
+      bulkModalOpen: false,
+      bulkModalSubmitting: false,
+      bulkModalText: "",
+      bulkModalError: "",
+    });
+  }
+
+  private onBulkAddRules() {
+    this.setState({
+      bulkModalSubmitting: true,
+    });
+
+    const existingRules = new Set<string>();
+    for (const rule of this.state.rules) {
+      existingRules.add(rule.cidr);
+    }
+
+    const newRules = new Array<iprules.IPRule>();
+    for (const rule of this.state.bulkModalText.split(/[\s,]+/)) {
+      if (existingRules.has(rule) || existingRules.has(rule + "/32") || existingRules.has(rule + "/128")) {
+        console.log("skipping existing rule", rule);
+        continue;
+      }
+      newRules.push(iprules.IPRule.create({ cidr: rule }));
+      existingRules.add(rule);
+    }
+
+    const requests = new Array<Promise<iprules.AddRuleResponse>>();
+    for (const rule of newRules) {
+      requests.push(
+        rpcService.service
+          .addIPRule(iprules.AddRuleRequest.create({ rule: rule }))
+          .catch((e) => Promise.reject(rule.cidr + ": " + BuildBuddyError.parse(e)))
+      );
+    }
+
+    Promise.allSettled(requests).then((results) => {
+      const errors = new Array<string>();
+      for (const result of results) {
+        if (result.status == "rejected") {
+          errors.push(result.reason);
+        }
+      }
+      this.setState({
+        bulkModalSubmitting: false,
+        bulkModalError: errors.join("\n"),
+      });
+      this.fetchIPRules();
+    });
+  }
+
+  private onBulkAddEntryChanged(e: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({
+      bulkModalText: e.target.value,
+    });
+  }
+
+  private onBulkAddDismissError() {
+    this.setState({
+      bulkModalError: "",
+    });
+  }
+
+  private renderBulkAddModal() {
+    return (
+      <Modal
+        className="ip-rule-bulk-add-modal"
+        isOpen={this.state.bulkModalOpen}
+        onRequestClose={this.onCloseBulkAddModal.bind(this)}>
+        <Dialog>
+          <DialogHeader>
+            <DialogTitle>Bulk add rules</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            {this.state.bulkModalError && (
+              <div className="ip-rule-bulk-add-error">
+                Some rules could not be added:
+                <pre>{this.state.bulkModalError}</pre>
+              </div>
+            )}
+            {!this.state.bulkModalError && (
+              <>
+                <div className="ip-rule-bulk-add-instructions">
+                  Rules may be separated by either whitespace or commas.
+                </div>
+                <textarea
+                  className="ip-rule-bulk-add-entry text-input"
+                  onChange={this.onBulkAddEntryChanged.bind(this)}
+                  value={this.state.bulkModalText}></textarea>
+              </>
+            )}
+            <div className="propagation-note">Rule changes may take up to 5 minutes to propagate.</div>
+          </DialogBody>
+          <DialogFooter>
+            <DialogFooterButtons>
+              {this.state.bulkModalSubmitting && <Spinner />}
+              <OutlinedButton disabled={this.state.bulkModalSubmitting} onClick={this.onCloseBulkAddModal.bind(this)}>
+                Cancel
+              </OutlinedButton>
+              {this.state.bulkModalError && (
+                <FilledButton onClick={this.onBulkAddDismissError.bind(this)}>Back</FilledButton>
+              )}
+              {!this.state.bulkModalError && (
+                <FilledButton disabled={this.state.bulkModalSubmitting} onClick={this.onBulkAddRules.bind(this)}>
+                  Add
+                </FilledButton>
+              )}
+            </DialogFooterButtons>
+          </DialogFooter>
+        </Dialog>
+      </Modal>
+    );
+  }
+
+  private onOpenBulkAddRulesModal() {
+    this.setState({
+      bulkModalOpen: true,
+    });
+  }
+
   render() {
     if (!this.props.user) return <></>;
 
@@ -261,6 +393,7 @@ export default class IpRulesComponent extends React.Component<Props, State> {
       <div className="ip-rules">
         {this.renderEditModal()}
         {this.renderDeleteModal()}
+        {this.renderBulkAddModal()}
         {!this.state.enforcementEnabled && (
           <div className="enforcement">
             <div className="enforcement-state">IP rules are NOT currently being enforced for this organization</div>
@@ -283,6 +416,9 @@ export default class IpRulesComponent extends React.Component<Props, State> {
           <FilledButton onClick={this.onAddNewRule.bind(this)} debug-id="create-new-ip-rule">
             Add rule
           </FilledButton>
+          <OutlinedButton onClick={this.onOpenBulkAddRulesModal.bind(this)} className="bulk-add-button">
+            Bulk add rules
+          </OutlinedButton>
           <div className="ip-rules-list">
             {this.state.rules.map((rule) => (
               <div className="ip-rules-list-item">

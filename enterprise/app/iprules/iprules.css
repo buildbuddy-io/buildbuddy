@@ -67,6 +67,7 @@
 
 .ip-rule-delete-modal .propagation-note,
 .ip-rule-edit-modal .propagation-note,
+.ip-rule-bulk-add-modal .propagation-note,
 .ip-rules .propagation-note {
   color: #666;
   margin-top: 16px;
@@ -90,4 +91,18 @@
 
 .ip-rules .ip-rules-table {
   margin-top: 40px;
+}
+
+.ip-rules .bulk-add-button {
+  margin-left: 16px;
+}
+
+.ip-rule-bulk-add-modal .ip-rule-bulk-add-entry,
+.ip-rule-bulk-add-modal .ip-rule-bulk-add-error {
+  width: 580px;
+  height: 400px;
+}
+
+.ip-rule-bulk-add-modal .ip-rule-bulk-add-instructions {
+  margin-bottom: 16px;
 }
