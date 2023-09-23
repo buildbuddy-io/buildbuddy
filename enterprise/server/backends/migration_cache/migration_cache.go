@@ -43,6 +43,7 @@ type MigrationCache struct {
 	quitChan chan struct{}
 
 	maxCopiesPerSec             int
+	numCopyWorkers              int
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *int64
@@ -94,6 +95,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &zero,
+		numCopyWorkers:              migrationConfig.NumCopyWorkers,
 		asyncDestWrites:             migrationConfig.AsyncDestWrites,
 	}
 }
@@ -889,27 +891,33 @@ type copyData struct {
 
 func (mc *MigrationCache) copyDataInBackground() error {
 	rateLimiter := rate.NewLimiter(rate.Limit(mc.maxCopiesPerSec), 1)
-
-	for {
-		if err := rateLimiter.Wait(context.Background()); err != nil {
-			return err
-		}
-
-		select {
-		case <-mc.quitChan:
-			// Drain copy channel on shutdown
-			// We cannot close the channel before draining because there's a chance some cache requests may be
-			// concurrently queued as the cache is shutting down, and if we try to enqueue a copy to the closed
-			// channel it will panic
-			for len(mc.copyChan) > 0 {
-				c := <-mc.copyChan
-				mc.copy(c)
+	eg := &errgroup.Group{}
+	for i := 0; i < mc.numCopyWorkers; i++ {
+		eg.Go(func() error {
+			for {
+				if err := rateLimiter.Wait(context.Background()); err != nil {
+					return err
+				}
+				select {
+				case <-mc.quitChan:
+					return nil
+				case c := <-mc.copyChan:
+					mc.copy(c)
+				}
 			}
-			return nil
-		case c := <-mc.copyChan:
-			mc.copy(c)
-		}
+		})
 	}
+	eg.Wait()
+
+	// Drain copy channel on shutdown
+	// We cannot close the channel before draining because there's a chance some cache requests may be
+	// concurrently queued as the cache is shutting down, and if we try to enqueue a copy to the closed
+	// channel it will panic
+	for len(mc.copyChan) > 0 {
+		c := <-mc.copyChan
+		mc.copy(c)
+	}
+	return nil
 }
 
 func (mc *MigrationCache) monitorCopyChanFullness() {

@@ -21,6 +21,7 @@ type MigrationConfig struct {
 	// CopyChanFullWarningIntervalMin controls how often we should log when the copy chan is full
 	CopyChanFullWarningIntervalMin int64 `yaml:"copy_chan_full_warning_interval_min"`
 	MaxCopiesPerSec                int   `yaml:"max_copies_per_sec"`
+	NumCopyWorkers                 int   `yaml:"num_copy_workers"`
 	// AsyncDestWrites controls whether we write to destination cache in the background
 	AsyncDestWrites bool `yaml:"async_dest_writes"`
 }
@@ -59,5 +60,8 @@ func (cfg *MigrationConfig) SetConfigDefaults() {
 	}
 	if cfg.MaxCopiesPerSec == 0 {
 		cfg.MaxCopiesPerSec = 5000
+	}
+	if cfg.NumCopyWorkers == 0 {
+		cfg.NumCopyWorkers = 1
 	}
 }
