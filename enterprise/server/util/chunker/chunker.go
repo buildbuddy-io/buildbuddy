@@ -3,6 +3,7 @@ package chunker
 import (
 	"context"
 	"io"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jotfs/fastcdc-go"
@@ -17,6 +18,9 @@ type Chunker struct {
 
 	done chan struct{}
 
+	mu  sync.Mutex // protexts err
+	err error
+
 	writeChunkFn WriteFunc
 }
 
@@ -24,22 +28,16 @@ func (c *Chunker) Write(buf []byte) (int, error) {
 	return c.pw.Write(buf)
 }
 
-func (c *Chunker) Close() (bool, error) {
-	var ctxErr error
-	select {
-	case <-c.ctx.Done():
-		ctxErr = c.ctx.Err()
-	default:
-		break
-	}
-
+func (c *Chunker) Close() error {
 	if err := c.pw.Close(); err != nil {
-		return false, status.InternalErrorf("failed to close chunker: %s", err)
+		return status.InternalErrorf("failed to close chunker: %s", err)
 	}
 
 	<-c.done
 
-	return true, ctxErr
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
 }
 
 // New returns an io.WriteCloser that split file into chunks of average size.
@@ -81,11 +79,23 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 				return
 			}
 			if err != nil {
-				pr.CloseWithError(status.InternalErrorf("failed to get the next chunk: %s", err))
+				err = status.InternalErrorf("failed to get the next chunk: %s", err)
+				pr.CloseWithError(err)
+				c.mu.Lock()
+				defer c.mu.Unlock()
+				if c.err == nil {
+					c.err = err
+				}
 				return
 			}
 			if err := c.writeChunkFn(chunk.Data); err != nil {
-				pr.CloseWithError(status.InternalErrorf("writeChunkFn failed: %s", err))
+				err = status.InternalErrorf("writeChunkFn failed: %s", err)
+				pr.CloseWithError(err)
+				c.mu.Lock()
+				defer c.mu.Unlock()
+				if c.err == nil {
+					c.err = err
+				}
 				return
 			}
 		}
@@ -94,6 +104,11 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 	go func() {
 		<-ctx.Done()
 		pr.CloseWithError(ctx.Err())
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.err == nil {
+			c.err = ctx.Err()
+		}
 	}()
 
 	return c, nil
