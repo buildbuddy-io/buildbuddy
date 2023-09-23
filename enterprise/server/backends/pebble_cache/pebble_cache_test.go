@@ -729,6 +729,7 @@ func TestIsolateAnonUsers(t *testing.T) {
 func TestMetadata(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
@@ -781,7 +782,6 @@ func TestMetadata(t *testing.T) {
 			for _, testSize := range testSizes {
 				desc := fmt.Sprintf("testSize: %d %s (averageChunkSizeBytes=%d)", testSize, tc.name, averageChunkSizeBytes)
 				t.Run(desc, func(t *testing.T) {
-					ctx := getAnonContext(t, te)
 					r, buf := newCASResourceBuf(t, testSize)
 					r.CacheType = tc.cacheType
 					r.Compressor = tc.compressor
@@ -1929,6 +1929,7 @@ func TestLRU(t *testing.T) {
 func TestStartupScan(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 
 	testCases := []struct {
@@ -1961,7 +1962,6 @@ func TestStartupScan(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ctx := getAnonContext(t, te)
 			rootDir := testfs.MakeTempDir(t)
 			options := &pebble_cache.Options{
 				RootDirectory:          rootDir,
@@ -1977,7 +1977,6 @@ func TestStartupScan(t *testing.T) {
 			for i := 0; i < 1000; i++ {
 				remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 				r, buf := newResourceAndBuf(t, tc.digestSize, rspb.CacheType_AC, remoteInstanceName)
-				log.Infof("write i=%d", i)
 				err = pc.Set(ctx, r, buf)
 				require.NoError(t, err)
 				resources = append(resources, r)
