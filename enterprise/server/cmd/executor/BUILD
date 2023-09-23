@@ -56,6 +56,7 @@ go_library(
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/containers/podman",
+            "//enterprise/server/remote_execution/vbd",
             "//server/util/networking",
         ],
         "//conditions:default": [],

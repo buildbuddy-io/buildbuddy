@@ -2477,12 +2477,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:El6M4kTTCOh6aBiKaUGG7oYTSPP8MxqL4YI3kZKwcP4=",
         version = "v0.0.0-20191202100458-e7afc7fbc510",
     )
-    go_repository(
-        name = "com_github_google_subcommands",
-        importpath = "github.com/google/subcommands",
-        sum = "h1:vWQspBTo2nEqTUFita5/KeEWlUL8kQObDFbub/EN9oE=",
-        version = "v1.2.0",
-    )
+
     go_repository(
         name = "com_github_google_tink_go",
         importpath = "github.com/google/tink/go",
@@ -3799,13 +3794,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
 
     go_repository(
-        name = "com_github_mdlayher_genetlink",
-        importpath = "github.com/mdlayher/genetlink",
-        sum = "h1:KdrNKe+CTu+IbZnm/GVUMXSqBBLqcGpRDa0xkQy56gw=",
-        version = "v1.3.2",
-    )
-
-    go_repository(
         name = "com_github_mdlayher_netlink",
         importpath = "github.com/mdlayher/netlink",
         sum = "h1:/UtM3ofJap7Vl4QWCPDGXY8d3GIY2UGSDbK+QWmY8/g=",
@@ -3835,12 +3823,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/mediocregopher/radix/v3",
         sum = "h1:oacPXPKHJg0hcngVVrdtTnfGJiS+PtwoQwTBZGFlV4k=",
         version = "v3.3.0",
-    )
-    go_repository(
-        name = "com_github_merovius_nbd",
-        importpath = "github.com/Merovius/nbd",
-        sum = "h1:+RuruTkdD790c2czCjTKFd/TZAAQ8EPh/7zyqg10ff8=",
-        version = "v0.0.0-20230908150103-a1d15e184887",
     )
 
     go_repository(

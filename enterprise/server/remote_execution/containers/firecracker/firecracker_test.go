@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
@@ -70,6 +71,7 @@ var (
 	// TODO(bduffany): make the bazel test a benchmark, and run it for both
 	// NBD and non-NBD.
 	testBazelBuild = flag.Bool("test_bazel_build", false, "Whether to test a bazel build.")
+	filecacheDir   = flag.String("persistent_filecache_dir", "", "Filecache directory to be used across test runs.")
 
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
@@ -86,6 +88,14 @@ func init() {
 //
 // See README.md for more details on the filesystem layout.
 func cleanExecutorRoot(t *testing.T, path string) {
+	if os.Getuid() == 0 {
+		// Clean up stubborn VBD mounts that might've been left around from
+		// previous tests that were interrupted. Otherwise we won't be able to
+		// clean up old firecracker workspaces.
+		err := vbd.UnmountAll()
+		require.NoError(t, err)
+	}
+
 	err := os.MkdirAll(path, 0755)
 	require.NoError(t, err)
 	entries, err := os.ReadDir(path)
@@ -152,7 +162,11 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
-	fc, err := filecache.NewFileCache(testRootDir, fileCacheSize, false)
+	fcDir := testRootDir
+	if *filecacheDir != "" {
+		fcDir = *filecacheDir
+	}
+	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
 
@@ -629,10 +643,13 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	if workspaceFSU == nil {
 		assert.Fail(t, "/workspace disk usage was not reported")
 	} else {
+		expectedWorkspaceDev := "/dev/vdc"
+		if *firecracker.EnableRootfs {
+			expectedWorkspaceDev = "/dev/vdb"
+		}
+
 		assert.Equal(t, "ext4", workspaceFSU.GetFstype())
-		assert.True(t,
-			workspaceFSU.GetSource() == "/dev/vdc" ||
-				workspaceFSU.GetSource() == "/dev/nbd1",
+		assert.True(t, workspaceFSU.GetSource() == expectedWorkspaceDev,
 			"unexpected workspace mount source %s", workspaceFSU.GetSource(),
 		)
 		assert.InDelta(
@@ -651,7 +668,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		assert.Fail(t, "root (/) disk usage was not reported")
 	} else if *firecracker.EnableRootfs {
 		assert.Equal(t, "ext4", rootFSU.GetFstype())
-		assert.Equal(t, "/dev/nbd0", rootFSU.GetSource())
+		assert.Equal(t, "/dev/vda", rootFSU.GetSource())
 	} else {
 		assert.Equal(t, "overlay", rootFSU.GetFstype())
 		assert.Equal(t, "overlayfs:/scratch/bbvmroot", rootFSU.GetSource())

@@ -1,9 +1,12 @@
 package vbd
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -180,3 +183,29 @@ func (r *reader) Size() int {
 }
 
 func (r *reader) Done() {}
+
+// UnmountAll unmounts all VBD devices on the system.
+func UnmountAll() error {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name, path := fields[0], fields[1]
+		if name != "vbd" {
+			continue
+		}
+		b, err := exec.Command("fusermount", "-u", path).CombinedOutput()
+		if err != nil {
+			return status.InternalErrorf("unmount vbd: fusermount -u: %q", string(b))
+		}
+	}
+	return nil
+}

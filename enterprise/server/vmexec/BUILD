@@ -11,7 +11,6 @@ go_library(
     ],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
-        "//enterprise/server/remote_execution/nbd/nbdclient",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/util/log",
