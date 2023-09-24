@@ -93,7 +93,13 @@ export default class Panel {
     return { x, y };
   }
 
+  isHovering() {
+    return this.canvas === document.elementFromPoint(this.mouse.clientX, this.mouse.clientY);
+  }
+
   getHoveredSection(): SectionModel | null {
+    if (!this.isHovering()) return null;
+
     const modelMouse = this.getMouseModelCoordinates();
     for (const section of this.model.sections) {
       if (modelMouse.y >= section.y && modelMouse.y <= section.y + section.height) {
@@ -105,6 +111,8 @@ export default class Panel {
   }
 
   getHoveredTrack(): TrackModel | null {
+    if (!this.isHovering()) return null;
+
     const section = this.getHoveredSection();
     if (!section?.tracks) return null;
 
@@ -125,6 +133,8 @@ export default class Panel {
   }
 
   getHoveredEvent(): TraceEvent | null {
+    if (!this.isHovering()) return null;
+
     const track = this.getHoveredTrack();
     if (!track) return null;
 
