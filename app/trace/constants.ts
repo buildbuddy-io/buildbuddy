@@ -1,5 +1,7 @@
 /**
- * How many units in the model X dimension there are per second.
+ * How many units in the model X dimension there are per second. Model X units
+ * are just microseconds, but the term "model x" coordinates is used to make
+ * some of the transformation calculations more readable.
  */
 export const MODEL_X_PER_SECOND = 1_000_000;
 

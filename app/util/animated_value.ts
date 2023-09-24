@@ -23,10 +23,6 @@ export class AnimatedValue {
     return this.target_;
   }
 
-  get error() {
-    return this.target - this.value;
-  }
-
   set value(value: number) {
     this.value_ = clamp(value, this.min_, this.max_);
   }

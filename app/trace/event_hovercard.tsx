@@ -16,6 +16,9 @@ export interface HovercardData {
   event: TraceEvent;
 }
 
+/**
+ * Hovercard displaying info about the hovered event in the trace viewer.
+ */
 export default class EventHovercard extends React.Component<EventHovercardProps, EventHovercardState> {
   state: EventHovercardState = {};
   private ref = React.createRef<HTMLDivElement>();

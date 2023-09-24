@@ -637,7 +637,7 @@ class HoveredLineInfo extends React.Component<HoveredLineInfoState> {
       event: { name, ts, value },
     } = point;
     const timestamp = truncateDecimals(ts / MICROSECONDS_PER_SECOND, 3);
-    const val = truncateDecimals(value, 3);
+    const val = truncateDecimals(Number(value), 3);
 
     return (
       <div

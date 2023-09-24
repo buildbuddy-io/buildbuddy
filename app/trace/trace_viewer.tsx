@@ -241,6 +241,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
 
   private onCanvasMouseDown(e: React.MouseEvent, panelIndex: number) {
     this.panning = this.panels[panelIndex];
+    this.isUsingZoomButtons = false;
     document.body.style.cursor = "grabbing";
     const container = this.panning.container;
     this.updateMouse(e);
