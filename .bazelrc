@@ -55,6 +55,8 @@ build:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 #   - Tell Bazel to use Linux-compatible toolchains to build
 build:target-linux --cpu=k8
 build:target-linux --host_cpu=k8
+# Write linux-target build outputs in a separate directory from host build outputs.
+build:target-linux --experimental_platform_in_output_dir
 
 # Build with --config=remote-target-linux* to build on remote Linux Executors.
 # from non-Linux machines (e.g. MacOS).
@@ -67,10 +69,8 @@ build:target-linux --host_cpu=k8
 #   bazel test --config=x //...
 build:remote-target-linux --config=target-linux
 build:remote-target-linux --config=remote
-build:remote-target-linux --experimental_platform_in_output_dir
 build:remote-target-linux-dev --config=target-linux
 build:remote-target-linux-dev --config=remote-dev
-build:remote-target-linux-dev --experimental_platform_in_output_dir
 
 # Configuration used for GitHub actions-based CI
 build:ci --config=remote
