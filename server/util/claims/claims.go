@@ -24,16 +24,14 @@ const (
 	// Maximum number of entries in JWT -> Claims cache.
 	claimsCacheSize = 10_00
 
-	// BuildBuddy JWT duration maximum.
-	defaultBuildBuddyJWTDuration = 6 * time.Hour
-
 	// The key the Claims are stored under in the context.
 	// If unset, the JWT can be used to reconstitute the claims.
 	contextClaimsKey = "auth.claims"
 )
 
 var (
-	jwtKey = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
+	jwtKey      = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
+	jwtDuration = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
 )
 
 type Claims struct {
@@ -204,7 +202,7 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 }
 
 func assembleJWT(ctx context.Context, c *Claims) (string, error) {
-	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
+	expirationTime := time.Now().Add(*jwtDuration)
 	expiresAt := expirationTime.Unix()
 	// Round expiration times down to the nearest minute to improve stability
 	// of JWTs for caching purposes.
