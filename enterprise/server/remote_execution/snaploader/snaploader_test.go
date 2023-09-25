@@ -267,25 +267,21 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	err = loader.CacheSnapshot(ctx, key, optsA)
 	require.NoError(t, err)
 
-	// Delete some artifacts from the remote cache
+	// Delete some artifacts from the remote cache (arbitrarily the first one for simplicity)
 	snapMetadata, err := loader.GetSnapshot(ctx, key)
 	require.NoError(t, err)
-	for i, f := range snapMetadata.GetFiles() {
-		if i == 0 {
-			rn := digest.NewResourceName(f.GetDigest(), "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3).ToProto()
+	for _, f := range snapMetadata.GetFiles() {
+		rn := digest.NewResourceName(f.GetDigest(), "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3).ToProto()
+		err = env.GetCache().Delete(ctx, rn)
+		require.NoError(t, err)
+		break
+	}
+	for _, f := range snapMetadata.GetChunkedFiles() {
+		for _, c := range f.GetChunks() {
+			rn := digest.NewResourceName(c.GetDigest(), "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3).ToProto()
 			err = env.GetCache().Delete(ctx, rn)
 			require.NoError(t, err)
 			break
-		}
-	}
-	for _, f := range snapMetadata.GetChunkedFiles() {
-		for i, c := range f.GetChunks() {
-			if i == 0 {
-				rn := digest.NewResourceName(c.GetDigest(), "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3).ToProto()
-				err = env.GetCache().Delete(ctx, rn)
-				require.NoError(t, err)
-				break
-			}
 		}
 	}
 

@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader_utils"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -671,7 +671,7 @@ func (m *Mmap) initMap() error {
 	}
 
 	outputPath := filepath.Join(m.dataDir, ChunkName(m.Offset, false /*dirty*/))
-	if err := snaploader_utils.FetchArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, m.remoteInstanceName, outputPath); err != nil {
+	if err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, m.remoteInstanceName, outputPath); err != nil {
 		return status.WrapErrorf(err, "fetch snapshot chunk for offset %d digest %s", m.Offset, m.lazyDigest.Hash)
 	}
 

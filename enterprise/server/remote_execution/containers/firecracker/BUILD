@@ -26,7 +26,7 @@ go_library(
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaploader",
-        "//enterprise/server/remote_execution/snaploader_utils",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/uffd",
         "//enterprise/server/remote_execution/vbd",
         "//enterprise/server/remote_execution/vmexec_client",

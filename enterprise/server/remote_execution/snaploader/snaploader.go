@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader_utils"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -52,12 +52,12 @@ func NewKey(task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb
 	}, nil
 }
 
-// manifestDigest returns the digest for the snapshot manifest
+// manifestKey returns the key for the snapshot manifest
 //
 // Because we always want runners to use the newest manifest/snapshot, this
 // doesn't actually create a digest of the manifest contents. It just takes a
 // hash of shared properties, for which the snapshot should be shared
-func manifestDigest(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) (*repb.Digest, error) {
+func manifestKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	gid, err := groupID(ctx, env)
 	if err != nil {
 		return nil, err
@@ -175,15 +175,15 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (*Snapshot, error) {
 	var manifest *fcpb.SnapshotManifest
 	var err error
-	if *snaploader_utils.EnableRemoteSnapshotSharing {
+	if *snaputil.EnableRemoteSnapshotSharing {
 		manifest, err = l.fetchRemoteManifest(ctx, key)
 		if err != nil {
 			return nil, status.WrapError(err, "fetch remote manifest")
 		}
 	} else {
-		manifest, err = l.fetchLocalManifest(ctx, key)
+		manifest, err = l.getLocalManifest(ctx, key)
 		if err != nil {
-			return nil, status.WrapError(err, "fetch local manifest")
+			return nil, status.WrapError(err, "get local manifest")
 		}
 	}
 
@@ -195,7 +195,7 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
 func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := manifestDigest(ctx, l.env, key)
+	d, err := manifestKey(ctx, l.env, key)
 	if err != nil {
 		return nil, err
 	}
@@ -209,8 +209,8 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
 }
 
-func (l *FileCacheLoader) fetchLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := manifestDigest(ctx, l.env, key)
+func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
+	d, err := manifestKey(ctx, l.env, key)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func chunkedFileProperty(chunkedFileTree *repb.Tree, propertyName string) (int64
 }
 
 func (l *FileCacheLoader) chunkedFileTree(ctx context.Context, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string) (*repb.Tree, error) {
-	b, err := snaploader_utils.FetchBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
+	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read chunked file tree: %s", status.Message(err))
 	}
@@ -334,7 +334,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 
 	for _, fileNode := range snapshot.manifest.Files {
 		outputPath := filepath.Join(outputDirectory, fileNode.GetName())
-		if err := snaploader_utils.FetchArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
+		if err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
 			return nil, err
 		}
 	}
@@ -381,7 +381,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 			IsExecutable: false,
 		})
 
-		if err := snaploader_utils.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath); err != nil {
+		if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath); err != nil {
 			return err
 		}
 	}
@@ -406,12 +406,12 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
-	d, err := manifestDigest(ctx, l.env, key)
+	d, err := manifestKey(ctx, l.env, key)
 	if err != nil {
 		return err
 	}
 
-	if *snaploader_utils.EnableRemoteSnapshotSharing {
+	if *snaputil.EnableRemoteSnapshotSharing {
 		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
 		return cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar)
 	}
@@ -525,7 +525,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 
 		if c.Mapped() {
 			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-			if err := snaploader_utils.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
+			if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
 				return nil, err
 			}
 		}
@@ -546,7 +546,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-	if err := snaploader_utils.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, remoteInstanceName, treeBytes, cow.DataDir()); err != nil {
+	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, remoteInstanceName, treeBytes); err != nil {
 		return nil, err
 	}
 
