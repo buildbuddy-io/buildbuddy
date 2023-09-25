@@ -23,21 +23,21 @@ import (
 
 func (p *pool) initContainerProviders() error {
 	providers := make(map[platform.ContainerType]container.Provider)
-	dockerProvider, err := docker.NewProvider(p.env, p.imageCacheAuth, p.hostBuildRoot())
+	dockerProvider, err := docker.NewProvider(p.env, p.hostBuildRoot())
 	if err != nil {
 		return status.FailedPreconditionErrorf("Failed to initialize docker container provider: %s", err)
 	}
 	if dockerProvider != nil {
 		providers[platform.DockerContainerType] = dockerProvider
 	}
-	podmanProvider, err := podman.NewProvider(p.env, p.imageCacheAuth, *rootDirectory)
+	podmanProvider, err := podman.NewProvider(p.env, *rootDirectory)
 	if err != nil {
 		return status.FailedPreconditionErrorf("Failed to initialize podman container provider: %s", err)
 	}
 	if podmanProvider != nil {
 		providers[platform.PodmanContainerType] = podmanProvider
 	}
-	providers[platform.FirecrackerContainerType] = firecracker.NewProvider(p.env, p.imageCacheAuth, *rootDirectory)
+	providers[platform.FirecrackerContainerType] = firecracker.NewProvider(p.env, *rootDirectory)
 	providers[platform.BareContainerType] = &bare.Provider{}
 
 	p.containerProviders = providers

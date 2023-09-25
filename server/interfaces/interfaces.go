@@ -1262,6 +1262,26 @@ type ClientIdentityService interface {
 	IdentityFromContext(ctx context.Context) (*ClientIdentity, error)
 }
 
+// ImageCacheToken is a claim to be able to access a locally cached image.
+type ImageCacheToken struct {
+	// GroupID is the authenticated group ID.
+	GroupID string
+	// ImageRef is the remote image ref, e.g. "gcr.io/foo/bar:v1.0"
+	ImageRef string
+}
+
+// ImageCacheAuthenticator validates access to locally cached images.
+type ImageCacheAuthenticator interface {
+	// IsAuthorized returns whether the given token is valid. If this returns
+	// false, the image must be revalidated with the remote registry, and then
+	// Refresh should be called in order to mark the token valid.
+	IsAuthorized(token ImageCacheToken) bool
+
+	// Refresh extends the TTL of the given token before it must be
+	// re-authenticated with a remote registry.
+	Refresh(token ImageCacheToken)
+}
+
 // Store models a block-level storage system, which is useful as a backend
 type Store interface {
 	io.ReaderAt

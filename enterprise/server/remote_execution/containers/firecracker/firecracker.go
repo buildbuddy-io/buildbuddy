@@ -298,13 +298,12 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 }
 
 type Provider struct {
-	env            environment.Env
-	dockerClient   *dockerclient.Client
-	imageCacheAuth *container.ImageCacheAuthenticator
-	buildRoot      string
+	env          environment.Env
+	dockerClient *dockerclient.Client
+	buildRoot    string
 }
 
-func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, hostBuildRoot string) *Provider {
+func NewProvider(env environment.Env, hostBuildRoot string) *Provider {
 	// Best effort trying to initialize the docker client. If it fails, we'll
 	// simply fall back to use skopeo to download and cache container images.
 	client, err := docker.NewClient()
@@ -313,10 +312,9 @@ func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthen
 	}
 
 	return &Provider{
-		env:            env,
-		dockerClient:   client,
-		imageCacheAuth: imageCacheAuth,
-		buildRoot:      hostBuildRoot,
+		env:          env,
+		dockerClient: client,
+		buildRoot:    hostBuildRoot,
 	}
 }
 
@@ -345,7 +343,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 		ActionWorkingDirectory: workingDir,
 		JailerRoot:             p.buildRoot,
 	}
-	c, err := NewContainer(ctx, p.env, p.imageCacheAuth, task.GetExecutionTask(), opts)
+	c, err := NewContainer(ctx, p.env, task.GetExecutionTask(), opts)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +402,6 @@ type FirecrackerContainer struct {
 	machine            *fcclient.Machine // the firecracker machine object.
 	vmLog              *VMLog
 	env                environment.Env
-	imageCacheAuth     *container.ImageCacheAuthenticator
 	createFromSnapshot bool
 	mountWorkspaceFile bool
 
@@ -421,7 +418,7 @@ type FirecrackerContainer struct {
 	cancelVmCtx context.CancelFunc
 }
 
-func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
 	if *snaploader.EnableLocalSnapshotSharing && !(*enableNBD && *enableUFFD) {
 		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires NBD and UFFD to be enabled")
 	}
@@ -475,7 +472,6 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		env:                env,
 		loader:             loader,
 		vmLog:              vmLog,
-		imageCacheAuth:     imageCacheAuth,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
 		cancelVmCtx:        func() {},
 	}
@@ -1592,7 +1588,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// there's no need to Create the machine.
 	if c.machine == nil {
 		log.CtxInfof(ctx, "Pulling image %q", c.containerImage)
-		if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.containerImage); err != nil {
+		if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.containerImage); err != nil {
 			return nonCmdExit(ctx, err)
 		}
 

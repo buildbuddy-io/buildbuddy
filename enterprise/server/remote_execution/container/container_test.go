@@ -61,7 +61,7 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
 	ctx := userCtx(t, ta, "US1")
 	goodCreds1 := container.PullCredentials{
@@ -76,17 +76,17 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 
 	assert.Equal(t, 0, c.PullCount, "sanity check: pull count should be 0 initially")
 
-	err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds1, imageRef)
+	err := container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, c.PullCount, "should pull the image if credentials are valid")
 
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds1, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, c.PullCount, "should not need to immediately re-authenticate with the remote registry")
 
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds2, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds2, imageRef)
 
 	require.NoError(t, err)
 	assert.Equal(
@@ -98,7 +98,7 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 	env := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
 	ctx := userCtx(t, ta, "US1")
 	goodCreds := container.PullCredentials{
@@ -111,15 +111,15 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 		Password: "trying-to-guess-the-real-secret",
 	}
 
-	err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, badCreds, imageRef)
+	err := container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef)
 
 	require.True(t, status.IsPermissionDeniedError(err), "should return PermissionDenied if credentials are valid")
 
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, badCreds, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef)
 
 	require.True(t, status.IsPermissionDeniedError(err), "should return PermissionDenied on subsequent attempts as well")
 
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds, imageRef)
 
 	require.NoError(t, err, "good creds should still work after previous incorrect attempts")
 }

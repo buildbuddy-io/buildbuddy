@@ -125,7 +125,6 @@ type pullStatus struct {
 
 type Provider struct {
 	env                     environment.Env
-	imageCacheAuth          *container.ImageCacheAuthenticator
 	buildRoot               string
 	imageStreamingEnabled   bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
@@ -155,7 +154,7 @@ func runSociStore(ctx context.Context) {
 	}
 }
 
-func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
+func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
 	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
 	if *imageStreamingEnabled {
@@ -207,7 +206,6 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 	}
 	return &Provider{
 		env:                     env,
-		imageCacheAuth:          imageCacheAuthenticator,
 		imageStreamingEnabled:   *imageStreamingEnabled,
 		sociArtifactStoreClient: sociArtifactStoreClient,
 		sociStoreKeychainClient: sociStoreKeychainClient,
@@ -267,7 +265,6 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 
 	return &podmanCommandContainer{
 		env:                     p.env,
-		imageCacheAuth:          p.imageCacheAuth,
 		image:                   props.ContainerImage,
 		imageIsStreamable:       imageIsStreamable,
 		sociArtifactStoreClient: p.sociArtifactStoreClient,
@@ -306,8 +303,7 @@ type PodmanOptions struct {
 
 // podmanCommandContainer containerizes a single command's execution using a Podman container.
 type podmanCommandContainer struct {
-	env            environment.Env
-	imageCacheAuth *container.ImageCacheAuthenticator
+	env environment.Env
 
 	image     string
 	buildRoot string
@@ -333,13 +329,12 @@ type podmanCommandContainer struct {
 	removed bool
 }
 
-func NewPodmanCommandContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, image, buildRoot string, options *PodmanOptions) container.CommandContainer {
+func NewPodmanCommandContainer(env environment.Env, image, buildRoot string, options *PodmanOptions) container.CommandContainer {
 	return &podmanCommandContainer{
-		env:            env,
-		imageCacheAuth: imageCacheAuth,
-		image:          image,
-		buildRoot:      buildRoot,
-		options:        options,
+		env:       env,
+		image:     image,
+		buildRoot: buildRoot,
+		options:   options,
 	}
 }
 
@@ -452,7 +447,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}

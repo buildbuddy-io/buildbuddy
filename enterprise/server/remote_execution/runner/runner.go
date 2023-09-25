@@ -168,9 +168,8 @@ func (rs runnerSlice) String() string {
 }
 
 type commandRunner struct {
-	env            environment.Env
-	imageCacheAuth *container.ImageCacheAuthenticator
-	p              *pool
+	env environment.Env
+	p   *pool
 
 	// key controls which tasks can execute on this runner.
 	key *rnpb.RunnerKey
@@ -266,7 +265,7 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 		return err
 	}
 	err = container.PullImageIfNecessary(
-		ctx, r.env, r.imageCacheAuth,
+		ctx, r.env,
 		r.Container, creds, r.PlatformProperties.ContainerImage,
 	)
 	if err != nil {
@@ -356,7 +355,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 			return commandutil.ErrorResult(err)
 		}
 		err = container.PullImageIfNecessary(
-			ctx, r.env, r.imageCacheAuth,
+			ctx, r.env,
 			r.Container, creds, r.PlatformProperties.ContainerImage,
 		)
 		if err != nil {
@@ -506,7 +505,6 @@ type PoolOptions struct {
 
 type pool struct {
 	env                environment.Env
-	imageCacheAuth     *container.ImageCacheAuthenticator
 	podID              string
 	buildRoot          string
 	overrideProvider   container.Provider
@@ -535,14 +533,11 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
 
-	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-
 	p := &pool{
-		env:            env,
-		podID:          podID,
-		buildRoot:      *rootDirectory,
-		imageCacheAuth: imageCacheAuth,
-		runners:        []*commandRunner{},
+		env:       env,
+		podID:     podID,
+		buildRoot: *rootDirectory,
+		runners:   []*commandRunner{},
 	}
 	if err := p.initContainerProviders(); err != nil {
 		return nil, err
@@ -786,7 +781,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 	err = container.PullImageIfNecessary(
-		ctx, p.env, p.imageCacheAuth,
+		ctx, p.env,
 		c, creds, platProps.ContainerImage,
 	)
 	if err != nil {
@@ -955,7 +950,6 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	r := &commandRunner{
 		env:                p.env,
 		p:                  p,
-		imageCacheAuth:     p.imageCacheAuth,
 		key:                state.GetRunnerKey(),
 		debugID:            state.GetDebugId(),
 		taskNumber:         state.GetAssignedTaskCount(),
