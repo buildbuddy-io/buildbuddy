@@ -1,0 +1,25 @@
+diff --git a/jailer.go b/jailer.go
+index e261fae..a5e055d 100644
+--- a/jailer.go
++++ b/jailer.go
+@@ -413,10 +413,19 @@ func LinkFilesHandler(kernelImageFileName string) Handler {
+ 			}
+ 
+ 			// copy all drives to the root fs
++			rootfsPrefix := rootfs + string(os.PathSeparator)
+ 			for i, drive := range m.Cfg.Drives {
+ 				hostPath := StringValue(drive.PathOnHost)
+-				driveFileName := filepath.Base(hostPath)
+ 
++				// If the provided host path is already within the rootfs then just
++				// update the drive path to be rootfs-relative.
++				if strings.HasPrefix(hostPath, rootfsPrefix) {
++					rootfsRelativePath := strings.TrimPrefix(hostPath, rootfsPrefix)
++					m.Cfg.Drives[i].PathOnHost = String(rootfsRelativePath)
++					continue
++				}
++
++				driveFileName := filepath.Base(hostPath)
+ 				if err := os.Link(
+ 					hostPath,
+ 					filepath.Join(rootfs, driveFileName),

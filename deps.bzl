@@ -1591,6 +1591,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_firecracker_microvm_firecracker_go_sdk",
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
+        patch_args = ["-p1"],
+        # TODO(bduffany): when
+        # https://github.com/firecracker-microvm/firecracker-go-sdk/pull/510 is
+        # merged, cherry-pick the final revision into our fork, and remove this
+        # patch.
+        patches = ["@{}//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch".format(workspace_name)],
         replace = "github.com/buildbuddy-io/firecracker-go-sdk",
         sum = "h1:Wx6fPNZOs0SJ9NpTsLbJsItORvEM9D94k/vr8ZwIBEg=",
         version = "v0.0.0-20230721-1d5c50b",
