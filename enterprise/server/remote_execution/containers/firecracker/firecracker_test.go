@@ -580,7 +580,6 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
 	var containersToCleanup []*firecracker.FirecrackerContainer
 	t.Cleanup(func() {
@@ -622,10 +621,10 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 			}},
 		},
 	}
-	baseVM, err := firecracker.NewContainer(ctx, env, cacheAuth, task, opts)
+	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
 	containersToCleanup = append(containersToCleanup, baseVM)
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, baseVM, container.PullCredentials{}, opts.ContainerImage)
+	err = container.PullImageIfNecessary(ctx, env, baseVM, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
 	err = baseVM.Create(ctx, opts.ActionWorkingDirectory)
 	require.NoError(t, err)
@@ -653,7 +652,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		},
 		JailerRoot: jailerRoot,
 	}
-	forkedVM, err := firecracker.NewContainer(ctx, env, cacheAuth, task, opts)
+	forkedVM, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
 	containersToCleanup = append(containersToCleanup, forkedVM)
 	err = forkedVM.Unpause(ctx)
@@ -690,7 +689,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		},
 		JailerRoot: jailerRoot,
 	}
-	forkedVM2, err := firecracker.NewContainer(ctx, env, cacheAuth, task, opts)
+	forkedVM2, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
 	containersToCleanup = append(containersToCleanup, forkedVM2)
 	err = forkedVM2.Unpause(ctx)

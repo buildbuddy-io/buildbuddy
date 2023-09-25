@@ -1,4 +1,4 @@
-package snaploader_utils
+package snaputil
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ import (
 var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
 var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd and executor.firecracker_enable_uffd are true.")
 
-func FetchArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) error {
+func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) error {
 	node := &repb.FileNode{Digest: d}
 	fetchedLocally := localCache.FastLinkFile(node, outputPath)
 	if fetchedLocally {
@@ -42,17 +42,17 @@ func FetchArtifact(ctx context.Context, localCache interfaces.FileCache, bsClien
 	}
 
 	// Write file to outputDir so it can be used by the VM
-	writeErr := writeFile(outputPath, buf.Bytes())
+	writeErr := os.WriteFile(outputPath, buf.Bytes(), 0777)
 
 	// Save to local cache so next time fetching won't require a remote get
-	if err := CacheLocally(localCache, d, outputPath); err != nil {
+	if err := cacheLocally(localCache, d, outputPath); err != nil {
 		log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
 	}
 
 	return writeErr
 }
 
-func FetchBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
+func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return nil, err
@@ -60,33 +60,21 @@ func FetchBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("%s.%s.tmp", d.Hash, randStr))
 	defer func() {
 		if err := os.Remove(tmpPath); err != nil {
-			log.Warningf("Failed to remove temp file in snaploader_utils::FetchBytes: %s", err)
+			log.Warningf("Failed to remove temp file in snaputil::GetBytes: %s", err)
 		}
 	}()
 
-	if err := FetchArtifact(ctx, localCache, bsClient, d, instanceName, tmpPath); err != nil {
+	if err := GetArtifact(ctx, localCache, bsClient, d, instanceName, tmpPath); err != nil {
 		return nil, err
 	}
 
 	return os.ReadFile(tmpPath)
 }
 
-func writeFile(path string, b []byte) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if _, err := f.Write(b); err != nil {
-		return err
-	}
-	return nil
-}
-
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled
 func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, path string) error {
-	localCacheErr := CacheLocally(localCache, d, path)
+	localCacheErr := cacheLocally(localCache, d, path)
 	if !*EnableRemoteSnapshotSharing {
 		return localCacheErr
 	}
@@ -104,14 +92,14 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, b []byte, tmpDir string) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, b []byte) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return err
 	}
-	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("%s.%s.tmp", d.Hash, randStr))
-	if err := writeFile(tmpPath, b); err != nil {
+	tmpPath := filepath.Join(localCache.TempDir(), fmt.Sprintf("%s.%s.tmp", d.Hash, randStr))
+	if err := os.WriteFile(tmpPath, b, 0777); err != nil {
 		return err
 	}
 	defer func() {
@@ -123,9 +111,9 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 	return Cache(ctx, localCache, bsClient, d, remoteInstanceName, tmpPath)
 }
 
-// CacheLocally copies the data at `path` to the local filecache with
+// cacheLocally copies the data at `path` to the local filecache with
 // the given `key`
-func CacheLocally(localCache interfaces.FileCache, d *repb.Digest, path string) error {
+func cacheLocally(localCache interfaces.FileCache, d *repb.Digest, path string) error {
 	fileNode := &repb.FileNode{Digest: d}
 	// If EnableLocalSnapshotSharing=true and we're computing real unloadedChunks,
 	// the files will be immutable. We won't need to re-save them to file cache

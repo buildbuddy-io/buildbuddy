@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader",
     deps = [
         "//enterprise/server/remote_execution/copy_on_write",
-        "//enterprise/server/remote_execution/snaploader_utils",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/util/filecacheutil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
