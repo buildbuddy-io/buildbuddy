@@ -3,7 +3,6 @@ package snaploader
 import (
 	"context"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader_utils"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -385,20 +384,12 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 			IsExecutable: false,
 		})
 
-<<<<<<< HEAD
 		if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath); err != nil {
-=======
-		if err := snaploader_utils.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath); err != nil {
->>>>>>> dd8cf1f23 (Add remote instance name when reading/writing to cache)
 			return err
 		}
 	}
 	for name, cow := range opts.ChunkedFiles {
-<<<<<<< HEAD
 		treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts.Recycled)
-=======
-		treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow)
->>>>>>> dd8cf1f23 (Add remote instance name when reading/writing to cache)
 		if err != nil {
 			return status.WrapErrorf(err, "cache %q COW", name)
 		}
@@ -488,11 +479,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
-<<<<<<< HEAD
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, recycled bool) (*repb.Digest, error) {
-=======
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore) (*repb.Digest, error) {
->>>>>>> dd8cf1f23 (Add remote instance name when reading/writing to cache)
 	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err
@@ -541,11 +528,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 
 		if c.Mapped() {
 			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-<<<<<<< HEAD
 			if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
-=======
-			if err := snaploader_utils.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
->>>>>>> dd8cf1f23 (Add remote instance name when reading/writing to cache)
 				return nil, err
 			}
 		}
@@ -566,11 +549,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-<<<<<<< HEAD
 	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, remoteInstanceName, treeBytes); err != nil {
-=======
-	if err := snaploader_utils.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, remoteInstanceName, treeBytes, cow.DataDir()); err != nil {
->>>>>>> dd8cf1f23 (Add remote instance name when reading/writing to cache)
 		return nil, err
 	}
 

@@ -60,7 +60,11 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("%s.%s.tmp", d.Hash, randStr))
 	defer func() {
 		if err := os.Remove(tmpPath); err != nil {
+<<<<<<< HEAD
 			log.CtxWarningf(ctx, "Failed to remove temp file in snaputil::GetBytes: %s", err)
+=======
+			log.Warningf("Failed to remove temp file in snaputil::GetBytes: %s", err)
+>>>>>>> dd65283ec (PR feedback)
 		}
 	}()
 
@@ -104,7 +108,11 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 	}
 	defer func() {
 		if err := os.Remove(tmpPath); err != nil {
+<<<<<<< HEAD
 			log.CtxWarningf(ctx, "Failed to remove temp file: %s", err)
+=======
+			log.Warningf("Failed to remove temp file: %s", err)
+>>>>>>> dd65283ec (PR feedback)
 		}
 	}()
 
