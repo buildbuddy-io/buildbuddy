@@ -679,12 +679,9 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	require.Equal(t, "Base\nFork remote fetch\n", string(res.Stdout))
 }
 
-// Run with `bazel test  //enterprise/server/remote_execution/containers/firecracker:firecracker_test_manual  --test_output=streamed --test_filter=TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking`
+// To print performance data, run with:
+// `bazel test  //enterprise/server/remote_execution/containers/firecracker/... --test_output=streamed --test_filter=TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking`
 func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
-	if os.Getenv("RUN_MANUAL_TEST") != "true" {
-		t.Skip("Skipping TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking")
-	}
-
 	// Silence the logs so output is easier to read
 	flags.Set(t, "app.log_level", "error")
 	log.Configure()
@@ -727,7 +724,6 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		require.NoError(t, err)
 		fc.WaitForDirectoryScanToComplete()
 		env.SetFileCache(fc)
-		cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
 		task = &repb.ExecutionTask{
 			Command: &repb.Command{
@@ -749,10 +745,10 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 			JailerRoot: jailerRoot,
 		}
 
-		c, err = firecracker.NewContainer(ctx, env, cacheAuth, task, opts)
+		c, err = firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
 		containersToCleanup = append(containersToCleanup, c)
-		err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
+		err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
 		require.NoError(t, err)
 		err = c.Create(ctx, opts.ActionWorkingDirectory)
 		require.NoError(t, err)
