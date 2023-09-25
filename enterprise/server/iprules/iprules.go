@@ -279,10 +279,6 @@ func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) err
 		return nil
 	}
 
-	if r.URL.Path == "/rpc/BuildBuddyService/GetGroup" {
-		return nil
-	}
-
 	// All other APIs are subject to IP access checks.
 	if strings.HasPrefix(r.URL.Path, "/rpc/") || strings.HasPrefix(r.URL.Path, "/api/") {
 		err := s.Authorize(ctx)
