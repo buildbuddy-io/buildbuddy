@@ -112,6 +112,7 @@ type RealEnv struct {
 	auditLog                         interfaces.AuditLogger
 	ipRulesService                   interfaces.IPRulesService
 	serverIdentityService            interfaces.ClientIdentityService
+	imageCacheAuthenticator          interfaces.ImageCacheAuthenticator
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -643,4 +644,12 @@ func (r *RealEnv) GetClientIdentityService() interfaces.ClientIdentityService {
 
 func (r *RealEnv) SetClientIdentityService(s interfaces.ClientIdentityService) {
 	r.serverIdentityService = s
+}
+
+func (r *RealEnv) GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticator {
+	return r.imageCacheAuthenticator
+}
+
+func (r *RealEnv) SetImageCacheAuthenticator(val interfaces.ImageCacheAuthenticator) {
+	r.imageCacheAuthenticator = val
 }

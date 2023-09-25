@@ -59,8 +59,8 @@ func TestDockerRun(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c := docker.NewDockerContainer(env, cacheAuth, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
 	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
 
@@ -95,8 +95,8 @@ func TestDockerLifecycleControl(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c := docker.NewDockerContainer(env, cacheAuth, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
 	isContainerRunning := false
 	t.Cleanup(func() {
@@ -114,7 +114,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	})
 
 	err = container.PullImageIfNecessary(
-		ctx, env, cacheAuth, c, container.PullCredentials{},
+		ctx, env, c, container.PullCredentials{},
 		"mirror.gcr.io/library/busybox",
 	)
 	require.NoError(t, err)
@@ -184,11 +184,10 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	}}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c := docker.NewDockerContainer(env, cacheAuth, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(
-		ctx, env, cacheAuth, c, container.PullCredentials{}, "mirror.gcr.io/library/busybox")
+		ctx, env, c, container.PullCredentials{}, "mirror.gcr.io/library/busybox")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -238,11 +237,10 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	}}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c := docker.NewDockerContainer(env, cacheAuth, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(
-		ctx, env, cacheAuth, c, container.PullCredentials{}, "mirror.gcr.io/library/busybox")
+		ctx, env, c, container.PullCredentials{}, "mirror.gcr.io/library/busybox")
 	require.NoError(t, err)
 
 	err = c.Create(ctx, workDir)
@@ -298,10 +296,9 @@ func TestDockerExec_Stdio(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c := docker.NewDockerContainer(env, cacheAuth, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 	err = container.PullImageIfNecessary(
-		ctx, env, cacheAuth, c, container.PullCredentials{},
+		ctx, env, c, container.PullCredentials{},
 		"mirror.gcr.io/library/busybox",
 	)
 	require.NoError(t, err)
@@ -347,8 +344,7 @@ func TestDockerRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c := docker.NewDockerContainer(env, cacheAuth, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
+	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
 	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
 

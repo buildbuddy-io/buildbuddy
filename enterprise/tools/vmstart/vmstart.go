@@ -64,6 +64,7 @@ func getToolEnv() *real_environment.RealEnv {
 	re.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	re.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	re.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	re.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	return re
 }
 
@@ -137,10 +138,9 @@ func main() {
 	}
 
 	var c *firecracker.FirecrackerContainer
-	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	// TODO: make snapshotID work again.
 	if *snapshotID != "" {
-		c, err = firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+		c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
@@ -148,12 +148,12 @@ func main() {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
 	} else {
-		c, err = firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+		c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
 		creds := container.PullCredentials{Username: *registryUser, Password: *registryPassword}
-		if err := container.PullImageIfNecessary(ctx, env, auth, c, creds, opts.ContainerImage); err != nil {
+		if err := container.PullImageIfNecessary(ctx, env, c, creds, opts.ContainerImage); err != nil {
 			log.Fatalf("Unable to PullImageIfNecessary: %s", err)
 		}
 		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {

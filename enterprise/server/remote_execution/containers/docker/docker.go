@@ -60,10 +60,9 @@ var (
 )
 
 type Provider struct {
-	env            environment.Env
-	client         *dockerclient.Client
-	imageCacheAuth *container.ImageCacheAuthenticator
-	buildRoot      string
+	env       environment.Env
+	client    *dockerclient.Client
+	buildRoot string
 }
 
 var (
@@ -100,17 +99,16 @@ func NewClient() (*dockerclient.Client, error) {
 	return dockerClient, initErr
 }
 
-func NewProvider(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, hostBuildRoot string) (*Provider, error) {
+func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 	client, err := NewClient()
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
 	}
 
 	return &Provider{
-		env:            env,
-		client:         client,
-		imageCacheAuth: imageCacheAuth,
-		buildRoot:      hostBuildRoot,
+		env:       env,
+		client:    client,
+		buildRoot: hostBuildRoot,
 	}, nil
 }
 
@@ -130,7 +128,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 		Volumes:                 *dockerVolumes,
 		InheritUserIDs:          *dockerInheritUserIDs,
 	}
-	return NewDockerContainer(p.env, p.imageCacheAuth, p.client, props.ContainerImage, p.buildRoot, opts), nil
+	return NewDockerContainer(p.env, p.client, props.ContainerImage, p.buildRoot, opts), nil
 }
 
 type DockerOptions struct {
@@ -151,8 +149,7 @@ type DockerOptions struct {
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
 type dockerCommandContainer struct {
-	env            environment.Env
-	imageCacheAuth *container.ImageCacheAuthenticator
+	env environment.Env
 
 	image string
 	// hostRootDir is the path on the _host_ machine ("node", in k8s land) of the
@@ -173,14 +170,13 @@ type dockerCommandContainer struct {
 	removed bool
 }
 
-func NewDockerContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
+func NewDockerContainer(env environment.Env, client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
 	return &dockerCommandContainer{
-		env:            env,
-		imageCacheAuth: imageCacheAuth,
-		image:          image,
-		hostRootDir:    hostRootDir,
-		client:         client,
-		options:        options,
+		env:         env,
+		image:       image,
+		hostRootDir: hostRootDir,
+		client:      client,
+		options:     options,
 	}
 }
 
@@ -206,7 +202,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := container.PullImageIfNecessary(ctx, r.env, r.imageCacheAuth, r, creds, r.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}

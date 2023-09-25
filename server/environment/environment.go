@@ -163,4 +163,6 @@ type Env interface {
 	SetIPRulesService(interfaces.IPRulesService)
 	SetClientIdentityService(service interfaces.ClientIdentityService)
 	GetClientIdentityService() interfaces.ClientIdentityService
+	GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticator
+	SetImageCacheAuthenticator(interfaces.ImageCacheAuthenticator)
 }

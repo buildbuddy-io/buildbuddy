@@ -199,6 +199,9 @@ func main() {
 	}
 	executorID := executorUUID.String()
 
+	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	env.SetImageCacheAuthenticator(imageCacheAuth)
+
 	runnerPool, err := runner.NewPool(env, &runner.PoolOptions{})
 	if err != nil {
 		log.Fatalf("Failed to initialize runner pool: %s", err)

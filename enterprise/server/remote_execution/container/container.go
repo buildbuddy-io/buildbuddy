@@ -42,6 +42,8 @@ var (
 
 	containerRegistries     = flag.Slice("executor.container_registries", []ContainerRegistry{}, "")
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
+
+	slowPullWarnOnce sync.Once
 )
 
 type ContainerRegistry struct {
@@ -231,13 +233,17 @@ type Stdio struct {
 
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
-func PullImageIfNecessary(ctx context.Context, env environment.Env, cacheAuth *ImageCacheAuthenticator, ctr CommandContainer, creds PullCredentials, imageRef string) error {
+func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds PullCredentials, imageRef string) error {
 	if *debugUseLocalImagesOnly {
 		return nil
 	}
-	if env.GetAuthenticator() == nil {
+	cacheAuth := env.GetImageCacheAuthenticator()
+	if cacheAuth == nil || env.GetAuthenticator() == nil {
 		// If we don't have an authenticator available, fall back to
 		// authenticating the creds with the image registry on every request.
+		slowPullWarnOnce.Do(func() {
+			log.CtxWarningf(ctx, "Authentication is not properly configured; this will result in slower image pulls.")
+		})
 		return ctr.PullImage(ctx, creds)
 	}
 	isCached, err := ctr.IsImageCached(ctx)
@@ -279,39 +285,33 @@ func (p PullCredentials) String() string {
 	return p.Username + ":" + p.Password
 }
 
-// ImageCacheToken is a claim to be able to access a locally cached image.
-type ImageCacheToken struct {
-	GroupID  string
-	ImageRef string
-}
-
 // NewImageCacheToken returns the token representing the authenticated group ID,
 // pull credentials, and image ref. For the same sets of those values, the
 // same token is always returned.
-func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCredentials, imageRef string) (ImageCacheToken, error) {
+func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCredentials, imageRef string) (interfaces.ImageCacheToken, error) {
 	groupID := ""
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err != nil {
 		if !authutil.IsAnonymousUserError(err) {
-			return ImageCacheToken{}, err
+			return interfaces.ImageCacheToken{}, err
 		}
 	} else {
 		groupID = u.GetGroupID()
 	}
-	return ImageCacheToken{
+	return interfaces.ImageCacheToken{
 		GroupID:  groupID,
 		ImageRef: imageRef,
 	}, nil
 }
 
-// ImageCacheAuthenticator grants access to short-lived tokens for accessing
+// imageCacheAuthenticator grants access to short-lived tokens for accessing
 // locally cached images without needing to re-authenticate with the remote
 // registry (which can be slow).
-type ImageCacheAuthenticator struct {
+type imageCacheAuthenticator struct {
 	opts ImageCacheAuthenticatorOpts
 
 	mu               sync.Mutex // protects(tokenExpireTimes)
-	tokenExpireTimes map[ImageCacheToken]time.Time
+	tokenExpireTimes map[interfaces.ImageCacheToken]time.Time
 }
 
 type ImageCacheAuthenticatorOpts struct {
@@ -320,17 +320,17 @@ type ImageCacheAuthenticatorOpts struct {
 	TokenTTL time.Duration
 }
 
-func NewImageCacheAuthenticator(opts ImageCacheAuthenticatorOpts) *ImageCacheAuthenticator {
+func NewImageCacheAuthenticator(opts ImageCacheAuthenticatorOpts) *imageCacheAuthenticator {
 	if opts.TokenTTL == 0 {
 		opts.TokenTTL = defaultImageCacheTokenTTL
 	}
-	return &ImageCacheAuthenticator{
+	return &imageCacheAuthenticator{
 		opts:             opts,
-		tokenExpireTimes: map[ImageCacheToken]time.Time{},
+		tokenExpireTimes: map[interfaces.ImageCacheToken]time.Time{},
 	}
 }
 
-func (a *ImageCacheAuthenticator) IsAuthorized(token ImageCacheToken) bool {
+func (a *imageCacheAuthenticator) IsAuthorized(token interfaces.ImageCacheToken) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.purgeExpiredTokens()
@@ -338,13 +338,13 @@ func (a *ImageCacheAuthenticator) IsAuthorized(token ImageCacheToken) bool {
 	return ok
 }
 
-func (a *ImageCacheAuthenticator) Refresh(token ImageCacheToken) {
+func (a *imageCacheAuthenticator) Refresh(token interfaces.ImageCacheToken) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.tokenExpireTimes[token] = time.Now().Add(a.opts.TokenTTL)
 }
 
-func (a *ImageCacheAuthenticator) purgeExpiredTokens() {
+func (a *imageCacheAuthenticator) purgeExpiredTokens() {
 	for token, expireTime := range a.tokenExpireTimes {
 		if time.Now().After(expireTime) {
 			delete(a.tokenExpireTimes, token)
