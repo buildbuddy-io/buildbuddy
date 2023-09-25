@@ -405,13 +405,6 @@ type FirecrackerContainer struct {
 	createFromSnapshot bool
 	mountWorkspaceFile bool
 
-	// If a container is resumed from a snapshot, the jailer
-	// is started first using an external command and then the snapshot
-	// is loaded. This slightly breaks the firecracker SDK's "Wait()"
-	// method, so in that case we wait for the external jailer command
-	// to finish, rather than calling "Wait()" on the sdk machine object.
-	externalJailerCmd *exec.Cmd
-
 	cleanupVethPair func(context.Context) error
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
 	// already been stopped manually.
@@ -1061,10 +1054,6 @@ func nonCmdExit(ctx context.Context, err error) *interfaces.CommandResult {
 		Error:    err,
 		ExitCode: -2,
 	}
-}
-
-func (c *FirecrackerContainer) startedFromSnapshot() bool {
-	return c.externalJailerCmd != nil
 }
 
 func (c *FirecrackerContainer) newID(ctx context.Context) error {
@@ -2200,9 +2189,8 @@ func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
 func (c *FirecrackerContainer) Wait(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-
-	if c.externalJailerCmd != nil {
-		return c.externalJailerCmd.Wait()
+	if c.machine == nil {
+		return nil
 	}
 	return c.machine.Wait(ctx)
 }
