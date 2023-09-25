@@ -524,9 +524,6 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	podmanRunArgs = addUserArgs(podmanRunArgs, c.options)
-	if strings.ToLower(c.options.Network) == "off" {
-		podmanRunArgs = append(podmanRunArgs, "--network=none")
-	}
 	if stdio.Stdin != nil {
 		podmanRunArgs = append(podmanRunArgs, "--interactive")
 	}
