@@ -713,6 +713,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ChunkedFiles:        map[string]*copy_on_write.COWStore{},
+		Recycled:            c.recycled,
 	}
 	if *enableVBD {
 		if c.rootStore != nil {
