@@ -361,7 +361,6 @@ type FirecrackerContainer struct {
 	containerImage   string // the OCI container image. ex "alpine:latest"
 	actionWorkingDir string // the action directory with inputs / outputs
 	containerFSPath  string // the path to the container ext4 image
-	tempDir          string // path for writing disk images before the chroot is created
 	user             string // user to execute all commands as
 
 	rmOnce *sync.Once
@@ -1634,27 +1633,12 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
-	var err error
-	c.tempDir, err = os.MkdirTemp(c.jailerRoot, "fc-container-*")
-	if err != nil {
-		return err
-	}
 	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
 		return status.InternalErrorf("failed to create chroot dir: %s", err)
 	}
 
 	scratchFSPath := c.scratchFSPath()
 	workspaceFSPath := c.workspaceFSPath()
-
-	// When mounting the workspace image directly as a block device (rather than
-	// as an NBD), the firecracker go SDK expects the disk images to be outside
-	// the chroot, and will move them to the chroot for us. So we place them in
-	// a temp dir so that the SDK doesn't complain that the chroot paths already
-	// exist when it tries to create them.
-	if !*enableNBD {
-		scratchFSPath = filepath.Join(c.tempDir, scratchFSName)
-		workspaceFSPath = filepath.Join(c.tempDir, workspaceFSName)
-	}
 	if *EnableRootfs {
 		if err := c.initRootfsStore(ctx); err != nil {
 			return status.WrapError(err, "create root image")
@@ -1670,7 +1654,6 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if err := c.createWorkspaceImage(ctx, "" /*=workspaceDir*/, workspaceFSPath); err != nil {
 		return err
 	}
-	log.CtxDebugf(ctx, "Scratch and workspace disk images written to %q", c.tempDir)
 	log.CtxDebugf(ctx, "Using container image at %q", c.containerFSPath)
 	log.CtxDebugf(ctx, "getChroot() is %q", c.getChroot())
 	fcCfg, err := c.getConfig(ctx, c.containerFSPath, scratchFSPath, workspaceFSPath)
@@ -1968,12 +1951,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if err := c.cleanupNetworking(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error cleaning up networking: %s", err)
 		lastErr = err
-	}
-	if c.tempDir != "" {
-		if err := os.RemoveAll(c.tempDir); err != nil {
-			log.CtxErrorf(ctx, "Error removing workspace fs: %s", err)
-			lastErr = err
-		}
 	}
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
 		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
