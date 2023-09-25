@@ -32,7 +32,6 @@ build:cache --experimental_remote_cache_compression
 build:remote-shared --remote_upload_local_results
 build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
-build:remote-shared --experimental_repo_remote_exec
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
 build:remote-shared --platforms=@buildbuddy_toolchain//:platform_linux
@@ -56,6 +55,8 @@ build:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 #   - Tell Bazel to use Linux-compatible toolchains to build
 build:target-linux --cpu=k8
 build:target-linux --host_cpu=k8
+# Write linux-target build outputs in a separate directory from host build outputs.
+build:target-linux --experimental_platform_in_output_dir
 
 # Build with --config=remote-target-linux* to build on remote Linux Executors.
 # from non-Linux machines (e.g. MacOS).
