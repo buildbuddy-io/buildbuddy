@@ -20,6 +20,7 @@ import (
 	"github.com/awslabs/soci-snapshotter/ztoc/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -33,6 +34,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
@@ -289,42 +291,52 @@ func sociIndexKey(h v1.Hash) (*repb.Digest, error) {
 func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConfigHash v1.Hash) (*socipb.GetArtifactsResponse, error) {
 	sociIndexCacheKey, err := sociIndexKey(imageConfigHash)
 	if err != nil {
+		recordOutcome("error_generating_soci_key")
 		return nil, err
 	}
 	sociIndexNameResourceName := digest.NewResourceName(sociIndexCacheKey, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
 	exists, err := s.cache.Contains(ctx, sociIndexNameResourceName)
 	if err != nil {
+		recordOutcome("soci_index_pointer_contains_error")
 		return nil, err
 	}
 	if !exists {
+		recordOutcome("soci_index_pointer_missing")
 		return nil, status.NotFoundErrorf("soci index for image with manifest config %s not found in cache", imageConfigHash.Hex)
 	}
 	bytes, err := s.cache.Get(ctx, sociIndexNameResourceName)
 	if err != nil {
+		recordOutcome("soci_index_pointer_read_error")
 		return nil, err
 	}
 	sociIndexResourceName, err := digest.ParseDownloadResourceName(string(bytes))
 	if err != nil {
+		recordOutcome("malformed_soci_index_pointer")
 		return nil, err
 	}
 	sociIndexBytes, err := s.cache.Get(ctx, sociIndexResourceName.ToProto())
 	if err != nil {
+		recordOutcome("soci_index_read_error")
 		return nil, err
 	}
 	ztocDigests, err := getZtocDigests(sociIndexBytes)
 	if err != nil {
+		recordOutcome("soci_index_parse_error")
 		return nil, err
 	}
 	for _, ztocDigest := range ztocDigests {
 		exists, err := s.cache.Contains(ctx,
 			digest.NewResourceName(ztocDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 		if err != nil {
+			recordOutcome("ztoc_contains_error")
 			return nil, err
 		}
 		if !exists {
+			recordOutcome("ztoc_missing")
 			return nil, status.NotFoundErrorf("ztoc %s not found in cache", ztocDigest.Hash)
 		}
 	}
+	recordOutcome("cached")
 	return getArtifactsResponse(imageConfigHash, sociIndexResourceName.GetDigest(), ztocDigests), nil
 }
 
@@ -612,4 +624,10 @@ func getGroupIdForDebugging(ctx context.Context, env environment.Env) string {
 		return interfaces.AuthAnonymousUser
 	}
 	return userInfo.GetGroupID()
+}
+
+func recordOutcome(outcome string) {
+	metrics.PodmanGetSociArtifactsOutcomes.With(prometheus.Labels{
+		metrics.GetSociArtifactsOutcomeTag: outcome,
+	}).Inc()
 }
