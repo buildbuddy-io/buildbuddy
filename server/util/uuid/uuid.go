@@ -3,6 +3,7 @@ package uuid
 import (
 	"context"
 	"encoding/hex"
+	"flag"
 	"io"
 	"os"
 	"path"
@@ -26,6 +27,8 @@ var (
 
 	failsafeID     string
 	failsafeIDOnce sync.Once
+
+	manualHostID = flag.String("executor.host_id", "", "Optional: Allows for manual specification of an executor's host id. If not set, a random UUID will be used.")
 )
 
 func SetInContext(ctx context.Context) (context.Context, error) {
@@ -85,6 +88,9 @@ func configDir() (string, error) {
 }
 
 func getOrCreateHostId() (string, error) {
+	if *manualHostID != "" {
+		return *manualHostID, nil
+	}
 	configDirPath, err := configDir()
 	if err != nil {
 		return "", err
