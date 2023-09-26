@@ -442,10 +442,10 @@ func findRoute(ctx context.Context, prefix string) (route, error) {
 // for networking to work on vms.
 func EnableMasquerading(ctx context.Context) error {
 	route, err := findRoute(ctx, *routePrefix)
-	device := route.device
 	if err != nil {
 		return err
 	}
+	device := route.device
 	// Skip appending the rule if it's already in the table.
 	err = runCommand(ctx, "iptables", "--wait", "-t", "nat", "--check", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
 	if err == nil {
