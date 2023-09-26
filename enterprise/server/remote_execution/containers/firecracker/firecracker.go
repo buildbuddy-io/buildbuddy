@@ -3,6 +3,7 @@ package firecracker
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -1936,17 +1937,13 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 
 	var lastErr error
 
-	if c.machine != nil {
-		// Note: we don't attempt any kind of clean shutdown here, because at this
-		// point either (a) the VM should be paused and we should have already taken
-		// a snapshot, or (b) we are just calling Remove() to force a cleanup
-		// regardless of VM state (e.g. executor shutdown).
-
-		if err := c.machine.StopVMM(); err != nil {
-			log.CtxErrorf(ctx, "Error stopping VMM: %s", err)
-			lastErr = err
-		}
-		c.machine = nil
+	// Note: we don't attempt any kind of clean shutdown here, because at this
+	// point either (a) the VM should be paused and we should have already taken
+	// a snapshot, or (b) we are just calling Remove() to force a cleanup
+	// regardless of VM state (e.g. executor shutdown).
+	if err := c.stopMachine(ctx); err != nil {
+		log.CtxErrorf(ctx, "Error stopping machine: %s", err)
+		lastErr = err
 	}
 	if err := c.cleanupNetworking(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error cleaning up networking: %s", err)
@@ -1988,6 +1985,25 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.memoryStore = nil
 	}
 	return lastErr
+}
+
+func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
+	if c.machine == nil {
+		return nil
+	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	if err := c.machine.StopVMM(); err != nil {
+		return status.WrapError(err, "kill firecracker")
+	}
+	// StopVMM just sends SIGTERM to firecracker; wait for the firecracker
+	// process to exit. SIGTERM error is expected, so ignore it.
+	if err := c.machine.Wait(ctx); err != nil && !isExitErrorSIGTERM(err) {
+		return status.WrapError(err, "wait for firecracker to exit")
+	}
+	c.machine = nil
+	return nil
 }
 
 // Pause freezes the container so that it no longer consumes CPU resources.
@@ -2036,14 +2052,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	// Stop the VM, UFFD page fault handler, and NBD server to ensure nothing is
 	// modifying the snapshot files as we save them
-	if c.machine != nil {
-		// Note: we don't attempt any kind of clean shutdown here because we have already taken
-		// a snapshot
-		if err := c.machine.StopVMM(); err != nil {
-			log.CtxErrorf(ctx, "Error stopping VMM: %s", err)
-			return err
-		}
-		c.machine = nil
+	if err := c.stopMachine(ctx); err != nil {
+		return err
 	}
 	if c.uffdHandler != nil {
 		if err := c.uffdHandler.Stop(); err != nil {
@@ -2257,6 +2267,19 @@ func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskSta
 		metrics.GroupID:                  groupID,
 		metrics.SnapshotSharingStatus:    snapshotSharingStatus,
 	}).Observe(float64(durationUsec))
+}
+
+func isExitErrorSIGTERM(err error) bool {
+	err = errors.Unwrap(err)
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		return false
+	}
+	ws, ok := exitErr.ProcessState.Sys().(syscall.WaitStatus)
+	if !ok {
+		return false
+	}
+	return ws.Signal() == syscall.SIGTERM
 }
 
 // VMLog retains the tail of the VM log.
