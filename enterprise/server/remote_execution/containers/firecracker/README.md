@@ -5,19 +5,33 @@
 Firecracker only runs on Linux, so when testing Firecracker,
 make sure to test from a Linux machine.
 
-To test firecracker locally, make sure to run `sudo tools/enable_local_firecracker.sh`. You will need to re-run this
-every time you reboot your machine.
+As a pre-requisite, you'll need to run
+`./tools/enable_local_firecracker.sh` to install `firecracker` and
+`jailer` in your PATH.
 
-You can then run the executor with `--executor.enable_firecracker=true`,
-then run Bazel targets with `exec_properties` configured with
-`"workload-isolation-type": "firecracker"`.
+Then, to test firecracker locally, you will need `mount()` permissions,
+which requires root. To run the test suite as root, use one of the
+convenience scripts:
+
+```shell
+./enterprise/server/remote_execution/containers/firecracker/test.sh
+# or for benchmarking:
+./enterprise/server/remote_execution/containers/firecracker/bench.sh
+```
+
+To run the executor locally with Firecracker enabled, you'll need to run
+`bazel` with `--run_under=sudo` and enable firecracker explicitly:
+
+```shell
+bazel run --run_under=sudo //enterprise/server/cmd/executor -- \
+  --executor.enable_firecracker=true
+```
+
+Then, you can build or test Bazel targets with `exec_properties`
+configured with `"workload-isolation-type": "firecracker"`.
 
 If you want to test workflows locally with firecracker, make sure to set
-`--app.workflows_enable_firecracker=true`.
-
-You can also test firecracker just by running
-`bazel test //enterprise/server/remote_execution/containers/firecracker:firecracker_test`. Make sure to run these tests
-before submitting any changes.
+`--app.workflows_enable_firecracker=true` on the app.
 
 ## Troubleshooting
 
