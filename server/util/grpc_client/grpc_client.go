@@ -16,17 +16,17 @@ import (
 // DialSimple handles some of the logic around detecting the correct GRPC
 // connection type and applying relevant options when connecting.
 //
-// NOTE: Clients within BuildBuddy servers (i.e. executor) should use the Dial
+// NOTE: Clients within BuildBuddy servers (i.e. executor) should use the DialInterservice
 // variant with an env argument.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return Dial(nil, target, extraOptions...)
+	return DialInterservice(nil, target, extraOptions...)
 }
 
-// Dial is similar to DialSimple, but it adds additional interceptors
+// DialInterservice is similar to DialSimple, but it adds additional interceptors
 // (such as client identity) based on the specified environment.
 //
 // Outside of BuildBuddy servers, DialSimple may be used instead.
-func Dial(env environment.Env, target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+func DialInterservice(env environment.Env, target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	dialOptions := CommonGRPCClientOptions(env)
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)

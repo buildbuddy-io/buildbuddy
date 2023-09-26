@@ -184,7 +184,7 @@ func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs
 		url.Host = url.Hostname() + ":80"
 	}
 
-	conn, err := grpc_client.Dial(env, grpcTargetForFileURL(url, grpcs))
+	conn, err := grpc_client.DialInterservice(env, grpcTargetForFileURL(url, grpcs))
 	if err != nil {
 		return err
 	}

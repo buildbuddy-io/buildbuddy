@@ -73,7 +73,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	} else if u, err := url.Parse(cacheTarget); err == nil && u.Hostname() == "cloud.buildbuddy.io" {
 		log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` to remote.buildbuddy.io for improved performance.")
 	}
-	conn, err = grpc_client.Dial(realEnv, cacheTarget)
+	conn, err = grpc_client.DialInterservice(realEnv, cacheTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", cacheTarget, err)
 	}
@@ -138,7 +138,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 		}
 	}
 
-	conn, err := grpc_client.Dial(realEnv, *appTarget)
+	conn, err := grpc_client.DialInterservice(realEnv, *appTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to app '%s': %s", *appTarget, err)
 	}

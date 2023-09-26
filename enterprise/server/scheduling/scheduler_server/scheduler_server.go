@@ -789,7 +789,7 @@ func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
 			client = schedulerClient{localServer: c.localServer}
 		} else {
 			// This is non-blocking so it's OK to hold the lock.
-			conn, err := grpc_client.Dial(c.env, "grpc://"+hostPort)
+			conn, err := grpc_client.DialInterservice(c.env, "grpc://"+hostPort)
 			if err != nil {
 				return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
 			}
