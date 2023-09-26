@@ -315,10 +315,6 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
@@ -705,7 +701,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		jailerRoot string
 	)
 
-	setup := func() {
+	setup := func(createContainer bool) {
 		var err error
 		env = testenv.GetTestEnv(t)
 		flags.Set(t, "executor.enable_local_snapshot_sharing", true)
@@ -714,9 +710,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 
 		ctx = context.Background()
 		env = getTestEnv(ctx, t)
-		rootDir := testfs.MakeTempDir(t)
 		jailerRoot = tempJailerRoot(t)
-		workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 		filecacheRoot := testfs.MakeDirAll(t, jailerRoot, "filecache")
@@ -733,31 +727,282 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 				}},
 			},
 		}
-		opts = firecracker.ContainerOpts{
-			ContainerImage:         busyboxImage,
-			ActionWorkingDirectory: workDir,
-			VMConfiguration: &fcpb.VMConfiguration{
-				NumCpus:           1,
-				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-				EnableNetworking:  false,
-				ScratchDiskSizeMb: 100,
-			},
-			JailerRoot: jailerRoot,
-		}
 
-		c, err = firecracker.NewContainer(ctx, env, task, opts)
-		require.NoError(t, err)
-		containersToCleanup = append(containersToCleanup, c)
-		err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
-		require.NoError(t, err)
-		err = c.Create(ctx, opts.ActionWorkingDirectory)
-		require.NoError(t, err)
+		if createContainer {
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			opts = firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				JailerRoot: jailerRoot,
+			}
+
+			c, err = firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, c)
+			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			require.NoError(t, err)
+			err = c.Create(ctx, opts.ActionWorkingDirectory)
+			require.NoError(t, err)
+		}
+	}
+	// TODO: Should not be run - should just be exec
+	//
+	//// Run a bazel test on a clean runner
+	//for _, enableRemote := range []bool{true, false} {
+	//	{
+	//		setup(false)
+	//		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+	//
+	//		rootDir := testfs.MakeTempDir(t)
+	//		workDir := testfs.MakeDirAll(t, rootDir, "work")
+	//		cmd := &repb.Command{Arguments: []string{"bash", "-c", `
+	//			 cd ~
+	//			 git clone https://github.com/bazelbuild/rules_foreign_cc
+	//			 cd rules_foreign_cc
+	//			 bazelisk test //...
+	//		`}}
+	//		opts = firecracker.ContainerOpts{
+	//			ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+	//			ActionWorkingDirectory: workDir,
+	//			VMConfiguration: &fcpb.VMConfiguration{
+	//				NumCpus:           6,
+	//				MemSizeMb:         8000,
+	//				EnableNetworking:  true,
+	//				ScratchDiskSizeMb: 20_000,
+	//			},
+	//			JailerRoot: jailerRoot,
+	//		}
+	//
+	//		start := time.Now()
+	//		c, err := firecracker.NewContainer(ctx, env, task, opts)
+	//		require.NoError(t, err)
+	//		containersToCleanup = append(containersToCleanup, c)
+	//		err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+	//		require.NoError(t, err)
+	//		err = c.Create(ctx, opts.ActionWorkingDirectory)
+	//		require.NoError(t, err)
+	//		res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	//		require.NoError(t, res.Error)
+	//		require.Contains(t, string(res.Stdout), "tests pass")
+	//		fmt.Printf("(remote_snapshot_sharing=%v) Bazel test on a clean runner took %s.\n", enableRemote, time.Since(start))
+	//	}
+	//}
+
+	// TODO: Creating a new container and then unpause doesn't work - why?
+	// Run a bazel test on a recycled runner - 100% locally cached
+	for _, enableRemote := range []bool{true, false} {
+		{
+			setup(false)
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			cmd := &repb.Command{Arguments: []string{"bash", "-c", `
+				 cd ~
+				 if [ -d rules_foreign_cc ]; then
+					echo "Directory exists."
+				 else
+					git clone https://github.com/bazelbuild/rules_foreign_cc
+				 fi
+				 cd rules_foreign_cc
+				 bazelisk test //...
+			`}}
+			opts = firecracker.ContainerOpts{
+				ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           6,
+					MemSizeMb:         8000,
+					EnableNetworking:  true,
+					ScratchDiskSizeMb: 20_000,
+				},
+				JailerRoot: jailerRoot,
+			}
+
+			// Run task and save a snapshot
+			c, err := firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, c)
+			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			require.NoError(t, err)
+			err = c.Create(ctx, opts.ActionWorkingDirectory)
+			require.NoError(t, err)
+			res := c.Exec(ctx, cmd, nil)
+			require.NoError(t, res.Error)
+			require.Contains(t, string(res.Stdout), "tests pass")
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+
+			// Run again - should use the snapshot
+			start := time.Now()
+			workDir = testfs.MakeDirAll(t, rootDir, "work-fork")
+			opts.ActionWorkingDirectory = workDir
+			c, err = firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, c)
+			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			require.NoError(t, err)
+			err = c.Unpause(ctx)
+			require.NoError(t, err)
+			res = c.Exec(ctx, cmd, nil)
+			require.NoError(t, res.Error)
+			require.Contains(t, string(res.Stdout), "tests pass")
+			//require.Contains(t, string(res.Stdout), "cached")
+			//require.Contains(t, string(res.Stdout), "Directory exists")
+			fmt.Printf("(remote_snapshot_sharing=%v) Bazel test on a recycled runner (100%% locally cached) took %s.\n", enableRemote, time.Since(start))
+			fmt.Printf("Stdout is %s", string(res.Stdout))
+			fmt.Printf("Stderr is %s", string(res.Stderr))
+		}
 	}
 
+	// Run a bazel test on a recycled runner - 30% of artifacts were evicted from filecache
+	// If local only, will be forced to run on a clean runner
+	// If remote is enabled, will fetch artifacts from remote cache
+	for _, enableRemote := range []bool{true, false} {
+		{
+			setup(false)
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			cmd := &repb.Command{Arguments: []string{"bash", "-c", `
+				 cd ~
+				 git clone https://github.com/bazelbuild/rules_foreign_cc
+				 cd rules_foreign_cc
+				 bazelisk test //...
+			`}}
+			opts = firecracker.ContainerOpts{
+				ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           6,
+					MemSizeMb:         8000,
+					EnableNetworking:  true,
+					ScratchDiskSizeMb: 20_000,
+				},
+				JailerRoot: jailerRoot,
+			}
+
+			// Run task and save a snapshot
+			c, err := firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, c)
+			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			require.NoError(t, err)
+			err = c.Create(ctx, opts.ActionWorkingDirectory)
+			require.NoError(t, err)
+			res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+			require.NoError(t, res.Error)
+			require.Contains(t, string(res.Stdout), "tests pass")
+
+			// Delete 30% of artifacts from the filecache
+			loader, err := snaploader.New(env)
+			require.NoError(t, err)
+			configHash, err := digest.ComputeForMessage(opts.VMConfiguration, repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			snapshotKey, err := snaploader.NewKey(task, configHash.GetHash(), "")
+			require.NoError(t, err)
+			snapMetadata, err := loader.GetSnapshot(ctx, snapshotKey)
+			require.NoError(t, err)
+			for _, f := range snapMetadata.GetFiles() {
+				if rand.Intn(100) < 30 {
+					deleted := env.GetFileCache().DeleteFile(f)
+					require.True(t, deleted)
+				}
+			}
+			for _, f := range snapMetadata.GetChunkedFiles() {
+				for _, c := range f.GetChunks() {
+					if rand.Intn(100) < 30 {
+						_ = env.GetFileCache().DeleteFile(&repb.FileNode{Digest: c.Digest})
+					}
+				}
+			}
+
+			// Run again - should use the snapshot
+			start := time.Now()
+			c, err = firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, c)
+			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			require.NoError(t, err)
+			err = c.Create(ctx, opts.ActionWorkingDirectory)
+			require.NoError(t, err)
+			res = c.Run(ctx, cmd, workDir, container.PullCredentials{})
+			require.NoError(t, res.Error)
+			require.Contains(t, string(res.Stdout), "tests pass")
+			require.Contains(t, string(res.Stdout), "cached")
+			fmt.Printf("(remote_snapshot_sharing=%v) Bazel test on a recycled runner (100%% locally cached) took %s.\n", enableRemote, time.Since(start))
+		}
+	}
+
+	for _, enableRemote := range []bool{true, false} {
+		{
+			setup(false)
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			cmd := &repb.Command{Arguments: []string{"bash", "-c", `
+				 cd ~
+				 git clone https://github.com/bazelbuild/rules_foreign_cc
+				 cd rules_foreign_cc
+				 bazelisk test //...
+			`}}
+			opts = firecracker.ContainerOpts{
+				ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           6,
+					MemSizeMb:         8000,
+					EnableNetworking:  true,
+					ScratchDiskSizeMb: 20_000,
+				},
+				JailerRoot: jailerRoot,
+			}
+
+			// Run task and save a snapshot
+			c, err := firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, c)
+			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			require.NoError(t, err)
+			err = c.Create(ctx, opts.ActionWorkingDirectory)
+			require.NoError(t, err)
+			res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+			require.NoError(t, res.Error)
+			require.Contains(t, string(res.Stdout), "tests pass")
+
+			// Run again - should use the snapshot
+			start := time.Now()
+			c, err = firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, c)
+			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			require.NoError(t, err)
+			err = c.Create(ctx, opts.ActionWorkingDirectory)
+			require.NoError(t, err)
+			res = c.Run(ctx, cmd, workDir, container.PullCredentials{})
+			require.NoError(t, res.Error)
+			require.Contains(t, string(res.Stdout), "tests pass")
+			require.Contains(t, string(res.Stdout), "cached")
+			fmt.Printf("(remote_snapshot_sharing=%v) Bazel test on a recycled runner (100%% locally cached) took %s.\n", enableRemote, time.Since(start))
+		}
+	}
+
+	// TODO: Clean up setup function
+
+	fmt.Printf("\n======= More Detailed Breakdowns =======\n\n")
 	// Pausing a new VM
 	for _, enableRemote := range []bool{true, false} {
 		{
-			setup()
+			setup(true)
 			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
 			start := time.Now()
@@ -771,7 +1016,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// No changes to the VM other than running for a bit.
 	for _, enableRemote := range []bool{true, false} {
 		{
-			setup()
+			setup(true)
 			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
 			// Create a snapshot
@@ -793,7 +1038,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Execute a command in the VM before saving the new snapshot.
 	for _, enableRemote := range []bool{true, false} {
 		{
-			setup()
+			setup(true)
 			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
 			// Create a snapshot
@@ -817,7 +1062,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Loading a snapshot for a VM.
 	for _, enableRemote := range []bool{true, false} {
 		{
-			setup()
+			setup(true)
 			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
 			// Create a snapshot
@@ -834,7 +1079,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Loading a snapshot for a VM where ~30% of artifacts were evicted from filecache
 	// and must be fetched remotely.
 	{
-		setup()
+		setup(true)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
 		// Create a snapshot
@@ -873,7 +1118,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Loading a snapshot for a VM where all artifacts were evicted from filecache
 	// and must be fetched remotely.
 	{
-		setup()
+		setup(true)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
 		// Create a snapshot
