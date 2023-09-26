@@ -16,17 +16,29 @@ body {
   background-color: #ffc107;
   padding: 4px 32px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   box-shadow: 0 -1px 1px rgba(0, 0, 0, 0.12) inset;
 }
 
-.impersonation-toolbar .exit-button {
-  margin-left: auto;
+.impersonation-toolbar .impersonation-caution {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 
-.impersonation-toolbar .generate-api-key-button {
-  margin-left: 32px;
+.impersonation-toolbar .impersonation-caution .icon {
+  margin-top: 3px;
+}
+
+.impersonation-toolbar .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.impersonation-toolbar .spacer {
+  margin-left: auto;
 }
 
 .impersonation-toolbar button {
