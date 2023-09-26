@@ -19,6 +19,9 @@ const (
 	// image. The functions in this package which create disk images will fail
 	// if the provided size is any smaller.
 	MinDiskImageSizeBytes = 225e3
+
+	// The number of bytes in one IEC kilobyte (K).
+	iecKilobyte = 1024
 )
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
@@ -111,7 +114,7 @@ func DiskSizeBytes(ctx context.Context, inputDir string) (int64, error) {
 	if err != nil {
 		return 0, status.InternalErrorf("du output %q did not match 'SIZE  /file/path': %s", out, err)
 	}
-	return int64(s * 1000), nil
+	return int64(s * iecKilobyte), nil
 }
 
 // DirectoryToImageAutoSize is like DirectoryToImage, but it will attempt to
