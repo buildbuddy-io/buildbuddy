@@ -127,20 +127,27 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
   render() {
     return (
       <div className="impersonation-toolbar">
-        <AlertCircle className="icon black" />
-        <span>
-          Authenticated as a member of <b>{this.props.user.selectedGroupName()}</b> ({this.props.user.selectedGroup?.id}
-          ). Proceed with caution.
-        </span>
+        <div className="impersonation-caution">
+          <AlertCircle className="icon black" />
+          <span>
+            <span className="hide-on-mobile">Caution: authenticated as a member of </span>
+            <b>{this.props.user.selectedGroupName()}</b> ({this.props.user.selectedGroup?.id})
+          </span>
+        </div>
+        <div className="spacer" />
         <OutlinedButton
           onClick={this.handleGenerateImpersonationAPIKeyClicked.bind(this)}
-          className="generate-api-key-button">
-          <span>{this.state.apiKey ? "Copy" : "Generate"} temporary API key</span>
-          {this.state.isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
+          className="generate-api-key-button hide-on-mobile">
+          <span>{this.state.apiKey ? "Copy" : "Get"} temporary API key</span>
+          {this.state.isCopied ? (
+            <Check style={{ stroke: "green" }} className="icon black" />
+          ) : (
+            <Copy className="icon black" />
+          )}
         </OutlinedButton>
         <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)} className="exit-button">
           <span>Exit</span>
-          <LogOut className="icon black" width={16} />
+          <LogOut className="icon black" />
         </OutlinedButton>
       </div>
     );

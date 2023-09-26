@@ -1551,7 +1551,7 @@ code .comment {
 
 @media (max-width: 800px) {
   .hide-on-mobile {
-    display: none;
+    display: none !important;
   }
 
   .login-box {
