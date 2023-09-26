@@ -116,6 +116,8 @@ go_test(
     ],
 )
 
+# NOTE: to run this test locally, use `test.sh` or `bench.sh`
+#
 # TODO(bduffany): once blockio is fully enabled, set blockio flag(s) on
 # firecracker_test and remove this one.
 go_test(
