@@ -2027,9 +2027,16 @@ func (cdcw *cdcWriter) writeChunkWhenMultiple(chunkData []byte) error {
 	// read out of order.
 	cdcw.writtenChunks = append(cdcw.writtenChunks, rn)
 
-	cdcw.eg.Go(func() error {
-		return cdcw.writeRawChunk(fileRecord, key, chunkData)
-	})
+	exists, _ := p.Contains(ctx, rn)
+
+	// We only write the chunk again if it does not exist in the cache. If it
+	// exists, we skip the write but the atime will be updated in the Contains
+	// call.
+	if !exists {
+		cdcw.eg.Go(func() error {
+			return cdcw.writeRawChunk(fileRecord, key, chunkData)
+		})
+	}
 	return nil
 }
 
