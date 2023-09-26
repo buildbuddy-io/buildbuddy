@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -85,7 +87,7 @@ func init() {
 // So we instead keep the same directory around and clean it between tests.
 //
 // See README.md for more details on the filesystem layout.
-func cleanExecutorRoot(t *testing.T, path string) {
+func cleanExecutorRoot(t testing.TB, path string) {
 	err := os.MkdirAll(path, 0755)
 	require.NoError(t, err)
 	entries, err := os.ReadDir(path)
@@ -101,7 +103,7 @@ func cleanExecutorRoot(t *testing.T, path string) {
 	}
 }
 
-func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
+func getTestEnv(ctx context.Context, t testing.TB) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 
 	// Use a permissive image cache authenticator to avoid registry requests.
@@ -163,7 +165,7 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	return env
 }
 
-func tempJailerRoot(t *testing.T) string {
+func tempJailerRoot(t testing.TB) string {
 	// When running this test on the bare executor pool, ensure the jailer root
 	// is under /buildbuddy so that it's on the same device as the executor data
 	// dir (with action workspaces and filecache).
@@ -1833,6 +1835,95 @@ func TestBazelBuild(t *testing.T) {
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
 	require.NoError(t, res.Error)
+}
+
+func BenchmarkStressNg(t *testing.B) {
+	for _, test := range []struct {
+		COW  bool
+		Args string
+	}{
+		{COW: false, Args: "--hdd=4"},
+		{COW: true, Args: "--hdd=4"},
+		{COW: false, Args: "--hdd=4 --hdd-opts=sync"},
+		{COW: true, Args: "--hdd=4 --hdd-opts=sync"},
+	} {
+		lbl := "base"
+		if test.COW {
+			lbl = "cow"
+		}
+		name := fmt.Sprintf("%s,%s", test.Args, lbl)
+		t.Run(name, func(t *testing.B) {
+			if test.COW {
+				flags.Set(t, "executor.firecracker_enable_vbd", true)
+				flags.Set(t, "executor.firecracker_enable_uffd", true)
+				flags.Set(t, "executor.firecracker_enable_merged_rootfs", true)
+			}
+			benchmarkStressNG(t, test.Args)
+		})
+	}
+}
+
+func benchmarkStressNG(t *testing.B, args string) {
+	if t.N != 1 {
+		t.Fatalf("stress-ng tests are meant to be run with -test.benchtime=1x")
+	}
+	log.Configure()
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "gcr.io/flame-public/stress-ng-alpine@sha256:b3c26074348e7eecff6415f992dcac443947b1f36298b746b962ca677405fcbf",
+		JailerRoot:             tempJailerRoot(t),
+		ActionWorkingDirectory: testfs.MakeTempDir(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           4,
+			MemSizeMb:         1000,
+			ScratchDiskSizeMb: 1000,
+		},
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			cd /root
+			stress-ng --timeout 10s --metrics ` + args + `
+		`},
+	}
+
+	t.ResetTimer()
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	t.StopTimer()
+
+	// Parse stress-ng output.
+	output := string(res.Stderr)
+	log.Debugf("stress-ng output:\n%s", output)
+
+	lines := strings.Split(output, "\n")
+	headingPattern := regexp.MustCompile(`\[\d+\] stressor\s+bogo ops`)
+	var resultLine string
+	for i, line := range lines {
+		if headingPattern.MatchString(line) {
+			resultLine = lines[i+2]
+			break
+		}
+	}
+	if resultLine == "" {
+		t.Logf("stress-ng-output:\n%s", output)
+		t.Fatalf("Failed to find 'bogo ops' in stress-ng output")
+	}
+	fields := strings.Fields(resultLine)
+	ops, err := strconv.Atoi(fields[4])
+	require.NoError(t, err, "failed to parse stress-ng output:\n%s", output)
+	t.ReportMetric(float64(ops), "bogo-ops/op")
 }
 
 func tree(label string) {
