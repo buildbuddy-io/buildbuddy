@@ -45,7 +45,6 @@ export default class InvocationModel {
   finished?: build_event_stream.BuildFinished;
   aborted?: build_event_stream.BuildEvent;
   failedAction?: build_event_stream.BuildEvent;
-  toolLogs?: build_event_stream.BuildToolLogs;
   workflowConfigured?: build_event_stream.WorkflowConfigured;
   childInvocationsConfigured?: build_event_stream.ChildInvocationsConfigured;
   childInvocationCompletedByInvocationId = new Map<
@@ -131,7 +130,6 @@ export default class InvocationModel {
       } else if (buildEvent.aborted) {
         this.aborted = buildEvent as build_event_stream.BuildEvent;
       }
-      if (buildEvent.buildToolLogs) this.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
       if (buildEvent.workspaceStatus) {
         this.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
       }
@@ -210,7 +208,7 @@ export default class InvocationModel {
     for (let item of this.workspaceStatus?.item || []) {
       this.workspaceStatusMap.set(item.key, item.value);
     }
-    for (let log of this.toolLogs?.log || []) {
+    for (let log of this.buildToolLogs?.log || []) {
       this.toolLogMap.set(log.name, new TextDecoder().decode(log.contents || new Uint8Array()));
     }
     for (let commandLine of this.structuredCommandLine) {
