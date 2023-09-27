@@ -2048,9 +2048,7 @@ func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
 // already been passed to the chunker to be processed.
 func (cdcw *cdcWriter) closeChunkerAndWait() error {
 	closeErr := cdcw.chunker.Close()
-	if closeErr == nil {
-		cdcw.isChunkerClosed = true
-	}
+	cdcw.isChunkerClosed = true
 	if err := cdcw.eg.Wait(); err != nil {
 		return err
 	}

@@ -984,7 +984,7 @@ func TestReadWrite(t *testing.T) {
 	}
 }
 
-func TestWriteCancel(t *testing.T) {
+func TestWriteCancelBeforeCommit(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 
@@ -1026,7 +1026,61 @@ func TestWriteCancel(t *testing.T) {
 			require.NoError(t, err)
 			cancel()
 			err = wc.Commit()
+			require.ErrorContains(t, err, "context canceled")
+			err = wc.Close()
 			require.NoError(t, err)
+
+			err = pc.Stop()
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCancelBeforeWrite(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+
+	type testCase struct {
+		desc                   string
+		maxInlineFileSizeBytes int64
+		averageChunkSizeBytes  int
+		testSize               int64
+	}
+	testCases := []testCase{
+		{
+			desc:                  "chunking turned on",
+			averageChunkSizeBytes: 64 * 4,
+			testSize:              256,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			options := &pebble_cache.Options{
+				RootDirectory:          testfs.MakeTempDir(t),
+				MaxSizeBytes:           maxSizeBytes,
+				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
+				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
+			}
+			pc, err := pebble_cache.NewPebbleCache(te, options)
+			require.NoError(t, err)
+			err = pc.Start()
+			require.NoError(t, err)
+
+			ctx := getAnonContext(t, te)
+			ctx, cancel := context.WithCancel(ctx)
+			rn, buf := newCASResourceBuf(t, tc.testSize)
+			// Use Writer() to set the bytes in the cache.
+			wc, err := pc.Writer(ctx, rn)
+			require.NoError(t, err, "Error getting %q writer", rn.GetDigest().GetHash())
+			cancel()
+			// Wait for cancel to take effect.
+			time.Sleep(100 * time.Millisecond)
+			_, err = wc.Write(buf)
+			require.ErrorContains(t, err, "context canceled")
+			err = wc.Commit()
+			require.ErrorContains(t, err, "context canceled")
 			err = wc.Close()
 			require.NoError(t, err)
 
@@ -1895,14 +1949,14 @@ func TestStartupScan(t *testing.T) {
 			digestSize:            2 * 1024,
 		},
 		{
-			desc:                  "chunking_off_inline",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            2 * 1024,
+			desc:                   "chunking_off_inline",
+			maxInlineFileSizeBytes: 1000,
+			digestSize:             100,
 		},
 		{
-			desc:                  "chunking_off_disk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            2 * 1024,
+			desc:                   "chunking_off_disk",
+			maxInlineFileSizeBytes: 1000,
+			digestSize:             2000,
 		},
 	}
 
