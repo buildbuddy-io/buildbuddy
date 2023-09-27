@@ -243,36 +243,33 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 		return nil, err
 	}
 
-	// Try to only read-pull-index-write once at a time to prevent hammering
-	// the containter registry with a ton of parallel pull requests, and save
-	// apps a bunch of parallel work.
-	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
-	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
-		resp, err := s.getArtifactsFromCache(ctx, configHash)
-		if status.IsNotFoundError(err) {
+	resp, err := s.getArtifactsFromCache(ctx, configHash)
+	if status.IsNotFoundError(err) {
+		// Try to only pull-index-write once at a time to prevent hammering
+		// the containter registry with a ton of parallel pull requests, and save
+		// apps a bunch of parallel work.
+		workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
+		respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
 			log.CtxDebugf(ctx, "soci artifacts for image %s missing from cache: %s", targetImageRef.DigestStr(), err)
 			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)
 			if err != nil {
 				return nil, err
 			}
-			resp = getArtifactsResponse(configHash, sociIndexDigest, ztocDigests)
-		} else if err != nil {
-			return nil, err
-		}
-		proto, err := proto.Marshal(resp)
+			proto, err := proto.Marshal(getArtifactsResponse(configHash, sociIndexDigest, ztocDigests))
+			if err != nil {
+				return nil, err
+			}
+			return proto, nil
+		})
 		if err != nil {
 			return nil, err
 		}
-		return proto, nil
-	})
-	if err != nil {
-		return nil, err
+		if err := proto.Unmarshal(respBytes, &resp); err != nil {
+			return nil, err
+		}
+		return &resp, nil
 	}
-	var resp socipb.GetArtifactsResponse
-	if err := proto.Unmarshal(respBytes, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
+	return resp, err
 }
 
 // Accepts a container image config hash 'h' which uniquely identifies the
