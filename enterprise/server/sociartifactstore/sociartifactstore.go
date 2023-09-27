@@ -6,7 +6,6 @@ package sociartifactstore
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -49,7 +48,7 @@ import (
 
 var (
 	layerStorage       = flag.String("soci_artifact_store.layer_storage", "/tmp/", "Directory in which to store pulled container image layers for indexing by soci artifact store.")
-	sociIndexCacheSeed = flag.String("soci_artifact_store.cache_seed", "socicache-06052023", "If set, this seed is hashed with container image IDs to generate cache keys storing soci indexes.")
+	sociIndexCacheSeed = flag.String("soci_artifact_store.cache_seed", "socicache-09272023", "If set, this seed is hashed with container image IDs to generate cache keys storing soci indexes.")
 )
 
 const (
@@ -285,55 +284,38 @@ func sociIndexKey(h v1.Hash) (*repb.Digest, error) {
 	return digest.Compute(buf, repb.DigestFunction_SHA256)
 }
 
-// TODO(iain): consider reading/writing soci artifacts from/to the cache using
-// RPC clients for ByteStream read/write and UpdatActionResult APIs so that
-// reading the action result automatically checks for existence of artifacts.
 func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConfigHash v1.Hash) (*socipb.GetArtifactsResponse, error) {
 	sociIndexCacheKey, err := sociIndexKey(imageConfigHash)
 	if err != nil {
 		recordOutcome("error_generating_soci_key")
 		return nil, err
 	}
-	sociIndexNameResourceName := digest.NewResourceName(sociIndexCacheKey, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
-	exists, err := s.env.GetCache().Contains(ctx, sociIndexNameResourceName)
+	actionResult, err := s.env.GetActionCacheServer().GetActionResult(
+		ctx,
+		&repb.GetActionResultRequest{
+			ActionDigest: sociIndexCacheKey,
+			InlineStdout: true,
+		})
 	if err != nil {
 		recordOutcome("soci_index_pointer_contains_error")
 		return nil, err
 	}
-	if !exists {
+	// The SOCI Index digest is serialized in the stdout field so we can
+	// identify it.
+	if len(actionResult.StdoutRaw) == 0 {
 		recordOutcome("soci_index_pointer_missing")
 		return nil, status.NotFoundErrorf("soci index for image with manifest config %s not found in cache", imageConfigHash.Hex)
 	}
-	bytes, err := s.env.GetCache().Get(ctx, sociIndexNameResourceName)
-	if err != nil {
-		recordOutcome("soci_index_pointer_read_error")
-		return nil, err
-	}
-	sociIndexResourceName, err := digest.ParseDownloadResourceName(string(bytes))
+	sociIndexResourceName, err := digest.ParseDownloadResourceName(string(actionResult.StdoutRaw))
 	if err != nil {
 		recordOutcome("malformed_soci_index_pointer")
 		return nil, err
 	}
-	sociIndexBytes, err := s.env.GetCache().Get(ctx, sociIndexResourceName.ToProto())
-	if err != nil {
-		recordOutcome("soci_index_read_error")
-		return nil, err
-	}
-	ztocDigests, err := getZtocDigests(sociIndexBytes)
-	if err != nil {
-		recordOutcome("soci_index_parse_error")
-		return nil, err
-	}
-	for _, ztocDigest := range ztocDigests {
-		exists, err := s.env.GetCache().Contains(ctx,
-			digest.NewResourceName(ztocDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
-		if err != nil {
-			recordOutcome("ztoc_contains_error")
-			return nil, err
-		}
-		if !exists {
-			recordOutcome("ztoc_missing")
-			return nil, status.NotFoundErrorf("ztoc %s not found in cache", ztocDigest.Hash)
+
+	var ztocDigests []*repb.Digest
+	for _, outputFile := range actionResult.OutputFiles {
+		if !proto.Equal(outputFile.Digest, sociIndexResourceName.GetDigest()) {
+			ztocDigests = append(ztocDigests, outputFile.Digest)
 		}
 	}
 	recordOutcome("cached")
@@ -450,16 +432,27 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 	if err != nil {
 		return nil, nil, err
 	}
-	// Write the pointer from image identifier to SOCI Index in the ActionCache
-	// because the entry isn't content-addressable.
 	serializedIndexResourceName, err := indexResourceName.DownloadString()
 	if err != nil {
 		return nil, nil, err
 	}
-	err = s.env.GetCache().Set(ctx,
-		digest.NewResourceName(sociIndexCacheKey, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto(),
-		[]byte(serializedIndexResourceName))
-	if err != nil {
+
+	// Store the SOCI Index as an ActionResult with:
+	// - The digest of the SOCI Index serialized in the stdout field
+	// - The digest of all artifacts (ZToCs and SOCI Index) as OutputFiles
+	var artifacts []*repb.OutputFile
+	artifacts = append(artifacts, &repb.OutputFile{Digest: indexResourceName.GetDigest()})
+	for _, ztocDigest := range ztocDigests {
+		artifacts = append(artifacts, &repb.OutputFile{Digest: ztocDigest})
+	}
+	req := repb.UpdateActionResultRequest{
+		ActionDigest: sociIndexCacheKey,
+		ActionResult: &repb.ActionResult{
+			StdoutRaw:   []byte(serializedIndexResourceName),
+			OutputFiles: artifacts,
+		},
+	}
+	if _, err = s.env.GetActionCacheServer().UpdateActionResult(ctx, &req); err != nil {
 		return nil, nil, err
 	}
 	return &indexDigest, ztocDigests, nil
@@ -583,24 +576,6 @@ type SociLayerIndexStruct struct {
 type SociIndexStruct struct {
 	Layers []SociLayerIndexStruct `json:"layers"`
 	// There are some other fields too that we don't need.
-}
-
-// Returns the digests of all ztocs mentioned in the provided soci index. These
-// are in the layers[].digest and layers[].size fields of the json.
-func getZtocDigests(sociIndexBytes []byte) ([]*repb.Digest, error) {
-	var sociIndex SociIndexStruct
-	if err := json.Unmarshal(sociIndexBytes, &sociIndex); err != nil {
-		return nil, err
-	}
-	digests := []*repb.Digest{}
-	for _, layerIndex := range sociIndex.Layers {
-		digest, err := godigest.Parse(layerIndex.Digest)
-		if err != nil {
-			return nil, err
-		}
-		digests = append(digests, &repb.Digest{Hash: digest.Encoded(), SizeBytes: layerIndex.Size})
-	}
-	return digests, nil
 }
 
 func getArtifactsResponse(imageConfigHash v1.Hash, sociIndexDigest *repb.Digest, ztocDigests []*repb.Digest) *socipb.GetArtifactsResponse {

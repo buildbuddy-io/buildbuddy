@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
@@ -74,10 +75,13 @@ func TestIndexExists(t *testing.T) {
 	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/2c4c1f7de7a83d2b1b302bce865ed7ba8e14870db155daecabeba08be37eb5c4.json", rspb.CacheType_CAS)
 	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/5fa40df4606c1d9daa7119a18f7106b672d352f6f56d250547b41572bcf384de.ztoc", rspb.CacheType_CAS)
 	writeFileContentsToCache(ctx, t, env, &ztocDigest2, "test_data/ztocs/aa58f9f015faed905d18144fe7aaf55bac280a8276f84a08e05b970a95fd56bb.ztoc", rspb.CacheType_CAS)
-	writeDataToCache(ctx, t, env,
+	writeActionResult(ctx, t, env,
 		getSociIndexKey(t, "sha256:dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b"),
 		[]byte(serializedSociIndexResourceName),
-		rspb.CacheType_AC)
+		[]*repb.Digest{
+			&ztocDigest1,
+			&ztocDigest2,
+		})
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
 	require.NoError(t, err)
@@ -136,10 +140,13 @@ func TestIndexPartiallyExists(t *testing.T) {
 	writeFileContentsToCache(ctx, t, env, &sociIndexDigest, "test_data/soci_indexes/2c4c1f7de7a83d2b1b302bce865ed7ba8e14870db155daecabeba08be37eb5c4.json", rspb.CacheType_CAS)
 	writeFileContentsToCache(ctx, t, env, &ztocDigest1, "test_data/ztocs/5fa40df4606c1d9daa7119a18f7106b672d352f6f56d250547b41572bcf384de.ztoc", rspb.CacheType_CAS)
 	// Don't write the second ztoc (aa58f...) to the cache.
-	writeDataToCache(ctx, t, env,
+	writeActionResult(ctx, t, env,
 		getSociIndexKey(t, "sha256:dd04f266fd693e9ae2abee66dd7d3b61b8b42dcf38099cade554c6a34d1ae63b"),
 		[]byte(serializedSociIndexResourceName),
-		rspb.CacheType_AC)
+		[]*repb.Digest{
+			&ztocDigest1,
+			&ztocDigest2,
+		})
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
 	require.NoError(t, err)
@@ -306,18 +313,27 @@ func cacheContains(ctx context.Context, t *testing.T, env *testenv.TestEnv, d *r
 func writeFileContentsToCache(ctx context.Context, t *testing.T, env *testenv.TestEnv, d *repb.Digest, filename string, cacheType rspb.CacheType) {
 	data, err := ioutil.ReadFile(filename)
 	require.NoError(t, err)
-	writeDataToCache(ctx, t, env, d, data, cacheType)
-}
-
-func writeDataToCache(ctx context.Context, t *testing.T, env *testenv.TestEnv, d *repb.Digest, data []byte, cacheType rspb.CacheType) {
 	resourceName := digest.NewResourceName(d, "" /*=instanceName -- not used */, cacheType, repb.DigestFunction_SHA256)
 	require.NoError(t, env.GetCache().Set(ctx, resourceName.ToProto(), data))
+}
+
+func writeActionResult(ctx context.Context, t *testing.T, env *testenv.TestEnv, actionDigest *repb.Digest, stdout []byte, outputFileDigests []*repb.Digest) {
+	req := repb.UpdateActionResultRequest{
+		ActionDigest: actionDigest,
+		ActionResult: &repb.ActionResult{StdoutRaw: stdout},
+	}
+	for _, outputFileDigest := range outputFileDigests {
+		req.ActionResult.OutputFiles = append(req.ActionResult.OutputFiles, &repb.OutputFile{Digest: outputFileDigest})
+	}
+	_, err := env.GetActionCacheServer().UpdateActionResult(ctx, &req)
+	require.NoError(t, err)
 }
 
 func setup(t *testing.T) (*testenv.TestEnv, *SociArtifactStore, *containerRegistry, context.Context) {
 	env := testenv.GetTestEnv(t)
 	env.SetDefaultRedisClient(testredis.Start(t).Client())
 	env.SetSingleFlightDeduper(&deduper{})
+	action_cache_server.Register(env)
 	reg := runContainerRegistry(t)
 	err, store := newSociArtifactStore(env)
 	require.NoError(t, err)
