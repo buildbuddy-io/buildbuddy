@@ -246,17 +246,39 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			}
 			return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
 		}
+
+		mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
+		if err != nil {
+			return err
+		}
+
 		guestPageAddr := pageStartAddress(guestFaultingAddr, pageSize)
+		if guestPageAddr < mapping.BaseHostVirtAddr {
+			// Make sure we only try to map addresses that fall within the valid
+			// guest memory ranges
+			guestPageAddr = mapping.BaseHostVirtAddr
+		}
 
 		// Find the memory data in the store that should be used to handle the page fault
-		faultStoreOffset, err := guestMemoryAddrToStoreOffset(guestPageAddr, mappings)
-		if err != nil {
-			return status.WrapError(err, "translate to store offset")
-		}
-		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
+		faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
+
+		// To reduce the number of UFFD round trips, try to copy the entire
+		// chunk containing the faulting address
 		hostAddr, allocatedLen, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
 		if err != nil {
 			return status.WrapError(err, "get backing page address")
+		}
+
+		// If copying the entire chunk would map data falling outside the valid
+		// guest memory range, only copy the valid parts of the chunk
+		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
+		destAddr := guestPageAddr - relOffset
+		// TODO: Check the upper bound too? Or is that already captured
+		if destAddr < mapping.BaseHostVirtAddr {
+			invalidBytesAtChunkStart := mapping.BaseHostVirtAddr - destAddr
+			destAddr = mapping.BaseHostVirtAddr
+			hostAddr += invalidBytesAtChunkStart
+			allocatedLen -= int64(invalidBytesAtChunkStart)
 		}
 
 		// Should never map a partial page at the end of the file, but just
@@ -265,20 +287,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
 		}
 
-		// We try to save round trips with UFFD by mapping an entire chunk
-		// We shouldn't do that though if the beginning of the chunk
-		// would map to an address that is not a valid memory address for the VM
-		mapping, err := guestMemoryAddrToMapping(guestPageAddr, mappings)
-		if err != nil {
-			return err
-		}
-		destAddr := guestPageAddr - relOffset
-		if destAddr < mapping.BaseHostVirtAddr {
-			invalidLen := mapping.BaseHostVirtAddr - destAddr
-			allocatedLen -= invalidLen
-			destAddr = mapping.BaseHostVirtAddr
-			hostAddr = hostAddr + relOffset
-		}
 		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(allocatedLen))
 		if err != nil {
 			return err
@@ -364,19 +372,12 @@ func (h *Handler) Stop() error {
 
 // Translate the faulting memory address in the guest to a persisted store offset
 // based on the memory mappings.
-func guestMemoryAddrToStoreOffset(addr uintptr, mappings []GuestRegionUFFDMapping) (uintptr, error) {
-	for _, m := range mappings {
-		if !m.ContainsGuestAddr(addr) {
-			continue
-		}
-		relativeOffset := addr - m.BaseHostVirtAddr
-		return m.Offset + relativeOffset, nil
-	}
-	return 0, status.InternalErrorf("page address 0x%x not found in guest region UFFD mappings", addr)
+func guestMemoryAddrToStoreOffset(addr uintptr, mapping GuestRegionUFFDMapping) uintptr {
+	relativeOffset := addr - mapping.BaseHostVirtAddr
+	return mapping.Offset + relativeOffset
 }
 
-// Translate the faulting memory address in the guest to a persisted store offset
-// based on the memory mappings.
+// Return the GuestRegionUFFDMapping corresponding to the given address
 func guestMemoryAddrToMapping(addr uintptr, mappings []GuestRegionUFFDMapping) (*GuestRegionUFFDMapping, error) {
 	for _, m := range mappings {
 		if !m.ContainsGuestAddr(addr) {
