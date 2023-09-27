@@ -16,18 +16,10 @@ import (
 // DialSimple handles some of the logic around detecting the correct GRPC
 // connection type and applying relevant options when connecting.
 //
-// NOTE: Clients within BuildBuddy servers (i.e. executor) should use the DialInterservice
-// variant with an env argument.
+// NOTE: Clients within BuildBuddy servers (i.e. app, executor) should use the
+// DialInternal variant with an env argument.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return DialInterservice(nil, target, extraOptions...)
-}
-
-// DialInterservice is similar to DialSimple, but it adds additional interceptors
-// (such as client identity) based on the specified environment.
-//
-// Outside of BuildBuddy servers, DialSimple may be used instead.
-func DialInterservice(env environment.Env, target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
-	dialOptions := CommonGRPCClientOptions(env)
+	dialOptions := CommonGRPCClientOptions()
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
 	if err == nil {
@@ -53,6 +45,16 @@ func DialInterservice(env environment.Env, target string, extraOptions ...grpc.D
 	return grpc.Dial(target, dialOptions...)
 }
 
+// DialInternal is similar to DialSimple, but it adds additional interceptors
+// (such as client identity) based on the specified environment.
+//
+// Outside of BuildBuddy servers, DialSimple should be used instead.
+func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
+	opts = append(opts, extraOptions...)
+	return DialSimple(target, opts...)
+}
+
 type rpcCredentials struct {
 	authorization string
 }
@@ -73,10 +75,10 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 	return false
 }
 
-func CommonGRPCClientOptions(env environment.Env) []grpc.DialOption {
+func CommonGRPCClientOptions() []grpc.DialOption {
 	return []grpc.DialOption{
-		interceptors.GetUnaryClientInterceptor(env),
-		interceptors.GetStreamClientInterceptor(env),
+		interceptors.GetUnaryClientInterceptor(),
+		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			// After a duration of this time if the client doesn't see any activity it

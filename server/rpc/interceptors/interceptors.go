@@ -482,20 +482,26 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	)
 }
 
-func GetUnaryClientInterceptor(env environment.Env) grpc.DialOption {
+func GetUnaryClientInterceptor() grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(
 		otelgrpc.UnaryClientInterceptor(),
 		grpc_prometheus.UnaryClientInterceptor,
 		setHeadersUnaryClientInterceptor(),
-		setClientIdentityUnaryClientInteceptor(env),
 	)
 }
 
-func GetStreamClientInterceptor(env environment.Env) grpc.DialOption {
+func GetUnaryClientIdentityInterceptor(env environment.Env) grpc.DialOption {
+	return grpc.WithChainUnaryInterceptor(setClientIdentityUnaryClientInteceptor(env))
+}
+
+func GetStreamClientInterceptor() grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(
 		otelgrpc.StreamClientInterceptor(),
 		grpc_prometheus.StreamClientInterceptor,
 		setHeadersStreamClientInterceptor(),
-		setClientIdentityStreamClientInterceptor(env),
 	)
+}
+
+func GetStreamClientIdentityInterceptor(env environment.Env) grpc.DialOption {
+	return grpc.WithChainStreamInterceptor(setClientIdentityStreamClientInterceptor(env))
 }
