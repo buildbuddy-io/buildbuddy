@@ -3,7 +3,6 @@
 package uffd
 
 import (
-	"fmt"
 	"context"
 	"encoding/json"
 	"net"
@@ -242,7 +241,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 
 		// Receive a page fault notification
 		guestFaultingAddr, err := readFaultingAddress(uffd)
-		fmt.Printf("Read address %v from the notification", guestFaultingAddr)
 		if err != nil {
 			if err == unix.EAGAIN {
 				// Try again code
@@ -251,21 +249,17 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
 		}
 		guestPageAddr := pageStartAddress(guestFaultingAddr, pageSize)
-		fmt.Printf("Start of the page for that address %v", guestPageAddr)
 
 		// Find the memory data in the store that should be used to handle the page fault
 		faultStoreOffset, err := guestMemoryAddrToStoreOffset(guestPageAddr, mappings)
 		if err != nil {
 			return status.WrapError(err, "translate to store offset")
 		}
-		fmt.Printf("Store memory address is %v", faultStoreOffset)
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-		fmt.Printf("Relative offset from chunk start is %v", relOffset)
 		hostAddr, allocatedLen, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
 		if err != nil {
 			return status.WrapError(err, "get backing page address")
 		}
-		fmt.Printf("Source address is %v for len %v", hostAddr, allocatedLen)
 
 		// Should never map a partial page at the end of the file, but just
 		// warn in this case for now.
@@ -279,17 +273,13 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 		destAddr := guestPageAddr - relOffset
 		if destAddr < mapping.BaseHostVirtAddr {
-			fmt.Println("Entering here")
 			invalidLen := mapping.BaseHostVirtAddr - destAddr
-			fmt.Printf("Invalid len is %v", invalidLen)
 			//allocatedLen should be length from faulting Addr -> end of chunk
 			allocatedLen -= int64(invalidLen)
-			fmt.Printf("Allocated len is %v", allocatedLen)
 			destAddr = mapping.BaseHostVirtAddr
 			hostAddr = hostAddr + relOffset
 		}
 
-		fmt.Printf("Trying to copy to dest %v from src %v len %v", destAddr, hostAddr, allocatedLen)
 		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(allocatedLen))
 		if err != nil {
 			return err
@@ -369,12 +359,10 @@ func (h *Handler) Stop() error {
 // Translate the faulting memory address in the guest to a persisted store offset
 // based on the memory mappings.
 func guestMemoryAddrToStoreOffset(addr uintptr, mappings []GuestRegionUFFDMapping) (uintptr, error) {
-	fmt.Printf("Looking for addr %v in mappings", addr)
 	for _, m := range mappings {
 		if !m.ContainsGuestAddr(addr) {
 			continue
 		}
-		fmt.Printf("Found it in mapping with baze address %v", m.BaseHostVirtAddr)
 		relativeOffset := addr - m.BaseHostVirtAddr
 		return m.Offset + relativeOffset, nil
 	}
