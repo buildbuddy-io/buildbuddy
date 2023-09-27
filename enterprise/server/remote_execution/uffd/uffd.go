@@ -264,7 +264,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 
 		// To reduce the number of UFFD round trips, try to copy the entire
 		// chunk containing the faulting address
-		hostAddr, allocatedLen, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
+		hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
 		if err != nil {
 			return status.WrapError(err, "get backing page address")
 		}
@@ -273,12 +273,19 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		// guest memory range, only copy the valid parts of the chunk
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
 		destAddr := guestPageAddr - relOffset
-		// TODO: Check the upper bound too? Or is that already captured
+		// Check for data below the valid memory range
 		if destAddr < mapping.BaseHostVirtAddr {
 			invalidBytesAtChunkStart := mapping.BaseHostVirtAddr - destAddr
 			destAddr = mapping.BaseHostVirtAddr
 			hostAddr += invalidBytesAtChunkStart
-			allocatedLen -= int64(invalidBytesAtChunkStart)
+			copySize -= int64(invalidBytesAtChunkStart)
+		}
+		// Check for data above the valid memory range
+		mappingEndAddr := mapping.BaseHostVirtAddr + mapping.Size
+		copyEndAddr := destAddr + uintptr(copySize)
+		if copyEndAddr > mappingEndAddr {
+			invalidBytesAtChunkEnd := int64(copyEndAddr - mappingEndAddr)
+			copySize -= invalidBytesAtChunkEnd
 		}
 
 		// Should never map a partial page at the end of the file, but just
@@ -287,7 +294,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
 		}
 
-		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(allocatedLen))
+		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
 		if err != nil {
 			return err
 		}
