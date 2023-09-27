@@ -16,8 +16,9 @@ import (
 // DialSimple handles some of the logic around detecting the correct GRPC
 // connection type and applying relevant options when connecting.
 //
-// NOTE: Clients within BuildBuddy servers (i.e. app, executor) should use the
-// DialInternal variant with an env argument.
+// This function should be used when dialing from outside of BuildBuddy servers
+// such as from cli tools and the like. When dialing from BuildBuddy servers
+// (app, executor) you should use DialInternal.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	dialOptions := CommonGRPCClientOptions()
 	dialOptions = append(dialOptions, extraOptions...)
