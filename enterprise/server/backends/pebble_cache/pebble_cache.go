@@ -764,12 +764,12 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	}
 	defer db.Close()
 
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
 	// Write Lock: because we read/modify/write below.
 	unlockFn := p.locker.Lock(key.LockID())
 	defer unlockFn()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
 
 	md, version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), iter, key)
 	if err != nil {
@@ -1797,11 +1797,12 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	}
 	defer db.Close()
 
+	unlockFn := p.locker.Lock(key.LockID())
+	defer unlockFn()
+
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	unlockFn := p.locker.Lock(key.LockID())
-	defer unlockFn()
 	md, err := p.lookupFileMetadata(ctx, iter, key)
 	if err != nil {
 		return err
