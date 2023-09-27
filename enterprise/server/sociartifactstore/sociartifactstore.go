@@ -270,10 +270,11 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err != nil {
 		return nil, err
 	}
-	if err := proto.Unmarshal(respBytes, &resp); err != nil {
+	var unmarshalledResp socipb.GetArtifactsResponse
+	if err := proto.Unmarshal(respBytes, &unmarshalledResp); err != nil {
 		return nil, err
 	}
-	return &resp, nil
+	return &unmarshalledResp, nil
 }
 
 // Accepts a container image config hash 'h' which uniquely identifies the
