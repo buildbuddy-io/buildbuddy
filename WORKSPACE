@@ -355,7 +355,6 @@ dockerfile_image(
 
 # BuildBuddy Toolchain
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
-
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
     sha256 = "1cab6ef3ae9b4211ab9d57826edd4bbc34e5b9e5cb1927c97f0788d8e7ad0442",
