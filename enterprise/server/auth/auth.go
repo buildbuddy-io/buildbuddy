@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/golang-jwt/jwt"
@@ -93,6 +94,7 @@ func (a *authenticator) Login(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if len(errors) > 0 {
+		log.Infof("Failed login attempt: %s", errors)
 		return errors[0]
 	}
 	return status.NotFoundErrorf("No authenticator registered to handle login path: %s", r.URL.Path)
@@ -113,6 +115,7 @@ func (a *authenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if len(errors) > 0 {
+		log.Infof("Failed to authorize HTTP request: %s", errors)
 		return errors[0]
 	}
 	return status.NotFoundErrorf("No authenticator registered to auth path: %s", r.URL.Path)
@@ -146,6 +149,7 @@ func (a *authenticator) FillUser(ctx context.Context, user *tables.User) error {
 		}
 	}
 	if len(errors) > 0 {
+		log.Infof("Failed to fill authenticated user fields: %s", errors)
 		return errors[0]
 	}
 	return status.UnauthenticatedErrorf("No user authenticators configured")
@@ -164,6 +168,7 @@ func (a *authenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserI
 		}
 	}
 	if len(errors) > 0 {
+		log.Infof("Failed to authenticate user: %s", errors)
 		return nil, errors[0]
 	}
 	return nil, status.UnauthenticatedErrorf("No user authenticators configured")
