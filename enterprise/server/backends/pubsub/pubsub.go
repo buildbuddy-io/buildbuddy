@@ -396,3 +396,7 @@ func (p *StreamPubSub) Publish(ctx context.Context, channel *Channel, message st
 	_, err := pipe.Exec(ctx)
 	return err
 }
+
+func (p *StreamPubSub) Expire(ctx context.Context, channel *Channel, d time.Duration) error {
+	return p.rdb.Expire(ctx, channel.name, d).Err()
+}

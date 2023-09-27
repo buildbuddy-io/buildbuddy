@@ -54,6 +54,11 @@ const (
 	// TTL for keys used to track pending executions for action merging.
 	pendingExecutionTTL    = 8 * time.Hour
 	updateExecutionTimeout = 15 * time.Second
+
+	// When an action finishes, schedule the corresponding pubsub channel to
+	// be discarded after this time. There may be multiple waiters for a single
+	// action so we cannot discard the channel immediately.
+	completedPubSubChanExpiration = 15 * time.Minute
 )
 
 var (
@@ -716,16 +721,6 @@ type InProgressExecution struct {
 	opName       string
 }
 
-func (e *InProgressExecution) processSerializedOpUpdate(ctx context.Context, serializedOp string) (done bool, err error) {
-	op, err := operation.Decode(serializedOp)
-	if err != nil {
-		log.CtxWarningf(ctx, "Could not decode operation update for %q: %v", e.opName, err)
-		// Continue to process further updates.
-		return false, nil
-	}
-	return e.processOpUpdate(ctx, op)
-}
-
 func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunning.Operation) (done bool, err error) {
 	stage := operation.ExtractStage(op)
 	log.CtxInfof(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
@@ -839,9 +834,20 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		} else {
 			data = msg.Data
 		}
-		done, err := e.processSerializedOpUpdate(ctx, data)
+		op, err := operation.Decode(data)
+		if err != nil {
+			log.CtxWarningf(ctx, "Could not decode operation update for %q: %v", e.opName, err)
+			// Continue to process further updates.
+			continue
+		}
+		done, err := e.processOpUpdate(ctx, op)
 		if done {
 			log.CtxDebugf(ctx, "WaitExecution %q: progress loop exited: err: %v, done: %t", req.GetName(), err, done)
+			if operation.ExtractStage(op) == repb.ExecutionStage_COMPLETED {
+				if err := s.streamPubSub.Expire(ctx, subChan, completedPubSubChanExpiration); err != nil {
+					log.CtxWarningf(ctx, "could not expire channel for %q: %s", req.GetName(), err)
+				}
+			}
 			return err
 		}
 	}
