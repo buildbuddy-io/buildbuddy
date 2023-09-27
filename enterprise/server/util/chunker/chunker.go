@@ -103,9 +103,9 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 
 	go func() {
 		<-ctx.Done()
-		pr.CloseWithError(ctx.Err())
 		c.mu.Lock()
 		defer c.mu.Unlock()
+		pr.CloseWithError(ctx.Err())
 		if c.err == nil {
 			c.err = ctx.Err()
 		}
