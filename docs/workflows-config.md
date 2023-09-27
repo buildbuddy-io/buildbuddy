@@ -179,6 +179,26 @@ build or fetch these dependencies.
 
 :::
 
+## Merge queue support
+
+BuildBuddy workflows are compatible with GitHub's [merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue).
+
+To ensure that workflows are run as part of merge queue CI, configure
+a push trigger that runs whenever GitHub pushes its temporary merge queue
+branch, as described in [Triggering merge group checks with third-party CI providers](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue).
+
+Example `buildbuddy.yaml` file:
+
+```yaml
+- action: Test
+  triggers:
+    push:
+      # Run when a merge queue branch is pushed or the main branch is
+      # pushed.
+      branches: ["main", "gh-readonly-queue/*"]
+  # ...
+```
+
 ## Linux image configuration
 
 By default, workflows run on an Ubuntu 18.04-based image. You can use
@@ -349,7 +369,8 @@ Defines whether an action should execute when a branch is pushed.
 
 - **`branches`** (`string` list): The branches that, when pushed to, will
   trigger the action. This field accepts a simple wildcard character
-  (`"*"`) as a possible value, which will match any branch.
+  (`"*"`) as a possible value, which will match any branch, as well as
+  `"gh-readonly-queue/*"`, which matches GitHub's merge queue branches.
 
 ### `PullRequestTrigger`
 
@@ -358,11 +379,18 @@ pushed.
 
 **Fields:**
 
-- **`branches`** (`string` list): The _target_ branches of a pull request.
+- **`branches`** (`string` list): The _base_ branches of a pull request.
   For example, if this is set to `[ "v1", "v2" ]`, then the associated
   action is only run when a PR wants to merge a branch _into_ the `v1`
   branch or the `v2` branch. This field accepts a simple wildcard
   character (`"*"`) as a possible value, which will match any branch.
+- **`merge_with_base`** (`boolean`, default: `true`): Whether to merge the
+  base branch into the PR branch before running the workflow action. This
+  can help ensure that the changes in the PR branch do not conflict with
+  the main branch. However, the action will not be continuously re-run as
+  changes are pushed to the base branch. For stronger protection against
+  breaking the main branch, you may wish to use [merge
+  queues](#merge-queue-support).
 
 ### `ResourceRequests`
 
