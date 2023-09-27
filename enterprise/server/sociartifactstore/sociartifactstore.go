@@ -244,32 +244,36 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	}
 
 	resp, err := s.getArtifactsFromCache(ctx, configHash)
-	if status.IsNotFoundError(err) {
-		log.CtxDebugf(ctx, "soci artifacts for image %s missing from cache: %s", targetImageRef.DigestStr(), err)
-		// Try to only pull-index-write once at a time to prevent hammering
-		// the containter registry with a ton of parallel pull requests, and save
-		// apps a bunch of parallel work.
-		workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
-		respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
-			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)
-			if err != nil {
-				return nil, err
-			}
-			proto, err := proto.Marshal(getArtifactsResponse(configHash, sociIndexDigest, ztocDigests))
-			if err != nil {
-				return nil, err
-			}
-			return proto, nil
-		})
+	if err == nil {
+		return resp, nil
+	}
+	if err != nil && !status.IsNotFoundError(err) {
+		return nil, err
+	}
+
+	log.CtxDebugf(ctx, "soci artifacts for image %s missing from cache: %s", targetImageRef.DigestStr(), err)
+	// Try to only pull-index-write once at a time to prevent hammering
+	// the containter registry with a ton of parallel pull requests, and save
+	// apps a bunch of parallel work.
+	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
+	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
+		sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)
 		if err != nil {
 			return nil, err
 		}
-		if err := proto.Unmarshal(respBytes, &resp); err != nil {
+		proto, err := proto.Marshal(getArtifactsResponse(configHash, sociIndexDigest, ztocDigests))
+		if err != nil {
 			return nil, err
 		}
-		return &resp, nil
+		return proto, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return resp, err
+	if err := proto.Unmarshal(respBytes, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 // Accepts a container image config hash 'h' which uniquely identifies the
