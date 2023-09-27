@@ -265,8 +265,21 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
 		}
 
-		destAddr := uint64(guestPageAddr - relOffset)
-		_, err = resolvePageFault(uffd, destAddr, uint64(hostAddr), uint64(allocatedLen))
+		// We try to save round trips with UFFD by mapping an entire chunk
+		// We shouldn't do that though if the beginning of the chunk
+		// would map to an address that is not a valid memory address for the VM
+		mapping, err := guestMemoryAddrToMapping(guestPageAddr, mappings)
+		if err != nil {
+			return err
+		}
+		destAddr := guestPageAddr - relOffset
+		if destAddr < mapping.BaseHostVirtAddr {
+			invalidLen := mapping.BaseHostVirtAddr - destAddr
+			allocatedLen -= invalidLen
+			destAddr = mapping.BaseHostVirtAddr
+			hostAddr = hostAddr + relOffset
+		}
+		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(allocatedLen))
 		if err != nil {
 			return err
 		}
@@ -360,4 +373,16 @@ func guestMemoryAddrToStoreOffset(addr uintptr, mappings []GuestRegionUFFDMappin
 		return m.Offset + relativeOffset, nil
 	}
 	return 0, status.InternalErrorf("page address 0x%x not found in guest region UFFD mappings", addr)
+}
+
+// Translate the faulting memory address in the guest to a persisted store offset
+// based on the memory mappings.
+func guestMemoryAddrToMapping(addr uintptr, mappings []GuestRegionUFFDMapping) (*GuestRegionUFFDMapping, error) {
+	for _, m := range mappings {
+		if !m.ContainsGuestAddr(addr) {
+			continue
+		}
+		return &m, nil
+	}
+	return nil, status.InternalErrorf("page address 0x%x not found in guest region UFFD mappings", addr)
 }
