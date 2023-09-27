@@ -100,7 +100,10 @@ func NewCOWStore(fileCache interfaces.FileCache, chunks []*Mmap, chunkSizeBytes,
 // Ex. Let's say there are 100B chunks. For input offset 205, chunkStartOffset
 // would be 200, and this would return 5
 func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
+	fmt.Printf("GetRelativeOffsetFromChunkStart for offset %v", offset)
+	fmt.Printf("Chunk size is %v", c.ChunkSizeBytes())
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	fmt.Printf("Chunk start offset is %v", chunkStartOffset)
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 	return chunkRelativeAddress
 }

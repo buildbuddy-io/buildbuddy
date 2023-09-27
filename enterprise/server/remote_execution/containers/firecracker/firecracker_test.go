@@ -308,7 +308,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			MemSizeMb:         4000, // small to make snapshotting faster.
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
