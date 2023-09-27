@@ -76,7 +76,6 @@ const (
 )
 
 type SociArtifactStore struct {
-	cache   interfaces.Cache
 	deduper interfaces.SingleFlightDeduper
 	env     environment.Env
 }
@@ -101,7 +100,6 @@ func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 		return status.FailedPreconditionError("soci artifact server requires a single-flight deduper"), nil
 	}
 	return nil, &SociArtifactStore{
-		cache:   env.GetCache(),
 		deduper: env.GetSingleFlightDeduper(),
 		env:     env,
 	}
@@ -295,7 +293,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 		return nil, err
 	}
 	sociIndexNameResourceName := digest.NewResourceName(sociIndexCacheKey, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
-	exists, err := s.cache.Contains(ctx, sociIndexNameResourceName)
+	exists, err := s.env.GetCache().Contains(ctx, sociIndexNameResourceName)
 	if err != nil {
 		recordOutcome("soci_index_pointer_contains_error")
 		return nil, err
@@ -304,7 +302,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 		recordOutcome("soci_index_pointer_missing")
 		return nil, status.NotFoundErrorf("soci index for image with manifest config %s not found in cache", imageConfigHash.Hex)
 	}
-	bytes, err := s.cache.Get(ctx, sociIndexNameResourceName)
+	bytes, err := s.env.GetCache().Get(ctx, sociIndexNameResourceName)
 	if err != nil {
 		recordOutcome("soci_index_pointer_read_error")
 		return nil, err
@@ -314,7 +312,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 		recordOutcome("malformed_soci_index_pointer")
 		return nil, err
 	}
-	sociIndexBytes, err := s.cache.Get(ctx, sociIndexResourceName.ToProto())
+	sociIndexBytes, err := s.env.GetCache().Get(ctx, sociIndexResourceName.ToProto())
 	if err != nil {
 		recordOutcome("soci_index_read_error")
 		return nil, err
@@ -325,7 +323,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 		return nil, err
 	}
 	for _, ztocDigest := range ztocDigests {
-		exists, err := s.cache.Contains(ctx,
+		exists, err := s.env.GetCache().Contains(ctx,
 			digest.NewResourceName(ztocDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 		if err != nil {
 			recordOutcome("ztoc_contains_error")
@@ -442,7 +440,7 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 		SizeBytes: indexSizeBytes,
 	}
 	indexResourceName := digest.NewResourceName(&indexDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
-	err = s.cache.Set(ctx, indexResourceName.ToProto(), indexBytes)
+	err = s.env.GetCache().Set(ctx, indexResourceName.ToProto(), indexBytes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -456,7 +454,7 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 	if err != nil {
 		return nil, nil, err
 	}
-	err = s.cache.Set(ctx,
+	err = s.env.GetCache().Set(ctx,
 		digest.NewResourceName(sociIndexCacheKey, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto(),
 		[]byte(serializedIndexResourceName))
 	if err != nil {
@@ -559,7 +557,7 @@ func (s *SociArtifactStore) indexLayer(ctx context.Context, layer v1.Layer) (*re
 		Hash:      ztocDesc.Digest.Encoded(),
 		SizeBytes: ztocDesc.Size,
 	}
-	cacheWriter, err := s.cache.Writer(ctx,
+	cacheWriter, err := s.env.GetCache().Writer(ctx,
 		digest.NewResourceName(&ztocDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 	if err != nil {
 		return nil, err
