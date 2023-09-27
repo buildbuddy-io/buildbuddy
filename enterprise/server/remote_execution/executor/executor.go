@@ -314,7 +314,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// ActionResult under an invocation-specific digest, which will not ever be seen by bazel but
 	// may be viewed via the Buildbuddy UI.
 	if task.GetAction().GetDoNotCache() || cmdResult.Error != nil || cmdResult.ExitCode != 0 {
-		resultDigest, err := digest.AddInvocationIDToDigest(req.GetActionDigest(), task.GetInvocationId())
+		resultDigest, err := digest.AddInvocationIDToDigest(req.GetActionDigest(), digestFunction, task.GetInvocationId())
 		if err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}
