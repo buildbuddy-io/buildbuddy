@@ -366,11 +366,15 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 
 // AddInvocationIDToDigest combines the hash of the input digest and input invocationID and re-hash.
 // This is only to be used for failed action results.
-func AddInvocationIDToDigest(digest *repb.Digest, invocationID string) (*repb.Digest, error) {
+func AddInvocationIDToDigest(digest *repb.Digest, digestType repb.DigestFunction_Value, invocationID string) (*repb.Digest, error) {
 	if digest == nil {
 		return nil, status.FailedPreconditionError("nil digest")
 	}
-	h := sha256.New()
+
+	h, err := HashForDigestType(digestType)
+	if err != nil {
+		return nil, err
+	}
 	h.Write([]byte(digest.Hash))
 	h.Write([]byte(invocationID))
 	return &repb.Digest{

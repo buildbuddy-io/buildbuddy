@@ -880,7 +880,7 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 
 func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, invocationID string) (*repb.ActionResult, error) {
 	d := cmd.GetActionResourceName().GetDigest()
-	actionResultDigest, err := digest.AddInvocationIDToDigest(d, invocationID)
+	actionResultDigest, err := digest.AddInvocationIDToDigest(d, cmd.GetActionResourceName().GetDigestFunction(), invocationID)
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("unable to attach invocation ID %q to digest", invocationID))
 	}

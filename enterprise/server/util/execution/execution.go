@@ -62,7 +62,7 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 		// the exit code is zero and the action was not marked with DoNotCache.
 		actionResultDigest = proto.Clone(r.GetDigest()).(*repb.Digest)
 	} else {
-		actionResultDigest, err = digest.AddInvocationIDToDigest(r.GetDigest(), in.InvocationID)
+		actionResultDigest, err = digest.AddInvocationIDToDigest(r.GetDigest(), r.GetDigestFunction(), in.InvocationID)
 		if err != nil {
 			return nil, err
 		}

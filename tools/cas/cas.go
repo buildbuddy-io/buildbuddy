@@ -144,7 +144,7 @@ func main() {
 		ar, err := cachetools.GetActionResult(ctx, acClient, ind)
 		if err != nil {
 			log.Infof("Could not fetch ActionResult; maybe the action failed. Attempting to fetch failed action using invocation ID = %q", *invocationID)
-			failedDigest, err := digest.AddInvocationIDToDigest(ind.GetDigest(), *invocationID)
+			failedDigest, err := digest.AddInvocationIDToDigest(ind.GetDigest(), ind.GetDigestFunction(), *invocationID)
 			if err != nil {
 				log.Fatalf(err.Error())
 			}
