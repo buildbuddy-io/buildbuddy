@@ -245,12 +245,12 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 
 	resp, err := s.getArtifactsFromCache(ctx, configHash)
 	if status.IsNotFoundError(err) {
+		log.CtxDebugf(ctx, "soci artifacts for image %s missing from cache: %s", targetImageRef.DigestStr(), err)
 		// Try to only pull-index-write once at a time to prevent hammering
 		// the containter registry with a ton of parallel pull requests, and save
 		// apps a bunch of parallel work.
 		workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
 		respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
-			log.CtxDebugf(ctx, "soci artifacts for image %s missing from cache: %s", targetImageRef.DigestStr(), err)
 			sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)
 			if err != nil {
 				return nil, err
