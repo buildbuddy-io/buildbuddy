@@ -213,6 +213,15 @@ func (s *Service) authorize(ctx context.Context, groupID string) error {
 }
 
 func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return err
+	}
+	// Server admins in impersonation mode can bypass IP rules.
+	if u.IsImpersonating() {
+		return nil
+	}
+
 	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
 	if err != nil {
 		return err
@@ -260,8 +269,13 @@ func (s *Service) Authorize(ctx context.Context) error {
 
 func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
 	// GetUser is used by the frontend to know what the user is allowed to
-	//  do, including whether or not they are allowed access by IP rules.
+	// do, including whether or not they are allowed access by IP rules.
 	if r.URL.Path == "/rpc/BuildBuddyService/GetUser" {
+		return nil
+	}
+
+	// GetGroup is used to lookup group metadata for impersonation.
+	if r.URL.Path == "/rpc/BuildBuddyService/GetGroup" {
 		return nil
 	}
 

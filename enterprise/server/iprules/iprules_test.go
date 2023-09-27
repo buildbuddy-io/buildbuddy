@@ -48,7 +48,7 @@ func TestEnforcementNotEnabled(t *testing.T) {
 	require.NoError(t, err)
 
 	// Checking by group ID should also pass.
-	err = irs.AuthorizeGroup(ctx, u.Groups[0].Group.GroupID)
+	err = irs.AuthorizeGroup(authCtx, u.Groups[0].Group.GroupID)
 	require.NoError(t, err)
 }
 
