@@ -333,6 +333,10 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 				outputFile.NodeProperties.Properties[0].Value)
 		}
 	}
+	if sociIndexDigest == nil {
+		recordOutcome("action_result_missing_soci_index")
+		return nil, status.InternalError("malformed action result, missing soci index")
+	}
 	recordOutcome("cached")
 	return getArtifactsResponse(imageConfigHash, sociIndexDigest, ztocDigests), nil
 }
