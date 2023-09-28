@@ -96,7 +96,7 @@ func HandleAsk(args []string) (int, error) {
 		lastBackend = "grpcs://" + lastBackend
 	}
 
-	conn, err := grpc_client.DialTarget(lastBackend)
+	conn, err := grpc_client.DialSimple(lastBackend)
 	if err != nil {
 		return 1, err
 	}

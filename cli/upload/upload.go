@@ -91,7 +91,7 @@ func uploadFile(args []string) error {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	conn, err := grpc_client.DialTarget(*target)
+	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
 		return err
 	}

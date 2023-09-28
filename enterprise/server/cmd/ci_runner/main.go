@@ -1014,7 +1014,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := grpc_client.DialTarget(*cacheBackend)
+	conn, err := grpc_client.DialSimple(*cacheBackend)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1494,7 +1494,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 	}
 
 	if len(*patchURIs) > 0 {
-		conn, err := grpc_client.DialTarget(*cacheBackend)
+		conn, err := grpc_client.DialSimple(*cacheBackend)
 		if err != nil {
 			return err
 		}

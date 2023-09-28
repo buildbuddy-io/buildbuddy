@@ -28,7 +28,7 @@ func RegisterRemoteExecutionClient(env environment.Env) error {
 	if err != nil {
 		return status.InternalErrorf("Error initializing remote execution client: %s", err)
 	}
-	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_port))
+	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_port))
 	if err != nil {
 		return status.InternalErrorf("Error initializing remote execution client: %s", err)
 	}

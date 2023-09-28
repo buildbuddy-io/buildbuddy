@@ -65,7 +65,7 @@ func Register(env environment.Env) error {
 	}
 	env.SetCASServer(casServer)
 
-	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
+	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	if err != nil {
 		return status.InternalErrorf("Error initializing ContentAddressableStorageClient: %s", err)

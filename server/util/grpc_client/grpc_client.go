@@ -6,15 +6,20 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/keepalive"
 )
 
-// DialTarget handles some of the logic around detecting the correct GRPC
+// DialSimple handles some of the logic around detecting the correct GRPC
 // connection type and applying relevant options when connecting.
-func DialTarget(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+//
+// This function should be used when dialing from outside of BuildBuddy servers
+// such as from cli tools and the like. When dialing from BuildBuddy servers
+// (app, executor) you should use DialInternal.
+func DialSimple(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	dialOptions := CommonGRPCClientOptions()
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
@@ -39,6 +44,16 @@ func DialTarget(target string, extraOptions ...grpc.DialOption) (*grpc.ClientCon
 
 	// Connect to host/port and create a new client
 	return grpc.Dial(target, dialOptions...)
+}
+
+// DialInternal is similar to DialSimple, but it adds additional interceptors
+// (such as client identity) based on the specified environment.
+//
+// Outside of BuildBuddy servers, DialSimple should be used instead.
+func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
+	opts = append(opts, extraOptions...)
+	return DialSimple(target, opts...)
 }
 
 type rpcCredentials struct {

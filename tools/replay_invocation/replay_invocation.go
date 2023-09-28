@@ -87,7 +87,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err.Error())
 	}
-	conn, err := grpc_client.DialTarget(*besBackend)
+	conn, err := grpc_client.DialSimple(*besBackend)
 	if err != nil {
 		log.Fatalf("Error dialing bes backend: %s", err.Error())
 	}

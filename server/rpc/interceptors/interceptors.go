@@ -424,6 +424,29 @@ func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 	return contextReplacingStreamClientInterceptor(setHeadersFromContext)
 }
 
+func getClientIdentityAdder(env environment.Env) func(ctx context.Context) context.Context {
+	if env == nil || env.GetClientIdentityService() == nil {
+		return func(ctx context.Context) context.Context {
+			return ctx
+		}
+	}
+	return func(ctx context.Context) context.Context {
+		ctx, err := env.GetClientIdentityService().AddIdentityToContext(ctx)
+		if err != nil {
+			alert.UnexpectedEvent("could_not_add_server_identity", err.Error())
+		}
+		return ctx
+	}
+}
+
+func setClientIdentityUnaryClientInteceptor(env environment.Env) grpc.UnaryClientInterceptor {
+	return contextReplacingUnaryClientInterceptor(getClientIdentityAdder(env))
+}
+
+func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamClientInterceptor {
+	return contextReplacingStreamClientInterceptor(getClientIdentityAdder(env))
+}
+
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		unaryRecoveryInterceptor(),
@@ -467,10 +490,18 @@ func GetUnaryClientInterceptor() grpc.DialOption {
 	)
 }
 
+func GetUnaryClientIdentityInterceptor(env environment.Env) grpc.DialOption {
+	return grpc.WithChainUnaryInterceptor(setClientIdentityUnaryClientInteceptor(env))
+}
+
 func GetStreamClientInterceptor() grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(
 		otelgrpc.StreamClientInterceptor(),
 		grpc_prometheus.StreamClientInterceptor,
 		setHeadersStreamClientInterceptor(),
 	)
+}
+
+func GetStreamClientIdentityInterceptor(env environment.Env) grpc.DialOption {
+	return grpc.WithChainStreamInterceptor(setClientIdentityStreamClientInterceptor(env))
 }

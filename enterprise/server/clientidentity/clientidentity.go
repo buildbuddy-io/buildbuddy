@@ -3,6 +3,7 @@ package clientidentity
 import (
 	"context"
 	"flag"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -17,6 +18,7 @@ const (
 	IdentityHeaderName = "x-buildbuddy-client-identity"
 	DefaultExpiration  = 5 * time.Minute
 
+	cachedHeaderExpiration      = 1 * time.Minute
 	validatedIdentityContextKey = "validatedClientIdentity"
 )
 
@@ -30,6 +32,10 @@ type Service struct {
 	signingKey []byte
 
 	clock clockwork.Clock
+
+	mu               sync.Mutex
+	cachedHeader     string
+	cachedHeaderTime time.Time
 }
 
 func New(clock clockwork.Clock) (*Service, error) {
@@ -66,6 +72,11 @@ func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.
 }
 
 func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clock.Since(s.cachedHeaderTime) < cachedHeaderExpiration {
+		return metadata.AppendToOutgoingContext(ctx, IdentityHeaderName, s.cachedHeader), nil
+	}
 	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: *origin,
 		Client: *client,
@@ -73,6 +84,8 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 	if err != nil {
 		return ctx, err
 	}
+	s.cachedHeader = header
+	s.cachedHeaderTime = s.clock.Now()
 	return metadata.AppendToOutgoingContext(ctx, IdentityHeaderName, header), nil
 }
 

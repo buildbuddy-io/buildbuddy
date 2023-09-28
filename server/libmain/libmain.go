@@ -257,7 +257,7 @@ func registerLocalGRPCClients(env environment.Env) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
 	usageutil.SetClientType("app")
 
-	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
+	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
 	if err != nil {
 		return status.InternalErrorf("Error initializing ByteStreamClient: %s", err)
 	}

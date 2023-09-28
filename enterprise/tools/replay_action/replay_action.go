@@ -126,7 +126,7 @@ func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Di
 }
 
 func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, repb.ContentAddressableStorageClient) {
-	conn, err := grpc_client.DialTarget(target)
+	conn, err := grpc_client.DialSimple(target)
 	if err != nil {
 		log.Fatalf("Error dialing executor: %s", err.Error())
 	}

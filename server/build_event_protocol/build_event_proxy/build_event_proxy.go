@@ -34,7 +34,7 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 	}
 	c.clientMux.Lock()
 	defer c.clientMux.Unlock()
-	conn, err := grpc_client.DialTarget(c.target)
+	conn, err := grpc_client.DialSimple(c.target)
 	if err != nil {
 		log.Warningf("Unable to connect to proxy host '%s': %s", c.target, err)
 		c.client = nil

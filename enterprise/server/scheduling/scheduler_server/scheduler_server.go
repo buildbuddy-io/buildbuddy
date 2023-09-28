@@ -740,6 +740,8 @@ func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *s
 }
 
 type schedulerClientCache struct {
+	env environment.Env
+
 	mu      sync.Mutex
 	clients map[string]schedulerClient
 	// Address of this app instance. If the destination address matches the address of this instance, we call into
@@ -748,8 +750,9 @@ type schedulerClientCache struct {
 	localServer         *SchedulerServer
 }
 
-func newSchedulerClientCache(localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
+func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
 	cache := &schedulerClientCache{
+		env:                 env,
 		clients:             make(map[string]schedulerClient),
 		localServerHostPort: localServerHostPort,
 		localServer:         localServer,
@@ -786,7 +789,7 @@ func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
 			client = schedulerClient{localServer: c.localServer}
 		} else {
 			// This is non-blocking so it's OK to hold the lock.
-			conn, err := grpc_client.DialTarget("grpc://" + hostPort)
+			conn, err := grpc_client.DialInternal(c.env, "grpc://"+hostPort)
 			if err != nil {
 				return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
 			}
@@ -883,7 +886,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
 	}
-	s.schedulerClientCache = newSchedulerClientCache(s.ownHostPort, s)
+	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
 }
 

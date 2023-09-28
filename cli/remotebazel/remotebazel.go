@@ -478,7 +478,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	healthChecker := healthcheck.NewHealthChecker("ci-runner")
 	env := real_environment.NewRealEnv(healthChecker)
 
-	conn, err := grpc_client.DialTarget(opts.Server)
+	conn, err := grpc_client.DialSimple(opts.Server)
 	if err != nil {
 		return 0, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
 	}
@@ -574,7 +574,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	if fetchOutputs && exitCode == 0 {
-		conn, err := grpc_client.DialTarget(opts.Server)
+		conn, err := grpc_client.DialSimple(opts.Server)
 		if err != nil {
 			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
 		}
