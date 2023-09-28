@@ -6,7 +6,7 @@ index 0000000..7ab2087
 @@ -0,0 +1,6 @@
 +module(
 +    name = "soci_snapshotter",
-+    version = "0.0.7",
++    version = "0.0.8",
 +)
 +
 +bazel_dep(name = "zlib", version = "1.3")
