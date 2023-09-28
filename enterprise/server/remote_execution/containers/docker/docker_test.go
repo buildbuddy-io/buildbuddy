@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -177,9 +178,10 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		"sh", "-c", `
 			echo ExampleStdout >&1
 			echo ExampleStderr >&2
+
+			# Signal to the test that we are done, then wait indefinitely
 			echo "output" > output.txt
-      # Wait for the context to be canceled
-			sleep 100
+			sleep infinity
 		`,
 	}}
 	env := testenv.GetTestEnv(t)
@@ -190,8 +192,17 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		ctx, env, c, container.PullCredentials{}, "mirror.gcr.io/library/busybox")
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+
+	go func() {
+		// Wait for output file to be created, then cancel the context.
+		defer cancel()
+		err := disk.WaitUntilExists(ctx, filepath.Join(workDir, "output.txt"), disk.WaitOpts{})
+		require.NoError(t, err)
+		// Wait a little bit for stdout/stderr to be flushed to docker logs.
+		time.Sleep(200 * time.Millisecond)
+	}()
 
 	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
 

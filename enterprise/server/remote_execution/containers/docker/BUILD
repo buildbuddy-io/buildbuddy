@@ -47,6 +47,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/disk",
         "//server/util/status",
         "@com_github_docker_docker//client",
         "@com_github_stretchr_testify//assert",
