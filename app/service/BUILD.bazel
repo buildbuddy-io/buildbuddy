@@ -6,6 +6,7 @@ ts_library(
     name = "rpc_service",
     srcs = ["rpc_service.ts"],
     deps = [
+        "//app/capabilities",
         "//app/util:async",
         "//proto:buildbuddy_service_ts_proto",
         "//proto:context_ts_proto",
