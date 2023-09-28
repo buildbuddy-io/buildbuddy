@@ -32,13 +32,7 @@ export class Capabilities {
   usage: boolean = false;
   userManagement: boolean = false;
 
-  register(name: string, enterprise: boolean, paths: Array<string>) {
-    this.name = name;
-    this.paths = new Set(paths);
-    this.enterprise = enterprise;
-
-    this.createOrg = this.enterprise;
-
+  constructor() {
     this.invocationSharing = true;
     this.compareInvocations = true;
     this.deleteInvocation = true;
@@ -61,6 +55,14 @@ export class Capabilities {
     this.code = this.config.codeEditorEnabled;
     this.usage = this.config.usageEnabled;
     this.userManagement = this.config.userManagementEnabled;
+  }
+
+  register(name: string, enterprise: boolean, paths: Array<string>) {
+    this.name = name;
+    this.paths = new Set(paths);
+    this.enterprise = enterprise;
+
+    this.createOrg = this.enterprise;
 
     if (window.gtag) {
       window.gtag("set", {

@@ -16,6 +16,7 @@ go_library(
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/remote_cache/hit_tracker",
+        "//server/util/flag",
         "//server/util/status",
         "//server/util/subdomain",
         "//server/version",

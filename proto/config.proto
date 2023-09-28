@@ -131,4 +131,16 @@ message FrontendConfig {
 
   // Whether IP rules UI is enabled.
   bool ip_rules_enabled = 43;
+
+  // Regional servers.
+  repeated Region regions = 44;
+}
+
+message Region {
+  // The name of the regional server. Ex: "Europe"
+  string name = 1;
+
+  // The http endpoint of the regional server, including https://.
+  // Ex: "https://app.buildbuddy.io"
+  string server = 2;
 }
