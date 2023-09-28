@@ -67,7 +67,7 @@ var (
 	backgroundRepairFrequency = flag.Duration("cache.pebble.background_repair_frequency", 1*24*time.Hour, "How frequently to run period background repair tasks.")
 	backgroundRepairQPSLimit  = flag.Int("cache.pebble.background_repair_qps_limit", 100, "QPS limit for background repair modifications.")
 	deleteACEntriesOlderThan  = flag.Duration("cache.pebble.delete_ac_entries_older_than", 0, "If set, the background repair will delete AC entries older than this time.")
-	scanForMissingFiles       = flag.Bool("cache.pebble.scan_for_missing_files", true, "If set, scan all keys and check if external files are missing on disk. Deletes keys with missing files.")
+	scanForMissingFiles       = flag.Bool("cache.pebble.scan_for_missing_files", false, "If set, scan all keys and check if external files are missing on disk. Deletes keys with missing files.")
 	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
@@ -1155,25 +1155,19 @@ type repairOpts struct {
 	deleteACEntriesOlderThan      time.Duration
 }
 
-func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *repairOpts) error {
-	log.Infof("Pebble Cache: backgroundRepairIteration starting")
+func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *partitionEvictor, quitChan chan struct{}, opts *repairOpts) {
+	partitionID := evictor.part.ID
+	log.Infof("Pebble Cache: backgroundRepair starting for partition %q", partitionID)
 
-	evictors := make(map[string]*partitionEvictor, 0)
-	p.statusMu.Lock()
-	for _, pe := range p.evictors {
-		evictors[pe.part.ID] = pe
+	keyPrefix := []byte(fmt.Sprintf("%s/%s", evictor.partitionKeyPrefix(), filestore.GroupIDPrefix))
+	if opts.deleteEntriesWithMissingFiles {
+		keyPrefix = []byte(evictor.partitionKeyPrefix() + "/")
 	}
-	p.statusMu.Unlock()
-
-	db, err := p.leaser.DB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
+	lowerBound, upperBound := keys.Range(keyPrefix)
 
 	iter := db.NewIter(&pebble.IterOptions{
-		LowerBound: keys.MinByte,
-		UpperBound: keys.MaxByte,
+		LowerBound: lowerBound,
+		UpperBound: upperBound,
 	})
 	// We update the iter variable later on, so we need to wrap the Close call
 	// in a func to operate on the correct iterator instance.
@@ -1197,7 +1191,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		// Check if we're shutting down; exit if so.
 		select {
 		case <-quitChan:
-			return nil
+			return
 		default:
 		}
 
@@ -1208,7 +1202,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			copy(k, iter.Key())
 			newIter := db.NewIter(&pebble.IterOptions{
 				LowerBound: k,
-				UpperBound: keys.MaxByte,
+				UpperBound: upperBound,
 			})
 			iter.Close()
 			if !newIter.First() {
@@ -1222,7 +1216,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		}
 
 		if time.Since(lastUpdate) > 1*time.Minute {
-			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s", pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)))
+			log.Infof("Pebble Cache: backgroundRepair for %q in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s", partitionID, pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)))
 			lastUpdate = time.Now()
 		}
 
@@ -1264,19 +1258,14 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 			age := time.Since(atime)
 			if age > opts.deleteACEntriesOlderThan {
-				e, ok := evictors[fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()]
-				if ok {
-					_ = modLim.Wait(p.env.GetServerContext())
-					err := e.deleteFile(key, version, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
-					if err != nil {
-						log.Warningf("Could not delete old AC key %q: %s", key.String(), err)
-					} else {
-						removedEntry = true
-						oldACEntries++
-						oldACEntriesBytes += fileMetadata.GetStoredSizeBytes()
-					}
+				_ = modLim.Wait(p.env.GetServerContext())
+				err := evictor.deleteFile(key, version, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
+				if err != nil {
+					log.Warningf("Could not delete old AC key %q: %s", key.String(), err)
 				} else {
-					log.Warningf("Did not find evictor for %q for key %q", fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.String())
+					removedEntry = true
+					oldACEntries++
+					oldACEntriesBytes += fileMetadata.GetStoredSizeBytes()
 				}
 			}
 		}
@@ -1286,13 +1275,36 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			uncompressedBytes += fileMetadata.GetStoredSizeBytes()
 		}
 	}
-	log.Infof("Pebble Cache: backgroundRepairIteration scanned %s records (%s uncompressed entries remaining using %s bytes [%s])", pr.Sprint(totalCount), pr.Sprint(uncompressedCount), pr.Sprint(uncompressedBytes), units.BytesSize(float64(uncompressedBytes)))
+	log.Infof("Pebble Cache: backgroundRepair for %q scanned %s records (%s uncompressed entries remaining using %s bytes [%s])", partitionID, pr.Sprint(totalCount), pr.Sprint(uncompressedCount), pr.Sprint(uncompressedBytes), units.BytesSize(float64(uncompressedBytes)))
 	if opts.deleteEntriesWithMissingFiles {
-		log.Infof("Pebble Cache: backgroundRepairIteration deleted %d keys with missing files", missingFiles)
+		log.Infof("Pebble Cache: backgroundRepair for %q deleted %d keys with missing files", partitionID, missingFiles)
 	}
 	if opts.deleteACEntriesOlderThan != 0 {
-		log.Infof("Pebble Cache: backgroundRepairIteration deleted %s AC keys older than %s using %s", pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan, units.BytesSize(float64(oldACEntriesBytes)))
+		log.Infof("Pebble Cache: backgroundRepair for %q deleted %s AC keys older than %s using %s", partitionID, pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan, units.BytesSize(float64(oldACEntriesBytes)))
 	}
+	return
+}
+
+func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *repairOpts) error {
+	log.Infof("Pebble Cache: backgroundRepairIteration starting")
+
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	evictors := make([]*partitionEvictor, len(p.evictors))
+	p.statusMu.Lock()
+	copy(evictors, p.evictors)
+	p.statusMu.Unlock()
+
+	for _, e := range evictors {
+		p.backgroundRepairPartition(db, e, quitChan, opts)
+	}
+
+	log.Infof("Pebble Cache: backgroundRepairIteration finished")
+
 	return nil
 }
 

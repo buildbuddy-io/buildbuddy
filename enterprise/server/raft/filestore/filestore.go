@@ -25,7 +25,7 @@ import (
 
 const (
 	PartitionDirectoryPrefix = "PT"
-	groupIDPrefix            = "GR"
+	GroupIDPrefix            = "GR"
 
 	// Data owned by the ANON user will be assigned to this groupID. This
 	// ensures that our stored data has a uniform format, which allows
@@ -160,20 +160,20 @@ func remapFixedToANONGroupID(groupID string) string {
 // sample uniformly across group IDs.
 func FixedWidthGroupID(groupID string) string {
 	// This is only true for the special "ANON" group.
-	if !strings.HasPrefix(groupID, groupIDPrefix) {
+	if !strings.HasPrefix(groupID, GroupIDPrefix) {
 		return groupID
 	}
-	return fmt.Sprintf("%s%020s", groupIDPrefix, groupID[2:])
+	return fmt.Sprintf("%s%020s", GroupIDPrefix, groupID[2:])
 }
 
 // Undoes the padding added by FixedWidthGroupID to produce the "real" group
 // ID.
 func trimFixedWidthGroupID(groupID string) string {
 	// This is only for true the special "ANON" group.
-	if !strings.HasPrefix(groupID, groupIDPrefix) {
+	if !strings.HasPrefix(groupID, GroupIDPrefix) {
 		return groupID
 	}
-	return groupIDPrefix + strings.TrimLeft(groupID[2:], "0")
+	return GroupIDPrefix + strings.TrimLeft(groupID[2:], "0")
 }
 
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
