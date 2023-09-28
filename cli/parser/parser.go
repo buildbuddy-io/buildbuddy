@@ -683,6 +683,8 @@ func ExpandConfigs(args []string) ([]string, error) {
 	return CanonicalizeArgs(args)
 }
 
+// Mirroring the behavior here:
+// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java#L41
 func getBazelOS() string {
 	switch runtime.GOOS {
 	case "linux":
