@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -54,16 +55,10 @@ var (
 	newTrendsUIEnabled                     = flag.Bool("app.new_trends_ui_enabled", false, "If set, show a new trends UI with a bit more organization.")
 	trendsRangeSelectionEnabled            = flag.Bool("app.trends_range_selection", false, "If set, let users drag to select time ranges in the trends UI.")
 	ipRulesUIEnabled                       = flag.Bool("app.ip_rules_ui_enabled", false, "If set, show the IP rules tab in settings page.")
-	regions                                = flag.Slice("regions", []Region{}, "A list of regions that executors might be connected to.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
-
-type Region struct {
-	Name   string
-	Server string
-}
 
 func FSFromRelPath(relPath string) (fs.FS, error) {
 	// Figure out where our runfiles (static content bundled with the binary) live.
@@ -193,7 +188,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CustomerSubdomain:                      subdomain.Get(ctx) != "",
 		Domain:                                 build_buddy_url.Domain(),
 		IpRulesEnabled:                         *ipRulesUIEnabled,
-		Regions:                                regionsToProto(*regions),
+		Regions:                                region.Protos(),
 	}
 
 	configJSON, err := protojson.Marshal(&config)
@@ -210,17 +205,6 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func regionsToProto(regions []Region) []*cfgpb.Region {
-	protos := []*cfgpb.Region{}
-	for _, r := range regions {
-		protos = append(protos, &cfgpb.Region{
-			Name:   r.Name,
-			Server: r.Server,
-		})
-	}
-	return protos
 }
 
 func AppBundleHash(bundleFS fs.FS) (string, error) {
