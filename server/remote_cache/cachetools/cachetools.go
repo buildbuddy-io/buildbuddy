@@ -222,8 +222,9 @@ func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *d
 		return nil, status.InvalidArgumentError("Cannot download non-AC resource from action cache")
 	}
 	req := &repb.GetActionResultRequest{
-		ActionDigest: ar.GetDigest(),
-		InstanceName: ar.GetInstanceName(),
+		ActionDigest:   ar.GetDigest(),
+		InstanceName:   ar.GetInstanceName(),
+		DigestFunction: ar.GetDigestFunction(),
 	}
 	return acClient.GetActionResult(ctx, req)
 }
