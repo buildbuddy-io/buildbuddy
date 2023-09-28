@@ -109,7 +109,6 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		v.sawFinishedEvent = true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
 		for _, toolLog := range p.BuildToolLogs.Log {
-			// Get the first non-empty URI like we do in the app.
 			if uri := toolLog.GetUri(); uri != "" {
 				if url, err := url.Parse(uri); err != nil {
 					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
