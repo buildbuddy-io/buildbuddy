@@ -634,6 +634,10 @@ type UsageLabels struct {
 type Usage struct {
 	Model
 
+	// UsageID is going to be a unique ID for this usage row.
+	// TODO(sluongng): migrate data to this new column before making it the primary key.
+	UsageID string `gorm:"default:NULL"`
+
 	GroupID string `gorm:"not null;index:group_period_region_index_v2,priority:1"`
 
 	// PeriodStartUsec is the time at which the usage period started, in

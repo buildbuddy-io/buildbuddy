@@ -172,6 +172,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	// should be finalized up to the second period.
 	assert.Equal(t, []*tables.Usage{
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			PeriodStartUsec: period1Start.UnixMicro(),
 			GroupID:         "GR1",
 			Region:          "us-west1",
@@ -181,6 +182,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			UsageLabels: *labels,
 		},
 		{
+			UsageID:         fmt.Sprintf("GR2-%d-us-west1", period1Start.UnixMicro()),
 			PeriodStartUsec: period1Start.UnixMicro(),
 			GroupID:         "GR2",
 			Region:          "us-west1",
@@ -224,6 +226,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 	// - 3rd period should *not* be flushed since it's the current period.
 	require.Equal(t, []*tables.Usage{
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -314,6 +317,7 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	usages := queryAllUsages(t, te)
 	require.Equal(t, []*tables.Usage{
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -321,6 +325,7 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 			UsageLabels:     *labels,
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period2Start.UnixMicro()),
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period2Start.UnixMicro(),
@@ -367,6 +372,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	usages := queryAllUsages(t, te1)
 	require.Equal(t, []*tables.Usage{
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-europe-north1", period1Start.UnixMicro()),
 			GroupID:         "GR1",
 			Region:          "europe-north1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -374,6 +380,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 			UsageLabels:     *labels,
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -405,6 +412,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 
 	usages := queryAllUsages(t, te)
 	require.Equal(t, []*tables.Usage{{
+		UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 		PeriodStartUsec: period1Start.UnixMicro(),
 		GroupID:         "GR1",
 		UsageLabels:     *labels,
@@ -442,6 +450,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	usages := queryAllUsages(t, te)
 	require.Equal(t, []*tables.Usage{
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -449,6 +458,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -456,6 +466,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{Client: "bazel"},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -484,6 +495,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	usages = queryAllUsages(t, te)
 	require.Equal(t, []*tables.Usage{
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -491,6 +503,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -498,6 +511,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{Client: "bazel"},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -505,6 +519,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{Client: "executor", Origin: "internal"},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period3Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period3Start.UnixMicro(),
@@ -512,6 +527,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{Client: "bazel"},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period3Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period3Start.UnixMicro(),
@@ -571,6 +587,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 	// we had a faulty double-count attempt.
 	require.Equal(t, []*tables.Usage{
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -578,6 +595,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -585,6 +603,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{Origin: "Origin-TestValue1"},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -592,6 +611,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{Origin: "Origin-TestValue2"},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -599,6 +619,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 			UsageLabels:     tables.UsageLabels{Client: "Client-TestValue1"},
 		},
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
@@ -640,6 +661,7 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 	usages := queryAllUsages(t, te)
 	require.Equal(t, []*tables.Usage{
 		{
+			UsageID:         fmt.Sprintf("GR1-%d-us-west1", period1Start.UnixMicro()),
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),

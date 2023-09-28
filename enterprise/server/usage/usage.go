@@ -341,6 +341,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 	dbh := ut.env.GetDBHandle()
 	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("insert_usage"), func(tx *db.DB) error {
 		tu := &tables.Usage{
+			UsageID:         fmt.Sprintf("%s-%d-%s", groupID, p.Start().UnixMicro(), ut.region),
 			GroupID:         groupID,
 			PeriodStartUsec: p.Start().UnixMicro(),
 			Region:          ut.region,
