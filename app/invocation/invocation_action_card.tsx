@@ -49,7 +49,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchAction() {
     this.setState({ loadingAction: true });
     const digest = parseDigest(this.props.search.get("actionDigest") ?? "");
-    const actionUrl = `bytestream://${this.getCacheAddress()}/blobs/${digest.hash}/${digest.sizeBytes ?? 1}`;
+    const digestType = this.props.model.getDigestFunctionDir();
+    const actionUrl = `bytestream://${this.getCacheAddress()}/blobs/${digestType}${digest.hash}/${
+      digest.sizeBytes ?? 1
+    }`;
     rpcService
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
@@ -87,7 +90,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
     let inputRootFile =
-      "bytestream://" + this.getCacheAddress() + "/blobs/" + rootDigest.hash + "/" + rootDigest.sizeBytes;
+      "bytestream://" +
+      this.getCacheAddress() +
+      "/blobs/" +
+      this.props.model.getDigestFunctionDir() +
+      rootDigest.hash +
+      "/" +
+      rootDigest.sizeBytes;
     rpcService
       .fetchBytestreamFile(inputRootFile, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
@@ -112,8 +121,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (digestParam == null) {
       digestParam = this.props.search.get("actionDigest");
     }
+    const digestType = this.props.model.getDigestFunctionDir();
     const digest = parseDigest(digestParam ?? "");
-    const actionResultUrl = `actioncache://${this.getCacheAddress()}/blobs/ac/${digest.hash}/${digest.sizeBytes ?? 1}`;
+    const actionResultUrl = `actioncache://${this.getCacheAddress()}/blobs/ac/${digestType}${digest.hash}/${
+      digest.sizeBytes ?? 1
+    }`;
     rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
@@ -131,6 +143,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "bytestream://" +
       this.getCacheAddress() +
       "/blobs/" +
+      this.props.model.getDigestFunctionDir() +
       actionResult.stdoutDigest?.hash +
       "/" +
       actionResult.stdoutDigest?.sizeBytes;
@@ -148,6 +161,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "bytestream://" +
       this.getCacheAddress() +
       "/blobs/" +
+      this.props.model.getDigestFunctionDir() +
       actionResult.stderrDigest?.hash +
       "/" +
       actionResult.stderrDigest?.sizeBytes;
@@ -166,6 +180,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "bytestream://" +
       this.getCacheAddress() +
       "/blobs/" +
+      this.props.model.getDigestFunctionDir() +
       action.commandDigest?.hash +
       "/" +
       action.commandDigest?.sizeBytes;
@@ -193,7 +208,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
   handleOutputFileClicked(file: build.bazel.remote.execution.v2.OutputFile) {
     rpcService.downloadBytestreamFile(
       file.path,
-      "bytestream://" + this.getCacheAddress() + "/blobs/" + file.digest?.hash + "/" + file.digest?.sizeBytes,
+      "bytestream://" +
+        this.getCacheAddress() +
+        "/blobs/" +
+        this.props.model.getDigestFunctionDir() +
+        file.digest?.hash +
+        "/" +
+        file.digest?.sizeBytes,
       this.props.model.getInvocationId()
     );
   }
@@ -310,7 +331,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   handleFileClicked(node: InputNode) {
     let digestString = node.obj.digest?.hash + "/" + node.obj.digest?.sizeBytes;
-    let dirUrl = "bytestream://" + this.getCacheAddress() + "/blobs/" + digestString;
+    let dirUrl =
+      "bytestream://" + this.getCacheAddress() + "/blobs/" + this.props.model.getDigestFunctionDir() + digestString;
 
     if (this.state.treeShaToExpanded.get(digestString)) {
       this.state.treeShaToExpanded.set(digestString, false);

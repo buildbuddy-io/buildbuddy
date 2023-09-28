@@ -199,8 +199,9 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, 
 
 		// Request the ActionResult
 		req := &repb.GetActionResultRequest{
-			InstanceName: r.GetInstanceName(),
-			ActionDigest: r.GetDigest(),
+			InstanceName:   r.GetInstanceName(),
+			ActionDigest:   r.GetDigest(),
+			DigestFunction: r.GetDigestFunction(),
 		}
 		actionResult, err := acClient.GetActionResult(ctx, req)
 		if err != nil {
