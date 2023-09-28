@@ -151,7 +151,7 @@ class RpcService {
     if (this.debuggingEnabled()) {
       request.setRequestHeader("x-buildbuddy-trace", "force");
     }
-    if (capabilities.config.regions.map((r) => r.server).includes(server)) {
+    if (capabilities.config.regions?.map((r) => r.server).includes(server)) {
       request.withCredentials = true;
     }
 
