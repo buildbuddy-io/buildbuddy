@@ -71,8 +71,9 @@ var (
 	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
 	// TODO(bduffany): make the bazel test a benchmark, and run it for both
 	// NBD and non-NBD.
-	testBazelBuild = flag.Bool("test_bazel_build", false, "Whether to test a bazel build.")
-	filecacheDir   = flag.String("persistent_filecache_dir", "", "Filecache directory to be used across test runs.")
+	testBazelBuild      = flag.Bool("test_bazel_build", false, "Whether to test a bazel build.")
+	testManualBenchmark = flag.Bool("test_manual_benchmark", false, "Whether to run manual benchmarking tests.")
+	filecacheDir        = flag.String("persistent_filecache_dir", "", "Filecache directory to be used across test runs.")
 
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
@@ -697,9 +698,11 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	require.Equal(t, "Base\nFork remote fetch\n", string(res.Stdout))
 }
 
-// To print performance data, run with:
-// `bazel test  //enterprise/server/remote_execution/containers/firecracker/... --test_output=streamed --test_filter=TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking`
+// Prints performance data about various Firecracker commands
 func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
+	if !*testManualBenchmark {
+		t.Skip()
+	}
 	// Silence the logs so output is easier to read
 	flags.Set(t, "app.log_level", "error")
 	log.Configure()
