@@ -174,6 +174,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Note: cleanupFUSEMounts needs to happen before deleteBuildRootOnStartup.
+	cleanupFUSEMounts()
+
 	if *deleteBuildRootOnStartup {
 		rootDir := runner.GetBuildRoot()
 		if err := os.RemoveAll(rootDir); err != nil {

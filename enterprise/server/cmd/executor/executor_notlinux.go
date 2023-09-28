@@ -6,3 +6,6 @@ import "context"
 
 func setupNetworking(rootContext context.Context) {
 }
+
+func cleanupFUSEMounts() {
+}

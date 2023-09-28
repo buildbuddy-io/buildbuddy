@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 )
@@ -29,5 +30,11 @@ func setupNetworking(rootContext context.Context) {
 			fmt.Printf("Error configuring secondary network for podman: %s", err)
 			os.Exit(1)
 		}
+	}
+}
+
+func cleanupFUSEMounts() {
+	if err := vbd.UnmountAll(); err != nil {
+		log.Warningf("Failed to cleanup Virtual Block Device mounts from previous runs: %s", err)
 	}
 }

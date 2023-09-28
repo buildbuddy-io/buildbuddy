@@ -329,11 +329,6 @@ proto_library(
 )
 
 proto_library(
-    name = "nbd_proto",
-    srcs = ["nbd.proto"],
-)
-
-proto_library(
     name = "build_event_stream_proto",
     srcs = ["build_event_stream.proto"],
     deps = [
@@ -872,13 +867,6 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vfs",
     proto = ":vfs_proto",
-)
-
-go_proto_library(
-    name = "nbd_go_proto",
-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/nbd",
-    proto = ":nbd_proto",
 )
 
 go_proto_library(

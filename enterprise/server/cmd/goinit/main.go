@@ -12,11 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/nbd/nbdclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
@@ -38,12 +40,15 @@ const (
 
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
+
+	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
+	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
+	EXT4_IOC_RESIZE_FS = 0x40086610
 )
 
 var (
 	path                    = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort              = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
-	enableNBD               = flag.Bool("enable_nbd", false, "Whether to enable network block devices (nbd)")
 	enableRootfs            = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
 	debugMode               = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
@@ -52,9 +57,16 @@ var (
 	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 
-	isVMExec    = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
-	isVMVFS     = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
-	isNBDClient = flag.Bool("nbdclient", false, "Whether to run as an NBD client binary.")
+	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
+	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
+)
+
+var (
+	// Device paths.
+	rootDevice      = ""
+	containerDevice = "/dev/vda"
+	scratchDevice   = "/dev/vdb"
+	workspaceDevice = "/dev/vdc"
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -209,12 +221,15 @@ func main() {
 
 	flag.Parse()
 
+	if *enableRootfs {
+		rootDevice = "/dev/vda"
+		workspaceDevice = "/dev/vdb"
+		containerDevice = ""
+		scratchDevice = ""
+	}
+
 	// If we were re-exec'd by the init binary as a child process, run the
 	// appropriate handler.
-	if *isNBDClient {
-		die(nbdclient.Run(rootContext))
-		return
-	}
 	if *isVMExec {
 		die(runVMExecServer(rootContext))
 		return
@@ -250,38 +265,24 @@ func main() {
 	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
 
 	if *enableRootfs {
-		// Serve the rootfs using a background process, so that it can focus
-		// only on serving NBD requests without being interrupted by other
-		// syscalls made in this process (which can lead to deadlocks if those
-		// syscalls themselves require NBD reads).
-		rootfs, err := nbdclient.Start("rootfs", "/mnt")
-		die(err)
-		die(rootfs.Mount())
+		die(mkdirp("/mnt", 0755))
+		die(mount(rootDevice, "/mnt", "ext4", syscall.MS_NOATIME, ""))
+		die(resizeExt4FS(rootDevice, "/mnt"))
 	} else {
+		// If rootfs is not enabled then set up an overlayfs with a readonly
+		// containerfs layer and a read/write scratchfs layer.
 		die(mkdirp("/container", 0755))
-
-		die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
+		die(mount(containerDevice, "/container", "ext4", syscall.MS_RDONLY, ""))
 		die(mkdirp("/scratch", 0755))
-		if *enableNBD {
-			scratchNBD, err := nbdclient.NewClientDevice(rootContext, "scratchfs")
-			die(err)
-			die(scratchNBD.Mount("/scratch"))
-		} else {
-			die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
-		}
+		die(mount(scratchDevice, "/scratch", "ext4", syscall.MS_RELATIME, ""))
 		die(mkdirp("/scratch/bbvmroot", 0755))
 		die(mkdirp("/scratch/bbvmwork", 0755))
-
 		die(mkdirp("/mnt", 0755))
 		die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
 	}
 
 	die(mkdirp("/mnt/workspace", 0755))
-	if !*enableNBD {
-		die(mount("/dev/vdc", "/mnt/workspace", "ext4", syscall.MS_RELATIME, ""))
-	}
-	// If NBD is enabled, let the vmexec server mount and unmount the workspace
-	// dir, since it runs within the chroot.
+	die(mount(workspaceDevice, "/mnt/workspace", "ext4", syscall.MS_NOATIME, ""))
 
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
@@ -456,17 +457,7 @@ func runVMExecServer(ctx context.Context) error {
 	log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes))
 
-	// When NBD is enabled, the VMExec server needs a handle on the workspacefs
-	// ClientDevice so that it can mount/unmount the workspace between actions.
-	// Create the device now and mount it.
-	var workspaceNBD *nbdclient.Process
-	if *enableNBD {
-		nbd, err := nbdclient.Start("workspacefs", "/workspace")
-		die(err)
-		die(nbd.Mount())
-		workspaceNBD = nbd
-	}
-	vmService, err := vmexec.NewServer(workspaceNBD)
+	vmService, err := vmexec.NewServer(workspaceDevice)
 	if err != nil {
 		return err
 	}
@@ -481,4 +472,40 @@ func runVMExecServer(ctx context.Context) error {
 	}
 
 	return server.Serve(listener)
+}
+
+// Resizes the ext4 filesystem mounted at the given path to match the underlying
+// block device size.
+func resizeExt4FS(devicePath, mountPath string) error {
+	sizeBuf, err := os.ReadFile(fmt.Sprintf("/sys/class/block/%s/size", filepath.Base(devicePath)))
+	if err != nil {
+		return status.InternalErrorf("read block device size: %s", err)
+	}
+	// Here, the block size is always 512.
+	// So the size in bytes is deviceSizeBlocks*512.
+	deviceSizeBlocks, err := strconv.Atoi(strings.TrimSpace(string(sizeBuf)))
+	if err != nil {
+		return status.InternalErrorf("failed to parse block device size %q", string(sizeBuf))
+	}
+
+	s := &syscall.Statfs_t{}
+	if err := syscall.Statfs(mountPath, s); err != nil {
+		return status.InternalErrorf("statfs %s: %s", mountPath, err)
+	}
+	blocks := int64(deviceSizeBlocks*512) / s.Bsize
+	fd, err := syscall.Open(mountPath, syscall.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		uintptr(EXT4_IOC_RESIZE_FS),
+		uintptr(unsafe.Pointer(&blocks)),
+	)
+	if errno != 0 {
+		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
+	}
+	return nil
 }
