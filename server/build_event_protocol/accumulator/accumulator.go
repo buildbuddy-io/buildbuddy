@@ -69,7 +69,7 @@ type BEValues struct {
 	sawBuildMetadataEvent          bool
 	sawFinishedEvent               bool
 	buildStartTime                 time.Time
-	bytestreamProfileURI           *url.URL
+	buildToolLogURIs               []*url.URL
 	profileName                    string
 	hasBytestreamTestActionOutputs bool
 
@@ -114,9 +114,8 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 				if url, err := url.Parse(uri); err != nil {
 					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
 				} else if url.Scheme == "bytestream" {
-					v.bytestreamProfileURI = url
+					v.buildToolLogURIs = append(v.buildToolLogURIs, url)
 				}
-				break
 			}
 		}
 	case *build_event_stream.BuildEvent_TestResult:
@@ -185,8 +184,8 @@ func (v *BEValues) BuildFinished() bool {
 	return v.sawFinishedEvent
 }
 
-func (v *BEValues) BytestreamProfileURI() *url.URL {
-	return v.bytestreamProfileURI
+func (v *BEValues) BuildToolLogURIs() []*url.URL {
+	return v.buildToolLogURIs
 }
 
 func (v *BEValues) HasBytestreamTestActionOutputs() bool {

@@ -823,9 +823,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if !*disablePersistArtifacts {
 		testOutputURIs := e.beValues.TestOutputURIs()
 		persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
-		if e.beValues.BytestreamProfileURI() != nil {
-			persist.URIs = append(persist.URIs, e.beValues.BytestreamProfileURI())
-		}
+		persist.URIs = append(persist.URIs, e.beValues.BuildToolLogURIs()...)
 		persist.URIs = append(persist.URIs, testOutputURIs...)
 	}
 
