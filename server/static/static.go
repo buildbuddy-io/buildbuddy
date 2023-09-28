@@ -2,7 +2,6 @@ package static
 
 import (
 	"context"
-	"flag"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -17,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -187,6 +188,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CustomerSubdomain:                      subdomain.Get(ctx) != "",
 		Domain:                                 build_buddy_url.Domain(),
 		IpRulesEnabled:                         *ipRulesUIEnabled,
+		Regions:                                region.Protos(),
 	}
 
 	configJSON, err := protojson.Marshal(&config)

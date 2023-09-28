@@ -14,6 +14,7 @@ go_library(
         "//server/util/alert",
         "//server/util/clientip",
         "//server/util/log",
+        "//server/util/region",
         "//server/util/request_context",
         "//server/util/subdomain",
         "//server/util/uuid",

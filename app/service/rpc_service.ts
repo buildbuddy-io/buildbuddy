@@ -3,6 +3,7 @@ import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import { CancelablePromise } from "../util/async";
 import * as protobufjs from "protobufjs";
+import capabilities from "../capabilities/capabilities";
 
 export { CancelablePromise } from "../util/async";
 
@@ -27,6 +28,7 @@ export type XMLHttpResponseType = XMLHttpRequest["responseType"];
 
 class RpcService {
   service: ExtendedBuildBuddyService;
+  regionalServices = new Map<string, ExtendedBuildBuddyService>();
   events: Subject<string>;
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
@@ -34,8 +36,17 @@ class RpcService {
   });
 
   constructor() {
-    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));
+    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "")));
     this.events = new Subject();
+
+    if (capabilities.config.regions) {
+      for (let r of capabilities.config.regions) {
+        this.regionalServices.set(
+          r.name,
+          this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server)))
+        );
+      }
+    }
 
     (window as any)._rpcService = this;
   }
@@ -134,9 +145,9 @@ class RpcService {
     });
   }
 
-  rpc(method: any, requestData: any, callback: any) {
+  rpc(server: string, method: any, requestData: any, callback: any) {
     var request = new XMLHttpRequest();
-    request.open("POST", `/rpc/BuildBuddyService/${method.name}`, true);
+    request.open("POST", `${server || ""}/rpc/BuildBuddyService/${method.name}`, true);
     if (this.debuggingEnabled()) {
       request.setRequestHeader("x-buildbuddy-trace", "force");
     }

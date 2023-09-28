@@ -11,7 +11,7 @@ import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
 import LinkButton from "../../../app/components/button/link_button";
-import { Cpu, Hash, Laptop, LucideIcon } from "lucide-react";
+import { Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
 
 enum FetchType {
   Executors,
@@ -130,18 +130,23 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
 }
 
 interface ExecutorsListProps {
-  executors: scheduler.GetExecutionNodesResponse.Executor[];
+  regions: { name: string; response: scheduler.GetExecutionNodesResponse }[];
 }
 
 class ExecutorsList extends React.Component<ExecutorsListProps> {
   render() {
-    let executorsByPool = new Map<string, scheduler.GetExecutionNodesResponse.Executor[]>();
-    for (const e of this.props.executors) {
-      const key = (e.node?.os || "") + "-" + (e.node?.arch || "") + "-" + (e.node?.pool || "");
-      if (!executorsByPool.has(key)) {
-        executorsByPool.set(key, []);
+    let executorsByPool = new Map<
+      string,
+      { region: string; executor: scheduler.GetExecutionNodesResponse.Executor }[]
+    >();
+    for (const r of this.props.regions) {
+      for (const e of r.response.executor) {
+        const key = r.name + "-" + (e.node?.os || "") + "-" + (e.node?.arch || "") + "-" + (e.node?.pool || "");
+        if (!executorsByPool.has(key)) {
+          executorsByPool.set(key, []);
+        }
+        executorsByPool.get(key)!.push({ region: r.name, executor: e });
       }
-      executorsByPool.get(key)!.push(e);
     }
     const keys = Array.from(executorsByPool.keys()).sort();
 
@@ -156,16 +161,21 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
               }
               return (
                 <>
-                  <h2>{executors[0].node?.pool || "Default Pool"}</h2>
+                  <h2>{executors[0].executor.node?.pool || "Default Pool"}</h2>
                   <div className="executor-details">
+                    {executors[0].region && (
+                      <ExecutorDetail Icon={Globe} label="">
+                        {[executors[0].region]}
+                      </ExecutorDetail>
+                    )}
                     <ExecutorDetail Icon={Hash} label="">
                       {executors.length} {executors.length === 1 ? "executor" : "executors"}
                     </ExecutorDetail>
                     <ExecutorDetail Icon={Laptop} label="OS">
-                      {executors[0].node?.os || "unknown"}
+                      {executors[0].executor.node?.os || "unknown"}
                     </ExecutorDetail>
                     <ExecutorDetail Icon={Cpu} label="Arch">
-                      {executors[0].node?.arch || "unknown"}
+                      {executors[0].executor.node?.arch || "unknown"}
                     </ExecutorDetail>
                   </div>
                   {executors.length < 3 && (
@@ -176,7 +186,10 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                     </div>
                   )}
                   {executors.map(
-                    (node) => node.node && <ExecutorCardComponent node={node.node} isDefault={node.isDefault} />
+                    (node) =>
+                      node.executor.node && (
+                        <ExecutorCardComponent node={node.executor.node} isDefault={node.executor.isDefault} />
+                      )
                   )}
                 </>
               );
@@ -208,7 +221,7 @@ interface Props {
 
 interface State {
   userOwnedExecutorsSupported: boolean;
-  nodes: scheduler.GetExecutionNodesResponse.Executor[];
+  regions: { name: string; response: scheduler.GetExecutionNodesResponse }[];
   executorKeys: api_key.IApiKey[];
   loading: FetchType[];
   schedulerUri: string;
@@ -218,7 +231,7 @@ interface State {
 export default class ExecutorsComponent extends React.Component<Props, State> {
   state: State = {
     userOwnedExecutorsSupported: false,
-    nodes: [],
+    regions: [],
     executorKeys: [],
     loading: [],
     schedulerUri: "",
@@ -272,12 +285,26 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     }));
 
     try {
-      const response = await rpcService.service.getExecutionNodes(scheduler.GetExecutionNodesRequest.create({}));
+      let regions = rpcService.regionalServices.size
+        ? await Promise.all(
+            Array.from(rpcService.regionalServices).map(([name, service]) =>
+              service.getExecutionNodes(scheduler.GetExecutionNodesRequest.create({})).then((resp) => {
+                return { name: name, response: resp };
+              })
+            )
+          )
+        : [
+            await rpcService.service.getExecutionNodes(scheduler.GetExecutionNodesRequest.create({})).then((resp) => {
+              return { name: "", response: resp };
+            }),
+          ];
+
+      let userOwnedExecutorsSupported = regions.some((r) => r.response.userOwnedExecutorsSupported);
       this.setState({
-        nodes: response.executor,
-        userOwnedExecutorsSupported: response.userOwnedExecutorsSupported,
+        regions: regions,
+        userOwnedExecutorsSupported: userOwnedExecutorsSupported,
       });
-      if (response.userOwnedExecutorsSupported) {
+      if (userOwnedExecutorsSupported) {
         await this.fetchApiKeys();
         await this.fetchBazelConfig();
       }
@@ -321,7 +348,8 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
 
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).
   renderWithGroupOwnedExecutorsEnabled() {
-    const defaultTabId = this.state.nodes.length > 0 ? "status" : "setup";
+    const allNodes = this.state.regions.flatMap((r) => r.response.executor);
+    const defaultTabId = allNodes.length > 0 ? "status" : "setup";
     const activeTab = (this.props.path.substring("/executors/".length) || defaultTabId) as TabId;
 
     return (
@@ -340,7 +368,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         </div>
         {activeTab === "status" && (
           <>
-            {this.state.nodes.some((node) => !node.isDefault) && (
+            {allNodes.some((node) => !node.isDefault) && (
               <Banner type="warning">
                 <div>
                   Self-hosted executors are not the default for this organization. To change this, enable "Default to
@@ -353,14 +381,14 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
                 </div>
               </Banner>
             )}
-            <ExecutorsList executors={this.state.nodes} />
-            {!this.state.nodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
+            <ExecutorsList regions={this.state.regions} />
+            {!allNodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
               <div className="empty-state">
                 <h1>No self-hosted executors are connected.</h1>
                 <p>Click the "setup" tab to deploy your executors.</p>
               </div>
             )}
-            {!this.state.nodes.length && !this.props.user.selectedGroup.useGroupOwnedExecutors && (
+            {!allNodes.length && !this.props.user.selectedGroup.useGroupOwnedExecutors && (
               <div className="empty-state">
                 <h1>You're currently using BuildBuddy cloud executors.</h1>
                 <p>Click the "setup" tab for instructions on self-hosting executors.</p>
@@ -372,7 +400,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
           <ExecutorSetup
             user={this.props.user}
             executorKeys={this.state.executorKeys}
-            executors={this.state.nodes}
+            executors={allNodes}
             schedulerUri={this.state.schedulerUri}
           />
         )}
@@ -382,7 +410,8 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
 
   // "bring your own runners" is not enabled for the installation (i.e. onprem deployment)
   renderWithoutGroupOwnedExecutorsEnabled() {
-    if (this.state.nodes.length == 0) {
+    const allNodes = this.state.regions.flatMap((r) => r.response.executor);
+    if (allNodes.length == 0) {
       return (
         <div className="empty-state">
           <h1>No remote execution nodes found!</h1>
@@ -397,7 +426,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         </div>
       );
     } else {
-      return <ExecutorsList executors={this.state.nodes} />;
+      return <ExecutorsList regions={this.state.regions} />;
     }
   }
 
