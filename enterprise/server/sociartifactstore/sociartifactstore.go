@@ -297,7 +297,11 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 			InlineStdout: true,
 		})
 	if err != nil {
-		recordOutcome("soci_index_pointer_contains_error")
+		if status.IsNotFoundError(err) {
+			recordOutcome("action_result_missing")
+		} else {
+			recordOutcome("action_result_error")
+		}
 		return nil, err
 	}
 	// The SOCI Index digest is serialized in the stdout field so we can
@@ -308,7 +312,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 	}
 	sociIndexResourceName, err := digest.ParseDownloadResourceName(string(actionResult.StdoutRaw))
 	if err != nil {
-		recordOutcome("malformed_soci_index_pointer")
+		recordOutcome("soci_index_pointer_malformed")
 		return nil, err
 	}
 
