@@ -85,15 +85,6 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
-type annoyingZstdWriterBullshit struct {
-	io.Writer
-	http.ResponseWriter
-}
-
-func (w *annoyingZstdWriterBullshit) Write(b []byte) (int, error) {
-	return w.Writer.Write(b)
-}
-
 func Gzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -120,19 +111,39 @@ func Gzip(next http.Handler) http.Handler {
 		gz.Reset(w)
 		defer gz.Close()
 
-		if r.Header.Get("X-Stored-Encoding-Hint") == "zstd" {
-			zstdWriter, err := compression.NewZstdDecompressor(gz)
-			defer zstdWriter.Close()
-			// XXX
-			if err != nil {
-				log.Warningf("Ugh")
-			}
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
+	})
+}
 
-			next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: zstdWriter}, r)
+type pipedZstdDecompressor struct {
+	io.Writer
+	http.ResponseWriter
+}
+
+func (w *pipedZstdDecompressor) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
+func Zstd(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The client is telling us that the stored file is compressed with
+		// zstd.  Browser support for zstd is experimental-only, so we
+		// decompress the file for the client.
+		if r.Header.Get("X-Stored-Encoding-Hint") != "zstd" {
+			next.ServeHTTP(w, r)
 			return
 		}
 
-		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
+		// Note that unlike the gzip code above, zstd decompressors are pooled
+		// under the hood of this function call.
+		zstd, err := compression.NewZstdDecompressor(w)
+		defer zstd.Close()
+		if err != nil {
+			http.Error(w, "Failed to initialize decompressor", http.StatusInternalServerError)
+			return
+		}
+
+		next.ServeHTTP(&pipedZstdDecompressor{ResponseWriter: w, Writer: zstd}, r)
 	})
 }
 
@@ -362,6 +373,7 @@ func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
 	// NB: These are called in reverse order, so the 0th element will be
 	// called last before the handler itself is called.
 	return wrapHandler(env, next, &[]wrapFn{
+		Zstd,
 		Gzip,
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
@@ -376,6 +388,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	// NB: These are called in reverse order, so the 0th element will be
 	// called last before the handler itself is called.
 	return wrapHandler(env, next, &[]wrapFn{
+		Zstd,
 		Gzip,
 		func(h http.Handler) http.Handler { return AuthorizeIP(env, h) },
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
