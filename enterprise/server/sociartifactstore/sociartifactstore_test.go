@@ -321,8 +321,8 @@ func writeActionResult(ctx context.Context, t *testing.T, env *testenv.TestEnv, 
 				Digest: sociIndexDigest,
 				NodeProperties: &repb.NodeProperties{
 					Properties: []*repb.NodeProperty{&repb.NodeProperty{
-						Name:  artifactTypeKey,
-						Value: sociIndexArtifactType,
+						Name:  "type",
+						Value: "soci",
 					}},
 				},
 			}},
@@ -335,8 +335,8 @@ func writeActionResult(ctx context.Context, t *testing.T, env *testenv.TestEnv, 
 				Digest: ztocDigest,
 				NodeProperties: &repb.NodeProperties{
 					Properties: []*repb.NodeProperty{&repb.NodeProperty{
-						Name:  artifactTypeKey,
-						Value: ztocArtifactType,
+						Name:  "type",
+						Value: "ztoc",
 					}},
 				},
 			})
