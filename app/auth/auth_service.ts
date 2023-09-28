@@ -228,7 +228,7 @@ export class AuthService {
     this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, response.id, { maxAge: 0 });
     // If the new group is on a different subdomain then we have to use a redirect.
     if (capabilities.config.subdomainsEnabled && new URL(response.url).hostname != window.location.hostname) {
-      window.location.href = response.url;
+      window.location.href = response.url + window.location.pathname + window.location.search;
     } else {
       window.location.reload();
     }
