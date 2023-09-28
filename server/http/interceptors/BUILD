@@ -13,6 +13,7 @@ go_library(
         "//server/role_filter",
         "//server/util/alert",
         "//server/util/clientip",
+        "//server/util/compression",
         "//server/util/log",
         "//server/util/region",
         "//server/util/request_context",

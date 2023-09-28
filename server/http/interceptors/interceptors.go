@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
@@ -84,6 +85,15 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
+type annoyingZstdWriterBullshit struct {
+	io.Writer
+	http.ResponseWriter
+}
+
+func (w *annoyingZstdWriterBullshit) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
 func Gzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -109,6 +119,18 @@ func Gzip(next http.Handler) http.Handler {
 
 		gz.Reset(w)
 		defer gz.Close()
+
+		if r.Header.Get("X-Stored-Encoding-Hint") == "zstd" {
+			zstdWriter, err := compression.NewZstdDecompressor(gz)
+			defer zstdWriter.Close()
+			// XXX
+			if err != nil {
+				log.Warningf("Ugh")
+			}
+
+			next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: zstdWriter}, r)
+			return
+		}
 
 		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
 	})
