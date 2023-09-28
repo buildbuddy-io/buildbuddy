@@ -140,7 +140,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 		// Counter for the number of bytes from the original reader containing decompressed bytes
 		counter = &ioutil.Counter{}
-		reader, err = compression.NewZstdCompressingReader(io.NopCloser(io.TeeReader(reader, counter)), rbuf[:bufSize], cbuf[:bufSize])
+		reader, err = compression.NewZstdCompressingReader(io.NopCloser(io.TeeReader(reader, counter)), rbuf, cbuf)
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}
@@ -150,21 +150,20 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
 
-	buf := copyBuf[:bufSize]
 	bytesTransferredToClient := 0
 	for {
-		n, err := io.ReadFull(reader, buf)
+		n, err := io.ReadFull(reader, copyBuf)
 		bytesTransferredToClient += n
 		if err == io.EOF {
 			break
 		} else if err == io.ErrUnexpectedEOF {
-			if err := stream.Send(&bspb.ReadResponse{Data: buf[:n]}); err != nil {
+			if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
 				return err
 			}
 		} else if err != nil {
 			return err
 		} else {
-			if err := stream.Send(&bspb.ReadResponse{Data: buf}); err != nil {
+			if err := stream.Send(&bspb.ReadResponse{Data: copyBuf}); err != nil {
 				return err
 			}
 			continue

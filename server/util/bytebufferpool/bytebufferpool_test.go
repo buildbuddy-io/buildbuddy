@@ -11,20 +11,23 @@ func TestBufferSize(t *testing.T) {
 	bp := bytebufferpool.New(1024)
 
 	type test struct {
-		dataSize    int64
-		wantBufSize int
+		dataSize   int64
+		wantBufLen int
+		wantBufCap int
 	}
 	for _, testCase := range []test{
-		{dataSize: 0, wantBufSize: 1},
-		{dataSize: 1, wantBufSize: 1},
-		{dataSize: 8, wantBufSize: 8},
-		{dataSize: 12, wantBufSize: 16},
-		{dataSize: 15, wantBufSize: 16},
-		{dataSize: 16, wantBufSize: 16},
-		{dataSize: 17, wantBufSize: 32},
+		{dataSize: 0, wantBufLen: 0, wantBufCap: 1},
+		{dataSize: 1, wantBufLen: 1, wantBufCap: 1},
+		{dataSize: 8, wantBufLen: 8, wantBufCap: 8},
+		{dataSize: 12, wantBufLen: 12, wantBufCap: 16},
+		{dataSize: 15, wantBufLen: 15, wantBufCap: 16},
+		{dataSize: 16, wantBufLen: 16, wantBufCap: 16},
+		{dataSize: 17, wantBufLen: 17, wantBufCap: 32},
+		{dataSize: 1024, wantBufLen: 1024, wantBufCap: 1024},
+		{dataSize: 1025, wantBufLen: 1024, wantBufCap: 1024},
 	} {
-		assert.EqualValues(t, testCase.wantBufSize, len(bp.Get(testCase.dataSize)), "incorrect buffer len for length %d", testCase.dataSize)
-		assert.EqualValues(t, testCase.wantBufSize, cap(bp.Get(testCase.dataSize)), "incorrect buffer cap for data of length %d", testCase.dataSize)
+		assert.EqualValues(t, testCase.wantBufLen, len(bp.Get(testCase.dataSize)), "incorrect buffer len for length %d", testCase.dataSize)
+		assert.EqualValues(t, testCase.wantBufCap, cap(bp.Get(testCase.dataSize)), "incorrect buffer cap for data of length %d", testCase.dataSize)
 	}
 }
 

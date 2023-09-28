@@ -3474,7 +3474,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		readBuf := p.bufferPool.Get(bufSize)
 		compressBuf := p.bufferPool.Get(bufSize)
 
-		cr, err := compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
+		cr, err := compression.NewZstdCompressingReader(reader, readBuf, compressBuf)
 		if err != nil {
 			p.bufferPool.Put(readBuf)
 			p.bufferPool.Put(compressBuf)
