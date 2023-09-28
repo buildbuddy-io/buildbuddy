@@ -71,17 +71,21 @@ var gzPool = sync.Pool{
 	},
 }
 
-type gzipResponseWriter struct {
+// A wrapped http.ResponseWriter that first bounces the write through a
+// compressor or decompressor (thereby changing the file length).  This
+// deletes Content-length headers so that there isn't a mismatch due to
+// file compression.
+type wrappedCompressionResponseWriter struct {
 	io.Writer
 	http.ResponseWriter
 }
 
-func (w *gzipResponseWriter) WriteHeader(status int) {
+func (w *wrappedCompressionResponseWriter) WriteHeader(status int) {
 	w.Header().Del("Content-Length")
 	w.ResponseWriter.WriteHeader(status)
 }
 
-func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+func (w *wrappedCompressionResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
@@ -111,17 +115,8 @@ func Gzip(next http.Handler) http.Handler {
 		gz.Reset(w)
 		defer gz.Close()
 
-		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
+		next.ServeHTTP(&wrappedCompressionResponseWriter{ResponseWriter: w, Writer: gz}, r)
 	})
-}
-
-type pipedZstdDecompressor struct {
-	io.Writer
-	http.ResponseWriter
-}
-
-func (w *pipedZstdDecompressor) Write(b []byte) (int, error) {
-	return w.Writer.Write(b)
 }
 
 func Zstd(next http.Handler) http.Handler {
@@ -143,7 +138,7 @@ func Zstd(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(&pipedZstdDecompressor{ResponseWriter: w, Writer: zstd}, r)
+		next.ServeHTTP(&wrappedCompressionResponseWriter{ResponseWriter: w, Writer: zstd}, r)
 	})
 }
 
