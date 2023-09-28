@@ -54,14 +54,14 @@ var (
 	newTrendsUIEnabled                     = flag.Bool("app.new_trends_ui_enabled", false, "If set, show a new trends UI with a bit more organization.")
 	trendsRangeSelectionEnabled            = flag.Bool("app.trends_range_selection", false, "If set, let users drag to select time ranges in the trends UI.")
 	ipRulesUIEnabled                       = flag.Bool("app.ip_rules_ui_enabled", false, "If set, show the IP rules tab in settings page.")
-	regions                       		   = flag.Slice("regions", []Region{}, "A list of regions that executors might be connected to.")
+	regions                                = flag.Slice("regions", []Region{}, "A list of regions that executors might be connected to.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
 
 type Region struct {
-	Name string
+	Name   string
 	Server string
 }
 
@@ -193,7 +193,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CustomerSubdomain:                      subdomain.Get(ctx) != "",
 		Domain:                                 build_buddy_url.Domain(),
 		IpRulesEnabled:                         *ipRulesUIEnabled,
-		Regions: regionsToProto(*regions),
+		Regions:                                regionsToProto(*regions),
 	}
 
 	configJSON, err := protojson.Marshal(&config)
@@ -216,7 +216,7 @@ func regionsToProto(regions []Region) []*cfgpb.Region {
 	protos := []*cfgpb.Region{}
 	for _, r := range regions {
 		protos = append(protos, &cfgpb.Region{
-			Name: r.Name,
+			Name:   r.Name,
 			Server: r.Server,
 		})
 	}
