@@ -1161,7 +1161,7 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 
 	keyPrefix := []byte(fmt.Sprintf("%s/%s", evictor.partitionKeyPrefix(), filestore.GroupIDPrefix))
 	if opts.deleteEntriesWithMissingFiles {
-		keyPrefix = []byte("")
+		keyPrefix = []byte(evictor.partitionKeyPrefix() + "/")
 	}
 	lowerBound, upperBound := keys.Range(keyPrefix)
 
