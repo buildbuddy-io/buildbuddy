@@ -1,3 +1,6 @@
+build --enable_platform_specific_config
+query --enable_platform_specific_config
+
 # Skymeld merges the analysis phase and execution phase.
 # This allows build and test executions to start before the analysis phase finishes,
 # thus speeding up the build overall .
@@ -152,7 +155,9 @@ build --bes_backend=grpcs://remote.buildbuddy.io
 build --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
 
 # Populate workspace info like commit sha and repo name to your invocation.
-build --workspace_status_command=$(pwd)/workspace_status.sh
+build:linux --workspace_status_command=$(pwd)/workspace_status.sh
+build:macos --workspace_status_command=$(pwd)/workspace_status.sh
+build:windows --workspace_status_command="bash workspace_status.sh"
 
 # Misc remote cache/BES optimizations
 build --experimental_remote_cache_async
@@ -163,7 +168,8 @@ build --nolegacy_important_outputs
 build --incompatible_strict_action_env
 
 # rules_nodejs needs runfiles to be explicitly enabled.
-build --enable_runfiles
+build:linux --enable_runfiles
+build:macos --enable_runfiles
 
 # Use syscall to create symlink in-process.
 # Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
@@ -175,7 +181,12 @@ build --experimental_inprocess_symlink_creation
 test --test_tag_filters=-docker,-bare
 
 # Use C++17 standard for all C++ compilation
-build --host_cxxopt=-std=c++17
+build:linux --host_cxxopt=-std=c++17
+build:linux --cxxopt=-std=c++17
+build:macos --host_cxxopt=-std=c++17
+build:macos --cxxopt=-std=c++17
+build:windows --host_cxxopt=/std:c++17
+build:windows --cxxopt=/std:c++17
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
