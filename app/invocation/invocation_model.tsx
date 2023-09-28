@@ -365,7 +365,7 @@ export default class InvocationModel {
   }
 
   getDigestFunctionDir() {
-    if (this.optionsMap.get("digest_function").toLowerCase() == "blake3") {
+    if (this.optionsMap.get("digest_function")?.toLowerCase() == "blake3") {
       return "blake3/";
     }
     return "";
