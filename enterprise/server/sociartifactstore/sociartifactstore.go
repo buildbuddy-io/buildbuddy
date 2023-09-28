@@ -72,6 +72,10 @@ const (
 	sociImageLayerDigestKey    = "com.amazon.soci.image-layer-digest"
 	sociImageLayerMediaTypeKey = "com.amazon.soci.image-layer-mediaType"
 	sociBuildToolIdentifierKey = "com.amazon.soci.build-tool-identifier"
+
+	artifactTypeKey       = "type"
+	sociIndexArtifactType = "soci"
+	ztocArtifactType      = "ztoc"
 )
 
 type SociArtifactStore struct {
@@ -292,10 +296,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 	}
 	actionResult, err := s.env.GetActionCacheServer().GetActionResult(
 		ctx,
-		&repb.GetActionResultRequest{
-			ActionDigest: sociIndexCacheKey,
-			InlineStdout: true,
-		})
+		&repb.GetActionResultRequest{ActionDigest: sociIndexCacheKey})
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			recordOutcome("action_result_missing")
@@ -304,26 +305,35 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 		}
 		return nil, err
 	}
-	// The SOCI Index digest is serialized in the stdout field so we can
-	// identify it.
-	if len(actionResult.StdoutRaw) == 0 {
-		recordOutcome("soci_index_pointer_missing")
-		return nil, status.NotFoundErrorf("soci index for image with manifest config %s not found in cache", imageConfigHash.Hex)
-	}
-	sociIndexResourceName, err := digest.ParseDownloadResourceName(string(actionResult.StdoutRaw))
-	if err != nil {
-		recordOutcome("soci_index_pointer_malformed")
-		return nil, err
-	}
 
+	var sociIndexDigest *repb.Digest
 	var ztocDigests []*repb.Digest
 	for _, outputFile := range actionResult.OutputFiles {
-		if !proto.Equal(outputFile.Digest, sociIndexResourceName.GetDigest()) {
+		if len(outputFile.NodeProperties.Properties) != 1 {
+			recordOutcome("action_result_missing_node_props")
+			return nil, status.InternalErrorf(
+				"malformed action result, expected exactly 1 node property, found %d",
+				len(outputFile.NodeProperties.Properties))
+		}
+		if outputFile.NodeProperties.Properties[0].Name != artifactTypeKey {
+			recordOutcome("action_result_bad_node_prop_key")
+			return nil, status.InternalErrorf(
+				"malformed action result, expected node property with key 'type', was %s",
+				outputFile.NodeProperties.Properties[0].Name)
+		}
+		if outputFile.NodeProperties.Properties[0].Value == sociIndexArtifactType {
+			sociIndexDigest = outputFile.Digest
+		} else if outputFile.NodeProperties.Properties[0].Value == ztocArtifactType {
 			ztocDigests = append(ztocDigests, outputFile.Digest)
+		} else {
+			recordOutcome("action_result_bad_node_prop_value")
+			return nil, status.InternalErrorf(
+				"malformed action result, unrecognized node property value: %s",
+				outputFile.NodeProperties.Properties[0].Value)
 		}
 	}
 	recordOutcome("cached")
-	return getArtifactsResponse(imageConfigHash, sociIndexResourceName.GetDigest(), ztocDigests), nil
+	return getArtifactsResponse(imageConfigHash, sociIndexDigest, ztocDigests), nil
 }
 
 func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, configHash v1.Hash, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
@@ -436,25 +446,35 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 	if err != nil {
 		return nil, nil, err
 	}
-	serializedIndexResourceName, err := indexResourceName.DownloadString()
-	if err != nil {
-		return nil, nil, err
-	}
 
-	// Store the SOCI Index as an ActionResult with:
-	// - The digest of the SOCI Index serialized in the stdout field
-	// - The digest of all artifacts (ZToCs and SOCI Index) as OutputFiles
+	// Store the SOCI Index as an ActionResult with all of the artifacts as
+	// outputfiles, with a NodeProperty denoting their type.
 	var artifacts []*repb.OutputFile
-	artifacts = append(artifacts, &repb.OutputFile{Digest: indexResourceName.GetDigest()})
+	artifacts = append(artifacts,
+		&repb.OutputFile{
+			Digest: indexResourceName.GetDigest(),
+			NodeProperties: &repb.NodeProperties{
+				Properties: []*repb.NodeProperty{&repb.NodeProperty{
+					Name:  artifactTypeKey,
+					Value: sociIndexArtifactType,
+				}},
+			},
+		})
 	for _, ztocDigest := range ztocDigests {
-		artifacts = append(artifacts, &repb.OutputFile{Digest: ztocDigest})
+		artifacts = append(artifacts,
+			&repb.OutputFile{
+				Digest: ztocDigest,
+				NodeProperties: &repb.NodeProperties{
+					Properties: []*repb.NodeProperty{&repb.NodeProperty{
+						Name:  artifactTypeKey,
+						Value: ztocArtifactType,
+					}},
+				},
+			})
 	}
 	req := repb.UpdateActionResultRequest{
 		ActionDigest: sociIndexCacheKey,
-		ActionResult: &repb.ActionResult{
-			StdoutRaw:   []byte(serializedIndexResourceName),
-			OutputFiles: artifacts,
-		},
+		ActionResult: &repb.ActionResult{OutputFiles: artifacts},
 	}
 	if _, err = s.env.GetActionCacheServer().UpdateActionResult(ctx, &req); err != nil {
 		return nil, nil, err
