@@ -364,6 +364,13 @@ export default class InvocationModel {
     return this.optionsMap.get("remote_instance_name") ?? "";
   }
 
+  getDigestFunctionDir() {
+    if (this.optionsMap.get("digest_function")?.toLowerCase() == "blake3") {
+      return "blake3/";
+    }
+    return "";
+  }
+
   getIsRBEEnabled() {
     return Boolean(this.stringCommandLineOption("remote_executor"));
   }

@@ -83,7 +83,7 @@ func init() {
 	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
 	uploadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?:(?P<digest_function>blake3)/)?(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
 	downloadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?:(?P<digest_function>blake3)/)?(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
-	actionCacheRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
+	actionCacheRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?:(?P<digest_function>blake3)/)?(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
 }
 
 func SupportedDigestFunctions() []repb.DigestFunction_Value {
