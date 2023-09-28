@@ -90,7 +90,6 @@ go_test(
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/runner",
         "//enterprise/server/remote_execution/vbd",
-        "//enterprise/server/remote_execution/snaploader_utils",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/testutil/testcontainer",
         "//enterprise/server/util/ext4",
