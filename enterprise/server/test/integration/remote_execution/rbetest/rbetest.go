@@ -885,8 +885,9 @@ func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, 
 		assert.FailNow(r.t, fmt.Sprintf("unable to attach invocation ID %q to digest", invocationID))
 	}
 	req := &repb.GetActionResultRequest{
-		InstanceName: cmd.GetActionResourceName().GetInstanceName(),
-		ActionDigest: actionResultDigest,
+		InstanceName:   cmd.GetActionResourceName().GetInstanceName(),
+		ActionDigest:   actionResultDigest,
+		DigestFunction: cmd.GetActionResourceName().GetDigestFunction(),
 	}
 	acClient := r.GetActionResultStorageClient()
 	return acClient.GetActionResult(context.Background(), req)
