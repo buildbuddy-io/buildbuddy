@@ -538,6 +538,13 @@ proto_library(
 )
 
 proto_library(
+    name = "execution_graph_proto",
+    srcs = [
+        "execution_graph.proto",
+    ],
+)
+
+proto_library(
     name = "bazel_config_proto",
     srcs = ["bazel_config.proto"],
     deps = [
@@ -1673,6 +1680,14 @@ ts_proto_library(
         ":semver_ts_proto",
         ":timestamp_ts_proto",
         ":wrappers_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "execution_graph_ts_proto",
+    proto = ":execution_graph_proto",
+    deps = [
+        ":any_ts_proto",
     ],
 )
 
