@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -682,6 +683,23 @@ func ExpandConfigs(args []string) ([]string, error) {
 	return CanonicalizeArgs(args)
 }
 
+func getBazelOS() string {
+	switch runtime.GOOS {
+	case "linux":
+		return "linux"
+	case "darwin":
+		return "macos"
+	case "windows":
+		return "windows"
+	case "freebsd":
+		return "freebsd"
+	case "openbsd":
+		return "openbsd"
+	default:
+		return runtime.GOOS
+	}
+}
+
 func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	_, idx := GetBazelCommandAndIndex(args)
 	if idx == -1 {
@@ -731,6 +749,18 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 		}
 	}
 	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
+
+	enable, enableIndex, enableLength := arg.FindLast(args, "enable_platform_specific_config")
+	noEnable, noEnableIndex, noEnableLength := arg.FindLast(args, "noenable_platform_specific_config")
+	if enableIndex > noEnableIndex {
+		if enable == "true" || enable == "yes" || enable == "1" || enable == "" {
+			args = concat(args[:enableIndex], []string{"--config", getBazelOS()}, args[enableIndex+enableLength:])
+		}
+	} else if noEnableIndex > enableIndex {
+		if noEnable == "false" || noEnable == "no" || noEnable == "0" {
+			args = concat(args[:noEnableIndex], []string{"--config", getBazelOS()}, args[noEnableIndex+noEnableLength:])
+		}
+	}
 
 	offset := 0
 	for offset < len(args) {
