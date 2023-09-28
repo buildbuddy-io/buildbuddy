@@ -411,9 +411,10 @@ type FirecrackerContainer struct {
 	mountWorkspaceFile bool
 
 	cleanupVethPair func(context.Context) error
+	vmCtx           context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
 	// already been stopped manually.
-	cancelVmCtx context.CancelFunc
+	cancelVmCtx context.CancelCauseFunc
 }
 
 func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
@@ -471,7 +472,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		loader:             loader,
 		vmLog:              vmLog,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
-		cancelVmCtx:        func() {},
+		cancelVmCtx:        func(err error) {},
 	}
 
 	if opts.ForceVMIdx != 0 {
@@ -573,7 +574,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 			for {
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
+					return context.Cause(ctx)
 				default:
 					break
 				}
@@ -803,8 +804,13 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
-	vmCtx, cancel := context.WithCancel(context.Background())
-	c.cancelVmCtx = cancel
+	vmCtx, cancelVmCtx := context.WithCancelCause(context.Background())
+	c.vmCtx = vmCtx
+	c.cancelVmCtx = cancelVmCtx
+
+	ctx, cancel := c.monitorVMContext(ctx)
+	defer cancel()
+
 	var snapOpt fcclient.Opt
 	if *enableUFFD {
 		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffdPrivileged)
@@ -876,7 +882,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
-		return status.InternalErrorf("Failed to dial firecracker VM exec port: %s", err)
+		return err
 	}
 	defer conn.Close()
 
@@ -1476,6 +1482,12 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 	if err := h.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
 		return status.WrapError(err, "start uffd handler")
 	}
+	go func() {
+		// If we fail to handle a uffd request, terminate the VM.
+		if err := h.Wait(); err != nil {
+			c.cancelVmCtx(err)
+		}
+	}()
 	c.uffdHandler = h
 	return nil
 }
@@ -1712,7 +1724,8 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return status.WrapError(err, "failed to init VBD mounts")
 	}
 
-	vmCtx, cancel := context.WithCancel(context.Background())
+	vmCtx, cancel := context.WithCancelCause(context.Background())
+	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancel
 
 	machineOpts := []fcclient.Opt{
@@ -1769,17 +1782,19 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
 	conn, err := vsock.SimpleGRPCDial(ctx, vsockPath, vsock.VMExecPort)
 	if err != nil {
-		if err == context.DeadlineExceeded {
-			// If we never connected to the VM exec port, it's likely because of a
-			// fatal error in the init binary. Search for the logged error and return
-			// it if found.
+		if err := context.Cause(ctx); err != nil {
+			// If the context was cancelled for any reason (timed out or VM
+			// crashed), check the VM logs which might have more relevant crash
+			// info, otherwise return the context error.
 			if err := c.parseFatalInitError(); err != nil {
 				return nil, err
 			}
-			// Intentionally not returning DeadlineExceededError here since it is not
-			// a Bazel-retryable error, but this particular timeout should be retryable.
+			// Intentionally not returning DeadlineExceededError here since it
+			// is not a Bazel-retryable error, but this particular timeout
+			// should be retryable.
+			return nil, status.InternalErrorf("failed to connect to VM: %s", err)
 		}
-		return nil, status.InternalErrorf("Failed to connect to firecracker VM exec server: %s", err)
+		return nil, status.InternalErrorf("failed to connect to VM: %s", err)
 	}
 	return conn, nil
 }
@@ -1812,6 +1827,23 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 	return rsp, err
 }
 
+// monitorVMContext returns a context that is cancelled if the VM exits. The
+// returned cancel func should be called after any VM requests are completed, to
+// clean up the goroutine that monitors the VM context. Otherwise, the goroutine
+// will stay running until the VM exits, which may not be desirable in some
+// situations.
+func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-c.vmCtx.Done():
+			cancel(context.Cause(c.vmCtx))
+		}
+	}()
+	return ctx, func() { cancel(nil) }
+}
+
 // Exec runs a command inside a container, with the same working dir set when
 // creating the container.
 // If stdin is non-nil, the contents of stdin reader will be piped to the stdin of
@@ -1825,6 +1857,11 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer span.End()
 
 	start := time.Now()
+
+	// Ensure that ctx gets cancelled if the VM crashes.
+	ctx, cancel := c.monitorVMContext(ctx)
+	defer cancel()
+
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
 		execDuration := time.Since(start)
@@ -1881,7 +1918,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
 	close(execDone)
 
-	ctx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
+	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 
 	// If FUSE is enabled then outputs are already in the workspace.
@@ -1971,7 +2008,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, finalizationTimeout)
 	defer cancel()
 
-	defer c.cancelVmCtx()
+	defer c.cancelVmCtx(fmt.Errorf("VM removed"))
 
 	var lastErr error
 
@@ -2090,6 +2127,9 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) pause(ctx context.Context) error {
+	ctx, cancel := c.monitorVMContext(ctx)
+	defer cancel()
+
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
