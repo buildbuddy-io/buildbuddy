@@ -73,6 +73,7 @@ const (
 	sociImageLayerMediaTypeKey = "com.amazon.soci.image-layer-mediaType"
 	sociBuildToolIdentifierKey = "com.amazon.soci.build-tool-identifier"
 
+	// ActionResult.OutputFiles.NodeProperties type definitions
 	artifactTypeKey       = "type"
 	sociIndexArtifactType = "soci"
 	ztocArtifactType      = "ztoc"
