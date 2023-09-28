@@ -64,8 +64,7 @@ message Node {
 // Metrics contains all the timing metrics about a Node.
 message Metrics {
   // The time when the node started, as milliseconds from the Unix epoch.
-  int64 start_timestamp_millis = 1
-      ;
+  int64 start_timestamp_millis = 1;
 
   // How long did this node last. This should be the sum of all the parts
   // below, but is included separately to identify issues when that's not true.

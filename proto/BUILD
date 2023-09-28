@@ -1686,9 +1686,6 @@ ts_proto_library(
 ts_proto_library(
     name = "execution_graph_ts_proto",
     proto = ":execution_graph_proto",
-    deps = [
-        ":any_ts_proto",
-    ],
 )
 
 ts_proto_library(
