@@ -39,13 +39,7 @@ build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
 build:remote-shared --platforms=@buildbuddy_toolchain//:platform_bare_linux
 build:remote-shared --host_platform=@buildbuddy_toolchain//:platform_bare_linux
-# build:remote-shared --platforms=@hermetic_cc_toolchain//toolchain/platform:linux_amd64
-# build:remote-shared --host_platform=@hermetic_cc_toolchain//toolchain/platform:linux_amd64
-# build:remote-shared --crosstool_top=@buildbuddy_toolchain//:ubuntu_cc_toolchain_suite
-# build:remote-shared --extra_toolchains=@buildbuddy_toolchain//:ubuntu_cc_toolchain
 build:remote-shared --extra_toolchains=//:sh_toolchain
-# build:remote-shared --host_javabase=@bazel_tools//tools/jdk:absolute_javabase
-# build:remote-shared --define=ABSOLUTE_JAVABASE=/path/to/my/jdk
 
 # Build with --config=remote to use BuildBuddy RBE.
 build:remote --config=remote-shared
