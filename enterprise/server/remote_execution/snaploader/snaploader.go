@@ -2,6 +2,7 @@ package snaploader
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -195,11 +196,17 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
 func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
+	b, err := json.Marshal(key)
+	if err != nil {
+		return nil, err
+	}
 	d, err := manifestKey(ctx, l.env, key)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Read: The key is %s, the manifest key is %v", string(b), d)
 	rn := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	fmt.Printf("Reading digest: %v", rn.ToProto())
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if err != nil {
 		return nil, err
@@ -410,9 +417,15 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
+	b2, err := json.Marshal(key)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Saving: The key is %s, the manifest key is %v", string(b2), d)
 
 	if *snaputil.EnableRemoteSnapshotSharing {
 		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+		fmt.Printf("Saving to digest: %v", acDigest.ToProto())
 		return cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar)
 	}
 

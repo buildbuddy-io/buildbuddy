@@ -102,7 +102,6 @@ go_test(
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/testutil/testauth",
-        "//server/testutil/testcache",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
@@ -131,6 +130,7 @@ go_test(
         "--executor.firecracker_enable_merged_rootfs=true",
         "--executor.firecracker_enable_uffd=true",
         "--executor.enable_local_snapshot_sharing=true",
+        "--executor.enable_remote_snapshot_sharing=true",
     ],
     exec_properties = {
         "test.Pool": "bare",

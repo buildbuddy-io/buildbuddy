@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"reflect"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -150,6 +151,9 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
+	 underlyingType := reflect.TypeOf(s.cache).Name()
+    // Print the underlying type
+    fmt.Printf("Underlying type of cache is %v:", underlyingType)
 	blob, err := s.cache.Get(ctx, rn.ToProto())
 	if err != nil {
 		ht.TrackMiss(d)

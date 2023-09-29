@@ -31,7 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+//	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -129,7 +129,7 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	err = networking.DeleteNetNamespaces(ctx)
 	require.NoError(t, err)
 
-	testRootDir := testfs.MakeTempDir(t)
+	testRootDir := "/tmp/fixed/disk/root"
 	dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: testRootDir}, diskCacheSize)
 	if err != nil {
 		t.Error(err)
@@ -1612,9 +1612,14 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 		pool   interfaces.RunnerPool
 		ctxUS1 context.Context
 	)
+//	testRootDir := testfs.MakeTempDir(t)
+	//dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: testRootDir}, 10_000_000_000)
+	//if err != nil {
+	//	t.Error(err)
+	//}
 	setup := func() {
 		var err error
-		env = testenv.GetTestEnv(t)
+		env = getTestEnv(ctx, t)
 		flags.Set(t, "executor.enable_firecracker", true)
 		// Jailer root dir needs to be < 38 chars
 		flags.Set(t, "executor.root_directory", testRoot)
@@ -1624,7 +1629,7 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 		require.NoError(t, err)
 		fc.WaitForDirectoryScanToComplete()
 		env.SetFileCache(fc)
-		testcache.Setup(t, env)
+		//testcache.Setup(t, env)
 		pool, err = runner.NewPool(env, &runner.PoolOptions{})
 		require.NoError(t, err)
 		ctxUS1, err = ta.WithAuthenticatedUser(ctx, "US1")
