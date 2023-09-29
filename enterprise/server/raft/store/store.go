@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -1336,79 +1335,6 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	copyBuf := make([]byte, bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, readCloser, copyBuf)
 	return err
-}
-
-func (s *Store) Write(stream rfspb.Api_WriteServer) error {
-	var bytesWritten int64
-	var writeCloser interfaces.MetadataWriteCloser
-	var shardID uint64
-	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if writeCloser == nil {
-			r, err := s.LeasedRange(req.GetHeader())
-			if err != nil {
-				s.log.Errorf("Error while calling LeasedRange: %s", err)
-				return err
-			}
-			shardID = r.ShardID
-			writeCloser, err = r.Writer(stream.Context(), req.GetHeader(), req.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			defer writeCloser.Close()
-			// Send the client an empty write response as an indicator that we
-			// have accepted the write.
-			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
-				return err
-			}
-		}
-		n, err := writeCloser.Write(req.Data)
-		if err != nil {
-			return err
-		}
-		bytesWritten += int64(n)
-		if req.FinishWrite {
-			now := time.Now()
-			md := &rfpb.FileMetadata{
-				FileRecord:      req.GetFileRecord(),
-				StorageMetadata: writeCloser.Metadata(),
-				StoredSizeBytes: bytesWritten,
-				LastModifyUsec:  now.UnixMicro(),
-				LastAccessUsec:  now.UnixMicro(),
-			}
-			pebbleKey, err := s.fileStorer.PebbleKey(req.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			fileMetadataKey, err := pebbleKey.Bytes(filestore.Version2)
-			if err != nil {
-				return err
-			}
-			protoBytes, err := proto.Marshal(md)
-			if err != nil {
-				return err
-			}
-			writeReq := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-				Kv: &rfpb.KV{
-					Key:   fileMetadataKey,
-					Value: protoBytes,
-				},
-			})
-			if err := client.SyncProposeLocalBatchNoRsp(stream.Context(), s.nodeHost, shardID, writeReq); err != nil {
-				return err
-			}
-			return stream.Send(&rfpb.WriteResponse{
-				CommittedSize: bytesWritten,
-			})
-		}
-	}
-	return nil
 }
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
