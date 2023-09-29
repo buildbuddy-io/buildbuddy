@@ -3,7 +3,7 @@ package region
 import (
 	"testing"
 
-	"gotest.tools/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_IsRegionalServer(t *testing.T) {

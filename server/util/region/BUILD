@@ -15,5 +15,5 @@ go_test(
     name = "region_test",
     srcs = ["region_test.go"],
     embed = [":region"],
-    deps = ["@tools_gotest//assert"],
+    deps = ["@com_github_stretchr_testify//assert"],
 )
