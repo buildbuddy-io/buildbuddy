@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
@@ -31,7 +32,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -111,7 +111,12 @@ func cleanExecutorRoot(t *testing.T, path string) {
 	}
 }
 
-func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
+type envOpts struct {
+	cacheRootDir     string
+	filecacheRootDir string
+}
+
+func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 
 	// Use a permissive image cache authenticator to avoid registry requests.
@@ -129,7 +134,10 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	err = networking.DeleteNetNamespaces(ctx)
 	require.NoError(t, err)
 
-	testRootDir := testfs.MakeTempDir(t)
+	testRootDir := opts.cacheRootDir
+	if testRootDir == "" {
+		testRootDir = testfs.MakeTempDir(t)
+	}
 	dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: testRootDir}, diskCacheSize)
 	if err != nil {
 		t.Error(err)
@@ -162,12 +170,15 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
-	fcDir := testRootDir
+	fcDir := opts.filecacheRootDir
 	if *filecacheDir != "" {
 		fcDir = *filecacheDir
+	} else if fcDir == "" {
+		fcDir = testRootDir
 	}
 	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false)
 	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
 
 	// Some tests need iptables which is in /usr/sbin.
@@ -197,7 +208,7 @@ func tempJailerRoot(t *testing.T) string {
 
 func TestFirecrackerRunSimple(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -244,7 +255,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 
 func TestFirecrackerLifecycle(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -310,7 +321,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
 	for _, memorySize := range []int64{minMemSizeMB, 4000} {
 		ctx := context.Background()
-		env := getTestEnv(ctx, t)
+		env := getTestEnv(ctx, t, envOpts{})
 		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 		rootDir := testfs.MakeTempDir(t)
 		workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -394,11 +405,12 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
-	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-	flags.Set(t, "executor.firecracker_enable_vbd", true)
-	flags.Set(t, "executor.firecracker_enable_uffd", true)
+	if !*snaputil.EnableLocalSnapshotSharing {
+		t.Skip("Snapshot sharing is not enabled")
+	}
+
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	rootDir := testfs.MakeTempDir(t)
 	jailerRoot := tempJailerRoot(t)
@@ -563,13 +575,12 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 }
 
 func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
-	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-	flags.Set(t, "executor.firecracker_enable_nbd", true)
-	flags.Set(t, "executor.firecracker_enable_uffd", true)
+	if !*snaputil.EnableRemoteSnapshotSharing {
+		t.Skip("Snapshot sharing is not enabled")
+	}
 
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	jailerRoot := tempJailerRoot(t)
 
@@ -709,7 +720,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	fileSizeBytes := int64(1_000_000)
 	scratchTestFileSizeBytes := int64(50_000_000)
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 
 	rootDir := testfs.MakeTempDir(t)
 	subDirs := []string{"a", "b", "c", "d", "e"}
@@ -841,7 +852,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 
 func TestFirecrackerRunWithNetwork(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -877,7 +888,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 
 func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	// Write a helper script that prints process info for a pid.
@@ -967,7 +978,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 
 func TestFirecrackerNonRoot(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	ws, err := workspace.New(env, rootDir, &workspace.Opts{NonrootWritable: true})
 	require.NoError(t, err)
@@ -1016,7 +1027,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{Arguments: []string{"pwd"}}
@@ -1051,7 +1062,7 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
@@ -1108,7 +1119,7 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
@@ -1158,7 +1169,7 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
@@ -1192,7 +1203,7 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 
 func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
 	rootDir := testfs.MakeTempDir(t)
@@ -1277,7 +1288,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
 	rootDir := testfs.MakeTempDir(t)
@@ -1377,7 +1388,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -1458,7 +1469,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 // `sleep` command.
 func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
@@ -1502,7 +1513,7 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 
 func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
@@ -1571,7 +1582,7 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 
 func TestFirecrackerLargeResult(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
@@ -1599,31 +1610,27 @@ func TestFirecrackerLargeResult(t *testing.T) {
 func TestFirecrackerWithExecutorRestart(t *testing.T) {
 	ctx := context.Background()
 
+	// Make sure we use the same filecache and disk root across restarts
 	testRoot := tempJailerRoot(t)
 	err := os.RemoveAll(filepath.Join(testRoot, "_runner_pool_state.bin"))
 	require.NoError(t, err)
 	filecacheRoot := testfs.MakeDirAll(t, testRoot, "filecache")
+	diskCacheRoot := testfs.MakeTempDir(t)
 
 	var (
 		env    *testenv.TestEnv
 		ta     *testauth.TestAuthenticator
-		fc     interfaces.FileCache
 		pool   interfaces.RunnerPool
 		ctxUS1 context.Context
 	)
 	setup := func() {
 		var err error
-		env = testenv.GetTestEnv(t)
+		env = getTestEnv(ctx, t, envOpts{filecacheRootDir: filecacheRoot, cacheRootDir: diskCacheRoot})
 		flags.Set(t, "executor.enable_firecracker", true)
 		// Jailer root dir needs to be < 38 chars
 		flags.Set(t, "executor.root_directory", testRoot)
 		ta = testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
 		env.SetAuthenticator(ta)
-		fc, err = filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
-		require.NoError(t, err)
-		fc.WaitForDirectoryScanToComplete()
-		env.SetFileCache(fc)
-		testcache.Setup(t, env)
 		pool, err = runner.NewPool(env, &runner.PoolOptions{})
 		require.NoError(t, err)
 		ctxUS1, err = ta.WithAuthenticatedUser(ctx, "US1")
@@ -1746,7 +1753,7 @@ func TestMergeDiffSnapshot(t *testing.T) {
 
 func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	// Write an NOP script and exec it directly, to test a fork/exec that
@@ -1821,7 +1828,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	te := getTestEnv(ctx, t)
+	te := getTestEnv(ctx, t, envOpts{})
 	jailerRoot := tempJailerRoot(t)
 
 	// Create a little test setup that's like a simpler version of the runner
@@ -1965,7 +1972,7 @@ func TestBazelBuild(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
+	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{Arguments: []string{"bash", "-c", `
