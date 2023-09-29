@@ -34,7 +34,7 @@ const (
 // A COWStore can be created either by splitting a file into chunks, or loading
 // chunks from a directory containing artifacts exported by a COWStore instance.
 //
-// A COWStore supports concurrent reads/writes, as long as they are to different chunks
+// A COWStore supports concurrent reads/writes
 type COWStore struct {
 	ctx                context.Context
 	env                environment.Env
@@ -392,12 +392,13 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	}
 
 	dstChunkSize := s.calculateChunkSize(chunkStartOffset)
-	dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
-	if err != nil {
-		return status.WrapError(err, "initialize dirty chunk")
-	}
 
 	s.mu.Lock()
+	dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
+	if err != nil {
+		s.mu.Unlock()
+		return status.WrapError(err, "initialize dirty chunk")
+	}
 	src := s.chunks[chunkStartOffset]
 	s.chunks[chunkStartOffset] = dst
 	s.dirty[chunkStartOffset] = true
@@ -584,10 +585,14 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 //
 // It allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
+//
+// Mmap is concurrency safe
 type Mmap struct {
 	ctx                context.Context
 	env                environment.Env
 	remoteInstanceName string
+
+	mu sync.RWMutex
 
 	Offset int64
 
@@ -660,6 +665,8 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 
 // TODO(Maggie): Pre-emptively initialize chunks in the background on startup
 func (m *Mmap) initMap() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
@@ -686,40 +693,56 @@ func (m *Mmap) initMap() error {
 }
 
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		if err := m.initMap(); err != nil {
 			return 0, err
 		}
 	}
-	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
+	dataLen, err := m.SizeBytes()
+	if err != nil {
 		return 0, err
 	}
+	if err := checkBounds("read", dataLen, p, off); err != nil {
+		return 0, err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	copy(p, m.data[int(off):int(off)+len(p)])
 	return len(p), nil
 }
 
 func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		if err := m.initMap(); err != nil {
 			return 0, err
 		}
 	}
-	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
+	dataLen, err := m.SizeBytes()
+	if err != nil {
 		return 0, err
 	}
+	if err := checkBounds("write", dataLen, p, off); err != nil {
+		return 0, err
+	}
+	m.mu.Lock()
 	m.lazyDigest = nil
 	copy(m.data[int(off):int(off)+len(p)], p)
+	m.mu.Unlock()
 	return len(p), nil
 }
 
 func (m *Mmap) Sync() error {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		return nil
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return unix.Msync(m.data, unix.MS_SYNC)
 }
 
 func (m *Mmap) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.closed = true
 	if !m.mapped {
 		return nil
@@ -729,36 +752,60 @@ func (m *Mmap) Close() error {
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		if err := m.initMap(); err != nil {
 			return 0, err
 		}
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return int64(len(m.data)), nil
 }
 
 // StartAddress returns the address of the first mapped byte. If this is a lazy
 // mmap, calling this func will force an mmap if not already mapped.
 func (m *Mmap) StartAddress() (uintptr, error) {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		if err := m.initMap(); err != nil {
 			return 0, err
 		}
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return memoryAddress(m.data), nil
 }
 
-func (m *Mmap) Mapped() bool {
+func (m *Mmap) safeReadMapped() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.mapped
 }
 
+func (m *Mmap) Mapped() bool {
+	return m.safeReadMapped()
+}
+
+func (m *Mmap) safeReadClosed() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
+}
+
+func (m *Mmap) safeReadLazyDigest() *repb.Digest {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lazyDigest
+}
+
 func (m *Mmap) SetDigest(d *repb.Digest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.lazyDigest = d
 }
 
 func (m *Mmap) Digest() (*repb.Digest, error) {
-	if m.lazyDigest != nil {
-		return m.lazyDigest, nil
+	if d := m.safeReadLazyDigest(); d != nil {
+		return d, nil
 	}
 
 	// Otherwise compute the digest.
@@ -770,7 +817,7 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.lazyDigest = d
+	m.SetDigest(d)
 	return d, nil
 }
 
