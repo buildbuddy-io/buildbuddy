@@ -106,6 +106,12 @@ func addClientIPToContext(ctx context.Context) context.Context {
 		return ctx
 	}
 
+	if len(md.Get("x-vadim")) > 0 {
+		for k, hdrs := range md {
+			log.Warningf("header %s=%s", k, strings.Join(hdrs, ", "))
+		}
+	}
+
 	hdrs := md.Get("X-Forwarded-For")
 	if len(hdrs) == 0 {
 		return ctx
