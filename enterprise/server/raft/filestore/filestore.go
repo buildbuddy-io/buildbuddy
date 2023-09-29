@@ -418,7 +418,7 @@ func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
 	// Parse hash type string back into a digestFunction enum.
 	intDigestFunction, err := strconv.Atoi(digestFunctionString)
 	if err != nil || intDigestFunction == 0 {
-		// It is an error for a v4 key to have a 0 digestFunction value.
+		// It is an error for a v5 key to have a 0 digestFunction value.
 		return parseError(parts)
 	}
 	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
