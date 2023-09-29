@@ -3,6 +3,7 @@ package interceptors
 import (
 	"context"
 	"flag"
+	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
@@ -107,9 +108,11 @@ func addClientIPToContext(ctx context.Context) context.Context {
 	}
 
 	if len(md.Get("x-vadim")) > 0 {
+		var b strings.Builder
 		for k, hdrs := range md {
-			log.Warningf("header %s=%s", k, strings.Join(hdrs, ", "))
+			b.WriteString(fmt.Sprintf("header %s=%s\n", k, strings.Join(hdrs, ", ")))
 		}
+		log.Warningf("headers:\n%s", b.String())
 	}
 
 	hdrs := md.Get("X-Forwarded-For")
