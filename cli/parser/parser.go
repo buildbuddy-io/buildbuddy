@@ -27,7 +27,8 @@ import (
 )
 
 const (
-	workspacePrefix = `%workspace%/`
+	workspacePrefix                  = `%workspace%/`
+	enablePlatformSpecificConfigFlag = "enable_platform_specific_config"
 )
 
 var (
@@ -752,15 +753,11 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	}
 	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
 
-	enable, enableIndex, enableLength := arg.FindLast(args, "enable_platform_specific_config")
-	noEnable, noEnableIndex, noEnableLength := arg.FindLast(args, "noenable_platform_specific_config")
+	enable, enableIndex, enableLength := arg.FindLast(args, enablePlatformSpecificConfigFlag)
+	_, noEnableIndex, _ := arg.FindLast(args, "no"+enablePlatformSpecificConfigFlag)
 	if enableIndex > noEnableIndex {
 		if enable == "true" || enable == "yes" || enable == "1" || enable == "" {
 			args = concat(args[:enableIndex], []string{"--config", getBazelOS()}, args[enableIndex+enableLength:])
-		}
-	} else if noEnableIndex > enableIndex {
-		if noEnable == "false" || noEnable == "no" || noEnable == "0" {
-			args = concat(args[:noEnableIndex], []string{"--config", getBazelOS()}, args[noEnableIndex+noEnableLength:])
 		}
 	}
 
