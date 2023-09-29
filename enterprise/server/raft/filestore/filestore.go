@@ -401,16 +401,14 @@ func (pmk *PebbleKey) parseVersion4(parts [][]byte) error {
 }
 
 func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
-	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/1/cas/v5",
-	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
-	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/9/ac/v5",
-	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/EK123/v5",
 	digestFunctionString := ""
-
 	switch len(parts) {
-
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/1/cas/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/9/ac/v5",
 	case 5:
 		pmk.partID, pmk.hash, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/EK123/v5",
 	case 6:
 		pmk.partID, pmk.hash, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
@@ -426,9 +424,7 @@ func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
 	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
 	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
 	pmk.groupID = remapFixedToANONGroupID(trimFixedWidthGroupID(pmk.groupID))
-	// check hash length against digest type
-	// check isolation value
-	// extract Partition?
+
 	slash := []byte{filepath.Separator}
 	pmk.fullKey = bytes.Join(parts, slash)
 	return nil
