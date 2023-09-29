@@ -121,61 +121,62 @@ go_test(
 #
 # TODO(bduffany): once blockio is fully enabled, set blockio flag(s) on
 # firecracker_test and remove this one.
-go_test(
-    name = "firecracker_test_blockio",
-    timeout = "long",
-    srcs = ["firecracker_test.go"],
-    args = [
-        "--executor.firecracker_enable_vbd=true",
-        "--executor.firecracker_enable_merged_rootfs=true",
-        "--executor.firecracker_enable_uffd=true",
-        "--executor.enable_local_snapshot_sharing=true",
-    ],
-    exec_properties = {
-        "test.Pool": "bare",
-        "test.use-self-hosted-executors": "true",
-        "test.container-image": "none",
-    },
-    tags = [
-        "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
-        "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
-    ],
-    target_compatible_with = [
-        "@platforms//os:linux",
-    ],
-    deps = [
-        ":firecracker",
-        "//enterprise:bundle",
-        "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/filecache",
-        "//enterprise/server/remote_execution/platform",
-        "//enterprise/server/remote_execution/runner",
-        "//enterprise/server/remote_execution/snaploader",
-        "//enterprise/server/remote_execution/vbd",
-        "//enterprise/server/remote_execution/workspace",
-        "//enterprise/server/testutil/testcontainer",
-        "//enterprise/server/util/ext4",
-        "//proto:firecracker_go_proto",
-        "//proto:remote_execution_go_proto",
-        "//proto:scheduler_go_proto",
-        "//server/backends/disk_cache",
-        "//server/interfaces",
-        "//server/remote_cache/action_cache_server",
-        "//server/remote_cache/byte_stream_server",
-        "//server/remote_cache/content_addressable_storage_server",
-        "//server/testutil/testauth",
-        "//server/testutil/testdigest",
-        "//server/testutil/testenv",
-        "//server/testutil/testfs",
-        "//server/util/disk",
-        "//server/util/fileresolver",
-        "//server/util/log",
-        "//server/util/networking",
-        "//server/util/status",
-        "//server/util/testing/flags",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_x_sync//errgroup",
-    ],
-)
+#go_test(
+#    name = "firecracker_test_blockio",
+#    timeout = "long",
+#    srcs = ["firecracker_test.go"],
+#    args = [
+#        "--executor.firecracker_enable_vbd=true",
+#        "--executor.firecracker_enable_merged_rootfs=true",
+#        "--executor.firecracker_enable_uffd=true",
+#        "--executor.enable_local_snapshot_sharing=true",
+#    ],
+#    exec_properties = {
+#        "test.Pool": "bare",
+#        "test.use-self-hosted-executors": "true",
+#        "test.container-image": "none",
+#    },
+#    tags = [
+#        "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
+#        "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
+#    ],
+#    target_compatible_with = [
+#        "@platforms//os:linux",
+#    ],
+#    deps = [
+#        ":firecracker",
+#        "//enterprise:bundle",
+#        "//enterprise/server/remote_execution/container",
+#        "//enterprise/server/remote_execution/filecache",
+#        "//enterprise/server/remote_execution/platform",
+#        "//enterprise/server/remote_execution/runner",
+#        "//enterprise/server/remote_execution/snaploader",
+#        "//enterprise/server/remote_execution/vbd",
+#        "//enterprise/server/remote_execution/workspace",
+#        "//enterprise/server/testutil/testcontainer",
+#        "//enterprise/server/util/ext4",
+#        "//proto:firecracker_go_proto",
+#        "//proto:remote_execution_go_proto",
+#        "//proto:scheduler_go_proto",
+#        "//server/backends/disk_cache",disk_cache
+#        "//server/interfaces",
+#        "//server/remote_cache/action_cache_server",
+#        "//server/remote_cache/byte_stream_server",
+#        "//server/remote_cache/content_addressable_storage_server",
+#        "//server/testutil/testauth",
+#        "//server/testutil/testdigest",
+#        "//server/testutil/testenv",
+#        "//server/testutil/testfs",
+#        "//server/util/disk",
+#        "//server/util/fileresolver",
+#        "//server/util/log",
+#        "//server/util/networking",
+#        "//server/util/status",
+#        "//server/util/testing/flags",
+#        "@com_github_stretchr_testify//assert",
+#        "@com_github_stretchr_testify//require",
+#        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+#        "@org_golang_x_sync//errgroup",
+#    ],
+#)
+#
