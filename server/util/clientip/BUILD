@@ -5,4 +5,5 @@ go_library(
     srcs = ["clientip.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/clientip",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/flag"],
 )
