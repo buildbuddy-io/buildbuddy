@@ -445,6 +445,7 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		unaryRecoveryInterceptor(),
+		copyHeadersUnaryServerInterceptor(),
 		ClientIPUnaryServerInterceptor(),
 		subdomainUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
@@ -453,7 +454,6 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
-		copyHeadersUnaryServerInterceptor(),
 		identityUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
 		roleAuthUnaryServerInterceptor(env),
@@ -463,6 +463,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
 		streamRecoveryInterceptor(),
+		copyHeadersStreamServerInterceptor(),
 		clientIPStreamServerInterceptor(),
 		subdomainStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),
@@ -470,7 +471,6 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
-		copyHeadersStreamServerInterceptor(),
 		identityStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env),
