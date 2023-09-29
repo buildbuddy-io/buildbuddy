@@ -250,7 +250,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		}
 		hashStr := pmk.hash
 		if pmk.isolation == "ac" {
-			hashExtra := remapANONToFixedGroupID(FixedWidthGroupID(pmk.groupID))
+			hashExtra := remapANONToFixedGroupID(pmk.groupID)
 			rih := pmk.remoteInstanceHash
 			if rih == "" {
 				rih = "0"
