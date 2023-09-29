@@ -155,9 +155,13 @@ func (cm *ClusterMap) OnReplicaUsageUpdate(nhid string, ru *rfpb.ReplicaUsage, r
 	}
 }
 func (cm *ClusterMap) OnRangeLeaseAcquired(rd *rfpb.RangeDescriptor) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 	cm.leasedRanges[rd.GetRangeId()] = rd
 }
 func (cm *ClusterMap) OnRangeLeaseDropped(rd *rfpb.RangeDescriptor) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 	delete(cm.leasedRanges, rd.GetRangeId())
 }
 
