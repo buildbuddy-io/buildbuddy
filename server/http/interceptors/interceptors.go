@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
@@ -70,17 +71,21 @@ var gzPool = sync.Pool{
 	},
 }
 
-type gzipResponseWriter struct {
+// A wrapped http.ResponseWriter that first bounces the write through a
+// compressor or decompressor (thereby changing the file length).  This
+// deletes Content-length headers so that there isn't a mismatch due to
+// file compression.
+type wrappedCompressionResponseWriter struct {
 	io.Writer
 	http.ResponseWriter
 }
 
-func (w *gzipResponseWriter) WriteHeader(status int) {
+func (w *wrappedCompressionResponseWriter) WriteHeader(status int) {
 	w.Header().Del("Content-Length")
 	w.ResponseWriter.WriteHeader(status)
 }
 
-func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+func (w *wrappedCompressionResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
@@ -110,7 +115,30 @@ func Gzip(next http.Handler) http.Handler {
 		gz.Reset(w)
 		defer gz.Close()
 
-		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
+		next.ServeHTTP(&wrappedCompressionResponseWriter{ResponseWriter: w, Writer: gz}, r)
+	})
+}
+
+func Zstd(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The client is telling us that the stored file is compressed with
+		// zstd.  Browser support for zstd is experimental-only, so we
+		// decompress the file for the client.
+		if r.Header.Get("X-Stored-Encoding-Hint") != "zstd" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Note that unlike the gzip code above, zstd decompressors are pooled
+		// under the hood of this function call.
+		zstd, err := compression.NewZstdDecompressor(w)
+		defer zstd.Close()
+		if err != nil {
+			http.Error(w, "Failed to initialize decompressor", http.StatusInternalServerError)
+			return
+		}
+
+		next.ServeHTTP(&wrappedCompressionResponseWriter{ResponseWriter: w, Writer: zstd}, r)
 	})
 }
 
@@ -340,6 +368,7 @@ func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
 	// NB: These are called in reverse order, so the 0th element will be
 	// called last before the handler itself is called.
 	return wrapHandler(env, next, &[]wrapFn{
+		Zstd,
 		Gzip,
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
@@ -354,6 +383,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	// NB: These are called in reverse order, so the 0th element will be
 	// called last before the handler itself is called.
 	return wrapHandler(env, next, &[]wrapFn{
+		Zstd,
 		Gzip,
 		func(h http.Handler) http.Handler { return AuthorizeIP(env, h) },
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
