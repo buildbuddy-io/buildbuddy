@@ -121,7 +121,7 @@ func addClientIPToContext(ctx context.Context) context.Context {
 	if p, ok := peer.FromContext(ctx); ok {
 		ap, err := netip.ParseAddrPort(p.Addr.String())
 		if err != nil {
-			alert.UnexpectedEvent("invalid peer %q", p.Addr.String())
+			alert.UnexpectedEvent("invalid peer %q", p.Addr.String(), err.Error())
 			return ctx
 		}
 		return context.WithValue(ctx, clientip.ContextKey, ap.Addr().String())
