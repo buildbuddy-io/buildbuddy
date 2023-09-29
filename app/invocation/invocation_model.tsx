@@ -519,6 +519,15 @@ export default class InvocationModel {
     return +(this.invocation.durationUsec ?? 0);
   }
 
+  getExecutionGraphDumpUri(): string | undefined {
+    for (let log of this.buildToolLogs?.log || []) {
+      if (log.name === "execution_graph_dump.proto.zst") {
+        return log.uri;
+      }
+    }
+    return undefined;
+  }
+
   getDurationSeconds() {
     let durationMicros = this.getDurationMicros();
     return `${durationMicros / 1000000} seconds`;

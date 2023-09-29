@@ -39,6 +39,10 @@ import router from "../router/router";
 import rpc_service from "../service/rpc_service";
 import { InvocationBotCard } from "./invocation_bot_card";
 import TargetV2Component from "../target/target_v2";
+import { execution_graph } from "../../proto/execution_graph_ts_proto";
+import ExecutionGraphModel from "./execution_graph_model";
+import * as protobufjs from "protobufjs";
+import ExecutionGraphCard from "./execution_graph_card";
 
 interface State {
   loading: boolean;
@@ -46,6 +50,7 @@ interface State {
   error: BuildBuddyError | null;
 
   model?: InvocationModel;
+  executionGraphModel?: ExecutionGraphModel;
 
   keyboardShortcutHandle: string;
 }
@@ -134,6 +139,43 @@ export default class InvocationComponent extends React.Component<Props, State> {
     shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
+  maybeFetchExecutionGraphData(newModel: InvocationModel) {
+    const invocationId = newModel.getInvocationId();
+    const uri = newModel.getExecutionGraphDumpUri();
+
+    if (
+      !capabilities.config.executionGraphsEnabled ||
+      uri === undefined ||
+      this.state.executionGraphModel?.getInvocationId() === invocationId ||
+      !uri.startsWith("bytestream://")
+    ) {
+      // There either isn't a graph we can load, it's already being loaded, or it's already loaded.
+      return;
+    }
+
+    this.setState({ executionGraphModel: ExecutionGraphModel.loading(invocationId) });
+    rpcService
+      .fetchBytestreamFile(uri, invocationId, "arraybuffer", { storedEncoding: "zstd" })
+      .then((buffer) => {
+        if (invocationId !== this.state.model?.getInvocationId()) {
+          // Invocation changed out from under us, bail.
+          return;
+        }
+
+        const reader = protobufjs.Reader.create(new Uint8Array(buffer));
+        const nodes: execution_graph.Node[] = [];
+        while (reader.pos < reader.len) {
+          // The graph file is just a length-delimited list of Nodes.
+          nodes.push(execution_graph.Node.decode(reader.bytes()));
+        }
+        this.setState({ executionGraphModel: ExecutionGraphModel.forNodes(invocationId, nodes) });
+      })
+      .catch((e) => {
+        this.setState({ executionGraphModel: ExecutionGraphModel.error(invocationId) });
+        console.log(e);
+      });
+  }
+
   fetchInvocation() {
     const wasQueued = this.isQueued();
     let request = new invocation.GetInvocationRequest();
@@ -154,6 +196,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
           model: model,
           error: null,
         });
+
+        this.maybeFetchExecutionGraphData(model);
+
         if (wasQueued) {
           router.setQueryParam("queued", null);
         }
@@ -353,6 +398,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
             <QueryGraphCardComponent buildLogs={this.getBuildLogs(this.state.model)} />
+          )}
+
+          {activeTab === "all" && Boolean(this.state.executionGraphModel) && (
+            <ExecutionGraphCard graph={this.state.executionGraphModel!} />
           )}
 
           {(activeTab === "all" || activeTab == "log") && (

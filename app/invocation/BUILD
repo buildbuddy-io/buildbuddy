@@ -13,6 +13,8 @@ ts_library(
         "//app/favicon",
         "//app/invocation:cache_requests_card",
         "//app/invocation:child_invocations",
+        "//app/invocation:execution_graph_card",
+        "//app/invocation:execution_graph_model",
         "//app/invocation:invocation_action_card",
         "//app/invocation:invocation_artifacts_card",
         "//app/invocation:invocation_bot_card",
@@ -43,6 +45,7 @@ ts_library(
         "//app/target",
         "//app/target:target_v2",
         "//app/util:errors",
+        "//proto:execution_graph_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/moment",
@@ -51,6 +54,26 @@ ts_library(
         "@npm//react",
         "@npm//rxjs",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "execution_graph_card",
+    srcs = ["execution_graph_card.tsx"],
+    deps = [
+        "//app/invocation:execution_graph_model",
+        "@npm//@types/react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "execution_graph_model",
+    srcs = ["execution_graph_model.ts"],
+    deps = [
+        "//proto:execution_graph_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )
 
