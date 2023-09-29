@@ -21,9 +21,10 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 	fs := filestore.New()
 
 	// What we are testing here is that for every version a key can be
-	// written at, it can also be re-read and rewritten at every other version.
+	// written at, it can also be re-read and rewritten at every *later*
+	// version.
 	for i := filestore.UndefinedKeyVersion; i < filestore.TestingMaxKeyVersion; i++ {
-		r, _ := testdigest.RandomACResourceBuf(t, 100)
+		r, _ := testdigest.RandomCASResourceBuf(t, 100)
 		fr := &rfpb.FileRecord{
 			Isolation: &rfpb.Isolation{
 				CacheType:          r.GetCacheType(),
@@ -43,10 +44,9 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 		keyBytes, err := sourceKey.Bytes(i)
 		require.NoError(t, err)
 
-		for j := filestore.UndefinedKeyVersion; j < filestore.TestingMaxKeyVersion; j++ {
+		for j := i; j < filestore.TestingMaxKeyVersion; j++ {
 			parsedKey := &filestore.PebbleKey{}
 			parsedVersion, err := parsedKey.FromBytes(keyBytes)
-
 			assert.NoError(t, err)
 			assert.Equal(t, i, parsedVersion)
 			assert.Equal(t, sourceKey.String(), parsedKey.String())
@@ -89,6 +89,13 @@ func TestKnownVersions(t *testing.T) {
 			"PTFOO/GR74042147050500190371/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/2364854541/EK123/v4",
 			"PTFOO/GR74042147050500190371/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/0/v4",
 		},
+		filestore.Version5: {
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/v5",
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/v5",
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/EK123/v5",
+			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/v5",
+		},
 	}
 
 	for version := filestore.UndefinedKeyVersion; version < filestore.TestingMaxKeyVersion; version++ {
@@ -114,6 +121,7 @@ func TestMigration(t *testing.T) {
 			filestore.Version2:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v2",
 			filestore.Version3:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v3",
 			filestore.Version4:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/1/cas/v4",
+			filestore.Version5:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/1/cas/v5",
 		},
 		{
 			filestore.UndefinedKeyVersion: "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
@@ -121,6 +129,7 @@ func TestMigration(t *testing.T) {
 			filestore.Version2:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v2",
 			filestore.Version3:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3",
 			filestore.Version4:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/2364854541/v4",
+			filestore.Version5:            "PTFOO/8d35507f8943fa0242206a2077054c0ead9c71ba9f5d01c6b7f3578c6d4ba464/1/ac/v5",
 		},
 		{
 			filestore.UndefinedKeyVersion: "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
@@ -128,6 +137,7 @@ func TestMigration(t *testing.T) {
 			filestore.Version2:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/v2",
 			filestore.Version3:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/0/v3",
 			filestore.Version4:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v4",
+			filestore.Version5:            "PTdefault/1e664dcc33e701dc7d59472f93f110159ca128b5e52e4e849d6eefeb4bda7f72/1/ac/v5",
 		},
 		{
 			filestore.UndefinedKeyVersion: "PTdefault/ANON/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
@@ -135,6 +145,7 @@ func TestMigration(t *testing.T) {
 			filestore.Version2:            "PTdefault/ANON/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/v2",
 			filestore.Version3:            "PTdefault/ANON/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/0/v3",
 			filestore.Version4:            "PTdefault/GR74042147050500190371/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v4",
+			filestore.Version5:            "PTdefault/4929cde6f4c93cd5ab0ffde947e7e5da09bdb0677057c2ae7ea75b083c67feaa/1/ac/v5",
 		},
 	}
 
@@ -148,7 +159,7 @@ func TestMigration(t *testing.T) {
 			_, err := parsedKey.FromBytes([]byte(key))
 			require.NoError(t, err)
 
-			for version := filestore.UndefinedKeyVersion; version < filestore.TestingMaxKeyVersion; version++ {
+			for version := startingVersion; version < filestore.TestingMaxKeyVersion; version++ {
 				t.Run(fmt.Sprintf("from_v%d_to_v%d", startingVersion, version), func(t *testing.T) {
 					versionedKey, err := parsedKey.Bytes(version)
 					require.NoError(t, err)
