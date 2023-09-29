@@ -329,7 +329,7 @@ func (m *v3ToV4Migrator) Migrate(val []byte) []byte             { return val }
 type v4ToV5Migrator struct{}
 
 func (m *v4ToV5Migrator) FromVersion() filestore.PebbleKeyVersion {
-	return filestore.Version3
+	return filestore.Version4
 }
 func (m *v4ToV5Migrator) ToVersion() filestore.PebbleKeyVersion { return filestore.Version5 }
 func (m *v4ToV5Migrator) Migrate(val []byte) []byte             { return val }
