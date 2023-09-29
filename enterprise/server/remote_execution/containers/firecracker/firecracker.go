@@ -1583,9 +1583,28 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	if err := networking.DeleteRoute(ctx, c.vmIdx); err != nil {
 		lastErr = err
 	}
-	if err := networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx); err != nil {
-		lastErr = err
-	}
+
+	// TODO(Maggie): Debug root cause for failures
+	// Run cleanup in the background because failures are preventing VMs from
+	// being recycled. Even if they aren't properly cleaned up, leftover
+	// rules shouldn't prevent recycled VMs from working
+	go func() {
+		ipRules, err := networking.DebugListIPRules(ctx)
+		if err != nil {
+			log.Warningf("ip rule list failed with: %s", err)
+		}
+
+		var delErr error
+		defer func() {
+			if delErr != nil && len(ipRules) > 0 {
+				log.CtxWarningf(ctx, "List ip rules output:\n%s", string(ipRules))
+			}
+		}()
+		delErr = networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx)
+		if delErr != nil {
+			log.CtxWarningf(ctx, "delete secondary network rule failed: %s\n kernel logs are %s", delErr, string(c.vmLog.Tail()))
+		}
+	}()
 	return lastErr
 }
 

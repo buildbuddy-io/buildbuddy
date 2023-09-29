@@ -613,3 +613,7 @@ func IsSecondaryNetworkEnabled() bool {
 func PreserveExistingNetNamespaces() bool {
 	return *preserveExistingNetNamespaces
 }
+
+func DebugListIPRules(ctx context.Context) ([]byte, error) {
+	return sudoCommand(ctx, "ip", "rule", "list")
+}
