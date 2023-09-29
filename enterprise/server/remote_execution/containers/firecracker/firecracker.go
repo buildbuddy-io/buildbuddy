@@ -1578,12 +1578,15 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 		}
 	}
 	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
+		log.Warningf("RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
 		lastErr = err
 	}
 	if err := networking.DeleteRoute(ctx, c.vmIdx); err != nil {
+		log.Warningf("DeleteRoute for vm idx %d failed with: %s", c.vmIdx, err)
 		lastErr = err
 	}
 	if err := networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx); err != nil {
+		log.Warningf("DeleteRuleIfSecondaryNetworkEnabled for vm idx %d failed with: %s", c.vmIdx, err)
 		lastErr = err
 	}
 	return lastErr
@@ -2021,8 +2024,12 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		lastErr = err
 	}
 	if err := c.cleanupNetworking(ctx); err != nil {
-		log.CtxErrorf(ctx, "Error cleaning up networking: %s", err)
-		lastErr = err
+		log.CtxErrorf(ctx, "Error cleaning up networking: %s\n%s", err, string(c.vmLog.Tail()))
+		// TODO(Maggie): Debug root cause for failures
+		// Don't fail if networking cleanup was not successful bc it's preventing VMs from
+		// being recycled. Even if they aren't properly cleaned up, leftover
+		// rules shouldn't prevent recycled VMs from working
+		// lastErr = err
 	}
 
 	if c.vfsServer != nil {
