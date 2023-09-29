@@ -423,7 +423,6 @@ func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
 	}
 	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
 	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
-	pmk.groupID = remapFixedToANONGroupID(trimFixedWidthGroupID(pmk.groupID))
 
 	slash := []byte{filepath.Separator}
 	pmk.fullKey = bytes.Join(parts, slash)
