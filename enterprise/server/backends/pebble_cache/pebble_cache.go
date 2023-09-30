@@ -2358,12 +2358,6 @@ func (k *evictionKey) String() string {
 	return string(k.bytes)
 }
 
-type groupIDApproxCount struct {
-	groupID         string
-	count           int64
-	cumulativeCount int64
-}
-
 type partitionEvictor struct {
 	mu            *sync.Mutex
 	part          disk.Partition
