@@ -53,6 +53,10 @@ type Iterator interface {
 	// iterator is pointing at a valid entry and false otherwise.
 	Next() bool
 
+	// Prev moves the iterator to the prev key/value pair. Returns true if the
+	// iterator is pointing at a valid entry and false otherwise.
+	Prev() bool
+
 	// SeekGE moves the iterator to the first key/value pair whose key is greater
 	// than or equal to the given key. Returns true if the iterator is pointing at
 	// a valid entry and false otherwise.
@@ -192,6 +196,12 @@ func (i *instrumentedIter) Next() bool {
 	return i.iter.Next()
 }
 
+func (i *instrumentedIter) Prev() bool {
+	t := i.db.iterPrevMetrics.Track()
+	defer t.Done()
+	return i.iter.Prev()
+}
+
 func (i *instrumentedIter) SeekGE(key []byte) bool {
 	t := i.db.iterSeekGEMetrics.Track()
 	defer t.Done()
@@ -276,6 +286,7 @@ type instrumentedDB struct {
 
 	iterFirstMetrics  *opMetrics
 	iterNextMetrics   *opMetrics
+	iterPrevMetrics   *opMetrics
 	iterSeekGEMetrics *opMetrics
 	iterSeekLTMetrics *opMetrics
 
@@ -395,6 +406,7 @@ func Open(dbDir string, id string, options *pebble.Options) (IPebbleDB, error) {
 		db:                   db,
 		iterFirstMetrics:     opMetrics("iter_first"),
 		iterNextMetrics:      opMetrics("iter_next"),
+		iterPrevMetrics:      opMetrics("iter_prev"),
 		iterSeekGEMetrics:    opMetrics("iter_seek_ge"),
 		iterSeekLTMetrics:    opMetrics("iter_seek_lt"),
 		dbApplyMetrics:       opMetrics("apply"),

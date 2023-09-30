@@ -3,9 +3,12 @@ package pebble_cache
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
+	"math/big"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -71,7 +74,6 @@ var (
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
-	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
 	deletesPerEviction        = flag.Int("cache.pebble.deletes_per_eviction", 5, "Maximum number keys to delete in one eviction attempt before resampling.")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
@@ -2482,7 +2484,30 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, deltaSize int64)
 	e.lru.UpdateSizeBytes(e.sizeBytes)
 }
 
-func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
+func keyToBigInt(key []byte) (*big.Int, error) {
+	var pk filestore.PebbleKey
+	if _, err := pk.FromBytes(key); err != nil {
+		return nil, err
+	}
+	hash, err := hex.DecodeString(pk.Hash())
+	if err != nil {
+		return nil, status.UnknownErrorf("could not parse key %q hash: %s", pk.Hash(), err)
+	}
+
+	for len(hash) < 32 {
+		hash = append(hash, 0)
+	}
+	if len(hash) > 32 {
+		hash = hash[:32]
+	}
+
+	return big.NewInt(0).SetBytes(hash), nil
+}
+
+func (e *partitionEvictor) sampleSizeInRange(start, end []byte) (int64, int64, int64, error) {
+	// Sample keys until the average size per key changes less than .01 % on each sample
+	// Estimate the number of keys between start and end.
+	// Return the estimated size and count
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return 0, 0, 0, err
@@ -2495,20 +2520,41 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	defer iter.Close()
 	iter.SeekLT(start)
 
-	casCount := int64(0)
-	acCount := int64(0)
-	blobSizeBytes := int64(0)
-	metadataSizeBytes := int64(0)
+	if !iter.Next() {
+		return 0, 0, 0, status.FailedPreconditionError("No first value")
+	}
+	firstKeyBigInt, err := keyToBigInt(iter.Key())
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	iter.SeekGE(end)
+	if !iter.Prev() {
+		return 0, 0, 0, status.FailedPreconditionError("No last value")
+	}
+	lastKeyBigInt, err := keyToBigInt(iter.Key())
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	iter.SeekLT(start)
+
 	fileMetadata := &rfpb.FileMetadata{}
+	var totalBytes, totalBytesSquared int64
+	var casCount, acCount int64
+	var keysScanned int64
+	var lastStdErr float64
 
 	for iter.Next() {
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
-		blobSizeBytes += fileMetadata.GetStoredSizeBytes()
-		metadataSizeBytes += int64(len(iter.Value()))
+		keysScanned += 1
 
-		// identify and count CAS vs AC files.
+		sizeBytes := (fileMetadata.GetStoredSizeBytes() + int64(len(iter.Value())))
+		totalBytes += sizeBytes
+		totalBytesSquared += sizeBytes * sizeBytes
+
 		if bytes.Contains(iter.Key(), casDir) {
 			casCount += 1
 		} else if bytes.Contains(iter.Key(), acDir) {
@@ -2516,9 +2562,38 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		} else {
 			log.Warningf("Unidentified file (not CAS or AC): %q", iter.Key())
 		}
+
+		mean := float64(totalBytes) / float64(keysScanned)
+		avgOfSquares := float64(totalBytesSquared) / float64(keysScanned)
+		stdev := math.Sqrt(avgOfSquares - (math.Pow(mean, 2)))
+		stderr := stdev / math.Sqrt(float64(keysScanned))
+		stderrDelta := math.Abs((lastStdErr - stderr) / lastStdErr)
+
+		if keysScanned > 1000 && stderrDelta < .0000001 {
+			break
+		}
+		lastStdErr = stderr
 	}
 
-	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
+	sampleEndBigInt, err := keyToBigInt(iter.Key())
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	var populationDiffBigInt, sampleDiffBigInt big.Int
+	populationDiffBigInt.Sub(lastKeyBigInt, firstKeyBigInt)
+	sampleDiffBigInt.Sub(sampleEndBigInt, firstKeyBigInt)
+
+	popDiffBigFloat := new(big.Float).SetInt(&populationDiffBigInt)
+	sampleDiffBigFloat := new(big.Float).SetInt(&sampleDiffBigInt)
+	scalarBigFloat := popDiffBigFloat.Quo(popDiffBigFloat, sampleDiffBigFloat)
+	scalar, _ := scalarBigFloat.Float64()
+
+	estimatedBytes := int64(float64(totalBytes) * scalar)
+	estimatedCASCount := int64(float64(casCount) * scalar)
+	estimatedACCount := int64(float64(acCount) * scalar)
+
+	return estimatedBytes, estimatedCASCount, estimatedACCount, nil
 }
 
 func partitionMetadataKey(partID string) []byte {
@@ -2568,19 +2643,9 @@ func (e *partitionEvictor) flushPartitionMetadata(db pebble.IPebbleDB) error {
 }
 
 func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
-	if !*forceCalculateMetadata {
-		partitionMD, err := e.lookupPartitionMetadata()
-		if err == nil {
-			log.Infof("Loaded partition %q metadata from cache: %+v", e.part.ID, partitionMD)
-			return partitionMD.GetSizeBytes(), partitionMD.GetCasCount(), partitionMD.GetAcCount(), nil
-		} else if !status.IsNotFoundError(err) {
-			return 0, 0, 0, err
-		}
-	}
-
 	start := append([]byte(e.partitionKeyPrefix()+"/"), keys.MinByte...)
 	end := append([]byte(e.partitionKeyPrefix()+"/"), keys.MaxByte...)
-	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
+	totalSizeBytes, totalCasCount, totalAcCount, err := e.sampleSizeInRange(start, end)
 	if err != nil {
 		return 0, 0, 0, err
 	}
