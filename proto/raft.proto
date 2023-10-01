@@ -343,14 +343,19 @@ message NodeLivenessRecord {
 message RangeLeaseRecord {
   message NodeLiveness {
     int64 epoch = 1;
-    bytes replica_id = 2;
+    bytes nhid = 2;
+  }
+
+  message ReplicaExpiration {
+    int64 expiration = 1;
+    bytes nhid = 2;
   }
 
   // A RangeLease can either be time based or based off of a node liveness
   // record.
   oneof value {
     NodeLiveness node_liveness = 1;
-    int64 expiration = 2;
+    ReplicaExpiration replica_expiration = 2;
   }
 }
 

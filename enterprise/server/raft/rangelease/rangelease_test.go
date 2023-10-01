@@ -11,13 +11,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/lni/goutils/random"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	dbcl "github.com/lni/dragonboat/v4/client"
 	sm "github.com/lni/dragonboat/v4/statemachine"
+	dbrd "github.com/lni/goutils/random"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -28,6 +29,7 @@ const shardID = 1
 
 type testingProposer struct {
 	t    testing.TB
+	id   string
 	Data map[string]string
 }
 
@@ -54,8 +56,12 @@ func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) sm.Result {
 	return sm.Result{Data: buf}
 }
 
+func (tp *testingProposer) ID() string {
+	return tp.id
+}
+
 func (tp *testingProposer) GetNoOPSession(shardID uint64) *dbcl.Session {
-	return dbcl.NewNoOPSession(shardID, random.LockGuardedRand)
+	return dbcl.NewNoOPSession(shardID, dbrd.LockGuardedRand)
 }
 
 func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Session, cmd []byte) (sm.Result, error) {
@@ -139,8 +145,11 @@ func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.Ba
 }
 
 func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender) {
+	randID, err := random.RandomString(10)
+	require.NoError(t, err)
 	p := &testingProposer{
 		t:    t,
+		id:   randID,
 		Data: make(map[string]string),
 	}
 	return p, &testingSender{p}
