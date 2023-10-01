@@ -307,51 +307,49 @@ func TestFirecrackerLifecycle(t *testing.T) {
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	// Test for both small and large memory sizes
+	for _, memorySize := range []int64{minMemSizeMB, 4000} {
+		ctx := context.Background()
+		env := getTestEnv(ctx, t)
+		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+		rootDir := testfs.MakeTempDir(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-			EnableNetworking:  false,
-			ScratchDiskSizeMb: 100,
-		},
-		JailerRoot: tempJailerRoot(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
-		t.Fatalf("unable to pull image: %s", err)
-	}
-
-	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-		t.Fatalf("unable to Create container: %s", err)
-	}
-	t.Cleanup(func() {
-		if err := c.Remove(ctx); err != nil {
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         memorySize,
+				EnableNetworking:  false,
+				ScratchDiskSizeMb: 100,
+			},
+			JailerRoot: tempJailerRoot(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		if err != nil {
 			t.Fatal(err)
 		}
-	})
 
-	cmd := &repb.Command{
-		// Run a script that increments /workspace/count (on workspacefs) and
-		// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
-		// This will let us test whether the scratchfs is sticking around across
-		// runs, and whether workspacefs is being correctly reset across runs.
-		Arguments: []string{"sh", "-c", `
+		if err := container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
+			t.Fatalf("unable to pull image: %s", err)
+		}
+
+		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+			t.Fatalf("unable to Create container: %s", err)
+		}
+		t.Cleanup(func() {
+			if err := c.Remove(ctx); err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		cmd := &repb.Command{
+			// Run a script that increments /workspace/count (on workspacefs) and
+			// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+			// This will let us test whether the scratchfs is sticking around across
+			// runs, and whether workspacefs is being correctly reset across runs.
+			Arguments: []string{"sh", "-c", `
 			for dir in /workspace /root; do
 				(
 					cd "$dir"
@@ -366,31 +364,32 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 				)
 			done
 		`},
-	}
-
-	res := c.Exec(ctx, cmd, nil /*=stdio*/)
-	require.NoError(t, res.Error)
-
-	assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
-
-	// Try pause, unpause, exec several times.
-	for i := 1; i <= 3; i++ {
-		if err := c.Pause(ctx); err != nil {
-			t.Fatalf("unable to pause container: %s", err)
-		}
-
-		countBefore := rand.Intn(100)
-		err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
-		require.NoError(t, err)
-
-		if err := c.Unpause(ctx); err != nil {
-			t.Fatalf("unable to unpause container: %s", err)
 		}
 
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
 
-		assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
+		assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
+
+		// Try pause, unpause, exec several times.
+		for i := 1; i <= 3; i++ {
+			if err := c.Pause(ctx); err != nil {
+				t.Fatalf("unable to pause container: %s", err)
+			}
+
+			countBefore := rand.Intn(100)
+			err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
+			require.NoError(t, err)
+
+			if err := c.Unpause(ctx); err != nil {
+				t.Fatalf("unable to unpause container: %s", err)
+			}
+
+			res := c.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+
+			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
+		}
 	}
 }
 

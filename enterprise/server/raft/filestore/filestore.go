@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -90,6 +91,11 @@ const (
 	// fixed ANON group ID in GR{20} format.
 	Version4
 
+	// Version5 simplifies the keyspace (to simplify eviction) by encoding
+	// AC keys under a synthetic digest made from their remote instance
+	// name, groupID, and digest.
+	Version5
+
 	// TestingMaxKeyVersion should not be used directly -- it is always
 	// 1 more than the highest defined version, which allows for tests
 	// to iterate across all versions from UndefinedKeyVersion to
@@ -105,6 +111,13 @@ type PebbleKey struct {
 	hash               string
 	encryptionKeyID    string
 	digestFunction     repb.DigestFunction_Value
+
+	// For Version5 keys and beyond, creating a key from the above fields is
+	// a *lossy* procedure. This means it's impossible to take a raw key and
+	// back out the groupID or other information. For that reason, when a
+	// v5+ key is parsed, the full key bytes are preserved here so that the
+	// key can be re-serialized.
+	fullKey []byte
 }
 
 func (pmk PebbleKey) String() string {
@@ -117,7 +130,11 @@ func (pmk PebbleKey) String() string {
 
 func (pmk PebbleKey) LockID() string {
 	if pmk.isolation == "ac" {
-		return filepath.Join(pmk.isolation, pmk.groupID, pmk.remoteInstanceHash, pmk.hash)
+		fmk, err := pmk.Bytes(Version5)
+		if err != nil {
+			return err.Error()
+		}
+		return string(fmk)
 	}
 	return filepath.Join(pmk.isolation, pmk.hash)
 }
@@ -227,7 +244,32 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v4")
 		return []byte(filePath), nil
+	case Version5:
+		if len(pmk.fullKey) > 0 {
+			return pmk.fullKey, nil
+		}
+		hashStr := pmk.hash
+		if pmk.isolation == "ac" {
+			hashExtra := remapANONToFixedGroupID(pmk.groupID)
+			rih := pmk.remoteInstanceHash
+			if rih == "" {
+				rih = "0"
+			}
+			hashExtra += "|" + rih + "|" + pmk.hash
+			h, err := digest.HashForDigestType(pmk.digestFunction)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := h.Write([]byte(hashExtra)); err != nil {
+				return nil, err
+			}
+			hashStr = fmt.Sprintf("%x", h.Sum(nil))
+		}
 
+		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v5")
+		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
 	}
@@ -358,6 +400,35 @@ func (pmk *PebbleKey) parseVersion4(parts [][]byte) error {
 	return nil
 }
 
+func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
+	digestFunctionString := ""
+	switch len(parts) {
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/1/cas/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/9/ac/v5",
+	case 5:
+		pmk.partID, pmk.hash, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/EK123/v5",
+	case 6:
+		pmk.partID, pmk.hash, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+
+	// Parse hash type string back into a digestFunction enum.
+	intDigestFunction, err := strconv.Atoi(digestFunctionString)
+	if err != nil || intDigestFunction == 0 {
+		// It is an error for a v5 key to have a 0 digestFunction value.
+		return parseError(parts)
+	}
+	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+
+	slash := []byte{filepath.Separator}
+	pmk.fullKey = bytes.Join(parts, slash)
+	return nil
+}
+
 func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	version := UndefinedKeyVersion
 	slash := []byte{filepath.Separator}
@@ -395,6 +466,8 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 		return Version3, pmk.parseVersion3(parts)
 	case Version4:
 		return Version4, pmk.parseVersion4(parts)
+	case Version5:
+		return Version5, pmk.parseVersion5(parts)
 	default:
 		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
 	}

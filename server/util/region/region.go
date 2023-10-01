@@ -2,18 +2,22 @@ package region
 
 import (
 	"net/http"
+	"regexp"
+	"strings"
 
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 )
 
 var (
-	regions = flag.Slice("regions", []Region{}, "A list of regions that executors might be connected to.")
+	regions        = flag.Slice("regions", []Region{}, "A list of regions that executors might be connected to.")
+	subdomainRegex = regexp.MustCompile("^[a-zA-Z0-9-]+$")
 )
 
 type Region struct {
-	Name   string
-	Server string
+	Name       string `yaml:"name" json:"name" usage:"The user-friendly name of this region. Ex: Europe"`
+	Server     string `yaml:"server" json:"server" usage:"The http endpoint for this server, with the protocol. Ex: https://app.europe.buildbuddy.io"`
+	Subdomains string `yaml:"subdomains" json:"subdomains" usage:"The format for subdomain urls of with a single * wildcard. Ex: https://*.europe.buildbuddy.io"`
 }
 
 func Protos() []*cfgpb.Region {
@@ -27,9 +31,23 @@ func Protos() []*cfgpb.Region {
 	return protos
 }
 
-func isRegionalServer(server string) bool {
-	for _, region := range *regions {
+func isRegionalServer(regions []Region, server string) bool {
+	for _, region := range regions {
 		if region.Server == server {
+			return true
+		}
+		chunks := strings.Split(region.Subdomains, "*")
+		// Only one wildcard is allowed for the subdomain.
+		if len(chunks) != 2 {
+			continue
+		}
+		// Trim the http:// prefix bit and the top level domain suffix.
+		if !strings.HasPrefix(server, chunks[0]) || !strings.HasSuffix(server, chunks[1]) {
+			continue
+		}
+		subdomain := strings.TrimSuffix(strings.TrimPrefix(server, chunks[0]), chunks[1])
+		// Make sure the subdomain doesn't have any non alphanumeric or dash characters.
+		if subdomainRegex.MatchString(subdomain) {
 			return true
 		}
 	}
@@ -51,7 +69,7 @@ func CORS(next http.Handler) http.Handler {
 		}
 
 		// If we're not dealing with a regional server, we don't have to set any CORS headers.
-		if r.Header.Get("Origin") == "" || !isRegionalServer(r.Header.Get("Origin")) {
+		if r.Header.Get("Origin") == "" || !isRegionalServer(*regions, r.Header.Get("Origin")) {
 			next.ServeHTTP(w, r)
 			return
 		}

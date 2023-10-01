@@ -110,14 +110,9 @@ func addClientIPToContext(ctx context.Context) context.Context {
 	if len(hdrs) == 0 {
 		return ctx
 	}
-	ips := strings.Split(hdrs[0], ",")
-	if len(ips) < 2 {
-		return ctx
-	}
-	// For GCLB, the header format is [client supplied IP,]client IP, LB IP
-	// We always look at the client IP as seen by GCLB as the client supplied
-	// value can't be trusted if it's present.
-	return context.WithValue(ctx, clientip.ContextKey, ips[len(ips)-2])
+
+	ctx, _ = clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
+	return ctx
 }
 
 func addSubdomainToContext(ctx context.Context) context.Context {
@@ -450,6 +445,7 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		unaryRecoveryInterceptor(),
+		copyHeadersUnaryServerInterceptor(),
 		ClientIPUnaryServerInterceptor(),
 		subdomainUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
@@ -458,7 +454,6 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
-		copyHeadersUnaryServerInterceptor(),
 		identityUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
 		roleAuthUnaryServerInterceptor(env),
@@ -468,6 +463,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
 		streamRecoveryInterceptor(),
+		copyHeadersStreamServerInterceptor(),
 		clientIPStreamServerInterceptor(),
 		subdomainStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),
@@ -475,7 +471,6 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
-		copyHeadersStreamServerInterceptor(),
 		identityStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env),

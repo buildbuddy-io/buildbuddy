@@ -147,6 +147,10 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 	return rangeDescriptor, nil
 }
 
+func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
+	return s.rangeCache.UpdateRange(rangeDescriptor)
+}
+
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) (int, error) {

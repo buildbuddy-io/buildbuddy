@@ -28,6 +28,7 @@ import (
 const DefaultContextTimeout = 60 * time.Second
 
 type NodeHost interface {
+	ID() string
 	GetNoOPSession(shardID uint64) *client.Session
 	SyncPropose(ctx context.Context, session *client.Session, cmd []byte) (dbsm.Result, error)
 	SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error)

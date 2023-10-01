@@ -22,7 +22,7 @@ type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddy
  */
 export type BuildBuddyServiceRpcName = RpcMethodNames<buildbuddy.service.BuildBuddyService>;
 
-export type FileEncoding = "gzip" | "";
+export type FileEncoding = "gzip" | "zstd" | "";
 
 export type XMLHttpResponseType = XMLHttpRequest["responseType"];
 
@@ -140,6 +140,8 @@ class RpcService {
       // that it doesn't double-gzip.
       if (storedEncoding === "gzip") {
         request.setRequestHeader("X-Stored-Encoding-Hint", "gzip");
+      } else if (storedEncoding === "zstd") {
+        request.setRequestHeader("X-Stored-Encoding-Hint", "zstd");
       }
       request.send();
     });
