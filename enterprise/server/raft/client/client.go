@@ -9,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -122,84 +121,6 @@ func RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadReq
 
 func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
 	return RemoteReader(ctx, client, req)
-}
-
-type streamWriteCloser struct {
-	stream         rfspb.Api_WriteClient
-	header         *rfpb.Header
-	fileRecord     *rfpb.FileRecord
-	firstWriteDone bool
-	closed         bool
-	cancelFunc     context.CancelFunc
-}
-
-func (wc *streamWriteCloser) Write(data []byte) (int, error) {
-	req := &rfpb.WriteRequest{
-		Header:      wc.header,
-		FileRecord:  wc.fileRecord,
-		Data:        data,
-		FinishWrite: false,
-	}
-	if err := wc.stream.Send(req); err != nil {
-		return 0, err
-	}
-	// On the first write, the peer will send us an empty response to indicate
-	// that it has accepted the write so we wait here to make sure the write
-	// was not rejected.
-	if !wc.firstWriteDone {
-		if _, err := wc.stream.Recv(); err != nil {
-			return 0, err
-		}
-		wc.firstWriteDone = true
-	}
-	return len(data), nil
-}
-
-func (wc *streamWriteCloser) Commit() error {
-	req := &rfpb.WriteRequest{
-		Header:      wc.header,
-		FileRecord:  wc.fileRecord,
-		FinishWrite: true,
-	}
-	if err := wc.stream.Send(req); err != nil {
-		return err
-	}
-	if err := wc.stream.CloseSend(); err != nil {
-		return err
-	}
-	_, err := wc.stream.Recv()
-	return err
-}
-
-func (wc *streamWriteCloser) Close() error {
-	if !wc.closed {
-		wc.cancelFunc()
-		wc.closed = true
-	}
-	return nil
-}
-
-func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedWriteCloser, error) {
-	ctx, cancel := context.WithCancel(ctx)
-
-	stream, err := client.Write(ctx)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	wc := &streamWriteCloser{
-		header:     header,
-		fileRecord: fileRecord,
-		stream:     stream,
-		cancelFunc: cancel,
-	}
-	return wc, nil
-}
-
-type PeerHeader struct {
-	Header    *rfpb.Header
-	GRPCAddr  string
-	GRPClient rfspb.ApiClient
 }
 
 func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
