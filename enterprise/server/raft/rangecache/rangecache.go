@@ -112,7 +112,7 @@ func (rc *RangeCache) OnEvent(updateType serf.EventType, event serf.Event) {
 		if userEvent.Name == constants.MetaRangeTag {
 			rd := &rfpb.RangeDescriptor{}
 			if err := proto.Unmarshal(userEvent.Payload, rd); err != nil {
-				log.Errorf("unparsable rangeset: %s", err)
+				log.Errorf("error parsing metarange: %s", err)
 				return
 			}
 			if err := rc.updateRange(rd); err != nil {
