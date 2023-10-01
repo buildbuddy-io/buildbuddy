@@ -199,10 +199,6 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}
 	rc.gossipManager = gossipManager
 
-	// Register the range cache as a gossip listener, so that it can
-	// discover which nodes maintain the meta range..
-	rc.gossipManager.AddListener(rc.rangeCache)
-
 	// A NodeHost is basically a single node (think 'computer') that can be
 	// a member of raft clusters. This nodehost is configured with a dynamic
 	// NodeRegistryFactory that allows raft to resolve other nodehosts that
