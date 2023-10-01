@@ -109,9 +109,6 @@ func (rc *RangeCache) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
 	case serf.EventUser:
 		userEvent, _ := event.(serf.UserEvent)
-		// Whenever the metarange data changes, for any
-		// reason, start a goroutine that ensures the
-		// node liveness record is up to date.
 		if userEvent.Name == constants.MetaRangeTag {
 			rd := &rfpb.RangeDescriptor{}
 			if err := proto.Unmarshal(userEvent.Payload, rd); err != nil {
