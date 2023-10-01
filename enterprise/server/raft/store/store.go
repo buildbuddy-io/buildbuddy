@@ -904,7 +904,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			s.log.Errorf("Error marshaling metarange descriptor: %s", err)
 			return
 		}
-		go s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf, /*coalesce=*/false)
+		go s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
 	}
 
 	// Start goroutines for these so that Adding ranges is quick.

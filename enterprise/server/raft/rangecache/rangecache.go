@@ -108,7 +108,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 func (rc *RangeCache) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
 	case serf.EventUser:
-                userEvent, _ := event.(serf.UserEvent)
+		userEvent, _ := event.(serf.UserEvent)
 		// Whenever the metarange data changes, for any
 		// reason, start a goroutine that ensures the
 		// node liveness record is up to date.

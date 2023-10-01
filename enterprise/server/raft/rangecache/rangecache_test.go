@@ -41,7 +41,7 @@ func metaRangeEvent(t *testing.T, rangeDescriptor *rfpb.RangeDescriptor) (serf.E
 	}
 
 	event := serf.UserEvent{
-		Name: constants.MetaRangeTag,
+		Name:    constants.MetaRangeTag,
 		Payload: buf,
 	}
 
