@@ -105,21 +105,21 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	return nil
 }
 
-// OnEvent is called when a node joins, leaves, or is updated.
 func (rc *RangeCache) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
-	case serf.EventMemberJoin, serf.EventMemberUpdate:
-		memberEvent, _ := event.(serf.MemberEvent)
-		for _, member := range memberEvent.Members {
-			if tagData, ok := member.Tags[constants.MetaRangeTag]; ok {
-				rd := &rfpb.RangeDescriptor{}
-				if err := proto.Unmarshal([]byte(tagData), rd); err != nil {
-					log.Errorf("unparsable rangeset: %s", err)
-					return
-				}
-				if err := rc.updateRange(rd); err != nil {
-					log.Errorf("Error updating ranges: %s", err)
-				}
+	case serf.EventUser:
+                userEvent, _ := event.(serf.UserEvent)
+		// Whenever the metarange data changes, for any
+		// reason, start a goroutine that ensures the
+		// node liveness record is up to date.
+		if userEvent.Name == constants.MetaRangeTag {
+			rd := &rfpb.RangeDescriptor{}
+			if err := proto.Unmarshal(userEvent.Payload, rd); err != nil {
+				log.Errorf("unparsable rangeset: %s", err)
+				return
+			}
+			if err := rc.updateRange(rd); err != nil {
+				log.Errorf("Error updating ranges: %s", err)
 			}
 		}
 	default:
