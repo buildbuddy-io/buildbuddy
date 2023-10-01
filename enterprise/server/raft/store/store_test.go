@@ -136,7 +136,6 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	ts.APIClient = apiClient
 
 	rc := rangecache.New()
-	gm.AddListener(rc)
 	ts.Sender = sender.New(rc, reg, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
 	s, err := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, apiClient, ts.GRPCAddress, []disk.Partition{})
