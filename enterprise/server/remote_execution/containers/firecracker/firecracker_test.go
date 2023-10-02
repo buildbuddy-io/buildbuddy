@@ -1713,6 +1713,83 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 	}
 }
 
+//TODO(MAGGIE): Make this a runner pool test
+func TestRC(t *testing.T) {
+	ctx := context.Background()
+
+	// Make sure we use the same filecache and disk root across restarts
+	testRoot := tempJailerRoot(t)
+	err := os.RemoveAll(filepath.Join(testRoot, "_runner_pool_state.bin"))
+	require.NoError(t, err)
+	filecacheRoot := testfs.MakeDirAll(t, testRoot, "filecache")
+	diskCacheRoot := testfs.MakeTempDir(t)
+
+	var (
+		env    *testenv.TestEnv
+		ta     *testauth.TestAuthenticator
+		pool   interfaces.RunnerPool
+		ctxUS1 context.Context
+	)
+	setup := func() {
+		var err error
+		env = getTestEnv(ctx, t, envOpts{filecacheRootDir: filecacheRoot, cacheRootDir: diskCacheRoot})
+		flags.Set(t, "executor.enable_firecracker", true)
+		// Jailer root dir needs to be < 38 chars
+		flags.Set(t, "executor.root_directory", testRoot)
+		ta = testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+		env.SetAuthenticator(ta)
+		pool, err = runner.NewPool(env, &runner.PoolOptions{})
+		require.NoError(t, err)
+		ctxUS1, err = ta.WithAuthenticatedUser(ctx, "US1")
+		require.NoError(t, err)
+	}
+
+	setup()
+
+	smd := &scpb.SchedulingMetadata{
+		TaskSize: &scpb.TaskSize{
+			EstimatedMemoryBytes: 1_000_000_000,
+			EstimatedMilliCpu:    1_000,
+		},
+	}
+	commonProps := []*repb.Platform_Property{
+		{Name: "recycle-runner", Value: "true"},
+		{Name: "workload-isolation-type", Value: "firecracker"},
+		{Name: "container-image", Value: "docker://" + busyboxImage},
+		// TODO: Test setting preserve-workspace=true when resuming from
+		// persisted state. This doesn't matter a whole lot for workflows in
+		// particular, because we don't use the workspace and instead override
+		// the working dir to /root/workspace
+	}
+
+	task1 := &repb.ScheduledTask{
+		ExecutionTask: &repb.ExecutionTask{
+			Command: &repb.Command{
+				Arguments: []string{"sh", "-c", "printf foo > /root/KEEP"},
+				Platform:  &repb.Platform{Properties: commonProps},
+			},
+		},
+		SchedulingMetadata: smd,
+	}
+
+	for i := 0; i < 20; i++ {
+		pool, err = runner.NewPool(env, &runner.PoolOptions{})
+
+		// Try to trigger race condition where we try to take a runner from the pool at same time as it's being removed during shutdown
+		go func() {
+			err = pool.Shutdown(ctx)
+			require.NoError(t, err)
+		}()
+		go func() {
+			r, err := pool.Get(ctxUS1, task1)
+			require.NoError(t, err)
+
+			res := r.Run(ctxUS1)
+			require.NoError(t, res.Error)
+		}()
+	}
+}
+
 func TestMergeDiffSnapshot(t *testing.T) {
 	tmp := testfs.MakeTempDir(t)
 	for i := 0; i < 100; i++ {

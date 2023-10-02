@@ -1048,6 +1048,10 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, e
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.isShuttingDown {
+		return nil, status.UnavailableErrorf("Could not take a runner from the pool because the executor is shutting down.")
+	}
+
 	log.CtxInfof(ctx, "Looking for match for %q in runner pool %s", keyString(key), p)
 	taskKeyBytes, err := proto.Marshal(key)
 	if err != nil {
