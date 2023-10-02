@@ -1447,7 +1447,12 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	}
 
 	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
-		return err
+		if strings.Contains(err.Error(), "File exists") {
+			// Don't fail if we failed to cleanup the networking on a previous run
+			log.Warningf("Networking cleanup failure. Net namespace already exists: %s", err)
+		} else {
+			return err
+		}
 	}
 	if err := networking.CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
 		return err
@@ -1578,15 +1583,15 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 		}
 	}
 	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
-		log.Warningf("RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
+		log.Warningf("Networking cleanup failure. RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
 		lastErr = err
 	}
 	if err := networking.DeleteRoute(ctx, c.vmIdx); err != nil {
-		log.Warningf("DeleteRoute for vm idx %d failed with: %s", c.vmIdx, err)
+		log.Warningf("Networking cleanup failure. DeleteRoute for vm idx %d failed with: %s", c.vmIdx, err)
 		lastErr = err
 	}
 	if err := networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx); err != nil {
-		log.Warningf("DeleteRuleIfSecondaryNetworkEnabled for vm idx %d failed with: %s", c.vmIdx, err)
+		log.Warningf("Networking cleanup failure. DeleteRuleIfSecondaryNetworkEnabled for vm idx %d failed with: %s", c.vmIdx, err)
 		lastErr = err
 	}
 	return lastErr
