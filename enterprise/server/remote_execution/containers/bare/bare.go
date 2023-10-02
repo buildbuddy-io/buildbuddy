@@ -46,6 +46,10 @@ func NewBareCommandContainer(opts *Opts) container.CommandContainer {
 	return &bareCommandContainer{opts: opts}
 }
 
+func (_ *bareCommandContainer) ContainerType() platform.ContainerType {
+	return platform.BareContainerType
+}
+
 func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	return c.exec(ctx, command, workDir, nil /*=stdio*/)
 }

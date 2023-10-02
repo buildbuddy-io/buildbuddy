@@ -625,6 +625,10 @@ func alignToMultiple(n int64, multiple int64) int64 {
 	return n + multiple - remainder
 }
 
+func (_ *FirecrackerContainer) ContainerType() platform.ContainerType {
+	return platform.FirecrackerContainerType
+}
+
 // State returns the container state to be persisted to disk so that this
 // container can be reconstructed from the state on disk after an executor
 // restart.

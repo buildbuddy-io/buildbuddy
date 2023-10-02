@@ -24,6 +24,10 @@ type FakeContainer struct {
 	PullCount               int
 }
 
+func (_ *FakeContainer) ContainerType() platform.ContainerType {
+	return platform.ContainerType("fake")
+}
+
 func (c *FakeContainer) Run(context.Context, *repb.Command, string, container.PullCredentials) *interfaces.CommandResult {
 	return nil
 }
@@ -137,6 +141,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			env,
 			container.PullCredentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
+			platform.BareContainerType,
 		)
 
 		require.NoError(t, err)
@@ -152,6 +157,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			env,
 			container.PullCredentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
+			platform.BareContainerType,
 		)
 
 		require.NoError(t, err)
@@ -168,6 +174,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			env,
 			container.PullCredentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
+			platform.BareContainerType,
 		)
 
 		require.NoError(t, err)
@@ -186,6 +193,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			env,
 			container.PullCredentials{},
 			"alpine:latest",
+			platform.BareContainerType,
 		)
 
 		require.NoError(t, err)
@@ -205,6 +213,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			env,
 			container.PullCredentials{},
 			"alpine:latest",
+			platform.BareContainerType,
 		)
 
 		require.NoError(t, err)
@@ -228,6 +237,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			env,
 			container.PullCredentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
+			platform.BareContainerType,
 		)
 
 		require.NoError(t, err)
@@ -237,6 +247,43 @@ func TestImageCacheAuthenticator(t *testing.T) {
 
 		assert.False(t, isAuthorized, "Expired tokens should not be authorized")
 	}
+}
+
+func TestImageCacheAuthenticator_DifferentIsolationTypes(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(ta)
+
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	dockerToken, err := container.NewImageCacheToken(
+		userCtx(t, ta, "US1"),
+		env,
+		container.PullCredentials{Username: "user1", Password: "pass1"},
+		"gcr.io/org1/image:latest",
+		platform.DockerContainerType,
+	)
+
+	require.NoError(t, err)
+
+	auth.Refresh(dockerToken)
+	isAuthorized := auth.IsAuthorized(dockerToken)
+
+	assert.True(t, isAuthorized, "Tokens should be authorized after authenticating with the remote registry")
+
+	podmanToken, err := container.NewImageCacheToken(
+		userCtx(t, ta, "US1"),
+		env,
+		container.PullCredentials{Username: "user1", Password: "pass1"},
+		"gcr.io/org1/image:latest",
+		platform.PodmanContainerType,
+	)
+
+	require.NoError(t, err)
+
+	isAuthorized = auth.IsAuthorized(podmanToken)
+
+	assert.False(t, isAuthorized, "Tokens should not be shared across isolation types")
 }
 
 func TestGetPullCredentials(t *testing.T) {

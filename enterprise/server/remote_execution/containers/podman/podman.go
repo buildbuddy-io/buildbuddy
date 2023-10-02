@@ -336,6 +336,10 @@ func NewPodmanCommandContainer(env environment.Env, image, buildRoot string, opt
 	}
 }
 
+func (_ *podmanCommandContainer) ContainerType() platform.ContainerType {
+	return platform.PodmanContainerType
+}
+
 func addUserArgs(args []string, options *PodmanOptions) []string {
 	if options.ForceRoot {
 		args = append(args, "--user=0:0")

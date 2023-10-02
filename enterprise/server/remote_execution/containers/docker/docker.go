@@ -188,6 +188,10 @@ const (
 	ctrDidNotExitCleanly
 )
 
+func (_ *dockerCommandContainer) ContainerType() platform.ContainerType {
+	return platform.DockerContainerType
+}
+
 func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),

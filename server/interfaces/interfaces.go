@@ -1268,6 +1268,8 @@ type ImageCacheToken struct {
 	GroupID string
 	// ImageRef is the remote image ref, e.g. "gcr.io/foo/bar:v1.0"
 	ImageRef string
+	// IsolationType is the isolation type, e.g. "docker"
+	IsolationType string
 }
 
 // ImageCacheAuthenticator validates access to locally cached images.

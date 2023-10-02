@@ -285,6 +285,10 @@ func New(options *Options) container.CommandContainer {
 	}
 }
 
+func (_ *sandbox) ContainerType() platform.ContainerType {
+	return platform.SandboxContainerType
+}
+
 func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(sandbox) %s", command.GetArguments()),

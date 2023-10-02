@@ -166,6 +166,11 @@ type FileSystemLayout struct {
 
 // CommandContainer provides an execution environment for commands.
 type CommandContainer interface {
+
+	// Returns the isolation type of this command container, for example:
+	// "docker" or "podman".
+	ContainerType() platform.ContainerType
+
 	// Run the given command within the container and remove the container after
 	// it is done executing.
 	//
@@ -250,7 +255,7 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	if err != nil {
 		return err
 	}
-	cacheToken, err := NewImageCacheToken(ctx, env, creds, imageRef)
+	cacheToken, err := NewImageCacheToken(ctx, env, creds, imageRef, ctr.ContainerType())
 	if err != nil {
 		return status.WrapError(err, "create image cache token")
 	}
@@ -288,7 +293,7 @@ func (p PullCredentials) String() string {
 // NewImageCacheToken returns the token representing the authenticated group ID,
 // pull credentials, and image ref. For the same sets of those values, the
 // same token is always returned.
-func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCredentials, imageRef string) (interfaces.ImageCacheToken, error) {
+func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCredentials, imageRef string, isolationType platform.ContainerType) (interfaces.ImageCacheToken, error) {
 	groupID := ""
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err != nil {
@@ -299,8 +304,9 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCred
 		groupID = u.GetGroupID()
 	}
 	return interfaces.ImageCacheToken{
-		GroupID:  groupID,
-		ImageRef: imageRef,
+		GroupID:       groupID,
+		ImageRef:      imageRef,
+		IsolationType: string(isolationType),
 	}, nil
 }
 
@@ -405,6 +411,11 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) (PullCr
 type TracedCommandContainer struct {
 	Delegate CommandContainer
 	implAttr attribute.KeyValue
+}
+
+func (t *TracedCommandContainer) ContainerType() platform.ContainerType {
+	// Delegates should just return a constant, so no need to trace this call.
+	return t.Delegate.ContainerType()
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult {
