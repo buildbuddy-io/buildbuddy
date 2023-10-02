@@ -65,11 +65,12 @@ func TestMmap_Digest(t *testing.T) {
 }
 
 func TestCOW_Basic(t *testing.T) {
+	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
-	s, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), path, chunkSizeBytes, dataDir)
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "")
 	require.NoError(t, err)
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
@@ -82,6 +83,7 @@ func TestCOW_SparseData(t *testing.T) {
 		t.SkipNow()
 	}
 
+	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	// Figure out the IO block size (number of bytes transferred to/from disk
 	// for each IO operation). This is the minimum seek size when using seek()
@@ -112,7 +114,7 @@ func TestCOW_SparseData(t *testing.T) {
 	outDir := testfs.MakeTempDir(t)
 
 	// Now split the file.
-	c, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), dataFilePath, chunkSize, outDir)
+	c, err := copy_on_write.ConvertFileToCOW(ctx, env, dataFilePath, chunkSize, outDir, "")
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -157,6 +159,7 @@ func TestCOW_SparseData(t *testing.T) {
 
 func TestCOW_Resize(t *testing.T) {
 	const chunkSize = 2 * 4096
+	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	for _, test := range []struct {
 		Name             string
@@ -175,7 +178,7 @@ func TestCOW_Resize(t *testing.T) {
 				startBuf := randBytes(t, int(test.OldSize))
 				src := makeTempFile(t, startBuf)
 				dir := testfs.MakeTempDir(t)
-				cow, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), src, chunkSize, dir)
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir, "")
 				require.NoError(t, err)
 
 				// Resize the COW
@@ -240,6 +243,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 	// read/write tests don't touch the same block twice.
 	const ioCountPerBenchOp = diskSize / ioSize
 
+	ctx := context.Background()
 	env := testenv.GetTestEnv(b)
 
 	for _, test := range []struct {
@@ -303,7 +307,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				}
 				chunkDir, err := os.MkdirTemp(tmp, "")
 				require.NoError(b, err)
-				cow, err := copy_on_write.ConvertFileToCOW(env.GetFileCache(), f.Name(), chunkSize, chunkDir)
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, f.Name(), chunkSize, chunkDir, "")
 				require.NoError(b, err)
 				err = os.Remove(f.Name())
 				require.NoError(b, err)
@@ -429,6 +433,7 @@ func randSubslice(sliceLength int) (offset, length int) {
 }
 
 func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
+	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 
 	root := testfs.MakeTempDir(t)
@@ -442,7 +447,7 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	s, err := f.Stat()
 	require.NoError(t, err)
 
-	mmap, err := copy_on_write.NewMmapFd(env.GetFileCache(), root, int(f.Fd()), int(s.Size()), 0)
+	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, int(f.Fd()), int(s.Size()), 0, "")
 	require.NoError(t, err)
 	return mmap, path
 }

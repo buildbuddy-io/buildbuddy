@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
@@ -418,7 +419,7 @@ type FirecrackerContainer struct {
 }
 
 func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
-	if *snaploader.EnableLocalSnapshotSharing && !(*enableVBD && *enableUFFD) {
+	if *snaputil.EnableLocalSnapshotSharing && !(*enableVBD && *enableUFFD) {
 		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires VBD and UFFD to be enabled")
 	}
 	if *EnableRootfs && !*enableVBD {
@@ -494,7 +495,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// TODO(Maggie): Once local snapshot sharing is stable, remove runner ID
 		// from the snapshot key
 		runnerID := c.id
-		if *snaploader.EnableLocalSnapshotSharing {
+		if *snaputil.EnableLocalSnapshotSharing {
 			runnerID = ""
 		}
 		c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), runnerID)
@@ -505,7 +506,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// Create(), load the snapshot instead of creating a new VM.
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
-		if recyclingEnabled && *snaploader.EnableLocalSnapshotSharing {
+		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
 			_, err := loader.GetSnapshot(ctx, c.snapshotKey)
 			c.createFromSnapshot = (err == nil)
 		}
@@ -628,7 +629,7 @@ func alignToMultiple(n int64, multiple int64) int64 {
 // container can be reconstructed from the state on disk after an executor
 // restart.
 func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	if *snaploader.EnableLocalSnapshotSharing {
+	if *snaputil.EnableLocalSnapshotSharing {
 		// When local snapshot sharing is enabled, don't bother explicitly
 		// persisting container state across reboots. Instead we can
 		// deterministically match tasks to cached snapshots just based on the
@@ -837,7 +838,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	unpacked, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot())
 	if err != nil {
-		return err
+		return status.WrapError(err, "failed to unpack snapshot")
 	}
 	if len(unpacked.ChunkedFiles) > 0 && !(*enableVBD || *enableUFFD) {
 		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
@@ -1002,7 +1003,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
-	cow, err := copy_on_write.ConvertFileToCOW(c.env.GetFileCache(), filePath, cowChunkSizeBytes(), chunkDir)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
@@ -2359,7 +2360,7 @@ func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskSta
 	}
 
 	snapshotSharingStatus := "disabled"
-	if *snaploader.EnableLocalSnapshotSharing {
+	if *snaputil.EnableLocalSnapshotSharing {
 		snapshotSharingStatus = "local_sharing_enabled"
 	}
 

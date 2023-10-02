@@ -26,6 +26,7 @@ go_library(
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaploader",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/uffd",
         "//enterprise/server/remote_execution/vbd",
         "//enterprise/server/remote_execution/vmexec_client",
@@ -88,7 +89,7 @@ go_test(
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/runner",
-        "//enterprise/server/remote_execution/snaploader",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/vbd",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/testutil/testcontainer",
@@ -130,6 +131,7 @@ go_test(
 #        "--executor.firecracker_enable_merged_rootfs=true",
 #        "--executor.firecracker_enable_uffd=true",
 #        "--executor.enable_local_snapshot_sharing=true",
+#        "--executor.enable_remote_snapshot_sharing=true",
 #    ],
 #    exec_properties = {
 #        "test.Pool": "bare",
@@ -158,7 +160,7 @@ go_test(
 #        "//proto:firecracker_go_proto",
 #        "//proto:remote_execution_go_proto",
 #        "//proto:scheduler_go_proto",
-#        "//server/backends/disk_cache",disk_cache
+#        "//server/backends/disk_cache",
 #        "//server/interfaces",
 #        "//server/remote_cache/action_cache_server",
 #        "//server/remote_cache/byte_stream_server",
@@ -179,4 +181,3 @@ go_test(
 #        "@org_golang_x_sync//errgroup",
 #    ],
 #)
-#

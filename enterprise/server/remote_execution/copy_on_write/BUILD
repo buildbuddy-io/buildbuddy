@@ -6,7 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/snaputil",
         "//proto:remote_execution_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/status",
