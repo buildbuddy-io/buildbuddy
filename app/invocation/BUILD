@@ -51,6 +51,7 @@ ts_library(
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//moment",
+        "@npm//protobufjs",
         "@npm//react",
         "@npm//rxjs",
         "@npm//tslib",
@@ -70,11 +71,7 @@ ts_library(
 ts_library(
     name = "execution_graph_model",
     srcs = ["execution_graph_model.ts"],
-    deps = [
-        "//proto:execution_graph_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-    ],
+    deps = ["//proto:execution_graph_ts_proto"],
 )
 
 ts_library(

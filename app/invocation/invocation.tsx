@@ -115,6 +115,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
         this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
       }
     }
+    if (this.props.invocationId !== this.state.executionGraphModel?.getInvocationId()) {
+      this.setState({ executionGraphModel: undefined });
+    }
     // Update title and favicon
     if (this.state.model) {
       document.title = `${this.state.model.getUser(
