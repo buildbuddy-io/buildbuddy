@@ -2181,8 +2181,8 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress, rfpb.FileMetadata_COMPLETE_FILE_TYPE)
 }
 
-// newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write,
-// it will
+// newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write
+// will:
 // (1) compress the data if shouldCompress is true; and then
 // (2) encrypt the data if encryption is enabled
 // (3) write the data using input wcm's Write method.
