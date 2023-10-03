@@ -168,8 +168,6 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 driver = "overlay"
 runroot = "/run/containers/storage"
 graphroot = "/var/lib/containers/storage"
-[storage.options]
-additionallayerstores=["/var/lib/soci-store/store:ref"]
 `
 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
