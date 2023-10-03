@@ -384,9 +384,9 @@ dockerfile_image(
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "c487fd8a32e278d664c8dc4d4773e35d32d883527bee47c9e11d2947ae2f30a3",
-    strip_prefix = "buildbuddy-toolchain-a88ae46d4a9ae0043f3c79a28ffa91831b7ebed5",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/a88ae46d4a9ae0043f3c79a28ffa91831b7ebed5.tar.gz"],
+    sha256 = "94d015a29a782f1d559d72a088ffa4f01faf35706019f25b82751327e9a2bbcc",
+    strip_prefix = "buildbuddy-toolchain-44663aedc95b7fefdf94d81eb4ad4b48a5a67633",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/44663aedc95b7fefdf94d81eb4ad4b48a5a67633.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
