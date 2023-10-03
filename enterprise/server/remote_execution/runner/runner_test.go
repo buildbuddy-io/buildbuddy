@@ -329,7 +329,7 @@ func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 	assert.Equal(t, 0, pool.ActiveRunnerCount())
 }
 
-func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
+func TestRunnerPool_Shutdown_HandlingActiveTasks(t *testing.T) {
 	seed := time.Now().UnixNano()
 	rand.Seed(seed)
 	t.Logf("Random seed: %d", seed)
@@ -388,10 +388,16 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 		wg.Wait()
 		close(errs)
 		for err := range errs {
-			if err == nil || status.IsUnavailableError(err) {
+			if err == nil {
 				continue
 			}
-			require.NoError(t, err, "runner pool shutdown caused non-retriable error")
+			if isShutdownError(err) {
+				// We want retryable errors so that the operation can be retried on a different
+				// executor
+				require.True(t, status.IsUnavailableError(err))
+				continue
+			}
+			require.NoError(t, err, "runner pool shutdown caused non-retriable/invalid error")
 		}
 	}
 }

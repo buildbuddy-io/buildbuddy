@@ -1713,38 +1713,23 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 	}
 }
 
-//TODO(MAGGIE): Make this a runner pool test
-func TestRC(t *testing.T) {
+func TestRunnerPoolShutdown(t *testing.T) {
 	ctx := context.Background()
 
-	// Make sure we use the same filecache and disk root across restarts
 	testRoot := tempJailerRoot(t)
 	err := os.RemoveAll(filepath.Join(testRoot, "_runner_pool_state.bin"))
 	require.NoError(t, err)
-	filecacheRoot := testfs.MakeDirAll(t, testRoot, "filecache")
-	diskCacheRoot := testfs.MakeTempDir(t)
 
-	var (
-		env    *testenv.TestEnv
-		ta     *testauth.TestAuthenticator
-		pool   interfaces.RunnerPool
-		ctxUS1 context.Context
-	)
-	setup := func() {
-		var err error
-		env = getTestEnv(ctx, t, envOpts{filecacheRootDir: filecacheRoot, cacheRootDir: diskCacheRoot})
-		flags.Set(t, "executor.enable_firecracker", true)
-		// Jailer root dir needs to be < 38 chars
-		flags.Set(t, "executor.root_directory", testRoot)
-		ta = testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
-		env.SetAuthenticator(ta)
-		pool, err = runner.NewPool(env, &runner.PoolOptions{})
-		require.NoError(t, err)
-		ctxUS1, err = ta.WithAuthenticatedUser(ctx, "US1")
-		require.NoError(t, err)
-	}
-
-	setup()
+	env := getTestEnv(ctx, t, envOpts{})
+	flags.Set(t, "executor.enable_firecracker", true)
+	// Jailer root dir needs to be < 38 chars
+	flags.Set(t, "executor.root_directory", testRoot)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	pool, err := runner.NewPool(env, &runner.PoolOptions{})
+	require.NoError(t, err)
+	ctxUS1, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
 
 	smd := &scpb.SchedulingMetadata{
 		TaskSize: &scpb.TaskSize{
@@ -1756,37 +1741,62 @@ func TestRC(t *testing.T) {
 		{Name: "recycle-runner", Value: "true"},
 		{Name: "workload-isolation-type", Value: "firecracker"},
 		{Name: "container-image", Value: "docker://" + busyboxImage},
-		// TODO: Test setting preserve-workspace=true when resuming from
-		// persisted state. This doesn't matter a whole lot for workflows in
-		// particular, because we don't use the workspace and instead override
-		// the working dir to /root/workspace
 	}
-
 	task1 := &repb.ScheduledTask{
 		ExecutionTask: &repb.ExecutionTask{
 			Command: &repb.Command{
-				Arguments: []string{"sh", "-c", "printf foo > /root/KEEP"},
+				Arguments: []string{"sh", "-c", "printf foo"},
 				Platform:  &repb.Platform{Properties: commonProps},
 			},
 		},
 		SchedulingMetadata: smd,
 	}
 
+	// Because firecracker runners use instance variables that are assumed to be
+	// non-nil at certain points, they're susceptible to panics caused by
+	// race conditions if runners are incorrectly cleaned up while a task is
+	// still executing
+	errs := make(chan error)
+	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
 		pool, err = runner.NewPool(env, &runner.PoolOptions{})
 
-		// Try to trigger race condition where we try to take a runner from the pool at same time as it's being removed during shutdown
+		// Try to trigger race condition where we try to take a runner from
+		// the pool at same time as it's being removed during shutdown
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			err = pool.Shutdown(ctx)
-			require.NoError(t, err)
+			if err != nil {
+				errs <- err
+			}
 		}()
-		go func() {
-			r, err := pool.Get(ctxUS1, task1)
-			require.NoError(t, err)
+		for j := 0; j < 10; j++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r, err := pool.Get(ctxUS1, task1)
+				if err != nil {
+					errs <- err
+					return
+				}
 
-			res := r.Run(ctxUS1)
-			require.NoError(t, res.Error)
-		}()
+				res := r.Run(ctxUS1)
+				if res.Error != nil {
+					errs <- err
+				}
+			}()
+		}
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+		if err == nil {
+			continue
+		}
 	}
 }
 

@@ -91,5 +91,6 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_x_sync//errgroup",
     ],
 )

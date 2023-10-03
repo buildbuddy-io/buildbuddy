@@ -371,7 +371,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	case ready:
 		break
 	case removed:
-		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
+		return commandutil.ErrorResult(shutdownError("run task"))
 	default:
 		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", r.state))
 	}
@@ -581,7 +581,7 @@ func (p *pool) checkAddPreconditions(r *commandRunner) *labeledError {
 
 	if p.isShuttingDown {
 		return &labeledError{
-			status.UnavailableError("pool is shutting down; new runners cannot be added."),
+			shutdownError("add new runner"),
 			"pool_shutting_down",
 		}
 	}
@@ -901,7 +901,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
 	}
 	if props.RecycleRunner {
-		r := p.takeWithRetry(ctx, key)
+		r, err := p.takeWithRetry(ctx, key)
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
@@ -913,6 +913,9 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 				metrics.RecycleRunnerRequestStatusLabel: hitStatusLabel,
 			}).Inc()
 			return r, nil
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -931,6 +934,13 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 // newRunner creates a runner either for the given task (if set) or restores the
 // runner from the given state.ContainerState.
 func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState) (*commandRunner, error) {
+	p.mu.Lock()
+	if p.isShuttingDown {
+		p.mu.Unlock()
+		return nil, shutdownError("create new task runner")
+	}
+	p.mu.Unlock()
+
 	if st == nil && state.GetContainerState() == nil {
 		return nil, status.FailedPreconditionError("either a task or saved container state is required to create a runner")
 	}
@@ -967,10 +977,18 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 		r.state = paused
 	}
 
+	// The pool might have shut down while we were starting the VFS. We don't
+	// hold the lock while mounting the VFS since it is relatively slow, so need to re-check
+	// whether the pool shut down here.
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.isShuttingDown {
-		return nil, status.UnavailableErrorf("Could not get a new task runner because the executor is shutting down.")
+		defer func() {
+			if err := r.removeVFS(); err != nil {
+				log.CtxWarningf(ctx, "Remove VFS failed: %s", err)
+			}
+		}()
+		return nil, shutdownError("create new task runner")
 	}
 	p.runners = append(p.runners, r)
 	if *contextBasedShutdown {
@@ -1030,16 +1048,19 @@ func (p *pool) String() string {
 // unpause fails, it retries up to 5 times. For any given attempt, if there
 // are no runners available to unpause, this will return nil. If an unpause
 // operation fails on a given attempt, the runner is removed from the pool.
-func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
+func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, error) {
 	for i := 1; i <= maxUnpauseAttempts; i++ {
 		// Note: take returns (nil, nil) if there are no available runners.
 		r, err := p.take(ctx, key)
 		if err == nil {
-			return r
+			return r, nil
+		} else if isShutdownError(err) {
+			// Return early on non-retryable errors
+			return nil, err
 		}
 		log.CtxWarningf(ctx, "Take attempt %d failed: %s", i, err)
 	}
-	return nil
+	return nil, nil
 }
 
 // take finds the most recently used runner in the pool that matches the given
@@ -1049,7 +1070,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, e
 	defer p.mu.Unlock()
 
 	if p.isShuttingDown {
-		return nil, status.UnavailableErrorf("Could not take a runner from the pool because the executor is shutting down.")
+		return nil, shutdownError("take runner from pool")
 	}
 
 	log.CtxInfof(ctx, "Looking for match for %q in runner pool %s", keyString(key), p)
@@ -1678,4 +1699,14 @@ func truncate(text string, n int, truncateWith string) string {
 		return text[:n] + truncateWith
 	}
 	return text
+}
+
+func shutdownError(operationType string) error {
+	// Return a retryable error so that the operation can be retried on a different
+	// executor
+	return status.UnavailableErrorf("%s failed because the executor is shutting down", operationType)
+}
+
+func isShutdownError(err error) bool {
+	return strings.Contains(err.Error(), "shutting down")
 }
