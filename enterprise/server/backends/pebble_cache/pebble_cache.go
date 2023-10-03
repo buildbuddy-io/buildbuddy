@@ -3296,6 +3296,11 @@ func (p *PebbleCache) updatePebbleMetrics() error {
 	// Block cache metrics.
 	metrics.PebbleCachePebbleBlockCacheSizeBytes.With(nameLabel).Set(float64(m.BlockCache.Size))
 
+	// Write Stall metrics
+	count, dur := p.eventListener.writeStallStats()
+	metrics.PebbleCacheWriteStallCount.With(nameLabel).Set(float64(count))
+	metrics.PebbleCacheWriteStallDurationUsec.With(nameLabel).Observe(float64(dur.Microseconds()))
+
 	p.oldMetrics = *m
 
 	return nil

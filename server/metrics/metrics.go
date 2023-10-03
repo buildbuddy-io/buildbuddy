@@ -2285,6 +2285,25 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheWriteStallCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_write_stall_count",
+		Help:      "The number of write stalls",
+	}, []string{
+		CacheNameLabel,
+	})
+
+	PebbleCacheWriteStallDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_write_stall_duration_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "The duration of write stall in pebble, in microseconds.",
+	}, []string{
+		CacheNameLabel,
+	})
+
 	// Temporary metric to verify AC sampling behavior.
 	PebbleCacheGroupIDSampleCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
