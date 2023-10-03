@@ -116,7 +116,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       }
     }
     if (this.props.invocationId !== this.state.executionGraphModel?.getInvocationId()) {
-      this.setState({ executionGraphModel: undefined });
+      // this.setState({ executionGraphModel: undefined });
     }
     // Update title and favicon
     if (this.state.model) {
@@ -156,7 +156,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       return;
     }
 
-    this.setState({ executionGraphModel: ExecutionGraphModel.loading(invocationId) });
+    // this.setState({ executionGraphModel: ExecutionGraphModel.loading(invocationId) });
     rpcService
       .fetchBytestreamFile(uri, invocationId, "arraybuffer", { storedEncoding: "zstd" })
       .then((buffer) => {
@@ -171,10 +171,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
           // The graph file is just a length-delimited list of Nodes.
           nodes.push(execution_graph.Node.decode(reader.bytes()));
         }
-        this.setState({ executionGraphModel: ExecutionGraphModel.forNodes(invocationId, nodes) });
+        // this.setState({ executionGraphModel: ExecutionGraphModel.forNodes(invocationId, nodes) });
       })
       .catch((e) => {
-        this.setState({ executionGraphModel: ExecutionGraphModel.error(invocationId) });
+        // this.setState({ executionGraphModel: ExecutionGraphModel.error(invocationId) });
         console.log(e);
       });
   }
@@ -406,6 +406,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab === "all" && Boolean(this.state.executionGraphModel) && (
             <ExecutionGraphCard graph={this.state.executionGraphModel!} />
           )}
+          <ExecutionGraphCard graph={this.state.executionGraphModel!} />
 
           {(activeTab === "all" || activeTab == "log") && (
             <BuildLogsCardComponent

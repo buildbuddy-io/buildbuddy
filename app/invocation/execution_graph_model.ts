@@ -90,4 +90,17 @@ export default class ExecutionGraphModel {
     });
     return out;
   }
+
+  getNode(id: number): Node | undefined {
+    return this.nodes.get(id);
+  }
+
+  getAllNodes() {
+    // Something something immutability something.
+    return this.nodes;
+  }
+
+  getOutgoingEdges(id: number): number[] {
+    return [...(this.outgoingEdges.get(id) ?? [])];
+  }
 }
