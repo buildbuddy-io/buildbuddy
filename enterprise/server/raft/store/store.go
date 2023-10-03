@@ -570,10 +570,11 @@ type Store struct {
 	metaRangeMu   sync.Mutex
 	metaRangeData []byte
 
-	leaderUpdatedCB listener.LeaderCB
-
 	fileStorer filestore.Store
-	eg         *errgroup.Group
+
+	closeLeaderUpdatesChan func()
+	eg                     errgroup.Group
+	egCancel               context.CancelFunc
 }
 
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
@@ -599,7 +600,6 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 		fileStorer:    filestore.New(),
-		eg:            &errgroup.Group{},
 	}
 
 	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
@@ -609,7 +609,6 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
 
-	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	usages, err := newUsageTracker(s, gossipManager, partitions)
 	if err != nil {
 		return nil, err
@@ -617,8 +616,6 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 	s.usages = usages
 
 	gossipManager.AddListener(s)
-
-	listener.DefaultListener().RegisterLeaderUpdatedCB(&s.leaderUpdatedCB)
 	statusz.AddSection("raft_store", "Store", s)
 
 	go s.queryForMetarange()
@@ -726,16 +723,23 @@ func (s *Store) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
-	if !s.isLeader(info.ShardID) {
-		return
+func (s *Store) handleLeaderUpdates(ctx context.Context, leaderUpdatesChan <-chan raftio.LeaderInfo) error {
+	for {
+		select {
+		case info := <-leaderUpdatesChan:
+			if !s.isLeader(info.ShardID) {
+				continue
+			}
+			rd := s.lookupRange(info.ShardID)
+			if rd == nil {
+				log.Errorf("Got callback for shard %d but range not found", info.ShardID)
+				continue
+			}
+			go s.maybeAcquireRangeLease(rd)
+		case <-ctx.Done():
+			return nil
+		}
 	}
-	rd := s.lookupRange(info.ShardID)
-	if rd == nil {
-		log.Errorf("Got callback for shard %d but range not found", info.ShardID)
-		return
-	}
-	go s.maybeAcquireRangeLease(rd)
 }
 
 func (s *Store) NotifyUsage(replicaUsage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {
@@ -772,17 +776,28 @@ func (s *Store) Start() error {
 		s.grpcServer.Serve(lis)
 	}()
 
+	leaderUpdatesChan, closeLeaderUpdatesChan := listener.DefaultListener().AddLeaderChangeListener()
+	s.closeLeaderUpdatesChan = closeLeaderUpdatesChan
+
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	s.egCancel = cancelFunc
+
+	eg, gctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		return s.handleLeaderUpdates(gctx, leaderUpdatesChan)
+	})
+
 	return nil
 }
 
 func (s *Store) Stop(ctx context.Context) error {
 	s.dropLeadershipForShutdown()
-	if err := s.eg.Wait(); err != nil {
-		return err
-	}
-	s.log.Info("Store: waitgroups finished")
 
-	listener.DefaultListener().UnregisterLeaderUpdatedCB(&s.leaderUpdatedCB)
+	s.egCancel()
+	s.eg.Wait()
+	s.closeLeaderUpdatesChan()
+
+	s.log.Info("Store: waitgroups finished")
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 

@@ -3,6 +3,7 @@ package listener
 import (
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4/raftio"
 )
 
@@ -10,48 +11,69 @@ var (
 	defaultListener = NewRaftListener()
 )
 
-type LeaderCB func(info raftio.LeaderInfo)
-type NodeCB func(info raftio.NodeInfo)
-type ConnCB func(info raftio.ConnectionInfo)
-type SnapshotCB func(info raftio.SnapshotInfo)
-type EntryCB func(info raftio.EntryInfo)
-
 func DefaultListener() *RaftListener {
 	return defaultListener
 }
 
 type RaftListener struct {
-	mu                     sync.Mutex
-	nodeReadyCallbacks     map[*NodeCB]struct{}
-	leaderUpdatedCallbacks map[*LeaderCB]struct{}
+	mu sync.Mutex
+
+	lastLeaderInfo        *raftio.LeaderInfo
+	leaderChangeListeners []chan raftio.LeaderInfo
 }
 
 func NewRaftListener() *RaftListener {
 	return &RaftListener{
-		mu:                     sync.Mutex{},
-		nodeReadyCallbacks:     make(map[*NodeCB]struct{}),
-		leaderUpdatedCallbacks: make(map[*LeaderCB]struct{}),
+		mu: sync.Mutex{},
+
+		leaderChangeListeners: make([]chan raftio.LeaderInfo, 0),
 	}
+}
+
+// Returns a channel and associated close function. raftio.LeaderInfo updates
+// will be published on the channel when callbacks are received by the library.
+// Listeners *must not block* or they risk dropping updates.
+func (rl *RaftListener) AddLeaderChangeListener() (<-chan raftio.LeaderInfo, func()) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	ch := make(chan raftio.LeaderInfo, 10)
+	rl.leaderChangeListeners = append(rl.leaderChangeListeners, ch)
+	closeFunc := func() {
+		rl.mu.Lock()
+		defer rl.mu.Unlock()
+		for i, l := range rl.leaderChangeListeners {
+			if l == ch {
+				rl.leaderChangeListeners = append(rl.leaderChangeListeners[:i], rl.leaderChangeListeners[:i+1]...)
+			}
+		}
+	}
+
+	if rl.lastLeaderInfo != nil {
+		ch <- *rl.lastLeaderInfo
+	}
+
+	return ch, closeFunc
 }
 
 func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
+	log.Debugf("LeaderUpdated: %+v", info)
+
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	for cbp := range rl.leaderUpdatedCallbacks {
-		cb := *cbp
-		cb(info)
+	rl.lastLeaderInfo = &info
+
+	for _, ch := range rl.leaderChangeListeners {
+		select {
+		case ch <- info:
+			continue
+		default:
+			log.Warning("Dropped LeaderUpdate callback")
+		}
 	}
 }
 
-func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	for cbp := range rl.nodeReadyCallbacks {
-		cb := *cbp
-		cb(info)
-	}
-}
-
+func (rl *RaftListener) NodeReady(info raftio.NodeInfo)                   {}
 func (rl *RaftListener) NodeHostShuttingDown()                            {}
 func (rl *RaftListener) NodeUnloaded(info raftio.NodeInfo)                {}
 func (rl *RaftListener) NodeDeleted(info raftio.NodeInfo)                 {}
@@ -67,27 +89,3 @@ func (rl *RaftListener) SnapshotCreated(info raftio.SnapshotInfo)         {}
 func (rl *RaftListener) SnapshotCompacted(info raftio.SnapshotInfo)       {}
 func (rl *RaftListener) LogCompacted(info raftio.EntryInfo)               {}
 func (rl *RaftListener) LogDBCompacted(info raftio.EntryInfo)             {}
-
-func (rl *RaftListener) RegisterNodeReadyCB(cb *NodeCB) {
-	rl.mu.Lock()
-	rl.nodeReadyCallbacks[cb] = struct{}{}
-	rl.mu.Unlock()
-}
-
-func (rl *RaftListener) UnregisterNodeReadyCB(cb *NodeCB) {
-	rl.mu.Lock()
-	delete(rl.nodeReadyCallbacks, cb)
-	rl.mu.Unlock()
-}
-
-func (rl *RaftListener) RegisterLeaderUpdatedCB(cb *LeaderCB) {
-	rl.mu.Lock()
-	rl.leaderUpdatedCallbacks[cb] = struct{}{}
-	rl.mu.Unlock()
-}
-
-func (rl *RaftListener) UnregisterLeaderUpdatedCB(cb *LeaderCB) {
-	rl.mu.Lock()
-	delete(rl.leaderUpdatedCallbacks, cb)
-	rl.mu.Unlock()
-}
