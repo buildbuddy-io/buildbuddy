@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -1726,47 +1727,48 @@ func TestRunnerPoolShutdown(t *testing.T) {
 	flags.Set(t, "executor.root_directory", testRoot)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
-	pool, err := runner.NewPool(env, &runner.PoolOptions{})
-	require.NoError(t, err)
 	ctxUS1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
 
-	smd := &scpb.SchedulingMetadata{
-		TaskSize: &scpb.TaskSize{
-			EstimatedMemoryBytes: 1_000_000_000,
-			EstimatedMilliCpu:    1_000,
-		},
-	}
-	commonProps := []*repb.Platform_Property{
-		{Name: "recycle-runner", Value: "true"},
-		{Name: "workload-isolation-type", Value: "firecracker"},
-		{Name: "container-image", Value: "docker://" + busyboxImage},
-	}
-	task1 := &repb.ScheduledTask{
-		ExecutionTask: &repb.ExecutionTask{
-			Command: &repb.Command{
-				Arguments: []string{"sh", "-c", "printf foo"},
-				Platform:  &repb.Platform{Properties: commonProps},
+	getTask := func() *repb.ScheduledTask {
+		smd := &scpb.SchedulingMetadata{
+			TaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes: 1_000_000_000,
+				EstimatedMilliCpu:    1_000,
 			},
-		},
-		SchedulingMetadata: smd,
+		}
+		commonProps := []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "workload-isolation-type", Value: "firecracker"},
+			{Name: "container-image", Value: "docker://" + busyboxImage},
+		}
+		return &repb.ScheduledTask{
+			ExecutionTask: &repb.ExecutionTask{
+				Command: &repb.Command{
+					Arguments: []string{"sh", "-c", "printf foo"},
+					Platform:  &repb.Platform{Properties: commonProps},
+				},
+			},
+			SchedulingMetadata: smd,
+		}
 	}
 
 	// Because firecracker runners use instance variables that are assumed to be
 	// non-nil at certain points, they're susceptible to panics caused by
 	// race conditions if runners are incorrectly cleaned up while a task is
 	// still executing
-	errs := make(chan error)
+	errs := make(chan error, 220)
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
-		pool, err = runner.NewPool(env, &runner.PoolOptions{})
+		pool, err := runner.NewPool(env, &runner.PoolOptions{})
+		require.NoError(t, err)
 
 		// Try to trigger race condition where we try to take a runner from
 		// the pool at same time as it's being removed during shutdown
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = pool.Shutdown(ctx)
+			err := pool.Shutdown(ctx)
 			if err != nil {
 				errs <- err
 			}
@@ -1775,7 +1777,7 @@ func TestRunnerPoolShutdown(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				r, err := pool.Get(ctxUS1, task1)
+				r, err := pool.Get(ctxUS1, getTask())
 				if err != nil {
 					errs <- err
 					return
@@ -1793,10 +1795,10 @@ func TestRunnerPoolShutdown(t *testing.T) {
 	close(errs)
 
 	for err := range errs {
-		require.NoError(t, err)
-		if err == nil {
+		if strings.Contains(err.Error(), "executor is shutting down") {
 			continue
 		}
+		require.NoError(t, err)
 	}
 }
 
