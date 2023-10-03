@@ -317,8 +317,9 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
         bundleArray.push(b);
       })
     );
+    console.log(`eidtobidToBundle`);
+    console.log(eidToBidToBundleMap);
 
-    // XXX: You are here.
     const eidToBundleSetMap: Map<number, BundleArrayWithIndex[]> = new Map();
     entries.forEach((e) => {
       let bundleSet: BundleArrayWithIndex[] = [];
@@ -363,8 +364,10 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
     options.bigc ||= node_width + c;
 
     entries.forEach((e) => {
-      const numberOfBundles = eidToBidToBundleMap.get(e.id)?.entries.length ?? 0;
+      const numberOfBundles = eidToBidToBundleMap.get(e.id)?.size ?? 0;
       e.height = (Math.max(1, numberOfBundles) - 1) * metro_d;
+      console.log(`eid: ${e.id} nob: ${numberOfBundles} height: ${e.height}`);
+      console.log(eidToBidToBundleMap.get(e.id));
     });
 
     var x_offset = padding;
@@ -384,22 +387,14 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
     let i = 0;
     levels.forEach((l, levelIndex) => {
       levelToBundlesMap.get(levelIndex)?.forEach((b, bundleIndex, bundleValues) => {
-        console.log(b);
-        console.log(
-          d3Max(b.parentEntries, (d: number) => {
-            console.log("d");
-            console.log(d);
-            console.log(eidToEntryMap.get(d));
-            return eidToEntryMap.get(d).x;
-          })
-        );
         b.x =
           d3Max(b.parentEntries, (d: number) => {
             return eidToEntryMap.get(d).x;
           }) +
           node_width +
           (bundleValues.length - 1 - b.indexInLevel) * bundle_width;
-        b.y = i * node_height;
+        // XXX: wrong / different, but i dont get why original ever should have worked.
+        b.y = i * 2 * node_height;
       });
       i += l.entries.length;
     });
@@ -427,10 +422,7 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
 
       l.xt = target.x;
       l.yt =
-        target.y +
-        individualBundle.indexInLevel * metro_d -
-        (bundleArrayWithIndex.bundles.length * metro_d) / 2 +
-        metro_d / 2;
+        target.y + bundleArrayWithIndex.bullshitIndex * metro_d - (bundleArrays.length * metro_d) / 2 + metro_d / 2;
       l.xb = l.bundle?.x ?? 0;
       l.yb = l.bundle?.y ?? 0;
       l.xs = source.x;
@@ -473,14 +465,15 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
       if (!individualBundle) {
         return;
       }
-
+      if (target.id === 0) {
+        console.log(`bindex: ${bundleArrayWithIndex.bullshitIndex}`);
+      }
       l.yt =
-        target.y +
-        individualBundle.indexInLevel * metro_d -
-        (bundleArrayWithIndex.bundles.length * metro_d) / 2 +
-        metro_d / 2;
+        target.y + bundleArrayWithIndex.bullshitIndex * metro_d - (bundleArrays.length * metro_d) / 2 + metro_d / 2;
       l.ys = source.y;
+      console.log("BIGC:" + options.bigc);
       l.c1 = source.level - target.level > 1 ? Math.min(options.bigc ?? 0, l.xb - l.xt, l.yb - l.yt) - c : c;
+      console.log(l);
       l.c2 = c;
     });
 
@@ -496,12 +489,6 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
 
     return { levels, nodes: entries, nodes_index: eidToEntryMap, links, bundles, layout };
   }
-  /*
-  data = [
-  [{ id: 'Chaos' }],
-  [{ id: 'Gaea', parents: ['Chaos'] }, { id: 'Uranus' }],
-]
-  */
 
   render() {
     /*let primaryNodes: execution_graph.Node[];
@@ -511,6 +498,10 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
     } else if (this.props.selectedTarget !== undefined) {
       primaryNodes = this.props.graph.getNodesForTarget(this.props.selectedTarget);
     }*/
+
+    console.log("GRAPH:");
+    console.log(this.props.graph);
+
     const data = [
       { entries: [this.createEntry(0, [])] },
       { entries: [this.createEntry(1, [0]), this.createEntry(2, [])] },
