@@ -39,6 +39,7 @@ type SuggestionMatcher = (params: MatchParams) => Suggestion | null;
 // Recommended --execution_filter values for iOS builds.
 const IOS_EXECUTION_FILTER = {
   noRemote: [
+    "AppleLipo",
     "BitcodeSymbolsCopy",
     "BundleApp",
     "BundleTreeApp",
