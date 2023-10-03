@@ -2002,17 +2002,17 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.PebbleKey, chunkData []byte) error {
 	ctx := cdcw.ctx
 	p := cdcw.pc
-	inlineWriter := p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
-	wcm, err := p.newWrappedWriter(ctx, inlineWriter, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed, cdcw.fileType)
+
+	cwc, err := p.newWrappedWriter(ctx, fileRecord, key, cdcw.shouldCompress || cdcw.isCompressed, cdcw.fileType)
 	if err != nil {
 		return err
 	}
-	defer wcm.Close()
-	_, err = wcm.Write(chunkData)
+	defer cwc.Close()
+	_, err = cwc.Write(chunkData)
 	if err != nil {
 		return status.InternalErrorf("failed to write raw chunk: %s", err)
 	}
-	if err := wcm.Commit(); err != nil {
+	if err := cwc.Commit(); err != nil {
 		return status.InternalErrorf("failed to commit while writing raw chunk: %s", err)
 	}
 	return nil
@@ -2172,31 +2172,13 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		return nil, err
 	}
 
-	if p.averageChunkSizeBytes > 0 {
-		if r.GetDigest().GetSizeBytes() < int64(p.averageChunkSizeBytes) {
-			// Files smaller than averageChunkSizeBytes are highly like to only
-			// have one chunk. We write them directly inline to avoid unnecessary
-			// processing.
-			wcm := p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
-			return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress, rfpb.FileMetadata_COMPLETE_FILE_TYPE)
-		}
-		// we enabled cdc chunking
+	if p.averageChunkSizeBytes > 0 && r.GetDigest().GetSizeBytes() >= int64(p.averageChunkSizeBytes) {
+		// Files smaller than averageChunkSizeBytes are highly like to only
+		// have one chunk, so we skip cdc-chunking step.
 		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
 	}
 
-	var wcm interfaces.MetadataWriteCloser
-	if r.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
-		wcm = p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
-	} else {
-		blobDir := p.blobDir()
-		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)
-		if err != nil {
-			return nil, err
-		}
-		wcm = fw
-	}
-
-	return p.newWrappedWriter(ctx, wcm, fileRecord, key, shouldCompress, rfpb.FileMetadata_COMPLETE_FILE_TYPE)
+	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress, rfpb.FileMetadata_COMPLETE_FILE_TYPE)
 }
 
 // newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write,
@@ -2205,7 +2187,18 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 // (2) encrypt the data if encryption is enabled
 // (3) write the data using input wcm's Write method.
 // On Commit, it will write the metadata for fileRecord.
-func (p *PebbleCache) newWrappedWriter(ctx context.Context, wcm interfaces.MetadataWriteCloser, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, fileType rfpb.FileMetadata_FileType) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, fileType rfpb.FileMetadata_FileType) (interfaces.CommittedWriteCloser, error) {
+	var wcm interfaces.MetadataWriteCloser
+	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
+		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
+	} else {
+		blobDir := p.blobDir()
+		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		wcm = fw
+	}
 	// Grab another lease and pass the Close function to the writer
 	// so it will be closed when the writer is.
 	db, err := p.leaser.DB()
