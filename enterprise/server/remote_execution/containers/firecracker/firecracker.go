@@ -1588,8 +1588,10 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 		lastErr = err
 	}
 	if err := networking.DeleteRoute(ctx, c.vmIdx); err != nil {
-		log.Warningf("Networking cleanup failure. DeleteRoute for vm idx %d failed with: %s", c.vmIdx, err)
-		lastErr = err
+		if !strings.Contains(err.Error(), "No such process") {
+			log.Warningf("Networking cleanup failure. DeleteRoute for vm idx %d failed with: %s", c.vmIdx, err)
+			lastErr = err
+		}
 	}
 	if err := networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx); err != nil {
 		log.Warningf("Networking cleanup failure. DeleteRuleIfSecondaryNetworkEnabled for vm idx %d failed with: %s", c.vmIdx, err)
