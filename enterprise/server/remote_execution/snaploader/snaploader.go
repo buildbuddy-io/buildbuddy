@@ -117,6 +117,9 @@ type CacheSnapshotOptions struct {
 
 	// Labeled map of chunked artifacts backed by copy_on_write.COWStore storage.
 	ChunkedFiles map[string]*copy_on_write.COWStore
+
+	// Whether the snapshot is from a recycled VM
+	Recycled bool
 }
 
 type UnpackedSnapshot struct {
@@ -386,7 +389,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		}
 	}
 	for name, cow := range opts.ChunkedFiles {
-		treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow)
+		treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts.Recycled)
 		if err != nil {
 			return status.WrapErrorf(err, "cache %q COW", name)
 		}
@@ -476,7 +479,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore) (*repb.Digest, error) {
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, recycled bool) (*repb.Digest, error) {
 	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err
@@ -554,13 +557,19 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
+	recycleStatus := "clean"
+	if recycled {
+		recycleStatus = "recycled"
+	}
 	metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
-		metrics.GroupID:  gid,
-		metrics.FileName: name,
+		metrics.GroupID:              gid,
+		metrics.FileName:             name,
+		metrics.RecycledRunnerStatus: recycleStatus,
 	}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
 	metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
-		metrics.GroupID:  gid,
-		metrics.FileName: name,
+		metrics.GroupID:              gid,
+		metrics.FileName:             name,
+		metrics.RecycledRunnerStatus: recycleStatus,
 	}).Add(float64(dirtyBytes))
 
 	return treeDigest, nil
@@ -626,6 +635,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	// Add the COW to cache. This will also compute chunk digests.
 	opts := &CacheSnapshotOptions{
 		ChunkedFiles: map[string]*copy_on_write.COWStore{rootfsFileName: cow},
+		Recycled:     false,
 	}
 	if err := l.CacheSnapshot(ctx, key, opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")

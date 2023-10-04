@@ -991,7 +991,7 @@ var (
 	// histogram_quantile(
 	//   0.95,
 	//   sum by(le, group_id) (
-	//      rate(buildbuddy_firecracker_stage_duration_msec_bucket{job="executor-workflows", stage="task_lifecycle"}[5m])
+	//      rate(buildbuddy_firecracker_stage_duration_usec_bucket{job="executor-workflows", stage="task_lifecycle"}[5m])
 	//     )
 	//  )
 	// ```
@@ -1005,6 +1005,7 @@ var (
 	}, []string{
 		GroupID,
 		FileName,
+		RecycledRunnerStatus,
 	})
 
 	// #### Examples
@@ -1014,7 +1015,7 @@ var (
 	// # Visualize with the Bar Gauge type
 	// # Legend: {{le}}
 	// # Format: Heatmap
-	// sum(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio) by(le)
+	// sum(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket) by(le)
 	// ```
 
 	COWSnapshotDirtyBytes = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1025,6 +1026,7 @@ var (
 	}, []string{
 		GroupID,
 		FileName,
+		RecycledRunnerStatus,
 	})
 
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
