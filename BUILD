@@ -38,6 +38,7 @@ write_file(
                     "asmdecl",
                     "assign",
                     "atomicalign",
+                    # "cgocall",
                     "buildtag",
                     "cgocall",
                     "composites",

@@ -25,6 +25,6 @@ go_library(
 go_binary(
     name = "goinit",
     embed = [":goinit_lib"],
-    # pure = "on", # causes the init file to require an ELF interpreter which the kernel does not have access to
+    pure = "on",
     static = "on",
 )

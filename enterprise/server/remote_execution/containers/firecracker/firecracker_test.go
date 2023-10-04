@@ -79,12 +79,6 @@ var (
 func init() {
 	// Set umask to match the executor process.
 	syscall.Umask(0)
-
-	// Some tests need iptables which is in /usr/sbin.
-	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
-	if err != nil {
-		log.Fatal(err.Error())
-	}
 }
 
 // cleanExecutorRoot cleans all entries in the test root dir *except* for cached
@@ -186,6 +180,10 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
+
+	// Some tests need iptables which is in /usr/sbin.
+	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	require.NoError(t, err)
 
 	return env
 }
@@ -447,7 +445,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB * 2, // small to make snapshotting faster.
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
@@ -765,7 +763,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		ActionWorkingDirectory: rootDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB * 2,
+			MemSizeMb:         minMemSizeMB,
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
@@ -937,7 +935,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         3500,
+			MemSizeMb:         2500,
 			ScratchDiskSizeMb: 100,
 		},
 		JailerRoot: tempJailerRoot(t),

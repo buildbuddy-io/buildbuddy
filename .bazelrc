@@ -37,8 +37,10 @@ build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
-build:remote-shared --platforms=@buildbuddy_toolchain//:platform_bare_linux
-build:remote-shared --host_platform=@buildbuddy_toolchain//:platform_bare_linux
+build:remote-shared --platforms=@buildbuddy_toolchain//:platform_linux
+build:remote-shared --host_platform=@buildbuddy_toolchain//:platform_linux
+build:remote-shared --crosstool_top=@buildbuddy_toolchain//:ubuntu_cc_toolchain_suite
+build:remote-shared --extra_toolchains=@buildbuddy_toolchain//:ubuntu_cc_toolchain
 build:remote-shared --extra_toolchains=//:sh_toolchain
 
 # Build with --config=remote to use BuildBuddy RBE.
@@ -144,11 +146,6 @@ build:release-m1 --config=release-shared
 build:auto-release --config=remote
 build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 build:auto-release -c opt
-
-build:linux --incompatible_enable_cc_toolchain_resolution
-build:linux --action_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-build:linux --@io_bazel_rules_go//go/config:static=true
-build:linux --copt=-fPIC
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
