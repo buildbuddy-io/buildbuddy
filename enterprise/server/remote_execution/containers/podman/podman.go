@@ -109,10 +109,10 @@ const (
 	enableStreamingStoreArg = "--storage-opt=additionallayerstore=/var/lib/soci-store/store:ref"
 
 	// The directory where soci artifact blobs are stored
-	sociBlobDirectory = "/var/lib/soci-snapshotter-grpc/content/blobs/sha256/"
+	sociBlobDirectory = "/var/lib/containers/soci/content/blobs/sha256/"
 
 	// The directory whre soci indexes are stored
-	sociIndexDirectory = "/var/lib/soci-snapshotter-grpc/indexes/"
+	sociIndexDirectory = "/var/lib/containers/soci/indexes/"
 
 	sociStorePath         = "/var/lib/soci-store/store"
 	sociStoreCredCacheTtl = 1 * time.Hour
