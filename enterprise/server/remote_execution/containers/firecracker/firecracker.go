@@ -1862,6 +1862,7 @@ func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Co
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
 func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
+	log.Warningf("In firecracker exec")
 	log.CtxInfof(ctx, "Executing command.")
 
 	ctx, span := tracing.StartSpan(ctx)

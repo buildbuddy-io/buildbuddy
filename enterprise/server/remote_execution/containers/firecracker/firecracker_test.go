@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -1749,6 +1750,119 @@ func TestMergeDiffSnapshot(t *testing.T) {
 			require.FailNowf(t, "Merged bytes not equal to expected bytes", "")
 		}
 	}
+}
+
+func TestMaggie(t *testing.T) {
+	seed := time.Now().UnixNano()
+	rand.Seed(seed)
+	t.Logf("Random seed: %d", seed)
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	flags.Set(t, "executor.enable_firecracker", true)
+	// Jailer root dir needs to be < 38 chars
+	testRoot := tempJailerRoot(t)
+	flags.Set(t, "executor.root_directory", testRoot)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	newTask := func() *repb.ScheduledTask {
+		smd := &scpb.SchedulingMetadata{
+			TaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes: 1_000_000_000,
+				EstimatedMilliCpu:    1_000,
+			},
+		}
+		commonProps := []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "workload-isolation-type", Value: "firecracker"},
+			{Name: "container-image", Value: "docker://" + busyboxImage},
+			// TODO: Test setting preserve-workspace=true when resuming from
+			// persisted state. This doesn't matter a whole lot for workflows in
+			// particular, because we don't use the workspace and instead override
+			// the working dir to /root/workspace
+		}
+		return &repb.ScheduledTask{
+			ExecutionTask: &repb.ExecutionTask{
+				Command: &repb.Command{
+					Arguments: []string{"sh", "-c", "printf foo > /root/KEEP"},
+					Platform:  &repb.Platform{Properties: commonProps},
+				},
+			},
+			SchedulingMetadata: smd,
+		}
+	}
+
+	// Run 30 trials where we create a pool that runs 50 tasks using runner
+	// recycling, shutting down the pool after roughly half of the tasks have been
+	// started.
+	for i := 0; i < 30; i++ {
+		pool, err := runner.NewPool(env, &runner.PoolOptions{})
+		require.NoError(t, err)
+		numTasks := 50
+		tasksStarted := make(chan struct{}, numTasks)
+		errs := make(chan error, numTasks)
+		runTask := func() error {
+			r, err := pool.Get(ctx, newTask())
+			if err != nil {
+				return err
+			}
+			// Random delay to simulate downloading inputs
+			sleepRandMicros(10)
+			tasksStarted <- struct{}{}
+			if result := r.Run(ctx); result.Error != nil {
+				return result.Error
+			}
+			// Random delay to simulate uploading outputs
+			sleepRandMicros(10)
+			if err := pool.Add(ctx, r.(*runner.CommandRunner)); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		var wg sync.WaitGroup
+		for i := 0; i < numTasks; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs <- runTask()
+			}()
+			// Random, tiny delay to stagger the tasks a bit more.
+			sleepRandMicros(1)
+		}
+
+		nStarted := 0
+		for range tasksStarted {
+			nStarted++
+			if nStarted == numTasks/2 {
+				err := pool.Shutdown(ctx)
+				require.NoError(t, err)
+				break
+			}
+		}
+
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err == nil {
+				continue
+			}
+			if strings.Contains(err.Error(), "shutting down") {
+				// We want retryable errors so that the operation can be retried on a different
+				// executor
+				require.True(t, status.IsUnavailableError(err))
+				continue
+			}
+			require.NoError(t, err, "runner pool shutdown caused non-retriable/invalid error")
+		}
+	}
+}
+
+func sleepRandMicros(max int64) {
+	time.Sleep(time.Duration(rand.Int63n(max) * int64(time.Microsecond)))
 }
 
 func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
