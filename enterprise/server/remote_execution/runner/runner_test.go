@@ -158,6 +158,12 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	p, err := NewPool(env, cfg.PoolOptions)
 	require.NoError(t, err)
 	require.NotNil(t, p)
+	t.Cleanup(func() {
+		// Always make sure we can cleanly shut down the pool at the end of each
+		// test.
+		err := p.Shutdown(env.GetServerContext())
+		require.NoError(t, err)
+	})
 	return p
 }
 
