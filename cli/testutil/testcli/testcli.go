@@ -99,37 +99,7 @@ func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
 // to use the pre-downloaded bazel binary from test runfiles.
 func NewWorkspace(t *testing.T) string {
 	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": `
-workspace(name = "test")
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
-
-HERMETIC_CC_TOOLCHAIN_VERSION = "v2.0.0"
-
-http_archive(
-    name = "hermetic_cc_toolchain",
-    sha256 = "57f03a6c29793e8add7bd64186fc8066d23b5ffd06fe9cc6b0b8c499914d3a65",
-    urls = [
-        "https://mirror.bazel.build/github.com/uber/hermetic_cc_toolchain/releases/download/{0}/hermetic_cc_toolchain-{0}.tar.gz".format(HERMETIC_CC_TOOLCHAIN_VERSION),
-        "https://github.com/uber/hermetic_cc_toolchain/releases/download/{0}/hermetic_cc_toolchain-{0}.tar.gz".format(HERMETIC_CC_TOOLCHAIN_VERSION),
-    ],
-)
-
-load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
-
-# Plain zig_toolchains() will pick reasonable defaults. See
-# toolchain/defs.bzl:toolchains on how to change the Zig SDK version and
-# download URL.
-zig_toolchains()
-
-register_toolchains(
-    "@zig_sdk//toolchain:linux_amd64_musl",
-    "@zig_sdk//toolchain:linux_arm64_musl",
-    "@zig_sdk//toolchain:darwin_amd64",
-    "@zig_sdk//toolchain:darwin_arm64",
-    "@zig_sdk//toolchain:windows_amd64",
-    "@zig_sdk//toolchain:windows_arm64",
-)
-`,
+		"WORKSPACE":     "",
 		".bazelversion": testbazel.BinaryPath(t),
 	})
 	// Make it a git workspace to test git metadata.
