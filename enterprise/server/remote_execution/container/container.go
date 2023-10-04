@@ -482,9 +482,6 @@ func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
-	log.Infof("Exec()...")
-	defer log.Infof("Exec done!")
-
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.removed {
@@ -524,10 +521,8 @@ func (t *TracedCommandContainer) Remove(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
-	log.Infof("Remove()")
-
-	// Get an *exclusive* lock here to ensure any other pending operations are
-	// completed before we remove.
+	// Get an *exclusive* lock here to ensure any other concurrent operations
+	// are completed before we remove.
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.removed {
