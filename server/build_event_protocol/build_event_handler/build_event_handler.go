@@ -21,7 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -457,7 +457,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			ctx := usageutil.WithLocalServerLabels(ctx)
 
 			fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
-			if urlutil.GetDomain(uri.Hostname()) == build_buddy_url.Domain() {
+			if urlutil.GetDomain(uri.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
 				if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
 					log.CtxError(ctx, err.Error())
 				}
