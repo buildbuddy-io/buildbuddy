@@ -2033,11 +2033,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	}
 	if err := c.cleanupNetworking(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error cleaning up networking: %s\n%s", err, string(c.vmLog.Tail()))
-		// TODO(Maggie): Debug root cause for failures
-		// Don't fail if networking cleanup was not successful bc it's preventing VMs from
-		// being recycled. Even if they aren't properly cleaned up, leftover
-		// rules shouldn't prevent recycled VMs from working
-		// lastErr = err
+		lastErr = err
 	}
 
 	if c.vfsServer != nil {
