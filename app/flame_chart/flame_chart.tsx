@@ -7,7 +7,7 @@ import { AnimationLoop } from "../util/animation_loop";
 import { createSvgElement } from "../util/dom";
 import { truncateDecimals } from "../util/math";
 import { BlockModel, buildFlameChartModel, FlameChartModel, LineModel } from "./flame_chart_model";
-import { Profile } from "./profile_model";
+import { Profile } from "../trace/trace_events";
 import {
   BLOCK_HEIGHT,
   INITIAL_END_TIME_SECONDS,
@@ -637,7 +637,7 @@ class HoveredLineInfo extends React.Component<HoveredLineInfoState> {
       event: { name, ts, value },
     } = point;
     const timestamp = truncateDecimals(ts / MICROSECONDS_PER_SECOND, 3);
-    const val = truncateDecimals(value, 3);
+    const val = truncateDecimals(Number(value), 3);
 
     return (
       <div

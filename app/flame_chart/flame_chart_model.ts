@@ -1,5 +1,5 @@
 import { getUniformBrightnessColor, getMaterialChartColor, getLightMaterialChartColor } from "../util/color";
-import { buildThreadTimelines, buildTimeSeries, ThreadEvent, TraceEvent, TimeSeriesEvent } from "./profile_model";
+import { buildThreadTimelines, buildTimeSeries, ThreadEvent, TraceEvent, TimeSeriesEvent } from "../trace/trace_events";
 import capabilities from "../capabilities/capabilities";
 import {
   BLOCK_HEIGHT,
@@ -8,7 +8,6 @@ import {
   SECTION_PADDING_BOTTOM,
   SECTION_PADDING_TOP,
   TIME_SERIES_HEIGHT,
-  POINT_RADIUS,
 } from "./style_constants";
 
 const MICROSECONDS_PER_SECOND = 1000 * 1000;
@@ -117,7 +116,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
 
       const darkColor = getMaterialChartColor(index);
       const lightColor = getLightMaterialChartColor(index);
-      const yMax = Math.max(...events.map((event) => event.value));
+      const yMax = Math.max(...events.map((event) => Number(event.value)));
       const xMax = Math.max(...events.map((event) => event.ts / MICROSECONDS_PER_SECOND));
       const xMin = Math.min(...events.map((event) => event.ts / MICROSECONDS_PER_SECOND));
       let d = `M ${xMin} ${lowerBoundY}`;
@@ -125,7 +124,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
       for (const event of events) {
         const { name, ts, value } = event;
         const x = ts / MICROSECONDS_PER_SECOND;
-        const y = lowerBoundY - (value / yMax) * TIME_SERIES_HEIGHT;
+        const y = lowerBoundY - (Number(value) / yMax) * TIME_SERIES_HEIGHT;
         d += `L ${x} ${y} `;
         // We use the rounded x as lookup key (instead of the exact value of x)
         // when we render a reference vertical line and point on the path; so that

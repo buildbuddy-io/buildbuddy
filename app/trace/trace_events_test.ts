@@ -1,4 +1,4 @@
-import { parseProfile } from "./profile_model";
+import { parseProfile } from "./trace_events";
 
 const INCOMPLETE_PROFILE = `
 {"otherData":{"build_id":"799cc58b-8695-4e70-a772-7a15472aa55b","output_base":"/output-base","date":"Wed Oct 26 20:24:01 UTC 2022"},"traceEvents":[
