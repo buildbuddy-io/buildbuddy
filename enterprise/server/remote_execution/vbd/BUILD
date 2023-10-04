@@ -7,6 +7,7 @@ go_library(
     srcs = ["vbd.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd",
     deps = [
+        "//enterprise/server/util/flock",
         "//server/util/log",
         "//server/util/status",
         "@com_github_hanwen_go_fuse_v2//fs",

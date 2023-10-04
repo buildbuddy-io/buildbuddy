@@ -76,9 +76,19 @@ var (
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
 
+var (
+	cleaned = map[testing.TB]bool{}
+)
+
 func init() {
 	// Set umask to match the executor process.
 	syscall.Umask(0)
+
+	// Some tests need iptables which is in /usr/sbin.
+	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 }
 
 // cleanExecutorRoot cleans all entries in the test root dir *except* for cached
@@ -88,12 +98,19 @@ func init() {
 //
 // See README.md for more details on the filesystem layout.
 func cleanExecutorRoot(t *testing.T, path string) {
+	// Only clean the executor root once per test, to avoid unintentionally
+	// wiping dir contents that are still in use.
+	if cleaned[t] {
+		return
+	}
+	cleaned[t] = true
+
 	if os.Getuid() == 0 {
 		// Clean up stubborn VBD mounts that might've been left around from
 		// previous tests that were interrupted. Otherwise we won't be able to
 		// clean up old firecracker workspaces.
-		err := vbd.UnmountAll()
-		require.NoError(t, err)
+		err := vbd.CleanStaleMounts()
+		require.NoError(t, err, "failed to clean up VBD mounts from previous test runs")
 	}
 
 	err := os.MkdirAll(path, 0755)
@@ -180,10 +197,6 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
-
-	// Some tests need iptables which is in /usr/sbin.
-	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
-	require.NoError(t, err)
 
 	return env
 }
@@ -445,7 +458,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			MemSizeMb:         minMemSizeMB * 2, // small to make snapshotting faster.
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
@@ -763,7 +776,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		ActionWorkingDirectory: rootDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB,
+			MemSizeMb:         minMemSizeMB * 2,
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
@@ -935,7 +948,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         2500,
+			MemSizeMb:         3500,
 			ScratchDiskSizeMb: 100,
 		},
 		JailerRoot: tempJailerRoot(t),

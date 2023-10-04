@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/flock"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -20,6 +21,17 @@ import (
 const (
 	// FileName is the name of the single file exposed under the mount dir.
 	FileName = "file"
+
+	// flockSuffix is a suffix given to the lock file associated with the VBD
+	// mount. The lock file is created as a sibling of the mount directory, with
+	// this suffix appended. Note that we cannot lock the mount directory
+	// directly, since the filesystem at the mount path changes before and after
+	// the mount, causing lock file descriptors to point to different underlying
+	// files.
+	flockSuffix = ".lock"
+
+	// Timeout for unmounting the VBD.
+	unmountTimeout = 3 * time.Second
 )
 
 // BlockDevice is the interface backing VBD IO operations.
@@ -36,6 +48,7 @@ type FS struct {
 	store     BlockDevice
 	root      *Node
 	server    *fuse.Server
+	lockFile  *flock.Flock
 	mountPath string
 }
 
@@ -61,6 +74,14 @@ func (f *FS) Mount(path string) error {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return err
 	}
+	lockFile, err := flock.Create(path + flockSuffix)
+	if err != nil {
+		return status.WrapError(err, "create file lock")
+	}
+	if err := lockFile.Lock(); err != nil {
+		return status.WrapError(err, "acquire file lock")
+	}
+	f.lockFile = lockFile
 
 	nodeAttrTimeout := 6 * time.Hour
 	opts := &fusefs.Options{
@@ -101,8 +122,14 @@ func (f *FS) Unmount() error {
 	err := f.server.Unmount()
 	f.server.Wait()
 	f.server = nil
-	if err := os.Remove(f.mountPath); err != nil {
-		log.Errorf("Failed to unmount vbd: %s", err)
+	// If we successfully unmounted then the dir should be empty; remove it.
+	if err == nil {
+		if err := os.Remove(f.mountPath); err != nil {
+			log.Errorf("Failed to unmount vbd: %s", err)
+		}
+	}
+	if err := f.lockFile.Close(); err != nil {
+		log.Errorf("Failed to unlock vbd lock file: %s", err)
 	}
 	log.Debugf("Unmounted %s", f.mountPath)
 	return err
@@ -184,8 +211,9 @@ func (r *reader) Size() int {
 
 func (r *reader) Done() {}
 
-// UnmountAll unmounts all VBD devices on the system.
-func UnmountAll() error {
+// CleanStaleMounts unmounts all VBD mounts on the system that are not currently
+// in use.
+func CleanStaleMounts() error {
 	f, err := os.Open("/proc/mounts")
 	if err != nil {
 		return err
@@ -202,10 +230,32 @@ func UnmountAll() error {
 		if name != "vbd" {
 			continue
 		}
+
+		// We keep a lockfile for each VBD mount that determines whether it's
+		// still in use. If we can successfully lock it (non-blocking), then it
+		// must no longer be in use by any process, and should be safe to
+		// unmount.
+
+		f, err := flock.Open(path + flockSuffix)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// The dir was removed by something else; this is OK
+				continue
+			}
+			return status.InternalErrorf("unmount vbd: init flock: %s", err)
+		}
+		defer f.Close()
+
+		if err := f.TryLock(); err != nil {
+			log.Debugf("Not unmounting in-use vbd mount at %q", path)
+			continue
+		}
+
 		b, err := exec.Command("fusermount", "-u", path).CombinedOutput()
 		if err != nil {
 			return status.InternalErrorf("unmount vbd: fusermount -u: %q", string(b))
 		}
+		log.Debugf("Unmounted stale vbd at %q", path)
 	}
 	return nil
 }
