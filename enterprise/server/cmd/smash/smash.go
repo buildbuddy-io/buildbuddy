@@ -163,14 +163,14 @@ func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 		}
 
 		bytesUploaded += int64(len(wr.Data))
-		if readDone {
-			break
-		}
 		dynamicMsg, err := dynamic.AsDynamicMessage(wr)
 		if err != nil {
 			return nil, err
 		}
 		messages = append(messages, dynamicMsg)
+		if readDone {
+			break
+		}
 	}
 	return messages, nil
 }
