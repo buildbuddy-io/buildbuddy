@@ -56,7 +56,7 @@ const (
 )
 
 var (
-	enableSplittingReplicas            = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
+	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
 )
 
 type Store struct {
@@ -525,7 +525,6 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	go s.releaseRangeLease(rd.GetRangeId())
 	go s.updateTags()
 }
-
 
 func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*usagetracker.ReplicaSample], error) {
 	r, rd, err := s.replicaForRange(rangeID)

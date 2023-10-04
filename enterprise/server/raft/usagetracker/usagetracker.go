@@ -13,18 +13,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 
 	"github.com/docker/go-units"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/protobuf/proto"	
+	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -415,9 +415,9 @@ func (ut *Tracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage) {
 }
 
 func (ut *Tracker) removeRangePartitions(rangeID uint64) {
-       for _, u := range ut.byPartition {
-               delete(u.replicas, rangeID)
-       }
+	for _, u := range ut.byPartition {
+		delete(u.replicas, rangeID)
+	}
 }
 
 func (ut *Tracker) RemoveRange(rangeID uint64) {
@@ -529,4 +529,3 @@ func (ut *Tracker) broadcast(force bool) error {
 
 	return nil
 }
-
