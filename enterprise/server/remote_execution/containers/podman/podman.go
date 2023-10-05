@@ -108,8 +108,12 @@ const (
 	// argument to podman to enable the use of the soci store for streaming
 	enableStreamingStoreArg = "--storage-opt=additionallayerstore=/var/lib/soci-store/store:ref"
 
+	// soci-store data root
+	sociDataRootDirectory = "/var/lib/containers/soci"
+
 	// The directory where soci artifact blobs are stored
-	sociBlobDirectory = "/var/lib/containers/soci/content/blobs/sha256/"
+	sociContentDirectory = "/var/lib/containers/soci/content"
+	sociBlobDirectory    = "/var/lib/containers/soci/content/blobs/sha256/"
 
 	// The directory whre soci indexes are stored
 	sociIndexDirectory = "/var/lib/containers/soci/indexes/"
@@ -132,11 +136,11 @@ type Provider struct {
 }
 
 func prepareSociStore(ctx context.Context) error {
-	sociStoreConf := `
-root_path = "/var/lib/containers/soci"
-content_store_path = "/var/lib/containers/soci/content"
-index_store_path = "/var/lib/containers/soci/indexes"
-`
+	sociStoreConf := fmt.Sprintf(`
+root_path = "%s"
+content_store_path = "%s"
+index_store_path = "%s"
+`, sociDataRootDirectory, sociContentDirectory, sociIndexDirectory)
 	if err := os.MkdirAll("/etc/soci-store", 0644); err != nil {
 		return err
 	}
