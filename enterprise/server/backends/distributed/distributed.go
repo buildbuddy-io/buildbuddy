@@ -213,6 +213,9 @@ func (c *Cache) Check(ctx context.Context) error {
 	// then it's not necessary to wait for any heartbeats and this cache
 	// will report healthy immediately.
 	if len(c.config.Nodes) > 0 {
+		if len(c.config.Nodes) < c.config.ReplicationFactor {
+			return status.UnavailableErrorf("Not enough nodes configured %d to meet replication factor %d.", len(c.config.Nodes), c.config.ReplicationFactor)
+		}
 		return nil
 	}
 
@@ -221,6 +224,9 @@ func (c *Cache) Check(ctx context.Context) error {
 	nodesAvailable := len(c.consistentHash.GetItems())
 	if nodesAvailable < c.config.ClusterSize {
 		return status.UnavailableErrorf("%d nodes available but cluster size is %d.", nodesAvailable, c.config.ClusterSize)
+	}
+	if nodesAvailable < c.config.ReplicationFactor {
+		return status.UnavailableErrorf("Not enough nodes available %d to meet replication factor %d.", nodesAvailable, c.config.ReplicationFactor)
 	}
 
 	// Next check that we're participating in the network:
