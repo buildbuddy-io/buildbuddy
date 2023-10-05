@@ -76,6 +76,10 @@ var (
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
 
+var (
+	cleaned = map[testing.TB]bool{}
+)
+
 func init() {
 	// Set umask to match the executor process.
 	syscall.Umask(0)
@@ -197,7 +201,12 @@ func tempJailerRoot(t *testing.T) string {
 	}
 
 	if *testExecutorRoot != "" {
-		cleanExecutorRoot(t, *testExecutorRoot)
+		// Clean the root dir before using it, but only once per test. (We don't
+		// want to accidentally delete something mid-test that's still in use).
+		if !cleaned[t] {
+			cleaned[t] = true
+			cleanExecutorRoot(t, *testExecutorRoot)
+		}
 		return *testExecutorRoot
 	}
 
