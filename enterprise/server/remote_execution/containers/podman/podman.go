@@ -131,7 +131,22 @@ type Provider struct {
 	sociStoreKeychainClient sspb.LocalKeychainClient
 }
 
-func runSociStore(ctx context.Context) {
+func prepareSociStore(ctx context.Context) error {
+	sociStoreConf := `
+root_path = "/var/lib/containers/soci"
+content_store_path = "/var/lib/containers/soci/content"
+index_store_path = "/var/lib/containers/soci/indexes"
+`
+	if err := os.MkdirAll("/etc/soci-store", 0644); err != nil {
+		return err
+	}
+	if err := os.WriteFile("/etc/soci-store/config.toml", []byte(sociStoreConf), 0644); err != nil {
+		return status.UnavailableErrorf("could not write soci-store config: %s", err)
+	}
+	return nil
+}
+
+func runSociStore(ctx context.Context) error {
 	for {
 		log.Infof("Starting soci store")
 		args := []string{fmt.Sprintf("--local_keychain_port=%d", *sociStoreKeychainPort)}
@@ -159,6 +174,9 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
 	if *imageStreamingEnabled {
 		if *sociStoreBinary != "" {
+			if err := prepareSociStore(env.GetServerContext()); err != nil {
+				return nil, err
+			}
 			go runSociStore(env.GetServerContext())
 		}
 
