@@ -112,7 +112,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 		return reg, nil
 	})
 
-	raftListener := listener.DefaultListener()
+	raftListener := listener.NewRaftListener()
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(ts.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(ts.RootDir, "nodehost"),
@@ -138,7 +138,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	rc := rangecache.New()
 	ts.Sender = sender.New(rc, reg, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
-	s, err := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, apiClient, ts.GRPCAddress, []disk.Partition{})
+	s, err := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, []disk.Partition{})
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	s.Start()
