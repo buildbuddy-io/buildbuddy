@@ -78,27 +78,27 @@ auth:
    In case multiple Azure AD tenants is available, and select the tenant that will be using BuildBuddy.
 
 2. Register a BuildBuddy application:
-   a. Search for and select Azure Active Directory
-   b. Under `Manage`, select `App registration` -> `New registration`
-   c. Enter `BuildBuddy` for application name.
-   d. Select types of account in Azure AD that should have access to BuildBuddy.
+   - Search for and select Azure Active Directory
+   - Under `Manage`, select `App registration` -> `New registration`
+   - Enter `BuildBuddy` for application name.
+   - Select types of account in Azure AD that should have access to BuildBuddy.
    Usually `Accounts in this organizational directory only` is correct for single-tenant use case,
    "Accounts in any organizational directory" is correct for multiple-tenants use case.
-   e. Redirect URI should be `https://YOUR_BUILDBUDDY_URL/auth/` with `Web` platform.
-   f. Click `Register`
-   e. Take note of "Application (client) ID" and `Directory (tenant) ID`.
+   - Redirect URI should be `https://YOUR_BUILDBUDDY_URL/auth/` with `Web` platform.
+   - Click `Register`
+   - Take note of "Application (client) ID" and `Directory (tenant) ID`.
 
 3. Configure Application Secret
-   a. Click on `Certificates & secrets` -> `Client secrets` -> `New client secret`
+   - Click on `Certificates & secrets` -> `Client secrets` -> `New client secret`
    We recommend set the expiry date of the secret to 12 months.
-   b. Click `Add` -> Take note of `Value` of the newly created secret.
+   - Click `Add` -> Take note of `Value` of the newly created secret.
 
 4. Configure Application API scope
-   a. Navigate to `API permissions`
-   b. Select `Add a permission` -> `Microsoft Graph` -> `Delegated permission`
-   c. In `OpenId permissions`, select `email`, `offline_access`, `openid`, `profile`.
-   d. In `User`, select `User.Read`
-   e. Click `Add permissions`
+   - Navigate to `API permissions`
+   - Select `Add a permission` -> `Microsoft Graph` -> `Delegated permission`
+   - In `OpenId permissions`, select `email`, `offline_access`, `openid`, `profile`.
+   - In `User`, select `User.Read`
+   - Click `Add permissions`
 
 5. After that, your BuildBuddy config should be like this
    ```
