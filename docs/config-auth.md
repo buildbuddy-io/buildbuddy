@@ -119,9 +119,11 @@ Organizations' admins should configure a BuildBuddy application in their SAML 2.
 
 - Find the short name (slug) of your organization in [Organizations Settings](https://app.buildbuddy.io/settings/)
 
-- **Single Sign-On URL**: `https://app.buildbuddy.io/auth/saml/acs/?slug=<org-slug>`
+- **Assertion Consumer Service(ACS) URL**: `https://app.buildbuddy.io/auth/saml/acs/?slug=<org-slug>`
 
-- **Audience URI (SP Entity ID)**: `https://app.buildbuddy.io/saml/metadata/?slug=<org-slug>`
+- **Audience URL (SP Entity ID)**: `https://app.buildbuddy.io/saml/metadata/?slug=<org-slug>`
+
+- **Sign on URL** (for IdP-initiated login): `https://app.buildbuddy.io/login/?slug=<org-slug>`
 
 - Ensure the application **Attribute Statement** with a field name `email` and it's value mapped to `user.email` (or equivalent).
 
@@ -158,7 +160,7 @@ get the organization SAML configured accordingly.
 
    b. `Reply URL (Assertion Consumer Service URL)` should be `https://app.buildbuddy.io/auth/saml/acs/?slug=<org-slug>`.
 
-   c. `Sign on URL` should be `https://app.buildbuddy.io/auth/saml/acs/?slug=<org-slug>`.
+   c. `Sign on URL` should be `https://app.buildbuddy.io/login/?slug=<org-slug>`.
 
    d. Hit `Save` button.
 
