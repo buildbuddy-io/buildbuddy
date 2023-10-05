@@ -150,7 +150,7 @@ index_store_path = "%s"
 	return nil
 }
 
-func runSociStore(ctx context.Context) error {
+func runSociStore(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
 		args := []string{fmt.Sprintf("--local_keychain_port=%d", *sociStoreKeychainPort)}
