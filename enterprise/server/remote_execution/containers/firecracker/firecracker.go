@@ -1585,6 +1585,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	var lastErr error
 	if c.cleanupVethPair != nil {
 		if err := c.cleanupVethPair(ctx); err != nil {
+			log.Warningf("Networking cleanup failure. CleanupVethPair for vm id %s failed with: %s", c.id, err)
 			lastErr = err
 		}
 	}
