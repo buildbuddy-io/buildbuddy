@@ -64,7 +64,7 @@ var (
 	maxRunnerDiskSizeBytes = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
-	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
+	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
 )
 
@@ -90,6 +90,9 @@ const (
 	// How long to spend waiting for a persistent worker process to terminate
 	// after we send the shutdown signal before giving up.
 	persistentWorkerShutdownTimeout = 10 * time.Second
+
+	// Default value of maxRunnerMemoryUsageBytes.
+	defaultMaxRunnerMemoryUsageBytes = 2e9 // 2GiB
 
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
@@ -610,11 +613,11 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 			"stats_failed",
 		}
 	}
-	// If memory usage stats are not implemented, fall back to the default task
-	// size estimate.
+	// If memory usage stats are not implemented, use the configured per-runner
+	// limit as a (very) rough estimate.
 	if stats == nil {
 		stats = &repb.UsageStats{}
-		stats.MemoryBytes = int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
+		stats.MemoryBytes = p.maxRunnerMemoryUsageBytes
 	}
 
 	if stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
@@ -1353,11 +1356,15 @@ func (p *pool) setLimits() {
 	}
 
 	mem := *maxRunnerMemoryUsageBytes
-	if mem > totalRAMBytes {
-		mem = totalRAMBytes
+	if mem == 0 {
+		mem = defaultMaxRunnerMemoryUsageBytes
 	} else if mem < 0 {
 		// < 0 means no limit.
 		mem = math.MaxInt64
+	}
+	// Per-runner limit shouldn't exceed total allocated RAM.
+	if mem > totalRAMBytes {
+		mem = totalRAMBytes
 	}
 
 	disk := *maxRunnerDiskSizeBytes
