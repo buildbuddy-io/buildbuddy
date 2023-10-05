@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -699,6 +700,8 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 }
 
 // Prints performance data about various Firecracker commands
+// Run with:
+// ./enterprise/server/remote_execution/containers/firecracker/test.sh --@io_bazel_rules_go//go/config:race  -- -test.run=TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking -test_manual_benchmark
 func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	if !*testManualBenchmark {
 		t.Skip()
@@ -730,21 +733,15 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		var err error
 		env = testenv.GetTestEnv(t)
 		flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-		flags.Set(t, "executor.firecracker_enable_nbd", true)
+		flags.Set(t, "executor.firecracker_enable_vbd", true)
 		flags.Set(t, "executor.firecracker_enable_uffd", true)
 
 		ctx = context.Background()
-		env = getTestEnv(ctx, t)
+		env = getTestEnv(ctx, t, envOpts{})
 		rootDir := testfs.MakeTempDir(t)
 		jailerRoot = tempJailerRoot(t)
 		workDir := testfs.MakeDirAll(t, rootDir, "work")
-
 		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-		filecacheRoot := testfs.MakeDirAll(t, jailerRoot, "filecache")
-		fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
-		require.NoError(t, err)
-		fc.WaitForDirectoryScanToComplete()
-		env.SetFileCache(fc)
 
 		task = &repb.ExecutionTask{
 			Command: &repb.Command{
@@ -777,79 +774,71 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 
 	// Pausing a new VM
 	for _, enableRemote := range []bool{true, false} {
-		{
-			setup()
-			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup()
+		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
-			start := time.Now()
-			err := c.Pause(ctx)
-			require.NoError(t, err)
-			fmt.Printf("(remote_snapshot_sharing=%v) Pausing a new VM took %s.\n", enableRemote, time.Since(start))
-		}
+		start := time.Now()
+		err := c.Pause(ctx)
+		require.NoError(t, err)
+		fmt.Printf("(remote_snapshot_sharing=%v) Pausing a new VM took %s.\n", enableRemote, time.Since(start))
 	}
 
 	// Pausing a VM that had started from a snapshot.
 	// No changes to the VM other than running for a bit.
 	for _, enableRemote := range []bool{true, false} {
-		{
-			setup()
-			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup()
+		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
-			// Create a snapshot
-			err := c.Pause(ctx)
-			require.NoError(t, err)
+		// Create a snapshot
+		err := c.Pause(ctx)
+		require.NoError(t, err)
 
-			// Load the snapshot
-			err = c.Unpause(ctx)
-			require.NoError(t, err)
+		// Load the snapshot
+		err = c.Unpause(ctx)
+		require.NoError(t, err)
 
-			start := time.Now()
-			err = c.Pause(ctx)
-			require.NoError(t, err)
-			fmt.Printf("(remote_snapshot_sharing=%v) Pausing a VM that had started from a snapshot and had no non-metadata changes took %s.\n", enableRemote, time.Since(start))
-		}
+		start := time.Now()
+		err = c.Pause(ctx)
+		require.NoError(t, err)
+		fmt.Printf("(remote_snapshot_sharing=%v) Pausing a VM that had started from a snapshot and had no non-metadata changes took %s.\n", enableRemote, time.Since(start))
 	}
 
 	// Pausing a VM that had started from a snapshot.
 	// Execute a command in the VM before saving the new snapshot.
 	for _, enableRemote := range []bool{true, false} {
-		{
-			setup()
-			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup()
+		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
-			// Create a snapshot
-			err := c.Pause(ctx)
-			require.NoError(t, err)
+		// Create a snapshot
+		err := c.Pause(ctx)
+		require.NoError(t, err)
 
-			// Load the snapshot and exec a command in the VM
-			err = c.Unpause(ctx)
-			require.NoError(t, err)
-			cmd := appendToLog("Executing")
-			res := c.Exec(ctx, cmd, nil /*=stdio*/)
-			require.NoError(t, res.Error)
+		// Load the snapshot and exec a command in the VM
+		err = c.Unpause(ctx)
+		require.NoError(t, err)
+		cmd := appendToLog("Executing")
+		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+		require.NoError(t, res.Error)
 
-			start := time.Now()
-			err = c.Pause(ctx)
-			require.NoError(t, err)
-			fmt.Printf("(remote_snapshot_sharing=%v) Pausing a VM that had started from a snapshot and had execution-related changes took %s.\n", enableRemote, time.Since(start))
-		}
+		start := time.Now()
+		err = c.Pause(ctx)
+		require.NoError(t, err)
+		fmt.Printf("(remote_snapshot_sharing=%v) Pausing a VM that had started from a snapshot and had execution-related changes took %s.\n", enableRemote, time.Since(start))
 	}
 
 	// Loading a snapshot for a VM.
 	for _, enableRemote := range []bool{true, false} {
-		{
-			setup()
-			flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup()
+		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
-			// Create a snapshot
-			err := c.Pause(ctx)
-			require.NoError(t, err)
+		// Create a snapshot
+		err := c.Pause(ctx)
+		require.NoError(t, err)
 
-			start := time.Now()
-			err = c.Unpause(ctx)
-			require.NoError(t, err)
-			fmt.Printf("(remote_snapshot_sharing=%v) Unpausing a VM that is fully cached in filecache took %s.\n", enableRemote, time.Since(start))
-		}
+		start := time.Now()
+		err = c.Unpause(ctx)
+		require.NoError(t, err)
+		fmt.Printf("(remote_snapshot_sharing=%v) Unpausing a VM that is fully cached in filecache took %s.\n", enableRemote, time.Since(start))
 	}
 
 	// Loading a snapshot for a VM where ~30% of artifacts were evicted from filecache
