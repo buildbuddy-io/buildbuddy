@@ -69,6 +69,11 @@ var (
 	workloadRampUpInterval     = flag.Duration("workload_ramp_up_interval", 5*time.Second, "The number of concurrent commands is increased this often until the target concurrency is reached.")
 	workloadNumFilesPerCommand = flag.Int("workload_num_files_per_command", 0, "Number of files per command.")
 	workloadFileSizeBytes      = flag.Int("workload_file_size_bytes", 0, "Input file size in bytes.")
+
+	// Container image flags
+	containerImage            = flag.String("container_image", "", "Container image to use, if not the server-side default.")
+	containerRegistryUsername = flag.String("container_registry_username", "", "Username to use when authenticating with the remote container registry.")
+	containerRegistryPassword = flag.String("container_registry_password", "", "Password to use when authenticating with the remote container registry.")
 )
 
 const (
@@ -275,6 +280,18 @@ func prepareCommand(ctx context.Context, rbeClient *rbeclient.Client, byteStream
 	}
 	if *commandPlatformPool != "" {
 		platformProps = append(platformProps, &repb.Platform_Property{Name: "Pool", Value: *commandPlatformPool})
+	}
+	if *containerImage != "" {
+		platformProps = append(platformProps, &repb.Platform_Property{Name: "container-image", Value: *containerImage})
+	}
+	if (*containerRegistryUsername == "") != (*containerRegistryPassword == "") {
+		log.Fatal("Must provide both --container_registry_username and --container_registry_password")
+	}
+	if *containerRegistryUsername != "" {
+		platformProps = append(platformProps, &repb.Platform_Property{Name: "container-registry-username", Value: *containerRegistryUsername})
+	}
+	if *containerRegistryPassword != "" {
+		platformProps = append(platformProps, &repb.Platform_Property{Name: "container-registry-password", Value: *containerRegistryPassword})
 	}
 	command := &repb.Command{
 		Arguments: commandArgs,
