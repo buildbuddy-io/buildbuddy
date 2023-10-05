@@ -211,7 +211,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// keys. The rangeCache is where this information is cached, and the
 	// sender interface is what makes it simple to address data across the
 	// cluster.
-	raftListener := listener.DefaultListener()
+	raftListener := listener.NewRaftListener()
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(conf.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(conf.RootDir, "nodehost"),
@@ -231,7 +231,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	store, err := store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient, rc.grpcAddress, rc.conf.Partitions)
+	store, err := store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, raftListener, rc.apiClient, rc.grpcAddress, rc.conf.Partitions)
 	if err != nil {
 		return nil, err
 	}

@@ -7,14 +7,6 @@ import (
 	"github.com/lni/dragonboat/v4/raftio"
 )
 
-var (
-	defaultListener = NewRaftListener()
-)
-
-func DefaultListener() *RaftListener {
-	return defaultListener
-}
-
 type RaftListener struct {
 	mu sync.Mutex
 

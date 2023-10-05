@@ -68,6 +68,7 @@ type Store struct {
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
 	registry      registry.NodeRegistry
+	listener      *listener.RaftListener
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
@@ -94,7 +95,7 @@ type Store struct {
 	egCancel               context.CancelFunc
 }
 
-func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
+func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
 	s := &Store{
 		rootDir:       rootDir,
 		grpcAddr:      grpcAddress,
@@ -103,6 +104,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		gossipManager: gossipManager,
 		sender:        sender,
 		registry:      registry,
+		listener:      listener,
 		apiClient:     apiClient,
 		liveness:      nodeliveness.New(nodeHost.ID(), sender),
 		log:           log.NamedSubLogger(nodeHost.ID()),
@@ -293,7 +295,7 @@ func (s *Store) Start() error {
 		s.grpcServer.Serve(lis)
 	}()
 
-	leaderUpdatesChan, closeLeaderUpdatesChan := listener.DefaultListener().AddLeaderChangeListener()
+	leaderUpdatesChan, closeLeaderUpdatesChan := s.listener.AddLeaderChangeListener()
 	s.closeLeaderUpdatesChan = closeLeaderUpdatesChan
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
