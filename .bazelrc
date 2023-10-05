@@ -129,6 +129,7 @@ build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 build:auto-release -c opt
 
 build:linux --action_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+build:linux --action_env HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX
 build:linux --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl,@zig_sdk//toolchain:linux_arm64_musl
 build:linux --@io_bazel_rules_go//go/config:static=true
 build:linux --copt=-fPIC
