@@ -437,13 +437,13 @@ func (r *commandRunner) Remove(ctx context.Context) error {
 		if err := r.shutdown(ctx); err != nil {
 			errs = append(errs, err)
 		}
-		if err := r.Container.Remove(ctx); err != nil {
-			errs = append(errs, err)
-		}
 		if r.stopPersistentWorker != nil {
 			if err := r.stopPersistentWorker(); err != nil {
 				errs = append(errs, err)
 			}
+		}
+		if err := r.Container.Remove(ctx); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	if err := r.removeVFS(); err != nil {
