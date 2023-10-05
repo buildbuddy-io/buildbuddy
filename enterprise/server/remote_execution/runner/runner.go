@@ -65,7 +65,6 @@ var (
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
-	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", true, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
 )
 
@@ -118,10 +117,6 @@ var (
 	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
 	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
 )
-
-func ContextBasedShutdownEnabled() bool {
-	return *contextBasedShutdown
-}
 
 func GetBuildRoot() string {
 	return *rootDirectory
@@ -973,11 +968,9 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 		return nil, status.UnavailableErrorf("Could not get a new task runner because the executor is shutting down.")
 	}
 	p.runners = append(p.runners, r)
-	if *contextBasedShutdown {
-		p.pendingRemovals.Add(1)
-		r.removeCallback = func() {
-			p.pendingRemovals.Done()
-		}
+	p.pendingRemovals.Add(1)
+	r.removeCallback = func() {
+		p.pendingRemovals.Done()
 	}
 	log.CtxInfof(ctx, "Created new %s runner %s for task", props.WorkloadIsolationType, r)
 	return r, nil
@@ -1198,56 +1191,47 @@ func (p *pool) Shutdown(ctx context.Context) error {
 	p.isShuttingDown = true
 	var runnersToRemove []*commandRunner
 	persistedState := &rnpb.RunnerPoolState{}
-	if *contextBasedShutdown {
-		// Remove only paused runners, since active runners should be removed only
-		// after their currently assigned task is canceled due to the shutdown
-		// grace period expiring.
-		var pausedRunners, activeRunners []*commandRunner
-		for _, r := range p.runners {
-			if r.state == paused {
-				pausedRunners = append(pausedRunners, r)
-			} else {
-				activeRunners = append(activeRunners, r)
-			}
+	// Remove only paused runners, since active runners should be removed only
+	// after their currently assigned task is canceled due to the shutdown
+	// grace period expiring.
+	var pausedRunners, activeRunners []*commandRunner
+	for _, r := range p.runners {
+		if r.state == paused {
+			pausedRunners = append(pausedRunners, r)
+		} else {
+			activeRunners = append(activeRunners, r)
 		}
-		runnersToRemove = pausedRunners
-		p.runners = activeRunners
-		if len(runnersToRemove) > 0 {
-			log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
+	}
+	runnersToRemove = pausedRunners
+	p.runners = activeRunners
+	if len(runnersToRemove) > 0 {
+		log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
+	}
+
+	for _, r := range pausedRunners {
+		// TODO: figure out how/whether to preserve the workspace dir during
+		// executor restarts, and remove this check. We exclude this check
+		// for firecracker workflows because they don't use the workspace
+		// disk.
+		if r.PlatformProperties.PreserveWorkspace && !(r.PlatformProperties.WorkflowID != "" && r.PlatformProperties.WorkloadIsolationType == string(platform.FirecrackerContainerType)) {
+			continue
 		}
 
-		for _, r := range pausedRunners {
-			// TODO: figure out how/whether to preserve the workspace dir during
-			// executor restarts, and remove this check. We exclude this check
-			// for firecracker workflows because they don't use the workspace
-			// disk.
-			if r.PlatformProperties.PreserveWorkspace && !(r.PlatformProperties.WorkflowID != "" && r.PlatformProperties.WorkloadIsolationType == string(platform.FirecrackerContainerType)) {
-				continue
-			}
-
-			containerState, err := r.Container.State(ctx)
-			if status.IsUnimplementedError(err) {
-				continue
-			}
-			if err != nil {
-				log.Warningf("Failed to persist state for runner %s: %s", r, err)
-				continue
-			}
-			runnerState := &rnpb.RunnerState{
-				RunnerKey:      r.key,
-				DebugId:        r.debugID,
-				ContainerState: containerState,
-			}
-			persistedState.RunnerStates = append(persistedState.RunnerStates, runnerState)
-			log.Infof("Persisting state for runner %s", r)
+		containerState, err := r.Container.State(ctx)
+		if status.IsUnimplementedError(err) {
+			continue
 		}
-
-	} else {
-		runnersToRemove = p.runners
-		p.runners = nil
-		if len(runnersToRemove) > 0 {
-			log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
+		if err != nil {
+			log.Warningf("Failed to persist state for runner %s: %s", r, err)
+			continue
 		}
+		runnerState := &rnpb.RunnerState{
+			RunnerKey:      r.key,
+			DebugId:        r.debugID,
+			ContainerState: containerState,
+		}
+		persistedState.RunnerStates = append(persistedState.RunnerStates, runnerState)
+		log.Infof("Persisting state for runner %s", r)
 	}
 	p.mu.Unlock()
 
@@ -1284,9 +1268,7 @@ func (p *pool) Shutdown(ctx context.Context) error {
 }
 
 func (p *pool) Wait() {
-	if *contextBasedShutdown {
-		p.pendingRemovals.Wait()
-	}
+	p.pendingRemovals.Wait()
 }
 
 func (p *pool) remove(r *commandRunner) {

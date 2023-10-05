@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -229,12 +228,10 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 		alert.UnexpectedEvent("no_deadline_on_shutdownfunc_context")
 		q.rootCancel()
 	}
-	delay := deadline.Sub(time.Now()) - time.Second
-	if runner.ContextBasedShutdownEnabled() {
-		// Cancel all tasks early enough to allow containers and workspaces to be
-		// cleaned up.
-		delay = deadline.Sub(time.Now()) - *shutdownCleanupDuration
-	}
+
+	// Cancel all tasks early enough to allow containers and workspaces to be
+	// cleaned up.
+	delay := deadline.Sub(time.Now()) - *shutdownCleanupDuration
 	ctx, cancel := context.WithTimeout(ctx, delay)
 	defer cancel()
 
