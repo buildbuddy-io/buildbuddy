@@ -501,7 +501,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			MemSizeMb:         minMemSizeMB * 2, // small to make snapshotting faster.
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
@@ -1198,7 +1198,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		ActionWorkingDirectory: rootDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB,
+			MemSizeMb:         minMemSizeMB * 2,
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
@@ -1370,7 +1370,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         2500,
+			MemSizeMb:         3500,
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: getExecutorConfig(t),

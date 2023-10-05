@@ -37,9 +37,8 @@ build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
-# TODO(sluongng): split these into separate configs for each target platform
-build:remote-shared --platforms=//platforms:linux_x86_64
-build:remote-shared --extra_execution_platforms=//platforms:linux_x86_64
+build:remote-shared --platforms=@buildbuddy_toolchain//:platform_bare_linux
+build:remote-shared --extra_execution_platforms=@buildbuddy_toolchain//:platform_bare_linux
 
 build --incompatible_enable_cc_toolchain_resolution
 
@@ -128,6 +127,11 @@ build:release-m1 --config=release-shared
 build:auto-release --config=remote
 build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 build:auto-release -c opt
+
+build:linux --action_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+build:linux --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl,@zig_sdk//toolchain:linux_arm64_musl
+build:linux --@io_bazel_rules_go//go/config:static=true
+build:linux --copt=-fPIC
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
