@@ -1573,6 +1573,11 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	}
 	c.isNetworkSetup = false
 
+	// Even if the context was canceled, extend the life of the context for
+	// cleanup
+	ctx, cancel := background.ExtendContextForFinalization(ctx, time.Second*1)
+	defer cancel()
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
