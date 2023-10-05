@@ -78,22 +78,25 @@ auth:
    In case multiple Azure AD tenants is available, and select the tenant that will be using BuildBuddy.
 
 2. Register a BuildBuddy application:
+
    - Search for and select Azure Active Directory
    - Under `Manage`, select `App registration` -> `New registration`
    - Enter `BuildBuddy` for application name.
    - Select types of account in Azure AD that should have access to BuildBuddy.
-   Usually `Accounts in this organizational directory only` is correct for single-tenant use case,
-   "Accounts in any organizational directory" is correct for multiple-tenants use case.
+     Usually `Accounts in this organizational directory only` is correct for single-tenant use case,
+     "Accounts in any organizational directory" is correct for multiple-tenants use case.
    - Redirect URI should be `https://YOUR_BUILDBUDDY_URL/auth/` with `Web` platform.
    - Click `Register`
    - Take note of "Application (client) ID" and `Directory (tenant) ID`.
 
 3. Configure Application Secret
+
    - Click on `Certificates & secrets` -> `Client secrets` -> `New client secret`
-   We recommend set the expiry date of the secret to 12 months.
+     We recommend set the expiry date of the secret to 12 months.
    - Click `Add` -> Take note of `Value` of the newly created secret.
 
 4. Configure Application API scope
+
    - Navigate to `API permissions`
    - Select `Add a permission` -> `Microsoft Graph` -> `Delegated permission`
    - In `OpenId permissions`, select `email`, `offline_access`, `openid`, `profile`.
