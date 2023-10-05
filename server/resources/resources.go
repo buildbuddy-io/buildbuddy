@@ -62,7 +62,7 @@ func setSysRAMBytes() {
 	}
 	mem := gosigar.Mem{}
 	mem.Get()
-	allocatedRAMBytes = int64(mem.ActualFree)
+	allocatedRAMBytes = int64(mem.Total)
 }
 
 func setSysMilliCPUCapacity() {
