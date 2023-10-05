@@ -78,17 +78,23 @@ type setupMessage struct {
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a copy_on_write.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
+	// If the UFFD handler fails, it should cancel the context to immediately
+	// stop the VM from continuing to run. Otherwise the VM will hang, waiting for
+	// a page fault to be resolved, until it times out
+	cancelCtx context.CancelFunc
+
 	lis            net.Listener
 	stoppedChan    chan struct{}
 	handleDoneChan chan struct{}
-	handleErr      error
 
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
 }
 
-func NewHandler() (*Handler, error) {
-	return &Handler{}, nil
+func NewHandler(cancelCtx context.CancelFunc) (*Handler, error) {
+	return &Handler{
+		cancelCtx: cancelCtx,
+	}, nil
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
@@ -124,8 +130,11 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *cop
 	h.earlyTerminationWriter = pipeWrite
 
 	go func() {
-		h.handleErr = h.handle(ctx, memoryStore)
-		close(h.handleDoneChan)
+		err := h.handle(ctx, memoryStore)
+		if err != nil {
+			log.Errorf("Canceling the VM context because UFFD handler failed: %s", err)
+			h.cancelCtx()
+		}
 	}()
 	return nil
 }
@@ -201,6 +210,8 @@ func (h *Handler) receiveSetupMsg(ctx context.Context) (*setupMessage, error) {
 }
 
 func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStore) (err error) {
+	defer close(h.handleDoneChan)
+
 	// Get uffd sent from firecracker
 	setup, err := h.receiveSetupMsg(ctx)
 	if err != nil {
@@ -343,13 +354,6 @@ func readFaultingAddress(uffd uintptr) (uint64, error) {
 func pageStartAddress(addr uint64, pageSize int) uintptr {
 	// Align the address to the nearest lower multiple of pageSize by masking the least significant bits.
 	return uintptr(addr & ^(uint64(pageSize) - 1))
-}
-
-// Wait waits for the UFFD handler to terminate. It returns an error only if
-// the handler terminated because it failed to handle a page fault request.
-func (h *Handler) Wait() error {
-	<-h.handleDoneChan
-	return h.handleErr
 }
 
 func (h *Handler) Stop() error {
