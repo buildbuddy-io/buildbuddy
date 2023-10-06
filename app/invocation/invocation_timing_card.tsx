@@ -51,7 +51,7 @@ const groupByAllStorageValue = "all";
 export default class InvocationTimingCardComponent extends React.Component<Props, State> {
   state: State = {
     profile: null,
-    loading: false,
+    loading: true,
     threadNumPages: 1,
     threadToNumEventPagesMap: new Map<number, number>(),
     threadMap: new Map<number, Thread>(),
@@ -82,7 +82,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
   }
 
   fetchProfile() {
-    if (!this.isTimingEnabled()) return;
+    if (!this.isTimingEnabled()) {
+      this.setState({ loading: false });
+    }
 
     // Already fetched
     if (this.state.profile) return;
