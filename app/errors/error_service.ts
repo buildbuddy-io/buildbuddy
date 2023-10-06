@@ -21,6 +21,7 @@ export class ErrorService {
       return;
     }
     alertService.error(String(error));
+    window.opener?.postMessage(String(error), window.location.origin);
   }
 }
 

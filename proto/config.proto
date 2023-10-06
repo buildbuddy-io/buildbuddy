@@ -137,6 +137,9 @@ message FrontendConfig {
 
   // Whether the new trace viewer is enabled.
   bool trace_viewer_enabled = 45;
+
+  // Whether popup windows should be used for authentication.
+  bool popup_auth_enabled = 46;
 }
 
 message Region {

@@ -111,3 +111,8 @@ ts_library(
     name = "canvas",
     srcs = ["canvas.ts"],
 )
+
+ts_library(
+    name = "popup",
+    srcs = ["popup.ts"],
+)

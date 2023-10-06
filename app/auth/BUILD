@@ -12,6 +12,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:errors",
+        "//app/util:popup",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "//proto:user_ts_proto",
