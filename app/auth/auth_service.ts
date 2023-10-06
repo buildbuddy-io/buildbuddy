@@ -104,10 +104,7 @@ export class AuthService {
   }
 
   handleLoggedIn(response: user.GetUserResponse) {
-    if (window.opener) {
-      console.log("Posting success message to " + window.location.origin);
-      window.opener?.postMessage("", window.location.origin);
-    }
+    window.opener?.postMessage("", window.location.origin);
     localStorage.removeItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY);
     this.emitUser(this.userFromResponse(response));
   }

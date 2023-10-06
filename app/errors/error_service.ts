@@ -21,10 +21,7 @@ export class ErrorService {
       return;
     }
     alertService.error(String(error));
-    if (window.opener) {
-      console.log("Posting error message to " + window.location.origin);
-      window.opener?.postMessage(String(error), window.location.origin);
-    }
+    window.opener?.postMessage(String(error), window.location.origin);
   }
 }
 
