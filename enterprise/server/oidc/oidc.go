@@ -437,7 +437,7 @@ func (a *OpenIDAuthenticator) getAuthCodeOptions(r *http.Request) []oauth2.AuthC
 	}
 	sessionID := cookie.GetCookie(r, cookie.SessionIDCookie)
 	// If a session doesn't already exist, force a consent screen (so the user can select between multiple accounts) if enabled.
-	if (sessionID == "" && *forceApproval) || gcplink.IsLinkRequest(r) {
+	if (sessionID == "" && *forceApproval) || r.URL.Query().Get("show_picker") == "true" || gcplink.IsLinkRequest(r) {
 		options = append(options, oauth2.ApprovalForce)
 	}
 	return options
