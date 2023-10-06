@@ -34,7 +34,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -629,7 +628,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize)
 			if err != nil {
 				return err
 			}
@@ -1465,17 +1464,6 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter peb
 func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
 	md, _, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
 	return md, err
-}
-
-// getLastAccessUsec processes the FileMetadata as a sequence of (tag,value)
-// pairs. It loops through the pairs until hitting the tag for last_acess_usec,
-// then it returns the value. This lets us avoid a full parse of FileMetadata.
-func getLastAccessUsec(b []byte) int64 {
-	// This needs to match the field number for the last_access_usec field in
-	// FileMetadata in proto/raft.proto
-	const lastAccessUsecFieldNumber = 4
-	v, _ := pbwireutil.ConsumeFirstVarint(b, lastAccessUsecFieldNumber)
-	return int64(v)
 }
 
 // iterHasKey returns a bool indicating if the provided iterator has the
@@ -2394,8 +2382,7 @@ type partitionEvictor struct {
 	// item count.
 	groupIDApproxCounts []groupIDApproxCount
 
-	atimeBufferSize int
-	minEvictionAge  time.Duration
+	minEvictionAge time.Duration
 
 	includeMetadataSize bool
 }
@@ -2404,21 +2391,20 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:              &sync.Mutex{},
-		part:            part,
-		fileStorer:      fileStorer,
-		blobDir:         blobDir,
-		dbGetter:        dbg,
-		locker:          locker,
-		versionGetter:   vg,
-		accesses:        accesses,
-		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
-		clock:           clock,
-		atimeBufferSize: atimeBufferSize,
-		minEvictionAge:  minEvictionAge,
-		cacheName:       cacheName,
+		mu:             &sync.Mutex{},
+		part:           part,
+		fileStorer:     fileStorer,
+		blobDir:        blobDir,
+		dbGetter:       dbg,
+		locker:         locker,
+		versionGetter:  vg,
+		accesses:       accesses,
+		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:          clock,
+		minEvictionAge: minEvictionAge,
+		cacheName:      cacheName,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
