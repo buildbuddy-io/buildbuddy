@@ -392,17 +392,10 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	}
 
 	dstChunkSize := s.calculateChunkSize(chunkStartOffset)
-
-	s.mu.Lock()
-	dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
+	src, dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
 	if err != nil {
-		s.mu.Unlock()
 		return status.WrapError(err, "initialize dirty chunk")
 	}
-	src := s.chunks[chunkStartOffset]
-	s.chunks[chunkStartOffset] = dst
-	s.dirty[chunkStartOffset] = true
-	s.mu.Unlock()
 
 	if src == nil {
 		// We had no data at this offset; nothing to copy.
@@ -451,17 +444,29 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 }
 
 // Writes a new dirty chunk containing all 0s for the given chunk index.
-func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
+func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newChunk *Mmap, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", offset, dirtySuffix))
 	fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer syscall.Close(fd)
 	if err := syscall.Ftruncate(fd, size); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, s.remoteInstanceName)
+	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, s.remoteInstanceName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ogChunk = s.chunks[offset]
+	s.chunks[offset] = newChunk
+	s.dirty[offset] = true
+
+	return ogChunk, newChunk, nil
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -592,14 +597,14 @@ type Mmap struct {
 	env                environment.Env
 	remoteInstanceName string
 
-	mu sync.RWMutex
+	Offset  int64
+	dataDir string
 
-	Offset int64
-
+	// Mutex protects the subsequent fields
+	mu         sync.RWMutex
 	data       []byte
 	mapped     bool
 	closed     bool
-	dataDir    string
 	lazyDigest *repb.Digest
 }
 
@@ -698,15 +703,11 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 			return 0, err
 		}
 	}
-	dataLen, err := m.SizeBytes()
-	if err != nil {
-		return 0, err
-	}
-	if err := checkBounds("read", dataLen, p, off); err != nil {
-		return 0, err
-	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
+		return 0, err
+	}
 	copy(p, m.data[int(off):int(off)+len(p)])
 	return len(p), nil
 }
@@ -717,17 +718,13 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 			return 0, err
 		}
 	}
-	dataLen, err := m.SizeBytes()
-	if err != nil {
-		return 0, err
-	}
-	if err := checkBounds("write", dataLen, p, off); err != nil {
-		return 0, err
-	}
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
+		return 0, err
+	}
 	m.lazyDigest = nil
 	copy(m.data[int(off):int(off)+len(p)], p)
-	m.mu.Unlock()
 	return len(p), nil
 }
 
