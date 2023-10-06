@@ -201,7 +201,7 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		err := disk.WaitUntilExists(ctx, filepath.Join(workDir, "output.txt"), disk.WaitOpts{})
 		require.NoError(t, err)
 		// Wait a little bit for stdout/stderr to be flushed to docker logs.
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}()
 
 	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
