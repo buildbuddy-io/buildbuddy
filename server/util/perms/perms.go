@@ -110,11 +110,10 @@ func AuthenticatedUser(ctx context.Context, env environment.Env) (interfaces.Use
 	return auth.AuthenticatedUser(ctx)
 }
 
-func AuthorizeRead(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error {
-	if authenticatedUser == nil {
-		return status.InvalidArgumentError("authenticatedUser cannot be nil.")
+func AuthorizeRead(u interfaces.UserInfo, acl *aclpb.ACL) error {
+	if u == nil {
+		return status.InvalidArgumentError("user cannot be nil.")
 	}
-	u := *authenticatedUser
 	if acl == nil {
 		return status.InvalidArgumentError("acl cannot be nil.")
 	}

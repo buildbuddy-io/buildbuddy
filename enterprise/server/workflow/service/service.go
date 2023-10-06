@@ -509,7 +509,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 	// Authorize workflow access
 	wfACL := perms.ToACLProto(&uidpb.UserId{Id: wf.GroupID}, wf.GroupID, wf.Perms)
-	if err := perms.AuthorizeRead(&user, wfACL); err != nil {
+	if err := perms.AuthorizeRead(user, wfACL); err != nil {
 		return nil, err
 	}
 
