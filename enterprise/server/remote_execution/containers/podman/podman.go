@@ -108,11 +108,15 @@ const (
 	// argument to podman to enable the use of the soci store for streaming
 	enableStreamingStoreArg = "--storage-opt=additionallayerstore=/var/lib/soci-store/store:ref"
 
+	// soci-store data root
+	sociDataRootDirectory = "/var/lib/containers/soci"
+
 	// The directory where soci artifact blobs are stored
-	sociBlobDirectory = "/var/lib/soci-snapshotter-grpc/content/blobs/sha256/"
+	sociContentDirectory = "/var/lib/containers/soci/content"
+	sociBlobDirectory    = "/var/lib/containers/soci/content/blobs/sha256/"
 
 	// The directory whre soci indexes are stored
-	sociIndexDirectory = "/var/lib/soci-snapshotter-grpc/indexes/"
+	sociIndexDirectory = "/var/lib/containers/soci/indexes/"
 
 	sociStorePath         = "/var/lib/soci-store/store"
 	sociStoreCredCacheTtl = 1 * time.Hour
@@ -129,6 +133,21 @@ type Provider struct {
 	imageStreamingEnabled   bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
 	sociStoreKeychainClient sspb.LocalKeychainClient
+}
+
+func prepareSociStore(ctx context.Context) error {
+	sociStoreConf := fmt.Sprintf(`
+root_path = "%s"
+content_store_path = "%s"
+index_store_path = "%s"
+`, sociDataRootDirectory, sociContentDirectory, sociIndexDirectory)
+	if err := os.MkdirAll("/etc/soci-store", 0644); err != nil {
+		return err
+	}
+	if err := os.WriteFile("/etc/soci-store/config.toml", []byte(sociStoreConf), 0644); err != nil {
+		return status.UnavailableErrorf("could not write soci-store config: %s", err)
+	}
+	return nil
 }
 
 func runSociStore(ctx context.Context) {
@@ -159,6 +178,9 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
 	if *imageStreamingEnabled {
 		if *sociStoreBinary != "" {
+			if err := prepareSociStore(env.GetServerContext()); err != nil {
+				return nil, err
+			}
 			go runSociStore(env.GetServerContext())
 		}
 
