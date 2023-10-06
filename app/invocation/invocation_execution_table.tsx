@@ -71,6 +71,9 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                     {execution?.executedActionMetadata?.ioStats?.fileUploadCount} files)
                   </div>
                 </div>
+                {execution.status?.code !== 0 && execution.status?.message && (
+                  <div className="invocation-execution-row-status-message">{execution.status.message}</div>
+                )}
               </div>
             </Link>
           );

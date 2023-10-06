@@ -809,6 +809,12 @@
   font-weight: 600;
 }
 
+.invocation-execution-row-status-message {
+  color: #e53935;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
 .invocation-execution-row-stats div {
   margin-right: 8px;
 }
