@@ -2000,6 +2000,9 @@ message Compressor {
 
     // Brotli compression.
     BROTLI = 3;
+
+    // Zstandard compression with external dictionary support.
+    ZSTD_DICT = 4;
   }
 }
 
@@ -2036,6 +2039,24 @@ message CacheCapabilities {
   // [BatchUpdateBlobs][build.bazel.remote.execution.v2.ContentAddressableStorage.BatchUpdateBlobs]
   // requests.
   repeated Compressor.Value supported_batch_update_compressors = 7;
+
+  // BUILDBUDDY EXTENSIONS BELOW
+
+  // A digest pointing to a [ZstdDictionaryRegistry][build.bazel.remote.execution.v2.ZstdDictionaryRegistry]
+  // object in CAS that contains the zstd dictionaries that should be used for
+  // compressing and decompressing blobs.
+  //
+  // This MUST be set if the server supports ZSTD_DICT compression.
+  Digest zstd_dictionary_registry = 1000;
+}
+
+message ZstdDictionaryRegistry {
+  // Each file's name should be set to either the dictID of the ZSTD dictionary (32 bits unsigned integer),
+  // or "default" for the default dictionary that client SHOULD use to compress uploaded data.
+  //
+  // A "default" dictionary MUST always be present.
+  // The server MUST ensure that all listed dictionaries are accessible throughout the invocation duration.
+  repeated FileNode dictionaries = 1;
 }
 
 // Capabilities of the remote execution system.
