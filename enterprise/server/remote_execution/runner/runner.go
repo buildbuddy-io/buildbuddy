@@ -66,6 +66,11 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+
+	// ErrShutdown is returned when an operation fails due to executor shutdown
+	// Return a retryable error so that the operation can be retried on a
+	// different executor
+	ErrShutdown = status.UnavailableError("executor is shutting down")
 )
 
 const (
@@ -167,7 +172,7 @@ func (rs runnerSlice) String() string {
 
 type commandRunner struct {
 	env environment.Env
-	p   *pool
+	mu  sync.RWMutex
 
 	// key controls which tasks can execute on this runner.
 	key *rnpb.RunnerKey
@@ -181,7 +186,7 @@ type commandRunner struct {
 
 	// Container is the handle on the container (possibly the bare /
 	// NOP container) that is used to execute commands.
-	Container *container.TracedCommandContainer
+	container *container.TracedCommandContainer
 	// Workspace holds the data which is used by this runner.
 	Workspace *workspace.Workspace
 	// VFS holds the FUSE-backed virtual filesystem, if it's enabled.
@@ -264,7 +269,7 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 	}
 	err = container.PullImageIfNecessary(
 		ctx, r.env,
-		r.Container, creds, r.PlatformProperties.ContainerImage,
+		r.container, creds, r.PlatformProperties.ContainerImage,
 	)
 	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
@@ -319,11 +324,17 @@ func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStat
 
 // Run runs the task that is currently bound to the command runner.
 func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
+	if r.safeReadState() == removed {
+		return commandutil.ErrorResult(ErrShutdown)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	wsPath := r.Workspace.Path()
 	if r.VFS != nil {
 		wsPath = r.VFS.GetMountDir()
 	}
-
 	command := r.task.GetCommand()
 
 	if !r.PlatformProperties.RecycleRunner {
@@ -334,18 +345,11 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		return r.Container.Run(ctx, command, wsPath, creds)
+		return r.container.Run(ctx, command, wsPath, creds)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
-	//
-	// TODO(bduffany): Make this access to r.state thread-safe. The pool can be
-	// shutdown while this func is executing, which concurrently sets the runner
-	// state to "removed". This doesn't cause any known issues right now, but is
-	// error prone.
-	r.p.mu.RLock()
 	s := r.state
-	r.p.mu.RUnlock()
 	switch s {
 	case initial:
 		creds, err := r.pullCredentials()
@@ -354,22 +358,18 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		}
 		err = container.PullImageIfNecessary(
 			ctx, r.env,
-			r.Container, creds, r.PlatformProperties.ContainerImage,
+			r.container, creds, r.PlatformProperties.ContainerImage,
 		)
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		if err := r.Container.Create(ctx, wsPath); err != nil {
+		if err := r.container.Create(ctx, wsPath); err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		r.p.mu.Lock()
 		r.state = ready
-		r.p.mu.Unlock()
 		break
 	case ready:
 		break
-	case removed:
-		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
 		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", r.state))
 	}
@@ -378,7 +378,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, &container.Stdio{})
+	return r.container.Exec(ctx, command, &container.Stdio{})
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
@@ -396,16 +396,50 @@ func (r *commandRunner) GetIsolationType() string {
 	return r.PlatformProperties.WorkloadIsolationType
 }
 
+func (r *commandRunner) pause(ctx context.Context) error {
+	if r.safeReadState() == removed {
+		return ErrShutdown
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.container.Pause(ctx)
+}
+
+func (r *commandRunner) unpause(ctx context.Context) error {
+	if r.safeReadState() == removed {
+		return ErrShutdown
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	err := r.container.Unpause(ctx)
+	if err != nil {
+		return err
+	}
+	r.state = ready
+	return nil
+}
+
+func (r *commandRunner) stats(ctx context.Context) (*repb.UsageStats, error) {
+	if r.safeReadState() == removed {
+		return nil, ErrShutdown
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.container.Stats(ctx)
+}
+
+func (r *commandRunner) containerState(ctx context.Context) (*rnpb.ContainerState, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.container.State(ctx)
+}
+
 // shutdown runs any manual cleanup required to clean up processes before
 // removing a runner from the pool. This has no effect for isolation types
 // that fully isolate all processes started by the runner and remove them
 // automatically via `Container.Remove`.
 func (r *commandRunner) shutdown(ctx context.Context) error {
-	r.p.mu.RLock()
-	props := r.PlatformProperties
-	r.p.mu.RUnlock()
-
-	if props.WorkloadIsolationType != string(platform.BareContainerType) {
+	if r.PlatformProperties.WorkloadIsolationType != string(platform.BareContainerType) {
 		return nil
 	}
 
@@ -418,31 +452,36 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (r *commandRunner) Remove(ctx context.Context) error {
+func (r *commandRunner) remove(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Removal will sometimes happen in the background because it can be
+	// slow. Callers should always first synchronously mark the runner as removed
+	// so it can't be reused by other threads
+	if r.state != removed {
+		return status.InternalError("runner should be marked as removed before entering this function")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, runnerCleanupTimeout)
+	defer cancel()
+
 	if r.removeCallback != nil {
 		defer r.removeCallback()
 	}
 
-	r.p.mu.RLock()
-	s := r.state
-	r.p.mu.RUnlock()
-
+	// TODO: Make sure this is idempotent / won't break if the machine was in initial state
 	errs := []error{}
-	if s != initial && s != removed {
-		r.p.mu.Lock()
-		r.state = removed
-		r.p.mu.Unlock()
-		if err := r.shutdown(ctx); err != nil {
+	if err := r.shutdown(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if r.stopPersistentWorker != nil {
+		if err := r.stopPersistentWorker(); err != nil {
 			errs = append(errs, err)
 		}
-		if r.stopPersistentWorker != nil {
-			if err := r.stopPersistentWorker(); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		if err := r.Container.Remove(ctx); err != nil {
-			errs = append(errs, err)
-		}
+	}
+	if err := r.container.Remove(ctx); err != nil {
+		errs = append(errs, err)
 	}
 	if err := r.removeVFS(); err != nil {
 		errs = append(errs, err)
@@ -456,16 +495,20 @@ func (r *commandRunner) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (r *commandRunner) RemoveWithTimeout(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, runnerCleanupTimeout)
-	defer cancel()
-	return r.Remove(ctx)
-}
-
 func (r *commandRunner) RemoveInBackground() {
+	if r.safeReadState() == removed {
+		return
+	}
+
+	// Synchronously mark the runner as removed, so other threads don't try
+	// to use it
+	r.mu.Lock()
+	r.state = removed
+	r.mu.Unlock()
+
 	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
-		if err := r.RemoveWithTimeout(context.Background()); err != nil {
+		if err := r.remove(context.Background()); err != nil {
 			log.Errorf("Failed to remove runner: %s", err)
 		}
 	}()
@@ -474,11 +517,8 @@ func (r *commandRunner) RemoveInBackground() {
 // isCIRunner returns whether the task assigned to this runner is a BuildBuddy
 // CI task.
 func (r *commandRunner) isCIRunner() bool {
-	r.p.mu.RLock()
 	task := r.task
 	props := r.PlatformProperties
-	r.p.mu.RUnlock()
-
 	args := task.GetCommand().GetArguments()
 	return props.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
 }
@@ -585,7 +625,7 @@ func (p *pool) checkAddPreconditions(r *commandRunner) *labeledError {
 	}
 	// Note: shutdown can change the state to removed, so we need the lock to be
 	// held for this check.
-	if r.state != ready {
+	if r.safeReadState() != ready {
 		return &labeledError{
 			status.InternalErrorf("unexpected runner state %d; this should never happen", r.state),
 			"unexpected_runner_state",
@@ -599,14 +639,14 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 		return err
 	}
 
-	if err := r.Container.Pause(ctx); err != nil {
+	if err := r.pause(ctx); err != nil {
 		return &labeledError{
 			status.WrapError(err, "failed to pause container before adding to the pool"),
 			"pause_failed",
 		}
 	}
 
-	stats, err := r.Container.Stats(ctx)
+	stats, err := r.stats(ctx)
 	if err != nil {
 		return &labeledError{
 			status.WrapError(err, "failed to compute container stats"),
@@ -947,13 +987,12 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	}
 	r := &commandRunner{
 		env:                p.env,
-		p:                  p,
 		key:                state.GetRunnerKey(),
 		debugID:            state.GetDebugId(),
 		taskNumber:         state.GetAssignedTaskCount(),
 		task:               st.GetExecutionTask(),
 		PlatformProperties: props,
-		Container:          ctr,
+		container:          ctr,
 		Workspace:          ws,
 	}
 	if err := r.startVFS(); err != nil {
@@ -1052,7 +1091,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, e
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
 		r := p.runners[i]
-		if key.GroupId != r.key.GroupId || r.state != paused {
+		if key.GroupId != r.key.GroupId || r.safeReadState() != paused {
 			continue
 		}
 
@@ -1067,14 +1106,13 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, e
 		}
 
 		// TODO(bduffany): Find a way to unpause here without holding the lock.
-		if err := r.Container.Unpause(ctx); err != nil {
+		if err := r.unpause(ctx); err != nil {
 			// If we fail to unpause, subsequent unpause attempts are also likely
 			// to fail, so remove the container from the pool.
 			p.remove(r)
 			r.RemoveInBackground()
 			return nil, status.WrapErrorf(err, "failed to unpause runner %s", r)
 		}
-		r.state = ready
 
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
@@ -1192,61 +1230,64 @@ func (p *pool) initializeFromSavedState(ctx context.Context) error {
 func (p *pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
-	var runnersToRemove []*commandRunner
+	removeResults := make(chan error)
 	persistedState := &rnpb.RunnerPoolState{}
 	// Remove only paused runners, since active runners should be removed only
 	// after their currently assigned task is canceled due to the shutdown
 	// grace period expiring.
-	var pausedRunners, activeRunners []*commandRunner
+	var runnersToRemove, activeRunners []*commandRunner
 	for _, r := range p.runners {
+		r.mu.Lock()
 		if r.state == paused {
-			pausedRunners = append(pausedRunners, r)
+			// Immediately mark runner as removed, so no other threads try
+			// to use it
+			r.state = removed
+			runnersToRemove = append(runnersToRemove, r)
 		} else {
 			activeRunners = append(activeRunners, r)
 		}
+		r.mu.Unlock()
 	}
-	runnersToRemove = pausedRunners
+
+	// Remove all paused/removed runners from the `runners` field
 	p.runners = activeRunners
+	p.mu.Unlock()
+
 	if len(runnersToRemove) > 0 {
 		log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
 	}
-
-	for _, r := range pausedRunners {
+	for _, r := range runnersToRemove {
 		// TODO: figure out how/whether to preserve the workspace dir during
 		// executor restarts, and remove this check. We exclude this check
 		// for firecracker workflows because they don't use the workspace
 		// disk.
-		if r.PlatformProperties.PreserveWorkspace && !(r.PlatformProperties.WorkflowID != "" && r.PlatformProperties.WorkloadIsolationType == string(platform.FirecrackerContainerType)) {
-			continue
+		isFirecrackerWorkflow := r.PlatformProperties.WorkflowID != "" &&
+			r.PlatformProperties.WorkloadIsolationType == string(platform.FirecrackerContainerType)
+		preserveState := !r.PlatformProperties.PreserveWorkspace || isFirecrackerWorkflow
+		if preserveState {
+			containerState, err := r.containerState(ctx)
+			if err == nil {
+				runnerState := &rnpb.RunnerState{
+					RunnerKey:      r.key,
+					DebugId:        r.debugID,
+					ContainerState: containerState,
+				}
+				persistedState.RunnerStates = append(persistedState.RunnerStates, runnerState)
+				log.Infof("Persisting state for runner %s", r)
+			} else {
+				if !status.IsUnimplementedError(err) {
+					log.Warningf("Failed to persist state for runner %s: %s", r, err)
+				}
+			}
 		}
 
-		containerState, err := r.Container.State(ctx)
-		if status.IsUnimplementedError(err) {
-			continue
-		}
-		if err != nil {
-			log.Warningf("Failed to persist state for runner %s: %s", r, err)
-			continue
-		}
-		runnerState := &rnpb.RunnerState{
-			RunnerKey:      r.key,
-			DebugId:        r.debugID,
-			ContainerState: containerState,
-		}
-		persistedState.RunnerStates = append(persistedState.RunnerStates, runnerState)
-		log.Infof("Persisting state for runner %s", r)
-	}
-	p.mu.Unlock()
-
-	removeResults := make(chan error)
-	for _, r := range runnersToRemove {
+		r := r
 		// Remove runners in parallel, since each deletion is blocked on uploads
 		// to finish (if applicable). A single runner that takes a long time to
 		// upload its outputs should not block other runners from working on
 		// workspace removal in the meantime.
-		r := r
 		go func() {
-			removeResults <- r.RemoveWithTimeout(ctx)
+			removeResults <- r.remove(ctx)
 		}()
 	}
 
@@ -1275,6 +1316,7 @@ func (p *pool) Wait() {
 }
 
 func (p *pool) remove(r *commandRunner) {
+	// TODO: Make sure all usages of this are already locked
 	for i := range p.runners {
 		if p.runners[i] == r {
 			// Not using the "swap with last element" trick here because we need to
@@ -1437,6 +1479,18 @@ func SplitArgsIntoWorkerArgsAndFlagFiles(args []string) ([]string, []string) {
 	return workerArgs, flagFiles
 }
 
+func (r *commandRunner) safeReadState() state {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.state
+}
+
+func (r *commandRunner) safeSetState(s state) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.state = s
+}
+
 func (r *commandRunner) supportsPersistentWorkers(ctx context.Context, command *repb.Command) bool {
 	if r.PlatformProperties.PersistentWorkerKey != "" {
 		return true
@@ -1490,7 +1544,7 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 			Stdout: stdoutWriter,
 			Stderr: &r.stderr,
 		}
-		res := r.Container.Exec(ctx, command, stdio)
+		res := r.container.Exec(ctx, command, stdio)
 		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
 	}()
 }

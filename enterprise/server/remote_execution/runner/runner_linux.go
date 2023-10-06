@@ -56,7 +56,7 @@ func (r *commandRunner) startVFS() error {
 			return status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
 		}
 
-		vfsServer = vfs_server.New(r.p.env, r.Workspace.Path())
+		vfsServer = vfs_server.New(r.env, r.Workspace.Path())
 		unixSocket := filepath.Join(r.Workspace.Path(), "vfs.sock")
 
 		lis, err := net.Listen("unix", unixSocket)
@@ -87,7 +87,7 @@ func (r *commandRunner) prepareVFS(ctx context.Context, layout *container.FileSy
 	if r.PlatformProperties.EnableVFS {
 		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
 		// pass the layout information to the implementation.
-		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+		if fc, ok := r.container.Delegate.(*firecracker.FirecrackerContainer); ok {
 			fc.SetTaskFileSystemLayout(layout)
 		}
 	}
