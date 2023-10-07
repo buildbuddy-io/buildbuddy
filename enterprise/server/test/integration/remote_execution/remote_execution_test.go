@@ -1697,7 +1697,7 @@ func TestAppShutdownDuringExecution(t *testing.T) {
 	// app while an update stream is in progress, and want to catch the error
 	// early.
 	flags.Set(t, "executor.task_progress_publish_interval", 50*time.Millisecond)
-	initialTasksStarted := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	initialTasksStartedCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	rbe := rbetest.NewRBETestEnv(t)
 
@@ -1780,10 +1780,8 @@ func TestAppShutdownDuringExecution(t *testing.T) {
 
 	// Make sure we only ever started a single task execution per command (tasks
 	// should not be re-executed just because the app goes down).
-	tasksStarted := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount) - initialTasksStarted
-	require.Equal(
-		t, float64(len(cmds)), tasksStarted,
-		"no tasks should have been retried")
+	tasksStartedCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount) - initialTasksStartedCount
+	require.Equal(t, float64(len(cmds)), tasksStartedCount, "no tasks should have been retried")
 }
 
 func randSleepMillis(min, max int) {
