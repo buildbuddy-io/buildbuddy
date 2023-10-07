@@ -86,12 +86,18 @@ func Configure() error {
 			return status.InvalidArgumentErrorf("Only one of the 'executor.memory_bytes' config option and 'SYS_MEMORY_BYTES' environment variable may be set")
 		}
 		allocatedRAMBytes = *memoryBytes
+	} else {
+		// If flag is not set, fall back to env var, or total memory.
+		setSysRAMBytes()
 	}
 	if *milliCPU > 0 {
 		if os.Getenv(cpuEnvVarName) != "" {
 			return status.InvalidArgumentErrorf("Only one of the 'executor.millicpu' config option and 'SYS_MILLICPU' environment variable may be set")
 		}
 		allocatedCPUMillis = *milliCPU
+	} else {
+		// If flag is not set, fall back to env var, or available cores.
+		setSysMilliCPUCapacity()
 	}
 
 	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
