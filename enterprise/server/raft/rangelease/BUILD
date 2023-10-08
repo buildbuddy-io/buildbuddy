@@ -34,6 +34,7 @@ go_test(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//client",
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_lni_goutils//random",

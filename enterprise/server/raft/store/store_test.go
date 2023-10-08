@@ -145,6 +145,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	ts.Store = s
 	t.Cleanup(func() {
 		s.Stop(context.TODO())
+		nodeHost.Close()
 	})
 	return ts, nodeHost
 }
@@ -319,7 +320,7 @@ func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
 	fs := filestore.New()
 	pebbleKey, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
-	keyBytes, err := pebbleKey.Bytes(filestore.Version2)
+	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
 	require.NoError(t, err)
 	return keyBytes
 }

@@ -78,6 +78,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_SimpleSplit{
 			SimpleSplit: value,
 		}
+	case *rfpb.FindMissingRequest:
+		req.Value = &rfpb.RequestUnion_FindMissing{
+			FindMissing: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -228,4 +232,13 @@ func (br *BatchResponse) SimpleSplitResponse(n int) (*rfpb.SimpleSplitResponse, 
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetSimpleSplit(), br.unionError(u)
+}
+
+func (br *BatchResponse) FindMissingResponse(n int) (*rfpb.FindMissingResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetFindMissing(), br.unionError(u)
 }

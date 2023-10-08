@@ -32,6 +32,8 @@ type NodeHost interface {
 	GetNoOPSession(shardID uint64) *client.Session
 	SyncPropose(ctx context.Context, session *client.Session, cmd []byte) (dbsm.Result, error)
 	SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error)
+	ReadIndex(shardID uint64, timeout time.Duration) (*dragonboat.RequestState, error)
+	ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error)
 }
 
 type apiClientAndConn struct {
@@ -168,6 +170,13 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	return batchResponse, err
 }
 
+func getTimeout(ctx context.Context) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		return deadline.Sub(time.Now())
+	}
+	return DefaultContextTimeout
+}
+
 func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
@@ -176,7 +185,15 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 
 	var raftResponseIface interface{}
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		raftResponseIface, err = nodehost.SyncRead(ctx, shardID, buf)
+		rs, err := nodehost.ReadIndex(shardID, getTimeout(ctx))
+		if err != nil {
+			return err
+		}
+		v := <-rs.ResultC()
+		if !v.Completed() {
+			return status.FailedPreconditionError("Failed to read node index")
+		}
+		raftResponseIface, err = nodehost.ReadLocalNode(rs, buf)
 		return err
 	})
 	if err != nil {

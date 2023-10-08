@@ -843,17 +843,24 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 }
 
 func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
-	r, err := s.LeasedRange(req.GetHeader())
+	_, err := s.LeasedRange(req.GetHeader())
 	if err != nil {
 		return nil, err
 	}
-	missing, err := r.FindMissing(ctx, req.GetHeader(), req.GetFileRecord())
+	shardID := req.GetHeader().GetReplica().GetShardId()
+	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
 	if err != nil {
 		return nil, err
 	}
-	return &rfpb.FindMissingResponse{
-		FileRecord: missing,
-	}, nil
+	batch.Header = req.GetHeader()
+	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, shardID, batch)
+	if err != nil {
+		if err == dragonboat.ErrShardNotFound {
+			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, shardID)
+		}
+		return nil, err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp).FindMissingResponse(0)
 }
 
 func (s *Store) GetMulti(ctx context.Context, req *rfpb.GetMultiRequest) (*rfpb.GetMultiResponse, error) {

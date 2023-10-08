@@ -230,6 +230,7 @@ message RequestUnion {
     FileUpdateMetadataRequest file_update_metadata = 10;
     DeleteRangeRequest delete_range = 14;
     SimpleSplitRequest simple_split = 15;
+    FindMissingRequest find_missing = 16;
   }
 }
 
@@ -251,6 +252,7 @@ message ResponseUnion {
     FileUpdateMetadataResponse file_update_metadata = 11;
     DeleteRangeResponse delete_range = 15;
     SimpleSplitResponse simple_split = 16;
+    FindMissingResponse find_missing = 17;
   }
 }
 
@@ -557,12 +559,11 @@ message WriteResponse {
 
 message FindMissingRequest {
   Header header = 1;
-  Isolation isolation = 2;
-  repeated FileRecord file_record = 3;
+  repeated FileRecord file_records = 2;
 }
 
 message FindMissingResponse {
-  repeated FileRecord file_record = 1;
+  repeated FileRecord missing = 1;
 }
 
 message GetMultiRequest {

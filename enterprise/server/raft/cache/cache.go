@@ -358,7 +358,7 @@ func (rc *RaftCache) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pebbleKey.Bytes(filestore.Version2)
+	return pebbleKey.Bytes(filestore.Version5)
 }
 
 func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
@@ -500,7 +500,7 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 			if !ok {
 				return nil, status.InternalError("type is not *rfpb.FileRecord")
 			}
-			req.FileRecord = append(req.FileRecord, fr)
+			req.FileRecords = append(req.FileRecords, fr)
 		}
 		return c.FindMissing(ctx, req)
 	})
@@ -514,7 +514,7 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 		if !ok {
 			return nil, status.InternalError("response not of type *rfpb.FindMissingResponse")
 		}
-		for _, fr := range fmr.GetFileRecord() {
+		for _, fr := range fmr.GetMissing() {
 			missingDigests = append(missingDigests, fr.GetDigest())
 		}
 	}

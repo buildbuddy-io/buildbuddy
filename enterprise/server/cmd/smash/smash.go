@@ -100,7 +100,9 @@ func writeBlobsForReading(ctx context.Context, numBlobs int) []*repb.Digest {
 		log.Fatalf("Unable to connect to cache '%s': %s", *cacheTarget, err)
 	}
 	bsClient := bspb.NewByteStreamClient(conn)
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	if *apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	}
 	eg, ctx := errgroup.WithContext(ctx)
 
 	mu := sync.Mutex{}
