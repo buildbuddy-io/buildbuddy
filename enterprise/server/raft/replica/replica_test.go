@@ -129,7 +129,7 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 	fs := filestore.New()
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(t, err)
-	fileMetadataKey, err := key.Bytes(filestore.Version2)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
 	require.NoError(t, err)
 
 	writeCloserMetadata := fs.InlineWriter(context.TODO(), fileRecord.GetDigest().GetSizeBytes())
@@ -334,7 +334,7 @@ func TestReplicaCAS(t *testing.T) {
 	key, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
 
-	fileMetadataKey, err := key.Bytes(filestore.Version2)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
 	require.NoError(t, err)
 
 	// Do a DirectRead and verify the value was written.

@@ -200,7 +200,7 @@ func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pebbleKey.Bytes(filestore.Version2)
+	return pebbleKey.Bytes(filestore.Version5)
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
@@ -913,6 +913,26 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 	return rsp, nil
 }
 
+func (sm *Replica) findMissing(db ReplicaReader, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	rsp := &rfpb.FindMissingResponse{
+		Missing: make([]*rfpb.FileRecord, 0),
+	}
+
+	for _, fileRecord := range req.GetFileRecords() {
+		fileMetadataKey, err := sm.fileMetadataKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		if !iter.SeekGE(fileMetadataKey) || !bytes.Equal(iter.Key(), fileMetadataKey) {
+			rsp.Missing = append(rsp.Missing, fileRecord)
+		}
+	}
+	return rsp, nil
+}
+
 func statusProto(err error) *statuspb.Status {
 	s, _ := gstatus.FromError(err)
 	return s.Proto()
@@ -981,6 +1001,12 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 		r, err := sm.scan(db, value.Scan)
 		rsp.Value = &rfpb.ResponseUnion_Scan{
 			Scan: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FindMissing:
+		r, err := sm.findMissing(db, value.FindMissing)
+		rsp.Value = &rfpb.ResponseUnion_FindMissing{
+			FindMissing: r,
 		}
 		rsp.Status = statusProto(err)
 	default:
@@ -1220,33 +1246,6 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 	return rc, nil
 }
 
-func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
-	reader, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-
-	if err := sm.validateRange(header); err != nil {
-		return nil, err
-	}
-
-	iter := reader.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	missing := make([]*rfpb.FileRecord, 0)
-	for _, fileRecord := range fileRecords {
-		fileMetadaKey, err := sm.fileMetadataKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-		if !iter.SeekGE(fileMetadaKey) || !bytes.Equal(iter.Key(), fileMetadaKey) {
-			missing = append(missing, fileRecord)
-		}
-	}
-	return missing, nil
-}
-
 func (sm *Replica) GetMulti(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.GetMultiResponse_Data, error) {
 	reader, err := sm.leaser.DB()
 	if err != nil {
@@ -1450,11 +1449,20 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, err
 	}
 	batchRsp := &rfpb.BatchCmdResponse{}
-	for _, req := range batchReq.GetUnion() {
-		//sm.log.Debugf("Lookup: request union: %+v", req)
-		rsp := sm.handleRead(db, req)
-		//sm.log.Debugf("Lookup: response union: %+v", rsp)
-		batchRsp.Union = append(batchRsp.Union, rsp)
+
+	var headerErr error
+	if batchReq.GetHeader() != nil {
+		headerErr = sm.validateRange(batchReq.GetHeader())
+		batchRsp.Status = statusProto(headerErr)
+	}
+
+	if headerErr == nil {
+		for _, req := range batchReq.GetUnion() {
+			//sm.log.Debugf("Lookup: request union: %+v", req)
+			rsp := sm.handleRead(db, req)
+			// sm.log.Debugf("Lookup: response union: %+v", rsp)
+			batchRsp.Union = append(batchRsp.Union, rsp)
+		}
 	}
 
 	rspBuf, err := proto.Marshal(batchRsp)
