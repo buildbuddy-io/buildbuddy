@@ -360,34 +360,40 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     return (
       <div className="create-repo-page">
         <div className="create-repo-page-details">
-          <div className="repo-block card template-block">
-            <div className="template">
-              <div className="template-metadata">
-                <div className="template-name">{this.getTemplateName()}</div>
-                <div className="template-props">
-                  <div className="template-repo">
-                    <Github />
-                    <div className="template-repo-name">
-                      {this.getTemplateUrl().replaceAll("https://github.com/", "").split("/")[0]}
-                    </div>
+          {this.getTemplateName() && (
+            <div className="repo-block card template-block">
+              <div className="template">
+                <div className="template-metadata">
+                  <div className="template-name">{this.getTemplateName()}</div>
+                  <div className="template-props">
+                    {this.getTemplateUrl() && (
+                      <div className="template-repo">
+                        <Github />
+                        <div className="template-repo-name">
+                          {this.getTemplateUrl().replaceAll("https://github.com/", "").split("/")[0]}
+                        </div>
+                      </div>
+                    )}
+                    {this.getTemplateUrl() && (
+                      <div className="template-repo">
+                        <BookCopy />
+                        <div className="template-repo-name">
+                          {this.getTemplateUrl().replaceAll("https://github.com/", "").split("/").pop()}
+                        </div>
+                      </div>
+                    )}
+                    {this.getTemplateDirectory() && (
+                      <div className="template-repo">
+                        <Folders />
+                        <div className="template-repo-name">{this.getTemplateDirectory().replaceAll("/", " / ")}</div>
+                      </div>
+                    )}
                   </div>
-                  <div className="template-repo">
-                    <BookCopy />
-                    <div className="template-repo-name">
-                      {this.getTemplateUrl().replaceAll("https://github.com/", "").split("/")[1]}
-                    </div>
-                  </div>
-                  {this.getTemplateDirectory() && (
-                    <div className="template-repo">
-                      <Folders />
-                      <div className="template-repo-name">{this.getTemplateDirectory().replaceAll("/", " / ")}</div>
-                    </div>
-                  )}
                 </div>
+                {this.getTemplateImage() && <img className="template-image" src={this.getTemplateImage()} />}
               </div>
-              {this.getTemplateImage() && <img className="template-image" src={this.getTemplateImage()} />}
             </div>
-          </div>
+          )}
         </div>
         <div className={`repo-block card repo-create`}>
           <div className="repo-title">Create repository</div>
