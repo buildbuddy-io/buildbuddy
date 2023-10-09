@@ -151,19 +151,15 @@ type accessTokenResponse struct {
 }
 
 func GetGCPProject(env environment.Env, ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error) {
-	groupID := ""
-	if reqCtx := requestcontext.ProtoRequestContextFromContext(ctx); reqCtx != nil {
-		groupID = reqCtx.GetGroupId()
-	}
-	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+	u, err := perms.AuthenticatedUser(ctx, env)
+	if err != nil {
 		return nil, err
 	}
-
 	secretService := env.GetSecretService()
 	if secretService == nil {
 		return nil, status.FailedPreconditionError("secret service not available")
 	}
-	envVars, err := secretService.GetSecretEnvVars(ctx, groupID)
+	envVars, err := secretService.GetSecretEnvVars(ctx, u.GetGroupID())
 	if err != nil {
 		return nil, err
 	}
