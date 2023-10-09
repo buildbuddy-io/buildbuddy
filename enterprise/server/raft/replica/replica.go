@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -102,7 +101,6 @@ type Replica struct {
 	ReplicaID uint64
 
 	store               IStore
-	partitions          []disk.Partition
 	lastAppliedIndex    uint64
 	lastUsageCheckIndex uint64
 
@@ -213,11 +211,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 
 	var numFileRecords, sizeBytes int64
 	sm.partitionMetadataMu.Lock()
-	for _, p := range sm.partitions {
-		pm, ok := sm.partitionMetadata[p.ID]
-		if !ok {
-			continue
-		}
+	for _, pm := range sm.partitionMetadata {
 		ru.Partitions = append(ru.Partitions, proto.Clone(pm).(*rfpb.PartitionMetadata))
 		numFileRecords += pm.GetTotalCount()
 		sizeBytes += pm.GetSizeBytes()
@@ -1767,14 +1761,13 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, partitions []disk.Partition) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore) *Replica {
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,
 		store:               store,
 		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
-		partitions:          partitions,
 		lastUsageCheckIndex: 0,
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", shardID, replicaID)),
 		fileStorer:          filestore.New(),
