@@ -159,6 +159,7 @@ func GetGCPProject(env environment.Env, ctx context.Context, request *gcpb.GetGC
 	if secretService == nil {
 		return nil, status.FailedPreconditionError("secret service not available")
 	}
+	// TODO(siggisim): Add a method for fetching a single env var and use that.
 	envVars, err := secretService.GetSecretEnvVars(ctx, u.GetGroupID())
 	if err != nil {
 		return nil, err
