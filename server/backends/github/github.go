@@ -50,10 +50,10 @@ const (
 	FailureState State = "failure"
 	SuccessState State = "success"
 
-	stateCookieName   = "Github-State-Token"
-	groupIDCookieName = "Github-Linked-Group-ID"
-	userIDCookieName  = "Github-Linked-User-ID"
-	installationIDCookieName  = "Github-Linked-Installation-ID"
+	stateCookieName          = "Github-State-Token"
+	groupIDCookieName        = "Github-Linked-Group-ID"
+	userIDCookieName         = "Github-Linked-User-ID"
+	installationIDCookieName = "Github-Linked-Installation-ID"
 )
 
 // State represents a status value that GitHub's statuses API understands.
@@ -433,7 +433,7 @@ func (c *OAuthHandler) handleInstallation(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		return false, err
 	}
-	// Set a client readable cookie with installation id, so it knows which installation was most recently installed. 
+	// Set a client readable cookie with installation id, so it knows which installation was most recently installed.
 	setCookie(w, installationIDCookieName, rawID, false)
 	if redirect != "" {
 		http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
