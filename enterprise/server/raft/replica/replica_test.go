@@ -73,7 +73,7 @@ func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, sto
 		db.Close()
 	})
 
-	return replica.New(leaser, shardID, replicaID, store, partitions)
+	return replica.New(leaser, shardID, replicaID, store)
 }
 
 func TestOpenCloseReplica(t *testing.T) {
