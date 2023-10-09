@@ -36,7 +36,7 @@ const (
 	// Must match: https://cloud.google.com/sdk/docs/authorizing#auth-login
 	accessTokenEnvVariableName = "CLOUDSDK_AUTH_ACCESS_TOKEN"
 	authTokenURL               = "https://accounts.google.com/o/oauth2/token"
-	projectSearchURL = "https://cloudresourcemanager.googleapis.com/v3/projects:search"
+	projectSearchURL           = "https://cloudresourcemanager.googleapis.com/v3/projects:search"
 )
 
 var (
@@ -201,13 +201,13 @@ func toProto(projects []project) ([]*gcpb.GCPProject, error) {
 			return nil, err
 		}
 		protos = append(protos, &gcpb.GCPProject{
-			ResourceName: p.Name,
-			Parent: p.Parent,
-			DisplayName: p.DisplayName,
-			Id: p.ProjectID,
-			State: p.State,
+			ResourceName:  p.Name,
+			Parent:        p.Parent,
+			DisplayName:   p.DisplayName,
+			Id:            p.ProjectID,
+			State:         p.State,
 			CreatedAtUsec: createdAt.UnixMicro(),
-			Etag: p.Etag,
+			Etag:          p.Etag,
 		})
 	}
 	return protos, nil
@@ -218,13 +218,13 @@ type projectsResponse struct {
 }
 
 type project struct {
-	Name        string    `json:"name"`
-	Parent      string    `json:"parent"`
-	ProjectID   string    `json:"projectId"`
-	State       string    `json:"state"`
-	DisplayName string    `json:"displayName"`
-	CreateTime  string    `json:"createTime"`
-	Etag        string    `json:"etag"`
+	Name        string `json:"name"`
+	Parent      string `json:"parent"`
+	ProjectID   string `json:"projectId"`
+	State       string `json:"state"`
+	DisplayName string `json:"displayName"`
+	CreateTime  string `json:"createTime"`
+	Etag        string `json:"etag"`
 }
 
 func getRequest(url, token string, v any) error {

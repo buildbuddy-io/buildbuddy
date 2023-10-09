@@ -16,7 +16,8 @@ message GetGCPProjectResponse {
   repeated GCPProject project = 2;
 }
 
-// Based on https://cloud.google.com/resource-manager/reference/rest/v3/projects#Project
+// Based on
+// https://cloud.google.com/resource-manager/reference/rest/v3/projects#Project
 message GCPProject {
   // The unique project identifier, ex. "flame-public"
   string id = 1;
