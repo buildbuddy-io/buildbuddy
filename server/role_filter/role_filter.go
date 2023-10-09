@@ -157,7 +157,7 @@ var (
 		"DeleteIPRule",
 		"GetIPRulesConfig",
 		"SetIPRulesConfig",
-		// GCP 
+		// GCP
 		"GetGCPProject",
 	}
 
