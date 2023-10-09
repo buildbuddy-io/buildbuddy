@@ -159,6 +159,12 @@ proto_library(
 )
 
 proto_library(
+    name = "gcp_proto",
+    srcs = ["gcp.proto"],
+    deps = [":context_proto"],
+)
+
+proto_library(
     name = "package_load_metrics_proto",
     srcs = ["package_load_metrics.proto"],
     deps = [
@@ -449,6 +455,7 @@ proto_library(
         ":encryption_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
+        ":gcp_proto",
         ":github_proto",
         ":group_proto",
         ":invocation_proto",
@@ -733,6 +740,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "gcp_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/gcp",
+    proto = ":gcp_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "pagination_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/pagination",
     proto = ":pagination_proto",
@@ -1001,6 +1017,7 @@ go_proto_library(
         ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
+        ":gcp_go_proto",
         ":github_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
@@ -1308,6 +1325,14 @@ ts_proto_library(
 ts_proto_library(
     name = "github_ts_proto",
     proto = ":github_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "gcp_ts_proto",
+    proto = ":gcp_proto",
     deps = [
         ":context_ts_proto",
     ],
@@ -1640,6 +1665,7 @@ ts_proto_library(
         ":encryption_ts_proto",
         ":eventlog_ts_proto",
         ":execution_stats_ts_proto",
+        ":gcp_ts_proto",
         ":github_ts_proto",
         ":group_ts_proto",
         ":invocation_ts_proto",

@@ -14,9 +14,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -34,6 +36,7 @@ const (
 	// Must match: https://cloud.google.com/sdk/docs/authorizing#auth-login
 	accessTokenEnvVariableName = "CLOUDSDK_AUTH_ACCESS_TOKEN"
 	authTokenURL               = "https://accounts.google.com/o/oauth2/token"
+	projectSearchURL           = "https://cloudresourcemanager.googleapis.com/v3/projects:search"
 )
 
 var (
@@ -145,4 +148,104 @@ func makeTokenExchangeRequest(refreshToken string) (string, error) {
 
 type accessTokenResponse struct {
 	AccessToken string `json:"access_token"`
+}
+
+func GetGCPProject(env environment.Env, ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error) {
+	u, err := perms.AuthenticatedUser(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	secretService := env.GetSecretService()
+	if secretService == nil {
+		return nil, status.FailedPreconditionError("secret service not available")
+	}
+	// TODO(siggisim): Add a method for fetching a single env var and use that.
+	envVars, err := secretService.GetSecretEnvVars(ctx, u.GetGroupID())
+	if err != nil {
+		return nil, err
+	}
+	envVars, err = ExchangeRefreshTokenForAuthToken(ctx, envVars, true)
+	if err != nil {
+		return nil, err
+	}
+	accessToken := ""
+	for _, envVar := range envVars {
+		if envVar.Name == accessTokenEnvVariableName {
+			accessToken = envVar.Value
+		}
+	}
+	if accessToken == "" {
+		return nil, status.FailedPreconditionError("GCP not linked")
+	}
+
+	var projectResponse projectsResponse
+	err = getRequest(projectSearchURL, accessToken, &projectResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	proto, err := toProto(projectResponse.Projects)
+	if err != nil {
+		return nil, err
+	}
+
+	return &gcpb.GetGCPProjectResponse{
+		Project: proto,
+	}, nil
+}
+
+func toProto(projects []project) ([]*gcpb.GCPProject, error) {
+	protos := []*gcpb.GCPProject{}
+	for _, p := range projects {
+		createdAt, err := time.Parse(time.RFC3339, p.CreateTime)
+		if err != nil {
+			return nil, err
+		}
+		protos = append(protos, &gcpb.GCPProject{
+			ResourceName:  p.Name,
+			Parent:        p.Parent,
+			DisplayName:   p.DisplayName,
+			Id:            p.ProjectID,
+			State:         p.State,
+			CreatedAtUsec: createdAt.UnixMicro(),
+			Etag:          p.Etag,
+		})
+	}
+	return protos, nil
+}
+
+type projectsResponse struct {
+	Projects []project `json:"projects"`
+}
+
+type project struct {
+	Name        string `json:"name"`
+	Parent      string `json:"parent"`
+	ProjectID   string `json:"projectId"`
+	State       string `json:"state"`
+	DisplayName string `json:"displayName"`
+	CreateTime  string `json:"createTime"`
+	Etag        string `json:"etag"`
+}
+
+func getRequest(url, token string, v any) error {
+	accessToken := "Bearer " + token
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", accessToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+	err = json.NewDecoder(resp.Body).Decode(v)
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package gcp;
+
+message GetGCPProjectRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+}
+
+message GetGCPProjectResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  repeated GCPProject project = 2;
+}
+
+// Based on
+// https://cloud.google.com/resource-manager/reference/rest/v3/projects#Project
+message GCPProject {
+  // The unique project identifier, ex. "flame-public"
+  string id = 1;
+
+  // The user-readable display name, ex. "BuildBuddy Public"
+  string display_name = 2;
+
+  // Either "ACTIVE" or "DELETE_REQUESTED"
+  // https://cloud.google.com/resource-manager/reference/rest/v3/projects#State
+  string state = 3;
+
+  // Unique resource name of the project, ex. "projects/415104041262"
+  string resource_name = 4;
+
+  // Reference to parent resource, ex. "organizations/123"
+  string parent = 5;
+
+  // Created at timestamp in microseconds since the unix epoc.
+  int64 created_at_usec = 6;
+
+  // A checksum based on the current value of the Project resource.
+  string etag = 7;
+}
