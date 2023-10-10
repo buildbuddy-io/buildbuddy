@@ -134,20 +134,33 @@ func (pu *partitionUsage) RemoteUpdate(nhid string, update *rfpb.PartitionMetada
 	}
 }
 
-func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) (skip bool, err error) {
+func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) error {
+	mdRsp, err := pu.store.Metadata(ctx, &rfpb.MetadataRequest{Header: sample.Key.Header, FileRecord: sample.Key.FileRecord})
+	if err != nil {
+		if status.IsNotFoundError(err) || status.IsOutOfRangeError(err) {
+			log.Infof("Skipping refresh for %q: %s", sample.Key, err)
+			return nil
+		}
+		return err
+	}
+	atime := time.UnixMicro(mdRsp.GetFileMetadata().GetLastAccessUsec())
+	if sample.Timestamp != atime {
+		// atime has refreshed
+		return err
+	}
 	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
 		FileRecord: sample.Key.FileRecord,
 	})
 	rsp, err := client.SyncProposeLocalBatch(ctx, pu.store.NodeHost(), sample.Key.Header.GetReplica().GetShardId(), deleteReq)
 	if err != nil {
-		return false, status.InternalErrorf("could not propose eviction: %s", err)
+		return status.InternalErrorf("could not propose eviction: %s", err)
 	}
 	if err := rsp.AnyError(); err != nil {
 		if status.IsNotFoundError(err) || status.IsOutOfRangeError(err) {
 			log.Infof("Skipping eviction for %q: %s", sample.Key, err)
-			return true, nil
+			return nil
 		}
-		return false, status.InternalErrorf("eviction request failed: %s", rsp.AnyError())
+		return status.InternalErrorf("eviction request failed: %s", rsp.AnyError())
 	}
 
 	ageMillis := float64(time.Since(sample.Timestamp).Milliseconds())
@@ -179,7 +192,7 @@ func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*R
 		}
 	}
 
-	return false, nil
+	return nil
 }
 
 func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sample[*ReplicaSample], error) {
@@ -213,19 +226,6 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 		}
 	}
 	return samples, nil
-}
-
-func (pu *partitionUsage) refresh(ctx context.Context, key *ReplicaSample) (skip bool, timestamp time.Time, err error) {
-	rsp, err := pu.store.Metadata(ctx, &rfpb.MetadataRequest{Header: key.Header, FileRecord: key.FileRecord})
-	if err != nil {
-		if status.IsNotFoundError(err) || status.IsOutOfRangeError(err) {
-			log.Infof("Skipping refresh for %q: %s", key, err)
-			return true, time.Time{}, nil
-		}
-		return false, time.Time{}, err
-	}
-	atime := time.UnixMicro(rsp.GetFileMetadata().GetLastAccessUsec())
-	return false, atime, nil
 }
 
 type ReplicaSample struct {
@@ -266,14 +266,11 @@ func New(store IStore, gossipManager *gossip.GossipManager, partitions []disk.Pa
 			SamplePoolSize:     *samplePoolSize,
 			SamplesPerEviction: *samplesPerEviction,
 			MaxSizeBytes:       maxSizeBytes,
-			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) (skip bool, err error) {
+			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) error {
 				return u.evict(ctx, sample)
 			},
 			OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*ReplicaSample], error) {
 				return u.sample(ctx, n)
-			},
-			OnRefresh: func(ctx context.Context, key *ReplicaSample) (skip bool, timestamp time.Time, err error) {
-				return u.refresh(ctx, key)
 			},
 		})
 		if err != nil {

@@ -42,18 +42,11 @@ func (s *Sample[T]) String() string {
 // OnEvict requests that the given key be evicted. The callback may return
 // skip=true to indicate that the given sample is no longer valid and should be
 // removed from the eviction pool.
-type OnEvict[T Key] func(ctx context.Context, sample *Sample[T]) (skip bool, err error)
+type OnEvict[T Key] func(ctx context.Context, sample *Sample[T]) error
 
 // OnSample requests that n random samples be provided from the underlying data.
 type OnSample[T Key] func(ctx context.Context, n int) ([]*Sample[T], error)
 
-// OnRefresh requests the latest access timestamp for the given key. The
-// callback may return skip=true to indicate that the given sample is no longer
-// valid and should be removed from the eviction pool.
-type OnRefresh[T Key] func(ctx context.Context, key T) (skip bool, timestamp time.Time, error error)
-
-// LRU implements a thread safe fixed size LRU cache using sampled eviction.
-//
 // The LRU does not store information about the full set of keys or values that
 // is subject to eviction, instead relying on user provided callbacks to perform
 // sampling of the full universe of data.
@@ -73,12 +66,12 @@ type LRU[T Key] struct {
 	maxSizeBytes                int64
 	onEvict                     OnEvict[T]
 	onSample                    OnSample[T]
-	onRefresh                   OnRefresh[T]
 	evictionResampleLatencyUsec prometheus.Observer
 	evictionEvictLatencyUsec    prometheus.Observer
 	limiter                     *rate.Limiter
 
-	samplePool []*Sample[T]
+	samplePool         []*Sample[T]
+	numEvictionWorkers int
 
 	mu              sync.Mutex
 	ctx             context.Context
@@ -110,11 +103,11 @@ type Opts[T Key] struct {
 	EvictionEvictLatencyUsec prometheus.Observer
 	// RateLimit is the maximum number of evictions to perform per second.
 	// If not set, no limit is enforced.
-	RateLimit float64
+	RateLimit          float64
+	NumEvictionWorkers int
 
-	OnEvict   OnEvict[T]
-	OnSample  OnSample[T]
-	OnRefresh OnRefresh[T]
+	OnEvict  OnEvict[T]
+	OnSample OnSample[T]
 }
 
 func New[T Key](opts *Opts[T]) (*LRU[T], error) {
@@ -137,9 +130,6 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 	if opts.OnSample == nil {
 		return nil, status.FailedPreconditionError("sample callback is required")
 	}
-	if opts.OnRefresh == nil {
-		return nil, status.FailedPreconditionError("refresh callback is required")
-	}
 	rateLimit := rate.Limit(opts.RateLimit)
 	if rateLimit == 0 {
 		rateLimit = rate.Inf
@@ -151,7 +141,6 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 		maxSizeBytes:                opts.MaxSizeBytes,
 		onEvict:                     opts.OnEvict,
 		onSample:                    opts.OnSample,
-		onRefresh:                   opts.OnRefresh,
 		evictionResampleLatencyUsec: opts.EvictionResampleLatencyUsec,
 		evictionEvictLatencyUsec:    opts.EvictionEvictLatencyUsec,
 		limiter:                     rate.NewLimiter(rateLimit, 1),
@@ -207,6 +196,7 @@ func (l *LRU[T]) UpdateSizeBytes(sizeBytes int64) {
 }
 
 func (l *LRU[T]) resampleK(k int) error {
+	log.Infof("resampleK %d", k)
 	seen := make(map[string]struct{}, len(l.samplePool))
 	for _, entry := range l.samplePool {
 		seen[entry.Key.ID()] = struct{}{}
@@ -250,59 +240,14 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 	for i := len(l.samplePool) - 1; i >= 0; i-- {
 		sample := l.samplePool[i]
 
-		l.mu.Lock()
-		oldLocalSizeBytes := l.localSizeBytes
-		oldGlobalSizeBytes := l.globalSizeBytes
-		l.mu.Unlock()
-
-		skip, timestamp, err := l.onRefresh(l.ctx, sample.Key)
-		if err != nil {
-			log.Infof("Could not refresh timestamp for %q: %s", sample.Key, err)
-			continue
-		}
-		if skip {
-			continue
-		}
-		if sample.Timestamp != timestamp {
-			log.Infof("Evictor skipping %q; atime has changed %s -> %s", sample.Key, sample.Timestamp, timestamp)
-			// Update the timestamp to the new value so this sample can be
-			// removed later when the pool is trimmed.
-			sample.Timestamp = timestamp
-			continue
-		}
-
 		log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
-		skip, err = l.onEvict(l.ctx, sample)
+		err := l.onEvict(l.ctx, sample)
 		if err != nil {
 			log.Warningf("Could not evict %q: %s", sample.Key, err)
 			continue
 		}
 
-		l.mu.Lock()
-
-		// The user (e.g. pebble cache) is the source of truth of the size
-		// data, but the LRU also needs to do its own accounting in between
-		// the times that the user provides a size update to the LRU.
-		// We skip our own accounting here if we detect that the size has
-		// changed since it means the user provided their own size update
-		// which takes priority.
-		if l.localSizeBytes == oldLocalSizeBytes {
-			l.localSizeBytes -= sample.SizeBytes
-		}
-		if l.globalSizeBytes == oldGlobalSizeBytes {
-			// Assume eviction on remote servers is happening at the same
-			// rate as local eviction. It's fine to be wrong as we expect the
-			// actual sizes to be periodically to be reset to the true numbers
-			// using UpdateSizeBytes from data received from other servers.
-			l.globalSizeBytes -= int64(float64(sample.SizeBytes) * float64(l.globalSizeBytes) / float64(l.localSizeBytes))
-		}
-		l.mu.Unlock()
-
 		l.samplePool = append(l.samplePool[:i], l.samplePool[i+1:]...)
-
-		if skip {
-			continue
-		}
 
 		return sample, nil
 	}
@@ -334,6 +279,7 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 		if status.IsNotFoundError(err) {
 			// If no candidates were evictable in the whole pool, resample
 			// the pool.
+			log.Info("resample the whole pool")
 			l.samplePool = l.samplePool[:0]
 			if err := l.resampleK(l.samplePoolSize); err != nil {
 				return nil, err

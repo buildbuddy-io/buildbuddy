@@ -2067,6 +2067,15 @@ var (
 		PartitionID,
 		CacheNameLabel,
 	})
+	PebbleCacheEvictionSamplesChanSize2 = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_eviction_samples_chan_size_2",
+		Help:      "Num of items in eviction samples chan",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
 
 	PebbleCacheEvictionResampleLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
