@@ -1851,12 +1851,13 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 // will stay running until the VM exits, which may not be desirable in some
 // situations.
 func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	vmCtx := c.vmCtx
 	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		select {
 		case <-ctx.Done():
-		case <-c.vmCtx.Done():
-			cancel(context.Cause(c.vmCtx))
+		case <-vmCtx.Done():
+			cancel(context.Cause(vmCtx))
 		}
 	}()
 	return ctx, func() { cancel(nil) }
