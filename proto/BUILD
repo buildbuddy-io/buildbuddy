@@ -575,6 +575,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":trace_proto",
+        "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
     ],
@@ -1394,6 +1395,7 @@ ts_proto_library(
     deps = [
         ":acl_ts_proto",
         ":context_ts_proto",
+        ":duration_ts_proto",
         ":grpc_status_ts_proto",
         ":timestamp_ts_proto",
         ":trace_ts_proto",
