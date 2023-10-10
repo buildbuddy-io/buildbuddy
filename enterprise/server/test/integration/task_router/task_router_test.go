@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"testing"
 	"time"
 
@@ -51,6 +52,9 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkfl
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID1, ranked[0].GetExecutorID())
 
+	// The remaining nodes should be shuffled.
+	requireNonSequential(t, ranked[1:])
+
 	// Mark the same task complete by executor 2 as well.
 
 	router.MarkComplete(ctx, cmd, instanceName, executorID2)
@@ -64,6 +68,7 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkfl
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID2, ranked[0].GetExecutorID())
 	require.Equal(t, executorID1, ranked[1].GetExecutorID())
+	requireNonSequential(t, ranked[2:])
 }
 
 func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComplete(t *testing.T) {
@@ -91,6 +96,7 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID1, ranked[0].GetExecutorID())
+	requireNonSequential(t, ranked[1:])
 
 	// Mark the same task complete by executor 2 as well.
 
@@ -106,6 +112,7 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 	require.Equal(t, executorID2, ranked[0].GetExecutorID())
 
 	requireNotAlwaysRanked(1, executorID1, t, router, ctx, cmd, instanceName)
+	requireNonSequential(t, ranked[1:])
 }
 
 func TestTaskRouter_RankNodes_JustShufflesIfCommandIsNotAvailable(t *testing.T) {
@@ -203,6 +210,23 @@ func requireReordered(t *testing.T, nodes []interfaces.ExecutionNode, ranked []i
 		}
 	}
 	require.FailNow(t, "nodes were not reordered")
+}
+
+func requireNonSequential(t *testing.T, nodes []interfaces.ExecutionNode) {
+	if len(nodes) <= 1 {
+		require.FailNow(t, "slice too short to test for sequential order")
+	}
+	prev, err := strconv.Atoi(nodes[0].GetExecutorID())
+	require.NoError(t, err)
+	for i := 1; i < len(nodes); i++ {
+		cur, err := strconv.Atoi(nodes[i].GetExecutorID())
+		require.NoError(t, err)
+		if cur < prev {
+			return
+		}
+		prev = cur
+	}
+	require.FailNow(t, "nodes were in sequential order")
 }
 
 func newTaskRouter(t *testing.T, env environment.Env) interfaces.TaskRouter {
