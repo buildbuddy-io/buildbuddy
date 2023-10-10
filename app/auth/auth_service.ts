@@ -104,7 +104,7 @@ export class AuthService {
   }
 
   handleLoggedIn(response: user.GetUserResponse) {
-    window.opener?.postMessage("", window.location.origin);
+    window.opener?.postMessage({ type: "buildbuddy_message", error: "", success: true }, window.location.origin);
     localStorage.removeItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY);
     this.emitUser(this.userFromResponse(response));
   }

@@ -21,7 +21,10 @@ export class ErrorService {
       return;
     }
     alertService.error(String(error));
-    window.opener?.postMessage(String(error), window.location.origin);
+    window.opener?.postMessage(
+      { type: "buildbuddy_message", error: String(error), success: false },
+      window.location.origin
+    );
   }
 }
 
