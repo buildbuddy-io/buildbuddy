@@ -132,10 +132,14 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   async loginAndLinkGithub() {
-    if (!this.props.user) {
-      await this.loginToGithub();
+    try {
+      if (!this.props.user) {
+        await this.loginToGithub();
+      }
+      await this.linkGithubAccount();
+    } catch (e) {
+      error_service.handleError(e);
     }
-    await this.linkGithubAccount();
   }
 
   loginToGithub() {
@@ -146,8 +150,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
           link: "true",
         })}`
       )
-      .then(() => auth_service.refreshUser())
-      .catch(error_service.handleError);
+      .then(() => auth_service.refreshUser());
   }
 
   linkGithubAccount() {
@@ -170,8 +173,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
           }
           return resp;
         });
-      })
-      .catch(error_service.handleError);
+      });
   }
 
   handleInstallationPicked(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -308,14 +310,11 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     let needsGCPLink =
       isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpRefreshTokenKey);
 
-    if (isGCPDeploy && needsGCPLink) {
-      await this.linkGoogleCloud()
-        .then(() => this.fetchSecrets())
-        .catch(error_service.handleError);
-    }
-
     this.setState({ isDeploying: true });
     try {
+      if (isGCPDeploy && needsGCPLink) {
+        await this.linkGoogleCloud().then(() => this.fetchSecrets());
+      }
       if (this.getUnsetSecrets().length) {
         await this.saveSecrets();
       }
