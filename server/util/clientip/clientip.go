@@ -30,11 +30,11 @@ func SetFromXForwardedForHeader(ctx context.Context, header string) (context.Con
 	// If there's only a single IP in the header, return it directly.
 	// This handles the header format set by NGINX.
 	if len(ips) == 1 {
-		return context.WithValue(ctx, ContextKey, ips[0]), true
+		return context.WithValue(ctx, ContextKey, strings.TrimSpace(ips[0])), true
 	}
 
 	// For GCLB, the header format is [client supplied IP,]client IP, LB IP
 	// We always look at the client IP as seen by GCLB as the client supplied
 	// value can't be trusted if it's present.
-	return context.WithValue(ctx, ContextKey, ips[len(ips)-2]), true
+	return context.WithValue(ctx, ContextKey, strings.TrimSpace(ips[len(ips)-2])), true
 }
