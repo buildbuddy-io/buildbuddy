@@ -79,6 +79,7 @@ go_binary(
 )
 
 # Help validate windows compilation
+# TODO: remove this if we add Windows CI.
 go_binary(
     name = "executor_windows",
     args = [
