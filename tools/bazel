@@ -1,5 +1,0 @@
-#!/bin/bash
-
-export HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX=/tmp/zig-cache-$USER
-
-exec -a "$0" "${BAZEL_REAL}" "$@"

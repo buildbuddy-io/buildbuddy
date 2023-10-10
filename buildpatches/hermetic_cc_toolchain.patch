@@ -1,0 +1,268 @@
+diff --git a/toolchain/defs.bzl b/toolchain/defs.bzl
+index 6ffcfa6..3d7d425 100644
+--- a/toolchain/defs.bzl
++++ b/toolchain/defs.bzl
+@@ -130,18 +130,15 @@ def _zig_repository_impl(repository_ctx):
+     }.items():
+         repository_ctx.symlink(Label(src), dest)
+ 
+-    for dest, src in {
+-        "BUILD": "//toolchain:BUILD.sdk.bazel",
+-    }.items():
+-        repository_ctx.template(
+-            dest,
+-            Label(src),
+-            executable = False,
+-            substitutions = {
+-                "{zig_sdk_path}": _quote("external/zig_sdk"),
+-                "{os}": _quote(os),
+-            },
+-        )
++    repository_ctx.template(
++        "BUILD",
++        Label("//toolchain:BUILD.sdk.bazel"),
++        executable = False,
++        substitutions = {
++            "{zig_sdk_path}": _quote("external/zig_sdk"),
++            "{os}": _quote(os),
++        },
++    )
+ 
+     urls = [uf.format(**format_vars) for uf in repository_ctx.attr.url_formats]
+     repository_ctx.download_and_extract(
+@@ -151,34 +148,27 @@ def _zig_repository_impl(repository_ctx):
+         sha256 = zig_sha256,
+     )
+ 
+-    cache_prefix = repository_ctx.os.environ.get("HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX", "")
+-    if cache_prefix == "":
+-        if os == "windows":
+-            cache_prefix = "C:\\\\Temp\\\\hermetic_cc_toolchain"
+-        else:
+-            cache_prefix = "/tmp/zig-cache"
+-
+-    repository_ctx.template(
+-        "tools/zig-wrapper.zig",
+-        Label("//toolchain:zig-wrapper.zig"),
+-        executable = False,
+-        substitutions = {
+-            "{HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX}": cache_prefix,
+-        },
++    repository_ctx.file(
++        "tools/build-zig-wrapper.sh",
++        content = """
++#!/bin/bash
++
++TMP_DIR=$(mktemp -d -t hermetic_cc_toolchain.XXXXXX)
++trap "rm -rf $TMP_DIR" EXIT
++
++ZIG_LOCAL_CACHE_DIR=$TMP_DIR
++ZIG_GLOBAL_CACHE_DIR=$TMP_DIR
++
++{zig} build-exe -fstrip -mcpu={mcpu} -OReleaseSafe {wrapper} {static}
++""".format(
++            zig = _paths_join("..", "zig"),
++            mcpu = _MCPU[host_platform],
++            wrapper = repository_ctx.path(Label("//toolchain:zig-wrapper.zig")),
++            static = "-static" if os == "linux" else "",
++        ),
++        executable = True,
+     )
+ 
+-    compile_env = {
+-        "ZIG_LOCAL_CACHE_DIR": cache_prefix,
+-        "ZIG_GLOBAL_CACHE_DIR": cache_prefix,
+-    }
+-    compile_cmd = [
+-        _paths_join("..", "zig"),
+-        "build-exe",
+-        "-mcpu={}".format(_MCPU[host_platform]),
+-        "-OReleaseSafe",
+-        "zig-wrapper.zig",
+-    ] + (["-static"] if os == "linux" else [])
+-
+     # The elaborate code below is a workaround for ziglang/zig#14978: a race in
+     # Windows where zig may error with `error: AccessDenied`.
+     zig_wrapper_success = True
+@@ -188,9 +178,8 @@ def _zig_repository_impl(repository_ctx):
+             print("Launcher compilation failed. Retrying build")
+ 
+         ret = repository_ctx.execute(
+-            compile_cmd,
++            ["./build-zig-wrapper.sh"],
+             working_directory = "tools",
+-            environment = compile_env,
+         )
+ 
+         if ret.return_code == 0:
+@@ -198,13 +187,11 @@ def _zig_repository_impl(repository_ctx):
+             break
+ 
+         zig_wrapper_success = False
+-        full_cmd = [k + "=" + v for k, v in compile_env.items()] + compile_cmd
+         zig_wrapper_err_msg = _compile_failed.format(
+-            compile_cmd = " ".join(full_cmd),
++            compile_cmd = "build-zig-wrapper.sh",
+             return_code = ret.return_code,
+             stdout = ret.stdout,
+             stderr = ret.stderr,
+-            cache_prefix = cache_prefix,
+         )
+ 
+     if not zig_wrapper_success:
+diff --git a/toolchain/zig-wrapper.zig b/toolchain/zig-wrapper.zig
+index 4a0fab4..7f6864f 100644
+--- a/toolchain/zig-wrapper.zig
++++ b/toolchain/zig-wrapper.zig
+@@ -53,6 +53,7 @@
+ const builtin = @import("builtin");
+ const std = @import("std");
+ const fs = std.fs;
++const os = std.os;
+ const mem = std.mem;
+ const process = std.process;
+ const ChildProcess = std.ChildProcess;
+@@ -64,8 +65,6 @@ const EXE = switch (builtin.target.os.tag) {
+     else => "",
+ };
+ 
+-const CACHE_DIR = "{HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX}";
+-
+ const usage =
+     \\
+     \\Usage: <...>/tools/<target-triple>/{[arg0_noexe]s}{[exe]s} <args>...
+@@ -82,9 +81,22 @@ const Action = enum {
+     exec,
+ };
+ 
++const zig_cache_dir = "zig-cache";
++const rand_bytes_count = 12;
++const tmp_sub_path_len = fs.base64_encoder.calcSize(rand_bytes_count);
++
+ const ExecParams = struct {
+     args: ArrayListUnmanaged([]const u8),
+     env: process.EnvMap,
++    tmp_dir: ?[]u8,
++
++    pub fn cleanup(self: ExecParams) void {
++        if (self.tmp_dir) |td| {
++            fs.deleteTreeAbsolute(td) catch |err| {
++                std.debug.print("error deleting {s}: {s}\n", .{ td, @errorName(err) });
++            };
++        }
++    }
+ };
+ 
+ const ParseResults = union(Action) {
+@@ -129,22 +141,29 @@ pub fn main() u8 {
+     switch (action) {
+         .err => |msg| return fatal("{s}", .{msg}),
+         .exec => |params| {
+-            if (builtin.os.tag == .windows)
+-                return spawnWindows(arena, params)
+-            else
++            if (builtin.os.tag == .windows) {
++                return spawnWithChildProc(arena, params);
++            } else if (params.tmp_dir) |_| {
++                return spawnWithChildProc(arena, params);
++            } else {
+                 return execUnix(arena, params);
++            }
+         },
+     }
+ }
+ 
+-fn spawnWindows(arena: mem.Allocator, params: ExecParams) u8 {
++fn spawnWithChildProc(arena: mem.Allocator, params: ExecParams) u8 {
+     var proc = ChildProcess.init(params.args.items, arena);
+     proc.env_map = &params.env;
+-    const ret = proc.spawnAndWait() catch |err|
++
++    const ret = proc.spawnAndWait() catch |err| {
++        params.cleanup();
+         return fatal(
+-        "error spawning {s}: {s}\n",
+-        .{ params.args.items[0], @errorName(err) },
+-    );
++            "error spawning {s}: {s}\n",
++            .{ params.args.items[0], @errorName(err) },
++        );
++    };
++    params.cleanup();
+ 
+     switch (ret) {
+         .Exited => |code| return code,
+@@ -152,6 +171,9 @@ fn spawnWindows(arena: mem.Allocator, params: ExecParams) u8 {
+     }
+ }
+ 
++// execUnix execs a process by replacing the current process, effectively
++// stopping the execution of the current process completely. If successful,
++// this function will not return. Neither do subsequent cleanup / defer logic.
+ fn execUnix(arena: mem.Allocator, params: ExecParams) u8 {
+     const err = process.execve(arena, params.args.items, &params.env);
+     std.debug.print(
+@@ -217,9 +239,49 @@ fn parseArgs(
+     var env = process.getEnvMap(arena) catch |err|
+         return parseFatal(arena, "error getting env: {s}", .{@errorName(err)});
+ 
++    var tmp_dir: ?[]u8 = null;
++    // If $HOME is set, use a consistent path in $HOME/.cache/zig-cache
++    // Otherwise, use a random path in /tmp/zig-cache
++    const cache_dir = if (os.getenv("HOME")) |home|
++        fs.path.join(
++            arena,
++            &[_][]const u8{ home, ".cache", zig_cache_dir },
++        ) catch |err|
++            return parseFatal(arena, "error getting home dir: {s}", .{@errorName(err)})
++    else blk: {
++        var random_bytes: [rand_bytes_count]u8 = undefined;
++        std.crypto.random.bytes(&random_bytes);
++
++        var sub_path: [tmp_sub_path_len]u8 = undefined;
++        _ = fs.base64_encoder.encode(&sub_path, &random_bytes);
++
++        var zig_cache_path = fs.path.join(
++            arena,
++            &[_][]const u8{ "/tmp", zig_cache_dir },
++        ) catch |err|
++            return parseFatal(arena, "error getting zig_cache dir: {s}", .{@errorName(err)});
++        fs.makeDirAbsolute(zig_cache_path) catch |err| switch (err) {
++            error.PathAlreadyExists => {},
++            else => return parseFatal(arena, "error making zig-cache dir: {s}", .{@errorName(err)}),
++        };
++
++        var tmp_path = fs.path.join(
++            arena,
++            &[_][]const u8{ zig_cache_path, &sub_path },
++        ) catch |err|
++            return parseFatal(arena, "error getting tmp dir: {s}", .{@errorName(err)});
++        fs.makeDirAbsolute(tmp_path) catch |err| switch (err) {
++            error.PathAlreadyExists => {},
++            else => return parseFatal(arena, "error making {s} dir: {s}", .{ tmp_path, @errorName(err) }),
++        };
++
++        tmp_dir = tmp_path;
++        break :blk tmp_path;
++    };
++
+     try env.put("ZIG_LIB_DIR", zig_lib_dir);
+-    try env.put("ZIG_LOCAL_CACHE_DIR", CACHE_DIR);
+-    try env.put("ZIG_GLOBAL_CACHE_DIR", CACHE_DIR);
++    try env.put("ZIG_LOCAL_CACHE_DIR", cache_dir);
++    try env.put("ZIG_GLOBAL_CACHE_DIR", cache_dir);
+ 
+     // args is the path to the zig binary and args to it.
+     var args = ArrayListUnmanaged([]const u8){};
+@@ -238,7 +300,7 @@ fn parseArgs(
+     while (argv_it.next()) |arg|
+         try args.append(arena, arg);
+ 
+-    return ParseResults{ .exec = .{ .args = args, .env = env } };
++    return ParseResults{ .exec = .{ .args = args, .env = env, .tmp_dir = tmp_dir } };
+ }
+ 
+ fn parseFatal(
+-- 
+2.30.2
+
