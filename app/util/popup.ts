@@ -33,13 +33,16 @@ export default {
 
       // If we receieve a message, resolve or reject the promise based on the presence of error text.
       popupEventListener = function (e: MessageEvent) {
+        if (!e.data || e.data.type != "buildbuddy_message") {
+          return;
+        }
         clearTimeout(timeoutId);
         clearInterval(popupTimer);
         window.removeEventListener("message", popupEventListener, false);
         popup?.close();
         console.log("Received message from popup: " + e.data);
-        if (e.data != "") {
-          reject(e.data);
+        if (!e.data.success) {
+          reject(e.data.error);
         }
         resolve(e.data);
       };
