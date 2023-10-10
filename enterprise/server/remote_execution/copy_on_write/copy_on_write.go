@@ -138,15 +138,16 @@ func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uint
 func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if write {
 		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
 			return 0, status.WrapError(err, "copy chunk")
 		}
 	}
 
-	c.mu.RLock()
 	chunk := c.chunks[chunkStartOffset]
-	c.mu.RUnlock()
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
 		// can only happen for reads, since for writes we call copyChunkIfNotDirty above.
