@@ -31,6 +31,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
@@ -54,5 +55,6 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
