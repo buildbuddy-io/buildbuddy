@@ -180,7 +180,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 		r.setConnected(true)
 
 		schedulerMsgs := make(chan *scpb.RegisterAndStreamWorkResponse)
-		schedulerErr := make(chan error)
+		schedulerErr := make(chan error, 1)
 		go func() {
 			for {
 				msg, err := stream.Recv()
