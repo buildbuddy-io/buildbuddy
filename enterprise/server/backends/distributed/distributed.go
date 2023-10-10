@@ -407,25 +407,21 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 
 	if len(c.config.ExtraNodes) > 0 {
 		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
-		var allPrimaryPeers, allSecondaryPeers []string
-		if len(extendedPeerList) < c.config.ReplicationFactor {
-			allPrimaryPeers = []string{}
-			allSecondaryPeers = []string{}
-		} else {
-			allPrimaryPeers = extendedPeerList[:c.config.ReplicationFactor]
-			allSecondaryPeers = extendedPeerList[c.config.ReplicationFactor:]
-		}
+		if len(extendedPeerList) >= c.config.ReplicationFactor {
+			allPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
+			allSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
 
-		// If extraNodes is set, we want to additionally attempt reads
-		// on the nodes where the data ~would~ be if the extra nodes
-		// were included in the full peer set.
-		//
-		// These extra reads allow us to move data to the new nodes
-		// and read it immediately, while falling back to the old data
-		// location if it's not found and backfilling to the new
-		// nodes.
-		primaryPeers = dedupe(append(allPrimaryPeers, primaryPeers...))
-		secondaryPeers = dedupe(append(allSecondaryPeers, secondaryPeers...))
+			// If extraNodes is set, we want to additionally attempt reads
+			// on the nodes where the data ~would~ be if the extra nodes
+			// were included in the full peer set.
+			//
+			// These extra reads allow us to move data to the new nodes
+			// and read it immediately, while falling back to the old data
+			// location if it's not found and backfilling to the new
+			// nodes.
+			primaryPeers = dedupe(append(allPrimaryPeers, primaryPeers...))
+			secondaryPeers = dedupe(append(allSecondaryPeers, secondaryPeers...))
+		}
 	}
 
 	sortVal := func(peer string) int {
