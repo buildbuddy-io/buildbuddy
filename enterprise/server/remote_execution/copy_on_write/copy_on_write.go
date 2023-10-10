@@ -187,6 +187,10 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	for len(p) > 0 {
 		chunkRelativeOffset := off % c.chunkSizeBytes
 		chunkCalculatedSize := c.calculateChunkSize(chunkOffset)
@@ -194,9 +198,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		if readSize > len(p) {
 			readSize = len(p)
 		}
-		c.mu.RLock()
 		chunk := c.chunks[chunkOffset]
-		c.mu.RUnlock()
 		if chunk == nil {
 			// No chunk at this index yet; write all 0s.
 			copy(p[:readSize], c.zeroBuf)
@@ -256,6 +258,10 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
@@ -268,9 +274,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
-		c.mu.RLock()
 		chunk := c.chunks[chunkOffset]
-		c.mu.RUnlock()
 		nw, err := chunk.WriteAt(p[:writeSize], chunkRelativeOffset)
 		n += nw
 		if err != nil {
@@ -385,8 +389,9 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 	return size
 }
 
+// NOTE: This function should be executed atomically. Callers should manage locking
 func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
-	if s.Dirty(chunkStartOffset) {
+	if s.dirty[chunkStartOffset] {
 		// Chunk is already dirty - no need to copy
 		return nil
 	}
@@ -444,10 +449,8 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 }
 
 // Writes a new dirty chunk containing all 0s for the given chunk index.
+// NOTE: This function should be executed atomically. Callers should manage locking
 func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newChunk *Mmap, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", offset, dirtySuffix))
 	fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
