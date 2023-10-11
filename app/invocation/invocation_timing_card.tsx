@@ -1,7 +1,7 @@
 import React from "react";
 import SetupCodeComponent from "../docs/setup_code";
 import FlameChart from "../flame_chart/flame_chart";
-import { Profile, parseProfile } from "../trace/trace_events";
+import { Profile, readProfile } from "../trace/trace_events";
 import rpcService, { FileEncoding } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
@@ -63,6 +63,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
   };
 
+  private progressRef = React.createRef<HTMLDivElement>();
+
   componentDidMount() {
     this.fetchProfile();
   }
@@ -79,6 +81,30 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   isTimingEnabled() {
     return Boolean(this.getProfileFile()?.uri?.startsWith("bytestream://"));
+  }
+
+  setProgress(bytesLoaded: number, digestSize: number, encoding: FileEncoding) {
+    const container = this.progressRef.current;
+    if (!container) return;
+
+    let approxCompressionRatio = 1;
+    if (encoding === "gzip") {
+      approxCompressionRatio = 11.3;
+    }
+
+    const compressedBytesLoaded = Math.min(bytesLoaded / approxCompressionRatio, digestSize);
+    const progressPercent = 100 * Math.min(1, compressedBytesLoaded / digestSize);
+
+    const spinner = container.querySelector(".loading") as HTMLElement;
+    spinner.style.display = "none";
+
+    const progressContainer = container.querySelector(".timing-profile-progress")!;
+    progressContainer.removeAttribute("hidden");
+    const progressLabel = progressContainer.querySelector(".progress-label")!;
+    progressLabel.innerHTML = `Loading profile (${format.bytes(compressedBytesLoaded)} / ${format.bytes(digestSize)})`;
+
+    const progressBarInner = progressContainer.querySelector(".progress-bar-inner") as HTMLElement;
+    progressBarInner.style.width = `${progressPercent}%`;
   }
 
   fetchProfile() {
@@ -98,15 +124,19 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       storedEncoding = "gzip";
     }
 
+    const digestSize = Number(profileFile.uri.split("/").pop());
+
     this.setState({ loading: true });
-    // Note: we use responseType "text" instead of "json" since the profile is
-    // not always valid JSON (the trailing "]}" may be missing).
     rpcService
-      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "text", {
+      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "stream", {
         // Set the stored encoding header to prevent the server from double-gzipping.
         headers: { "X-Stored-Encoding-Hint": storedEncoding },
       })
-      .then((contents) => this.updateProfile(parseProfile(contents)))
+      .then((body) => {
+        if (body === null) throw new Error("response body is null");
+        return readProfile(body, (n) => this.setProgress(n, digestSize, storedEncoding));
+      })
+      .then((profile) => this.updateProfile(profile))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
@@ -207,7 +237,17 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   renderEmptyState() {
     if (this.state.loading) {
-      return <div className="loading" />;
+      return (
+        <div ref={this.progressRef}>
+          <div className="loading" />
+          <div className="timing-profile-progress" hidden>
+            <div className="progress-label" />
+            <div className="progress-bar">
+              <div className="progress-bar-inner" />
+            </div>
+          </div>
+        </div>
+      );
     }
 
     if (!this.props.model.buildToolLogs) {
