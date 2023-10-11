@@ -397,6 +397,7 @@ func dedupe(in []string) []string {
 func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	peers := c.consistentHash.GetAllReplicas(d.GetHash())
 	var primaryPeers, secondaryPeers []string
+	// To prevent a panic if replication is misconfigured to be higher than peer count.
 	if len(peers) >= c.config.ReplicationFactor {
 		primaryPeers = peers[:c.config.ReplicationFactor]
 		secondaryPeers = peers[c.config.ReplicationFactor:]
@@ -404,6 +405,7 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 
 	if len(c.config.ExtraNodes) > 0 {
 		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
+		// To prevent a panic if replication is misconfigured to be higher than extended peer count.
 		if len(extendedPeerList) >= c.config.ReplicationFactor {
 			allPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
 			allSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
