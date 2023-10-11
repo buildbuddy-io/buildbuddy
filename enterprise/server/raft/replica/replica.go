@@ -279,7 +279,6 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	if !isLocalKey(key) {
 		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
 			sm.rangeMu.RUnlock()
-			sm.log.Infof("%q isFileRecordKey: %t", key, isFileRecordKey(key))
 			if isFileRecordKey(key) {
 				if err := sm.updateAndFlushPartitionMetadatas(wb, key, val, nil /*=fileMetadata*/, fileRecordAdd); err != nil {
 					return err
