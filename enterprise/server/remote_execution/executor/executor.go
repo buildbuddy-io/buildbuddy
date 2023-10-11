@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strings"
 	"syscall"
@@ -30,15 +31,17 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-const (
+var (
 	// Messages are typically sent back to the client on state changes.
 	// During very long build steps (running large tests, linking large
 	// objects, etc) no progress can be returned for a very long time.
 	// To ensure we keep the connection alive, we start a timer and
 	// just repeat the last state change message after every
 	// execProgressCallbackPeriod. If this is set to 0, it is disabled.
-	execProgressCallbackPeriod = 60 * time.Second
+	execProgressCallbackPeriod = flag.Duration("executor.task_progress_publish_interval", 60*time.Second, "How often tasks should publish progress updates to the app.")
+)
 
+const (
 	// 7 days? Forever. This is the duration returned when no max duration
 	// has been set in the config and no timeout was set in the client
 	// request. It's basically the same as "no-timeout".
@@ -260,7 +263,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	// Run a timer that periodically sends update messages back
 	// to our caller while execution is ongoing.
-	updateTicker := time.NewTicker(execProgressCallbackPeriod)
+	updateTicker := time.NewTicker(*execProgressCallbackPeriod)
 	defer updateTicker.Stop()
 	var cmdResult *interfaces.CommandResult
 	for cmdResult == nil {

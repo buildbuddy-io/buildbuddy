@@ -3,6 +3,7 @@ package interceptors
 import (
 	"context"
 	"flag"
+	"net/netip"
 	"runtime"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/proto"
 
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -111,7 +113,20 @@ func addClientIPToContext(ctx context.Context) context.Context {
 		return ctx
 	}
 
-	ctx, _ = clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
+	ctx, ok = clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
+	if ok {
+		return ctx
+	}
+
+	if p, ok := peer.FromContext(ctx); ok {
+		ap, err := netip.ParseAddrPort(p.Addr.String())
+		if err != nil {
+			alert.UnexpectedEvent("invalid peer %q", p.Addr.String(), err.Error())
+			return ctx
+		}
+		return context.WithValue(ctx, clientip.ContextKey, ap.Addr().String())
+	}
+
 	return ctx
 }
 

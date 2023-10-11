@@ -34,7 +34,7 @@ const (
 // A COWStore can be created either by splitting a file into chunks, or loading
 // chunks from a directory containing artifacts exported by a COWStore instance.
 //
-// A COWStore supports concurrent reads/writes, as long as they are to different chunks
+// A COWStore supports concurrent reads/writes
 type COWStore struct {
 	ctx                context.Context
 	env                environment.Env
@@ -138,15 +138,16 @@ func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uint
 func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if write {
 		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
 			return 0, status.WrapError(err, "copy chunk")
 		}
 	}
 
-	c.mu.RLock()
 	chunk := c.chunks[chunkStartOffset]
-	c.mu.RUnlock()
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
 		// can only happen for reads, since for writes we call copyChunkIfNotDirty above.
@@ -187,6 +188,10 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	for len(p) > 0 {
 		chunkRelativeOffset := off % c.chunkSizeBytes
 		chunkCalculatedSize := c.calculateChunkSize(chunkOffset)
@@ -194,9 +199,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		if readSize > len(p) {
 			readSize = len(p)
 		}
-		c.mu.RLock()
 		chunk := c.chunks[chunkOffset]
-		c.mu.RUnlock()
 		if chunk == nil {
 			// No chunk at this index yet; write all 0s.
 			copy(p[:readSize], c.zeroBuf)
@@ -256,6 +259,10 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
@@ -268,9 +275,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
-		c.mu.RLock()
 		chunk := c.chunks[chunkOffset]
-		c.mu.RUnlock()
 		nw, err := chunk.WriteAt(p[:writeSize], chunkRelativeOffset)
 		n += nw
 		if err != nil {
@@ -385,23 +390,18 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 	return size
 }
 
+// NOTE: This function should be executed atomically. Callers should manage locking
 func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
-	if s.Dirty(chunkStartOffset) {
+	if s.dirty[chunkStartOffset] {
 		// Chunk is already dirty - no need to copy
 		return nil
 	}
 
 	dstChunkSize := s.calculateChunkSize(chunkStartOffset)
-	dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
+	src, dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
 	if err != nil {
 		return status.WrapError(err, "initialize dirty chunk")
 	}
-
-	s.mu.Lock()
-	src := s.chunks[chunkStartOffset]
-	s.chunks[chunkStartOffset] = dst
-	s.dirty[chunkStartOffset] = true
-	s.mu.Unlock()
 
 	if src == nil {
 		// We had no data at this offset; nothing to copy.
@@ -450,17 +450,27 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 }
 
 // Writes a new dirty chunk containing all 0s for the given chunk index.
-func (s *COWStore) initDirtyChunk(offset int64, size int64) (*Mmap, error) {
+// NOTE: This function should be executed atomically. Callers should manage locking
+func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newChunk *Mmap, err error) {
 	path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", offset, dirtySuffix))
 	fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer syscall.Close(fd)
 	if err := syscall.Ftruncate(fd, size); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, s.remoteInstanceName)
+	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, s.remoteInstanceName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ogChunk = s.chunks[offset]
+	s.chunks[offset] = newChunk
+	s.dirty[offset] = true
+
+	return ogChunk, newChunk, nil
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -584,17 +594,21 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 //
 // It allows processes to read/write to the file as if it
 // was memory, as opposed to having to interact with it via I/O file operations.
+//
+// Mmap is concurrency safe
 type Mmap struct {
 	ctx                context.Context
 	env                environment.Env
 	remoteInstanceName string
 
-	Offset int64
+	Offset  int64
+	dataDir string
 
+	// Mutex protects the subsequent fields
+	mu         sync.RWMutex
 	data       []byte
 	mapped     bool
 	closed     bool
-	dataDir    string
 	lazyDigest *repb.Digest
 }
 
@@ -660,6 +674,8 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 
 // TODO(Maggie): Pre-emptively initialize chunks in the background on startup
 func (m *Mmap) initMap() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
@@ -686,11 +702,13 @@ func (m *Mmap) initMap() error {
 }
 
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		if err := m.initMap(); err != nil {
 			return 0, err
 		}
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
@@ -699,11 +717,13 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		if err := m.initMap(); err != nil {
 			return 0, err
 		}
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
@@ -713,13 +733,17 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) Sync() error {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		return nil
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return unix.Msync(m.data, unix.MS_SYNC)
 }
 
 func (m *Mmap) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.closed = true
 	if !m.mapped {
 		return nil
@@ -729,36 +753,60 @@ func (m *Mmap) Close() error {
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		if err := m.initMap(); err != nil {
 			return 0, err
 		}
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return int64(len(m.data)), nil
 }
 
 // StartAddress returns the address of the first mapped byte. If this is a lazy
 // mmap, calling this func will force an mmap if not already mapped.
 func (m *Mmap) StartAddress() (uintptr, error) {
-	if !m.mapped {
+	if !m.safeReadMapped() {
 		if err := m.initMap(); err != nil {
 			return 0, err
 		}
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return memoryAddress(m.data), nil
 }
 
-func (m *Mmap) Mapped() bool {
+func (m *Mmap) safeReadMapped() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.mapped
 }
 
+func (m *Mmap) Mapped() bool {
+	return m.safeReadMapped()
+}
+
+func (m *Mmap) safeReadClosed() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
+}
+
+func (m *Mmap) safeReadLazyDigest() *repb.Digest {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lazyDigest
+}
+
 func (m *Mmap) SetDigest(d *repb.Digest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.lazyDigest = d
 }
 
 func (m *Mmap) Digest() (*repb.Digest, error) {
-	if m.lazyDigest != nil {
-		return m.lazyDigest, nil
+	if d := m.safeReadLazyDigest(); d != nil {
+		return d, nil
 	}
 
 	// Otherwise compute the digest.
@@ -770,7 +818,7 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.lazyDigest = d
+	m.SetDigest(d)
 	return d, nil
 }
 

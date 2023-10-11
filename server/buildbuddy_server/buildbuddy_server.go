@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
@@ -51,6 +52,7 @@ import (
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -2006,4 +2008,8 @@ func (s *BuildBuddyServer) DeleteIPRule(ctx context.Context, request *irpb.Delet
 		al.Log(ctx, rid, alpb.Action_DELETE, request)
 	}
 	return rsp, nil
+}
+
+func (s *BuildBuddyServer) GetGCPProject(ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error) {
+	return gcplink.GetGCPProject(s.env, ctx, request)
 }

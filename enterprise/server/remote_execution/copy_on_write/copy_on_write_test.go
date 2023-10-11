@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -64,6 +65,43 @@ func TestMmap_Digest(t *testing.T) {
 
 }
 
+func TestMmap_Concurrency(t *testing.T) {
+	s, _ := newMmap(t)
+
+	eg := &errgroup.Group{}
+	for i := 0; i < 20; i++ {
+		eg.Go(func() error {
+			buf := make([]byte, 100)
+			_, err := rand.Read(buf)
+			if err != nil {
+				return err
+			}
+			_, err = s.WriteAt(buf, 0)
+			return err
+		})
+		eg.Go(func() error {
+			buf := make([]byte, 100)
+			_, err := s.ReadAt(buf, 0)
+			return err
+		})
+		eg.Go(func() error {
+			return s.Sync()
+		})
+		eg.Go(func() error {
+			_, err := s.SizeBytes()
+			return err
+		})
+		eg.Go(func() error {
+			_, err := s.StartAddress()
+			return err
+		})
+	}
+	err := eg.Wait()
+	require.NoError(t, err)
+	err = s.Close()
+	require.NoError(t, err)
+}
+
 func TestCOW_Basic(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -75,6 +113,44 @@ func TestCOW_Basic(t *testing.T) {
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
 	testStore(t, s, "" /*=path*/)
+}
+
+func TestCOW_Concurrency(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	path := makeEmptyTempFile(t, backingFileSizeBytes)
+	dataDir := testfs.MakeTempDir(t)
+	chunkSizeBytes := backingFileSizeBytes / 2
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "")
+	require.NoError(t, err)
+
+	eg := &errgroup.Group{}
+	for i := 0; i < 20; i++ {
+		eg.Go(func() error {
+			buf := make([]byte, 100)
+			_, err := rand.Read(buf)
+			if err != nil {
+				return err
+			}
+			_, err = s.WriteAt(buf, 0)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		eg.Go(func() error {
+			buf := make([]byte, 100)
+			_, err := s.ReadAt(buf, 0)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+	err = eg.Wait()
+	require.NoError(t, err)
+	err = s.Close()
+	require.NoError(t, err)
 }
 
 func TestCOW_SparseData(t *testing.T) {

@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/auditlog",
+        "//enterprise/server/gcplink",
         "//enterprise/server/remote_execution/config",
         "//proto:api_key_go_proto",
         "//proto:auditlog_go_proto",
@@ -15,6 +16,7 @@ go_library(
         "//proto:encryption_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:execution_stats_go_proto",
+        "//proto:gcp_go_proto",
         "//proto:github_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",

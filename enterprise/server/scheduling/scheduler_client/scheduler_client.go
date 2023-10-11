@@ -100,7 +100,7 @@ func (r *Registration) Check(ctx context.Context) error {
 	return errors.New("not registered to scheduler yet")
 }
 
-func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, registrationTicker *time.Ticker) (bool, error) {
+func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker *time.Ticker) (bool, error) {
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}
@@ -125,11 +125,7 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 			return false, status.UnavailableErrorf("could not send shutdown notification: %s", err)
 		}
 		return true, nil
-	case msg, ok := <-schedulerMsgs:
-		if !ok {
-			return false, status.UnavailableError("could not receive message from scheduler")
-		}
-
+	case msg := <-schedulerMsgs:
 		if msg.EnqueueTaskReservationRequest == nil {
 			out, _ := prototext.Marshal(msg)
 			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", string(out))
@@ -145,6 +141,8 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		if err := stream.Send(rspMsg); err != nil {
 			return false, status.UnavailableErrorf("could not send task reservation response: %s", err)
 		}
+	case err := <-schedulerErr:
+		return false, status.WrapError(err, "failed to receive message from scheduler")
 	case <-registrationTicker.C:
 		if err := stream.Send(registrationMsg); err != nil {
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
@@ -182,12 +180,12 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 		r.setConnected(true)
 
 		schedulerMsgs := make(chan *scpb.RegisterAndStreamWorkResponse)
+		schedulerErr := make(chan error, 1)
 		go func() {
 			for {
 				msg, err := stream.Recv()
 				if err != nil {
-					log.Warningf("Could not read from stream: %s", err)
-					close(schedulerMsgs)
+					schedulerErr <- err
 					break
 				}
 				select {
@@ -199,7 +197,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 		}()
 
 		for {
-			done, err := r.processWorkStream(ctx, stream, schedulerMsgs, registrationTicker)
+			done, err := r.processWorkStream(ctx, stream, schedulerMsgs, schedulerErr, registrationTicker)
 			if err != nil {
 				_ = stream.CloseSend()
 				log.Warningf("Error maintaining registration with scheduler, will retry: %s", err)

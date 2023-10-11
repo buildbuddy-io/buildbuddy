@@ -17,6 +17,7 @@ import "proto/user.proto";
 import "proto/workflow.proto";
 import "proto/scheduler.proto";
 import "proto/usage.proto";
+import "proto/gcp.proto";
 import "proto/github.proto";
 import "proto/quota.proto";
 import "proto/repo.proto";
@@ -255,4 +256,8 @@ service BuildBuddyService {
       returns (github.UpdateGithubRefResponse);
   rpc CreateGithubRef(github.CreateGithubRefRequest)
       returns (github.CreateGithubRefResponse);
+
+  // GCP API
+  rpc GetGCPProject(gcp.GetGCPProjectRequest)
+      returns (gcp.GetGCPProjectResponse);
 }

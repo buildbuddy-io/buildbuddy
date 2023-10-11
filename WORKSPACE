@@ -64,42 +64,42 @@ go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
-    version = "1.21.1",  # Keep in sync with .github/workflows/checkstyle.yaml
+    version = "1.21.3",  # Keep in sync with .github/workflows/checkstyle.yaml
 )
 
 go_download_sdk(
     name = "go_sdk_linux_arm64",
     goarch = "arm64",
     goos = "linux",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin_arm64",
     goarch = "arm64",
     goos = "darwin",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_download_sdk(
     name = "go_sdk_windows",
     goarch = "amd64",
     goos = "windows",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_download_sdk(
     name = "go_sdk_windows_arm64",
     goarch = "arm64",
     goos = "windows",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_register_toolchains(
