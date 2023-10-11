@@ -590,7 +590,7 @@ func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDe
 // done by using the LeasedRange function.
 func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.RangeDescriptor, error) {
 	if header == nil {
-		return nil, nil, status.FailedPreconditionError("Nil header not allowed")
+		return nil, nil, status.FailedPreconditionError("Header must be set (was nil)")
 	}
 
 	r, rd, err := s.replicaForRange(header.GetRangeId())

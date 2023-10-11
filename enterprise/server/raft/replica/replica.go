@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -217,6 +218,9 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	}
 	sm.partitionMetadataMu.Unlock()
 
+	sort.Slice(ru.Partitions, func(i, j int) bool {
+		return ru.Partitions[i].GetPartitionId() < ru.Partitions[j].GetPartitionId()
+	})
 	ru.EstimatedDiskBytesUsed = sizeBytes
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
@@ -275,6 +279,7 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	if !isLocalKey(key) {
 		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
 			sm.rangeMu.RUnlock()
+			sm.log.Infof("%q isFileRecordKey: %t", key, isFileRecordKey(key))
 			if isFileRecordKey(key) {
 				if err := sm.updateAndFlushPartitionMetadatas(wb, key, val, nil /*=fileMetadata*/, fileRecordAdd); err != nil {
 					return err
@@ -942,7 +947,8 @@ func (sm *Replica) getMulti(db ReplicaReader, req *rfpb.GetMultiRequest) (*rfpb.
 			return nil, err
 		}
 
-		r := rsp.Responses[i]
+		r := new(rfpb.GetMultiResponse_Response)
+		rsp.Responses[i] = r
 		r.FileRecord = fr
 
 		fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
@@ -965,7 +971,8 @@ func (sm *Replica) setMulti(wb pebble.Batch, req *rfpb.SetMultiRequest) (*rfpb.S
 	for i, fileMetadata := range req.GetFileMetadatas() {
 		fm := fileMetadata
 
-		r := rsp.Responses[i]
+		r := new(rfpb.SetMultiResponse_Response)
+		rsp.Responses[i] = r
 		r.FileRecord = fm.GetFileRecord()
 
 		fileMetadataKey, err := sm.fileMetadataKey(fm.GetFileRecord())
