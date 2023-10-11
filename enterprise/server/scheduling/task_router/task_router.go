@@ -41,6 +41,9 @@ const (
 type taskRouter struct {
 	env environment.Env
 	rdb redis.UniversalClient
+
+	// The ordered list of routingStrategies to use for task routing.
+	strategies []routingStrategy
 }
 
 func Register(env environment.Env) error {
@@ -61,9 +64,11 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for task router")
 	}
+	strategies := []routingStrategy{runnerRecyclingRoutingStrategy{}}
 	return &taskRouter{
-		env: env,
-		rdb: rdb,
+		env:        env,
+		rdb:        rdb,
+		strategies: strategies,
 	}, nil
 }
 
@@ -76,20 +81,23 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		nodes[i], nodes[j] = nodes[j], nodes[i]
 	})
 
-	if cmd == nil {
+	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
+	strategy := tr.selectRoutingStrategy(params)
+	if strategy == nil {
+		log.Info("no routing strategy applied to the routing params")
 		return nodes
 	}
-	preferredNodeLimit := getPreferredNodeLimit(cmd)
+
+	preferredNodeLimit, routingKey, err := strategy.routingInfo(params)
+	if err != nil {
+		log.Errorf("Failed to compute routing info: %s", err)
+		return nodes
+	}
 	if preferredNodeLimit == 0 {
 		return nodes
 	}
 
-	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
-	if err != nil {
-		log.Errorf("Failed to compute routing key: %s", err)
-		return nodes
-	}
-	preferredNodeIDs, err := tr.rdb.LRange(ctx, key, 0, -1).Result()
+	preferredNodeIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 	if err != nil {
 		log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
 		return nodes
@@ -102,7 +110,7 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	preferredSet := map[string]struct{}{}
 	ranked := make([]interfaces.ExecutionNode, 0, len(nodes))
 
-	log.Debugf("Preferred executor IDs for %q: %v", key, preferredNodeIDs)
+	log.Debugf("Preferred executor IDs for %q: %v", routingKey, preferredNodeIDs)
 
 	// Place all preferred nodes first (in the order that they appear in the Redis
 	// list), then the remaining ones in shuffled order.
@@ -128,13 +136,18 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 // future tasks with those properties are more likely to be fulfilled by the
 // given node.
 func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorID string) {
-	nodeListMaxLength := getPreferredNodeLimit(cmd)
-	if nodeListMaxLength == 0 {
+	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
+	strategy := tr.selectRoutingStrategy(params)
+	if strategy == nil {
+		log.Info("no routing strategy applied to the routing params")
 		return
 	}
-	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
+	preferredNodeLimit, routingKey, err := strategy.routingInfo(params)
 	if err != nil {
-		log.Errorf("Failed to compute routing key: %s", err)
+		log.Errorf("Failed to compute routing info: %s", err)
+		return
+	}
+	if preferredNodeLimit == 0 {
 		return
 	}
 
@@ -142,57 +155,41 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 	// Push the node to the head of the list (but first remove it if already
 	// present to avoid dupes), trim to max length to prevent it from growing
 	// too large, and renew the TTL.
-	pipe.LRem(ctx, key, 1, executorID)
-	pipe.LPush(ctx, key, executorID)
-	pipe.LTrim(ctx, key, 0, int64(nodeListMaxLength)-1)
-	pipe.Expire(ctx, key, routingPropsKeyTTL)
+	pipe.LRem(ctx, routingKey, 1, executorID)
+	pipe.LPush(ctx, routingKey, executorID)
+	pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
+	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		log.Errorf("Failed to mark task complete: redis pipeline failed: %s", err)
 		return
 	}
 
-	log.Debugf("Preferred executor %q added to %q", executorID, key)
+	log.Debugf("Preferred executor %q added to %q", executorID, routingKey)
 }
 
-// getPreferredNodeLimit returns the max number of nodes that should be stored
-// in the preferred executors list for each task key, as well as the max number
-// of preferred nodes that should be returned by RankNodes.
-func getPreferredNodeLimit(cmd *repb.Command) int {
-	isRunnerRecyclingEnabled := platform.IsTrue(platform.FindValue(cmd.GetPlatform(), platform.RecycleRunnerPropertyName))
-	if !isRunnerRecyclingEnabled {
-		return 0
-	}
-	workflowID := platform.FindValue(cmd.GetPlatform(), platform.WorkflowIDPropertyName)
-	if workflowID != "" {
-		return workflowsPreferredNodeLimit
-	}
-	return defaultPreferredNodeLimit
+// Contains the parameters required to make a routing decision.
+type routingParams struct {
+	cmd                *repb.Command
+	remoteInstanceName string
+	groupID            string
 }
 
-func (tr *taskRouter) routingKey(ctx context.Context, cmd *repb.Command, remoteInstanceName string) (string, error) {
-	parts := []string{"task_route"}
-
-	if u, err := perms.AuthenticatedUser(ctx, tr.env); err == nil {
-		parts = append(parts, u.GetGroupID())
-	} else {
-		parts = append(parts, interfaces.AuthAnonymousUser)
+func getRoutingParams(ctx context.Context, env environment.Env, cmd *repb.Command, remoteInstanceName string) routingParams {
+	groupID := interfaces.AuthAnonymousUser
+	if u, err := perms.AuthenticatedUser(ctx, env); err == nil {
+		groupID = u.GetGroupID()
 	}
+	return routingParams{cmd: cmd, remoteInstanceName: remoteInstanceName, groupID: groupID}
+}
 
-	if remoteInstanceName != "" {
-		parts = append(parts, remoteInstanceName)
+// Selects and returns a routingStrategy to use, or nil if none applies.
+func (tr taskRouter) selectRoutingStrategy(params routingParams) routingStrategy {
+	for _, strategy := range tr.strategies {
+		if strategy.applies(params) {
+			return strategy
+		}
 	}
-
-	platform := cmd.GetPlatform()
-	if platform == nil {
-		platform = &repb.Platform{}
-	}
-	b, err := proto.Marshal(platform)
-	if err != nil {
-		return "", status.InternalErrorf("failed to marshal Command: %s", err)
-	}
-	parts = append(parts, fmt.Sprintf("%x", sha256.Sum256(b)))
-
-	return strings.Join(parts, "/"), nil
+	return nil
 }
 
 func copyNodes(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
@@ -206,4 +203,65 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// A routingStrategy encapsulates a strategy for performing task routing based
+// on a set of provided routingParams. Currently this interface is somewhat
+// coupled with the Redis reading and writing logic in the task_router, but
+// that could be uncoupled in the future when other routing strategies that
+// arent Redis-list-based are added.
+type routingStrategy interface {
+
+	// Returns true if this routing strategy applies to the given routing
+	// parameters, false otherwise. Note: applies() must be deterministic.
+	applies(params routingParams) bool
+
+	// Returns the routing info (preferredNodeLimit and routingKey) for the
+	// provided routing parameters. The preferredNodeLimit is the number of
+	// preferred executor nodes that should be used, and the routing Key is the
+	// Redis key where the list of preferred executor nodes are stored.
+	routingInfo(params routingParams) (int, string, error)
+}
+
+// The runnerRecyclingRoutingStrategy is a routing strategy that attempts to
+// "recycle" warm execution nodes when possible.
+type runnerRecyclingRoutingStrategy struct {
+}
+
+func (runnerRecyclingRoutingStrategy) applies(params routingParams) bool {
+	return platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.RecycleRunnerPropertyName))
+}
+
+func (runnerRecyclingRoutingStrategy) preferredNodeLimit(params routingParams) int {
+	workflowID := platform.FindValue(params.cmd.GetPlatform(), platform.WorkflowIDPropertyName)
+	if workflowID != "" {
+		return workflowsPreferredNodeLimit
+	}
+	return defaultPreferredNodeLimit
+}
+
+func (runnerRecyclingRoutingStrategy) routingKey(params routingParams) (string, error) {
+	parts := []string{"task_route", params.groupID}
+
+	if params.remoteInstanceName != "" {
+		parts = append(parts, params.remoteInstanceName)
+	}
+
+	platform := params.cmd.GetPlatform()
+	if platform == nil {
+		platform = &repb.Platform{}
+	}
+	b, err := proto.Marshal(platform)
+	if err != nil {
+		return "", status.InternalErrorf("failed to marshal Command: %s", err)
+	}
+	parts = append(parts, fmt.Sprintf("%x", sha256.Sum256(b)))
+
+	return strings.Join(parts, "/"), nil
+}
+
+func (s runnerRecyclingRoutingStrategy) routingInfo(params routingParams) (int, string, error) {
+	nodeLimit := s.preferredNodeLimit(params)
+	key, err := s.routingKey(params)
+	return nodeLimit, key, err
 }
