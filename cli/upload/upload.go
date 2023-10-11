@@ -87,7 +87,7 @@ func uploadFile(args []string) error {
 	defer f.Close()
 
 	ctx := context.Background()
-	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil {
+	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
