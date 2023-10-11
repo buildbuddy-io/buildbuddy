@@ -23,6 +23,7 @@ ts_library(
         "//app/invocation",
         "//app/invocation:invocation_model",
         "//app/menu",
+        "//app/picker",
         "//app/preferences",
         "//app/router",
         "//app/service:rpc_service",

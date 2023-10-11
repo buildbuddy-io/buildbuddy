@@ -14,6 +14,7 @@ import auth_service, { User } from "../../../app/auth/auth_service";
 import { secrets } from "../../../proto/secrets_ts_proto";
 import router from "../../../app/router/router";
 import popup from "../../../app/util/popup";
+import picker_service from "../../../app/picker/picker_service";
 
 export interface RepoComponentProps {
   path: string;
@@ -41,6 +42,7 @@ interface RepoComponentState {
 
 const selectedInstallationIndexLocalStorageKey = "repo-selectedInstallationIndex";
 const gcpRefreshTokenKey = "CLOUDSDK_AUTH_REFRESH_TOKEN";
+const gcpProjectKey = "GCP_PROJECT";
 export default class RepoComponent extends React.Component<RepoComponentProps, RepoComponentState> {
   state: RepoComponentState = {
     selectedInstallationIndex: localStorage[selectedInstallationIndexLocalStorageKey] || 0,
@@ -270,6 +272,9 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
         // up manually by the user, since we set this up as part of GCP
         // account linking.
         .filter((s) => gcpRefreshTokenKey != s)
+        // Exclude the GCP project environment variable since we'll show the user
+        // a picker if this isn't set.
+        .filter((s) => gcpProjectKey != s)
     );
   }
 
@@ -305,15 +310,30 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     await Promise.all(this.getUnsetSecrets().map((s) => encryptAndUpdate(s, this.state.secrets.get(s) || "")));
   }
 
+  async promptGCPProjectPicker() {
+    let resp = await rpc_service.service.getGCPProject({});
+    // TODO(siggisim): Handle the case where there aren't any GCP Projects.
+    let picked = await picker_service.show({
+      placeholder: "Pick a project or search...",
+      title: "Projects",
+      options: resp.project.map((p) => p.id),
+    });
+    await encryptAndUpdate(gcpProjectKey, picked);
+  }
+
   async handleDeployClicked(repoResponse: repo.CreateRepoResponse) {
     let isGCPDeploy = this.getSecrets().includes(gcpRefreshTokenKey);
     let needsGCPLink =
       isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpRefreshTokenKey);
+    let needsGCPProject = isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpProjectKey);
 
     this.setState({ isDeploying: true });
     try {
-      if (isGCPDeploy && needsGCPLink) {
+      if (needsGCPLink) {
         await this.linkGoogleCloud().then(() => this.fetchSecrets());
+      }
+      if (needsGCPProject) {
+        await this.promptGCPProjectPicker();
       }
       if (this.getUnsetSecrets().length) {
         await this.saveSecrets();
@@ -449,23 +469,25 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
         {this.getSecrets().length > 0 && (
           <div className={`repo-block card repo-create`}>
             <div className="repo-title">Configure deployment</div>
-            <div className="deployment-configs">
-              {this.getUnsetSecrets().map((s) => (
-                <div className="deployment-config">
-                  <div>{s}</div>
-                  <div>
-                    <TextInput
-                      placeholder={s}
-                      value={this.state.secrets.get(s)}
-                      onChange={(e) => {
-                        this.state.secrets.set(s, e.target.value);
-                        this.forceUpdate();
-                      }}
-                    />
+            {Boolean(this.getUnsetSecrets().length) && (
+              <div className="deployment-configs">
+                {this.getUnsetSecrets().map((s) => (
+                  <div className="deployment-config">
+                    <div>{s}</div>
+                    <div>
+                      <TextInput
+                        placeholder={s}
+                        value={this.state.secrets.get(s)}
+                        onChange={(e) => {
+                          this.state.secrets.set(s, e.target.value);
+                          this.forceUpdate();
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
             <button
               disabled={!this.state.repoResponse || this.state.isDeploying || Boolean(this.state.workflowResponse)}
               className="create-button"
