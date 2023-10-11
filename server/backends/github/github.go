@@ -50,9 +50,10 @@ const (
 	FailureState State = "failure"
 	SuccessState State = "success"
 
-	stateCookieName   = "Github-State-Token"
-	groupIDCookieName = "Github-Linked-Group-ID"
-	userIDCookieName  = "Github-Linked-User-ID"
+	stateCookieName          = "Github-State-Token"
+	groupIDCookieName        = "Github-Linked-Group-ID"
+	userIDCookieName         = "Github-Linked-User-ID"
+	installationIDCookieName = "Github-Linked-Installation-ID"
 )
 
 // State represents a status value that GitHub's statuses API understands.
@@ -218,10 +219,10 @@ func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, red
 		redirectWithError(w, r, err)
 		return
 	}
-	setCookie(w, stateCookieName, state)
-	setCookie(w, userIDCookieName, userID)
-	setCookie(w, groupIDCookieName, groupID)
-	setCookie(w, cookie.RedirCookie, redirectURL)
+	setCookie(w, stateCookieName, state, true)
+	setCookie(w, userIDCookieName, userID, true)
+	setCookie(w, groupIDCookieName, groupID, true)
+	setCookie(w, cookie.RedirCookie, redirectURL, true)
 
 	var authURL string
 	if r.FormValue("install") == "true" && c.InstallURL != "" {
@@ -432,6 +433,8 @@ func (c *OAuthHandler) handleInstallation(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		return false, err
 	}
+	// Set a client readable cookie with installation id, so it knows which installation was most recently installed.
+	setCookie(w, installationIDCookieName, rawID, false)
 	if redirect != "" {
 		http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
 		return true, nil
@@ -555,12 +558,12 @@ func appendStatusNameSuffix(p *GithubStatusPayload) *GithubStatusPayload {
 	return NewGithubStatusPayload(name, p.TargetURL, p.Description, p.State)
 }
 
-func setCookie(w http.ResponseWriter, name, value string) {
+func setCookie(w http.ResponseWriter, name, value string, httpOnly bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Expires:  time.Now().Add(time.Hour),
-		HttpOnly: true,
+		HttpOnly: httpOnly,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/",
 	})

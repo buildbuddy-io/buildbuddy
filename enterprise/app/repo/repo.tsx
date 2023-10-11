@@ -4,16 +4,16 @@ import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { repo } from "../../../proto/repo_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
-import { ChevronRightSquare, Github, UserIcon } from "lucide-react";
-import auth_service from "../../../app/auth/auth_service";
+import { BookCopy, ChevronRightSquare, CloudIcon, Folders, Github } from "lucide-react";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import Select from "../../../app/components/select/select";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import TextInput from "../../../app/components/input/input";
 import { encryptAndUpdate } from "../secrets/secret_util";
-import { User } from "../../../app/auth/auth_service";
+import auth_service, { User } from "../../../app/auth/auth_service";
 import { secrets } from "../../../proto/secrets_ts_proto";
 import router from "../../../app/router/router";
+import popup from "../../../app/util/popup";
 
 export interface RepoComponentProps {
   path: string;
@@ -78,6 +78,18 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     return this.props.search.get("dir") || "";
   }
 
+  getTemplateName() {
+    return this.props.search.get("templatename") || "";
+  }
+
+  getTemplateUrl() {
+    return this.props.search.get("template") || "";
+  }
+
+  getTemplateImage() {
+    return this.props.search.get("image") || "";
+  }
+
   getRepoName() {
     let paramRepoName = this.props.search.get("name");
     if (paramRepoName) {
@@ -93,13 +105,14 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   fetchGithubInstallations() {
     if (!this.props.user || !this.props.user.githubLinked) {
       this.setState({ githubInstallationsLoading: false });
-      return;
+      return Promise.resolve(null);
     }
-    rpc_service.service
+    return rpc_service.service
       .getGithubUserInstallations(new github.GetGithubUserInstallationsRequest())
       .then((response) => {
         console.log(response);
         this.setState({ githubInstallationsResponse: response });
+        return response;
       })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ githubInstallationsLoading: false }));
@@ -107,7 +120,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
 
   fetchSecrets() {
     if (!this.props.user) return;
-    rpc_service.service.listSecrets(new secrets.ListSecretsRequest()).then((response) => {
+    return rpc_service.service.listSecrets(new secrets.ListSecretsRequest()).then((response) => {
       console.log(response);
       this.setState({ secretsResponse: response });
     });
@@ -118,16 +131,59 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     this.fetchSecrets();
   }
 
-  handleInstallationPicked(e: React.ChangeEvent<HTMLSelectElement>) {
-    if (e.target.value == "-1") {
-      window.location.href = `/auth/github/app/link/?${new URLSearchParams({
-        group_id: this.props.user?.selectedGroup.id || "",
-        user_id: this.props.user?.displayUser.userId?.id || "",
-        redirect_url: window.location.href,
-        install: "true",
-      })}`;
+  async loginAndLinkGithub() {
+    try {
+      if (!this.props.user) {
+        await this.loginToGithub();
+      }
+      await this.linkGithubAccount();
+    } catch (e) {
+      error_service.handleError(e);
     }
-    let index = Number(e.target.value);
+  }
+
+  loginToGithub() {
+    return popup
+      .open(
+        `/login/github/?${new URLSearchParams({
+          redirect_url: window.location.href,
+          link: "true",
+        })}`
+      )
+      .then(() => auth_service.refreshUser());
+  }
+
+  linkGithubAccount() {
+    return popup
+      .open(
+        `/auth/github/app/link/?${new URLSearchParams({
+          group_id: this.props.user?.selectedGroup.id || "",
+          user_id: this.props.user?.displayUser.userId?.id || "",
+          redirect_url: window.location.href,
+          install: "true",
+        })}`
+      )
+      .then(() => this.fetchSecrets())
+      .then(() => {
+        return this.fetchGithubInstallations()?.then((resp) => {
+          let installationId = auth_service.getCookie("Github-Linked-Installation-ID");
+          let installationIndex = resp?.installations.findIndex((i) => i.id.toString() == installationId);
+          if (installationIndex && installationIndex > 0) {
+            this.selectInstallation(installationIndex);
+          }
+          return resp;
+        });
+      });
+  }
+
+  handleInstallationPicked(e: React.ChangeEvent<HTMLSelectElement>) {
+    this.selectInstallation(Number(e.target.value));
+  }
+
+  selectInstallation(index: number) {
+    if (index == -1) {
+      return this.loginAndLinkGithub();
+    }
     localStorage[selectedInstallationIndexLocalStorageKey] = index;
     this.setState({ selectedInstallationIndex: index });
   }
@@ -218,6 +274,17 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   async handleCreateClicked() {
+    if (!this.state.githubInstallationsResponse?.installations?.length) {
+      // TODO(siggisim): Instead of showing link popup again, show an in-app picker if
+      // there is more than one github org, or skip the linking if there's exactly one.
+      await this.loginAndLinkGithub();
+    }
+
+    if (!this.hasPermissions()) {
+      // TODO(siggisim): Make sure this permissions thing works well.
+      await this.showPermissions();
+    }
+
     this.setState({ isCreating: true });
     try {
       await this.linkInstallation();
@@ -239,8 +306,15 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   async handleDeployClicked(repoResponse: repo.CreateRepoResponse) {
+    let isGCPDeploy = this.getSecrets().includes(gcpRefreshTokenKey);
+    let needsGCPLink =
+      isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpRefreshTokenKey);
+
     this.setState({ isDeploying: true });
     try {
+      if (isGCPDeploy && needsGCPLink) {
+        await this.linkGoogleCloud().then(() => this.fetchSecrets());
+      }
       if (this.getUnsetSecrets().length) {
         await this.saveSecrets();
       }
@@ -252,11 +326,21 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     }
   }
 
-  handlePermissionsClicked() {
+  showPermissions() {
     let selectedInstallation = this.state.githubInstallationsResponse?.installations[
       this.state.selectedInstallationIndex
     ];
-    window.location.href = selectedInstallation?.url + `/permissions/update`;
+    popup.open(selectedInstallation?.url + `/permissions/update`);
+  }
+
+  linkGoogleCloud() {
+    return popup.open(
+      `/login/?${new URLSearchParams({
+        issuer_url: "https://accounts.google.com",
+        link_gcp_for_group: this.props.user?.selectedGroup.id || "",
+        redirect_url: window.location.href,
+      })}`
+    );
   }
 
   render() {
@@ -271,68 +355,64 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     }
 
     let isGCPDeploy = this.getSecrets().includes(gcpRefreshTokenKey);
-    let needsGCPLink =
-      isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpRefreshTokenKey);
     let deployDestination = isGCPDeploy ? " to Google Cloud" : "";
     return (
       <div className="create-repo-page">
-        {!this.props.user && (
-          <div className="repo-block card login-buttons">
-            <div className="repo-title">Get started</div>
-            <button
-              className="github-button"
-              onClick={() =>
-                (window.location.href = `/login/github/?${new URLSearchParams({
-                  redirect_url: window.location.href,
-                  link: "true",
-                })}`)
-              }>
-              <Github /> Continue with Github
-            </button>
-            <button className="google-button" onClick={() => auth_service.login()}>
-              <UserIcon /> Continue with Google
-            </button>
-          </div>
-        )}
-        {this.props.user && !this.state.githubInstallationsResponse?.installations && (
-          <div className="repo-block card login-buttons">
-            <div className="repo-title">Get started</div>
-            <button
-              className="github-button"
-              onClick={() =>
-                (window.location.href = `/auth/github/app/link/?${new URLSearchParams({
-                  user_id: this.props.user?.displayUser?.userId?.id || "",
-                  group_id: this.props.user?.selectedGroup?.id || "",
-                  redirect_url: window.location.href,
-                  install: "true",
-                })}`)
-              }>
-              <Github /> Link Github
-            </button>
-          </div>
-        )}
-        <div
-          className={`repo-block card repo-create ${
-            this.props.user && this.state.githubInstallationsResponse?.installations ? "" : "disabled"
-          }`}>
-          <div className="repo-title">Create git repository</div>
-          <div className="repo-picker">
-            <div>
-              <div>Git scope</div>
-              <div>
-                <Select
-                  onChange={this.handleInstallationPicked.bind(this)}
-                  value={this.state.selectedInstallationIndex}>
-                  {this.state.githubInstallationsResponse?.installations.map((i, index: number) => (
-                    <option value={index}>{`${i.login}`}</option>
-                  ))}
-                  {!this.state.githubInstallationsResponse?.installations && (
-                    <option value={-1}>Pick a git scope...</option>
-                  )}
-                  <option value={-1}>+ Add Github Account</option>
-                </Select>
+        <div className="create-repo-page-details">
+          {this.getTemplateName() && (
+            <div className="repo-block card template-block">
+              <div className="template">
+                <div className="template-metadata">
+                  <div className="template-name">{this.getTemplateName()}</div>
+                  <div className="template-props">
+                    {this.getTemplateUrl() && (
+                      <div className="template-repo">
+                        <Github />
+                        <div className="template-repo-name">
+                          {this.getTemplateUrl().replaceAll("https://github.com/", "").split("/")[0]}
+                        </div>
+                      </div>
+                    )}
+                    {this.getTemplateUrl() && (
+                      <div className="template-repo">
+                        <BookCopy />
+                        <div className="template-repo-name">
+                          {this.getTemplateUrl().replaceAll("https://github.com/", "").split("/").pop()}
+                        </div>
+                      </div>
+                    )}
+                    {this.getTemplateDirectory() && (
+                      <div className="template-repo">
+                        <Folders />
+                        <div className="template-repo-name">{this.getTemplateDirectory().replaceAll("/", " / ")}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {this.getTemplateImage() && <img className="template-image" src={this.getTemplateImage()} />}
               </div>
             </div>
+          )}
+        </div>
+        <div className={`repo-block card repo-create`}>
+          <div className="repo-title">Create repository</div>
+          <div className="repo-picker">
+            {this.state.githubInstallationsResponse?.installations &&
+              this.state.githubInstallationsResponse?.installations.length > 0 && (
+                <div>
+                  <div>Git scope</div>
+                  <div>
+                    <Select
+                      onChange={this.handleInstallationPicked.bind(this)}
+                      value={this.state.selectedInstallationIndex}>
+                      {this.state.githubInstallationsResponse?.installations.map((i, index: number) => (
+                        <option value={index}>{`${i.login}`}</option>
+                      ))}
+                      <option value={-1}>+ Add Github Account</option>
+                    </Select>
+                  </div>
+                </div>
+              )}
             <div>
               <div>Repository name</div>
               <div>
@@ -344,21 +424,12 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             <Checkbox checked={this.state.private} onChange={this.handlePrivateChanged.bind(this)} />
             Create private git repository
           </label>
-          {!this.hasPermissions() && (
-            <button className="permissions-button" onClick={this.handlePermissionsClicked.bind(this)}>
-              Grant permissions
-            </button>
-          )}
           {!this.state.repoResponse && (
             <button
-              disabled={
-                !this.state.githubInstallationsResponse?.installations ||
-                !this.hasPermissions() ||
-                this.state.isCreating
-              }
+              disabled={this.state.isCreating}
               className="create-button"
               onClick={this.handleCreateClicked.bind(this)}>
-              {this.state.isCreating ? "Creating..." : "Create repository"}
+              <Github /> {this.state.isCreating ? "Creating..." : "Create repository"}
             </button>
           )}
           {this.state.repoResponse && (
@@ -376,8 +447,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
           )}
         </div>
         {this.getSecrets().length > 0 && (
-          <div
-            className={`repo-block card repo-create ${this.props.user && this.state.repoResponse ? "" : "disabled"}`}>
+          <div className={`repo-block card repo-create`}>
             <div className="repo-title">Configure deployment</div>
             <div className="deployment-configs">
               {this.getUnsetSecrets().map((s) => (
@@ -385,7 +455,6 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                   <div>{s}</div>
                   <div>
                     <TextInput
-                      type="password"
                       placeholder={s}
                       value={this.state.secrets.get(s)}
                       onChange={(e) => {
@@ -397,30 +466,11 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                 </div>
               ))}
             </div>
-            {needsGCPLink && (
-              <button
-                disabled={!this.state.githubInstallationsResponse?.installations}
-                className="create-button"
-                onClick={() =>
-                  (window.location.href = `/login/?${new URLSearchParams({
-                    issuer_url: "https://accounts.google.com",
-                    link_gcp_for_group: this.props.user?.selectedGroup.id || "",
-                    redirect_url: window.location.href,
-                  })}`)
-                }>
-                Link Google Cloud
-              </button>
-            )}
             <button
-              disabled={
-                !this.state.githubInstallationsResponse?.installations ||
-                !this.hasPermissions() ||
-                this.state.isDeploying ||
-                Boolean(this.state.workflowResponse) ||
-                needsGCPLink
-              }
+              disabled={!this.state.repoResponse || this.state.isDeploying || Boolean(this.state.workflowResponse)}
               className="create-button"
               onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
+              <CloudIcon />{" "}
               {this.state.isDeploying || this.state.workflowResponse
                 ? `Deploying${deployDestination}...`
                 : `Deploy${deployDestination}`}

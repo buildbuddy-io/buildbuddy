@@ -46,8 +46,7 @@ var (
 
 // Returns true if the request contains either a gcp link url param or cookie.
 func IsLinkRequest(r *http.Request) bool {
-	return (r.URL.Query().Get(linkParamName) != "" && cookie.GetCookie(r, cookie.AuthIssuerCookie) == Issuer) ||
-		cookie.GetCookie(r, linkCookieName) != ""
+	return r.URL.Query().Get(linkParamName) != "" || cookie.GetCookie(r, linkCookieName) != ""
 }
 
 // Redirects the user to the auth flow with a request for the GCP scope.
