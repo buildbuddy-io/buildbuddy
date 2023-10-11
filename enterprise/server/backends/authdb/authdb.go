@@ -782,7 +782,7 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 		return nil, err
 	}
 	acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
-	if err := perms.AuthorizeRead(&user, acl); err != nil {
+	if err := perms.AuthorizeRead(user, acl); err != nil {
 		return nil, err
 	}
 	if err := d.fillDecryptedAPIKey(key); err != nil {

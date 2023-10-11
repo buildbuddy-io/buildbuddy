@@ -1739,7 +1739,7 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 				return nil, err
 			}
 
-			err := perms.AuthorizeRead(&user, registeredNode.GetAcl())
+			err := perms.AuthorizeRead(user, registeredNode.GetAcl())
 			if err != nil {
 				continue
 			}
