@@ -374,7 +374,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 	var rsp *rfpb.GetMultiResponse
 	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		req := &rfpb.GetMultiRequest{
-			Header:     h,
+			Header:      h,
 			FileRecords: []*rfpb.FileRecord{fileRecord},
 		}
 		r, err := c.GetMulti(ctx, req)
