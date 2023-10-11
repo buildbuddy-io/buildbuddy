@@ -115,6 +115,112 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 	requireNonSequential(t, ranked[1:])
 }
 
+func TestTaskRouter_RankNodes_OutputAffinityRouting(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "output-affinity-routing", Value: "true"},
+			},
+		},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	instanceName := "test-instance"
+
+	router.MarkComplete(ctx, cmd, instanceName, executorID1)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// Task should now be routed to executor 1.
+	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
+
+	require.ElementsMatch(t, nodes, ranked)
+	require.Equal(t, executorID1, ranked[0].GetExecutorID())
+	requireNonSequential(t, ranked[1:])
+
+	// Mark the same task complete by executor 2 as well.
+	router.MarkComplete(ctx, cmd, instanceName, executorID2)
+
+	ranked = router.RankNodes(ctx, cmd, instanceName, nodes)
+
+	// Task should now be routed to executor 2, with executor 1 ranked randomly
+	require.ElementsMatch(t, nodes, ranked)
+	require.Equal(t, executorID2, ranked[0].GetExecutorID())
+	requireNonSequential(t, ranked[1:])
+
+	requireNotAlwaysRanked(1, executorID1, t, router, ctx, cmd, instanceName)
+
+	// Change the output path and verify tasks with that output path are not
+	// routed preferentially.
+	cmd.OutputPaths[0] = "/bazel-out/bar.a"
+	requireNotAlwaysRanked(0, executorID2, t, router, ctx, cmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_OutputAffinityRoutingNoOutputs(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "output-affinity-routing", Value: "true"},
+			},
+		},
+	}
+	instanceName := "test-instance"
+
+	router.MarkComplete(ctx, cmd, instanceName, executorID1)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// No nodes should be preferred as there are no outputs to route using.
+	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
+	require.ElementsMatch(t, nodes, ranked)
+	requireNonSequential(t, ranked)
+	requireNotAlwaysRanked(0, executorID1, t, router, ctx, cmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_RunnerRecyclingTakesPrecedence(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	oaCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "output-affinity-routing", Value: "true"},
+			},
+		},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	instanceName := "test-instance"
+
+	router.MarkComplete(ctx, oaCmd, instanceName, executorID1)
+
+	rrCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "output-affinity-routing", Value: "true"},
+			},
+		},
+	}
+
+	router.MarkComplete(ctx, rrCmd, instanceName, executorID2)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// Task should be routed to executor 2, because the runner recycling
+	// routing should take priority
+	ranked := router.RankNodes(ctx, oaCmd, instanceName, nodes)
+
+	require.ElementsMatch(t, nodes, ranked)
+	require.Equal(t, executorID2, ranked[0].GetExecutorID())
+	requireNonSequential(t, ranked[1:])
+}
+
 func TestTaskRouter_RankNodes_JustShufflesIfCommandIsNotAvailable(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)

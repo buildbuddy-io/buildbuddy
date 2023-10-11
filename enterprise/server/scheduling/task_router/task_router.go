@@ -64,7 +64,7 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for task router")
 	}
-	strategies := []routingStrategy{runnerRecyclingRoutingStrategy{}}
+	strategies := []routingStrategy{runnerRecyclingRoutingStrategy{}, outputAffinityRoutingStrategy{}}
 	return &taskRouter{
 		env:        env,
 		rdb:        rdb,
@@ -261,6 +261,64 @@ func (runnerRecyclingRoutingStrategy) routingKey(params routingParams) (string, 
 }
 
 func (s runnerRecyclingRoutingStrategy) routingInfo(params routingParams) (int, string, error) {
+	nodeLimit := s.preferredNodeLimit(params)
+	key, err := s.routingKey(params)
+	return nodeLimit, key, err
+}
+
+type outputAffinityRoutingStrategy struct {
+}
+
+func (outputAffinityRoutingStrategy) applies(params routingParams) bool {
+	if !platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.OutputAffinityRoutingPropertyName)) {
+		return false
+	}
+	return (len(params.cmd.OutputPaths) > 0 && params.cmd.OutputPaths[0] != "") ||
+		(len(params.cmd.OutputFiles) > 0 && params.cmd.OutputFiles[0] != "") ||
+		(len(params.cmd.OutputDirectories) > 0 && params.cmd.OutputDirectories[0] != "")
+}
+
+func (outputAffinityRoutingStrategy) preferredNodeLimit(params routingParams) int {
+	return defaultPreferredNodeLimit
+}
+
+func (outputAffinityRoutingStrategy) routingKey(params routingParams) (string, error) {
+	parts := []string{"task_route", params.groupID}
+
+	if params.remoteInstanceName != "" {
+		parts = append(parts, params.remoteInstanceName)
+	}
+
+	platform := params.cmd.GetPlatform()
+	if platform == nil {
+		platform = &repb.Platform{}
+	}
+	b, err := proto.Marshal(platform)
+	if err != nil {
+		return "", status.InternalErrorf("failed to marshal Command: %s", err)
+	}
+	parts = append(parts, fmt.Sprintf("%x", sha256.Sum256(b)))
+
+	// Add the first output as the final part of the routing key. This should
+	// uniquely identify a bazel action and is an attempt to route actions to
+	// executor nodes that are warmed up (with inputs and OCI images) for this
+	// action.
+	firstOutput := ""
+	if len(params.cmd.OutputPaths) > 0 && params.cmd.OutputPaths[0] != "" {
+		firstOutput = params.cmd.OutputPaths[0]
+	} else if len(params.cmd.OutputFiles) > 0 && params.cmd.OutputFiles[0] != "" {
+		firstOutput = params.cmd.OutputFiles[0]
+	} else if len(params.cmd.OutputDirectories) > 0 && params.cmd.OutputDirectories[0] != "" {
+		firstOutput = params.cmd.OutputDirectories[0]
+	} else {
+		return "", status.InternalError("routing key requested for action with no outputs")
+	}
+	parts = append(parts, fmt.Sprintf("%x", sha256.Sum256([]byte(firstOutput))))
+
+	return strings.Join(parts, "/"), nil
+}
+
+func (s outputAffinityRoutingStrategy) routingInfo(params routingParams) (int, string, error) {
 	nodeLimit := s.preferredNodeLimit(params)
 	key, err := s.routingKey(params)
 	return nodeLimit, key, err
