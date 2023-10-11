@@ -30,9 +30,8 @@ export type TabId =
 
 export function getTabId(tab: string): TabId {
   if (tab === "#action") {
-    // Treat the action tab as the execution tab if executions are enabled,
-    // otherwise treat it as the cache tab.
-    return this.props.executionsEnabled ? "execution" : "cache";
+    // Treat the action tab as the execution tab for highlighting.
+    return "execution";
   }
 
   return (tab.substring(1) as TabId) || "all";
