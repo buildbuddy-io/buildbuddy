@@ -5,7 +5,7 @@
   z-index: 5;
   top: 0;
   left: 0;
-  right: 0; 
+  right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(1px) saturate(25%);
@@ -27,7 +27,7 @@
   z-index: 5;
   left: 50%;
   top: 20vh;
-  box-shadow: 0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
   background-color: #fff;
   max-width: 450px;
   width: 100%;
@@ -56,7 +56,7 @@
 .picker-options-label {
   padding: 8px 16px 4px 16px;
   color: #888;
-  font-size: .8em;
+  font-size: 0.8em;
 }
 
 .picker-search {
