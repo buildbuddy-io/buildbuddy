@@ -1237,9 +1237,10 @@ type ClientIdentity struct {
 }
 
 const (
-	ClientIdentityExecutor = "executor"
-	ClientIdentityApp      = "app"
-	ClientIdentityWorkflow = "workflow"
+	ClientIdentityExecutor       = "executor"
+	ClientIdentityApp            = "app"
+	ClientIdentityWorkflow       = "workflow"
+	ClientIdentityInternalOrigin = "internal"
 )
 
 type ClientIdentityService interface {

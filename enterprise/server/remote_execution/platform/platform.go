@@ -7,8 +7,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -117,6 +119,9 @@ const (
 	DockerContainerType      ContainerType = "docker"
 	FirecrackerContainerType ContainerType = "firecracker"
 	SandboxContainerType     ContainerType = "sandbox"
+
+	// The app will mint a signed client identity token to workflows.
+	workflowClientIdentityTokenLifetime = 12 * time.Hour
 )
 
 // Properties represents the platform properties parsed from a command.
@@ -466,6 +471,21 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			Name:  "BB_GRPC_CLIENT_ORIGIN",
 			Value: usageutil.ClientOrigin(),
 		})
+
+		// TODO(vadim): find a way to limit this to shared executors
+		if cis := env.GetClientIdentityService(); cis != nil {
+			h, err := cis.IdentityHeader(&interfaces.ClientIdentity{
+				Origin: interfaces.ClientIdentityInternalOrigin,
+				Client: interfaces.ClientIdentityWorkflow,
+			}, workflowClientIdentityTokenLifetime)
+			if err != nil {
+				return err
+			}
+			command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name:  "BB_GRPC_CLIENT_IDENTITY",
+				Value: h,
+			})
+		}
 	}
 
 	return nil
