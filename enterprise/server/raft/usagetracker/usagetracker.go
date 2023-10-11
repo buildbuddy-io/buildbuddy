@@ -224,7 +224,7 @@ func (pu *partitionUsage) refresh(ctx context.Context, key *ReplicaSample) (skip
 		}
 		return false, time.Time{}, err
 	}
-	atime := time.UnixMicro(rsp.GetMetadata().GetLastAccessUsec())
+	atime := time.UnixMicro(rsp.GetFileMetadata().GetLastAccessUsec())
 	return false, atime, nil
 }
 

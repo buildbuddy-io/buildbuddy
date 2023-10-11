@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
@@ -73,56 +72,6 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 
 func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, error) {
 	return c.getClient(ctx, peer)
-}
-
-func RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
-	stream, err := client.Read(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	reader, writer := io.Pipe()
-
-	// Bit annoying here -- the gRPC stream won't give us an error until
-	// we've called Recv on it. But we don't want to return a reader that
-	// we know will error on first read with NotFound -- we want to return
-	// that error now. So we'll wait for our goroutine to call Recv once
-	// and return any error it gets in the main thread.
-	firstError := make(chan error)
-	go func() {
-		readOnce := false
-		for {
-			rsp, err := stream.Recv()
-			if !readOnce {
-				firstError <- err
-				readOnce = true
-			}
-			if rsp != nil {
-				writer.Write(rsp.Data)
-			}
-			if err == io.EOF {
-				writer.Close()
-				break
-			}
-			if err != nil {
-				writer.CloseWithError(err)
-				break
-			}
-
-		}
-	}()
-	err = <-firstError
-
-	// If we get an EOF, and we're expecting one - don't return an error.
-	digestSize := req.GetFileRecord().GetDigest().GetSizeBytes()
-	offset := req.GetOffset()
-	if err == io.EOF && offset == digestSize {
-		return reader, nil
-	}
-	return reader, err
-}
-
-func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
-	return RemoteReader(ctx, client, req)
 }
 
 func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
