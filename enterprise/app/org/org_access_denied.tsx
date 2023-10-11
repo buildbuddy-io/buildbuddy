@@ -13,7 +13,7 @@ export default class OrgAccessDeniedComponent extends React.Component<Props> {
   handleImpersonateClicked() {
     const params = new URLSearchParams(window.location.search);
     const sourceUrl = params.get("source_url");
-    authService.enterImpersonationMode(this.props.user.subdomainGroupID, { redirectUrl: sourceUrl ?? undefined});
+    authService.enterImpersonationMode(this.props.user.subdomainGroupID, { redirectUrl: sourceUrl ?? undefined });
   }
 
   render() {

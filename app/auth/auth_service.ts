@@ -224,15 +224,15 @@ export class AuthService {
   }
 
   // Enters impersonation for the given group, which may either be a group ID or a URL identifier.
-  async enterImpersonationMode(query: string, { redirectUrl = ""}: { redirectUrl?: string} = {}) {
+  async enterImpersonationMode(query: string, { redirectUrl = "" }: { redirectUrl?: string } = {}) {
     const request = grp.GetGroupRequest.create(query.startsWith("GR") ? { groupId: query } : { urlIdentifier: query });
     const response = await rpc_service.service.getGroup(request);
     this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, response.id, { maxAge: 0 });
 
     // If we have an explicit redirect URL, navigate there directly.
     if (redirectUrl) {
-      window.location.href = redirectUrl
-      return
+      window.location.href = redirectUrl;
+      return;
     }
 
     // If the new group is on a different subdomain then we have to use a redirect.
