@@ -78,6 +78,26 @@ go_binary(
     embed = [":executor_lib"],
 )
 
+# Help validate windows compilation
+# TODO: remove this if we add Windows CI.
+go_binary(
+    name = "executor_windows",
+    args = [
+        "--config_file=enterprise/config/executor.local.yaml",
+        "--port=8888",
+        "--monitoring_port=9091",
+        "--max_shutdown_duration=3s",
+    ],
+    data = [
+        "//enterprise:licenses",
+        "//enterprise/config:config_files",
+    ],
+    embed = [":executor_lib"],
+    goarch = "amd64",
+    goos = "windows",
+    pure = "on",
+)
+
 # Executor expects "firecracker" and "jailer" binaries in $PATH,
 # and they can't be symlinks (otherwise the VM will not start).
 # Rename the firecracker/jailer binaries so that we can place
