@@ -24,7 +24,7 @@ export type BuildBuddyServiceRpcName = RpcMethodNames<buildbuddy.service.BuildBu
 
 export type FileEncoding = "gzip" | "zstd" | "";
 
-export type XMLHttpResponseType = XMLHttpRequest["responseType"];
+export type FetchResponseType = "arraybuffer" | "stream" | "text" | "";
 
 class RpcService {
   service: ExtendedBuildBuddyService;
@@ -102,80 +102,74 @@ class RpcService {
    * storedEncoding can be specified to prevent the server from
    * double-compressing (since it gzips all resources by default).
    */
-  fetchBytestreamFile(
+  fetchBytestreamFile<T extends FetchResponseType = "text">(
     bytestreamURL: string,
     invocationId: string,
-    responseType?: XMLHttpResponseType,
-    { storedEncoding }: { storedEncoding?: FileEncoding } = {}
-  ) {
-    return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId), responseType || "", {
-      storedEncoding: storedEncoding,
-    });
+    responseType?: T,
+    init: RequestInit = {}
+  ): Promise<FetchPromiseType<T>> {
+    return this.fetch(
+      this.getBytestreamUrl(bytestreamURL, invocationId),
+      (responseType || "") as FetchResponseType,
+      init
+    ) as Promise<FetchPromiseType<T>>;
   }
 
-  fetchFile(
-    fileURL: string,
-    responseType: XMLHttpResponseType,
-    { storedEncoding }: { storedEncoding?: FileEncoding } = {}
-  ): Promise<any> {
-    return new Promise((resolve, reject) => {
-      var request = new XMLHttpRequest();
-      request.responseType = responseType;
-      request.open("GET", fileURL, true);
-      request.onload = function () {
-        if (this.status >= 200 && this.status < 400) {
-          resolve(this.response);
-        } else {
-          let message: String;
-          if (this.response instanceof ArrayBuffer) {
-            message = new TextDecoder().decode(this.response);
-          } else {
-            message = String(this.response);
-          }
-          reject("Error loading file: " + message);
-        }
-      };
-      request.onerror = function () {
-        reject("Error loading file (unknown error)");
-      };
-      // If we know the stored content is already gzipped, inform the server so
-      // that it doesn't double-gzip.
-      if (storedEncoding === "gzip") {
-        request.setRequestHeader("X-Stored-Encoding-Hint", "gzip");
-      } else if (storedEncoding === "zstd") {
-        request.setRequestHeader("X-Stored-Encoding-Hint", "zstd");
-      }
-      request.send();
-    });
-  }
-
-  rpc(server: string, method: any, requestData: any, callback: any) {
-    var request = new XMLHttpRequest();
-    request.open("POST", `${server || ""}/rpc/BuildBuddyService/${method.name}`, true);
+  /**
+   * Lowest-level fetch method. Ensures that tracing headers are set correctly,
+   * and handles returning the correct type of response based on the given
+   * response type.
+   */
+  async fetch<T extends FetchResponseType>(
+    url: string,
+    responseType: T,
+    init: RequestInit = {}
+  ): Promise<FetchPromiseType<T>> {
+    const headers = new Headers(init.headers);
     if (this.debuggingEnabled()) {
-      request.setRequestHeader("x-buildbuddy-trace", "force");
+      headers.set("x-buildbuddy-trace", "force");
     }
-    if (capabilities.config.regions?.map((r) => r.server).includes(server)) {
-      request.withCredentials = true;
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, headers });
+    } catch (e) {
+      throw `connection error: ${e}`;
     }
-
-    request.setRequestHeader("Content-Type", method.contentType || "application/proto");
-    request.responseType = "arraybuffer";
-    request.onload = () => {
-      if (request.status >= 200 && request.status < 400) {
-        callback(null, new Uint8Array(request.response));
-        this.events.next(method.name);
-        console.log(`Emitting event [${method.name}]`);
-      } else {
-        callback(new Error(`${new TextDecoder("utf-8").decode(new Uint8Array(request.response))}`));
+    if (response.status < 200 || response.status >= 400) {
+      // Read error message from response body
+      let message = "";
+      try {
+        message = await response.text();
+      } catch (e) {
+        message = `unknown (failed to read response body: ${e})`;
       }
-    };
+      throw `failed to fetch: ${message}`;
+    }
+    switch (responseType) {
+      case "arraybuffer":
+        return (await response.arrayBuffer()) as FetchPromiseType<T>;
+      case "stream":
+        return response.body as FetchPromiseType<T>;
+      default:
+        return (await response.text()) as FetchPromiseType<T>;
+    }
+  }
 
-    request.onerror = () => {
-      callback(new Error("Connection error"));
-    };
-
-    request.send(requestData);
+  async rpc(server: string, method: any, requestData: any, callback: any) {
+    const url = `${server || ""}/rpc/BuildBuddyService/${method.name}`;
+    const init: RequestInit = { method: "POST", body: requestData };
+    if (capabilities.config.regions?.map((r) => r.server).includes(server)) {
+      init.credentials = "include";
+    }
+    init.headers = { "Content-Type": "application/proto" };
+    try {
+      const arrayBuffer = await this.fetch(url, "arraybuffer", init);
+      callback(null, new Uint8Array(arrayBuffer));
+      this.events.next(method.name);
+    } catch (e) {
+      console.error("RPC failed:", e);
+      callback(new Error(String(e)));
+    }
   }
 
   private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
@@ -219,5 +213,15 @@ type CancelableService<Service extends protobufjs.rpc.Service> = protobufjs.rpc.
       ? CancelableRpc<Request, Response>
       : never;
   };
+
+type FetchPromiseType<T extends FetchResponseType> = T extends ""
+  ? string
+  : T extends "text"
+  ? string
+  : T extends "arraybuffer"
+  ? ArrayBuffer
+  : T extends "stream"
+  ? ReadableStream<Uint8Array> | null
+  : never;
 
 export default new RpcService();

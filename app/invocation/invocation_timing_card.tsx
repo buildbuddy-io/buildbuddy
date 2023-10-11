@@ -102,8 +102,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     // Note: we use responseType "text" instead of "json" since the profile is
     // not always valid JSON (the trailing "]}" may be missing).
     rpcService
-      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "text", { storedEncoding })
-      .then((contents: string) => this.updateProfile(parseProfile(contents)))
+      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "text", {
+        // Set the stored encoding header to prevent the server from double-gzipping.
+        headers: { "X-Stored-Encoding-Hint": storedEncoding },
+      })
+      .then((contents) => this.updateProfile(parseProfile(contents)))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
