@@ -64,7 +64,6 @@ service BuildBuddyService {
   // User API
   rpc CreateUser(user.CreateUserRequest) returns (user.CreateUserResponse);
   rpc GetUser(user.GetUserRequest) returns (user.GetUserResponse);
-  rpc GetImpersonatedUser(user.GetUserRequest) returns (user.GetUserResponse);
 
   // Groups API
   rpc GetGroup(grp.GetGroupRequest) returns (grp.GetGroupResponse);

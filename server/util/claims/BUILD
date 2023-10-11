@@ -17,6 +17,7 @@ go_library(
         "//server/util/request_context",
         "//server/util/role",
         "//server/util/status",
+        "//server/util/subdomain",
         "@com_github_golang_jwt_jwt//:jwt",
     ],
 )

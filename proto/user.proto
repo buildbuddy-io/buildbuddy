@@ -58,6 +58,9 @@ message GetUserResponse {
   // group ID that owns the subdomain, but only if the user is allowed to
   // impersonate.
   string subdomain_group_id = 8;
+
+  // True if the user is using impersonation to access a group.
+  bool is_impersonating = 10;
 }
 
 message CreateUserRequest {
