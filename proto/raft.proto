@@ -412,6 +412,17 @@ message Header {
   ReplicaDescriptor replica = 1;
   uint64 range_id = 2;
   uint64 generation = 3;
+
+  enum ConsistencyMode {
+    LINEARIZABLE = 0;
+    STALE = 1;
+  }
+
+  // The consistency mode that should be used for this operation.
+  //  Writes are always written to all nodes (there are no STALE writes).
+  //  Reads will use LINEARIZABLE by default but STALE can be set if the client
+  //  can tolerate stale data.
+  ConsistencyMode consistency_mode = 4;
 }
 
 message RangeSet {

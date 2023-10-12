@@ -33,6 +33,7 @@ type NodeHost interface {
 	SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error)
 	ReadIndex(shardID uint64, timeout time.Duration) (*dragonboat.RequestState, error)
 	ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error)
+	StaleRead(shardID uint64, query interface{}) (interface{}, error)
 }
 
 type apiClientAndConn struct {
@@ -126,24 +127,37 @@ func getTimeout(ctx context.Context) time.Duration {
 	return DefaultContextTimeout
 }
 
-func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
 	}
 
+	if batch.Header == nil {
+		return nil, status.FailedPreconditionError("Header must be set")
+	}
+	shardID := batch.GetHeader().GetReplica().GetShardId()
 	var raftResponseIface interface{}
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		rs, err := nodehost.ReadIndex(shardID, getTimeout(ctx))
-		if err != nil {
+		switch batch.GetHeader().GetConsistencyMode() {
+		case rfpb.Header_LINEARIZABLE:
+			rs, err := nodehost.ReadIndex(shardID, getTimeout(ctx))
+			if err != nil {
+				return err
+			}
+			v := <-rs.ResultC()
+			if !v.Completed() {
+				return status.FailedPreconditionError("Failed to read node index")
+			}
+			raftResponseIface, err = nodehost.ReadLocalNode(rs, buf)
 			return err
+		case rfpb.Header_STALE:
+			raftResponseIface, err = nodehost.StaleRead(shardID, buf)
+			return err
+		default:
+			return status.UnknownError("Unknown consistency mode")
 		}
-		v := <-rs.ResultC()
-		if !v.Completed() {
-			return status.FailedPreconditionError("Failed to read node index")
-		}
-		raftResponseIface, err = nodehost.ReadLocalNode(rs, buf)
-		return err
+
 	})
 	if err != nil {
 		return nil, err
@@ -168,7 +182,7 @@ func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, shardID uint64,
 	return SyncProposeLocal(ctx, nhs.NodeHost, shardID, batch)
 }
 func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncReadLocal(ctx, nhs.NodeHost, shardID, batch)
+	return SyncReadLocal(ctx, nhs.NodeHost, batch)
 }
 
 func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
