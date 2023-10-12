@@ -2,6 +2,7 @@ package task_router
 
 import (
 	"context"
+	"flag"
 	"math/rand"
 	"strings"
 	"time"
@@ -17,6 +18,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+var (
+	affinityRoutingPermitted = flag.Bool("executor.affinity_routing_permitted", true, "If set, along with the 'affinity-routing' platform property, then (experimental) affinity routing is used. If false, then affinity routing is never used. This flag is intended to be used as an emergency shut-off for this experimental feature.")
 )
 
 const (
@@ -271,7 +276,8 @@ func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
 type affinityRouter struct{}
 
 func (affinityRouter) Applies(params routingParams) bool {
-	return platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.AffinityRoutingPropertyName)) &&
+	return *affinityRoutingPermitted &&
+		platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.AffinityRoutingPropertyName)) &&
 		getFirstOutput(params.cmd) != ""
 }
 

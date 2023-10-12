@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -223,6 +224,33 @@ func TestTaskRouter_RankNodes_AffinityRoutingNoOutputs(t *testing.T) {
 	nodes := sequentiallyNumberedNodes(100)
 
 	// No nodes should be preferred as there are no outputs to route using.
+	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
+	require.ElementsMatch(t, nodes, ranked)
+	requireNonSequential(t, ranked)
+	requireNotAlwaysRanked(0, executorID1, t, router, ctx, cmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_AffinityRoutingDisabled(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	flags.Set(t, "executor.affinity_routing_permitted", false)
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	instanceName := "test-instance"
+
+	router.MarkComplete(ctx, cmd, instanceName, executorID1)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// No nodes should be preferred as affinity routing is not permitted.
 	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 	require.ElementsMatch(t, nodes, ranked)
 	requireNonSequential(t, ranked)
