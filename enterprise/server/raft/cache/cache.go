@@ -383,7 +383,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 		}
 		rsp = r
 		return nil
-	}, sender.WithConsistencyMode(rfpb.Header_STALE))
+	})
 	if err != nil {
 		return nil, err
 	}
