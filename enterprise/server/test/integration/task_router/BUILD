@@ -14,6 +14,7 @@ go_test(
         "//server/environment",
         "//server/interfaces",
         "//server/testutil/testauth",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -51,6 +53,9 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkfl
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID1, ranked[0].GetExecutorID())
 
+	// The remaining nodes should be shuffled.
+	requireNonSequential(t, ranked[1:])
+
 	// Mark the same task complete by executor 2 as well.
 
 	router.MarkComplete(ctx, cmd, instanceName, executorID2)
@@ -64,6 +69,7 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkfl
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID2, ranked[0].GetExecutorID())
 	require.Equal(t, executorID1, ranked[1].GetExecutorID())
+	requireNonSequential(t, ranked[2:])
 }
 
 func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComplete(t *testing.T) {
@@ -91,6 +97,7 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID1, ranked[0].GetExecutorID())
+	requireNonSequential(t, ranked[1:])
 
 	// Mark the same task complete by executor 2 as well.
 
@@ -106,6 +113,187 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 	require.Equal(t, executorID2, ranked[0].GetExecutorID())
 
 	requireNotAlwaysRanked(1, executorID1, t, router, ctx, cmd, instanceName)
+	requireNonSequential(t, ranked[1:])
+}
+
+func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	firstCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "foo", Value: "bar"},
+		},
+		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	instanceName := "test-instance"
+
+	// No executor should be preferred.
+	nodes := sequentiallyNumberedNodes(100)
+	ranked := router.RankNodes(ctx, firstCmd, instanceName, nodes)
+	requireNotAlwaysRanked(0, executorID1, t, router, ctx, firstCmd, instanceName)
+	requireNonSequential(t, ranked)
+
+	// Mark the task as complete by executor 1.
+	router.MarkComplete(ctx, firstCmd, instanceName, executorID1)
+
+	secondCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "foo", Value: "baz"},
+		},
+		Arguments:   []string{"gcc", "-c", "opt", "foo.c"},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+
+	// Task should now be routed to executor 1.
+	ranked = router.RankNodes(ctx, secondCmd, instanceName, nodes)
+
+	require.ElementsMatch(t, nodes, ranked)
+	require.Equal(t, executorID1, ranked[0].GetExecutorID())
+	requireNonSequential(t, ranked[1:])
+
+	// Mark the task complete by executor 2 as well.
+	router.MarkComplete(ctx, secondCmd, instanceName, executorID2)
+
+	// If the first output is specified as an OutputFile rather than an
+	// OutputPath, the routing should still consider this.
+	thirdCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "foo", Value: "qux"},
+		},
+		Arguments:   []string{"gcc", "-c", "opt", "foo.c"},
+		OutputFiles: []string{"/bazel-out/foo.a"},
+	}
+
+	ranked = router.RankNodes(ctx, thirdCmd, instanceName, nodes)
+
+	// Task should now be routed to executor 2, with executor 1 ranked randomly
+	require.ElementsMatch(t, nodes, ranked)
+	require.Equal(t, executorID2, ranked[0].GetExecutorID())
+	requireNonSequential(t, ranked[1:])
+
+	requireNotAlwaysRanked(1, executorID1, t, router, ctx, thirdCmd, instanceName)
+
+	// Verify that tasks with a different first output are routed randomly.
+	fourthCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "foo", Value: "bar"},
+		},
+		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
+		OutputPaths: []string{"/bazel-out/bar.a"},
+	}
+	requireNotAlwaysRanked(0, executorID2, t, router, ctx, fourthCmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_AffinityRoutingNoOutputs(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+	}
+	instanceName := "test-instance"
+
+	router.MarkComplete(ctx, cmd, instanceName, executorID1)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// No nodes should be preferred as there are no outputs to route using.
+	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
+	require.ElementsMatch(t, nodes, ranked)
+	requireNonSequential(t, ranked)
+	requireNotAlwaysRanked(0, executorID1, t, router, ctx, cmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_AffinityRoutingDisabled(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	flags.Set(t, "executor.affinity_routing_permitted", false)
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	instanceName := "test-instance"
+
+	router.MarkComplete(ctx, cmd, instanceName, executorID1)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// No nodes should be preferred as affinity routing is not permitted.
+	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
+	require.ElementsMatch(t, nodes, ranked)
+	requireNonSequential(t, ranked)
+	requireNotAlwaysRanked(0, executorID1, t, router, ctx, cmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_RunnerRecyclingTakesPrecedence(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	oaCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	instanceName := "test-instance"
+
+	router.MarkComplete(ctx, oaCmd, instanceName, executorID1)
+
+	rrCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "affinity-routing", Value: "true"},
+			},
+		},
+	}
+
+	router.MarkComplete(ctx, rrCmd, instanceName, executorID2)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// Task should be routed to executor 2, because the runner recycling
+	// routing should take priority
+	ranked := router.RankNodes(ctx, oaCmd, instanceName, nodes)
+
+	require.ElementsMatch(t, nodes, ranked)
+	require.Equal(t, executorID2, ranked[0].GetExecutorID())
+	requireNonSequential(t, ranked[1:])
 }
 
 func TestTaskRouter_RankNodes_JustShufflesIfCommandIsNotAvailable(t *testing.T) {
@@ -203,6 +391,23 @@ func requireReordered(t *testing.T, nodes []interfaces.ExecutionNode, ranked []i
 		}
 	}
 	require.FailNow(t, "nodes were not reordered")
+}
+
+func requireNonSequential(t *testing.T, nodes []interfaces.ExecutionNode) {
+	if len(nodes) <= 1 {
+		require.FailNow(t, "slice too short to test for sequential order")
+	}
+	prev, err := strconv.Atoi(nodes[0].GetExecutorID())
+	require.NoError(t, err)
+	for i := 1; i < len(nodes); i++ {
+		cur, err := strconv.Atoi(nodes[i].GetExecutorID())
+		require.NoError(t, err)
+		if cur < prev {
+			return
+		}
+		prev = cur
+	}
+	require.FailNow(t, "nodes were in sequential order")
 }
 
 func newTaskRouter(t *testing.T, env environment.Env) interfaces.TaskRouter {

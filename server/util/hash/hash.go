@@ -7,8 +7,12 @@ import (
 	"unsafe"
 )
 
+func Bytes(input []byte) string {
+	return fmt.Sprintf("%x", sha256.Sum256(input))
+}
+
 func String(input string) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(input)))
+	return Bytes([]byte(input))
 }
 
 //go:noescape

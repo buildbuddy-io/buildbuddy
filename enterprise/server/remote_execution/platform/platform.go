@@ -66,6 +66,7 @@ const (
 	unsetContainerImageVal = "none"
 
 	RecycleRunnerPropertyName            = "recycle-runner"
+	AffinityRoutingPropertyName          = "affinity-routing"
 	preserveWorkspacePropertyName        = "preserve-workspace"
 	nonrootWorkspacePropertyName         = "nonroot-workspace"
 	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
@@ -142,6 +143,7 @@ type Properties struct {
 	DockerUser                string
 	DockerNetwork             string
 	RecycleRunner             bool
+	AffinityRouting           bool
 	EnableVFS                 bool
 	IncludeSecrets            bool
 
@@ -257,6 +259,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
+		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),

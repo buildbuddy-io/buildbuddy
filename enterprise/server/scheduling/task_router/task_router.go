@@ -2,8 +2,7 @@ package task_router
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
+	"flag"
 	"math/rand"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -18,6 +18,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+var (
+	affinityRoutingPermitted = flag.Bool("executor.affinity_routing_permitted", true, "If set, along with the 'affinity-routing' platform property, then (experimental) affinity routing is used. If false, then affinity routing is never used. This flag is intended to be used as an emergency shut-off for this experimental feature.")
 )
 
 const (
@@ -41,6 +45,11 @@ const (
 type taskRouter struct {
 	env environment.Env
 	rdb redis.UniversalClient
+
+	// The RoutingStrategies available to use for task routing. The routing
+	// strategy used is the first one that matches the input request from this
+	// ordered slice.
+	strategies []Router
 }
 
 func Register(env environment.Env) error {
@@ -61,9 +70,11 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for task router")
 	}
+	strategies := []Router{runnerRecycler{}, affinityRouter{}}
 	return &taskRouter{
-		env: env,
-		rdb: rdb,
+		env:        env,
+		rdb:        rdb,
+		strategies: strategies,
 	}, nil
 }
 
@@ -76,20 +87,22 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		nodes[i], nodes[j] = nodes[j], nodes[i]
 	})
 
-	if cmd == nil {
+	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
+	strategy := tr.selectRouter(params)
+	if strategy == nil {
 		return nodes
 	}
-	preferredNodeLimit := getPreferredNodeLimit(cmd)
+
+	preferredNodeLimit, routingKey, err := strategy.RoutingInfo(params)
+	if err != nil {
+		log.Errorf("Failed to compute routing info: %s", err)
+		return nodes
+	}
 	if preferredNodeLimit == 0 {
 		return nodes
 	}
 
-	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
-	if err != nil {
-		log.Errorf("Failed to compute routing key: %s", err)
-		return nodes
-	}
-	preferredNodeIDs, err := tr.rdb.LRange(ctx, key, 0, -1).Result()
+	preferredNodeIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 	if err != nil {
 		log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
 		return nodes
@@ -102,11 +115,11 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	preferredSet := map[string]struct{}{}
 	ranked := make([]interfaces.ExecutionNode, 0, len(nodes))
 
-	log.Debugf("Preferred executor IDs for %q: %v", key, preferredNodeIDs)
+	log.Debugf("Preferred executor IDs for %q: %v", routingKey, preferredNodeIDs)
 
 	// Place all preferred nodes first (in the order that they appear in the Redis
 	// list), then the remaining ones in shuffled order.
-	for _, id := range preferredNodeIDs[:minInt(preferredNodeLimit, len(preferredNodeIDs))] {
+	for _, id := range preferredNodeIDs[:min(preferredNodeLimit, len(preferredNodeIDs))] {
 		node := nodeByID[id]
 		if node == nil {
 			continue
@@ -128,13 +141,17 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 // future tasks with those properties are more likely to be fulfilled by the
 // given node.
 func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorID string) {
-	nodeListMaxLength := getPreferredNodeLimit(cmd)
-	if nodeListMaxLength == 0 {
+	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
+	strategy := tr.selectRouter(params)
+	if strategy == nil {
 		return
 	}
-	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
+	preferredNodeLimit, routingKey, err := strategy.RoutingInfo(params)
 	if err != nil {
-		log.Errorf("Failed to compute routing key: %s", err)
+		log.Errorf("Failed to compute routing info: %s", err)
+		return
+	}
+	if preferredNodeLimit == 0 {
 		return
 	}
 
@@ -142,57 +159,41 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 	// Push the node to the head of the list (but first remove it if already
 	// present to avoid dupes), trim to max length to prevent it from growing
 	// too large, and renew the TTL.
-	pipe.LRem(ctx, key, 1, executorID)
-	pipe.LPush(ctx, key, executorID)
-	pipe.LTrim(ctx, key, 0, int64(nodeListMaxLength)-1)
-	pipe.Expire(ctx, key, routingPropsKeyTTL)
+	pipe.LRem(ctx, routingKey, 1, executorID)
+	pipe.LPush(ctx, routingKey, executorID)
+	pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
+	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		log.Errorf("Failed to mark task complete: redis pipeline failed: %s", err)
 		return
 	}
 
-	log.Debugf("Preferred executor %q added to %q", executorID, key)
+	log.Debugf("Preferred executor %q added to %q", executorID, routingKey)
 }
 
-// getPreferredNodeLimit returns the max number of nodes that should be stored
-// in the preferred executors list for each task key, as well as the max number
-// of preferred nodes that should be returned by RankNodes.
-func getPreferredNodeLimit(cmd *repb.Command) int {
-	isRunnerRecyclingEnabled := platform.IsTrue(platform.FindValue(cmd.GetPlatform(), platform.RecycleRunnerPropertyName))
-	if !isRunnerRecyclingEnabled {
-		return 0
-	}
-	workflowID := platform.FindValue(cmd.GetPlatform(), platform.WorkflowIDPropertyName)
-	if workflowID != "" {
-		return workflowsPreferredNodeLimit
-	}
-	return defaultPreferredNodeLimit
+// Contains the parameters required to make a routing decision.
+type routingParams struct {
+	cmd                *repb.Command
+	remoteInstanceName string
+	groupID            string
 }
 
-func (tr *taskRouter) routingKey(ctx context.Context, cmd *repb.Command, remoteInstanceName string) (string, error) {
-	parts := []string{"task_route"}
-
-	if u, err := perms.AuthenticatedUser(ctx, tr.env); err == nil {
-		parts = append(parts, u.GetGroupID())
-	} else {
-		parts = append(parts, interfaces.AuthAnonymousUser)
+func getRoutingParams(ctx context.Context, env environment.Env, cmd *repb.Command, remoteInstanceName string) routingParams {
+	groupID := interfaces.AuthAnonymousUser
+	if u, err := perms.AuthenticatedUser(ctx, env); err == nil {
+		groupID = u.GetGroupID()
 	}
+	return routingParams{cmd: cmd, remoteInstanceName: remoteInstanceName, groupID: groupID}
+}
 
-	if remoteInstanceName != "" {
-		parts = append(parts, remoteInstanceName)
+// Selects and returns a Router to use, or nil if none applies.
+func (tr taskRouter) selectRouter(params routingParams) Router {
+	for _, strategy := range tr.strategies {
+		if strategy.Applies(params) {
+			return strategy
+		}
 	}
-
-	platform := cmd.GetPlatform()
-	if platform == nil {
-		platform = &repb.Platform{}
-	}
-	b, err := proto.Marshal(platform)
-	if err != nil {
-		return "", status.InternalErrorf("failed to marshal Command: %s", err)
-	}
-	parts = append(parts, fmt.Sprintf("%x", sha256.Sum256(b)))
-
-	return strings.Join(parts, "/"), nil
+	return nil
 }
 
 func copyNodes(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
@@ -201,9 +202,132 @@ func copyNodes(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
 	return out
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
+// A Router encapsulates a strategy for performing task routing based on a set
+// of provided routingParams. Currently this interface is somewhat coupled with
+// the Redis reading and writing logic in the task_router, but that could be
+// uncoupled in the future when other routing strategies that aren't
+// Redis-list-based are added.
+type Router interface {
+	// Returns true if this router applies to the given routing parameters,
+	// false otherwise. Note: Applies() must be deterministic.
+	Applies(params routingParams) bool
+
+	// Returns the routing info (preferredNodeLimit and routingKey) for the
+	// provided routing parameters. The preferredNodeLimit is the number of
+	// preferred executor nodes that should be used, and the routing key is the
+	// Redis key where the list of preferred executor nodes are stored.
+	RoutingInfo(params routingParams) (int, string, error)
+}
+
+// The runnerRecycler is a router that attempts to "recycle" warm execution
+// nodes when possible.
+type runnerRecycler struct{}
+
+func (runnerRecycler) Applies(params routingParams) bool {
+	return platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.RecycleRunnerPropertyName))
+}
+
+func (runnerRecycler) preferredNodeLimit(params routingParams) int {
+	workflowID := platform.FindValue(params.cmd.GetPlatform(), platform.WorkflowIDPropertyName)
+	if workflowID != "" {
+		return workflowsPreferredNodeLimit
 	}
-	return b
+	return defaultPreferredNodeLimit
+}
+
+func (runnerRecycler) routingKey(params routingParams) (string, error) {
+	parts := []string{"task_route", params.groupID}
+
+	if params.remoteInstanceName != "" {
+		parts = append(parts, params.remoteInstanceName)
+	}
+
+	platform := params.cmd.GetPlatform()
+	if platform == nil {
+		platform = &repb.Platform{}
+	}
+	b, err := proto.Marshal(platform)
+	if err != nil {
+		return "", status.InternalErrorf("failed to marshal Command: %s", err)
+	}
+	parts = append(parts, hash.Bytes(b))
+
+	return strings.Join(parts, "/"), nil
+}
+
+func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
+	nodeLimit := s.preferredNodeLimit(params)
+	key, err := s.routingKey(params)
+	return nodeLimit, key, err
+}
+
+// affinityRouter generates Redis routing keys based on:
+//   - remoteInstanceName
+//   - groupID
+//   - platform properties
+//   - and the name of the first action output
+//
+// Because only a single action can generate a given output in Bazel, this key
+// uniquely identifies an action and is stable even if the action's inputs
+// change. The intent of using this routing key is to route successive actions
+// whose inputs have changed to nodes which previously executed that action to
+// increase the local-cache hitrate, as it's likely that for large actions most
+// of the input tree is unchanged.
+type affinityRouter struct{}
+
+func (affinityRouter) Applies(params routingParams) bool {
+	return *affinityRoutingPermitted &&
+		platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.AffinityRoutingPropertyName)) &&
+		getFirstOutput(params.cmd) != ""
+}
+
+func (affinityRouter) preferredNodeLimit(params routingParams) int {
+	return defaultPreferredNodeLimit
+}
+
+func (affinityRouter) routingKey(params routingParams) (string, error) {
+	parts := []string{"task_route", params.groupID}
+
+	if params.remoteInstanceName != "" {
+		parts = append(parts, params.remoteInstanceName)
+	}
+
+	platform := params.cmd.GetPlatform()
+	if platform == nil {
+		platform = &repb.Platform{}
+	}
+	b, err := proto.Marshal(platform)
+	if err != nil {
+		return "", status.InternalErrorf("failed to marshal Command: %s", err)
+	}
+	parts = append(parts, hash.Bytes(b))
+
+	// Add the first output as the final part of the routing key. This should
+	// uniquely identify a bazel action and is an attempt to route actions to
+	// executor nodes that are warmed up (with inputs and OCI images) for this
+	// action.
+	firstOutput := getFirstOutput(params.cmd)
+	if firstOutput == "" {
+		return "", status.InternalError("routing key requested for action with no outputs")
+	}
+	parts = append(parts, hash.String(firstOutput))
+
+	return strings.Join(parts, "/"), nil
+}
+
+func (s affinityRouter) RoutingInfo(params routingParams) (int, string, error) {
+	nodeLimit := s.preferredNodeLimit(params)
+	key, err := s.routingKey(params)
+	return nodeLimit, key, err
+}
+
+func getFirstOutput(cmd *repb.Command) string {
+	if len(cmd.OutputPaths) > 0 && cmd.OutputPaths[0] != "" {
+		return cmd.OutputPaths[0]
+	} else if len(cmd.OutputFiles) > 0 && cmd.OutputFiles[0] != "" {
+		return cmd.OutputFiles[0]
+	} else if len(cmd.OutputDirectories) > 0 && cmd.OutputDirectories[0] != "" {
+		return cmd.OutputDirectories[0]
+	}
+	return ""
 }
