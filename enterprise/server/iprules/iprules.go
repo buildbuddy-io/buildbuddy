@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -178,6 +179,21 @@ func (s *Service) checkRules(ctx context.Context, groupID string, skipCache bool
 	clientIP := net.ParseIP(rawClientIP)
 	// Client IP is not parsable.
 	if clientIP == nil {
+		if cis := s.env.GetClientIdentityService(); cis != nil {
+			si, err := cis.IdentityFromContext(ctx)
+			log.Warningf("identity %+v err %v", si, err)
+			// Trusted clients with signed identity.
+			if err == nil && (si.Client == interfaces.ClientIdentityExecutor ||
+				si.Client == interfaces.ClientIdentityApp ||
+				si.Client == interfaces.ClientIdentityWorkflow) {
+				return nil
+			}
+			if err != nil && !status.IsNotFoundError(err) {
+				return err
+			}
+		} else {
+			log.Warningf("no identity service")
+		}
 		return status.FailedPreconditionErrorf("client IP %q is not valid", rawClientIP)
 	}
 
