@@ -307,6 +307,7 @@ func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) 
 		return blake3.New(), nil
 	case repb.DigestFunction_UNKNOWN:
 		// TODO(tylerw): make this a warning when clients support this.
+		// log.Warningf("Digest function was unset: defaulting to SHA256")
 		return sha256.New(), nil
 	default:
 		return nil, status.UnimplementedErrorf("No support for digest type: %s", digestType)
