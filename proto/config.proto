@@ -48,9 +48,7 @@ message FrontendConfig {
   // Whether or not the usage page is enabled.
   bool usage_enabled = 15;
 
-  // Whether or not user management is enabled.
-  // DEPRECATED: This is now always true.
-  bool user_management_enabled = 16 [deprecated = true];
+  reserved 16; // DEPRECATED user_management_enabled
 
   // Whether Darwin (macOS) executors must be self-hosted.
   bool force_user_owned_darwin_executors = 17;

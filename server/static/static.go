@@ -164,7 +164,6 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		SsoEnabled:                             env.GetAuthenticator().SSOEnabled(),
 		GlobalFilterEnabled:                    true,
 		UsageEnabled:                           *usageEnabled,
-		UserManagementEnabled:                  *userManagementEnabled,
 		ForceUserOwnedDarwinExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		TestGridV2Enabled:                      *testGridV2Enabled,
 		DetailedCacheStatsEnabled:              hit_tracker.DetailedStatsEnabled(),
