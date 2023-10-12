@@ -8,6 +8,8 @@ import Button from "../../../app/components/button/button";
 import alertService from "../../../app/alert/alert_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { ArrowRight, Github, HelpCircle, Lock, User } from "lucide-react";
+import popup from "../../../app/util/popup";
+import error_service from "../../../app/errors/error_service";
 
 interface State {
   orgName?: string;
@@ -67,7 +69,16 @@ export default class LoginComponent extends React.Component<Props, State> {
   }
 
   handleGithubClicked() {
-    window.location.href = "/login/github/";
+    const url = "/login/github/";
+    if (capabilities.config.popupAuthEnabled) {
+      popup
+        .open(url)
+        .then(() => authService.refreshUser())
+        .catch(error_service.handleError);
+      return;
+    }
+
+    window.location.href = url;
   }
 
   handleSSOClicked(event: any) {

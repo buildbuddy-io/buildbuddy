@@ -38,6 +38,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbConfig "github.com/lni/dragonboat/v4/config"
+	gstatus "google.golang.org/grpc/status"
 )
 
 func localAddr(t *testing.T) string {
@@ -112,7 +113,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 		return reg, nil
 	})
 
-	raftListener := listener.DefaultListener()
+	raftListener := listener.NewRaftListener()
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(ts.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(ts.RootDir, "nodehost"),
@@ -136,16 +137,16 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	ts.APIClient = apiClient
 
 	rc := rangecache.New()
-	gm.AddListener(rc)
 	ts.Sender = sender.New(rc, reg, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
-	s, err := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, apiClient, ts.GRPCAddress, []disk.Partition{})
+	s, err := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, []disk.Partition{})
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	s.Start()
 	ts.Store = s
 	t.Cleanup(func() {
 		s.Stop(context.TODO())
+		nodeHost.Close()
 	})
 	return ts, nodeHost
 }
@@ -320,22 +321,29 @@ func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
 	fs := filestore.New()
 	pebbleKey, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
-	keyBytes, err := pebbleKey.Bytes(filestore.Version2)
+	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
 	require.NoError(t, err)
 	return keyBytes
 }
 
 func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.FileRecord) {
+	fs := filestore.New()
 	fk := metadataKey(t, fr)
 
 	err := ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		rc, err := client.RemoteReader(ctx, c, &rfpb.ReadRequest{
-			Header:     h,
-			FileRecord: fr,
+		rsp, err := c.GetMulti(ctx, &rfpb.GetMultiRequest{
+			Header:      h,
+			FileRecords: []*rfpb.FileRecord{fr},
 		})
 		if err != nil {
 			return err
 		}
+		require.Equal(t, 1, len(rsp.GetResponses()))
+		err = gstatus.ErrorProto(rsp.GetResponses()[0].GetStatus())
+		require.NoError(t, err)
+		md := rsp.GetResponses()[0].GetFileMetadata()
+		rc, err := fs.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), 0, 0)
+		require.NoError(t, err)
 		d := testdigest.ReadDigestAndClose(t, rc)
 		require.True(t, proto.Equal(d, fr.GetDigest()))
 		return nil
@@ -563,20 +571,19 @@ func TestPostFactoSplit(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
+	// Transfer Leadership to the new node
+	_, err = s4.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
+		ShardId:         2,
+		TargetReplicaId: 4,
+	})
+	require.NoError(t, err)
 	// Now verify that all keys that should be on the new node are present.
 	for _, fr := range written {
 		fmk := metadataKey(t, fr)
 		if bytes.Compare(fmk, splitResponse.GetStart().GetEnd()) >= 0 {
 			continue
 		}
-		rd := s4.GetRange(2)
-		rc, err := r4.Reader(ctx, &rfpb.Header{
-			RangeId:    rd.GetRangeId(),
-			Generation: rd.GetGeneration(),
-		}, fr, 0, 0)
-		require.NoError(t, err)
-		d := testdigest.ReadDigestAndClose(t, rc)
-		require.True(t, proto.Equal(d, fr.GetDigest()))
+		readRecord(ctx, t, s4, fr)
 	}
 }
 

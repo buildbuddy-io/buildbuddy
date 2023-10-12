@@ -64,42 +64,42 @@ go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
-    version = "1.21.1",  # Keep in sync with .github/workflows/checkstyle.yaml
+    version = "1.21.3",  # Keep in sync with .github/workflows/checkstyle.yaml
 )
 
 go_download_sdk(
     name = "go_sdk_linux_arm64",
     goarch = "arm64",
     goos = "linux",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin_arm64",
     goarch = "arm64",
     goos = "darwin",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_download_sdk(
     name = "go_sdk_windows",
     goarch = "amd64",
     goos = "windows",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_download_sdk(
     name = "go_sdk_windows_arm64",
     goarch = "arm64",
     goos = "windows",
-    version = "1.21.1",
+    version = "1.21.3",
 )
 
 go_register_toolchains(
@@ -199,9 +199,9 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "b29fc5fc13926f347b7a8b676ae1e63f7ccdb92c2fc8ca326bc3a883dcc168ac",
-    strip_prefix = "protobuf-23.0",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v23.0/protobuf-23.0.tar.gz"],
+    sha256 = "616bb3536ac1fff3fb1a141450fa28b875e985712170ea7f1bfe5e5fc41e2cd8",
+    strip_prefix = "protobuf-24.4",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v24.4/protobuf-24.4.tar.gz"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")

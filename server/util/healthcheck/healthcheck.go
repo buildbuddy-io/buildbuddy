@@ -50,6 +50,7 @@ type HealthChecker struct {
 	checkers      map[string]interfaces.Checker
 	lastStatus    []*serviceStatus
 	serverType    string
+	shutdownOnce  sync.Once
 	mu            sync.RWMutex // protects: shutdownFuncs, readyToServe, shuttingDown
 	shutdownFuncs []interfaces.CheckerFunc
 	readyToServe  bool
@@ -89,7 +90,7 @@ func NewHealthChecker(serverType string) *HealthChecker {
 	sigTerm := make(chan os.Signal)
 	go func() {
 		<-sigTerm
-		close(hc.quit)
+		hc.Shutdown()
 	}()
 	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
 	go hc.handleShutdownFuncs()
@@ -185,7 +186,9 @@ func (h *HealthChecker) WaitForGracefulShutdown() {
 }
 
 func (h *HealthChecker) Shutdown() {
-	close(h.quit)
+	h.shutdownOnce.Do(func() {
+		close(h.quit)
+	})
 }
 
 func (h *HealthChecker) runHealthChecks(ctx context.Context) {

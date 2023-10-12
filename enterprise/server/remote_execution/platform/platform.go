@@ -7,8 +7,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -64,6 +66,7 @@ const (
 	unsetContainerImageVal = "none"
 
 	RecycleRunnerPropertyName            = "recycle-runner"
+	AffinityRoutingPropertyName          = "affinity-routing"
 	preserveWorkspacePropertyName        = "preserve-workspace"
 	nonrootWorkspacePropertyName         = "nonroot-workspace"
 	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
@@ -117,6 +120,9 @@ const (
 	DockerContainerType      ContainerType = "docker"
 	FirecrackerContainerType ContainerType = "firecracker"
 	SandboxContainerType     ContainerType = "sandbox"
+
+	// The app will mint a signed client identity token to workflows.
+	workflowClientIdentityTokenLifetime = 12 * time.Hour
 )
 
 // Properties represents the platform properties parsed from a command.
@@ -137,6 +143,7 @@ type Properties struct {
 	DockerUser                string
 	DockerNetwork             string
 	RecycleRunner             bool
+	AffinityRouting           bool
 	EnableVFS                 bool
 	IncludeSecrets            bool
 
@@ -252,6 +259,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
+		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
@@ -466,6 +474,21 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			Name:  "BB_GRPC_CLIENT_ORIGIN",
 			Value: usageutil.ClientOrigin(),
 		})
+
+		// TODO(vadim): find a way to limit this to shared executors
+		if cis := env.GetClientIdentityService(); cis != nil {
+			h, err := cis.IdentityHeader(&interfaces.ClientIdentity{
+				Origin: interfaces.ClientIdentityInternalOrigin,
+				Client: interfaces.ClientIdentityWorkflow,
+			}, workflowClientIdentityTokenLifetime)
+			if err != nil {
+				return err
+			}
+			command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name:  "BB_GRPC_CLIENT_IDENTITY",
+				Value: h,
+			})
+		}
 	}
 
 	return nil

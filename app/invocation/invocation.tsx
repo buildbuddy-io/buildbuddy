@@ -219,8 +219,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
         .flatMap((child) =>
           (this.state.model!.actionMap.get(child?.actionCompleted?.label ?? "") ?? []).filter(
             (event) =>
-              event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
-              event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
+              event?.buildEvent?.id?.actionCompleted?.primaryOutput === child?.actionCompleted?.primaryOutput &&
+              event?.buildEvent?.id?.actionCompleted?.configuration?.id === child?.actionCompleted?.configuration?.id
           )
         )
         .filter((event) => !!event) || [];
@@ -329,20 +329,20 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationFilterComponent
               tab={this.props.tab}
               search={this.props.search}
-              placeholder={activeTab == "execution" ? "Filter by digest or command..." : ""}
+              placeholder={activeTab === "execution" ? "Filter by digest or command..." : ""}
               // When serving a paginated invocation, debounce since searching
               // is done on the server.
               debounceMillis={this.state.model.invocation.targetGroups.length ? 200 : 0}
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && <ErrorCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab === "log") && <ErrorCardComponent model={this.state.model} />}
 
-          {(activeTab === "all" || activeTab == "log") && this.state.model.botSuggestions.length > 0 && (
+          {(activeTab === "all" || activeTab === "log") && this.state.model.botSuggestions.length > 0 && (
             <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
+          {isBazelInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
@@ -351,22 +351,22 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
+          {(activeTab === "all" || activeTab === "log") && this.state.model.isQuery() && (
             <QueryGraphCardComponent buildLogs={this.getBuildLogs(this.state.model)} />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && (
+          {(activeTab === "all" || activeTab === "log") && (
             <BuildLogsCardComponent
               title={isBazelInvocation ? "Build logs" : "Runner logs"}
               dark={!this.props.preferences.lightTerminalEnabled}
               value={this.getBuildLogs(this.state.model)}
               loading={this.areBuildLogsLoading(this.state.model)}
-              expanded={activeTab == "log"}
+              expanded={activeTab === "log"}
               fullLogsFetcher={fetchBuildLogs}
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log" || activeTab === "suggestions") && (
+          {(activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
             <SuggestionCardComponent
               suggestions={suggestions}
               overview={activeTab !== "suggestions"}
@@ -374,7 +374,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
+          {isBazelInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="passing"
@@ -383,23 +383,23 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab == "details") && (
+          {(activeTab === "all" || activeTab === "details") && (
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!activeTab} />
           )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab == "cache") && (
+          {isBazelInvocation && (activeTab === "all" || activeTab === "cache") && (
             <CacheCardComponent model={this.state.model} />
           )}
           {isBazelInvocation &&
-            (activeTab === "all" || activeTab == "cache") &&
+            (activeTab === "all" || activeTab === "cache") &&
             !capabilities.config.detailedCacheStatsEnabled && <ScorecardCardComponent model={this.state.model} />}
           {isBazelInvocation &&
-            (activeTab === "all" || activeTab == "cache") &&
+            (activeTab === "all" || activeTab === "cache") &&
             capabilities.config.detailedCacheStatsEnabled && (
               <CacheRequestsCardComponent model={this.state.model} search={this.props.search} />
             )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
+          {isBazelInvocation && (activeTab === "all" || activeTab === "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
               filter={this.props.search.get("artifactFilter") ?? ""}
@@ -407,7 +407,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab == "execution" && (
+          {activeTab === "execution" && (
             <ExecutionCardComponent
               model={this.state.model}
               inProgress={this.state.inProgress}
@@ -416,9 +416,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
+          {activeTab === "timing" && <TimingCardComponent model={this.state.model} />}
 
-          {activeTab == "action" && (
+          {activeTab === "action" && (
             <InvocationActionCardComponent
               model={this.state.model}
               search={this.props.search}
@@ -426,9 +426,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab == "fetches" && <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />}
+          {activeTab === "fetches" && (
+            <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />
+          )}
 
-          {activeTab == "raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
+          {activeTab === "raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>
       </div>
     );

@@ -33,12 +33,21 @@ const (
 	// Time window over which to measure CPU usage when exporting the milliCPU
 	// used metric.
 	cpuUsageUpdateInterval = 1 * time.Second
+
+	// Exit code used when returning an error instead of an actual exit code.
+	// TODO: fix circular dependency with commandutil and reference that const
+	// instead.
+	noExitCode = -2
 )
 
 var (
 	// Metrics is a shared metrics object to handle proper prometheus metrics
 	// accounting across container instances.
 	Metrics = NewContainerMetrics()
+
+	// ErrRemoved is returned by TracedCommandContainer operations when an
+	// operation fails due to the container already being removed.
+	ErrRemoved = status.UnavailableError("container has been removed")
 
 	containerRegistries     = flag.Slice("executor.container_registries", []ContainerRegistry{}, "")
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
@@ -401,69 +410,152 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) (PullCr
 	return PullCredentials{}, nil
 }
 
-// TracedCommandContainer is a wrapper that creates tracing spans for all CommandContainer methods.
+// TracedCommandContainer is a wrapper that creates tracing spans for all
+// CommandContainer methods. It also provides some basic protection against race
+// conditions, such as preventing Remove() from being called twice or while
+// other operations are in progress.
 type TracedCommandContainer struct {
-	Delegate CommandContainer
 	implAttr attribute.KeyValue
+
+	// This mutex is used only to prevent Remove() from being called
+	// concurrently with other operations. Exec() may be called concurrently
+	// with Pause() and Unpause() because persistent workers are implemented
+	// using a long-running Exec() operation.
+	mu       sync.RWMutex
+	removed  bool
+	Delegate CommandContainer
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return &interfaces.CommandResult{ExitCode: noExitCode, Error: ErrRemoved}
+	}
+
 	return t.Delegate.Run(ctx, command, workingDir, creds)
 }
 
 func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return false, ErrRemoved
+	}
+
 	return t.Delegate.IsImageCached(ctx)
 }
 
 func (t *TracedCommandContainer) PullImage(ctx context.Context, creds PullCredentials) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return ErrRemoved
+	}
+
 	return t.Delegate.PullImage(ctx, creds)
 }
 
 func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return ErrRemoved
+	}
+
 	return t.Delegate.Create(ctx, workingDir)
 }
 
 func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return &interfaces.CommandResult{ExitCode: noExitCode, Error: ErrRemoved}
+	}
+
 	return t.Delegate.Exec(ctx, command, opts)
 }
 
 func (t *TracedCommandContainer) Unpause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return ErrRemoved
+	}
+
 	return t.Delegate.Unpause(ctx)
 }
 
 func (t *TracedCommandContainer) Pause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return ErrRemoved
+	}
+
 	return t.Delegate.Pause(ctx)
 }
 
 func (t *TracedCommandContainer) Remove(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	// Get an *exclusive* lock here to ensure any other concurrent operations
+	// are completed before we remove.
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.removed {
+		return ErrRemoved
+	}
+	t.removed = true
+
 	return t.Delegate.Remove(ctx)
 }
 
 func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return nil, ErrRemoved
+	}
+
 	return t.Delegate.Stats(ctx)
 }
 
 func (t *TracedCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return nil, ErrRemoved
+	}
+
 	return t.Delegate.State(ctx)
 }
 

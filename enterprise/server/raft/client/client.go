@@ -3,13 +3,11 @@ package client
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -29,9 +27,13 @@ import (
 const DefaultContextTimeout = 60 * time.Second
 
 type NodeHost interface {
+	ID() string
 	GetNoOPSession(shardID uint64) *client.Session
 	SyncPropose(ctx context.Context, session *client.Session, cmd []byte) (dbsm.Result, error)
 	SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error)
+	ReadIndex(shardID uint64, timeout time.Duration) (*dragonboat.RequestState, error)
+	ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error)
+	StaleRead(shardID uint64, query interface{}) (interface{}, error)
 }
 
 type apiClientAndConn struct {
@@ -71,134 +73,6 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 
 func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, error) {
 	return c.getClient(ctx, peer)
-}
-
-func RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
-	stream, err := client.Read(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	reader, writer := io.Pipe()
-
-	// Bit annoying here -- the gRPC stream won't give us an error until
-	// we've called Recv on it. But we don't want to return a reader that
-	// we know will error on first read with NotFound -- we want to return
-	// that error now. So we'll wait for our goroutine to call Recv once
-	// and return any error it gets in the main thread.
-	firstError := make(chan error)
-	go func() {
-		readOnce := false
-		for {
-			rsp, err := stream.Recv()
-			if !readOnce {
-				firstError <- err
-				readOnce = true
-			}
-			if rsp != nil {
-				writer.Write(rsp.Data)
-			}
-			if err == io.EOF {
-				writer.Close()
-				break
-			}
-			if err != nil {
-				writer.CloseWithError(err)
-				break
-			}
-
-		}
-	}()
-	err = <-firstError
-
-	// If we get an EOF, and we're expecting one - don't return an error.
-	digestSize := req.GetFileRecord().GetDigest().GetSizeBytes()
-	offset := req.GetOffset()
-	if err == io.EOF && offset == digestSize {
-		return reader, nil
-	}
-	return reader, err
-}
-
-func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
-	return RemoteReader(ctx, client, req)
-}
-
-type streamWriteCloser struct {
-	stream         rfspb.Api_WriteClient
-	header         *rfpb.Header
-	fileRecord     *rfpb.FileRecord
-	firstWriteDone bool
-	closed         bool
-	cancelFunc     context.CancelFunc
-}
-
-func (wc *streamWriteCloser) Write(data []byte) (int, error) {
-	req := &rfpb.WriteRequest{
-		Header:      wc.header,
-		FileRecord:  wc.fileRecord,
-		Data:        data,
-		FinishWrite: false,
-	}
-	if err := wc.stream.Send(req); err != nil {
-		return 0, err
-	}
-	// On the first write, the peer will send us an empty response to indicate
-	// that it has accepted the write so we wait here to make sure the write
-	// was not rejected.
-	if !wc.firstWriteDone {
-		if _, err := wc.stream.Recv(); err != nil {
-			return 0, err
-		}
-		wc.firstWriteDone = true
-	}
-	return len(data), nil
-}
-
-func (wc *streamWriteCloser) Commit() error {
-	req := &rfpb.WriteRequest{
-		Header:      wc.header,
-		FileRecord:  wc.fileRecord,
-		FinishWrite: true,
-	}
-	if err := wc.stream.Send(req); err != nil {
-		return err
-	}
-	if err := wc.stream.CloseSend(); err != nil {
-		return err
-	}
-	_, err := wc.stream.Recv()
-	return err
-}
-
-func (wc *streamWriteCloser) Close() error {
-	if !wc.closed {
-		wc.cancelFunc()
-		wc.closed = true
-	}
-	return nil
-}
-
-func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedWriteCloser, error) {
-	ctx, cancel := context.WithCancel(ctx)
-
-	stream, err := client.Write(ctx)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	wc := &streamWriteCloser{
-		header:     header,
-		fileRecord: fileRecord,
-		stream:     stream,
-		cancelFunc: cancel,
-	}
-	return wc, nil
-}
-
-type PeerHeader struct {
-	Header    *rfpb.Header
-	GRPCAddr  string
-	GRPClient rfspb.ApiClient
 }
 
 func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
@@ -246,16 +120,44 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	return batchResponse, err
 }
 
-func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func getTimeout(ctx context.Context) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		return deadline.Sub(time.Now())
+	}
+	return DefaultContextTimeout
+}
+
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
 	}
 
+	if batch.Header == nil {
+		return nil, status.FailedPreconditionError("Header must be set")
+	}
+	shardID := batch.GetHeader().GetReplica().GetShardId()
 	var raftResponseIface interface{}
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		raftResponseIface, err = nodehost.SyncRead(ctx, shardID, buf)
-		return err
+		switch batch.GetHeader().GetConsistencyMode() {
+		case rfpb.Header_LINEARIZABLE:
+			rs, err := nodehost.ReadIndex(shardID, getTimeout(ctx))
+			if err != nil {
+				return err
+			}
+			v := <-rs.ResultC()
+			if !v.Completed() {
+				return status.FailedPreconditionError("Failed to read node index")
+			}
+			raftResponseIface, err = nodehost.ReadLocalNode(rs, buf)
+			return err
+		case rfpb.Header_STALE:
+			raftResponseIface, err = nodehost.StaleRead(shardID, buf)
+			return err
+		default:
+			return status.UnknownError("Unknown consistency mode")
+		}
+
 	})
 	if err != nil {
 		return nil, err
@@ -280,7 +182,7 @@ func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, shardID uint64,
 	return SyncProposeLocal(ctx, nhs.NodeHost, shardID, batch)
 }
 func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncReadLocal(ctx, nhs.NodeHost, shardID, batch)
+	return SyncReadLocal(ctx, nhs.NodeHost, batch)
 }
 
 func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {

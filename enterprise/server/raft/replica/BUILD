@@ -15,9 +15,7 @@ go_library(
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
-        "//server/interfaces",
         "//server/metrics",
-        "//server/util/disk",
         "//server/util/log",
         "//server/util/qps",
         "//server/util/rangemap",
@@ -53,6 +51,7 @@ go_test(
         "//server/util/status",
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
 )

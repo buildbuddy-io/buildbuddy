@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
+load("//rules/typescript:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,8 +9,8 @@ ts_library(
         "//app/capabilities",
         "//app/components/scrollbar",
         "//app/flame_chart:flame_chart_model",
-        "//app/flame_chart:profile_model",
         "//app/flame_chart:style_constants",
+        "//app/trace:trace_events",
         "//app/util:animated_value",
         "//app/util:animation_loop",
         "//app/util:dom",
@@ -23,27 +23,16 @@ ts_library(
     ],
 )
 
-ts_jasmine_node_test(
-    name = "profile_model_test",
-    srcs = ["profile_model_test.ts"],
-    deps = [":flame_chart"],
-)
-
 ts_library(
     name = "flame_chart_model",
     srcs = ["flame_chart_model.ts"],
     deps = [
         "//app/capabilities",
-        "//app/flame_chart:profile_model",
         "//app/flame_chart:style_constants",
+        "//app/trace:trace_events",
         "//app/util:color",
         "@npm//tslib",
     ],
-)
-
-ts_library(
-    name = "profile_model",
-    srcs = ["profile_model.ts"],
 )
 
 ts_library(

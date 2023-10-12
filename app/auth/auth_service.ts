@@ -6,6 +6,7 @@ import capabilities from "../capabilities/capabilities";
 import rpcService, { BuildBuddyServiceRpcName } from "../service/rpc_service";
 import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
+import popup from "../../app/util/popup";
 import router from "../router/router";
 import { User } from "./user";
 import rpc_service from "../service/rpc_service";
@@ -103,6 +104,7 @@ export class AuthService {
   }
 
   handleLoggedIn(response: user.GetUserResponse) {
+    window.opener?.postMessage({ type: "buildbuddy_message", error: "", success: true }, window.location.origin);
     localStorage.removeItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY);
     this.emitUser(this.userFromResponse(response));
   }
@@ -131,9 +133,6 @@ export class AuthService {
   }
 
   private getUser(request: user.GetUserRequest) {
-    if (rpcService.requestContext.impersonatingGroupId) {
-      return rpcService.service.getImpersonatedUser(request);
-    }
     return rpcService.service.getUser(request);
   }
 
@@ -176,7 +175,7 @@ export class AuthService {
           (name) => (name[0].toLowerCase() + name.substring(1)) as BuildBuddyServiceRpcName
         )
       ),
-      isImpersonating: Boolean(rpcService.requestContext.impersonatingGroupId),
+      isImpersonating: response.isImpersonating,
       subdomainGroupID: response.subdomainGroupId,
     });
   }
@@ -222,10 +221,17 @@ export class AuthService {
   }
 
   // Enters impersonation for the given group, which may either be a group ID or a URL identifier.
-  async enterImpersonationMode(query: string) {
+  async enterImpersonationMode(query: string, { redirectUrl = "" }: { redirectUrl?: string } = {}) {
     const request = grp.GetGroupRequest.create(query.startsWith("GR") ? { groupId: query } : { urlIdentifier: query });
     const response = await rpc_service.service.getGroup(request);
     this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, response.id, { maxAge: 0 });
+
+    // If we have an explicit redirect URL, navigate there directly.
+    if (redirectUrl) {
+      window.location.href = redirectUrl;
+      return;
+    }
+
     // If the new group is on a different subdomain then we have to use a redirect.
     if (capabilities.config.subdomainsEnabled && new URL(response.url).hostname != window.location.hostname) {
       window.location.href = response.url + window.location.pathname + window.location.search;
@@ -242,17 +248,35 @@ export class AuthService {
   login(slug?: string) {
     const search = new URLSearchParams(window.location.search);
     if (slug) {
-      window.location.href = `/login/?${new URLSearchParams({
+      let url = `/login/?${new URLSearchParams({
         redirect_url: search.get("redirect_url") || window.location.href,
+        show_picker: capabilities.config.popupAuthEnabled ? "true" : "false",
         slug,
       })}`;
+      if (capabilities.config.popupAuthEnabled) {
+        popup
+          .open(url)
+          .then(() => this.refreshUser())
+          .catch(errorService.handleError);
+        return;
+      }
+      window.location.href = url;
       return;
     }
 
-    window.location.href = `/login/?${new URLSearchParams({
+    let url = `/login/?${new URLSearchParams({
       redirect_url: search.get("redirect_url") || window.location.href,
+      show_picker: capabilities.config.popupAuthEnabled ? "true" : "false",
       issuer_url: capabilities.auth,
     })}`;
+    if (capabilities.config.popupAuthEnabled) {
+      popup
+        .open(url)
+        .then(() => this.refreshUser())
+        .catch(errorService.handleError);
+      return;
+    }
+    window.location.href = url;
   }
 
   logout() {

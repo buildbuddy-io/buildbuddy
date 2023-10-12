@@ -318,7 +318,7 @@ func (a *AwsS3BlobStore) Writer(ctx context.Context, blobName string) (interface
 	}
 	cwc.CloseFn = func() error {
 		cancel()
-		return nil
+		return pw.Close()
 	}
 	return cwc, nil
 }

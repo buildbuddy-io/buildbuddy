@@ -6,11 +6,13 @@ sidebar_label: Auth
 
 Auth is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy.
 
-## Section
+## OIDC
+
+### Section
 
 `auth:` The Auth section enables BuildBuddy authentication using an OpenID Connect provider that you specify. **Optional**
 
-## Options
+### Options
 
 - `oauth_providers:` A list of configured OAuth Providers.
   - `issuer_url: ` The issuer URL of this OIDC Provider.
@@ -18,11 +20,13 @@ Auth is only configurable in the [Enterprise version](enterprise.md) of BuildBud
   - `client_secret: ` The oauth client secret.
 - `enable_anonymous_usage:` If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.
 
-## Redirect URL
+### Redirect URL
 
 If during your OpenID provider configuration you're asked to enter a **Redirect URL**, you should enter `https://YOUR_BUILDBUDDY_URL/auth/`. For example if your BuildBuddy instance was hosted on `https://buildbuddy.acme.com`, you'd enter `https://buildbuddy.acme.com/auth/` as your redirect url.
 
-## Google auth provider
+### OIDC Examples
+
+#### Google auth provider
 
 If you'd like to use Google as an auth provider, you can easily obtain your client id and client secret [here](https://console.developers.google.com/apis/credentials).
 
@@ -36,7 +40,7 @@ auth:
       client_secret: "sEcRetKeYgOeShErE"
 ```
 
-## Gitlab auth provider
+#### Gitlab auth provider
 
 You can use Gitlab as an OIDC identity provider for BuildBuddy.
 This feature is available for both Gitlab On-Prem Deployment and Gitlab SaaS offering.
@@ -67,3 +71,110 @@ auth:
       client_id: "<GITLAB APPLICATION ID>"
       client_secret: "<GITLAB APPLICATION SECRET>"
 ```
+
+#### Azure AD provider
+
+1. Navigate to [Azure Portal](https://portal.azure.com/).
+   In case multiple Azure AD tenants is available, and select the tenant that will be using BuildBuddy.
+
+2. Register a BuildBuddy application:
+
+   - Search for and select Azure Active Directory
+   - Under `Manage`, select `App registration` -> `New registration`
+   - Enter `BuildBuddy` for application name.
+   - Select types of account in Azure AD that should have access to BuildBuddy.
+     Usually `Accounts in this organizational directory only` is correct for single-tenant use case,
+     "Accounts in any organizational directory" is correct for multiple-tenants use case.
+   - Redirect URI should be `https://YOUR_BUILDBUDDY_URL/auth/` with `Web` platform.
+   - Click `Register`
+   - Take note of "Application (client) ID" and `Directory (tenant) ID`.
+
+3. Configure Application Secret
+
+   - Click on `Certificates & secrets` -> `Client secrets` -> `New client secret`
+     We recommend set the expiry date of the secret to 12 months.
+   - Click `Add` -> Take note of `Value` of the newly created secret.
+
+4. Configure Application API scope
+
+   - Navigate to `API permissions`
+   - Select `Add a permission` -> `Microsoft Graph` -> `Delegated permission`
+   - In `OpenId permissions`, select `email`, `offline_access`, `openid`, `profile`.
+   - In `User`, select `User.Read`
+   - Click `Add permissions`
+
+5. After that, your BuildBuddy config should be like this
+   ```
+   auth:
+     oauth_providers:
+       - issuer_url: "https://login.microsoftonline.com/<DIRECTORY_ID>/v2.0"
+         client_id: "<CLIENT_ID>"
+         client_secret: "<CLIENT_SECRET>"
+   ```
+
+## SAML 2.0
+
+SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS) version.
+
+### Setup
+
+Organizations' admins should configure a BuildBuddy application in their SAML 2.0 Credential Provider:
+
+- Find the short name (slug) of your organization in [Organizations Settings](https://app.buildbuddy.io/settings/)
+
+- **Assertion Consumer Service(ACS) URL**: `https://app.buildbuddy.io/auth/saml/acs/?slug=<org-slug>`
+
+- **Audience URL (SP Entity ID)**: `https://app.buildbuddy.io/saml/metadata/?slug=<org-slug>`
+
+- **Sign on URL** (for IdP-initiated login): `https://app.buildbuddy.io/login/?slug=<org-slug>`
+
+- Ensure the application **Attribute Statement** with a field name `email` and it's value mapped to `user.email` (or equivalent).
+
+Once the app is created, organizations' admins could share the **Identity Provider Metadata** URL with BuildBuddy's support to
+get the organization SAML configured accordingly.
+
+### SAML 2.0 Examples
+
+#### Okta SAML provider
+
+1. From Okta Website, click `Create App Integration`, select `SAML 2.0`.
+
+2. Enter `BuildBuddy` and hit `Next`.
+
+3. Fill in `Single sign on URL`, `Audience URI` as above instruction.
+
+4. Add an `Attribute Statement` to map `email` and value `user.email`.
+
+5. Click on `Identity Provider Metadata` link and share the URL (should have this format `https://xxxx.okta.com/app/XXXX/sso/saml/metadata`) with BuildBuddy support.
+
+#### Azure AD / Entra SAML provider
+
+1. Visit [Entra portal page](https://entra.microsoft.com/), navigate to `Applications` -> `Enterprise applications`.
+
+2. Click `New application`.
+
+3. Search for `Azure AD SAML Toolkit` and select it. Change the name to `BuildBuddy` and hit `Create`.
+
+4. In the newly created appliction view, navigate to `Single sign-on` and select `SAML`.
+
+5. Click on `Edit` in the first section `Basic SAML Configuration`.
+
+   a. `Identified (Entity ID)` should be `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`.
+
+   b. `Reply URL (Assertion Consumer Service URL)` should be `https://app.buildbuddy.io/auth/saml/acs/?slug=<org-slug>`.
+
+   c. `Sign on URL` should be `https://app.buildbuddy.io/login/?slug=<org-slug>`.
+
+   d. Hit `Save` button.
+
+6. Click on `Edit` in the second section `Attributes & Claims`.
+
+   a. Select `Add new claim`.
+
+   b. For `Name`, fill in `email`.
+
+   c. For `Source` select `Attribute` and for `Source attribute`, search and select `user.mail`.
+
+   d. Hit `Save` button.
+
+7. In the 3rd section `SAML Certificates`, copy the `App Federation Metadata Url` and share it with BuildBuddy support.

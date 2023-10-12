@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -26,7 +27,8 @@ import (
 )
 
 const (
-	workspacePrefix = `%workspace%/`
+	workspacePrefix                  = `%workspace%/`
+	enablePlatformSpecificConfigFlag = "enable_platform_specific_config"
 )
 
 var (
@@ -682,6 +684,25 @@ func ExpandConfigs(args []string) ([]string, error) {
 	return CanonicalizeArgs(args)
 }
 
+// Mirroring the behavior here:
+// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java#L41
+func getBazelOS() string {
+	switch runtime.GOOS {
+	case "linux":
+		return "linux"
+	case "darwin":
+		return "macos"
+	case "windows":
+		return "windows"
+	case "freebsd":
+		return "freebsd"
+	case "openbsd":
+		return "openbsd"
+	default:
+		return runtime.GOOS
+	}
+}
+
 func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	_, idx := GetBazelCommandAndIndex(args)
 	if idx == -1 {
@@ -731,6 +752,14 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 		}
 	}
 	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
+
+	enable, enableIndex, enableLength := arg.FindLast(args, enablePlatformSpecificConfigFlag)
+	_, noEnableIndex, _ := arg.FindLast(args, "no"+enablePlatformSpecificConfigFlag)
+	if enableIndex > noEnableIndex {
+		if enable == "true" || enable == "yes" || enable == "1" || enable == "" {
+			args = concat(args[:enableIndex], []string{"--config", getBazelOS()}, args[enableIndex+enableLength:])
+		}
+	}
 
 	offset := 0
 	for offset < len(args) {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -20,9 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -102,7 +101,6 @@ type Replica struct {
 	ReplicaID uint64
 
 	store               IStore
-	partitions          []disk.Partition
 	lastAppliedIndex    uint64
 	lastUsageCheckIndex uint64
 
@@ -200,7 +198,7 @@ func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pebbleKey.Bytes(filestore.Version2)
+	return pebbleKey.Bytes(filestore.Version5)
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
@@ -213,17 +211,16 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 
 	var numFileRecords, sizeBytes int64
 	sm.partitionMetadataMu.Lock()
-	for _, p := range sm.partitions {
-		pm, ok := sm.partitionMetadata[p.ID]
-		if !ok {
-			continue
-		}
+	for _, pm := range sm.partitionMetadata {
 		ru.Partitions = append(ru.Partitions, proto.Clone(pm).(*rfpb.PartitionMetadata))
 		numFileRecords += pm.GetTotalCount()
 		sizeBytes += pm.GetSizeBytes()
 	}
 	sm.partitionMetadataMu.Unlock()
 
+	sort.Slice(ru.Partitions, func(i, j int) bool {
+		return ru.Partitions[i].GetPartitionId() < ru.Partitions[j].GetPartitionId()
+	})
 	ru.EstimatedDiskBytesUsed = sizeBytes
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
@@ -913,6 +910,105 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 	return rsp, nil
 }
 
+func (sm *Replica) findMissing(db ReplicaReader, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	rsp := &rfpb.FindMissingResponse{
+		Missing: make([]*rfpb.FileRecord, 0),
+	}
+
+	for _, fileRecord := range req.GetFileRecords() {
+		fileMetadataKey, err := sm.fileMetadataKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		if !iter.SeekGE(fileMetadataKey) || !bytes.Equal(iter.Key(), fileMetadataKey) {
+			rsp.Missing = append(rsp.Missing, fileRecord)
+		}
+	}
+	return rsp, nil
+}
+
+func (sm *Replica) getMulti(db ReplicaReader, req *rfpb.GetMultiRequest) (*rfpb.GetMultiResponse, error) {
+	rsp := &rfpb.GetMultiResponse{
+		Responses: make([]*rfpb.GetMultiResponse_Response, len(req.GetFileRecords())),
+	}
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	for i, fileRecord := range req.GetFileRecords() {
+		fr := fileRecord
+
+		fileMetadataKey, err := sm.fileMetadataKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+
+		r := new(rfpb.GetMultiResponse_Response)
+		rsp.Responses[i] = r
+		r.FileRecord = fr
+
+		fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+		if err != nil {
+			r.Status = gstatus.Convert(err).Proto()
+		} else {
+			r.FileMetadata = fileMetadata
+			sm.sendAccessTimeUpdate(fileMetadata)
+		}
+	}
+
+	return rsp, nil
+}
+
+func (sm *Replica) setMulti(wb pebble.Batch, req *rfpb.SetMultiRequest) (*rfpb.SetMultiResponse, error) {
+	rsp := &rfpb.SetMultiResponse{
+		Responses: make([]*rfpb.SetMultiResponse_Response, len(req.GetFileMetadatas())),
+	}
+
+	for i, fileMetadata := range req.GetFileMetadatas() {
+		fm := fileMetadata
+
+		r := new(rfpb.SetMultiResponse_Response)
+		rsp.Responses[i] = r
+		r.FileRecord = fm.GetFileRecord()
+
+		fileMetadataKey, err := sm.fileMetadataKey(fm.GetFileRecord())
+		if err != nil {
+			return nil, err
+		}
+		buf, err := proto.Marshal(fm)
+		if err != nil {
+			return nil, err
+		}
+		if err := sm.rangeCheckedSet(wb, fileMetadataKey, buf); err != nil {
+			r.Status = gstatus.Convert(err).Proto()
+		}
+	}
+
+	return rsp, nil
+}
+
+func (sm *Replica) metadata(db ReplicaReader, req *rfpb.MetadataRequest) (*rfpb.MetadataResponse, error) {
+	fileMetadataKey, err := sm.fileMetadataKey(req.GetFileRecord())
+	if err != nil {
+		return nil, err
+	}
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err != nil {
+		return nil, err
+	}
+	fileMetadata.StorageMetadata = nil // nil out because this is not a read call.
+	return &rfpb.MetadataResponse{
+		FileMetadata: fileMetadata,
+	}, nil
+}
+
 func statusProto(err error) *statuspb.Status {
 	s, _ := gstatus.FromError(err)
 	return s.Proto()
@@ -962,6 +1058,12 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion, rsp *r
 			SimpleSplit: r,
 		}
 		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_SetMulti:
+		r, err := sm.setMulti(wb, value.SetMulti)
+		rsp.Value = &rfpb.ResponseUnion_SetMulti{
+			SetMulti: r,
+		}
+		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
@@ -981,6 +1083,24 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 		r, err := sm.scan(db, value.Scan)
 		rsp.Value = &rfpb.ResponseUnion_Scan{
 			Scan: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FindMissing:
+		r, err := sm.findMissing(db, value.FindMissing)
+		rsp.Value = &rfpb.ResponseUnion_FindMissing{
+			FindMissing: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_GetMulti:
+		r, err := sm.getMulti(db, value.GetMulti)
+		rsp.Value = &rfpb.ResponseUnion_GetMulti{
+			GetMulti: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_Metadata:
+		r, err := sm.metadata(db, value.Metadata)
+		rsp.Value = &rfpb.ResponseUnion_Metadata{
+			Metadata: r,
 		}
 		rsp.Status = statusProto(err)
 	default:
@@ -1015,21 +1135,6 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, sm.rangeDescriptor.GetGeneration(), header.GetGeneration())
 	}
 	return nil
-}
-
-func (sm *Replica) metadataForRecord(db pebble.Reader, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
-	fileMetadataKey, err := sm.fileMetadataKey(fileRecord)
-	if err != nil {
-		return nil, err
-	}
-
-	iter := db.NewIter(nil /*default iterOptions*/)
-	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
-	iter.Close()
-	if err != nil {
-		return nil, err
-	}
-	return fileMetadata, nil
 }
 
 type accessTimeUpdate struct {
@@ -1177,115 +1282,6 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rf
 	}
 
 	return samples, nil
-}
-
-func (sm *Replica) Metadata(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	if err := sm.validateRange(header); err != nil {
-		return nil, err
-	}
-
-	return sm.metadataForRecord(db, fileRecord)
-}
-
-func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := sm.validateRange(header); err != nil {
-		db.Close()
-		return nil, err
-	}
-
-	sm.readQPS.Inc()
-
-	fileMetadata, err := sm.metadataForRecord(db, fileRecord)
-	db.Close()
-
-	if err != nil {
-		return nil, err
-	}
-	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
-	if err != nil {
-		return nil, err
-	}
-	sm.sendAccessTimeUpdate(fileMetadata)
-	return rc, nil
-}
-
-func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
-	reader, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-
-	if err := sm.validateRange(header); err != nil {
-		return nil, err
-	}
-
-	iter := reader.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	missing := make([]*rfpb.FileRecord, 0)
-	for _, fileRecord := range fileRecords {
-		fileMetadaKey, err := sm.fileMetadataKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-		if !iter.SeekGE(fileMetadaKey) || !bytes.Equal(iter.Key(), fileMetadaKey) {
-			missing = append(missing, fileRecord)
-		}
-	}
-	return missing, nil
-}
-
-func (sm *Replica) GetMulti(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.GetMultiResponse_Data, error) {
-	reader, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-
-	if err := sm.validateRange(header); err != nil {
-		return nil, err
-	}
-
-	var rsp []*rfpb.GetMultiResponse_Data
-	var buf bytes.Buffer
-	for _, fileRecord := range fileRecords {
-		rc, err := sm.Reader(ctx, header, fileRecord, 0, 0)
-		if err != nil {
-			return nil, err
-		}
-		_, err = io.Copy(&buf, rc)
-		rc.Close()
-		if err != nil {
-			return nil, err
-		}
-
-		data := make([]byte, buf.Len())
-		copy(data, buf.Bytes())
-		rsp = append(rsp, &rfpb.GetMultiResponse_Data{FileRecord: fileRecord, Data: data})
-		buf.Reset()
-	}
-	return rsp, nil
-}
-
-func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error) {
-	if err := sm.validateRange(header); err != nil {
-		return nil, err
-	}
-
-	writeCloserMetadata := sm.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
-	return writeCloserMetadata, nil
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
@@ -1450,11 +1446,20 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, err
 	}
 	batchRsp := &rfpb.BatchCmdResponse{}
-	for _, req := range batchReq.GetUnion() {
-		//sm.log.Debugf("Lookup: request union: %+v", req)
-		rsp := sm.handleRead(db, req)
-		//sm.log.Debugf("Lookup: response union: %+v", rsp)
-		batchRsp.Union = append(batchRsp.Union, rsp)
+
+	var headerErr error
+	if batchReq.GetHeader() != nil {
+		headerErr = sm.validateRange(batchReq.GetHeader())
+		batchRsp.Status = statusProto(headerErr)
+	}
+
+	if headerErr == nil {
+		for _, req := range batchReq.GetUnion() {
+			//sm.log.Debugf("Lookup: request union: %+v", req)
+			rsp := sm.handleRead(db, req)
+			// sm.log.Debugf("Lookup: response union: %+v", rsp)
+			batchRsp.Union = append(batchRsp.Union, rsp)
+		}
 	}
 
 	rspBuf, err := proto.Marshal(batchRsp)
@@ -1759,14 +1764,13 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, partitions []disk.Partition) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore) *Replica {
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,
 		store:               store,
 		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
-		partitions:          partitions,
 		lastUsageCheckIndex: 0,
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", shardID, replicaID)),
 		fileStorer:          filestore.New(),

@@ -24,7 +24,6 @@ var (
 	roleIndependentRPCs = []string{
 		// RPCs that happen pre-login and don't require group membership.
 		"GetUser",
-		"GetImpersonatedUser",
 		"CreateUser",
 		"GetGroup",
 		// Invocations can be shared publicly, so authorization for these RPCs is
@@ -157,6 +156,8 @@ var (
 		"DeleteIPRule",
 		"GetIPRulesConfig",
 		"SetIPRulesConfig",
+		// GCP
+		"GetGCPProject",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different

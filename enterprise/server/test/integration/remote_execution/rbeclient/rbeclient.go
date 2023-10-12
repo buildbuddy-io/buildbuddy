@@ -13,13 +13,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type GRPCClientSource interface {
@@ -79,6 +80,10 @@ type Command struct {
 	// Local name to aid debugging.
 	Name string
 
+	// AllowReconnect indicates whether the command should auto-reconnect
+	// using WaitExecution if the Execute request gets interrupted.
+	AllowReconnect bool
+
 	gRPCClientSource GRPCClientSource
 
 	actionResourceName *digest.ResourceName
@@ -134,7 +139,7 @@ func (c *Command) Start(ctx context.Context, opts *StartOpts) error {
 	c.afterExecuteTime = afterExecuteTime
 
 	// start reading the stream for updates
-	c.processUpdates(stream)
+	c.processUpdates(ctx, stream)
 
 	return nil
 }
@@ -157,23 +162,23 @@ func (c *Command) ReplaceWaitUsingWaitExecutionAPI(ctx context.Context) error {
 	if err != nil {
 		return status.UnavailableErrorf("unable to request WaitExecution for command %q using operation %q: %v", c.Name, c.opName, err)
 	}
-	c.processUpdates(stream)
+	c.processUpdates(ctx, stream)
 	return nil
 }
 
 // processUpdates starts a goroutine that processes execution updates from the passed stream.
-func (c *Command) processUpdates(stream repb.Execution_ExecuteClient) {
+func (c *Command) processUpdates(ctx context.Context, stream repb.Execution_ExecuteClient) {
 	c.status = make(chan *CommandResult, 1)
 	c.accepted = make(chan string, 1)
 	go func() {
-		c.processUpdatesAsync(stream, c.Name, c.status, c.accepted)
+		c.processUpdatesAsync(ctx, stream, c.Name, c.status, c.accepted)
 	}()
 }
 
 // processUpdatesAsync processes execution updates from the stream and publishes execution state updates via the status
 // and accepted channels. The accepted channel will receive the name of the operation ID as soon as it's known and the
 // status channel will receive progress updates for the execution.
-func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name string, statusChannel chan *CommandResult, accepted chan string) {
+func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution_ExecuteClient, name string, statusChannel chan *CommandResult, accepted chan string) {
 	sendStatus := func(status *CommandResult) {
 		c.mu.Lock()
 		status.ID = c.opName
@@ -186,14 +191,38 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 		}
 	}
 
+	taskID := ""
 	acceptedTime := time.Time{}
 	for {
 		op, err := stream.Recv()
+
+		if status.IsUnavailableError(err) && c.AllowReconnect && taskID != "" {
+			req := &repb.WaitExecutionRequest{Name: taskID}
+			r := retry.DefaultWithContext(ctx)
+			for r.Next() {
+				stream, err = c.gRPCClientSource.GetRemoteExecutionClient().WaitExecution(ctx, req)
+				if err != nil {
+					continue
+				}
+				break
+			}
+			if err != nil {
+				sendStatus(&CommandResult{
+					Stage: repb.ExecutionStage_COMPLETED,
+					Err:   status.AbortedErrorf("stream to server broken: %v", err)})
+			}
+			continue // retry recv using new stream
+		}
+
 		if err != nil {
 			sendStatus(&CommandResult{
 				Stage: repb.ExecutionStage_COMPLETED,
 				Err:   status.AbortedErrorf("stream to server broken: %v", err)})
 			return
+		}
+
+		if taskID == "" {
+			taskID = op.GetName()
 		}
 
 		metadata := &repb.ExecuteOperationMetadata{}

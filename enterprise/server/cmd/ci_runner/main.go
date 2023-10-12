@@ -1672,6 +1672,9 @@ func writeBazelrc(path, invocationID string) error {
 		lines = append(lines, "build --remote_header=x-buildbuddy-origin="+origin)
 		lines = append(lines, "build --bes_header=x-buildbuddy-origin="+origin)
 	}
+	if identity := os.Getenv("BB_GRPC_CLIENT_IDENTITY"); identity != "" {
+		lines = append(lines, "build --remote_header=x-buildbuddy-client-identity="+identity)
+	}
 
 	// Primitive configs pointing to BB endpoints. These are purposely very
 	// fine-grained and do not include any options other than the backend

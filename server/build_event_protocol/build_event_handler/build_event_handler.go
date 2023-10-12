@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -40,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
+	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/shlex"
@@ -455,8 +457,12 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			ctx := usageutil.WithLocalServerLabels(ctx)
 
 			fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
-			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
-				log.CtxError(ctx, err.Error())
+			// Only persist artifacts from caches that are hosted on the BuildBuddy
+			// domain (but only if we know it).
+			if cache_api_url.String() == "" || urlutil.GetDomain(uri.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
+				if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
+					log.CtxError(ctx, err.Error())
+				}
 			}
 			return nil
 		})

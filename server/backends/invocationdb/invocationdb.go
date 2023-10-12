@@ -166,7 +166,7 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 		if err != nil {
 			return nil, err
 		}
-		if err := perms.AuthorizeRead(&u, getACL(ti)); err != nil {
+		if err := perms.AuthorizeRead(u, getACL(ti)); err != nil {
 			return nil, err
 		}
 	}

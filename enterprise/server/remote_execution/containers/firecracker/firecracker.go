@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
@@ -418,7 +419,7 @@ type FirecrackerContainer struct {
 }
 
 func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
-	if *snaploader.EnableLocalSnapshotSharing && !(*enableVBD && *enableUFFD) {
+	if *snaputil.EnableLocalSnapshotSharing && !(*enableVBD && *enableUFFD) {
 		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires VBD and UFFD to be enabled")
 	}
 	if *EnableRootfs && !*enableVBD {
@@ -494,7 +495,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// TODO(Maggie): Once local snapshot sharing is stable, remove runner ID
 		// from the snapshot key
 		runnerID := c.id
-		if *snaploader.EnableLocalSnapshotSharing {
+		if *snaputil.EnableLocalSnapshotSharing {
 			runnerID = ""
 		}
 		c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), runnerID)
@@ -505,7 +506,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// Create(), load the snapshot instead of creating a new VM.
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
-		if recyclingEnabled && *snaploader.EnableLocalSnapshotSharing {
+		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
 			_, err := loader.GetSnapshot(ctx, c.snapshotKey)
 			c.createFromSnapshot = (err == nil)
 		}
@@ -628,7 +629,7 @@ func alignToMultiple(n int64, multiple int64) int64 {
 // container can be reconstructed from the state on disk after an executor
 // restart.
 func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	if *snaploader.EnableLocalSnapshotSharing {
+	if *snaputil.EnableLocalSnapshotSharing {
 		// When local snapshot sharing is enabled, don't bother explicitly
 		// persisting container state across reboots. Instead we can
 		// deterministically match tasks to cached snapshots just based on the
@@ -712,6 +713,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ChunkedFiles:        map[string]*copy_on_write.COWStore{},
+		Recycled:            c.recycled,
 	}
 	if *enableVBD {
 		if c.rootStore != nil {
@@ -837,7 +839,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	unpacked, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot())
 	if err != nil {
-		return err
+		return status.WrapError(err, "failed to unpack snapshot")
 	}
 	if len(unpacked.ChunkedFiles) > 0 && !(*enableVBD || *enableUFFD) {
 		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
@@ -1002,7 +1004,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
-	cow, err := copy_on_write.ConvertFileToCOW(c.env.GetFileCache(), filePath, cowChunkSizeBytes(), chunkDir)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
@@ -1447,7 +1449,12 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	}
 
 	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
-		return err
+		if strings.Contains(err.Error(), "File exists") {
+			// Don't fail if we failed to cleanup the networking on a previous run
+			log.Warningf("Networking cleanup failure. Net namespace already exists: %s", err)
+		} else {
+			return err
+		}
 	}
 	if err := networking.CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
 		return err
@@ -1566,6 +1573,11 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	}
 	c.isNetworkSetup = false
 
+	// Even if the context was canceled, extend the life of the context for
+	// cleanup
+	ctx, cancel := background.ExtendContextForFinalization(ctx, time.Second*1)
+	defer cancel()
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1574,16 +1586,22 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	var lastErr error
 	if c.cleanupVethPair != nil {
 		if err := c.cleanupVethPair(ctx); err != nil {
+			log.Warningf("Networking cleanup failure. CleanupVethPair for vm id %s failed with: %s", c.id, err)
 			lastErr = err
 		}
 	}
 	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
+		log.Warningf("Networking cleanup failure. RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
 		lastErr = err
 	}
 	if err := networking.DeleteRoute(ctx, c.vmIdx); err != nil {
-		lastErr = err
+		if !strings.Contains(err.Error(), "No such process") {
+			log.Warningf("Networking cleanup failure. DeleteRoute for vm idx %d failed with: %s", c.vmIdx, err)
+			lastErr = err
+		}
 	}
 	if err := networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx); err != nil {
+		log.Warningf("Networking cleanup failure. DeleteRuleIfSecondaryNetworkEnabled for vm idx %d failed with: %s", c.vmIdx, err)
 		lastErr = err
 	}
 	return lastErr
@@ -1833,12 +1851,13 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 // will stay running until the VM exits, which may not be desirable in some
 // situations.
 func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	vmCtx := c.vmCtx
 	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		select {
 		case <-ctx.Done():
-		case <-c.vmCtx.Done():
-			cancel(context.Cause(c.vmCtx))
+		case <-vmCtx.Done():
+			cancel(context.Cause(vmCtx))
 		}
 	}()
 	return ctx, func() { cancel(nil) }
@@ -2021,7 +2040,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		lastErr = err
 	}
 	if err := c.cleanupNetworking(ctx); err != nil {
-		log.CtxErrorf(ctx, "Error cleaning up networking: %s", err)
+		log.CtxErrorf(ctx, "Error cleaning up networking: %s\n%s", err, string(c.vmLog.Tail()))
 		lastErr = err
 	}
 
@@ -2347,7 +2366,7 @@ func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskSta
 	}
 
 	snapshotSharingStatus := "disabled"
-	if *snaploader.EnableLocalSnapshotSharing {
+	if *snaputil.EnableLocalSnapshotSharing {
 		snapshotSharingStatus = "local_sharing_enabled"
 	}
 

@@ -28,6 +28,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -73,7 +74,7 @@ func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, sto
 		db.Close()
 	})
 
-	return replica.New(leaser, shardID, replicaID, store, partitions)
+	return replica.New(leaser, shardID, replicaID, store)
 }
 
 func TestOpenCloseReplica(t *testing.T) {
@@ -125,11 +126,34 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 	require.Equal(t, 1, len(writeRsp))
 }
 
+func reader(t *testing.T, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
+	fs := filestore.New()
+
+	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetMultiRequest{
+		FileRecords: []*rfpb.FileRecord{fileRecord},
+	}).ToBuf()
+	require.NoError(t, err)
+	readRsp, err := r.Lookup(buf)
+	require.NoError(t, err)
+	readBatch := rbuilder.NewBatchResponse(readRsp)
+	getMultiRsp, err := readBatch.GetMultiResponse(0)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(getMultiRsp.GetResponses()))
+	err = gstatus.ErrorProto(getMultiRsp.GetResponses()[0].GetStatus())
+	if err != nil {
+		return nil, err
+	}
+	md := getMultiRsp.GetResponses()[0].GetFileMetadata()
+	rc, err := fs.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), 0, 0)
+	require.NoError(t, err)
+	return rc, nil
+}
+
 func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) interfaces.CommittedWriteCloser {
 	fs := filestore.New()
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(t, err)
-	fileMetadataKey, err := key.Bytes(filestore.Version2)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
 	require.NoError(t, err)
 
 	writeCloserMetadata := fs.InlineWriter(context.TODO(), fileRecord.GetDigest().GetSizeBytes())
@@ -334,7 +358,7 @@ func TestReplicaCAS(t *testing.T) {
 	key, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
 
-	fileMetadataKey, err := key.Bytes(filestore.Version2)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
 	require.NoError(t, err)
 
 	// Do a DirectRead and verify the value was written.
@@ -500,7 +524,6 @@ func TestReplicaScan(t *testing.T) {
 }
 
 func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
-	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := newTestReplica(t, rootDir, 1, 1, store)
@@ -541,7 +564,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.Nil(t, writeCommitter.Commit())
 	require.Nil(t, writeCommitter.Close())
 
-	readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
+	readCloser, err := reader(t, repl, header, fileRecord)
 	require.NoError(t, err)
 	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 
@@ -570,13 +593,12 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify that the file is readable.
-	readCloser, err = repl2.Reader(ctx, header, fileRecord, 0, 0)
+	readCloser, err = reader(t, repl2, header, fileRecord)
 	require.NoError(t, err)
 	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }
 
 func TestReplicaFileWriteDelete(t *testing.T) {
-	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := newTestReplica(t, rootDir, 1, 1, store)
@@ -611,7 +633,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 
 	// Verify that the file is readable.
 	{
-		readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
+		readCloser, err := reader(t, repl, header, fileRecord)
 		require.NoError(t, err)
 		require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 	}
@@ -628,7 +650,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	// Verify that the file is no longer readable and reading it returns a
 	// NotFoundError.
 	{
-		_, err := repl.Reader(ctx, header, fileRecord, 0, 0)
+		_, err := reader(t, repl, header, fileRecord)
 		require.NotNil(t, err)
 		require.True(t, status.IsNotFoundError(err), err)
 	}
@@ -659,15 +681,19 @@ func TestUsage(t *testing.T) {
 	{
 		ru, err := repl.Usage()
 		require.NoError(t, err)
-
 		require.EqualValues(t, 2100, ru.GetEstimatedDiskBytesUsed())
 		require.Len(t, ru.GetPartitions(), 2)
-		defaultUsage := ru.GetPartitions()[0]
-		require.EqualValues(t, 1500, defaultUsage.GetSizeBytes())
-		require.EqualValues(t, 2, defaultUsage.GetTotalCount())
-		anotherUsage := ru.GetPartitions()[1]
-		require.EqualValues(t, 600, anotherUsage.GetSizeBytes())
-		require.EqualValues(t, 3, anotherUsage.GetTotalCount())
+
+		for _, usage := range ru.GetPartitions() {
+			switch usage.GetPartitionId() {
+			case defaultPartition:
+				require.EqualValues(t, 1500, usage.GetSizeBytes())
+				require.EqualValues(t, 2, usage.GetTotalCount())
+			case anotherPartition:
+				require.EqualValues(t, 600, usage.GetSizeBytes())
+				require.EqualValues(t, 3, usage.GetTotalCount())
+			}
+		}
 	}
 
 	// Delete a single record and verify updated usage.
@@ -679,11 +705,16 @@ func TestUsage(t *testing.T) {
 
 		require.EqualValues(t, 1100, ru.GetEstimatedDiskBytesUsed())
 		require.Len(t, ru.GetPartitions(), 2)
-		defaultUsage := ru.GetPartitions()[0]
-		require.EqualValues(t, 500, defaultUsage.GetSizeBytes())
-		require.EqualValues(t, 1, defaultUsage.GetTotalCount())
-		anotherUsage := ru.GetPartitions()[1]
-		require.EqualValues(t, 600, anotherUsage.GetSizeBytes())
-		require.EqualValues(t, 3, anotherUsage.GetTotalCount())
+
+		for _, usage := range ru.GetPartitions() {
+			switch usage.GetPartitionId() {
+			case defaultPartition:
+				require.EqualValues(t, 500, usage.GetSizeBytes())
+				require.EqualValues(t, 1, usage.GetTotalCount())
+			case anotherPartition:
+				require.EqualValues(t, 600, usage.GetSizeBytes())
+				require.EqualValues(t, 3, usage.GetTotalCount())
+			}
+		}
 	}
 }

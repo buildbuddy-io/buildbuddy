@@ -114,7 +114,7 @@ func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 	}
 
 	// This is a time based lease, so check expiration time.
-	expireAt := time.Unix(0, rl.GetExpiration())
+	expireAt := time.Unix(0, rl.GetReplicaExpiration().GetExpiration())
 	if time.Now().After(expireAt) {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: expired at %s", expireAt)
 	}
@@ -169,8 +169,11 @@ func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
 	// time-based lease, rather than a node epoch based one.
 	leaseRecord := &rfpb.RangeLeaseRecord{}
 	if ContainsMetaRange(l.rangeDescriptor) {
-		leaseRecord.Value = &rfpb.RangeLeaseRecord_Expiration{
-			Expiration: time.Now().Add(l.leaseDuration).UnixNano(),
+		leaseRecord.Value = &rfpb.RangeLeaseRecord_ReplicaExpiration_{
+			ReplicaExpiration: &rfpb.RangeLeaseRecord_ReplicaExpiration{
+				Nhid:       []byte(l.nodeHost.ID()),
+				Expiration: time.Now().Add(l.leaseDuration).UnixNano(),
+			},
 		}
 	} else {
 		nl, err := l.liveness.BlockingGetCurrentNodeLiveness()
@@ -240,8 +243,8 @@ func (l *Lease) renewLease() error {
 	// If the lease is now set and has an expiration date in the future,
 	// set time until lease renewal. This will not happen for node liveness
 	// epoch based range leases.
-	if l.leaseRecord != nil && l.leaseRecord.GetExpiration() != 0 {
-		expiration := time.Unix(0, l.leaseRecord.GetExpiration())
+	if l.leaseRecord != nil && l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
+		expiration := time.Unix(0, l.leaseRecord.GetReplicaExpiration().GetExpiration())
 		timeUntilExpiry := expiration.Sub(time.Now())
 		l.timeUntilLeaseRenewal = timeUntilExpiry - l.gracePeriod
 	}
@@ -280,7 +283,7 @@ func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, err
 	if l.stopped {
 		l.stopped = false
 		l.quitLease = make(chan struct{})
-		if l.leaseRecord.GetExpiration() != 0 {
+		if l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 			// Only start the renew-goroutine for time-based
 			// leases which need periodic renewal.
 			go l.keepLeaseAlive()
@@ -319,7 +322,7 @@ func (l *Lease) string(rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) stri
 	if nl := lr.GetNodeLiveness(); nl != nil {
 		return fmt.Sprintf("%s [node epoch: %d]", leaseName, nl.GetEpoch())
 	}
-	lifetime := time.Unix(0, lr.GetExpiration()).Sub(time.Now())
+	lifetime := time.Unix(0, lr.GetReplicaExpiration().GetExpiration()).Sub(time.Now())
 	return fmt.Sprintf("%s [expires in: %s]", leaseName, lifetime)
 }
 

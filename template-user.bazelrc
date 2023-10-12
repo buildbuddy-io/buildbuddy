@@ -3,6 +3,11 @@
 ## cp template-user.bazelrc user.bazelrc
 
 
+################
+# Windows only #
+################
+# startup --output_user_root=D:/tmp
+
 ########################
 ## API key based auth ##
 ########################

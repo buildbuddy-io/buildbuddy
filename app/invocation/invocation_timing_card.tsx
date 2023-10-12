@@ -1,7 +1,7 @@
 import React from "react";
 import SetupCodeComponent from "../docs/setup_code";
 import FlameChart from "../flame_chart/flame_chart";
-import { Profile, parseProfile } from "../flame_chart/profile_model";
+import { Profile, parseProfile } from "../trace/trace_events";
 import rpcService, { FileEncoding } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
@@ -11,6 +11,8 @@ import format from "../format/format";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import TraceViewer from "../trace/trace_viewer";
 
 interface Props {
   model: InvocationModel;
@@ -49,7 +51,7 @@ const groupByAllStorageValue = "all";
 export default class InvocationTimingCardComponent extends React.Component<Props, State> {
   state: State = {
     profile: null,
-    loading: false,
+    loading: true,
     threadNumPages: 1,
     threadToNumEventPagesMap: new Map<number, number>(),
     threadMap: new Map<number, Thread>(),
@@ -80,7 +82,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
   }
 
   fetchProfile() {
-    if (!this.isTimingEnabled()) return;
+    if (!this.isTimingEnabled()) {
+      this.setState({ loading: false });
+    }
 
     // Already fetched
     if (this.state.profile) return;
@@ -98,8 +102,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     // Note: we use responseType "text" instead of "json" since the profile is
     // not always valid JSON (the trailing "]}" may be missing).
     rpcService
-      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "text", { storedEncoding })
-      .then((contents: string) => this.updateProfile(parseProfile(contents)))
+      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "text", {
+        // Set the stored encoding header to prevent the server from double-gzipping.
+        headers: { "X-Stored-Encoding-Hint": storedEncoding },
+      })
+      .then((contents) => this.updateProfile(parseProfile(contents)))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
@@ -259,7 +266,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     return (
       <>
-        <FlameChart profile={this.state.profile} />
+        {capabilities.config.traceViewerEnabled ? (
+          <TraceViewer profile={this.state.profile} />
+        ) : (
+          <FlameChart profile={this.state.profile} />
+        )}
         <InvocationBreakdownCardComponent
           durationByNameMap={this.state.durationByNameMap}
           durationByCategoryMap={this.state.durationByCategoryMap}

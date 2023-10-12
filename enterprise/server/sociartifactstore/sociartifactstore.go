@@ -237,7 +237,6 @@ func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platfo
 }
 
 func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArtifactsRequest) (*socipb.GetArtifactsResponse, error) {
-	ctx = log.EnrichContext(ctx, "group_id", getGroupIdForDebugging(ctx, s.env))
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
@@ -615,19 +614,6 @@ func getArtifactsResponse(imageConfigHash v1.Hash, sociIndexDigest *repb.Digest,
 		resp.Artifacts = append(resp.Artifacts, &socipb.Artifact{Digest: ztocDigest, Type: socipb.Type_ZTOC})
 	}
 	return &resp
-}
-
-// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/2673): delete debugging log statements
-func getGroupIdForDebugging(ctx context.Context, env environment.Env) string {
-	auth := env.GetAuthenticator()
-	if auth == nil {
-		return ""
-	}
-	userInfo, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return interfaces.AuthAnonymousUser
-	}
-	return userInfo.GetGroupID()
 }
 
 func recordOutcome(outcome string) {

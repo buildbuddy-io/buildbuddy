@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "google/rpc/status.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
@@ -40,6 +41,26 @@ message LeaseTaskRequest {
   // Optional description of why the task needs to be re-enqueued (may be
   // visible to end user).
   google.rpc.Status re_enqueue_reason = 6;
+
+  // Indicates whether the client supports lease reconnection.
+  //
+  // When set to true, and the client is attempting to lease a task that is in
+  // "reconnecting" state, the server will use the `reconnect_token` to validate
+  // the lease attempt. If the token is invalid, the server will return a
+  // NOT_FOUND error.
+  //
+  // Otherwise (if this field is false), the server will treat tasks in
+  // "reconnecting" state the same way that it treats unclaimed tasks. This
+  // behavior ensures backwards compatibility for older executors which don't
+  // support reconnection.
+  bool supports_reconnect = 7;
+
+  // The reconnect token that was returned by the server when the task was
+  // previously transitioned to "reconnecting" state. If the reconnect token is
+  // valid and the reconnection grace period has not yet elapsed, then the
+  // client will be allowed to reclaim the task, effectively resuming the
+  // previous lease.
+  string reconnect_token = 8;
 }
 
 message LeaseTaskResponse {
@@ -54,6 +75,11 @@ message LeaseTaskResponse {
 
   // Whether or not the lease was closed cleanly.
   bool closed_cleanly = 3;
+
+  // If present, the lease has been placed into "reconnecting" state due to the
+  // server shutting down. The client should immediately terminate the current
+  // lease stream and initiate a new LeaseTask stream with this token.
+  string reconnect_token = 4;
 }
 
 message TaskSize {
@@ -136,6 +162,13 @@ message EnqueueTaskReservationRequest {
   //
   // Ex. "610a4cd4-3c0f-41bb-ad72-abe933837d58"
   string executor_id = 4;
+
+  // If set, the executor client should wait this long before making the task
+  // available for scheduling. The server will set this field when re-enqueuing
+  // tasks that are currently in "reconnecting" state, so that the client which
+  // is trying to reconnect its lease can have a short grace period during which
+  // it can retry the lease.
+  google.protobuf.Duration delay = 5;
 
   // Used to propagate trace information from the initial Execute request.
   // Normally trace information is automatically propagated via RPC metadata but

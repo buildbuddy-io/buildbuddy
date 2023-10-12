@@ -101,3 +101,18 @@ ts_library(
     name = "lcov",
     srcs = ["lcov.ts"],
 )
+
+ts_library(
+    name = "platform",
+    srcs = ["platform.ts"],
+)
+
+ts_library(
+    name = "canvas",
+    srcs = ["canvas.ts"],
+)
+
+ts_library(
+    name = "popup",
+    srcs = ["popup.ts"],
+)

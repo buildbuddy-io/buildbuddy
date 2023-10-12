@@ -238,9 +238,10 @@ func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r 
 	}
 
 	req := &repb.UpdateActionResultRequest{
-		InstanceName: r.GetInstanceName(),
-		ActionDigest: r.GetDigest(),
-		ActionResult: ar,
+		InstanceName:   r.GetInstanceName(),
+		ActionDigest:   r.GetDigest(),
+		ActionResult:   ar,
+		DigestFunction: r.GetDigestFunction(),
 	}
 	_, err := acClient.UpdateActionResult(ctx, req)
 	return err

@@ -199,10 +199,6 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}
 	rc.gossipManager = gossipManager
 
-	// Register the range cache as a gossip listener, so that it can
-	// discover which nodes maintain the meta range..
-	rc.gossipManager.AddListener(rc.rangeCache)
-
 	// A NodeHost is basically a single node (think 'computer') that can be
 	// a member of raft clusters. This nodehost is configured with a dynamic
 	// NodeRegistryFactory that allows raft to resolve other nodehosts that
@@ -215,7 +211,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// keys. The rangeCache is where this information is cached, and the
 	// sender interface is what makes it simple to address data across the
 	// cluster.
-	raftListener := listener.DefaultListener()
+	raftListener := listener.NewRaftListener()
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(conf.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(conf.RootDir, "nodehost"),
@@ -235,7 +231,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	store, err := store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient, rc.grpcAddress, rc.conf.Partitions)
+	store, err := store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, raftListener, rc.apiClient, rc.grpcAddress, rc.conf.Partitions)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +358,7 @@ func (rc *RaftCache) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pebbleKey.Bytes(filestore.Version2)
+	return pebbleKey.Bytes(filestore.Version5)
 }
 
 func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
@@ -375,22 +371,27 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 		return nil, err
 	}
 
-	var readCloser io.ReadCloser
+	var rsp *rfpb.GetMultiResponse
 	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		req := &rfpb.ReadRequest{
-			Header:     h,
-			FileRecord: fileRecord,
-			Offset:     uncompressedOffset,
-			Limit:      limit,
+		req := &rfpb.GetMultiRequest{
+			Header:      h,
+			FileRecords: []*rfpb.FileRecord{fileRecord},
 		}
-		r, err := rc.apiClient.RemoteReader(ctx, c, req)
+		r, err := c.GetMulti(ctx, req)
 		if err != nil {
 			return err
 		}
-		readCloser = r
+		rsp = r
 		return nil
 	})
-	return readCloser, err
+	if err != nil {
+		return nil, err
+	}
+	if len(rsp.GetResponses()) != 1 {
+		return nil, status.InternalError("GetMulti response did not contain requested FileRecord")
+	}
+	md := rsp.GetResponses()[0].GetFileMetadata()
+	return rc.fileStorer.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), uncompressedOffset, limit)
 }
 
 type raftWriteCloser struct {
@@ -504,7 +505,7 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 			if !ok {
 				return nil, status.InternalError("type is not *rfpb.FileRecord")
 			}
-			req.FileRecord = append(req.FileRecord, fr)
+			req.FileRecords = append(req.FileRecords, fr)
 		}
 		return c.FindMissing(ctx, req)
 	})
@@ -518,7 +519,7 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 		if !ok {
 			return nil, status.InternalError("response not of type *rfpb.FindMissingResponse")
 		}
-		for _, fr := range fmr.GetFileRecord() {
+		for _, fr := range fmr.GetMissing() {
 			missingDigests = append(missingDigests, fr.GetDigest())
 		}
 	}
@@ -552,7 +553,7 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 			if !ok {
 				return nil, status.InternalError("type is not *rfpb.FileRecord")
 			}
-			req.FileRecord = append(req.FileRecord, fr)
+			req.FileRecords = append(req.FileRecords, fr)
 		}
 		return c.GetMulti(ctx, req)
 	})
@@ -564,10 +565,10 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 	for _, rsp := range rsps {
 		fmr, ok := rsp.(*rfpb.GetMultiResponse)
 		if !ok {
-			return nil, status.InternalError("response not of type *rfpb.FindMissingResponse")
+			return nil, status.InternalError("response not of type *rfpb.GetMultiResponse")
 		}
-		for _, frd := range fmr.GetData() {
-			dataMap[frd.GetFileRecord().GetDigest()] = frd.GetData()
+		for _, r := range fmr.GetResponses() {
+			dataMap[r.GetFileRecord().GetDigest()] = r.GetFileMetadata().GetStorageMetadata().GetInlineMetadata().GetData()
 		}
 	}
 

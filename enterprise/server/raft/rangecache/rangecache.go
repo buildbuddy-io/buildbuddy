@@ -3,12 +3,10 @@ package rangecache
 import (
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/hashicorp/serf/serf"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
@@ -103,28 +101,6 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		}
 	}
 	return nil
-}
-
-// OnEvent is called when a node joins, leaves, or is updated.
-func (rc *RangeCache) OnEvent(updateType serf.EventType, event serf.Event) {
-	switch updateType {
-	case serf.EventMemberJoin, serf.EventMemberUpdate:
-		memberEvent, _ := event.(serf.MemberEvent)
-		for _, member := range memberEvent.Members {
-			if tagData, ok := member.Tags[constants.MetaRangeTag]; ok {
-				rd := &rfpb.RangeDescriptor{}
-				if err := proto.Unmarshal([]byte(tagData), rd); err != nil {
-					log.Errorf("unparsable rangeset: %s", err)
-					return
-				}
-				if err := rc.updateRange(rd); err != nil {
-					log.Errorf("Error updating ranges: %s", err)
-				}
-			}
-		}
-	default:
-		break
-	}
 }
 
 func (rc *RangeCache) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {

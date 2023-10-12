@@ -266,11 +266,10 @@ func newCommand(start *vmxpb.ExecRequest) (*command, error) {
 			return nil, status.InternalErrorf("failed to update workspace dir perms")
 		}
 
-		cred, err := commandutil.LookupCredential(start.GetUser())
+		err := commandutil.SetCredential(cmd, start.GetUser())
 		if err != nil {
 			return nil, err
 		}
-		cmd.SysProcAttr.Credential = cred
 	}
 
 	stdoutReader, stdoutWriter := io.Pipe()

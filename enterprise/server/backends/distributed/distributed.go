@@ -34,7 +34,7 @@ var (
 	redisTarget                  = flag.String("cache.distributed_cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flag.Secret)
 	groupName                    = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
 	nodes                        = flag.Slice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
-	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
+	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 1, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
 	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
@@ -213,6 +213,9 @@ func (c *Cache) Check(ctx context.Context) error {
 	// then it's not necessary to wait for any heartbeats and this cache
 	// will report healthy immediately.
 	if len(c.config.Nodes) > 0 {
+		if len(c.config.Nodes) < c.config.ReplicationFactor {
+			return status.UnavailableErrorf("Not enough nodes configured %d to meet replication factor %d.", len(c.config.Nodes), c.config.ReplicationFactor)
+		}
 		return nil
 	}
 
@@ -221,6 +224,9 @@ func (c *Cache) Check(ctx context.Context) error {
 	nodesAvailable := len(c.consistentHash.GetItems())
 	if nodesAvailable < c.config.ClusterSize {
 		return status.UnavailableErrorf("%d nodes available but cluster size is %d.", nodesAvailable, c.config.ClusterSize)
+	}
+	if nodesAvailable < c.config.ReplicationFactor {
+		return status.UnavailableErrorf("Not enough nodes available %d to meet replication factor %d.", nodesAvailable, c.config.ReplicationFactor)
 	}
 
 	// Next check that we're participating in the network:
@@ -390,24 +396,31 @@ func dedupe(in []string) []string {
 // peers are returned in random order.
 func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	peers := c.consistentHash.GetAllReplicas(d.GetHash())
-	primaryPeers := peers[:c.config.ReplicationFactor]
-	secondaryPeers := peers[c.config.ReplicationFactor:]
+	var primaryPeers, secondaryPeers []string
+	// To prevent a panic if replication is misconfigured to be higher than peer count.
+	if len(peers) >= c.config.ReplicationFactor {
+		primaryPeers = peers[:c.config.ReplicationFactor]
+		secondaryPeers = peers[c.config.ReplicationFactor:]
+	}
 
 	if len(c.config.ExtraNodes) > 0 {
 		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
-		allPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
-		allSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
+		// To prevent a panic if replication is misconfigured to be higher than extended peer count.
+		if len(extendedPeerList) >= c.config.ReplicationFactor {
+			allPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
+			allSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
 
-		// If extraNodes is set, we want to additionally attempt reads
-		// on the nodes where the data ~would~ be if the extra nodes
-		// were included in the full peer set.
-		//
-		// These extra reads allow us to move data to the new nodes
-		// and read it immediately, while falling back to the old data
-		// location if it's not found and backfilling to the new
-		// nodes.
-		primaryPeers = dedupe(append(allPrimaryPeers, primaryPeers...))
-		secondaryPeers = dedupe(append(allSecondaryPeers, secondaryPeers...))
+			// If extraNodes is set, we want to additionally attempt reads
+			// on the nodes where the data ~would~ be if the extra nodes
+			// were included in the full peer set.
+			//
+			// These extra reads allow us to move data to the new nodes
+			// and read it immediately, while falling back to the old data
+			// location if it's not found and backfilling to the new
+			// nodes.
+			primaryPeers = dedupe(append(allPrimaryPeers, primaryPeers...))
+			secondaryPeers = dedupe(append(allSecondaryPeers, secondaryPeers...))
+		}
 	}
 
 	sortVal := func(peer string) int {
