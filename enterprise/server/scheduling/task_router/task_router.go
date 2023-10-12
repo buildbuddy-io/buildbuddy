@@ -2,8 +2,6 @@ package task_router
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"math/rand"
 	"strings"
 	"time"
@@ -87,7 +85,6 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
-		log.Info("no routing strategy applied to the routing params")
 		return nodes
 	}
 
@@ -142,7 +139,6 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
-		log.Info("no routing strategy applied to the routing params")
 		return
 	}
 	preferredNodeLimit, routingKey, err := strategy.RoutingInfo(params)
@@ -249,7 +245,7 @@ func (runnerRecycler) routingKey(params routingParams) (string, error) {
 	if err != nil {
 		return "", status.InternalErrorf("failed to marshal Command: %s", err)
 	}
-	parts = append(parts, fmt.Sprintf("%x", sha256.Sum256(b)))
+	parts = append(parts, hash.Bytes(b))
 
 	return strings.Join(parts, "/"), nil
 }
@@ -260,10 +256,18 @@ func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
 	return nodeLimit, key, err
 }
 
-// affinityRouter attempts to route execution actions to execuction nodes that
-// have some affinity with the provided routing parameters. That affinity is
-// determined through a combination of platform properties and the first
-// bazel-request output, which should uniquely identify an action.
+// affinityRouter generates Redis routing keys based on:
+//   - remoteInstanceName
+//   - groupID
+//   - platform properties
+//   - and the name of the first action output
+//
+// Because only a single action can generate a given output in Bazel, this key
+// uniquely identifies an action and is stable even if the action's inputs
+// change. The intent of using this routing key is to route successive actions
+// whose inputs have changed to nodes which previously executed that action to
+// increase the local-cache hitrate, as it's likely that for large actions most
+// of the input tree is unchanged.
 type affinityRouter struct{}
 
 func (affinityRouter) Applies(params routingParams) bool {
@@ -290,7 +294,7 @@ func (affinityRouter) routingKey(params routingParams) (string, error) {
 	if err != nil {
 		return "", status.InternalErrorf("failed to marshal Command: %s", err)
 	}
-	parts = append(parts, fmt.Sprintf("%x", sha256.Sum256(b)))
+	parts = append(parts, hash.Bytes(b))
 
 	// Add the first output as the final part of the routing key. This should
 	// uniquely identify a bazel action and is an attempt to route actions to
@@ -300,7 +304,7 @@ func (affinityRouter) routingKey(params routingParams) (string, error) {
 	if firstOutput == "" {
 		return "", status.InternalError("routing key requested for action with no outputs")
 	}
-	parts = append(parts, fmt.Sprintf("%x", hash.String(firstOutput)))
+	parts = append(parts, hash.String(firstOutput))
 
 	return strings.Join(parts, "/"), nil
 }
