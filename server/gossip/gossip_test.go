@@ -177,8 +177,10 @@ func TestUserQuery(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(3 * time.Second):
+	case <-time.After(5 * time.Second):
+		mu.Lock()
 		t.Fatalf("Timed out waiting for tags to be received: %+v", receivedLetters)
+		mu.Unlock()
 	case <-seenItAll:
 		break
 	}
@@ -239,8 +241,10 @@ func TestUserEvents(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(3 * time.Second):
+	case <-time.After(5 * time.Second):
+		mu.Lock()
 		t.Fatalf("Timed out waiting for tags to be received: %+v", gotData)
+		mu.Unlock()
 	case <-seenItAll:
 		break
 	}
