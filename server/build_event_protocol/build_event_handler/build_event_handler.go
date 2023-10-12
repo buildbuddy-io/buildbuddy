@@ -457,7 +457,9 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 			ctx := usageutil.WithLocalServerLabels(ctx)
 
 			fullPath := path.Join(task.invocationJWT.id, cacheArtifactsBlobstorePath, uri.Path)
-			if urlutil.GetDomain(uri.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
+			// Only persist artifacts from caches that are hosted on the BuildBuddy
+			// domain (but only if we know it).
+			if cache_api_url.String() == "" || urlutil.GetDomain(uri.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()) {
 				if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
 					log.CtxError(ctx, err.Error())
 				}
