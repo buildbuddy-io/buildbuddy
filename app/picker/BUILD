@@ -6,6 +6,7 @@ ts_library(
     name = "picker",
     srcs = ["picker.tsx"],
     deps = [
+        "//app/components/modal",
         "//app/picker:picker_service",
         "@npm//@types/react",
         "@npm//lucide-react",

@@ -1,17 +1,19 @@
 import { Search } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
-import pickerService, { Picker } from "./picker_service";
+import Modal from "../components/modal/modal";
+import pickerService, { PickerModel } from "./picker_service";
 
 interface State {
-  picker?: Picker;
-  isVisible?: boolean;
+  picker?: PickerModel;
+  isVisible: boolean;
   search: string;
   selectedIndex: number;
 }
 
-export default class PickerComponent extends React.Component<{}, State> {
+export default class Picker extends React.Component<{}, State> {
   state: State = {
+    isVisible: false,
     search: "",
     selectedIndex: 0,
   };
@@ -20,10 +22,8 @@ export default class PickerComponent extends React.Component<{}, State> {
 
   private subscription: Subscription = pickerService.pickers.subscribe(this.onPicker.bind(this));
 
-  private onPicker(picker: Picker) {
-    this.setState({ isVisible: true, search: "", picker }, () => {
-      this.ref.current?.focus();
-    });
+  private onPicker(picker: PickerModel) {
+    this.setState({ isVisible: true, search: "", picker });
   }
 
   componentWillUnmount() {
@@ -70,34 +70,37 @@ export default class PickerComponent extends React.Component<{}, State> {
 
   render() {
     return (
-      <div
-        onClick={this.handleDismissed.bind(this)}
-        className={`picker-shade ${this.state.isVisible ? "visible" : "hidden"}`}>
-        <div onClick={(e) => e.stopPropagation()} className={`picker`}>
-          <div className="picker-search">
-            <Search />
-            <input
-              onKeyUp={this.handleKeyUp.bind(this)}
-              value={this.state.search}
-              ref={this.ref}
-              onChange={(e) => this.setState({ search: e.target.value })}
-              placeholder={this.state.picker?.placeholder}
-            />
-          </div>
-          <div className="picker-options">
-            <div className="picker-options-label">{this.state.picker?.title}</div>
-            {this.matchingOptions()?.map((o, index) => (
-              <div
-                className={`picker-option ${index == this.selectedIndex() ? "selected" : ""}`}
-                onMouseOver={() => this.setState({ selectedIndex: index })}
-                onClick={this.handleOptionPicked.bind(this, o)}>
-                {o}
-              </div>
-            ))}
-            {!Boolean(this.matchingOptions()?.length) && <div className="picker-option">No matches found.</div>}
+      <Modal
+        isOpen={this.state.isVisible}
+        onAfterOpen={() => this.ref.current?.focus()}
+        onRequestClose={() => this.setState({ isVisible: false })}>
+        <div className="picker-container">
+          <div onClick={(e) => e.stopPropagation()} className={`picker`}>
+            <div className="picker-search">
+              <Search />
+              <input
+                onKeyUp={this.handleKeyUp.bind(this)}
+                value={this.state.search}
+                ref={this.ref}
+                onChange={(e) => this.setState({ search: e.target.value })}
+                placeholder={this.state.picker?.placeholder}
+              />
+            </div>
+            <div className="picker-options">
+              <div className="picker-options-label">{this.state.picker?.title}</div>
+              {this.matchingOptions()?.map((o, index) => (
+                <div
+                  className={`picker-option ${index == this.selectedIndex() ? "selected" : ""}`}
+                  onMouseOver={() => this.setState({ selectedIndex: index })}
+                  onClick={this.handleOptionPicked.bind(this, o)}>
+                  {o}
+                </div>
+              ))}
+              {!Boolean(this.matchingOptions()?.length) && <div className="picker-option">No matches found.</div>}
+            </div>
           </div>
         </div>
-      </div>
+      </Modal>
     );
   }
 }
