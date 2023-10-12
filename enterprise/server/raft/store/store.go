@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"io"
 	"net"
 	"sort"
 	"sync"
@@ -591,7 +590,7 @@ func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDe
 // done by using the LeasedRange function.
 func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.RangeDescriptor, error) {
 	if header == nil {
-		return nil, nil, status.FailedPreconditionError("Nil header not allowed")
+		return nil, nil, status.FailedPreconditionError("Header must be set (was nil)")
 	}
 
 	r, rd, err := s.replicaForRange(header.GetRangeId())
@@ -842,6 +841,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	}, nil
 }
 
+// TODO(tylerw): consolidate these in a non-confusing way.
 func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
 	_, err := s.LeasedRange(req.GetHeader())
 	if err != nil {
@@ -864,63 +864,66 @@ func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (
 }
 
 func (s *Store) GetMulti(ctx context.Context, req *rfpb.GetMultiRequest) (*rfpb.GetMultiResponse, error) {
-	r, err := s.LeasedRange(req.GetHeader())
+	_, err := s.LeasedRange(req.GetHeader())
 	if err != nil {
 		return nil, err
 	}
-	data, err := r.GetMulti(ctx, req.GetHeader(), req.GetFileRecord())
+	shardID := req.GetHeader().GetReplica().GetShardId()
+	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
 	if err != nil {
 		return nil, err
 	}
-	return &rfpb.GetMultiResponse{
-		Data: data,
-	}, nil
+	batch.Header = req.GetHeader()
+	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, shardID, batch)
+	if err != nil {
+		if err == dragonboat.ErrShardNotFound {
+			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, shardID)
+		}
+		return nil, err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp).GetMultiResponse(0)
 }
 
-type streamWriter struct {
-	stream rfspb.Api_ReadServer
-}
-
-func (w *streamWriter) Write(buf []byte) (int, error) {
-	err := w.stream.Send(&rfpb.ReadResponse{
-		Data: buf,
-	})
-	return len(buf), err
+func (s *Store) SetMulti(ctx context.Context, req *rfpb.SetMultiRequest) (*rfpb.SetMultiResponse, error) {
+	_, err := s.LeasedRange(req.GetHeader())
+	if err != nil {
+		return nil, err
+	}
+	shardID := req.GetHeader().GetReplica().GetShardId()
+	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
+	if err != nil {
+		return nil, err
+	}
+	batch.Header = req.GetHeader()
+	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, shardID, batch)
+	if err != nil {
+		if err == dragonboat.ErrShardNotFound {
+			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, shardID)
+		}
+		return nil, err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp).SetMultiResponse(0)
 }
 
 func (s *Store) Metadata(ctx context.Context, req *rfpb.MetadataRequest) (*rfpb.MetadataResponse, error) {
-	r, err := s.LeasedRange(req.GetHeader())
+	_, err := s.LeasedRange(req.GetHeader())
 	if err != nil {
 		return nil, err
 	}
-	md, err := r.Metadata(ctx, req.GetHeader(), req.GetFileRecord())
+	shardID := req.GetHeader().GetReplica().GetShardId()
+	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
 	if err != nil {
 		return nil, err
 	}
-
-	return &rfpb.MetadataResponse{Metadata: md}, nil
-}
-
-func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
-	r, err := s.LeasedRange(req.GetHeader())
+	batch.Header = req.GetHeader()
+	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, shardID, batch)
 	if err != nil {
-		return err
+		if err == dragonboat.ErrShardNotFound {
+			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, shardID)
+		}
+		return nil, err
 	}
-
-	readCloser, err := r.Reader(stream.Context(), req.GetHeader(), req.GetFileRecord(), req.GetOffset(), req.GetLimit())
-	if err != nil {
-		return err
-	}
-	defer readCloser.Close()
-
-	bufSize := int64(readBufSizeBytes)
-	d := req.GetFileRecord().GetDigest()
-	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
-		bufSize = d.GetSizeBytes()
-	}
-	copyBuf := make([]byte, bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, readCloser, copyBuf)
-	return err
+	return rbuilder.NewBatchResponseFromProto(rsp).MetadataResponse(0)
 }
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {

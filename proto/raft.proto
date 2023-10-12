@@ -231,6 +231,9 @@ message RequestUnion {
     DeleteRangeRequest delete_range = 14;
     SimpleSplitRequest simple_split = 15;
     FindMissingRequest find_missing = 16;
+    GetMultiRequest get_multi = 17;
+    SetMultiRequest set_multi = 18;
+    MetadataRequest metadata = 19;
   }
 }
 
@@ -253,6 +256,9 @@ message ResponseUnion {
     DeleteRangeResponse delete_range = 15;
     SimpleSplitResponse simple_split = 16;
     FindMissingResponse find_missing = 17;
+    GetMultiResponse get_multi = 18;
+    SetMultiResponse set_multi = 19;
+    MetadataResponse metadata = 20;
   }
 }
 
@@ -532,29 +538,7 @@ message MetadataRequest {
 }
 
 message MetadataResponse {
-  FileMetadata metadata = 1;
-}
-
-message ReadRequest {
-  Header header = 1;
-  FileRecord file_record = 2;
-  int64 offset = 3;
-  int64 limit = 4;
-}
-
-message ReadResponse {
-  bytes data = 1;
-}
-
-message WriteRequest {
-  Header header = 1;
-  FileRecord file_record = 2;
-  bool finish_write = 3;
-  bytes data = 4;
-}
-
-message WriteResponse {
-  int64 committed_size = 1;
+  FileMetadata file_metadata = 1;
 }
 
 message FindMissingRequest {
@@ -568,16 +552,41 @@ message FindMissingResponse {
 
 message GetMultiRequest {
   Header header = 1;
-  Isolation isolation = 2;
-  repeated FileRecord file_record = 3;
+  repeated FileRecord file_records = 2;
 }
 
 message GetMultiResponse {
-  message Data {
+  message Response {
+    // The FileRecord that was requested.
     FileRecord file_record = 1;
-    bytes data = 2;
+
+    // The FileMetadata that matches
+    FileMetadata file_metadata = 2;
+
+    // The result of attempting to upload that blob.
+    google.rpc.Status status = 3;
   }
-  repeated Data data = 1;
+
+  // The responses to the requests.
+  repeated Response responses = 1;
+}
+
+message SetMultiRequest {
+  Header header = 1;
+  repeated FileMetadata file_metadatas = 2;
+}
+
+message SetMultiResponse {
+  message Response {
+    // The blob digest to which this response corresponds.
+    FileRecord file_record = 1;
+
+    // The result of attempting to upload that blob.
+    google.rpc.Status status = 2;
+  }
+
+  // The responses to the requests.
+  repeated Response responses = 1;
 }
 
 message TransferLeadershipRequest {

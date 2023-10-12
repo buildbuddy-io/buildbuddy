@@ -371,22 +371,27 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 		return nil, err
 	}
 
-	var readCloser io.ReadCloser
+	var rsp *rfpb.GetMultiResponse
 	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		req := &rfpb.ReadRequest{
-			Header:     h,
-			FileRecord: fileRecord,
-			Offset:     uncompressedOffset,
-			Limit:      limit,
+		req := &rfpb.GetMultiRequest{
+			Header:      h,
+			FileRecords: []*rfpb.FileRecord{fileRecord},
 		}
-		r, err := rc.apiClient.RemoteReader(ctx, c, req)
+		r, err := c.GetMulti(ctx, req)
 		if err != nil {
 			return err
 		}
-		readCloser = r
+		rsp = r
 		return nil
 	})
-	return readCloser, err
+	if err != nil {
+		return nil, err
+	}
+	if len(rsp.GetResponses()) != 1 {
+		return nil, status.InternalError("GetMulti response did not containe requested FileRecord")
+	}
+	md := rsp.GetResponses()[0].GetFileMetadata()
+	return rc.fileStorer.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), uncompressedOffset, limit)
 }
 
 type raftWriteCloser struct {
@@ -548,7 +553,7 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 			if !ok {
 				return nil, status.InternalError("type is not *rfpb.FileRecord")
 			}
-			req.FileRecord = append(req.FileRecord, fr)
+			req.FileRecords = append(req.FileRecords, fr)
 		}
 		return c.GetMulti(ctx, req)
 	})
@@ -560,10 +565,10 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 	for _, rsp := range rsps {
 		fmr, ok := rsp.(*rfpb.GetMultiResponse)
 		if !ok {
-			return nil, status.InternalError("response not of type *rfpb.FindMissingResponse")
+			return nil, status.InternalError("response not of type *rfpb.GetMultiResponse")
 		}
-		for _, frd := range fmr.GetData() {
-			dataMap[frd.GetFileRecord().GetDigest()] = frd.GetData()
+		for _, r := range fmr.GetResponses() {
+			dataMap[r.GetFileRecord().GetDigest()] = r.GetFileMetadata().GetStorageMetadata().GetInlineMetadata().GetData()
 		}
 	}
 

@@ -20,9 +20,9 @@ service Api {
   rpc TransferLeadership(TransferLeadershipRequest)
       returns (TransferLeadershipResponse);
 
-  // Data API.
+  // Metadata API.
   rpc Metadata(MetadataRequest) returns (MetadataResponse);
-  rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
+  rpc SetMulti(SetMultiRequest) returns (SetMultiResponse);
 }

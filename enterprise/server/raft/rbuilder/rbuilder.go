@@ -82,6 +82,18 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_FindMissing{
 			FindMissing: value,
 		}
+	case *rfpb.GetMultiRequest:
+		req.Value = &rfpb.RequestUnion_GetMulti{
+			GetMulti: value,
+		}
+	case *rfpb.SetMultiRequest:
+		req.Value = &rfpb.RequestUnion_SetMulti{
+			SetMulti: value,
+		}
+	case *rfpb.MetadataRequest:
+		req.Value = &rfpb.RequestUnion_Metadata{
+			Metadata: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -241,4 +253,31 @@ func (br *BatchResponse) FindMissingResponse(n int) (*rfpb.FindMissingResponse, 
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetFindMissing(), br.unionError(u)
+}
+
+func (br *BatchResponse) GetMultiResponse(n int) (*rfpb.GetMultiResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetGetMulti(), br.unionError(u)
+}
+
+func (br *BatchResponse) SetMultiResponse(n int) (*rfpb.SetMultiResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetSetMulti(), br.unionError(u)
+}
+
+func (br *BatchResponse) MetadataResponse(n int) (*rfpb.MetadataResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetMetadata(), br.unionError(u)
 }
