@@ -2457,6 +2457,19 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	return pe, nil
 }
 
+func (e *partitionEvictor) startSampleGenerator(quitChan chan struct{}) {
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		return e.generateSamplesForEviction(quitChan)
+	})
+	eg.Wait()
+	// Drain samples chan before exiting
+	for len(e.samples) > 0 {
+		<-e.samples
+	}
+	close(e.samples)
+}
+
 func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -2947,15 +2960,9 @@ func (e *partitionEvictor) partitionKeyPrefix() string {
 }
 
 func (e *partitionEvictor) run(quitChan chan struct{}) error {
-	go e.generateSamplesForEviction(quitChan)
 	e.lru.Start()
 	<-quitChan
 	e.lru.Stop()
-	// Drain samples chan before exiting
-	for len(e.samples) > 0 {
-		<-e.samples
-	}
-	close(e.samples)
 	return nil
 }
 
@@ -3267,6 +3274,10 @@ func (p *PebbleCache) Start() error {
 		evictor := evictor
 		p.eg.Go(func() error {
 			return evictor.run(p.quitChan)
+		})
+		p.eg.Go(func() error {
+			evictor.startGroupIDSampler(p.quitChan)
+			return nil
 		})
 	}
 	p.eg.Go(func() error {
