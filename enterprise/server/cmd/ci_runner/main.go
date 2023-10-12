@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -103,6 +104,8 @@ const (
 
 	ansiGray  = "\033[90m"
 	ansiReset = "\033[0m"
+
+	clientIdentityEnvVar = "BB_GRPC_CLIENT_IDENTITY"
 )
 
 var (
@@ -468,6 +471,9 @@ func run() error {
 	ctx := context.Background()
 	if ws.buildbuddyAPIKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, ws.buildbuddyAPIKey)
+	}
+	if ci := os.Getenv(clientIdentityEnvVar); ci != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, clientidentity.IdentityHeaderName, ci)
 	}
 
 	buildEventReporter, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
@@ -1672,7 +1678,7 @@ func writeBazelrc(path, invocationID string) error {
 		lines = append(lines, "build --remote_header=x-buildbuddy-origin="+origin)
 		lines = append(lines, "build --bes_header=x-buildbuddy-origin="+origin)
 	}
-	if identity := os.Getenv("BB_GRPC_CLIENT_IDENTITY"); identity != "" {
+	if identity := os.Getenv(clientIdentityEnvVar); identity != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-client-identity="+identity)
 	}
 
