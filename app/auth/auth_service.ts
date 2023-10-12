@@ -133,9 +133,6 @@ export class AuthService {
   }
 
   private getUser(request: user.GetUserRequest) {
-    if (rpcService.requestContext.impersonatingGroupId) {
-      return rpcService.service.getImpersonatedUser(request);
-    }
     return rpcService.service.getUser(request);
   }
 
@@ -178,7 +175,7 @@ export class AuthService {
           (name) => (name[0].toLowerCase() + name.substring(1)) as BuildBuddyServiceRpcName
         )
       ),
-      isImpersonating: Boolean(rpcService.requestContext.impersonatingGroupId),
+      isImpersonating: response.isImpersonating,
       subdomainGroupID: response.subdomainGroupId,
     });
   }

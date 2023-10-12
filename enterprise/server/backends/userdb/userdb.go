@@ -774,6 +774,9 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	if err != nil {
 		return nil, err
 	}
+	if u.IsImpersonating() {
+		return d.GetImpersonatedUser(ctx)
+	}
 	var user *tables.User
 	err = d.h.Transaction(ctx, func(tx *db.DB) error {
 		user, err = d.getUser(tx, u.GetUserID())

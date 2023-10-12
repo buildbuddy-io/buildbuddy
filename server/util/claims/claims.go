@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/golang-jwt/jwt"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -161,8 +162,20 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 			if membership.GroupID != env.GetAuthenticator().AdminGroupID() || membership.Role != role.Admin {
 				continue
 			}
+
+			ig, err := env.GetUserDB().GetGroupByID(ctx, c.GetImpersonatingGroupId())
+			if err != nil {
+				return nil, err
+			}
+
+			// If the user requested impersonation but the subdomain doesn't
+			// match the impersonation target then don't enable impersonation.
+			if sd := subdomain.Get(ctx); sd != "" && ig.URLIdentifier != nil && sd != *ig.URLIdentifier {
+				return claims, nil
+			}
+
 			u.Groups = []*tables.GroupRole{{
-				Group: tables.Group{GroupID: c.GetImpersonatingGroupId()},
+				Group: *ig,
 				Role:  uint32(role.Admin),
 			}}
 			claims := userClaims(u, c.GetImpersonatingGroupId())

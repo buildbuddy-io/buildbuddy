@@ -274,22 +274,6 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 	return r
 }
 
-func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
-	return s.getUser(ctx, req, userDB.GetUser)
-}
-
-func (s *BuildBuddyServer) GetImpersonatedUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
-	return s.getUser(ctx, req, userDB.GetImpersonatedUser)
-}
-
 func (s *BuildBuddyServer) getGroupIDForSubdomain(ctx context.Context) (string, error) {
 	sd := subdomain.Get(ctx)
 	if sd == "" {
@@ -308,10 +292,21 @@ func (s *BuildBuddyServer) getGroupIDForSubdomain(ctx context.Context) (string, 
 	return g.GroupID, nil
 }
 
-type userLookup func(ctx context.Context) (*tables.User, error)
+func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
 
-func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest, dbLookup userLookup) (*uspb.GetUserResponse, error) {
-	tu, err := dbLookup(ctx)
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tu, err := s.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -370,6 +365,7 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 		AllowedRpc:       allowedRPCs,
 		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,
+		IsImpersonating:  u.IsImpersonating(),
 	}, nil
 }
 
