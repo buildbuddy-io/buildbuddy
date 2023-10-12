@@ -1,0 +1,24 @@
+From ab7d41cee37b20debffc052cfb2152391bdaf891 Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Thu, 12 Oct 2023 11:42:32 -0400
+Subject: [PATCH] patch
+
+---
+ sqlite3.go | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sqlite3.go b/sqlite3.go
+index 5e4e2ff..0d427a8 100644
+--- a/sqlite3.go
++++ b/sqlite3.go
+@@ -20,6 +20,7 @@ package sqlite3
+ #cgo CFLAGS: -DSQLITE_OMIT_DEPRECATED
+ #cgo CFLAGS: -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
+ #cgo CFLAGS: -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT
++#cgo CFLAGS: -D_LARGEFILE64_SOURCE
+ #cgo CFLAGS: -Wno-deprecated-declarations
+ #cgo linux,!android CFLAGS: -DHAVE_PREAD64=1 -DHAVE_PWRITE64=1
+ #cgo openbsd CFLAGS: -I/usr/local/include
+-- 
+2.30.2
+

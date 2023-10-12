@@ -42,6 +42,13 @@ http_archive(
     ],
 )
 
+http_archive(
+    name = "com_google_absl",
+    sha256 = "987ce98f02eefbaf930d6e38ab16aa05737234d7afbab2d5c4ea7adbe50c28ed",
+    strip_prefix = "abseil-cpp-20230802.1",
+    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20230802.1.tar.gz"],
+)
+
 load(":deps.bzl", "install_go_mod_dependencies", "install_static_dependencies")
 
 install_static_dependencies()

@@ -3765,6 +3765,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_mattn_go_sqlite3",
         importpath = "github.com/mattn/go-sqlite3",
+        patch_args = ["-p1"],
+        patches = ["@{}//buildpatches:com_github_mattn_go_sqlite3.patch".format(workspace_name)],
         sum = "h1:mCRHCLDUBXgpKAqIKsaAaAsrAlbkeomtRFKXh2L6YIM=",
         version = "v1.14.17",
     )
