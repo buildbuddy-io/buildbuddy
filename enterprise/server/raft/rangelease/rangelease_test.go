@@ -107,6 +107,9 @@ func (tp *testingProposer) ReadIndex(shardID uint64, timeout time.Duration) (*dr
 func (tp *testingProposer) ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
+func (tp *testingProposer) StaleRead(shardID uint64, query interface{}) (interface{}, error) {
+	return nil, status.UnimplementedError("not implemented in testingProposer")
+}
 
 // testingSender forwards all requests directly to the underlying proposer.
 type testingSender struct {

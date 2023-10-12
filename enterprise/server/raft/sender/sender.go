@@ -44,11 +44,12 @@ func New(rangeCache *rangecache.RangeCache, nodeRegistry registry.NodeRegistry, 
 	}
 }
 
-func makeHeader(rangeDescriptor *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
+func makeHeader(rangeDescriptor *rfpb.RangeDescriptor, replicaIdx int, mode rfpb.Header_ConsistencyMode) *rfpb.Header {
 	return &rfpb.Header{
-		Replica:    rangeDescriptor.GetReplicas()[replicaIdx],
-		RangeId:    rangeDescriptor.GetRangeId(),
-		Generation: rangeDescriptor.GetGeneration(),
+		Replica:         rangeDescriptor.GetReplicas()[replicaIdx],
+		RangeId:         rangeDescriptor.GetRangeId(),
+		Generation:      rangeDescriptor.GetGeneration(),
+		ConsistencyMode: mode,
 	}
 }
 
@@ -123,7 +124,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 			log.Warningf("RangeCache did not have meta range yet (key %q)", key)
 			continue
 		}
-		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn)
+		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
 		if err == nil {
 			return rangeDescriptor, nil
 		}
@@ -153,13 +154,13 @@ func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
 
-func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) (int, error) {
+func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, mode rfpb.Header_ConsistencyMode) (int, error) {
 	for i, replica := range rd.GetReplicas() {
 		client, err := s.connectionForReplicaDescriptor(ctx, replica)
 		if err != nil {
 			return 0, err
 		}
-		header := makeHeader(rd, i)
+		header := makeHeader(rd, i, mode)
 		err = fn(client, header)
 		if err == nil {
 			return i, nil
@@ -183,6 +184,24 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	return 0, status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
 }
 
+type Options struct {
+	ConsistencyMode rfpb.Header_ConsistencyMode
+}
+
+func defaultOptions() *Options {
+	return &Options{
+		ConsistencyMode: rfpb.Header_LINEARIZABLE,
+	}
+}
+
+type Option func(*Options)
+
+func WithConsistencyMode(mode rfpb.Header_ConsistencyMode) Option {
+	return func(o *Options) {
+		o.ConsistencyMode = mode
+	}
+}
+
 // Run looks up the replicas that are responsible for the given key and executes
 // fn for each replica until the function succeeds or returns an unretriable
 // error.
@@ -193,7 +212,12 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 // cache and try the fn again with the new replica information. If the
 // fn succeeds with the new replicas, the range cache will be updated with
 // the new ownership information.
-func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
+func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc, mods ...Option) error {
+	opts := defaultOptions()
+	for _, mod := range mods {
+		mod(opts)
+	}
+
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
 	var lastError error
@@ -203,7 +227,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 			log.Warningf("sender.Run error getting rd for %q: %s, %s, %+v", key, err, s.rangeCache.String(), s.rangeCache.Get(key))
 			continue
 		}
-		i, err := s.tryReplicas(ctx, rangeDescriptor, fn)
+		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, opts.ConsistencyMode)
 		if err == nil {
 			if i != 0 {
 				replica := rangeDescriptor.GetReplicas()[i]
@@ -263,7 +287,12 @@ func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skip
 //
 // RunMultiKey returns a combined slice of the values returned from successful
 // fn calls.
-func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc) ([]interface{}, error) {
+func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc, mods ...Option) ([]interface{}, error) {
+	opts := defaultOptions()
+	for _, mod := range mods {
+		mod(opts)
+	}
+
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
 	var rsps []interface{}
@@ -288,7 +317,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 				}
 				rangeRsp = rsp
 				return nil
-			})
+			}, opts.ConsistencyMode)
 			if err != nil {
 				if !status.IsOutOfRangeError(err) {
 					return nil, err

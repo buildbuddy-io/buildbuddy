@@ -388,7 +388,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 		return nil, err
 	}
 	if len(rsp.GetResponses()) != 1 {
-		return nil, status.InternalError("GetMulti response did not containe requested FileRecord")
+		return nil, status.InternalError("GetMulti response did not contain requested FileRecord")
 	}
 	md := rsp.GetResponses()[0].GetFileMetadata()
 	return rc.fileStorer.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), uncompressedOffset, limit)
