@@ -115,14 +115,14 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 	requireNonSequential(t, ranked[1:])
 }
 
-func TestTaskRouter_RankNodes_OutputAffinityRouting(t *testing.T) {
+func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
 	ctx := withAuthUser(t, context.Background(), env, "US1")
 	cmd := &repb.Command{
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "output-affinity-routing", Value: "true"},
+				{Name: "affinity-routing", Value: "true"},
 			},
 		},
 		OutputPaths: []string{"/bazel-out/foo.a"},
@@ -158,14 +158,14 @@ func TestTaskRouter_RankNodes_OutputAffinityRouting(t *testing.T) {
 	requireNotAlwaysRanked(0, executorID2, t, router, ctx, cmd, instanceName)
 }
 
-func TestTaskRouter_RankNodes_OutputAffinityRoutingNoOutputs(t *testing.T) {
+func TestTaskRouter_RankNodes_AffinityRoutingNoOutputs(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
 	ctx := withAuthUser(t, context.Background(), env, "US1")
 	cmd := &repb.Command{
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "output-affinity-routing", Value: "true"},
+				{Name: "affinity-routing", Value: "true"},
 			},
 		},
 	}
@@ -190,7 +190,7 @@ func TestTaskRouter_RankNodes_RunnerRecyclingTakesPrecedence(t *testing.T) {
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
-				{Name: "output-affinity-routing", Value: "true"},
+				{Name: "affinity-routing", Value: "true"},
 			},
 		},
 		OutputPaths: []string{"/bazel-out/foo.a"},
@@ -203,7 +203,7 @@ func TestTaskRouter_RankNodes_RunnerRecyclingTakesPrecedence(t *testing.T) {
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
-				{Name: "output-affinity-routing", Value: "true"},
+				{Name: "affinity-routing", Value: "true"},
 			},
 		},
 	}

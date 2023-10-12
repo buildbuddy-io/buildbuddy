@@ -267,11 +267,8 @@ func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
 type affinityRouter struct{}
 
 func (affinityRouter) Applies(params routingParams) bool {
-	if !platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.OutputAffinityRoutingPropertyName)) {
-		return false
-	}
-	o, err := getFirstOutput(params.cmd)
-	return o != "" && err == nil
+	return platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.AffinityRoutingPropertyName)) &&
+		getFirstOutput(params.cmd) != ""
 }
 
 func (affinityRouter) preferredNodeLimit(params routingParams) int {
@@ -299,9 +296,9 @@ func (affinityRouter) routingKey(params routingParams) (string, error) {
 	// uniquely identify a bazel action and is an attempt to route actions to
 	// executor nodes that are warmed up (with inputs and OCI images) for this
 	// action.
-	firstOutput, err := getFirstOutput(params.cmd)
-	if err != nil {
-		return "", err
+	firstOutput := getFirstOutput(params.cmd)
+	if firstOutput == "" {
+		return "", status.InternalError("routing key requested for action with no outputs")
 	}
 	parts = append(parts, fmt.Sprintf("%x", hash.String(firstOutput)))
 
@@ -314,13 +311,13 @@ func (s affinityRouter) RoutingInfo(params routingParams) (int, string, error) {
 	return nodeLimit, key, err
 }
 
-func getFirstOutput(cmd *repb.Command) (string, error) {
+func getFirstOutput(cmd *repb.Command) string {
 	if len(cmd.OutputPaths) > 0 && cmd.OutputPaths[0] != "" {
-		return cmd.OutputPaths[0], nil
+		return cmd.OutputPaths[0]
 	} else if len(cmd.OutputFiles) > 0 && cmd.OutputFiles[0] != "" {
-		return cmd.OutputFiles[0], nil
+		return cmd.OutputFiles[0]
 	} else if len(cmd.OutputDirectories) > 0 && cmd.OutputDirectories[0] != "" {
-		return cmd.OutputDirectories[0], nil
+		return cmd.OutputDirectories[0]
 	}
-	return "", status.InternalError("routing key requested for action with no outputs")
+	return ""
 }
