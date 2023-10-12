@@ -113,9 +113,9 @@ type Replica struct {
 
 	fileStorer filestore.Store
 
-	quitChan chan struct{}
-	accesses chan *accessTimeUpdate
-	usageUpdates chan<-*rfpb.ReplicaUsage
+	quitChan     chan struct{}
+	accesses     chan *accessTimeUpdate
+	usageUpdates chan<- *rfpb.ReplicaUsage
 
 	readQPS        *qps.Counter
 	raftProposeQPS *qps.Counter
@@ -248,7 +248,7 @@ func (sm *Replica) notifyListenersOfUsage(usage *rfpb.ReplicaUsage) {
 		return
 	}
 	select {
-	case sm.usageUpdates<-usage:
+	case sm.usageUpdates <- usage:
 		break
 	default:
 		sm.log.Warningf("dropped usage update")
@@ -1773,7 +1773,7 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, usageUpdates chan<-*rfpb.ReplicaUsage) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, usageUpdates chan<- *rfpb.ReplicaUsage) *Replica {
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,

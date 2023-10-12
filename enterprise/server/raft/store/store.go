@@ -79,8 +79,8 @@ type Store struct {
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
 
-	leases              sync.Map // map of uint64 rangeID -> *rangelease.Lease
-	replicas            sync.Map // map of uint64 rangeID -> *replica.Replica
+	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
+	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
 
 	usageUpdates        chan *rfpb.ReplicaUsage
 	usages              *usagetracker.Tracker
@@ -254,7 +254,7 @@ func (s *Store) handleUsageUpdates(ctx context.Context, usageUpdatesChan <-chan 
 				log.Warningf("Usage update for unknown range: %d", usage.GetRangeId())
 			}
 		case <-ctx.Done():
-	                return nil
+			return nil
 		}
 	}
 }
