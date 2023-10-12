@@ -436,6 +436,12 @@ func SetOptionDefaults(opts *Options) {
 		defaultVersion := int64(filestore.UndefinedKeyVersion)
 		opts.ActiveKeyVersion = &defaultVersion
 	}
+	if opts.SampleBufferSize == nil {
+		opts.SampleBufferSize = &DefaultSampleBufferSize
+	}
+	if opts.SamplesPerBatch == nil {
+		opts.SamplesPerBatch = &DefaultSamplesPerBatch
+	}
 }
 
 func ensureDefaultPartitionExists(opts *Options) {
