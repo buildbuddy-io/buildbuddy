@@ -154,10 +154,6 @@ func (pmk PebbleKey) Hash() string {
 	return pmk.hash
 }
 
-func (pmk PebbleKey) GroupID() string {
-	return pmk.groupID
-}
-
 func remapANONToFixedGroupID(groupID string) string {
 	if groupID == "ANON" {
 		return AnonGroupID

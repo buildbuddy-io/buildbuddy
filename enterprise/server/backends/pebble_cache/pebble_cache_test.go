@@ -1769,9 +1769,6 @@ func TestNoEarlyEviction(t *testing.T) {
 	}
 }
 
-func testLRU(t *testing.T, testACEviction bool) {
-}
-
 func TestLRU(t *testing.T) {
 	testCases := []struct {
 		desc                   string
@@ -1800,129 +1797,122 @@ func TestLRU(t *testing.T) {
 			digestSize:             100,
 		},
 	}
-	withACEviction := []bool{true, false}
 
-	for _, testACEviction := range withACEviction {
-		for _, tc := range testCases {
-			desc := fmt.Sprintf("%s_ac_eviction_%t", tc.desc, testACEviction)
-			t.Run(desc, func(t *testing.T) {
-				if testACEviction {
-					flags.Set(t, "cache.pebble.active_key_version", 3)
-					flags.Set(t, "cache.pebble.ac_eviction_enabled", true)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.Set(t, "cache.pebble.active_key_version", 5)
+			te := testenv.GetTestEnv(t)
+			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+			ctx := getAnonContext(t, te)
+
+			numDigests := 100
+			maxSizeBytes := int64(math.Ceil( // account for integer rounding
+				float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
+			rootDir := testfs.MakeTempDir(t)
+			atimeUpdateThreshold := time.Duration(0) // update atime on every access
+			atimeBufferSize := 0                     // blocking channel of atime updates
+			minEvictionAge := time.Duration(0)       // no min eviction age
+			opts := &pebble_cache.Options{
+				RootDirectory:               rootDir,
+				MaxSizeBytes:                maxSizeBytes,
+				AtimeUpdateThreshold:        &atimeUpdateThreshold,
+				AtimeBufferSize:             &atimeBufferSize,
+				MinEvictionAge:              &minEvictionAge,
+				MinBytesAutoZstdCompression: maxSizeBytes,
+				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
+				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
+			}
+			pc, err := pebble_cache.NewPebbleCache(te, opts)
+			require.NoError(t, err)
+			err = pc.Start()
+			require.NoError(t, err)
+
+			quartile := numDigests / 4
+
+			resourceKeys := make([]*rspb.ResourceName, numDigests)
+			for i := range resourceKeys {
+				cacheType := rspb.CacheType_CAS
+				if i%2 == 0 {
+					cacheType = rspb.CacheType_AC
 				}
-				te := testenv.GetTestEnv(t)
-				te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
-				ctx := getAnonContext(t, te)
-
-				numDigests := 100
-				maxSizeBytes := int64(math.Ceil( // account for integer rounding
-					float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
-				rootDir := testfs.MakeTempDir(t)
-				atimeUpdateThreshold := time.Duration(0) // update atime on every access
-				atimeBufferSize := 0                     // blocking channel of atime updates
-				minEvictionAge := time.Duration(0)       // no min eviction age
-				opts := &pebble_cache.Options{
-					RootDirectory:               rootDir,
-					MaxSizeBytes:                maxSizeBytes,
-					AtimeUpdateThreshold:        &atimeUpdateThreshold,
-					AtimeBufferSize:             &atimeBufferSize,
-					MinEvictionAge:              &minEvictionAge,
-					MinBytesAutoZstdCompression: maxSizeBytes,
-					MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
-					AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
-				}
-				pc, err := pebble_cache.NewPebbleCache(te, opts)
+				r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
+				resourceKeys[i] = r
+				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
-				err = pc.Start()
-				require.NoError(t, err)
+			}
 
-				quartile := numDigests / 4
-
-				resourceKeys := make([]*rspb.ResourceName, numDigests)
-				for i := range resourceKeys {
-					cacheType := rspb.CacheType_CAS
-					if testACEviction && i%2 == 0 {
-						cacheType = rspb.CacheType_AC
-					}
-					r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
-					resourceKeys[i] = r
-					err := pc.Set(ctx, r, buf)
+			// Use the digests in the following way:
+			// 1) first 3 quartiles
+			// 2) first 2 quartiles
+			// 3) first quartile
+			// This sets us up so we add an additional quartile of data
+			// and then expect data from the 3rd quartile (least recently used)
+			// to be the most evicted.
+			for i := 3; i > 0; i-- {
+				log.Printf("Using data from 0:%d", quartile*i)
+				for j := 0; j < quartile*i; j++ {
+					r := resourceKeys[j]
+					_, err = pc.Get(ctx, r)
 					require.NoError(t, err)
 				}
+			}
 
-				// Use the digests in the following way:
-				// 1) first 3 quartiles
-				// 2) first 2 quartiles
-				// 3) first quartile
-				// This sets us up so we add an additional quartile of data
-				// and then expect data from the 3rd quartile (least recently used)
-				// to be the most evicted.
-				for i := 3; i > 0; i-- {
-					log.Printf("Using data from 0:%d", quartile*i)
-					for j := 0; j < quartile*i; j++ {
-						r := resourceKeys[j]
-						_, err = pc.Get(ctx, r)
-						require.NoError(t, err)
-					}
+			// Write more data.
+			for i := 0; i < quartile; i++ {
+				cacheType := rspb.CacheType_CAS
+				if i%2 == 0 {
+					cacheType = rspb.CacheType_AC
 				}
-
-				// Write more data.
-				for i := 0; i < quartile; i++ {
-					cacheType := rspb.CacheType_CAS
-					if testACEviction && i%2 == 0 {
-						cacheType = rspb.CacheType_AC
-					}
-					r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
-					resourceKeys = append(resourceKeys, r)
-					err := pc.Set(ctx, r, buf)
-					require.NoError(t, err)
-				}
-
-				pc.Stop()
-				pc, err = pebble_cache.NewPebbleCache(te, opts)
+				r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
+				resourceKeys = append(resourceKeys, r)
+				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
-				err = pc.Start()
-				require.NoError(t, err)
+			}
 
-				time.Sleep(pebble_cache.JanitorCheckPeriod)
-				pc.TestingWaitForGC()
+			pc.Stop()
+			pc, err = pebble_cache.NewPebbleCache(te, opts)
+			require.NoError(t, err)
+			err = pc.Start()
+			require.NoError(t, err)
 
-				evictionsByQuartile := make([][]*repb.Digest, 5)
-				for i, r := range resourceKeys {
-					ok, err := pc.Contains(ctx, r)
-					evicted := err != nil || !ok
-					q := i / quartile
-					if evicted {
-						evictionsByQuartile[q] = append(evictionsByQuartile[q], r.GetDigest())
-					}
+			time.Sleep(pebble_cache.JanitorCheckPeriod)
+			pc.TestingWaitForGC()
+
+			evictionsByQuartile := make([][]*repb.Digest, 5)
+			for i, r := range resourceKeys {
+				ok, err := pc.Contains(ctx, r)
+				evicted := err != nil || !ok
+				q := i / quartile
+				if evicted {
+					evictionsByQuartile[q] = append(evictionsByQuartile[q], r.GetDigest())
 				}
+			}
 
-				for quartile, evictions := range evictionsByQuartile {
-					count := len(evictions)
-					sample := ""
-					for i, d := range evictions {
-						if i > 3 {
-							break
-						}
-						sample += d.GetHash()
-						sample += ", "
+			for quartile, evictions := range evictionsByQuartile {
+				count := len(evictions)
+				sample := ""
+				for i, d := range evictions {
+					if i > 3 {
+						break
 					}
-					log.Infof("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
+					sample += d.GetHash()
+					sample += ", "
 				}
+				log.Infof("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
+			}
 
-				// None of the files "used" just before adding more should have been
-				// evicted.
-				require.Equal(t, 0, len(evictionsByQuartile[0]))
+			// None of the files "used" just before adding more should have been
+			// evicted.
+			require.Equal(t, 0, len(evictionsByQuartile[0]))
 
-				// None of the most recently added files should have been evicted.
-				require.Equal(t, 0, len(evictionsByQuartile[4]))
+			// None of the most recently added files should have been evicted.
+			require.Equal(t, 0, len(evictionsByQuartile[4]))
 
-				// Relax the conditions a little to de-flake the tests.
-				require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+1)
-				require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+1)
-				require.Greater(t, len(evictionsByQuartile[3]), 0)
-			})
-		}
+			// Relax the conditions a little to de-flake the tests.
+			require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+1)
+			require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+1)
+			require.Greater(t, len(evictionsByQuartile[3]), 0)
+		})
 	}
 }
 
