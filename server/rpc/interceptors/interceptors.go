@@ -435,12 +435,10 @@ func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 }
 
 func getClientIdentityAdder(env environment.Env) func(ctx context.Context) context.Context {
-	if env == nil || env.GetClientIdentityService() == nil {
-		return func(ctx context.Context) context.Context {
+	return func(ctx context.Context) context.Context {
+		if env.GetClientIdentityService() == nil {
 			return ctx
 		}
-	}
-	return func(ctx context.Context) context.Context {
 		ctx, err := env.GetClientIdentityService().AddIdentityToContext(ctx)
 		if err != nil {
 			alert.UnexpectedEvent("could_not_add_server_identity", err.Error())
