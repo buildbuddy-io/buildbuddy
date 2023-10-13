@@ -95,7 +95,12 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 		return ctx, nil
 	}
 	if len(vals) > 1 {
-		return ctx, status.NotFoundError("multiple identity headers present")
+		// When --experimental_remote_downloader is enabled in Bazel, it seems
+		// to send the header twice. To workaround this, we accept the header
+		// as long as it has the same value.
+		if len(vals) != 2 || vals[0] != vals[1] {
+			return ctx, status.PermissionDeniedError("multiple identity headers present")
+		}
 	}
 	headerValue := vals[0]
 	c := &claims{}
