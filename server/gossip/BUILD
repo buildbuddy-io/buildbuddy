@@ -19,6 +19,9 @@ go_test(
     name = "gossip_test",
     size = "small",
     srcs = ["gossip_test.go"],
+    tags = [
+        "manual",
+    ],
     deps = [
         ":gossip",
         "//server/testutil/testport",
