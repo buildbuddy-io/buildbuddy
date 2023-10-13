@@ -30,7 +30,6 @@ export class Capabilities {
   code: boolean = false;
   sso: boolean = false;
   usage: boolean = false;
-  userManagement: boolean = false;
 
   constructor() {
     this.invocationSharing = true;
@@ -54,7 +53,6 @@ export class Capabilities {
     this.executorKeyCreation = this.config.executorKeyCreationEnabled;
     this.code = this.config.codeEditorEnabled;
     this.usage = this.config.usageEnabled;
-    this.userManagement = this.config.userManagementEnabled;
   }
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
