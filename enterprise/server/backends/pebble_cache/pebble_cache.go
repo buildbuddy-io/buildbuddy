@@ -2385,9 +2385,6 @@ type partitionEvictor struct {
 	minEvictionAge   time.Duration
 	activeKeyVersion int64
 
-	// lastTypeSampled represents the last type of item sampled from the cache
-	// for eviction. This should alternate between calls to sample().
-	lastTypeSampled rspb.CacheType
 	samplesPerBatch int
 
 	includeMetadataSize bool
@@ -2411,7 +2408,6 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		clock:           clock,
 		minEvictionAge:  minEvictionAge,
 		cacheName:       cacheName,
-		lastTypeSampled: rspb.CacheType_CAS,
 		samples:         make(chan *approxlru.Sample[*evictionKey], sampleBufferSize),
 		samplesPerBatch: samplesPerBatch,
 	}
@@ -2492,9 +2488,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
-	// and just read forward, yielding digests until we've found enough. To
-	// ensure we sample all kinds of items, e.lastSampledType  will be
-	// toggled on every call to sample.
+	// and just read forward, yielding digests until we've found enough.
 
 	for {
 		select {
@@ -2516,7 +2510,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		if !iter.Valid() {
 			// This should happen once every totalCount times or when
 			// we exausted the iter.
-			randomKey, err := e.randomKeyForEvictionSampling()
+			randomKey, err := e.randomKey(64)
 			if err != nil {
 				log.Warningf("cannot generate samples for eviction: failed to get random key: %s", err)
 				return err
@@ -2854,38 +2848,6 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 		return true, time.Time{}, nil
 	}
 	return false, atime, nil
-}
-
-func (e *partitionEvictor) randomKeyForEvictionSampling() ([]byte, error) {
-	var sampleType rspb.CacheType
-	e.mu.Lock()
-	switch e.lastTypeSampled {
-	case rspb.CacheType_AC:
-		sampleType = rspb.CacheType_CAS
-	case rspb.CacheType_CAS:
-		sampleType = rspb.CacheType_AC
-	default:
-		sampleType = rspb.CacheType_CAS
-	}
-
-	e.lastTypeSampled = sampleType
-	e.mu.Unlock()
-
-	var gid string
-	var err error
-
-	// Attempt AC sampling (but do not error out if it fails, instead fall
-	// through to CAS sampling)
-	if sampleType == rspb.CacheType_AC {
-		gid, err = e.randomGroupForEvictionSampling()
-		if err != nil && !status.IsNotFoundError(err) {
-			log.Warningf("no groups to sample for %q: %s", e.part.ID, err)
-		}
-	}
-
-	// If gid was set above (for sampleType == AC); this will return an AC
-	// key; otherwise gid will be "" and a CAS key will be returned.
-	return e.randomKey(64, gid, sampleType)
 }
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
@@ -3276,7 +3238,7 @@ func (p *PebbleCache) Start() error {
 			return evictor.run(p.quitChan)
 		})
 		p.eg.Go(func() error {
-			evictor.startGroupIDSampler(p.quitChan)
+			evictor.startSampleGenerator(p.quitChan)
 			return nil
 		})
 	}
