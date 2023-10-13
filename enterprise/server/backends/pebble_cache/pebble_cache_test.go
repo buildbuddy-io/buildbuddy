@@ -1800,12 +1800,12 @@ func TestLRU(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			flags.Set(t, "cache.pebble.active_key_version", 5)
 			te := testenv.GetTestEnv(t)
 			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 			ctx := getAnonContext(t, te)
 
 			numDigests := 100
+			activeKeyVersion := int64(5)
 			maxSizeBytes := int64(math.Ceil( // account for integer rounding
 				float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 			rootDir := testfs.MakeTempDir(t)
@@ -1821,6 +1821,7 @@ func TestLRU(t *testing.T) {
 				MinBytesAutoZstdCompression: maxSizeBytes,
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
 				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
+				ActiveKeyVersion:            &activeKeyVersion,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -2176,7 +2177,8 @@ func TestMigrateVersions(t *testing.T) {
 	{
 		// Set the active key version to 0 and write some data at this
 		// version.
-		flags.Set(t, "cache.pebble.active_key_version", 0)
+		activeKeyVersion := int64(0)
+		options.ActiveKeyVersion = &activeKeyVersion
 		pc, err := pebble_cache.NewPebbleCache(te, options)
 		if err != nil {
 			t.Fatal(err)
@@ -2199,8 +2201,9 @@ func TestMigrateVersions(t *testing.T) {
 		// Now set the active key version to 1 (to trigger a migration)
 		// and set the migration QPS low enough to ensure that
 		// migrations are happening during our reads.
-		flags.Set(t, "cache.pebble.active_key_version", 1)
 		flags.Set(t, "cache.pebble.migration_qps_limit", 1000)
+		activeKeyVersion := int64(1)
+		options.ActiveKeyVersion = &activeKeyVersion
 		pc2, err := pebble_cache.NewPebbleCache(te, options)
 		require.NoError(t, err)
 
@@ -2436,7 +2439,7 @@ func TestReadEncryptedWrongDigestSize(t *testing.T) {
 // The same digest encrypted/unencrypted should be able to co-exist in the
 // cache.
 func TestEncryptedUnencryptedSameDigest(t *testing.T) {
-	flags.Set(t, "cache.pebble.active_key_version", 3)
+	activeKeyVersion := int64(3)
 
 	testCases := []struct {
 		desc                   string
@@ -2497,6 +2500,7 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 				}},
 				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
 				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
+				ActiveKeyVersion:       &activeKeyVersion,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -2926,7 +2930,7 @@ func TestSupportsEncryption(t *testing.T) {
 }
 
 func TestSampling(t *testing.T) {
-	flags.Set(t, "cache.pebble.active_key_version", 3)
+	activeKeyVersion := int64(3)
 
 	te, kmsDir := getCrypterEnv(t)
 
@@ -2980,6 +2984,7 @@ func TestSampling(t *testing.T) {
 				MinEvictionAge:        &minEvictionAge,
 				AverageChunkSizeBytes: tc.averageChunkSizeBytes,
 				Clock:                 clock,
+				ActiveKeyVersion:      &activeKeyVersion,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)

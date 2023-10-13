@@ -162,6 +162,8 @@ type Options struct {
 
 	IncludeMetadataSize bool
 
+	ActiveKeyVersion *int64
+
 	Clock clockwork.Clock
 
 	ClearCacheOnStartup bool
@@ -196,9 +198,10 @@ type PebbleCache struct {
 	atimeBufferSize      int
 	minEvictionAge       time.Duration
 
-	minDBVersion filestore.PebbleKeyVersion
-	maxDBVersion filestore.PebbleKeyVersion
-	migrators    []keyMigrator
+	activeKeyVersion int64
+	minDBVersion     filestore.PebbleKeyVersion
+	maxDBVersion     filestore.PebbleKeyVersion
+	migrators        []keyMigrator
 
 	env    environment.Env
 	db     pebble.IPebbleDB
@@ -345,6 +348,7 @@ func Register(env environment.Env) error {
 		MinEvictionAge:              minEvictionAgeFlag,
 		AverageChunkSizeBytes:       *averageChunkSizeBytes,
 		IncludeMetadataSize:         *includeMetadataSize,
+		ActiveKeyVersion:            activeKeyVersion,
 	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
@@ -419,6 +423,10 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.MinEvictionAge == nil {
 		opts.MinEvictionAge = &DefaultMinEvictionAge
+	}
+	if opts.ActiveKeyVersion == nil {
+		defaultVersion := int64(filestore.UndefinedKeyVersion)
+		opts.ActiveKeyVersion = &defaultVersion
 	}
 }
 
@@ -514,6 +522,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
 		atimeBufferSize:             *opts.AtimeBufferSize,
 		minEvictionAge:              *opts.MinEvictionAge,
+		activeKeyVersion:            *opts.ActiveKeyVersion,
 		env:                         env,
 		db:                          db,
 		leaser:                      pebble.NewDBLeaser(db),
@@ -617,7 +626,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.ActiveKeyVersion)
 			if err != nil {
 				return err
 			}
@@ -711,7 +720,7 @@ func (p *PebbleCache) maxDatabaseVersion() filestore.PebbleKeyVersion {
 }
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
-	return filestore.PebbleKeyVersion(*activeKeyVersion)
+	return filestore.PebbleKeyVersion(p.activeKeyVersion)
 }
 
 // updateDatabaseVersion updates the min and max versions of the database.
@@ -2357,8 +2366,9 @@ type partitionEvictor struct {
 	casCount  int64
 	acCount   int64
 
-	atimeBufferSize int
-	minEvictionAge  time.Duration
+	atimeBufferSize  int
+	minEvictionAge   time.Duration
+	activeKeyVersion int64
 
 	includeMetadataSize bool
 }
@@ -2367,20 +2377,21 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, activeKeyVersion int64) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:             &sync.Mutex{},
-		part:           part,
-		fileStorer:     fileStorer,
-		blobDir:        blobDir,
-		dbGetter:       dbg,
-		locker:         locker,
-		versionGetter:  vg,
-		accesses:       accesses,
-		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
-		clock:          clock,
-		minEvictionAge: minEvictionAge,
-		cacheName:      cacheName,
+		mu:               &sync.Mutex{},
+		part:             part,
+		fileStorer:       fileStorer,
+		blobDir:          blobDir,
+		dbGetter:         dbg,
+		locker:           locker,
+		versionGetter:    vg,
+		accesses:         accesses,
+		rng:              rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:            clock,
+		minEvictionAge:   minEvictionAge,
+		activeKeyVersion: activeKeyVersion,
+		cacheName:        cacheName,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
