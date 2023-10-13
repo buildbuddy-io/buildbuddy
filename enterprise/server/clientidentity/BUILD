@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/interfaces",
+        "//server/util/flag",
         "//server/util/status",
         "@com_github_golang_jwt_jwt//:jwt",
         "@com_github_jonboulle_clockwork//:clockwork",
