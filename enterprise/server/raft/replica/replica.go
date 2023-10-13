@@ -468,6 +468,9 @@ func (sm *Replica) loadPartitionMetadata(db ReplicaReader) error {
 	if err != nil {
 		return err
 	}
+	sm.partitionMetadataMu.Lock()
+	defer sm.partitionMetadataMu.Unlock()
+
 	for _, pm := range pms.GetMetadata() {
 		sm.partitionMetadata[pm.GetPartitionId()] = pm
 	}
