@@ -197,7 +197,6 @@ type PebbleCache struct {
 	atimeUpdateThreshold time.Duration
 	atimeBufferSize      int
 	minEvictionAge       time.Duration
-	acEvictionEnabled    bool
 
 	activeKeyVersion int64
 	minDBVersion     filestore.PebbleKeyVersion
