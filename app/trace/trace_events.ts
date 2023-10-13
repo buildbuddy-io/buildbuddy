@@ -64,26 +64,73 @@ const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
   ["Network Down usage (total)", "system network down (Mbps)"],
 ]);
 
-export function parseProfile(data: string): Profile {
-  // Note, the trace profile format specifies that the "]" at the end of the
-  // list is optional:
-  // https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview#heading=h.f2f0yd51wi15
-  // Bazel uses the JSON Object Format, which means the trailing "]}" is
-  // optional.
-  if (trailingNonWhitespaceCharacters(data, 2) !== "]}") {
-    data += "]}";
+export async function readProfile(
+  body: ReadableStream<Uint8Array>,
+  progress: (numBytesLoaded: number) => void
+): Promise<Profile> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let n = 0;
+  let buffer = "";
+  let profile: Profile | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    // `stream: true` allows us to handle UTF-8 sequences that cross chunk
+    // boundaries (should be relatively rare).
+    const text = decoder.decode(value, { stream: true });
+    buffer += text;
+    n += value.byteLength;
+    progress(n);
+    // Keep accumulating into the buffer until we see the "traceEvents" array.
+    // Each entry in this array is newline-delimited (a special property of
+    // Google's trace event JSON format).
+    if (!profile) {
+      const beginMarker = '"traceEvents":[\n';
+      const index = buffer.indexOf(beginMarker);
+      if (index < 0) continue;
+
+      const before = buffer.substring(0, index + beginMarker.length);
+      const after = buffer.substring(before.length);
+
+      const outerJSON = before + "]}";
+      profile = JSON.parse(outerJSON) as Profile;
+      buffer = after;
+    }
+    if (profile) {
+      buffer = consumeEvents(buffer, profile);
+    }
   }
-  return JSON.parse(data) as Profile;
+  // Consume last event, which isn't guaranteed to end with ",\n"
+  if (buffer) {
+    const outerJSONClosingSequence = "\n  ]\n}";
+    if (buffer.endsWith(outerJSONClosingSequence)) {
+      buffer = buffer.substring(0, buffer.length - outerJSONClosingSequence.length);
+    }
+    if (buffer) {
+      const event = JSON.parse(buffer);
+      profile?.traceEvents.push(event);
+      buffer = "";
+    }
+  }
+
+  if (!profile) {
+    throw new Error("failed to parse timing profile JSON");
+  }
+  return profile;
 }
 
-function trailingNonWhitespaceCharacters(text: string, numTrailingChars: number) {
-  let out = "";
-  for (let i = text.length - 1; i >= 0; i--) {
-    if (text[i].trim() !== "") out = text[i] + out;
-
-    if (out.length >= numTrailingChars) break;
+function consumeEvents(buffer: string, profile: Profile): string {
+  // Each event entry looks like "   { ... },\n"
+  const parts = buffer.split(",\n");
+  const completeEvents = parts.slice(0, parts.length - 1);
+  for (const rawEvent of completeEvents) {
+    profile!.traceEvents.push(JSON.parse(rawEvent));
   }
-  return out;
+  // If there's a partial event at the end, that partial event becomes the new
+  // buffer value.
+  return parts[parts.length - 1] || "";
 }
 
 function eventComparator(a: TraceEvent, b: TraceEvent) {

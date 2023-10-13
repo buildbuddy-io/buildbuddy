@@ -1169,3 +1169,23 @@ svg.invocation-query-graph .nodes rect {
   margin-left: auto;
   white-space: nowrap;
 }
+
+.timing.card .progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  max-width: 300px;
+  overflow: clip;
+  background: #bbdefb;
+}
+
+.timing.card .progress-label {
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #616161;
+}
+
+.timing.card .progress-bar-inner {
+  height: 100%;
+  background: #2196f3;
+  transform-origin: left;
+}

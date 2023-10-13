@@ -55,6 +55,9 @@ ts_library(
 ts_library(
     name = "trace_events",
     srcs = ["trace_events.ts"],
+    deps = [
+        "@npm//tslib",
+    ],
 )
 
 ts_jasmine_node_test(
