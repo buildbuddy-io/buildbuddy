@@ -282,13 +282,23 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 		)
 	}
 
-	q.mu.Lock()
-	q.q.Enqueue(req)
-	q.mu.Unlock()
-	log.CtxInfof(ctx, "Added task %+v to pq.", req)
-	// Wake up the scheduling loop so that it can run the task if there are
-	// enough resources available.
-	q.checkQueueSignal <- struct{}{}
+	enqueueFn := func() {
+		q.mu.Lock()
+		q.q.Enqueue(req)
+		q.mu.Unlock()
+		log.CtxInfof(ctx, "Added task %+v to pq.", req)
+		// Wake up the scheduling loop so that it can run the task if there are
+		// enough resources available.
+		q.checkQueueSignal <- struct{}{}
+	}
+	if req.GetDelay().AsDuration() > 0 {
+		go func() {
+			time.Sleep(req.GetDelay().AsDuration())
+			enqueueFn()
+		}()
+	} else {
+		enqueueFn()
+	}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 

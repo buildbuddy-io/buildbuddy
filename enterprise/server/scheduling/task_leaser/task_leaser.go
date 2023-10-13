@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
@@ -17,18 +18,27 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var apiKey = flag.String("executor.api_key", "", "API Key used to authorize the executor with the BuildBuddy app server.", flag.Secret)
+var (
+	apiKey          = flag.String("executor.api_key", "", "API Key used to authorize the executor with the BuildBuddy app server.", flag.Secret)
+	enableReconnect = flag.Bool("executor.enable_lease_reconnect", true, "Enable task lease reconnection on scheduler server shutdown.")
+)
+
+const (
+	// Timeout for reconnecting a lease after disconnecting from the server.
+	reconnectTimeout = 1 * time.Second
+)
 
 type TaskLeaser struct {
-	env        environment.Env
-	executorID string
-	taskID     string
-	quit       chan struct{}
-	mu         sync.Mutex // protects stream
-	stream     scpb.Scheduler_LeaseTaskClient
-	ttl        time.Duration
-	closed     bool
-	cancelFunc context.CancelFunc
+	env            environment.Env
+	executorID     string
+	taskID         string
+	reconnectToken string
+	quit           chan struct{}
+	mu             sync.Mutex // protects stream
+	stream         scpb.Scheduler_LeaseTaskClient
+	ttl            time.Duration
+	closed         bool
+	cancelFunc     context.CancelFunc
 }
 
 func NewTaskLeaser(env environment.Env, executorID string, taskID string) *TaskLeaser {
@@ -42,19 +52,52 @@ func NewTaskLeaser(env environment.Env, executorID string, taskID string) *TaskL
 	}
 }
 
-func (t *TaskLeaser) pingServer() ([]byte, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	req := &scpb.LeaseTaskRequest{
-		ExecutorId: t.executorID,
-		TaskId:     t.taskID,
-	}
+func (t *TaskLeaser) sendRequest(req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskResponse, error) {
 	if err := t.stream.Send(req); err != nil {
 		return nil, err
 	}
-	rsp, err := t.stream.Recv()
-	if err != nil {
-		return nil, err
+	return t.stream.Recv()
+}
+
+func (t *TaskLeaser) pingServer(ctx context.Context) ([]byte, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	req := &scpb.LeaseTaskRequest{
+		ExecutorId:        t.executorID,
+		TaskId:            t.taskID,
+		SupportsReconnect: *enableReconnect,
+		ReconnectToken:    t.reconnectToken,
+	}
+	var rsp *scpb.LeaseTaskResponse
+	var r *retry.Retry
+	for {
+		var err error
+		rsp, err = t.sendRequest(req)
+		if err == nil {
+			break
+		}
+		if !*enableReconnect || !status.IsUnavailableError(err) {
+			return nil, err
+		}
+		// Server is unavailable (e.g. shutting down); retry. Note that we don't
+		// start the retry context timeout until after observing the disconnect
+		// error.
+		stream, err := t.env.GetSchedulerClient().LeaseTask(ctx)
+		if err != nil {
+			return nil, status.WrapError(err, "reconnect lease")
+		}
+		t.stream = stream
+		if r == nil {
+			ctx, cancel := context.WithTimeout(ctx, reconnectTimeout)
+			defer cancel()
+			r = retry.DefaultWithContext(ctx)
+		}
+		if !r.Next() {
+			return nil, err
+		}
+	}
+	if rsp.GetReconnectToken() != "" {
+		t.reconnectToken = rsp.GetReconnectToken()
 	}
 	t.ttl = time.Duration(rsp.GetLeaseDurationSeconds()) * time.Second
 	return rsp.GetSerializedTask(), nil
@@ -79,7 +122,7 @@ func (t *TaskLeaser) keepLease(ctx context.Context) {
 			case <-t.quit:
 				return
 			case <-time.After(t.ttl):
-				if _, err := t.pingServer(); err != nil {
+				if _, err := t.pingServer(ctx); err != nil {
 					log.CtxWarningf(ctx, "Error updating lease for task: %q: %s", t.taskID, err.Error())
 					t.cancelFunc()
 					return
@@ -102,10 +145,10 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 		return nil, nil, err
 	}
 	t.stream = stream
-	serializedTask, err := t.pingServer()
+	serializedTask, err := t.pingServer(leaseTaskCtx)
 	if err == nil {
 		t.closed = false
-		defer t.keepLease(ctx)
+		defer t.keepLease(leaseTaskCtx)
 		log.CtxInfof(ctx, "Worker leased task: %q", t.taskID)
 	}
 	ctx, cancel := context.WithCancel(ctx)
