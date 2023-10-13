@@ -47,6 +47,7 @@ import { api_key } from "../../../proto/api_key_ts_proto";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import alert_service from "../../../app/alert/alert_service";
 import InvocationModel from "../../../app/invocation/invocation_model";
+import PickerComponent from "../../../app/picker/picker";
 
 interface State {
   user?: User;
@@ -411,6 +412,7 @@ export default class EnterpriseRootComponent extends React.Component {
           </div>
           <GroupSearchComponent />
           <AlertComponent />
+          <PickerComponent />
           <ShortcutsComponent preferences={this.state.preferences} />
         </div>
       </>

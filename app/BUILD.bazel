@@ -42,6 +42,7 @@ genrule(
     srcs = [
         "//app/root:root.css",
         "//app/alert:alert.css",
+        "//app/picker:picker.css",
         "//app/compare:compare.css",
         "//app/invocation:invocation.css",
         "//app/trace:trace_viewer.css",
