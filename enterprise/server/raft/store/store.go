@@ -79,8 +79,10 @@ type Store struct {
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
 
-	leases              sync.Map // map of uint64 rangeID -> *rangelease.Lease
-	replicas            sync.Map // map of uint64 rangeID -> *replica.Replica
+	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
+	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
+
+	usageUpdates        chan *rfpb.ReplicaUsage
 	usages              *usagetracker.Tracker
 	rangeUsageListeners []RangeUsageListener
 
@@ -115,6 +117,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		leases:   sync.Map{},
 		replicas: sync.Map{},
 
+		usageUpdates:  make(chan *rfpb.ReplicaUsage, 100),
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 		fileStorer:    filestore.New(),
@@ -241,6 +244,21 @@ func (s *Store) Statusz(ctx context.Context) string {
 	return buf
 }
 
+func (s *Store) handleUsageUpdates(ctx context.Context, usageUpdatesChan <-chan *rfpb.ReplicaUsage) error {
+	for {
+		select {
+		case usage := <-usageUpdatesChan:
+			if rd := s.lookupRange(usage.GetRangeId()); rd != nil {
+				s.NotifyUsage(usage, rd)
+			} else {
+				log.Warningf("Usage update for unknown range: %d", usage.GetRangeId())
+			}
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
 func (s *Store) handleLeaderUpdates(ctx context.Context, leaderUpdatesChan <-chan raftio.LeaderInfo) error {
 	for {
 		select {
@@ -303,6 +321,10 @@ func (s *Store) Start() error {
 	eg, gctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		return s.handleLeaderUpdates(gctx, leaderUpdatesChan)
+	})
+
+	eg.Go(func() error {
+		return s.handleUsageUpdates(gctx, s.usageUpdates)
 	})
 
 	return nil
@@ -644,7 +666,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
-	r := replica.New(s.leaser, shardID, replicaID, s)
+	r := replica.New(s.leaser, shardID, replicaID, s, s.usageUpdates)
 	return r
 }
 

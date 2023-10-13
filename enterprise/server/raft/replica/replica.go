@@ -62,7 +62,6 @@ var (
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
-	NotifyUsage(ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor)
 	Sender() *sender.Sender
 	AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error
 	SnapshotCluster(ctx context.Context, shardID uint64) error
@@ -114,8 +113,9 @@ type Replica struct {
 
 	fileStorer filestore.Store
 
-	quitChan chan struct{}
-	accesses chan *accessTimeUpdate
+	quitChan     chan struct{}
+	accesses     chan *accessTimeUpdate
+	usageUpdates chan<- *rfpb.ReplicaUsage
 
 	readQPS        *qps.Counter
 	raftProposeQPS *qps.Counter
@@ -243,6 +243,18 @@ func rdString(rd *rfpb.RangeDescriptor) string {
 	return fmt.Sprintf("Range(%d) [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 }
 
+func (sm *Replica) notifyListenersOfUsage(usage *rfpb.ReplicaUsage) {
+	if sm.usageUpdates == nil {
+		return
+	}
+	select {
+	case sm.usageUpdates <- usage:
+		break
+	default:
+		sm.log.Warningf("dropped usage update")
+	}
+}
+
 func (sm *Replica) setRange(key, val []byte) error {
 	if !bytes.HasPrefix(key, constants.LocalRangeKey) {
 		return status.FailedPreconditionErrorf("setRange called with non-range key: %s", key)
@@ -269,7 +281,7 @@ func (sm *Replica) setRange(key, val []byte) error {
 	sm.store.AddRange(sm.rangeDescriptor, sm)
 
 	if usage, err := sm.Usage(); err == nil {
-		sm.store.NotifyUsage(usage, sm.rangeDescriptor)
+		sm.notifyListenersOfUsage(usage)
 	}
 	return nil
 }
@@ -456,6 +468,9 @@ func (sm *Replica) loadPartitionMetadata(db ReplicaReader) error {
 	if err != nil {
 		return err
 	}
+	sm.partitionMetadataMu.Lock()
+	defer sm.partitionMetadataMu.Unlock()
+
 	for _, pm := range pms.GetMetadata() {
 		sm.partitionMetadata[pm.GetPartitionId()] = pm
 	}
@@ -1401,10 +1416,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
 		} else {
-			sm.rangeMu.RLock()
-			rd := sm.rangeDescriptor
-			sm.rangeMu.RUnlock()
-			sm.store.NotifyUsage(usage, rd)
+			sm.notifyListenersOfUsage(usage)
 		}
 		sm.lastUsageCheckIndex = sm.lastAppliedIndex
 	}
@@ -1764,7 +1776,7 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, usageUpdates chan<- *rfpb.ReplicaUsage) *Replica {
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,

@@ -52,7 +52,6 @@ func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 func (fs *fakeStore) Sender() *sender.Sender {
 	return nil
 }
-func (fs *fakeStore) NotifyUsage(ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {}
 func (fs *fakeStore) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error {
 	return nil
 }
@@ -74,7 +73,7 @@ func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, sto
 		db.Close()
 	})
 
-	return replica.New(leaser, shardID, replicaID, store)
+	return replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/)
 }
 
 func TestOpenCloseReplica(t *testing.T) {
