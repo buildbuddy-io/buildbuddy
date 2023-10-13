@@ -19,6 +19,9 @@ message VMConfiguration {
   bool init_dockerd = 5;
   bool debug_mode = 6;
   bool enable_dockerd_tcp = 7;
+  string kernel_version = 8;
+  string firecracker_version = 9;
+  string goinit_version = 10;
 
   // TODO: add container_image here?
 }
