@@ -924,6 +924,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 		return status.InternalErrorf("failed to create rootfs chunk dir: %s", err)
 	}
 	containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
+
 	cf, err := snaploader.UnpackContainerImage(ctx, c.loader, c.containerImage, containerExt4Path, c.getChroot(), cowChunkSizeBytes())
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
@@ -1936,6 +1937,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
 	close(execDone)
+
+	log.CtxDebugf(ctx, "Exec completed; finalizing.")
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()

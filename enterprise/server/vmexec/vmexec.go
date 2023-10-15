@@ -298,7 +298,7 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 	// TODO(tylerw): use syncfs or something better here.
 	defer unix.Sync()
 
-	log.Debugf("Running command in VM: %q", c.cmd.String())
+	log.Infof("Running command in VM: %q", c.cmd.String())
 	stdoutErrCh := make(chan error, 1)
 	go func() {
 		_, err := io.Copy(&stdoutWriter{msgs}, c.stdoutReader)

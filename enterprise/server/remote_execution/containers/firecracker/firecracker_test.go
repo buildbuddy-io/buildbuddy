@@ -74,7 +74,9 @@ var (
 	// NBD and non-NBD.
 	testBazelBuild      = flag.Bool("test_bazel_build", false, "Whether to test a bazel build.")
 	testManualBenchmark = flag.Bool("test_manual_benchmark", false, "Whether to run manual benchmarking tests.")
-	filecacheDir        = flag.String("persistent_filecache_dir", "", "Filecache directory to be used across test runs.")
+
+	diskCacheDir = flag.String("persistent_disk_cache_dir", "", "Disk cache directory to be used across test runs.")
+	filecacheDir = flag.String("persistent_filecache_dir", "", "Filecache directory to be used across test runs.")
 
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
@@ -141,11 +143,13 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	err = networking.DeleteNetNamespaces(ctx)
 	require.NoError(t, err)
 
-	testRootDir := opts.cacheRootDir
-	if testRootDir == "" {
-		testRootDir = testfs.MakeTempDir(t)
+	cacheRootDir := opts.cacheRootDir
+	if *diskCacheDir != "" {
+		cacheRootDir = *diskCacheDir
+	} else if cacheRootDir == "" {
+		cacheRootDir = testfs.MakeTempDir(t)
 	}
-	dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: testRootDir}, diskCacheSize)
+	dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: cacheRootDir}, diskCacheSize)
 	if err != nil {
 		t.Error(err)
 	}
@@ -181,7 +185,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	if *filecacheDir != "" {
 		fcDir = *filecacheDir
 	} else if fcDir == "" {
-		fcDir = testRootDir
+		fcDir = cacheRootDir
 	}
 	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false)
 	require.NoError(t, err)
@@ -1994,7 +1998,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 		// dropped.
 		// If set to 0, each task does nothing (basically: sh -c '').
 		// If set to < 0, skips Exec entirely and just does pause/unpause.
-		ops = 100
+		ops = 1000
 		// File size of each file written, in bytes.
 		fileSize = 10 * 1024
 		// Whether to execute each run inside a docker container in the VM.
@@ -2004,7 +2008,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 	// VM lifecycle options
 	const (
 		// Max number of times a single VM can be used before it is removed
-		maxRunsPerVM = 1
+		maxRunsPerVM = 2
 	)
 	// VM configuration
 	const (
@@ -2081,6 +2085,17 @@ func TestFirecrackerStressIO(t *testing.T) {
 	script := `
 		set -e
 
+		# Start a BG task that continually accesses memory
+		# to make sure we're stressing UFFD.
+		sh -c '
+			cd /root
+			VAL="$(cat /dev/random | head -c 10000)"
+			STR=""
+			while true; do
+				STR="$STR:$VAL"
+			done
+		' &>/dev/null &
+
 		OPS=` + fmt.Sprint(ops) + `
 		if [ "$OPS" -eq 0 ]; then exit 0; fi
 
@@ -2107,8 +2122,9 @@ func TestFirecrackerStressIO(t *testing.T) {
 			cat "${DIR}/${i}".txt > /dev/null
 		done
 		echo $(( RUN_NUMBER + 1 )) > /root/run_number
+		echo "Done."
 	`
-	cmd := &repb.Command{Arguments: []string{"/bin/sh", "-c", script}}
+	cmd := &repb.Command{Arguments: []string{"/bin/bash", "-c", script}}
 	if dockerize {
 		cmd.Arguments = append([]string{
 			"docker", "run", "--rm",
@@ -2119,7 +2135,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 			busyboxImage,
 		}, cmd.Arguments...)
 	}
-	eg, ctx := errgroup.WithContext(context.Background())
+	eg := &errgroup.Group{}
 	eg.SetLimit(concurrency)
 	for i := 1; i <= runs; i++ {
 		i := i
@@ -2130,24 +2146,22 @@ func TestFirecrackerStressIO(t *testing.T) {
 			defer func() { assert.NoError(t, err) }()
 
 			vm, err := get()
+			assert.NoError(t, err)
 			if err != nil {
-				return err
+				return nil
 			}
 			defer pause(vm)
 
-			log.Infof("Run %d of %d, VM exec %d of %d", i, runs, vm.Runs+1, maxRunsPerVM)
+			log.Infof("Starting run %d of %d, VM exec %d of %d", i, runs, vm.Runs+1, maxRunsPerVM)
 
 			if ops < 0 {
 				return nil
 			}
 
 			res := vm.Instance.Exec(ctx, cmd, nil)
-			if res.Error != nil {
-				return res.Error
-			}
-			if res.ExitCode != 0 {
-				return fmt.Errorf("exit code %d; stderr: %s", res.ExitCode, string(res.Stderr))
-			}
+			assert.NoError(t, res.Error)
+			assert.Equal(t, 0, res.ExitCode)
+
 			return nil
 		})
 		if t.Failed() {

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sys/unix"
@@ -72,6 +73,10 @@ type COWStore struct {
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
 func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string) (*COWStore, error) {
+	if max(0) == 1 { // DO NOT SUBMIT
+		ctx = background.CopyValues(ctx)
+	}
+
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err

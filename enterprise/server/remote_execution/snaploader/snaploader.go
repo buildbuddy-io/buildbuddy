@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -370,37 +371,49 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		OutputDirectories: []*repb.OutputDirectory{},
 	}
 
+	eg, egCtx := errgroup.WithContext(ctx)
+
 	// Put the files from the snapshot into the cache and record their
 	// names and digests in an ActionResult so they can be unpacked later.
 	for _, filePath := range enumerateFiles(opts) {
-		fileName := filepath.Base(filePath)
-		d, err := fileDigest(filePath)
-		if err != nil {
-			return err
-		}
-		ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{
-			Path:         fileName,
-			Digest:       d,
+		filePath := filePath
+		out := &repb.OutputFile{
+			Path:         filepath.Base(filePath),
 			IsExecutable: false,
-		})
-
-		if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath); err != nil {
-			return err
 		}
+		ar.OutputFiles = append(ar.OutputFiles, out)
+		eg.Go(func() error {
+			ctx := egCtx
+			d, err := fileDigest(filePath)
+			if err != nil {
+				return err
+			}
+			out.Digest = d
+			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath)
+		})
 	}
 	for name, cow := range opts.ChunkedFiles {
-		treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts.Recycled)
-		if err != nil {
-			return status.WrapErrorf(err, "cache %q COW", name)
-		}
-		ar.OutputDirectories = append(ar.OutputDirectories, &repb.OutputDirectory{
-			Path:       name,
-			TreeDigest: treeDigest,
+		name, cow := name, cow
+		dir := &repb.OutputDirectory{Path: name}
+		ar.OutputDirectories = append(ar.OutputDirectories, dir)
+		eg.Go(func() error {
+			ctx := egCtx
+			treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts.Recycled)
+			if err != nil {
+				return status.WrapErrorf(err, "cache %q COW", name)
+			}
+			dir.TreeDigest = treeDigest
+			return nil
 		})
 	}
 
-	// Write the ActionResult to the cache. We'll retrieve this later in order
-	// to unpack the snapshot.
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	// Write the ActionResult to the cache only after we've successfully
+	// uploaded all snapshot related artifacts. We'll retrieve this later in
+	// order to unpack the snapshot.
 	return l.cacheActionResult(ctx, key, ar)
 }
 
@@ -503,41 +516,56 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		},
 	}
 
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(16)
+
 	dirtyChunkCount := 0
 	var dirtyBytes int64
 	chunks := cow.SortedChunks()
 	for _, c := range chunks {
-		if cow.Dirty(c.Offset) {
-			dirtyChunkCount++
-			chunkSize, err := c.SizeBytes()
-			if err != nil {
-				return nil, status.WrapError(err, "dirty chunk size")
-			}
-			dirtyBytes += chunkSize
-
-			// Sync dirty chunks to make sure the underlying file is up to date
-			// before we add it to cache.
-			if err := c.Sync(); err != nil {
-				return nil, status.WrapError(err, "sync dirty chunk")
-			}
-		}
-		d, err := c.Digest()
-		if err != nil {
-			return nil, err
-		}
-
-		if c.Mapped() {
-			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-			if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
-				return nil, err
-			}
-		}
-
-		tree.Root.Files = append(tree.Root.Files, &repb.FileNode{
+		c := c
+		fn := &repb.FileNode{
 			Name:         fmt.Sprintf("%d", c.Offset),
-			Digest:       d,
 			IsExecutable: false,
+		}
+		tree.Root.Files = append(tree.Root.Files, fn)
+		eg.Go(func() error {
+			ctx := egCtx
+			if cow.Dirty(c.Offset) {
+				dirtyChunkCount++
+				chunkSize, err := c.SizeBytes()
+				if err != nil {
+					return status.WrapError(err, "dirty chunk size")
+				}
+				dirtyBytes += chunkSize
+
+				// Sync dirty chunks to make sure the underlying file is up to date
+				// before we add it to cache.
+				if err := c.Sync(); err != nil {
+					return status.WrapError(err, "sync dirty chunk")
+				}
+			}
+
+			// Get or compute the digest.
+			d, err := c.Digest()
+			if err != nil {
+				return status.WrapError(err, "compute digest")
+			}
+			fn.Digest = d
+
+			if c.Mapped() {
+				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
+				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
+					return status.WrapError(err, "write chunk to cache")
+				}
+			}
+
+			return nil
 		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, status.WrapError(err, "cache chunks")
 	}
 
 	// Save ActionCache Tree to the cache

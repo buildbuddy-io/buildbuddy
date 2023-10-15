@@ -9,17 +9,23 @@ type disconnectedContext struct {
 	parent context.Context
 }
 
-func (ctx disconnectedContext) Deadline() (deadline time.Time, ok bool) {
+func (ctx *disconnectedContext) Deadline() (deadline time.Time, ok bool) {
 	return
 }
-func (ctx disconnectedContext) Done() <-chan struct{} {
+func (ctx *disconnectedContext) Done() <-chan struct{} {
 	return nil
 }
-func (ctx disconnectedContext) Err() error {
+func (ctx *disconnectedContext) Err() error {
 	return nil
 }
-func (ctx disconnectedContext) Value(key interface{}) interface{} {
+func (ctx *disconnectedContext) Value(key interface{}) interface{} {
 	return ctx.parent.Value(key)
+}
+
+// CopyValues returns a background context from the given context, preserving
+// only its values, and dropping any associated deadline and cancellation funcs.
+func CopyValues(ctx context.Context) context.Context {
+	return &disconnectedContext{ctx}
 }
 
 // Long story short: sometimes you need just a little more time to do a write
@@ -28,7 +34,7 @@ func (ctx disconnectedContext) Value(key interface{}) interface{} {
 // other values stored in the context. For that, we have this beauty. Use it
 // to make a copy of your expired context and do your cleanup work.
 func ExtendContextForFinalization(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	ctx := disconnectedContext{parent: parent}
+	ctx := &disconnectedContext{parent: parent}
 	// If the original context already had a deadline, ensure that the given timeout
 	// doesn't result in a new deadline that's even shorter.
 	if originalDeadline, ok := parent.Deadline(); ok {
