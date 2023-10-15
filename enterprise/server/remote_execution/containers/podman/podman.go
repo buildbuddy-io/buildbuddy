@@ -1,6 +1,8 @@
 package podman
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -896,9 +898,34 @@ func (c *podmanCommandContainer) readRawStats(ctx context.Context) (*repb.UsageS
 	if err != nil {
 		return nil, err
 	}
-	cpuNanos, err := readInt64FromFile(cpuUsagePath)
-	if err != nil {
-		return nil, err
+	var cpuNanos int64
+	if strings.HasSuffix(cpuUsagePath, "/cpuacct.usage") {
+		// cgroup v1: /cpuacct.usage file contains just the CPU usage in ns.
+		cpuNanos, err = readInt64FromFile(cpuUsagePath)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// cgroup v2: /cpu.stat file contains a line like "usage_usec <N>" It
+		// contains other lines like user_usec, system_usec etc. but we just
+		// report the total for now.
+		b, err := os.ReadFile(cpuUsagePath)
+		if err != nil {
+			return nil, err
+		}
+		scanner := bufio.NewScanner(bytes.NewReader(b))
+		for scanner.Scan() {
+			fields := strings.Fields(scanner.Text())
+			if len(fields) != 2 || fields[0] != "usage_usec" {
+				continue
+			}
+			cpuUsec, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			cpuNanos = cpuUsec * 1e3
+			break
+		}
 	}
 	return &repb.UsageStats{
 		MemoryBytes: memUsageBytes,
