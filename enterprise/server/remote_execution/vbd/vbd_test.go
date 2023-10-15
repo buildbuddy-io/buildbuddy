@@ -82,6 +82,10 @@ func TestVBD(t *testing.T) {
 				copy(b[offset:offset+length], p)
 			}
 		}
+		// Try sync() on the virtual file (this is a NOP for now, but should at
+		// least not fail)
+		err = f.Sync()
+		require.NoError(t, err)
 	}
 }
 
