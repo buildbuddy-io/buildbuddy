@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
@@ -259,6 +260,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := server_notification.Register(realEnv, "app"); err != nil {
 		log.Fatalf("%v", err)
 	}
 

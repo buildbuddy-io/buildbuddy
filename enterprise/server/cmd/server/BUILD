@@ -50,6 +50,7 @@ go_library(
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/secrets",
         "//enterprise/server/selfauth",
+        "//enterprise/server/server_notification",
         "//enterprise/server/sociartifactstore",
         "//enterprise/server/splash",
         "//enterprise/server/suggestion",
