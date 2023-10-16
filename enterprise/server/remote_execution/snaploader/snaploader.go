@@ -504,6 +504,12 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, recycled bool) (*repb.Digest, error) {
+	var dirtyBytes, dirtyChunkCount int64
+	start := time.Now()
+	defer func() {
+		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount)
+	}()
+
 	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err
@@ -530,7 +536,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(chunkedFileWriteConcurrency)
 
-	var dirtyBytes, dirtyChunkCount int64
 	chunks := cow.SortedChunks()
 	for _, c := range chunks {
 		c := c
