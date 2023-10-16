@@ -732,7 +732,7 @@ func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, 
 	rand.Shuffle(len(unclaimed), func(i, j int) {
 		unclaimed[i], unclaimed[j] = unclaimed[j], unclaimed[i]
 	})
-	return unclaimed[:minInt(n, len(unclaimed))], nil
+	return unclaimed[:min(n, len(unclaimed))], nil
 }
 
 type persistedTask struct {
@@ -1519,13 +1519,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	return nil
 }
 
-func minInt(i, j int) int {
-	if i < j {
-		return i
-	}
-	return j
-}
-
 type enqueueTaskReservationOpts struct {
 	numReplicas int
 	maxAttempts int
@@ -1562,7 +1555,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		}
 	}
 
-	probeCount := minInt(opts.numReplicas, nodeCount)
+	probeCount := min(opts.numReplicas, nodeCount)
 	probesSent := 0
 
 	startTime := time.Now()

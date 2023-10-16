@@ -66,13 +66,6 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	}, nil
 }
 
-func minInt64(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func checkReadPreconditions(req *bspb.ReadRequest) error {
 	if req.ResourceName == "" {
 		return status.InvalidArgumentError("Missing resource name")
