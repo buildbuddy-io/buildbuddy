@@ -30,11 +30,6 @@ export type TabId =
   | "action";
 
 export function getTabId(tab: string): TabId {
-  if (tab === "#action") {
-    // Treat the action tab as the execution tab for highlighting.
-    return "execution" as TabId;
-  }
-
   return (tab.substring(1) as TabId) || "all";
 }
 
