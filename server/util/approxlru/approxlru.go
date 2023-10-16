@@ -279,7 +279,6 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 		if status.IsNotFoundError(err) {
 			// If no candidates were evictable in the whole pool, resample
 			// the pool.
-			log.Info("resample the whole pool")
 			l.samplePool = l.samplePool[:0]
 			if err := l.resampleK(l.samplePoolSize); err != nil {
 				return nil, err

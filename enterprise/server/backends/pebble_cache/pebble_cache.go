@@ -451,6 +451,12 @@ func SetOptionDefaults(opts *Options) {
 	if opts.SamplesPerBatch == nil {
 		opts.SamplesPerBatch = &DefaultSamplesPerBatch
 	}
+	if opts.NumDeleteWorkers == nil {
+		opts.NumDeleteWorkers = &DefaultNumDeleteWorkers
+	}
+	if opts.DeleteBufferSize == nil {
+		opts.DeleteBufferSize = &DefaultDeleteBufferSize
+	}
 }
 
 func ensureDefaultPartitionExists(opts *Options) {
@@ -649,7 +655,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
+			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
 			if err != nil {
 				return err
 			}
@@ -2407,8 +2413,9 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
+func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
+		ctx:              ctx,
 		mu:               &sync.Mutex{},
 		part:             part,
 		fileStorer:       fileStorer,
