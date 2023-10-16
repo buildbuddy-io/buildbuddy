@@ -634,6 +634,9 @@ type UsageLabels struct {
 type Usage struct {
 	Model
 
+	// TODO(bduffany): backfill this, then make it a primary key.
+	UsageID string
+
 	GroupID string `gorm:"not null;index:group_period_region_index_v2,priority:1"`
 
 	// PeriodStartUsec is the time at which the usage period started, in

@@ -83,8 +83,10 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 		tu := &tables.Usage{}
 		err := dbh.DB(ctx).ScanRows(rows, tu)
 		require.NoError(t, err)
-		// Throw out Model timestamps to simplify assertions.
+		// Throw out Model timestamps and PK to simplify assertions, since these
+		// are non-deterministic.
 		tu.Model = tables.Model{}
+		tu.UsageID = ""
 		usages = append(usages, tu)
 	}
 	return usages
