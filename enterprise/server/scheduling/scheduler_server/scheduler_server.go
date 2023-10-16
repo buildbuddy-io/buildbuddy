@@ -1503,7 +1503,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		// return a shut down error early, rather than waiting until we're
 		// hard-stopped. The client should retry the lease with the reconnect
 		// token we sent earlier.
-		if s.isShuttingDown() && reconnectToken != "" {
+		if s.isShuttingDown() && reconnectToken != "" && claimed {
 			return status.UnavailableError("server is shutting down")
 		}
 		rsp.ClosedCleanly = !claimed
