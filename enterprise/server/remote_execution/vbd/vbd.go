@@ -143,6 +143,7 @@ type fileHandle struct {
 
 var _ fusefs.FileReader = (*fileHandle)(nil)
 var _ fusefs.FileWriter = (*fileHandle)(nil)
+var _ fusefs.FileFsyncer = (*fileHandle)(nil)
 
 func (h *fileHandle) Read(ctx context.Context, p []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
 	return &reader{h.file, off, len(p)}, 0
@@ -155,6 +156,11 @@ func (h *fileHandle) Write(ctx context.Context, p []byte, off int64) (uint32, sy
 		return uint32(n), syscall.EIO
 	}
 	return uint32(n), 0
+}
+
+func (h *fileHandle) Fsync(ctx context.Context, flags uint32) syscall.Errno {
+	// Do nothing for now; snaploader will sync contents to disk before adding to cache.
+	return fusefs.OK
 }
 
 type reader struct {
