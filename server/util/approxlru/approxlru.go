@@ -196,7 +196,6 @@ func (l *LRU[T]) UpdateSizeBytes(sizeBytes int64) {
 }
 
 func (l *LRU[T]) resampleK(k int) error {
-	log.Infof("resampleK %d", k)
 	seen := make(map[string]struct{}, len(l.samplePool))
 	for _, entry := range l.samplePool {
 		seen[entry.Key.ID()] = struct{}{}
