@@ -909,23 +909,11 @@ func (c *podmanCommandContainer) readRawStats(ctx context.Context) (*repb.UsageS
 		// cgroup v2: /cpu.stat file contains a line like "usage_usec <N>" It
 		// contains other lines like user_usec, system_usec etc. but we just
 		// report the total for now.
-		b, err := os.ReadFile(cpuUsagePath)
+		cpuMicros, err := readCgroupInt64Field(cpuUsagePath, "usage_usec")
 		if err != nil {
 			return nil, err
 		}
-		scanner := bufio.NewScanner(bytes.NewReader(b))
-		for scanner.Scan() {
-			fields := strings.Fields(scanner.Text())
-			if len(fields) != 2 || fields[0] != "usage_usec" {
-				continue
-			}
-			cpuUsec, err := strconv.ParseInt(fields[1], 10, 64)
-			if err != nil {
-				return nil, err
-			}
-			cpuNanos = cpuUsec * 1e3
-			break
-		}
+		cpuNanos = cpuMicros * 1e3
 	}
 	return &repb.UsageStats{
 		MemoryBytes: memUsageBytes,
@@ -1076,6 +1064,28 @@ func readInt64FromFile(path string) (int64, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// readCgroupInt64Field reads a cgroupfs file containing a list of lines like
+// "field_name <int64_value>" and returns the value of the given field name.
+func readCgroupInt64Field(path, fieldName string) (int64, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(b))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 || fields[0] != fieldName {
+			continue
+		}
+		val, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return val, nil
+	}
+	return 0, status.NotFoundErrorf("could not find field %q in %s", fieldName, path)
 }
 
 type containerStats struct {
