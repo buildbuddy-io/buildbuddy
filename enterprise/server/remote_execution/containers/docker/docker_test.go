@@ -192,7 +192,7 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		ctx, env, c, container.PullCredentials{}, "mirror.gcr.io/library/busybox")
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	go func() {
