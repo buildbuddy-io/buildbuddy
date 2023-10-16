@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
@@ -39,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
@@ -173,6 +173,9 @@ func main() {
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := server_notification.Register(realEnv, "app"); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := redis_kvstore.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -260,9 +263,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := server_notification.Register(realEnv, "app"); err != nil {
 		log.Fatalf("%v", err)
 	}
 

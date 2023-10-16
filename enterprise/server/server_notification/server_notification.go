@@ -62,10 +62,9 @@ func New(serviceName string, rdb redis.UniversalClient) *Service {
 		msgTypes:    msgTypes,
 		subs:        make(map[protoreflect.MessageDescriptor][]chan<- proto.Message),
 	}
-	sub := ps.Subscribe(context.Background(), channelName)
 	go func() {
-		for {
-			msg := <-sub.Chan()
+		sub := ps.Subscribe(context.Background(), channelName)
+		for msg := range sub.Chan() {
 			svc.dispatch(msg)
 		}
 	}()
