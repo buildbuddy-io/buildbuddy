@@ -96,10 +96,10 @@ func init() {
 // See README.md for more details on the filesystem layout.
 func cleanExecutorRoot(t *testing.T, path string) {
 	if os.Getuid() == 0 {
-		// Clean up stubborn VBD mounts that might've been left around from
-		// previous tests that were interrupted. Otherwise we won't be able to
-		// clean up old firecracker workspaces.
-		err := vbd.UnmountAll()
+		// Clean up VBD mounts that might've been left around from previous
+		// tests that were interrupted. Otherwise we won't be able to clean up
+		// old firecracker workspaces.
+		err := vbd.CleanStaleMounts()
 		require.NoError(t, err)
 	}
 
