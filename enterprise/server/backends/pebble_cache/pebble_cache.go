@@ -2536,9 +2536,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		}
 
 		fileMetadata := &rfpb.FileMetadata{}
-		unlockFn := e.locker.RLock(key.LockID())
 		err = proto.Unmarshal(iter.Value(), fileMetadata)
-		unlockFn()
 		if err != nil {
 			log.Warningf("cannot generate sample for eviction, skipping: failed to read proto: %s", err)
 			continue
@@ -2563,7 +2561,11 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 				SizeBytes: sizeBytes,
 				Timestamp: atime,
 			}
-			e.samples <- sample
+			select {
+			case e.samples <- sample:
+			case <-quitChan:
+				return nil
+			}
 		}
 		iter.Next()
 	}
