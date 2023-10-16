@@ -3,6 +3,7 @@ package server_notification_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
@@ -19,6 +20,10 @@ func TestPubSub(t *testing.T) {
 	app2 := server_notification.New("app", h.Client())
 	ch1 := app1.Subscribe(&snpb.InvalidateIPRulesCache{})
 	ch2 := app2.Subscribe(&snpb.InvalidateIPRulesCache{})
+
+	// Gross, but the PubSub subscription in New is async and must happen
+	// before any published messages can be dispatched.
+	time.Sleep(3 * time.Second)
 
 	ctx := context.Background()
 
