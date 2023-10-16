@@ -810,9 +810,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancelVmCtx
 
-	ctx, cancel := c.monitorVMContext(ctx)
-	defer cancel()
-
 	var snapOpt fcclient.Opt
 	if *enableUFFD {
 		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffdPrivileged)
@@ -867,18 +864,29 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
+	ctx, cancel := c.monitorVMContext(ctx)
+	defer cancel()
+
 	err = (func() error {
 		_, span := tracing.StartSpan(ctx)
 		defer span.End()
 		span.SetName("StartMachine")
+		// Note: using vmCtx here, which outlives the ctx above and is not
+		// cancelled until calling Remove().
 		return machine.Start(vmCtx)
 	})()
 	if err != nil {
-		return status.InternalErrorf("Failed starting machine: %s", err)
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
+		return status.InternalErrorf("failed to start machine: %s", err)
 	}
 	c.machine = machine
 
 	if err := c.machine.ResumeVM(ctx); err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
 

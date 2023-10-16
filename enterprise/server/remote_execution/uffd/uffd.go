@@ -125,6 +125,9 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *cop
 
 	go func() {
 		h.handleErr = h.handle(ctx, memoryStore)
+		if h.handleErr != nil {
+			log.CtxErrorf(ctx, "UFFD handler failed: %s", h.handleErr)
+		}
 		close(h.handleDoneChan)
 	}()
 	return nil
