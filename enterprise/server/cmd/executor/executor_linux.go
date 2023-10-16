@@ -34,7 +34,7 @@ func setupNetworking(rootContext context.Context) {
 }
 
 func cleanupFUSEMounts() {
-	if err := vbd.UnmountAll(); err != nil {
+	if err := vbd.CleanStaleMounts(); err != nil {
 		log.Warningf("Failed to cleanup Virtual Block Device mounts from previous runs: %s", err)
 	}
 }
