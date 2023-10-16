@@ -2797,7 +2797,6 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 }
 
 func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*evictionKey]) (bool, error) {
-	log.Infof("evict: %s", sample.Key)
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return false, err
