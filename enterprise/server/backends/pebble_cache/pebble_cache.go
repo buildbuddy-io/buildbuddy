@@ -70,7 +70,6 @@ var (
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	sampleBufferSize          = flag.Int("cache.pebbles.sample_buffer_size", DefaultSampleBufferSize, "Buffer up to this many samples for eviction")
 	samplesPerBatch           = flag.Int("cache.pebbles.samples_per_batch", DefaultSamplesPerBatch, "How many keys we read forward every time we get a random key.")
-	sampleTimeout             = flag.Duration("cache.pebble.sample_timeout", DefaultSampleTimeout, "How long to wait for the samples in the channel")
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
@@ -99,7 +98,6 @@ var (
 	DefaultAtimeBufferSize      = 100000
 	DefaultSampleBufferSize     = 8000
 	DefaultSamplesPerBatch      = 10000
-	DefaultSampleTimeout        = 1 * time.Millisecond
 	DefaultMinEvictionAge       = 6 * time.Hour
 
 	DefaultName         = "pebble_cache"
@@ -167,7 +165,6 @@ type Options struct {
 	MinEvictionAge       *time.Duration
 	SampleBufferSize     *int
 	SamplesPerBatch      *int
-	SampleTimeout        *time.Duration
 
 	IncludeMetadataSize bool
 
@@ -356,7 +353,6 @@ func Register(env environment.Env) error {
 		AtimeBufferSize:             atimeBufferSizeFlag,
 		SampleBufferSize:            sampleBufferSize,
 		SamplesPerBatch:             samplesPerBatch,
-		SampleTimeout:               sampleTimeout,
 		MinEvictionAge:              minEvictionAgeFlag,
 		AverageChunkSizeBytes:       *averageChunkSizeBytes,
 		IncludeMetadataSize:         *includeMetadataSize,
@@ -445,9 +441,6 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.SamplesPerBatch == nil {
 		opts.SamplesPerBatch = &DefaultSamplesPerBatch
-	}
-	if opts.SampleTimeout == nil {
-		opts.SampleTimeout = &DefaultSampleTimeout
 	}
 }
 
@@ -647,7 +640,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.SampleTimeout)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch)
 			if err != nil {
 				return err
 			}
@@ -2393,7 +2386,6 @@ type partitionEvictor struct {
 	activeKeyVersion int64
 
 	samplesPerBatch int
-	sampleTimeout   time.Duration
 
 	includeMetadataSize bool
 }
@@ -2402,7 +2394,7 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, sampleTimeout time.Duration) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:              &sync.Mutex{},
 		part:            part,
@@ -2418,7 +2410,6 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		cacheName:       cacheName,
 		samples:         make(chan *approxlru.Sample[*evictionKey], sampleBufferSize),
 		samplesPerBatch: samplesPerBatch,
-		sampleTimeout:   sampleTimeout,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
@@ -2864,15 +2855,12 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
 	for i := 0; i < k; i++ {
-		select {
-		case s, ok := <-e.samples:
-			if ok {
-				samples = append(samples, s)
-			}
-		case <-time.After(e.sampleTimeout):
-			return samples, nil
+		s, ok := <-e.samples
+		if ok {
+			samples = append(samples, s)
 		}
 	}
+
 	return samples, nil
 }
 
