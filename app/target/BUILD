@@ -14,6 +14,7 @@ ts_library(
         "//app/router",
         "//app/target:action_card",
         "//app/target:target_artifacts_card",
+        "//app/target:target_dependencies_card",
         "//app/target:target_test_coverage_card",
         "//app/target:target_test_document_card",
         "//app/target:target_test_log_card",
@@ -125,6 +126,18 @@ ts_library(
 )
 
 ts_library(
+    name = "target_dependencies_card",
+    srcs = ["target_dependencies_card.tsx"],
+    deps = [
+        "//app/invocation:execution_graph_model",
+        "//proto:execution_graph_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ]
+)
+
+ts_library(
     name = "target_v2",
     srcs = ["target_v2.tsx"],
     deps = [
@@ -138,6 +151,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/target:action_card",
         "//app/target:target_artifacts_card",
+        "//app/target:target_dependencies_card",
         "//app/target:target_test_coverage_card",
         "//app/target:target_test_document_card",
         "//app/target:target_test_log_card",

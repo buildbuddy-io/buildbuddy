@@ -16,6 +16,8 @@ import alert_service from "../alert/alert_service";
 import { timestampToDateWithFallback } from "../util/proto";
 import { OutlinedLinkButton } from "../components/button/link_button";
 import InvocationModel from "../invocation/invocation_model";
+import TargetDependenciesCard from "./target_dependencies_card";
+import ExecutionGraphModel from "../invocation/execution_graph_model";
 
 interface Props {
   invocationId: string;
@@ -24,6 +26,7 @@ interface Props {
   targetLabel: string;
   tab: string;
   model: InvocationModel;
+  executionGraphModel?: ExecutionGraphModel;
 
   files: build_event_stream.IFile[];
   configuredEvent?: invocation.InvocationEvent;
@@ -327,6 +330,11 @@ export default class TargetComponent extends React.Component<Props> {
                 />
               </div>
             ))}
+          {this.props.executionGraphModel && (
+            <TargetDependenciesCard
+              target={this.props.targetLabel}
+              graph={this.props.executionGraphModel}></TargetDependenciesCard>
+          )}
         </div>
       </div>
     );

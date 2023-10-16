@@ -19,6 +19,8 @@ import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import rpc_service from "../service/rpc_service";
 import error_service from "../errors/error_service";
 import { renderTestSize } from "../invocation/target_util";
+import ExecutionGraphModel from "../invocation/execution_graph_model";
+import TargetDependenciesCard from "./target_dependencies_card";
 
 const Status = api_common.v1.Status;
 
@@ -26,6 +28,7 @@ export interface TargetProps {
   invocationId: string;
   label: string;
   status: api_common.v1.Status;
+  executionGraphModel?: ExecutionGraphModel;
 
   user?: User;
   repo?: string;
@@ -335,6 +338,11 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                 />
               </div>
             ))}
+          {this.props.executionGraphModel && (
+            <TargetDependenciesCard
+              target={this.props.label}
+              graph={this.props.executionGraphModel}></TargetDependenciesCard>
+          )}
         </div>
       </div>
     );

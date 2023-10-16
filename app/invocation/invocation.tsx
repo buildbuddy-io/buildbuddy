@@ -171,7 +171,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           // The graph file is just a length-delimited list of Nodes.
           nodes.push(execution_graph.Node.decode(reader.bytes()));
         }
-        // this.setState({ executionGraphModel: ExecutionGraphModel.forNodes(invocationId, nodes) });
+        console.log("invo");
+        console.log(newModel);
+        this.setState({
+          executionGraphModel: ExecutionGraphModel.forNodes(invocationId, nodes, newModel.scoreCard),
+        });
       })
       .catch((e) => {
         // this.setState({ executionGraphModel: ExecutionGraphModel.error(invocationId) });
@@ -256,6 +260,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           user={this.props.user}
           repo={this.state.model.getGithubRepo()}
           commit={this.state.model.getCommit()}
+          executionGraphModel={this.state.executionGraphModel}
           dark={!this.props.preferences.lightTerminalEnabled}
         />
       );
@@ -287,6 +292,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         user={this.props.user}
         repo={this.state.model.getGithubRepo()}
         targetLabel={targetLabel}
+        executionGraphModel={this.state.executionGraphModel}
         dark={!this.props.preferences.lightTerminalEnabled}
       />
     );
@@ -406,7 +412,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab === "all" && Boolean(this.state.executionGraphModel) && (
             <ExecutionGraphCard graph={this.state.executionGraphModel!} />
           )}
-          <ExecutionGraphCard graph={this.state.executionGraphModel!} />
 
           {(activeTab === "all" || activeTab == "log") && (
             <BuildLogsCardComponent

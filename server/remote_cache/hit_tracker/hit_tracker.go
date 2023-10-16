@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	detailedStatsEnabled = flag.Bool("cache.detailed_stats_enabled", false, "Whether to enable detailed stats recording for all cache requests.")
+	detailedStatsEnabled = flag.Bool("cache.detailed_stats_enabled", true, "Whether to enable detailed stats recording for all cache requests.")
 
 	// Example: "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
 	actionRegexp = regexp.MustCompile(`^(?P<action_mnemonic>[[:alnum:]]*)\((?P<target_id>.+)\)/(?P<action_id>[[:alnum:]]+)$`)

@@ -119,6 +119,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   updateProfile(profile: Profile) {
     this.state.profile = profile;
+    console.log(profile);
     for (let event of this.state.profile?.traceEvents || []) {
       let thread = this.state.threadMap.get(event.tid) || {
         name: "",

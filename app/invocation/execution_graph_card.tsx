@@ -45,6 +45,7 @@ type Bundle = {
 
 type Entry = {
   id: number;
+  node: execution_graph.Node;
   parents: number[];
   height: number;
   x: number;
@@ -100,13 +101,19 @@ function d3Descending(a: number | null, b: number | null) {
   return a == null || b == null ? NaN : b < a ? -1 : b > a ? 1 : b >= a ? 0 : NaN;
 }
 
-function computeDepths(model: ExecutionGraphModel) {
+function nameForEntry(e: Entry): string {
+  const split = e.node.targetLabel.split(":");
+  return e.node.mnemonic + " " + split[split.length - 1];
+}
+
+function computeDepths(model: ExecutionGraphModel): { maxDepth: number; depths: Map<number, number> } {
   const depths = new Map<number, number>();
+  let maxDepth = 0;
   model.getAllNodes().forEach((node) => {
-    longestPathHelper(node.index, depths, model);
+    maxDepth = Math.max(maxDepth, longestPathHelper(node.index, depths, model));
   });
   // Can compute max depth using results of above calls.
-  return depths;
+  return { maxDepth: 1 + maxDepth, depths };
 }
 
 function longestPathHelper(id: number, state: Map<number, number>, model: ExecutionGraphModel): number {
@@ -122,8 +129,8 @@ function longestPathHelper(id: number, state: Map<number, number>, model: Execut
 
   const longestPathThroughChildren = children.reduce((longest, childId) => {
     const subgraphLongestPath = longestPathHelper(childId, state, model);
-    return 1 + Math.max(subgraphLongestPath, longest);
-  });
+    return Math.max(longest, 1 + subgraphLongestPath);
+  }, 0);
 
   state.set(id, longestPathThroughChildren);
   return longestPathThroughChildren;
@@ -139,7 +146,10 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
     const tangleLayout = this.constructTangleLayout(data, options);
 
     return (
-      <svg width={tangleLayout.layout.width} height={tangleLayout.layout.height} style={{ backgroundColor: "white" }}>
+      <svg
+        width={tangleLayout.layout.width + 500}
+        height={tangleLayout.layout.height}
+        style={{ backgroundColor: "white" }}>
         <style>
           {`
           text {
@@ -196,10 +206,10 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
                 y={n.y - n.height / 2 - 4}
                 stroke="${background_color}"
                 stroke-width="2">
-                ${n.id}
+                {nameForEntry(n)}
               </text>
               <text x={n.x + 4} y={n.y - n.height / 2 - 4} style={{ pointerEvents: "none" }}>
-                ${n.id}
+                {nameForEntry(n)}
               </text>
             </>
           );
@@ -317,8 +327,6 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
         bundleArray.push(b);
       })
     );
-    console.log(`eidtobidToBundle`);
-    console.log(eidToBidToBundleMap);
 
     const eidToBundleSetMap: Map<number, BundleArrayWithIndex[]> = new Map();
     entries.forEach((e) => {
@@ -366,8 +374,6 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
     entries.forEach((e) => {
       const numberOfBundles = eidToBidToBundleMap.get(e.id)?.size ?? 0;
       e.height = (Math.max(1, numberOfBundles) - 1) * metro_d;
-      console.log(`eid: ${e.id} nob: ${numberOfBundles} height: ${e.height}`);
-      console.log(eidToBidToBundleMap.get(e.id));
     });
 
     var x_offset = padding;
@@ -427,8 +433,6 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
       l.yb = l.bundle?.y ?? 0;
       l.xs = source.x;
       l.ys = source.y;
-
-      console.log(l);
     });
 
     // compress vertical space
@@ -465,15 +469,10 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
       if (!individualBundle) {
         return;
       }
-      if (target.id === 0) {
-        console.log(`bindex: ${bundleArrayWithIndex.bullshitIndex}`);
-      }
       l.yt =
         target.y + bundleArrayWithIndex.bullshitIndex * metro_d - (bundleArrays.length * metro_d) / 2 + metro_d / 2;
       l.ys = source.y;
-      console.log("BIGC:" + options.bigc);
       l.c1 = source.level - target.level > 1 ? Math.min(options.bigc ?? 0, l.xb - l.xt, l.yb - l.yt) - c : c;
-      console.log(l);
       l.c2 = c;
     });
 
@@ -501,16 +500,32 @@ export default class ExecutionGraphCard extends React.Component<Props, State> {
 
     console.log("GRAPH:");
     console.log(this.props.graph);
+    if (this.props.graph) {
+      const subgraph = this.props
+        .graph; /*this.props.graph.weirdConstrainedSubgraphForTarget("//tools/mount_vfs:mount_vfs");*/
+      console.log(subgraph);
 
-    const data = [
-      { entries: [this.createEntry(0, [])] },
-      { entries: [this.createEntry(1, [0]), this.createEntry(2, [])] },
-      { entries: [this.createEntry(3, [0, 1]), this.createEntry(4, [1, 2]), this.createEntry(5, [1])] },
-    ];
-    return this.renderChart(data, {});
+      const { maxDepth, depths } = computeDepths(subgraph);
+      console.log("DEPTHS..");
+      console.log(maxDepth);
+      console.log(depths);
+
+      const data = new Array(maxDepth);
+      depths.forEach((depth, id) => {
+        if (!data[maxDepth - depth - 1]) {
+          data[maxDepth - depth - 1] = { entries: [] };
+        }
+        data[maxDepth - depth - 1].entries.push(
+          this.createEntry(id, subgraph.getNode(id)!, subgraph.getIncomingEdges(id))
+        );
+      });
+      return this.renderChart(data, {});
+    }
+
+    return null;
   }
 
-  createEntry(id: number, parents: number[]): Entry {
-    return { id, parents, x: 0, y: 0, level: 0, height: 0 };
+  createEntry(id: number, node: execution_graph.Node, parents: number[]): Entry {
+    return { id, node, parents, x: 0, y: 0, level: 0, height: 0 };
   }
 }
