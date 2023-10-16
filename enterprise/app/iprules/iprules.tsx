@@ -155,7 +155,6 @@ export default class IpRulesComponent extends React.Component<Props, State> {
                   value={this.state.editModalRule.description}
                   onChange={this.onEditModalDescriptionChanged.bind(this)}
                 />
-                <div className="propagation-note">Rule changes may take up to 5 minutes to propagate.</div>
               </div>
             </DialogBody>
             <DialogFooter>
@@ -212,7 +211,6 @@ export default class IpRulesComponent extends React.Component<Props, State> {
           <DialogBody>
             Are you sure you want to delete the IP rule{" "}
             <span className="delete-modal-rule">{this.state.deleteModalRule.cidr}</span>?
-            <div className="propagation-note">Rule changes may take up to 5 minutes to propagate.</div>
           </DialogBody>
           <DialogFooter>
             <DialogFooterButtons>
@@ -357,7 +355,6 @@ export default class IpRulesComponent extends React.Component<Props, State> {
                   value={this.state.bulkModalText}></textarea>
               </>
             )}
-            <div className="propagation-note">Rule changes may take up to 5 minutes to propagate.</div>
           </DialogBody>
           <DialogFooter>
             <DialogFooterButtons>
@@ -433,7 +430,6 @@ export default class IpRulesComponent extends React.Component<Props, State> {
               </div>
             ))}
           </div>
-          <div className="propagation-note">Rule changes may take up to 5 minutes to propagate.</div>
         </div>
       </div>
     );

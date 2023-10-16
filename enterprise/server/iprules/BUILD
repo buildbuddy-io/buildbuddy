@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules",
     deps = [
         "//proto:iprules_go_proto",
+        "//proto:server_notification_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -15,6 +16,7 @@ go_library(
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/clientip",
+        "//server/util/log",
         "//server/util/lru",
         "//server/util/perms",
         "//server/util/role",
