@@ -29,8 +29,8 @@ function Component() {
           </div>
         </div>
       </div>
-      <div className={common.container}>
-        <img alt="Lyft Logo" className={styles.logo} width="125px" height="100px" src="/img/lyft.svg" />
+      <div className={styles.logos}>
+        <img alt="Lyft Logo" className={styles.logo} width="70px" height="50px" src="/img/lyft-white.svg" />
       </div>
     </div>
   );

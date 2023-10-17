@@ -5,7 +5,7 @@ import Image from "@theme/IdealImage";
 function Component() {
   return (
     <div className={styles.brands}>
-      <a target="_blank" href="https://www.ycombinator.com/companies?query=buildbuddy">
+      <a target="_blank" href="https://www.ycombinator.com/companies/buildbuddy">
         <Image
           alt="Y Combinator Logo"
           className={styles.image}
@@ -14,7 +14,7 @@ function Component() {
           threshold={10000}
         />
       </a>
-      <a target="_blank" href="https://cloud.google.com/partners">
+      <a target="_blank" href="https://cloud.google.com/find-a-partner/partner/buildbuddy">
         <Image
           alt="Google Cloud Partner Logo"
           className={styles.image}

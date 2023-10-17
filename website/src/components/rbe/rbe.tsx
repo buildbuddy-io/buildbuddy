@@ -1,9 +1,26 @@
 import React from "react";
 import common from "../../css/common.module.css";
 import styles from "./rbe.module.css";
-import { Cloud, Home } from "lucide-react";
+import { useEffect } from "react";
+import { useState } from "react";
 
 function Component() {
+  let [index, setIndex] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIndex((index) => index + 1);
+    }, 33);
+    return () => clearInterval(interval);
+  }, []);
+
+  let unixTimeForOct1st2023 = 1696143600;
+  let minutesSavedOnOct1st2023 = 2943179231;
+  let savingsPerSecond = 158.28;
+  let minutesInAYear = 525600;
+  let minuteSaved = Math.round(
+    minutesSavedOnOct1st2023 + savingsPerSecond * (new Date().getTime() / 1000 - unixTimeForOct1st2023)
+  );
+
   return (
     <div className={`${common.section} ${common.sectionDark}`}>
       <div className={`${common.container} ${common.splitContainer}`}>
@@ -15,26 +32,23 @@ function Component() {
           </h2>
           <div className={common.subtitle}>
             Massively parallel builds with just a few lines of configuration. BuildBuddy provides remote build execution
-            both on-prem and as a fully-managed cloud service. Supports custom Docker images and automatically scales to
+            and caching as a fully-managed cloud service. Supports custom Docker images, and automatically scales to
             thousands of worker nodes.
           </div>
         </div>
         <div className={styles.deploymentModels}>
           <div className={styles.deploymentModel}>
-            <div className={styles.deploymentModelTitle}>
-              <Cloud className={styles.deploymentModelIcon} /> Cloud
-            </div>
+            <div className={styles.deploymentModelTitle}>{minuteSaved.toLocaleString()} </div>
             <div className={styles.deploymentModelDescription}>
-              Fully managed BuildBuddy Cloud enables you to parallelize your Bazel builds across 1000s of machines
-              instantly.
+              Compute minutes saved by BuildBuddy Cloud organizations using remote caching &mdash; that's{" "}
+              {Math.round(minuteSaved / minutesInAYear).toLocaleString()} years not spent waiting for builds to finish.
             </div>
           </div>
           <div className={styles.deploymentModel}>
-            <div className={styles.deploymentModelTitle}>
-              <Home className={styles.deploymentModelIcon} /> On-prem
-            </div>
+            <div className={styles.deploymentModelTitle}>103 Global PoPs</div>
             <div className={styles.deploymentModelDescription}>
-              Run BuildBuddy in your own Kubernetes cluster. It's easy to configure and supports GCP, AWS, and Azure.
+              With our globally distributed Points of Presence (PoP) network, your BuildBuddy Cloud remote cache will
+              always be blazing fast &mdash; no matter where your engineers are.
             </div>
           </div>
         </div>

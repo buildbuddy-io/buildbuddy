@@ -70,7 +70,7 @@
   }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1240px) {
   .hero > div {
     display: grid;
     grid-template-columns: 1fr 40%;
@@ -93,7 +93,7 @@
   }
 }
 
-@media (max-width: 996px) {
+@media (max-width: 1020px) {
   .hero.hero {
     padding: 96px 0;
   }

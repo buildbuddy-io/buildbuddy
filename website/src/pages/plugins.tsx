@@ -105,6 +105,7 @@ function Component() {
           secondaryButtonText="Plugin docs"
           secondaryButtonHref="/docs/cli-plugins"
           style={{ padding: "64px 0", minHeight: "0" }}
+          gradientButton={true}
           component={
             <div className={styles.featuredPlugin}>
               <div className={styles.sectionTitle}>Featured plugin</div>

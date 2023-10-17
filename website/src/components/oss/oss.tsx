@@ -21,8 +21,8 @@ function Component() {
             <a target="_blank" className={styles.link} href="https://github.com/buildbuddy-io/buildbuddy">
               GitHub
             </a>
-            . To show our appreciation to the open source community, we also offer BuildBuddy Cloud for free to
-            individuals and Open Source projects.
+            . To show our appreciation to the open source community, we also offer BuildBuddy Cloud for free to small
+            teams and Open Source projects.
           </div>
         </div>
         <Image
