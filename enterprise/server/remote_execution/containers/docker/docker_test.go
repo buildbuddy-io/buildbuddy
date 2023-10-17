@@ -198,7 +198,8 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	go func() {
 		// Wait for output file to be created, then cancel the context.
 		defer cancel()
-		err := disk.WaitUntilExists(ctx, filepath.Join(workDir, "output.txt"), disk.WaitOpts{})
+		opts := disk.WaitOpts{Timeout: -1}
+		err := disk.WaitUntilExists(ctx, filepath.Join(workDir, "output.txt"), opts)
 		require.NoError(t, err)
 		// Wait a little bit for stdout/stderr to be flushed to docker logs.
 		time.Sleep(500 * time.Millisecond)
