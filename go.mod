@@ -49,7 +49,7 @@ require (
 	github.com/containerd/containerd v1.7.2
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/creack/pty v1.1.18
-	github.com/crewjam/saml v0.4.13
+	github.com/crewjam/saml v0.4.14
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/docker/docker v24.0.2+incompatible
 	github.com/docker/go-units v0.5.0
