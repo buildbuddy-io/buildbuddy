@@ -380,7 +380,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, &container.Stdio{})
+	return r.Container.Exec(ctx, command, &commandutil.Stdio{})
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
@@ -493,7 +493,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &container.Stdio{})
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &commandutil.Stdio{})
 	return res.Error
 }
 
@@ -1487,7 +1487,7 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
 
-		stdio := &container.Stdio{
+		stdio := &commandutil.Stdio{
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
 			Stderr: &r.stderr,

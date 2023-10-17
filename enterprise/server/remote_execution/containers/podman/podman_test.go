@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -89,7 +90,7 @@ func TestHelloWorldExec(t *testing.T) {
 	err := podman.Create(ctx, "/work")
 	require.NoError(t, err)
 
-	result := podman.Exec(ctx, cmd, &container.Stdio{})
+	result := podman.Exec(ctx, cmd, &commandutil.Stdio{})
 	assert.NoError(t, result.Error)
 
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
@@ -132,7 +133,7 @@ func TestExecStdio(t *testing.T) {
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
-	res := podman.Exec(ctx, cmd, &container.Stdio{
+	res := podman.Exec(ctx, cmd, &commandutil.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,

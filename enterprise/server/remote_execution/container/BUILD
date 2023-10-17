@@ -7,6 +7,7 @@ go_library(
     srcs = ["container.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container",
     deps = [
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
@@ -31,6 +32,7 @@ go_test(
     srcs = ["container_test.go"],
     deps = [
         ":container",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",

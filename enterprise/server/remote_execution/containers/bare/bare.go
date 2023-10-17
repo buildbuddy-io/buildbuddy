@@ -55,11 +55,11 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 	return nil
 }
 
-func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
+func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult {
 	return c.exec(ctx, cmd, c.WorkDir, stdio)
 }
 
-func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
+func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *commandutil.Stdio) *interfaces.CommandResult {
 	var statsListener procstats.Listener
 	if c.opts.EnableStats {
 		defer container.Metrics.Unregister(c)
