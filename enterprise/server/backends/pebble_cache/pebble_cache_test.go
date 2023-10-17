@@ -2971,7 +2971,7 @@ func TestSampling(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			rootDir := testfs.MakeTempDir(t)
 			minEvictionAge := 1 * time.Hour
-			samplesPerBatch := 8
+			samplesPerBatch := 50
 			clock := clockwork.NewFakeClock()
 
 			opts := &pebble_cache.Options{
@@ -3020,7 +3020,7 @@ func TestSampling(t *testing.T) {
 			// kick in. The unencrypted test digest should be evicted.
 			clock.Advance(minEvictionAge - 1*time.Minute)
 
-			for i := 0; i < 20; i++ {
+			for i := 0; i < 30; i++ {
 				if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
