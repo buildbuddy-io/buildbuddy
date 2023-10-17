@@ -75,6 +75,7 @@
   border-bottom: 1px solid #eee;
   padding-top: 16px;
   padding-bottom: 16px;
+  align-items: center;
 }
 
 .ip-rules .enforcement-state {
