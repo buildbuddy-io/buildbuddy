@@ -52,7 +52,9 @@ function Component(props) {
               </a>
             )}
             {props.secondaryButtonText !== "" && (
-              <a href={props.secondaryButtonHref || "/request-demo"} className={common.button}>
+              <a
+                href={props.secondaryButtonHref || "/request-demo"}
+                className={`${common.button} ${props.gradientButton ? common.buttonGradient : ""}`}>
                 {props.secondaryButtonText || <>Request a Demo</>}
               </a>
             )}

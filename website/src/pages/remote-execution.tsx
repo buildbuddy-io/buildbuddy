@@ -15,6 +15,7 @@ function Component() {
           subtitle="Automatically parallelize your build actions and test runs across thousands of cores."
           component={<Terminal />}
           bigImage={true}
+          gradientButton={true}
         />
         <Hero
           title="Simple configuration"
