@@ -1960,14 +1960,13 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 
-		copyOutputsErr := c.copyOutputsToWorkspace(ctx)
-		if err := c.machine.ResumeVM(ctx); err != nil {
-			result.Error = status.InternalErrorf("error resuming VM: %s", err)
+		if err := c.copyOutputsToWorkspace(ctx); err != nil {
+			result.Error = status.WrapError(err, "failed to copy action outputs from VM workspace")
 			return result
 		}
 
-		if copyOutputsErr != nil {
-			result.Error = status.WrapError(copyOutputsErr, "failed to copy action outputs from VM workspace")
+		if err := c.machine.ResumeVM(ctx); err != nil {
+			result.Error = status.InternalErrorf("error resuming VM after copying workspace outputs: %s", err)
 			return result
 		}
 	}
