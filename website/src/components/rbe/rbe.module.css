@@ -18,6 +18,7 @@
   font-weight: 700;
   display: flex;
   align-items: center;
+  min-width: 340px;
 }
 
 .deploymentModelIcon {
@@ -37,5 +38,10 @@
 @media (max-width: 512px) {
   div.deploymentModel {
     padding: 36px 36px;
+  }
+
+  div.deploymentModelTitle {
+    font-size: 36px;
+    min-width: 256px;
   }
 }
