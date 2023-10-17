@@ -2485,6 +2485,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	}()
 
 	totalCount := 0
+	shouldCreateNewIter := true
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -2496,8 +2497,9 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			return nil
 		default:
 		}
-		// Refersh the iterator once a while
-		if totalCount > e.samplesPerBatch {
+		// Refresh the iterator once a while
+		if shouldCreateNewIter {
+			shouldCreateNewIter = false
 			totalCount = 0
 			newIter := db.NewIter(&pebble.IterOptions{
 				LowerBound: start,
@@ -2507,6 +2509,10 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			iter = newIter
 		}
 		totalCount += 1
+		if totalCount > e.samplesPerBatch {
+			// Going to refresh the iterator in the next iteration.
+			shouldCreateNewIter = true
+		}
 		if !iter.Valid() {
 			// This should happen once every totalCount times or when
 			// we exausted the iter.
@@ -2517,6 +2523,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 			valid := iter.SeekGE(randomKey)
 			if !valid {
+				shouldCreateNewIter = true
 				continue
 			}
 		}
