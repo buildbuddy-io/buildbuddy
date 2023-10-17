@@ -22,6 +22,13 @@ func (ctx disconnectedContext) Value(key interface{}) interface{} {
 	return ctx.parent.Value(key)
 }
 
+// ToBackground returns a background context from the given context, removing
+// any cancellation and deadlines associated with the context, but preserving
+// all context values such as auth info and outgoing gRPC metadata.
+func ToBackground(ctx context.Context) context.Context {
+	return disconnectedContext{parent: ctx}
+}
+
 // Long story short: sometimes you need just a little more time to do a write
 // or clean things up, even after a client has cancelled the request (and
 // therefore the context) but you still need all the auth credentials and
