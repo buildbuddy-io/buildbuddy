@@ -91,6 +91,13 @@ proto_library(
 )
 
 proto_library(
+    name = "server_notification_proto",
+    srcs = [
+        "server_notification.proto",
+    ],
+)
+
+proto_library(
     name = "distributed_cache_proto",
     srcs = [
         "distributed_cache.proto",
@@ -691,6 +698,12 @@ go_proto_library(
     name = "config_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/config",
     proto = ":config_proto",
+)
+
+go_proto_library(
+    name = "server_notification_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/server_notification",
+    proto = ":server_notification_proto",
 )
 
 go_proto_library(
@@ -1306,6 +1319,11 @@ ts_proto_library(
 ts_proto_library(
     name = "config_ts_proto",
     proto = ":config_proto",
+)
+
+ts_proto_library(
+    name = "server_notification_ts_proto",
+    proto = ":server_notification_proto",
 )
 
 ts_proto_library(

@@ -1302,3 +1302,23 @@ func StoreReader(store Store) (io.Reader, error) {
 	}
 	return io.NewSectionReader(store, 0, size), nil
 }
+
+// ServerNotificationService provides a best-effort pubsub-style notification
+// service for broadcasting information to other servers within the same
+// service.
+type ServerNotificationService interface {
+	// Subscribe listens for notifications of the specified type. The specified
+	// proto must be one of the fields defined on the Notification proto in
+	// service_notification.proto
+	//
+	// e.g. subscribing to InvalidateIPRulesCache notifications can be done as:
+	// service.Subscribe(&snpb.InvalidateIPRulesCache{})
+	Subscribe(msgType proto.Message) <-chan proto.Message
+
+	// Publish broadcasts a notification to all the servers in the service. The
+	// specified proto msut be one of the fields defined on the Notification
+	// proto in service_notification.proto
+	// e.g. publishing an InvalidateIPRulesCache notification can be done as:
+	// service.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupID: "123"})
+	Publish(ctx context.Context, msg proto.Message) error
+}
