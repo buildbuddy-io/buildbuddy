@@ -68,6 +68,8 @@ var (
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
 	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	sampleBufferSize          = flag.Int("cache.pebbles.sample_buffer_size", DefaultSampleBufferSize, "Buffer up to this many samples for eviction")
+	samplesPerBatch           = flag.Int("cache.pebbles.samples_per_batch", DefaultSamplesPerBatch, "How many keys we read forward every time we get a random key.")
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
@@ -94,6 +96,8 @@ var (
 	// Their defaults must be vars so we can take their addresses)
 	DefaultAtimeUpdateThreshold = 10 * time.Minute
 	DefaultAtimeBufferSize      = 100000
+	DefaultSampleBufferSize     = 8000
+	DefaultSamplesPerBatch      = 10000
 	DefaultMinEvictionAge       = 6 * time.Hour
 
 	DefaultName         = "pebble_cache"
@@ -159,6 +163,8 @@ type Options struct {
 	AtimeUpdateThreshold *time.Duration
 	AtimeBufferSize      *int
 	MinEvictionAge       *time.Duration
+	SampleBufferSize     *int
+	SamplesPerBatch      *int
 
 	IncludeMetadataSize bool
 
@@ -345,6 +351,8 @@ func Register(env environment.Env) error {
 		MinBytesAutoZstdCompression: *minBytesAutoZstdCompression,
 		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
 		AtimeBufferSize:             atimeBufferSizeFlag,
+		SampleBufferSize:            sampleBufferSize,
+		SamplesPerBatch:             samplesPerBatch,
 		MinEvictionAge:              minEvictionAgeFlag,
 		AverageChunkSizeBytes:       *averageChunkSizeBytes,
 		IncludeMetadataSize:         *includeMetadataSize,
@@ -427,6 +435,12 @@ func SetOptionDefaults(opts *Options) {
 	if opts.ActiveKeyVersion == nil {
 		defaultVersion := int64(filestore.UndefinedKeyVersion)
 		opts.ActiveKeyVersion = &defaultVersion
+	}
+	if opts.SampleBufferSize == nil {
+		opts.SampleBufferSize = &DefaultSampleBufferSize
+	}
+	if opts.SamplesPerBatch == nil {
+		opts.SamplesPerBatch = &DefaultSamplesPerBatch
 	}
 }
 
@@ -626,7 +640,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.ActiveKeyVersion)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch)
 			if err != nil {
 				return err
 			}
@@ -2358,6 +2372,7 @@ type partitionEvictor struct {
 	locker        lockmap.Locker
 	versionGetter versionGetter
 	accesses      chan<- *accessTimeUpdate
+	samples       chan *approxlru.Sample[*evictionKey]
 	rng           *rand.Rand
 	clock         clockwork.Clock
 
@@ -2370,6 +2385,8 @@ type partitionEvictor struct {
 	minEvictionAge   time.Duration
 	activeKeyVersion int64
 
+	samplesPerBatch int
+
 	includeMetadataSize bool
 }
 
@@ -2377,21 +2394,22 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, activeKeyVersion int64) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:               &sync.Mutex{},
-		part:             part,
-		fileStorer:       fileStorer,
-		blobDir:          blobDir,
-		dbGetter:         dbg,
-		locker:           locker,
-		versionGetter:    vg,
-		accesses:         accesses,
-		rng:              rand.New(rand.NewSource(time.Now().UnixNano())),
-		clock:            clock,
-		minEvictionAge:   minEvictionAge,
-		activeKeyVersion: activeKeyVersion,
-		cacheName:        cacheName,
+		mu:              &sync.Mutex{},
+		part:            part,
+		fileStorer:      fileStorer,
+		blobDir:         blobDir,
+		dbGetter:        dbg,
+		locker:          locker,
+		versionGetter:   vg,
+		accesses:        accesses,
+		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:           clock,
+		minEvictionAge:  minEvictionAge,
+		cacheName:       cacheName,
+		samples:         make(chan *approxlru.Sample[*evictionKey], sampleBufferSize),
+		samplesPerBatch: samplesPerBatch,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
@@ -2435,12 +2453,129 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	return pe, nil
 }
 
+func (e *partitionEvictor) startSampleGenerator(quitChan chan struct{}) {
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		return e.generateSamplesForEviction(quitChan)
+	})
+	eg.Wait()
+	// Drain samples chan before exiting
+	for len(e.samples) > 0 {
+		<-e.samples
+	}
+	close(e.samples)
+}
+
+func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) error {
+	db, err := e.dbGetter.DB()
+	if err != nil {
+		log.Warningf("cannot generate samples for eviction: failed to get db: %s", err)
+		return err
+	}
+	defer db.Close()
+	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
+	iter := db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	// We update the iter variable later on, so we need to wrap the Close call
+	// in a func to operate on the correct iterator instance.
+	defer func() {
+		iter.Close()
+	}()
+
+	totalCount := 0
+	shouldCreateNewIter := true
+
+	// Files are kept in random order (because they are keyed by digest), so
+	// instead of doing a new seek for every random sample we will seek once
+	// and just read forward, yielding digests until we've found enough.
+
+	for {
+		select {
+		case <-quitChan:
+			return nil
+		default:
+		}
+		// Refresh the iterator once a while
+		if shouldCreateNewIter {
+			shouldCreateNewIter = false
+			totalCount = 0
+			newIter := db.NewIter(&pebble.IterOptions{
+				LowerBound: start,
+				UpperBound: end,
+			})
+			iter.Close()
+			iter = newIter
+		}
+		totalCount += 1
+		if totalCount > e.samplesPerBatch {
+			// Going to refresh the iterator in the next iteration.
+			shouldCreateNewIter = true
+		}
+		if !iter.Valid() {
+			// This should happen once every totalCount times or when
+			// we exausted the iter.
+			randomKey, err := e.randomKey(64)
+			if err != nil {
+				log.Warningf("cannot generate samples for eviction: failed to get random key: %s", err)
+				return err
+			}
+			valid := iter.SeekGE(randomKey)
+			if !valid {
+				shouldCreateNewIter = true
+				continue
+			}
+		}
+		var key filestore.PebbleKey
+		if _, err := key.FromBytes(iter.Key()); err != nil {
+			log.Warningf("cannot generate sample for eviction, skipping: failed to read key: %s", err)
+			continue
+		}
+
+		fileMetadata := &rfpb.FileMetadata{}
+		err = proto.Unmarshal(iter.Value(), fileMetadata)
+		if err != nil {
+			log.Warningf("cannot generate sample for eviction, skipping: failed to read proto: %s", err)
+			continue
+		}
+
+		atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+		age := e.clock.Since(atime)
+
+		sizeBytes := fileMetadata.GetStoredSizeBytes()
+		if e.includeMetadataSize {
+			sizeBytes = getTotalSizeBytes(fileMetadata) + int64(len(iter.Key()))
+		}
+
+		if age >= e.minEvictionAge {
+			keyBytes := make([]byte, len(iter.Key()))
+			copy(keyBytes, iter.Key())
+			sample := &approxlru.Sample[*evictionKey]{
+				Key: &evictionKey{
+					bytes:           keyBytes,
+					storageMetadata: fileMetadata.GetStorageMetadata(),
+				},
+				SizeBytes: sizeBytes,
+				Timestamp: atime,
+			}
+			select {
+			case e.samples <- sample:
+			case <-quitChan:
+				return nil
+			}
+		}
+		iter.Next()
+	}
+}
+
 func (e *partitionEvictor) updateMetrics() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
 	metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(e.sizeBytes))
 	metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(e.part.MaxSizeBytes))
+	metrics.PebbleCacheEvictionSamplesChanSize.With(lbls).Set(float64(len(e.samples)))
 
 	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
 		metrics.PartitionID:    e.part.ID,
@@ -2689,6 +2824,7 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 	}
 	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
 	metrics.DiskCacheNumEvictions.With(lbls).Inc()
+	metrics.DiskCacheBytesEvicted.With(lbls).Add(float64(sample.SizeBytes))
 	metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
 	metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
 	return false, nil
@@ -2724,98 +2860,11 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 }
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
-	db, err := e.dbGetter.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
-	iter := db.NewIter(&pebble.IterOptions{
-		LowerBound: start,
-		UpperBound: end,
-	})
-	iter.SeekGE(start)
-	defer iter.Close()
-
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
-
-	// generate k random digests and for each:
-	//   - seek to the next valid key, and return that file record
-	for i := 0; i < k*2; i++ {
-		randKey, err := e.randomKey(64)
-		if err != nil {
-			log.Errorf("Error generating random key: %s", err)
-			continue
-		}
-		valid := iter.SeekGE(randKey)
-		if !valid {
-			continue
-		}
-
-		var key filestore.PebbleKey
-		if _, err := key.FromBytes(iter.Key()); err != nil {
-			return nil, err
-		}
-
-		for {
-			fileMetadata := &rfpb.FileMetadata{}
-			unlockFn := e.locker.RLock(key.LockID())
-			err = proto.Unmarshal(iter.Value(), fileMetadata)
-			unlockFn()
-			if err != nil {
-				return nil, err
-			}
-
-			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-			age := e.clock.Since(atime)
-
-			sizeBytes := fileMetadata.GetStoredSizeBytes()
-			if e.includeMetadataSize {
-				sizeBytes = getTotalSizeBytes(fileMetadata) + int64(len(iter.Key()))
-			}
-
-			if age >= e.minEvictionAge {
-				keyBytes := make([]byte, len(iter.Key()))
-				copy(keyBytes, iter.Key())
-				sample := &approxlru.Sample[*evictionKey]{
-					Key: &evictionKey{
-						bytes:           keyBytes,
-						storageMetadata: fileMetadata.GetStorageMetadata(),
-					},
-					SizeBytes: sizeBytes,
-					Timestamp: atime,
-				}
-				samples = append(samples, sample)
-			}
-
-			if !iter.Next() {
-				break
-			}
-
-			// Check if the next key is for the same digest in which case
-			// include it as a possible eviction candidate.
-			//
-			// This can happen for example if there are multiple AC entries
-			// with different "remote instance name hash" values:
-			//   PTfoo/GR123/foobar/ac/123
-			//   PTfoo/GR123/foobar/ac/456
-			// We want to consider both keys for eviction, not just the first
-			// one.
-			//
-			// The same situation can occur after enabling or disabling
-			// encryption which can produce multiple keys with the same hash
-			// prefix.
-			var nextKey filestore.PebbleKey
-			if _, err := nextKey.FromBytes(iter.Key()); err != nil {
-				return nil, err
-			}
-			if nextKey.Hash() != key.Hash() {
-				break
-			}
-			key = nextKey
-		}
-		if len(samples) >= k {
-			break
+	for i := 0; i < k; i++ {
+		s, ok := <-e.samples
+		if ok {
+			samples = append(samples, s)
 		}
 	}
 
@@ -3199,6 +3248,10 @@ func (p *PebbleCache) Start() error {
 		evictor := evictor
 		p.eg.Go(func() error {
 			return evictor.run(p.quitChan)
+		})
+		p.eg.Go(func() error {
+			evictor.startSampleGenerator(p.quitChan)
+			return nil
 		})
 	}
 	p.eg.Go(func() error {

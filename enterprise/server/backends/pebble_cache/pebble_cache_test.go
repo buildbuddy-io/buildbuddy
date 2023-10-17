@@ -1910,8 +1910,8 @@ func TestLRU(t *testing.T) {
 			require.Equal(t, 0, len(evictionsByQuartile[4]))
 
 			// Relax the conditions a little to de-flake the tests.
-			require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+1)
-			require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+1)
+			require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+2)
+			require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+2)
 			require.Greater(t, len(evictionsByQuartile[3]), 0)
 		})
 	}
@@ -2930,7 +2930,7 @@ func TestSupportsEncryption(t *testing.T) {
 }
 
 func TestSampling(t *testing.T) {
-	activeKeyVersion := int64(3)
+	activeKeyVersion := int64(4)
 
 	te, kmsDir := getCrypterEnv(t)
 
@@ -2971,6 +2971,7 @@ func TestSampling(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			rootDir := testfs.MakeTempDir(t)
 			minEvictionAge := 1 * time.Hour
+			samplesPerBatch := 50
 			clock := clockwork.NewFakeClock()
 
 			opts := &pebble_cache.Options{
@@ -2985,6 +2986,7 @@ func TestSampling(t *testing.T) {
 				AverageChunkSizeBytes: tc.averageChunkSizeBytes,
 				Clock:                 clock,
 				ActiveKeyVersion:      &activeKeyVersion,
+				SamplesPerBatch:       &samplesPerBatch,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -3018,12 +3020,12 @@ func TestSampling(t *testing.T) {
 			// kick in. The unencrypted test digest should be evicted.
 			clock.Advance(minEvictionAge - 1*time.Minute)
 
-			for i := 0; i < 8; i++ {
+			for i := 0; i < 30; i++ {
 				if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(1000 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.
