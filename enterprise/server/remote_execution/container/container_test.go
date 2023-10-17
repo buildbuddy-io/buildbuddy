@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -38,7 +39,7 @@ func (c *FakeContainer) PullImage(ctx context.Context, creds container.PullCrede
 	return nil
 }
 func (c *FakeContainer) Create(context.Context, string) error { return nil }
-func (c *FakeContainer) Exec(context.Context, *repb.Command, *container.Stdio) *interfaces.CommandResult {
+func (c *FakeContainer) Exec(context.Context, *repb.Command, *commandutil.Stdio) *interfaces.CommandResult {
 	return nil
 }
 func (c *FakeContainer) Remove(ctx context.Context) error  { return nil }

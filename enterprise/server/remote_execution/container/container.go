@@ -3,10 +3,10 @@ package container
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -204,7 +204,7 @@ type CommandContainer interface {
 	// stdin of the executed process. If stdout is non-nil, the stdout of the
 	// executed process will be written to the stdout writer rather than being
 	// written to the command result's stdout field (same for stderr).
-	Exec(ctx context.Context, command *repb.Command, stdio *Stdio) *interfaces.CommandResult
+	Exec(ctx context.Context, command *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult
 	// Unpause un-freezes a container so that it can be used to execute commands.
 	Unpause(ctx context.Context) error
 	// Pause freezes a container so that it no longer consumes CPU resources.
@@ -228,16 +228,6 @@ type CommandContainer interface {
 	// If a container implementation does not support saving and restoring state
 	// across restarts, it can return UNIMPLEMENTED.
 	State(ctx context.Context) (*rnpb.ContainerState, error)
-}
-
-// Stdio specifies standard input / output readers for a command.
-type Stdio struct {
-	// Stdin is an optional stdin source for the executed process.
-	Stdin io.Reader
-	// Stdout is an optional stdout sink for the executed process.
-	Stdout io.Writer
-	// Stderr is an optional stderr sink for the executed process.
-	Stderr io.Writer
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it
@@ -478,7 +468,7 @@ func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) 
 	return t.Delegate.Create(ctx, workingDir)
 }
 
-func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *Stdio) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *commandutil.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 

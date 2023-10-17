@@ -57,6 +57,7 @@ go_test(
     ],
     deps = [
         ":podman",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testauth",

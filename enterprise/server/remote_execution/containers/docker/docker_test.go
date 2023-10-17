@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -128,7 +129,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	// the docker container.
 	isContainerRunning = true
 
-	res := c.Exec(ctx, cmd, &container.Stdio{})
+	res := c.Exec(ctx, cmd, &commandutil.Stdio{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, res, expectedResult)
@@ -147,7 +148,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	assert.Greater(t, stats.MemoryBytes, int64(0))
 
 	// Try executing the same command again after unpausing.
-	res = c.Exec(ctx, cmd, &container.Stdio{})
+	res = c.Exec(ctx, cmd, &commandutil.Stdio{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, res, expectedResult)
@@ -264,7 +265,7 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	res := c.Exec(ctx, cmd, &container.Stdio{})
+	res := c.Exec(ctx, cmd, &commandutil.Stdio{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -318,7 +319,7 @@ func TestDockerExec_Stdio(t *testing.T) {
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
-	res := c.Exec(ctx, cmd, &container.Stdio{
+	res := c.Exec(ctx, cmd, &commandutil.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,
