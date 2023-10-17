@@ -113,7 +113,8 @@ func (c *Claims) GetEnforceIPRules() bool {
 func ParseClaims(token string) (*Claims, error) {
 	keys := []string{*jwtKey}
 	if *newJwtKey != "" {
-		keys = append(keys, *newJwtKey)
+		// Try the new key first.
+		keys = []string{*newJwtKey, *jwtKey}
 	}
 
 	var lastErr error
