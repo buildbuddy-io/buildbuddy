@@ -169,7 +169,6 @@ type Options struct {
 	MinEvictionAge       *time.Duration
 	SampleBufferSize     *int
 	SamplesPerBatch      *int
-	SampleTimeout        *time.Duration
 	DeleteBufferSize     *int
 	NumDeleteWorkers     *int
 
