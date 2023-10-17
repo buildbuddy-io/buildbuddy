@@ -116,7 +116,6 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
         this.setState({ githubInstallationsResponse: response });
         return response;
       })
-      .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ githubInstallationsLoading: false }));
   }
 
@@ -129,7 +128,12 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   componentDidMount() {
-    this.fetchGithubInstallations();
+    this.fetchGithubInstallations().catch((e) => {
+      // Log the error, but we don't need to show it to the user since
+      // when they click the Create repository button, we'll do a GitHub
+      // link if installations aren't present.
+      console.log(e);
+    });
     this.fetchSecrets();
   }
 
@@ -350,7 +354,12 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     let selectedInstallation = this.state.githubInstallationsResponse?.installations[
       this.state.selectedInstallationIndex
     ];
-    popup.open(selectedInstallation?.url + `/permissions/update`);
+    return popup.open(selectedInstallation?.url + `/permissions/update`).catch((e) => {
+      // Log an error here, but let's keep going since sometimes the Github UI
+      // doesn't redirect after a permissions change, and the user has to X out
+      // of the window.
+      console.log(e);
+    });
   }
 
   linkGoogleCloud() {
