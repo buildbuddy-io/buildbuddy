@@ -392,9 +392,31 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		ar.OutputFiles = append(ar.OutputFiles, out)
 		eg.Go(func() error {
 			ctx := egCtx
-			d, err := fileDigest(filePath)
-			if err != nil {
-				return err
+			var d *repb.Digest
+			if *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing {
+				var err error
+				d, err = fileDigest(filePath)
+				if err != nil {
+					return err
+				}
+			} else {
+				// If snapshot sharing is disabled, don't compute the digest for the
+				// file because it is costly. Because the runner ID is in the key
+				// when snapshot sharing is disabled,  we don't need to worry about
+				// multiple runners trying to access the same key simultaneously
+				gid, err := groupID(ctx, l.env)
+				if err != nil {
+					return err
+				}
+				fileName := filepath.Base(filePath)
+				info, err := os.Stat(filePath)
+				if err != nil {
+					return err
+				}
+				d = &repb.Digest{
+					Hash:      hashStrings(gid, key.InstanceName, key.PlatformHash, key.ConfigurationHash, key.RunnerId, fileName),
+					SizeBytes: info.Size(),
+				}
 			}
 			out.Digest = d
 			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath)
