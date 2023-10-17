@@ -757,6 +757,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
+	vmCtx, cancelVmCtx := context.WithCancelCause(background.ToBackground(ctx))
+	c.vmCtx = vmCtx
+	c.cancelVmCtx = cancelVmCtx
+
 	if err := c.newID(ctx); err != nil {
 		return err
 	}
@@ -806,10 +810,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
-	vmCtx, cancelVmCtx := context.WithCancelCause(context.Background())
-	c.vmCtx = vmCtx
-	c.cancelVmCtx = cancelVmCtx
-
 	var snapOpt fcclient.Opt
 	if *enableUFFD {
 		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffdPrivileged)
@@ -834,7 +834,9 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
-	unpacked, err := c.loader.UnpackSnapshot(ctx, snap, c.getChroot())
+
+	// Use vmCtx for COWs since IO may be done outside of the task ctx.
+	unpacked, err := c.loader.UnpackSnapshot(vmCtx, snap, c.getChroot())
 	if err != nil {
 		return status.WrapError(err, "failed to unpack snapshot")
 	}
@@ -932,7 +934,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 		return status.InternalErrorf("failed to create rootfs chunk dir: %s", err)
 	}
 	containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-	cf, err := snaploader.UnpackContainerImage(ctx, c.loader, c.containerImage, containerExt4Path, c.getChroot(), cowChunkSizeBytes())
+	cf, err := snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.containerImage, containerExt4Path, c.getChroot(), cowChunkSizeBytes())
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
 	}
@@ -1012,7 +1014,8 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName)
+	// Use vmCtx for the COW since IO may be done outside of the task ctx.
+	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
@@ -1693,6 +1696,10 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
+	vmCtx, cancel := context.WithCancelCause(background.ToBackground(ctx))
+	c.vmCtx = vmCtx
+	c.cancelVmCtx = cancel
+
 	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
 		return status.InternalErrorf("failed to create chroot dir: %s", err)
 	}
@@ -1749,10 +1756,6 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if err := c.setupVBDMounts(ctx); err != nil {
 		return status.WrapError(err, "failed to init VBD mounts")
 	}
-
-	vmCtx, cancel := context.WithCancelCause(context.Background())
-	c.vmCtx = vmCtx
-	c.cancelVmCtx = cancel
 
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
