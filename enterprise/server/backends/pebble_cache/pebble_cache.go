@@ -2859,18 +2859,14 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	md, err := readFileMetadata(e.ctx, db, sample.Key.bytes)
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			log.Infof("try to evict %s cannot find md: %s", sample.Key, err)
 			return
 		}
-		log.Infof("try to evict %s can't read md: %s", sample.Key, err)
 		return
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
 	age := time.Since(atime)
 	if sample.Timestamp != atime {
-		// atime have been updated
-		log.Infof("try to evict %s atime updated", sample.Key)
-		// update the sample key
+		// atime have been updated. Do not evict.
 		return
 	}
 
