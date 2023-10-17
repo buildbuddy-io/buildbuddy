@@ -3023,7 +3023,7 @@ func TestSampling(t *testing.T) {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(1000 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.
