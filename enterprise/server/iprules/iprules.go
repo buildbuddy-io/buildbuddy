@@ -426,6 +426,14 @@ func validateIPRange(value string) (string, error) {
 	return "", status.InvalidArgumentErrorf("Invalid IP range %q", value)
 }
 
+func (s *Service) publishRuleInvalidation(ctx context.Context, groupID string) {
+	if sns := s.env.GetServerNotificationService(); sns != nil {
+		if err := sns.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupId: groupID}); err != nil {
+			log.CtxWarningf(ctx, "could not send cache invalidation notification for group %q: %s", groupID, err)
+		}
+	}
+}
+
 func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error) {
 	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
@@ -449,11 +457,7 @@ func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.
 	}
 	r.IpRuleId = id
 
-	if sns := s.env.GetServerNotificationService(); sns != nil {
-		if err := sns.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupId: groupID}); err != nil {
-			log.CtxWarningf(ctx, "could not send cache invalidation notification for group %q: %s", groupID, err)
-		}
-	}
+	s.publishRuleInvalidation(ctx, groupID)
 
 	return &irpb.AddRuleResponse{Rule: r}, nil
 }
@@ -475,11 +479,7 @@ func (s *Service) UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (
 		return nil, err
 	}
 
-	if sns := s.env.GetServerNotificationService(); sns != nil {
-		if err := sns.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupId: groupID}); err != nil {
-			log.CtxWarningf(ctx, "could not send cache invalidation notification for group %q: %s", groupID, err)
-		}
-	}
+	s.publishRuleInvalidation(ctx, groupID)
 
 	return &irpb.UpdateRuleResponse{}, nil
 }
@@ -511,11 +511,7 @@ func (s *Service) DeleteRule(ctx context.Context, req *irpb.DeleteRuleRequest) (
 		return nil, err
 	}
 
-	if sns := s.env.GetServerNotificationService(); sns != nil {
-		if err := sns.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupId: groupID}); err != nil {
-			log.CtxWarningf(ctx, "could not send cache invalidation notification for group %q: %s", groupID, err)
-		}
-	}
+	s.publishRuleInvalidation(ctx, groupID)
 
 	return &irpb.DeleteRuleResponse{}, nil
 }
