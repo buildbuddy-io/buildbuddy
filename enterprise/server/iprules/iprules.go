@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -25,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
+	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
 var (
@@ -112,10 +114,25 @@ func New(env environment.Env) (*Service, error) {
 		return nil, err
 	}
 
-	return &Service{
+	svc := &Service{
 		env:   env,
 		cache: cache,
-	}, nil
+	}
+	if sns := env.GetServerNotificationService(); sns != nil {
+		go func() {
+			for msg := range sns.Subscribe(&snpb.InvalidateIPRulesCache{}) {
+				ic, ok := msg.(*snpb.InvalidateIPRulesCache)
+				if !ok {
+					alert.UnexpectedEvent("iprules_invalid_proto_type", "received proto type %T", msg)
+					continue
+				}
+				if err := svc.refreshRules(env.GetServerContext(), ic.GetGroupId()); err != nil {
+					log.Warningf("could not refresh IP rules for group %q: %s", ic.GetGroupId(), err)
+				}
+			}
+		}()
+	}
+	return svc, nil
 }
 
 func Register(env environment.Env) error {
@@ -171,6 +188,16 @@ func (s *Service) loadParsedRulesFromDB(ctx context.Context, groupID string, ski
 		allowed = append(allowed, ipNet)
 	}
 	return allowed, nil
+}
+
+func (s *Service) refreshRules(ctx context.Context, groupID string) error {
+	pr, err := s.loadParsedRulesFromDB(ctx, groupID, "" /*=skipRuleId*/)
+	if err != nil {
+		return err
+	}
+	s.cache.Add(groupID, pr)
+	log.CtxInfof(ctx, "refreshed IP rules for group %s", groupID)
+	return nil
 }
 
 func (s *Service) checkRules(ctx context.Context, groupID string, skipCache bool, skipRuleID string) error {
@@ -399,6 +426,14 @@ func validateIPRange(value string) (string, error) {
 	return "", status.InvalidArgumentErrorf("Invalid IP range %q", value)
 }
 
+func (s *Service) publishRuleInvalidation(ctx context.Context, groupID string) {
+	if sns := s.env.GetServerNotificationService(); sns != nil {
+		if err := sns.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupId: groupID}); err != nil {
+			log.CtxWarningf(ctx, "could not send cache invalidation notification for group %q: %s", groupID, err)
+		}
+	}
+}
+
 func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.AddRuleResponse, error) {
 	if err := s.checkAccess(ctx, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
@@ -421,6 +456,9 @@ func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.
 		return nil, err
 	}
 	r.IpRuleId = id
+
+	s.publishRuleInvalidation(ctx, groupID)
+
 	return &irpb.AddRuleResponse{Rule: r}, nil
 }
 
@@ -440,6 +478,9 @@ func (s *Service) UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (
 	if err := s.env.GetDBHandle().DB(ctx).Exec(q, cidr, r.GetDescription(), groupID, r.GetIpRuleId()).Error; err != nil {
 		return nil, err
 	}
+
+	s.publishRuleInvalidation(ctx, groupID)
+
 	return &irpb.UpdateRuleResponse{}, nil
 }
 
@@ -469,5 +510,8 @@ func (s *Service) DeleteRule(ctx context.Context, req *irpb.DeleteRuleRequest) (
 	if err := s.env.GetDBHandle().DB(ctx).Exec(q, groupID, req.GetIpRuleId()).Error; err != nil {
 		return nil, err
 	}
+
+	s.publishRuleInvalidation(ctx, groupID)
+
 	return &irpb.DeleteRuleResponse{}, nil
 }

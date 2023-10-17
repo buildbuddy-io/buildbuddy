@@ -65,14 +65,6 @@
   margin-bottom: 8px;
 }
 
-.ip-rule-delete-modal .propagation-note,
-.ip-rule-edit-modal .propagation-note,
-.ip-rule-bulk-add-modal .propagation-note,
-.ip-rules .propagation-note {
-  color: #666;
-  margin-top: 16px;
-}
-
 .ip-rule-delete-modal .delete-modal-rule {
   font-weight: bold;
 }
