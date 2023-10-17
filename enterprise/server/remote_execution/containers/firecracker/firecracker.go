@@ -1015,7 +1015,8 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 		return nil, status.WrapError(err, "make chunk dir")
 	}
 	// Use vmCtx for the COW since IO may be done outside of the task ctx.
-	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName)
+	mem := strings.Contains(filePath, "mem")
+	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName, mem)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}

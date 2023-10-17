@@ -37,6 +37,7 @@ const (
 //
 // A COWStore supports concurrent reads/writes
 type COWStore struct {
+	memory             bool
 	ctx                context.Context
 	env                environment.Env
 	remoteInstanceName string
@@ -72,7 +73,7 @@ type COWStore struct {
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string) (*COWStore, error) {
+func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, memory bool) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -83,6 +84,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 	}
 
 	return &COWStore{
+		memory:             memory,
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
@@ -261,14 +263,18 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
 
-	readBuf := make([]byte, len(p))
-	n, err := c.ReadAt(p, off)
-	if err != nil {
-		return 0, status.WrapError(err, "Early read in write failed")
+	if c.memory {
+		readBuf := make([]byte, len(p))
+		_, err := c.ReadAt(readBuf, off)
+		if err != nil {
+			return 0, status.WrapError(err, "Early read in write failed")
+		}
+		log.Warningf("\n\nOriginal data at offset %d is %s\n\n", off, string(readBuf))
+		log.Warningf("\n\nNew data at offset %d is %s\n\n", off, string(p))
 	}
-	log.Warningf("\n\nOriginal data at offset %d is %s\n\n", off, string(readBuf))
 
 	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
@@ -295,14 +301,6 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		chunkOffset += c.chunkSizeBytes
 	}
 
-	c.mu.Unlock()
-
-	readBuf = make([]byte, len(p))
-	n, err = c.ReadAt(p, off)
-	if err != nil {
-		return 0, status.WrapError(err, "Second read in write failed")
-	}
-	log.Warningf("\n\nNew data at offset %d is %s\n\n", off, string(readBuf))
 	return n, nil
 }
 
@@ -504,7 +502,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string) (store *COWStore, err error) {
+func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, memory bool) (store *COWStore, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -602,7 +600,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		}
 	}
 
-	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName)
+	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, memory)
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite
