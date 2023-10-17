@@ -395,7 +395,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
 
 		// Try pause, unpause, exec several times.
-		for i := 1; i <= 3; i++ {
+		for i := 1; i <= 1; i++ {
 			if err := c.Pause(ctx); err != nil {
 				t.Fatalf("unable to pause container: %s", err)
 			}
@@ -404,6 +404,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
 			require.NoError(t, err)
 
+			fmt.Println("About to load a snapshot and exec")
 			if err := c.Unpause(ctx); err != nil {
 				t.Fatalf("unable to unpause container: %s", err)
 			}

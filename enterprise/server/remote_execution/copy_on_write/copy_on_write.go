@@ -3,6 +3,7 @@ package copy_on_write
 import (
 	"context"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"io"
 	"os"
 	"path/filepath"
@@ -260,8 +261,14 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
 
+	readBuf := make([]byte, len(p))
+	n, err := c.ReadAt(p, off)
+	if err != nil {
+		return 0, status.WrapError(err, "Early read in write failed")
+	}
+	log.Warningf("\n\nOriginal data at offset %d is %s\n\n", off, string(readBuf))
+
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
@@ -287,6 +294,15 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		p = p[writeSize:]
 		chunkOffset += c.chunkSizeBytes
 	}
+
+	c.mu.Unlock()
+
+	readBuf = make([]byte, len(p))
+	n, err = c.ReadAt(p, off)
+	if err != nil {
+		return 0, status.WrapError(err, "Second read in write failed")
+	}
+	log.Warningf("\n\nNew data at offset %d is %s\n\n", off, string(readBuf))
 	return n, nil
 }
 
