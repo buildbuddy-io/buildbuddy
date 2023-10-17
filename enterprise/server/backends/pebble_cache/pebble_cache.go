@@ -2553,7 +2553,6 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			shouldCreateNewIter = true
 		}
 		if !iter.Valid() {
-			log.Info("iter is invalid; generate new random key")
 			// This should happen once every totalCount times or when
 			// we exausted the iter.
 			randomKey, err := e.randomKey(64)
@@ -2865,7 +2864,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
 	age := time.Since(atime)
-	if sample.Timestamp != atime {
+	if !sample.Timestamp.Equal(atime) {
 		// atime have been updated. Do not evict.
 		return
 	}
