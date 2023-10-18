@@ -542,7 +542,6 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 			}
 			out.Digest = d
 			forceCache := strings.Contains(fileName, "mem")
-			fmt.Printf("Hey: forceCache is %v, name is %s", forceCache, fileName)
 			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath, forceCache)
 		})
 	}

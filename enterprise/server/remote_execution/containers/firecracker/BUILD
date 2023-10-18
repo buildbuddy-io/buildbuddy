@@ -117,6 +117,7 @@ go_test(
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
+        "//server/backends/disk_cache",
         "//server/interfaces",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
