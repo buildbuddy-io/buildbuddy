@@ -101,6 +101,7 @@ go_test(
     ],
     deps = [
         ":firecracker",
+        "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
@@ -116,7 +117,6 @@ go_test(
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
-        "//server/backends/disk_cache",
         "//server/interfaces",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
@@ -174,6 +174,8 @@ go_test(
     ],
     deps = [
         ":firecracker",
+        "//enterprise:bundle",
+        "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",

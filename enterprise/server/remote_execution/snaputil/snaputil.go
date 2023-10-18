@@ -102,9 +102,9 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string) error {
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, forceCache bool) error {
 	localCacheErr := cacheLocally(ctx, localCache, d, path)
-	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
+	if (!*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled) && !forceCache {
 		return localCacheErr
 	}
 
@@ -143,7 +143,7 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath)
+	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath, false)
 }
 
 // cacheLocally copies the data at `path` to the local filecache with

@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"io"
 	"math/rand"
 	"os"
@@ -28,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -192,19 +192,16 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	err = networking.DeleteNetNamespaces(ctx)
 	require.NoError(t, err)
 
-	testRootDir := opts.cacheRootDir
-	if testRootDir == "" {
-		testRootDir = testfs.MakeTempDir(t)
+	pebbleOpts := &pebble_cache.Options{
+		RootDirectory:         opts.cacheRootDir,
+		MaxSizeBytes:          int64(10_000_000_000), // 10GB
+		AverageChunkSizeBytes: 524288,
 	}
-	cacheSize := opts.cacheSize
-	if cacheSize == 0 {
-		cacheSize = diskCacheSize
-	}
-	dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: testRootDir}, cacheSize)
-	if err != nil {
-		t.Error(err)
-	}
-	env.SetCache(dc)
+	pc, err := pebble_cache.NewPebbleCache(env, pebbleOpts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	env.SetCache(pc)
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
 		t.Error(err)
@@ -236,7 +233,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	if *filecacheDir != "" {
 		fcDir = *filecacheDir
 	} else if fcDir == "" {
-		fcDir = testRootDir
+		fcDir = testfs.MakeTempDir(t)
 	}
 	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false)
 	require.NoError(t, err)
@@ -471,6 +468,101 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 		}
 	}
+}
+
+func TestDirtyMemoryCDC(t *testing.T) {
+	ctx := context.Background()
+	cacheDir := testfs.MakeTempDir(t)
+	// Setup env with pebble cache + CDC enabled
+	env := getTestEnv(ctx, t, envOpts{cacheRootDir: cacheDir})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	// Create snapshot
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         4000,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
+		t.Fatalf("unable to pull image: %s", err)
+	}
+
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+		t.Fatalf("unable to Create container: %s", err)
+	}
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
+	cmd := &repb.Command{
+		// Run a script that increments /workspace/count (on workspacefs) and
+		// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+		// This will let us test whether the scratchfs is sticking around across
+		// runs, and whether workspacefs is being correctly reset across runs.
+		Arguments: []string{"sh", "-c", `
+			exit
+		`},
+	}
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+
+	if err := c.Pause(ctx); err != nil {
+		t.Fatalf("unable to pause container: %s", err)
+	}
+
+	// After initial memory snapshot is saved, check size of cache
+	cacheSize := sizeDir(t, cacheDir)
+	fmt.Printf("\n\n Original cache size with memory snapshot: %dMB", cacheSize/(1024*1024))
+
+	workDir = testfs.MakeDirAll(t, rootDir, "fork")
+	opts.ActionWorkingDirectory = workDir
+	c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+	res = c.Exec(ctx, cmd, nil)
+	require.NoError(t, res.Error)
+	if err := c.Pause(ctx); err != nil {
+		t.Fatalf("unable to pause container: %s", err)
+	}
+
+	// After memory snapshot is dirtied and re-uploaded to cache, check size of cache
+	cacheSize = sizeDir(t, cacheDir)
+	fmt.Printf("\n\n New cache size with memory snapshot: %d MB", cacheSize/(1024*1024))
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func sizeDir(t *testing.T, dir string) int64 {
+	totalSize := int64(0)
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() {
+			totalSize += info.Size()
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	return totalSize
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {

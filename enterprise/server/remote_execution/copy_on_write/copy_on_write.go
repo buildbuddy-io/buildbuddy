@@ -53,6 +53,8 @@ var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrenc
 //
 // A COWStore supports concurrent reads/writes
 type COWStore struct {
+	name string
+
 	ctx                context.Context
 	env                environment.Env
 	remoteInstanceName string
@@ -96,7 +98,7 @@ type COWStore struct {
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (*COWStore, error) {
+func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool, name string) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -107,6 +109,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 	}
 
 	s := &COWStore{
+		name:               name,
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
@@ -610,7 +613,7 @@ func (s *COWStore) fetchChunk(offset int64) error {
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (store *COWStore, err error) {
+func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool, name string) (store *COWStore, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -708,7 +711,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		}
 	}
 
-	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
+	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled, name)
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite

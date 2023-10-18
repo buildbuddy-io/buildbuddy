@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -514,6 +515,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		eg.Go(func() error {
 			ctx := egCtx
 			var d *repb.Digest
+			fileName := filepath.Base(filePath)
 			if *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing {
 				var err error
 				d, err = fileDigest(filePath)
@@ -529,7 +531,6 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				if err != nil {
 					return err
 				}
-				fileName := filepath.Base(filePath)
 				info, err := os.Stat(filePath)
 				if err != nil {
 					return err
@@ -540,7 +541,9 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath)
+			forceCache := strings.Contains(fileName, "mem")
+			fmt.Printf("Hey: forceCache is %v, name is %s", forceCache, fileName)
+			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath, forceCache)
 		})
 	}
 	for name, cow := range opts.ChunkedFiles {
@@ -644,7 +647,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		}
 		chunks = append(chunks, c)
 	}
-	cow, err := copy_on_write.NewCOWStore(ctx, l.env, chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled)
+	cow, err := copy_on_write.NewCOWStore(ctx, l.env, chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled, file.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -689,6 +692,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	chunks := cow.SortedChunks()
 	var mu sync.RWMutex
 	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
+	forceCache := strings.Contains(name, "mem")
 	for _, c := range chunks {
 		c := c
 		fn := &repb.FileNode{
@@ -729,7 +733,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
 			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {
+				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path, forceCache); err != nil {
 					return status.WrapError(err, "write chunk to cache")
 				}
 			}
@@ -845,7 +849,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	//
 	// TODO(bduffany): single-flight this.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, "" /*=instanceName*/, *snaputil.EnableRemoteSnapshotSharing)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, "" /*=instanceName*/, *snaputil.EnableRemoteSnapshotSharing, rootfsFileName)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
