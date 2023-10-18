@@ -178,6 +178,7 @@ var (
 	locateBinariesOnceMap sync.Map
 	locateBinariesError   error
 	masqueradingOnce      sync.Once
+	masqueradingErr       error
 
 	// kernel + initrd
 	kernelImagePath string
@@ -1451,7 +1452,6 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	defer span.End()
 
 	// Setup masquerading on the host if it isn't already.
-	var masqueradingErr error
 	masqueradingOnce.Do(func() {
 		masqueradingErr = networking.EnableMasquerading(ctx)
 	})
