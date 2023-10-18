@@ -479,11 +479,25 @@ type CacheTC struct {
 	cacheDir string
 	c        interfaces.Cache
 	name     string
+	command  string
 }
 
 func TestDirtyMemoryCDC(t *testing.T) {
 	ctx := context.Background()
-	testCaches := make([]CacheTC, 3, 3)
+	testCaches := make([]CacheTC, 0, 3)
+	simpleCommand := "exit"
+	bazelCommand := `
+		cd ~
+		if [ -d bazel-gazelle ]; then
+		echo "Directory exists."
+		else
+		git clone https://github.com/bazelbuild/bazel-gazelle
+		fi
+		cd bazel-gazelle
+		# See https://github.com/bazelbuild/bazelisk/issues/220
+		echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
+		bazelisk build //...
+`
 
 	// Setup env with pebble cache, compression + CDC enabled
 	pcCompressionCDCDir := testfs.MakeTempDir(t)
@@ -497,8 +511,7 @@ func TestDirtyMemoryCDC(t *testing.T) {
 	err = pcCompressionCDC.Start()
 	require.NoError(t, err)
 	defer pcCompressionCDC.Stop()
-	testCaches[0] = CacheTC{
-		cacheDir: pcCompressionCDCDir, c: pcCompressionCDC, name: "Pebble compression cdc"}
+	testCaches = append(testCaches, CacheTC{cacheDir: pcCompressionCDCDir, c: pcCompressionCDC, name: "Pebble compression cdc"})
 
 	// Setup env with pebble cache, CDC enabled, no compression
 	pcCDCDir := testfs.MakeTempDir(t)
@@ -513,7 +526,7 @@ func TestDirtyMemoryCDC(t *testing.T) {
 	err = pcCDC.Start()
 	require.NoError(t, err)
 	defer pcCDC.Stop()
-	testCaches[1] = CacheTC{cacheDir: pcCDCDir, c: pcCDC, name: "Pebble cdc, no compression"}
+	testCaches = append(testCaches, CacheTC{cacheDir: pcCDCDir, c: pcCDC, name: "Pebble cdc, no compression"})
 
 	// Set up env with disk cache - no CDC, no compression
 	diskDir := testfs.MakeTempDir(t)
@@ -521,85 +534,89 @@ func TestDirtyMemoryCDC(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	testCaches[2] = CacheTC{cacheDir: diskDir, c: dc, name: "disk"}
+	testCaches = append(testCaches, CacheTC{cacheDir: diskDir, c: dc, name: "disk"})
 
-	for _, tc := range testCaches {
-		env := getTestEnv(ctx, t, envOpts{c: tc.c})
-		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-		rootDir := testfs.MakeTempDir(t)
-		workDir := testfs.MakeDirAll(t, rootDir, "work")
+	for _, cmdStr := range []string{simpleCommand, bazelCommand} {
+		for _, tc := range testCaches {
+			env := getTestEnv(ctx, t, envOpts{c: tc.c})
+			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-		// Create snapshot
-		opts := firecracker.ContainerOpts{
-			ContainerImage:         busyboxImage,
-			ActionWorkingDirectory: workDir,
-			VMConfiguration: &fcpb.VMConfiguration{
-				NumCpus:           1,
-				MemSizeMb:         4000,
-				EnableNetworking:  false,
-				ScratchDiskSizeMb: 100,
-			},
-			JailerRoot: tempJailerRoot(t),
-		}
-		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if err := container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
-			t.Fatalf("unable to pull image: %s", err)
-		}
-
-		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-			t.Fatalf("unable to Create container: %s", err)
-		}
-		t.Cleanup(func() {
-			if err := c.Remove(ctx); err != nil {
+			// Create snapshot
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           6,
+					MemSizeMb:         8000,
+					EnableNetworking:  true,
+					ScratchDiskSizeMb: 20_000,
+				},
+				JailerRoot: tempJailerRoot(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			if err != nil {
 				t.Fatal(err)
 			}
-		})
-		cmd := &repb.Command{
-			// Run a script that increments /workspace/count (on workspacefs) and
-			// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
-			// This will let us test whether the scratchfs is sticking around across
-			// runs, and whether workspacefs is being correctly reset across runs.
-			Arguments: []string{"sh", "-c", `
-			exit
-		`},
-		}
-		res := c.Exec(ctx, cmd, nil /*=stdio*/)
-		require.NoError(t, res.Error)
 
-		if err := c.Pause(ctx); err != nil {
-			t.Fatalf("unable to pause container: %s", err)
-		}
-
-		// After initial memory snapshot is saved, check size of cache
-		cacheSize := sizeDir(t, tc.cacheDir)
-		fmt.Printf("\n\n For cache %s: Original cache size with memory snapshot: %dMB", tc.name, cacheSize/(1024*1024))
-
-		workDir = testfs.MakeDirAll(t, rootDir, "fork")
-		opts.ActionWorkingDirectory = workDir
-		c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-		require.NoError(t, err)
-		err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
-		require.NoError(t, err)
-		err = c.Unpause(ctx)
-		require.NoError(t, err)
-		res = c.Exec(ctx, cmd, nil)
-		require.NoError(t, res.Error)
-		if err := c.Pause(ctx); err != nil {
-			t.Fatalf("unable to pause container: %s", err)
-		}
-
-		// After memory snapshot is dirtied and re-uploaded to cache, check size of cache
-		cacheSize = sizeDir(t, tc.cacheDir)
-		fmt.Printf("\n\n For cache %s: New cache size with memory snapshot: %d MB", tc.name, cacheSize/(1024*1024))
-		t.Cleanup(func() {
-			if err := c.Remove(ctx); err != nil {
-				t.Fatal(err)
+			if err := container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
+				t.Fatalf("unable to pull image: %s", err)
 			}
-		})
+
+			if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+				t.Fatalf("unable to Create container: %s", err)
+			}
+			t.Cleanup(func() {
+				if err := c.Remove(ctx); err != nil {
+					t.Fatal(err)
+				}
+			})
+			cmd := &repb.Command{
+				// Run a script that increments /workspace/count (on workspacefs) and
+				// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+				// This will let us test whether the scratchfs is sticking around across
+				// runs, and whether workspacefs is being correctly reset across runs.
+				Arguments: []string{"sh", "-c", cmdStr},
+			}
+			res := c.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+
+			if err := c.Pause(ctx); err != nil {
+				t.Fatalf("unable to pause container: %s", err)
+			}
+
+			// After initial memory snapshot is saved, check size of cache
+			cacheSize := sizeDir(t, tc.cacheDir)
+			cmdDescription := "No-op"
+			if cmdStr != "exit" {
+				cmdDescription = "Bazel bulid"
+			}
+			fmt.Printf("\n\n For cache %s after %s: Original cache size with memory snapshot: %dMB", tc.name, cmdDescription, cacheSize/(1024*1024))
+
+			workDir = testfs.MakeDirAll(t, rootDir, "fork")
+			opts.ActionWorkingDirectory = workDir
+			c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			require.NoError(t, err)
+			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			require.NoError(t, err)
+			err = c.Unpause(ctx)
+			require.NoError(t, err)
+			res = c.Exec(ctx, cmd, nil)
+			require.NoError(t, res.Error)
+			if err := c.Pause(ctx); err != nil {
+				t.Fatalf("unable to pause container: %s", err)
+			}
+
+			// After memory snapshot is dirtied and re-uploaded to cache, check size of cache
+			cacheSize = sizeDir(t, tc.cacheDir)
+			fmt.Printf("\n\n For cache %s after %s: New cache size with memory snapshot: %d MB", tc.name, cmdDescription, cacheSize/(1024*1024))
+			t.Cleanup(func() {
+				if err := c.Remove(ctx); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
 	}
 }
 
