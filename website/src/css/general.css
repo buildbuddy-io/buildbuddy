@@ -51,6 +51,10 @@ html body[data-theme="dark"] {
   --aa-selected-color-rgb: 80, 80, 80;
 }
 
+#__docusaurus {
+  overflow-x: hidden;
+}
+
 a {
   text-decoration: none;
 }
