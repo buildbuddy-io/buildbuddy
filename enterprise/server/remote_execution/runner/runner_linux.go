@@ -37,7 +37,13 @@ func (p *pool) initContainerProviders() error {
 	if podmanProvider != nil {
 		providers[platform.PodmanContainerType] = podmanProvider
 	}
-	providers[platform.FirecrackerContainerType] = firecracker.NewProvider(p.env, *rootDirectory)
+	if *platform.EnableFirecracker {
+		p, err := firecracker.NewProvider(p.env, *rootDirectory)
+		if err != nil {
+			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
+		}
+		providers[platform.FirecrackerContainerType] = p
+	}
 	providers[platform.BareContainerType] = &bare.Provider{}
 
 	p.containerProviders = providers

@@ -2,6 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+exports_files(srcs = ["main.go"])
+
 go_library(
     name = "goinit_lib",
     srcs = ["main.go"],
