@@ -244,11 +244,7 @@ func assembleJWT(ctx context.Context, c *Claims) (string, error) {
 	expiresAt -= (expiresAt % 60)
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	key := *jwtKey
-	if *newJwtKey != "" {
-		key = *newJwtKey
-	}
-	tokenString, err := token.SignedString([]byte(key))
+	tokenString, err := token.SignedString([]byte(*jwtKey))
 	return tokenString, err
 }
 
