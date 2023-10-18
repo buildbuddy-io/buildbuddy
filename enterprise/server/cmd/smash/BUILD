@@ -15,10 +15,9 @@ go_library(
         "//server/util/log",
         "@com_github_bojand_ghz//printer",
         "@com_github_bojand_ghz//runner",
-        "@com_github_jhump_protoreflect//desc",
+        "@com_github_jhump_protoreflect//dynamic",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )

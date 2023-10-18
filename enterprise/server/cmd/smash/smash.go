@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"sync"
@@ -16,10 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/jhump/protoreflect/desc"
+	"github.com/jhump/protoreflect/dynamic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -46,6 +46,8 @@ const (
 	byteStreamRead   = "google.bytestream.ByteStream/Read"
 	byteStreamWrite  = "google.bytestream.ByteStream/Write"
 	findMissingBlobs = "build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs"
+
+	writeBufSizeBytes = 1000000 // 1MB
 )
 
 var (
@@ -138,26 +140,45 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 	return d, buf
 }
 
-func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
+func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
 	resourceName, err := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).UploadString()
 	if err != nil {
 		log.Fatalf("Error computing upload resource name: %s", err)
 	}
-	wr := &bspb.WriteRequest{
-		ResourceName: resourceName,
-		WriteOffset:  0,
-		Data:         buf,
-		FinishWrite:  true,
+	r := bytes.NewReader(buf)
+
+	var messages []*dynamic.Message
+	writeBuf := make([]byte, writeBufSizeBytes)
+	bytesUploaded := int64(0)
+	for {
+		n, err := r.Read(writeBuf)
+		if err != nil && err != io.EOF {
+			log.Fatalf("failed to read in writeBuf: %s", err)
+		}
+		readDone := err == io.EOF
+		data := make([]byte, n)
+		copy(data, writeBuf[:n])
+		wr := &bspb.WriteRequest{
+			ResourceName: resourceName,
+			WriteOffset:  bytesUploaded,
+			Data:         data,
+			FinishWrite:  readDone,
+		}
+		bytesUploaded += int64(len(wr.Data))
+		dynamicMsg, err := dynamic.AsDynamicMessage(wr)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, dynamicMsg)
+		if readDone {
+			break
+		}
 	}
-	binData, err := proto.Marshal(wr)
-	if err != nil {
-		log.Fatalf("Error marshalling write: %s", err)
-	}
-	return binData
+	return messages, nil
 }
 
-func readDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
+func readDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	randomDigest := preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 
 	downloadString, err := digest.NewResourceName(randomDigest, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
@@ -170,14 +191,14 @@ func readDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 		ReadOffset:   0,
 		ReadLimit:    0,
 	}
-	binData, err := proto.Marshal(rr)
+	dynamicMsg, err := dynamic.AsDynamicMessage(rr)
 	if err != nil {
-		log.Fatalf("Error marshalling read: %s", err)
+		return nil, err
 	}
-	return binData
+	return []*dynamic.Message{dynamicMsg}, nil
 }
 
-func findMissingBlobsDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
+func findMissingBlobsDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	req := &repb.FindMissingBlobsRequest{
 		InstanceName: *instanceName,
 		BlobDigests:  make([]*repb.Digest, 100),
@@ -185,26 +206,25 @@ func findMissingBlobsDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) [
 	for i := 0; i < 100; i++ {
 		req.BlobDigests[i] = preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 	}
-	binData, err := proto.Marshal(req)
+	dynamicMsg, err := dynamic.AsDynamicMessage(req)
 	if err != nil {
-		log.Fatalf("Error marshalling read: %s", err)
+		return nil, err
 	}
-	return binData
+	return []*dynamic.Message{dynamicMsg}, nil
 }
 
-func dataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
+func dataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	switch *method {
 	case findMissingBlobs:
-		return findMissingBlobsDataFunc(mtd, cd)
+		return findMissingBlobsDataFunc(cd)
 	case byteStreamRead:
-		return readDataFunc(mtd, cd)
+		return readDataFunc(cd)
 	case byteStreamWrite:
-		return writeDataFunc(mtd, cd)
-	default:
-		log.Fatalf("Unknown rpc method: %q", *method)
+		return writeDataFunc(cd)
 	}
-	return nil
+	return nil, fmt.Errorf("Unknown rpc method: %q", *method)
 }
+
 func main() {
 	flag.Parse()
 
@@ -238,8 +258,8 @@ func main() {
 		runner.WithRPS(*rps),
 		runner.WithRunDuration(*testDuration),
 		runner.WithInsecure(!*ssl),
-		runner.WithBinaryDataFunc(dataFunc),
 		runner.WithMetadata(md),
+		runner.WithDataProvider(dataFunc),
 	)
 
 	if err != nil {
@@ -264,5 +284,4 @@ func main() {
 		}
 		log.Printf("Wrote results to f: %+v", f.Name())
 	}
-
 }
