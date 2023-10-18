@@ -83,10 +83,10 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		ctx = c
 	}
 	retrier := retry.New(ctx, &retry.Options{
-                InitialBackoff: 10 * time.Microsecond,
-                MaxBackoff:     100 * time.Millisecond,
-                Multiplier:     1.5,
-                MaxRetries:     math.MaxInt, // retry until context deadline
+		InitialBackoff: 10 * time.Microsecond,
+		MaxBackoff:     100 * time.Millisecond,
+		Multiplier:     1.5,
+		MaxRetries:     math.MaxInt, // retry until context deadline
 	})
 	for retrier.Next() {
 		err := nhf(ctx)
