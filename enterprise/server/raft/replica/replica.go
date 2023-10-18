@@ -1763,7 +1763,9 @@ func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
 // IOnDiskStateMachine instance has been closed, the Close method is not
 // allowed to update the state of IOnDiskStateMachine visible to the outside.
 func (sm *Replica) Close() error {
-	close(sm.quitChan)
+	if sm.quitChan != nil {
+		close(sm.quitChan)
+	}
 
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor

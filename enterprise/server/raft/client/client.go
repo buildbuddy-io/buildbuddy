@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -81,7 +82,12 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		defer cancel()
 		ctx = c
 	}
-	retrier := retry.DefaultWithContext(ctx)
+	retrier := retry.New(ctx, &retry.Options{
+		InitialBackoff: 10 * time.Microsecond,
+		MaxBackoff:     100 * time.Millisecond,
+		Multiplier:     1.5,
+		MaxRetries:     math.MaxInt, // retry until context deadline
+	})
 	for retrier.Next() {
 		err := nhf(ctx)
 		if err != nil {
@@ -120,11 +126,14 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	return batchResponse, err
 }
 
-func getTimeout(ctx context.Context) time.Duration {
+func getReadIndexTimeout(ctx context.Context) time.Duration {
+	const maxTimeout = time.Second
 	if deadline, ok := ctx.Deadline(); ok {
-		return deadline.Sub(time.Now())
+		if dur := deadline.Sub(time.Now()); dur < maxTimeout {
+			return dur
+		}
 	}
-	return DefaultContextTimeout
+	return maxTimeout
 }
 
 func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
@@ -141,16 +150,28 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdR
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
 		case rfpb.Header_LINEARIZABLE:
-			rs, err := nodehost.ReadIndex(shardID, getTimeout(ctx))
+			rs, err := nodehost.ReadIndex(shardID, getReadIndexTimeout(ctx))
 			if err != nil {
 				return err
 			}
 			v := <-rs.ResultC()
-			if !v.Completed() {
-				return status.FailedPreconditionError("Failed to read node index")
+			if v.Completed() {
+				raftResponseIface, err = nodehost.ReadLocalNode(rs, buf)
+				return err
+			} else if v.Rejected() {
+				return dragonboat.ErrRejected
+			} else if v.Timeout() {
+				return dragonboat.ErrTimeout
+			} else if v.Terminated() {
+				return dragonboat.ErrShardClosed
+			} else if v.Dropped() {
+				return dragonboat.ErrShardNotReady
+			} else if v.Aborted() {
+				return dragonboat.ErrAborted
+			} else {
+				return status.FailedPreconditionError("Failed to read result")
 			}
-			raftResponseIface, err = nodehost.ReadLocalNode(rs, buf)
-			return err
+
 		case rfpb.Header_STALE:
 			raftResponseIface, err = nodehost.StaleRead(shardID, buf)
 			return err
