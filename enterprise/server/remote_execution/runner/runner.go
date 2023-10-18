@@ -241,7 +241,7 @@ func (r *commandRunner) String() string {
 }
 
 func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
-	return container.GetPullCredentials(r.env, r.PlatformProperties)
+	return container.GetPullCredentials(r.PlatformProperties)
 }
 
 func (r *commandRunner) PrepareForTask(ctx context.Context) error {
@@ -776,7 +776,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 
-	creds, err := container.GetPullCredentials(p.env, platProps)
+	creds, err := container.GetPullCredentials(platProps)
 	if err != nil {
 		return err
 	}

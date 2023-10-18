@@ -241,7 +241,6 @@ func TestImageCacheAuthenticator(t *testing.T) {
 }
 
 func TestGetPullCredentials(t *testing.T) {
-	env := testenv.GetTestEnv(t)
 	flags.Set(
 		t,
 		"executor.container_registries",
@@ -264,7 +263,7 @@ func TestGetPullCredentials(t *testing.T) {
 		ContainerRegistryUsername: "username",
 		ContainerRegistryPassword: "",
 	}
-	_, err := container.GetPullCredentials(env, props)
+	_, err := container.GetPullCredentials(props)
 	assert.True(t, status.IsInvalidArgumentError(err))
 
 	props = &platform.Properties{
@@ -272,7 +271,7 @@ func TestGetPullCredentials(t *testing.T) {
 		ContainerRegistryUsername: "",
 		ContainerRegistryPassword: "password",
 	}
-	_, err = container.GetPullCredentials(env, props)
+	_, err = container.GetPullCredentials(props)
 	assert.True(t, status.IsInvalidArgumentError(err))
 
 	for _, testCase := range []struct {
@@ -308,7 +307,7 @@ func TestGetPullCredentials(t *testing.T) {
 	} {
 		props = &platform.Properties{ContainerImage: testCase.imageRef}
 
-		creds, err := container.GetPullCredentials(env, props)
+		creds, err := container.GetPullCredentials(props)
 
 		assert.NoError(t, err)
 		assert.Equal(
