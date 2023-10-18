@@ -127,12 +127,13 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 }
 
 func getReadIndexTimeout(ctx context.Context) time.Duration {
+	const maxTimeout = time.Second
 	if deadline, ok := ctx.Deadline(); ok {
-		if dur := deadline.Sub(time.Now()); dur < time.Second {
+		if dur := deadline.Sub(time.Now()); dur < maxTimeout {
 			return dur
 		}
 	}
-	return 100 * time.Millisecond
+	return maxTimeout
 }
 
 func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
@@ -149,7 +150,7 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdR
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
 		case rfpb.Header_LINEARIZABLE:
-			rs, err := nodehost.ReadIndex(shardID, time.Second)
+			rs, err := nodehost.ReadIndex(shardID, getReadIndexTimeout(ctx))
 			if err != nil {
 				return err
 			}
