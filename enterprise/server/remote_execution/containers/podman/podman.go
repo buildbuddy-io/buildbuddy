@@ -92,7 +92,11 @@ var (
 )
 
 const (
-	podmanInternalExitCode = 125
+	// Podman exit codes
+	podmanInternalExitCode           = 125
+	podmanCommandNotRunnableExitCode = 126
+	podmanCommandNotFoundExitCode    = 127
+
 	// podmanExecSIGKILLExitCode is the exit code returned by `podman exec` when the exec
 	// process is killed due to the parent container being removed.
 	podmanExecSIGKILLExitCode = 137
@@ -484,6 +488,12 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
 	result = runPodman(ctx, "run", &commandutil.Stdio{}, podmanRunArgs...)
+
+	if result.ExitCode == podmanCommandNotRunnableExitCode {
+		log.CtxInfof(ctx, "podman failed to run command")
+	} else if result.ExitCode == podmanCommandNotFoundExitCode {
+		log.CtxInfof(ctx, "podman failed to find command")
+	}
 
 	// Stop monitoring so that we can get stats.
 	stopMonitoring()
