@@ -155,13 +155,14 @@ func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 			log.Fatalf("failed to read in writeBuf: %s", err)
 		}
 		readDone := err == io.EOF
+		data := make([]byte, n)
+		copy(data, writeBuf[:n])
 		wr := &bspb.WriteRequest{
 			ResourceName: resourceName,
 			WriteOffset:  bytesUploaded,
-			Data:         writeBuf[:n],
+			Data:         data,
 			FinishWrite:  readDone,
 		}
-
 		bytesUploaded += int64(len(wr.Data))
 		dynamicMsg, err := dynamic.AsDynamicMessage(wr)
 		if err != nil {
