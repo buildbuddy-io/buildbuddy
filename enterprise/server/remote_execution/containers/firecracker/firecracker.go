@@ -373,9 +373,6 @@ type FirecrackerContainer struct {
 	rmOnce *sync.Once
 	rmErr  error
 
-	// Whether networking has been set up (and needs to be cleaned up).
-	isNetworkSetup bool
-
 	// Whether the VM was recycled.
 	recycled bool
 
@@ -404,6 +401,8 @@ type FirecrackerContainer struct {
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
 
+	network *networking.VMNetwork
+
 	jailerRoot         string            // the root dir the jailer will work in
 	machine            *fcclient.Machine // the firecracker machine object.
 	vmLog              *VMLog
@@ -411,8 +410,7 @@ type FirecrackerContainer struct {
 	createFromSnapshot bool
 	mountWorkspaceFile bool
 
-	cleanupVethPair func(context.Context) error
-	vmCtx           context.Context
+	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
 	// already been stopped manually.
 	cancelVmCtx context.CancelCauseFunc
@@ -1456,28 +1454,6 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 		return masqueradingErr
 	}
 
-	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
-		if strings.Contains(err.Error(), "File exists") {
-			// Don't fail if we failed to cleanup the networking on a previous run
-			log.Warningf("Networking cleanup failure. Net namespace already exists: %s", err)
-		} else {
-			return err
-		}
-	}
-	if err := networking.CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
-		return err
-	}
-	if err := networking.ConfigureTapInNamespace(ctx, c.id, tapDeviceName, tapAddr); err != nil {
-		return err
-	}
-	if err := networking.BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
-		return err
-	}
-	cleanupVethPair, err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx)
-	if err != nil {
-		return err
-	}
-	c.cleanupVethPair = cleanupVethPair
 	return nil
 }
 
@@ -1576,43 +1552,19 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
-	if !c.isNetworkSetup {
+	if c.network == nil {
 		return nil
 	}
-	c.isNetworkSetup = false
+
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 
 	// Even if the context was canceled, extend the life of the context for
 	// cleanup
 	ctx, cancel := background.ExtendContextForFinalization(ctx, time.Second*1)
 	defer cancel()
 
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
-
-	// These cleanup functions should not depend on each other, so try cleaning
-	// up everything and return the last error if there is one.
-	var lastErr error
-	if c.cleanupVethPair != nil {
-		if err := c.cleanupVethPair(ctx); err != nil {
-			log.Warningf("Networking cleanup failure. CleanupVethPair for vm id %s failed with: %s", c.id, err)
-			lastErr = err
-		}
-	}
-	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
-		log.Warningf("Networking cleanup failure. RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
-		lastErr = err
-	}
-	if err := networking.DeleteRoute(ctx, c.vmIdx); err != nil {
-		if !strings.Contains(err.Error(), "No such process") {
-			log.Warningf("Networking cleanup failure. DeleteRoute for vm idx %d failed with: %s", c.vmIdx, err)
-			lastErr = err
-		}
-	}
-	if err := networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx); err != nil {
-		log.Warningf("Networking cleanup failure. DeleteRuleIfSecondaryNetworkEnabled for vm idx %d failed with: %s", c.vmIdx, err)
-		lastErr = err
-	}
-	return lastErr
+	return c.network.Close()
 }
 
 func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {

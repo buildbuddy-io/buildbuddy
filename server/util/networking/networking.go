@@ -8,17 +8,25 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
 
 var (
 	routePrefix                   = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
+	dataDir                       = flag.String("executor.networking_data_home", os.TempDir(), "Data dir for networking-related accounting files.")
 )
 
 const (
@@ -29,7 +37,133 @@ const (
 	routingTableName = "rt1"
 	// netns prefix to use to identify executor namespaces.
 	netNamespacePrefix = "bb-executor-"
+	// Number of IP addresses available to assign.
+	numIPs = 1000
 )
+
+type Provider struct {
+	lockDir string
+
+	mu    sync.Mutex
+	idx   int
+	locks map[int]*os.File
+}
+
+// NewProvider returns a network provider that uses the given dir for storing
+// file locks.
+func NewProvider() (*Provider, error) {
+	lockDir := filepath.Join(*dataDir, os.Getenv("USER")+"_buildbuddy_networking", "locks")
+	if err := os.MkdirAll(lockDir, 0755); err != nil {
+		return nil, status.InternalErrorf("failed to create networking dir: %s", err)
+	}
+	return &Provider{
+		lockDir: lockDir,
+		locks:   make(map[int]*os.File, numIPs),
+	}, nil
+}
+
+// Get provisions a VM network using an IP that's not currently in use. The
+// caller must call Close() on the returned Network to clean it up and make the
+// IP available for others to use.
+func (p *Provider) Get(ctx context.Context) (*VMNetwork, error) {
+	n, err := p.get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := n.setup(ctx); err != nil {
+		// If setup fails, clean up any resources which were successfully
+		// created. Do this in the background in case the setup failed due to a
+		// context timeout.
+		go n.Close(context.Background())
+	}
+}
+
+func (p *Provider) get(ctx context.Context) (*VMNetwork, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// If all IPs are currently in use locally, just return an error (this
+	// should never happen in practice).
+	if len(p.locks) == numIPs {
+		return nil, status.ResourceExhaustedError("all IP addresses are currently in use")
+	}
+
+	// Otherwise, try to lock the next IP that's not currently in use. If that
+	// fails, another process is using the IP, so just continue on to the next
+	// IP and retry. Note that in production, this should always succeed after
+	// the first iteration; this exists for testing and development setups where
+	// multiple executors can be run locally.
+	r := retry.DefaultWithContext(ctx)
+	for r.Next() {
+		for p.locks[p.idx] != nil {
+			p.idx = (p.idx + 1) % numIPs
+		}
+		f, err := p.flock(p.idx)
+		if err == syscall.EAGAIN {
+			continue
+		} else if err != nil {
+			return nil, status.InternalErrorf("failed to acquire IP file lock: %s", err)
+		}
+		p.locks[p.idx] = f
+
+		idx := p.idx
+		return &VMNetwork{
+			Index:        p.idx,
+			NetNamespace: uuid.New(),
+			Release: func() error {
+				p.mu.Lock()
+				defer p.mu.Unlock()
+				delete(p.locks, idx)
+				return f.Close()
+			},
+		}, nil
+	}
+	return nil, ctx.Err()
+}
+
+func (p *Provider) flock(idx int) (*os.File, error) {
+	f, err := os.Create(filepath.Join(p.lockDir, fmt.Sprintf("%d.lock", idx)))
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+type VMNetwork struct {
+	Index        int
+	NetNamespace string
+	Release      func() error
+}
+
+func (n *VMNetwork) CloneIP() string {
+	return getCloneIP(n.Index)
+}
+
+func (n *VMNetwork) Close(ctx context.Context) error {
+	// These cleanup functions should not depend on each other. Run them all
+	// in parallel so that if one times out, it doesn't prevent the others from
+	// running.
+	var lastErr error
+
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		if err := removeNetNamespace(ctx, n.NetNamespace); err != nil {
+			log.CtxWarningf(ctx, "Failed to remove net namespace: %s", err)
+			lastErr = err
+		}
+		return nil
+	})
+
+	if err := deleteRuleIfSecondaryNetworkEnabled(ctx, n.Index); err != nil {
+		log.Warningf("Failed to delete secondary network IP rule: %s", err)
+		lastErr = err
+	}
+	return lastErr
+}
 
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root. Output and errors are returned.
@@ -143,8 +277,8 @@ func randomVethName(prefix string) (string, error) {
 	return prefix + suffix, nil
 }
 
-// createRandomVethPair attempts to create a veth pair with random names, the veth1 end of which will
-// be in the root namespace.
+// createRandomVethPair attempts to create a veth pair with random names, the
+// veth1 end of which will be in the root namespace.
 func createRandomVethPair(ctx context.Context, netNamespace string) (string, string, error) {
 	// compute unique veth names
 	var veth0, veth1 string
@@ -191,17 +325,7 @@ func removeForwardAcceptRule(ctx context.Context, vethName, defaultDevice string
 	return runCommand(ctx, "iptables", "--wait", "--delete", "FORWARD", "-i", vethName, "-o", defaultDevice, "-j", "ACCEPT")
 }
 
-func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
-	// This will delete the veth pair too, and the address attached
-	// to the host-size of the veth pair.
-	return runCommand(ctx, "ip", "netns", "delete", NetNamespace(netNamespace))
-}
-
-func DeleteRoute(ctx context.Context, vmIdx int) error {
-	return runCommand(ctx, "ip", "route", "delete", getCloneIP(vmIdx))
-}
-
-func DeleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
+func deleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
 	if !IsSecondaryNetworkEnabled() {
 		// IP rule is only added when the secondary network is enabled
 		return nil
@@ -280,74 +404,98 @@ func routeExists(ctx context.Context, source string, gateway string) (bool, erro
 //
 //	# add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //	$ sudo ip route add 192.168.0.3 via 10.0.0.2
-func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (func(context.Context) error, error) {
+func (n *VMNetwork) setup(ctx context.Context) error {
 	r, err := findRoute(ctx, *routePrefix)
-	device := r.device
 	if err != nil {
-		return nil, err
+		return err
 	}
+	device := r.device
 
-	// compute unique addresses for endpoints
-	veth0, veth1, err := createRandomVethPair(ctx, netNamespace)
+	// TODO: lock the net namespace so that other executors don't try to clean
+	// it up
+	if err := CreateNetNamespace(ctx, c.id); err != nil {
+		if strings.Contains(err.Error(), "File exists") {
+			// Don't fail if we failed to cleanup the networking on a previous run
+			log.Warningf("Networking cleanup failure. Net namespace already exists: %s", err)
+		} else {
+			return err
+		}
+	}
+	if err := CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
+		return err
+	}
+	if err := ConfigureTapInNamespace(ctx, c.id, tapDeviceName, tapAddr); err != nil {
+		return err
+	}
+	if err := BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
+		return err
+	}
+	cleanupVethPair, err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	c.cleanupVethPair = cleanupVethPair
+
+	veth0, veth1, err := createRandomVethPair(ctx, n.NetNamespace)
+	if err != nil {
+		return err
 	}
 
 	// This addr will be used for the host-side of the veth pair, so it
 	// needs to to be unique on the host.
-	hostEndpointNet := fmt.Sprintf("192.168.%d.%d/30", vmIdx/30, (vmIdx%30)*8+5)
+	hostEndpointNet := fmt.Sprintf("192.168.%d.%d/30", n.Index/30, (n.Index%30)*8+5)
 	hostEndpointAddr := strings.SplitN(hostEndpointNet, "/", 2)[0]
 
 	// Can be anything because it's in a namespace.
-	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", vmIdx/30, (vmIdx%30)*8+6)
+	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", n.Index/30, (n.Index%30)*8+6)
 	cloneEndpointAddr := strings.SplitN(cloneEndpointNet, "/", 2)[0]
 
 	// This IP will be used as the clone-address so must be unique on the
 	// host.
-	cloneIP := getCloneIP(vmIdx)
+	cloneIP := getCloneIP(n.Index)
 
-	err = attachAddressToVeth(ctx, netNamespace, cloneEndpointNet, veth0)
+	err = attachAddressToVeth(ctx, n.NetNamespace, cloneEndpointNet, veth0)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	err = runCommand(ctx, namespace(netNamespace, "ip", "link", "set", "dev", veth0, "up")...)
+	err = runCommand(ctx, namespace(n.NetNamespace, "ip", "link", "set", "dev", veth0, "up")...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	err = attachAddressToVeth(ctx, "" /*no namespace*/, hostEndpointNet, veth1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	err = runCommand(ctx, "ip", "link", "set", "dev", veth1, "up")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", hostEndpointAddr)...)
+	err = runCommand(ctx, namespace(n.NetNamespace, "ip", "route", "add", "default", "via", hostEndpointAddr)...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", veth0, "-s", vmIP, "-j", "SNAT", "--to", cloneIP)...)
+	err = runCommand(ctx, namespace(n.NetNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", veth0, "-s", vmIP, "-j", "SNAT", "--to", cloneIP)...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", veth0, "-d", cloneIP, "-j", "DNAT", "--to", vmIP)...)
+	err = runCommand(ctx, namespace(n.NetNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", veth0, "-d", cloneIP, "-j", "DNAT", "--to", vmIP)...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	exists, err := routeExists(ctx, cloneIP, cloneEndpointAddr)
 	if err != nil {
-		return nil, err
+		return err
 	} else if !exists {
 		err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	} else {
 		log.Debugf("ip route %s via %s already exists", cloneIP, cloneEndpointAddr)
@@ -356,18 +504,20 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 	if IsSecondaryNetworkEnabled() {
 		err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "lookup", routingTableName)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	err = runCommand(ctx, "iptables", "--wait", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return func(ctx context.Context) error {
+	n.cleanupFirewallRule = func(ctx context.Context) error {
 		return removeForwardAcceptRule(ctx, veth1, device)
-	}, nil
+	}
+
+	return nil
 }
 
 // DefaultIP returns the IPv4 address for the primary network.
