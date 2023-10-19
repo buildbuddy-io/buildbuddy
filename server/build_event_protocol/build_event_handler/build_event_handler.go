@@ -1012,6 +1012,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					}
 					return status.UnknownError(fmt.Sprintf("%v", authError))
 				}
+				if irs := e.env.GetIPRulesService(); irs != nil {
+					if err := irs.Authorize(e.ctx); err != nil {
+						return err
+					}
+				}
 			}
 		}
 

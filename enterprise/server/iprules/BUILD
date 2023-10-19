@@ -36,6 +36,7 @@ go_test(
         "//proto:iprules_go_proto",
         "//server/environment",
         "//server/testutil/testauth",
+        "//server/util/claims",
         "//server/util/clientip",
         "//server/util/status",
         "//server/util/testing/flags",
