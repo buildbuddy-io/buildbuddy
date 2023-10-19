@@ -116,7 +116,7 @@ type SafetyAttributes struct {
 }
 
 type Prediction struct {
-	Candidates       []Candidate      `json:"candidates"`
+	Candidates       []Candidate        `json:"candidates"`
 	SafetyAttributes []SafetyAttributes `json:"safetyAttributes"`
 }
 
