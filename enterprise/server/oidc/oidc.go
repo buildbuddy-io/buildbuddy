@@ -541,7 +541,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 	}
 
 	defer func() {
-		if status.IsUnauthenticatedError(err) {
+		if status.IsUnauthenticatedError(err) && strings.Contains(err.Error(), "Invalid API") {
 			if md, ok := metadata.FromIncomingContext(ctx); ok {
 				var sb strings.Builder
 				for k, v := range md {
