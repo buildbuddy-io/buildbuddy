@@ -527,7 +527,7 @@ func (a *OpenIDAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (inte
 	return a.authenticateGRPCRequest(ctx, false /* acceptJWT= */)
 }
 
-func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, acceptJWT bool) (claims *claims.Claims, err error) {
+func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, acceptJWT bool) (c *claims.Claims, err error) {
 	p, ok := peer.FromContext(ctx)
 
 	if ok && p != nil && p.AuthInfo != nil {
