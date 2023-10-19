@@ -547,7 +547,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 				for k, v := range md {
 					sb.WriteString(fmt.Sprintf("%s=%s\n", k, strings.Join(v, ",")))
 				}
-				log.CtxWarningf(ctx, "HEADERS:\n%s", sb.String())
+				log.CtxWarningf(ctx, "VVV HEADERS:\n%s", sb.String())
 			}
 		}
 	}()
