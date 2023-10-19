@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
@@ -36,7 +37,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -79,8 +79,8 @@ type Store struct {
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
 
-	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
-	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
+	leaseKeeper *leasekeeper.LeaseKeeper
+	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
 
 	usageUpdates        chan *rfpb.ReplicaUsage
 	usages              *usagetracker.Tracker
@@ -97,6 +97,7 @@ type Store struct {
 }
 
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
+	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
 	s := &Store{
 		rootDir:       rootDir,
 		grpcAddr:      grpcAddress,
@@ -107,15 +108,15 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		registry:      registry,
 		listener:      listener,
 		apiClient:     apiClient,
-		liveness:      nodeliveness.New(nodeHost.ID(), sender),
+		liveness:      nodeLiveness,
 		log:           log.NamedSubLogger(nodeHost.ID()),
 
 		rangeMu:             sync.RWMutex{},
 		openRanges:          make(map[uint64]*rfpb.RangeDescriptor),
 		rangeUsageListeners: make([]RangeUsageListener, 0),
 
-		leases:   sync.Map{},
-		replicas: sync.Map{},
+		leaseKeeper: leasekeeper.New(nodeHost, nodeLiveness, listener),
+		replicas:    sync.Map{},
 
 		usageUpdates:  make(chan *rfpb.ReplicaUsage, 100),
 		metaRangeMu:   sync.Mutex{},
@@ -203,7 +204,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
-		su.GetLeaseCount(),
+		s.leaseKeeper.LeaseCount(),
 		su.GetReadQps(),
 		su.GetRaftProposeQps(),
 		su.GetTotalBytesUsed()/1e6,
@@ -228,7 +229,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 		}
 		isLeader := 0
 		if rd := s.lookupRange(r.ShardID); rd != nil {
-			if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok && rlIface.(*rangelease.Lease).Valid() {
+			if s.leaseKeeper.HaveLease(rd.GetRangeId()) {
 				isLeader = 1
 			}
 		}
@@ -253,25 +254,6 @@ func (s *Store) handleUsageUpdates(ctx context.Context, usageUpdatesChan <-chan 
 			} else {
 				log.Warningf("Usage update for unknown range: %d", usage.GetRangeId())
 			}
-		case <-ctx.Done():
-			return nil
-		}
-	}
-}
-
-func (s *Store) handleLeaderUpdates(ctx context.Context, leaderUpdatesChan <-chan raftio.LeaderInfo) error {
-	for {
-		select {
-		case info := <-leaderUpdatesChan:
-			if !s.isLeader(info.ShardID) {
-				continue
-			}
-			rd := s.lookupRange(info.ShardID)
-			if rd == nil {
-				log.Errorf("Got callback for shard %d but range not found", info.ShardID)
-				continue
-			}
-			go s.maybeAcquireRangeLease(rd)
 		case <-ctx.Done():
 			return nil
 		}
@@ -312,30 +294,22 @@ func (s *Store) Start() error {
 		s.grpcServer.Serve(lis)
 	}()
 
-	leaderUpdatesChan, closeLeaderUpdatesChan := s.listener.AddLeaderChangeListener()
-	s.closeLeaderUpdatesChan = closeLeaderUpdatesChan
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	s.egCancel = cancelFunc
 
 	eg, gctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		return s.handleLeaderUpdates(gctx, leaderUpdatesChan)
-	})
-
-	eg.Go(func() error {
 		return s.handleUsageUpdates(gctx, s.usageUpdates)
 	})
-
+	s.leaseKeeper.Start()
 	return nil
 }
 
 func (s *Store) Stop(ctx context.Context) error {
-	s.dropLeadershipForShutdown()
+	s.leaseKeeper.Stop()
 
 	s.egCancel()
 	s.eg.Wait()
-	s.closeLeaderUpdatesChan()
 
 	s.log.Info("Store: waitgroups finished")
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
@@ -387,70 +361,6 @@ func (s *Store) dropLeadershipForShutdown() {
 		}
 	}
 	eg.Wait()
-}
-
-func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
-	if len(rd.GetReplicas()) == 0 {
-		s.log.Debugf("Not acquiring range %d lease: no replicas", rd.GetRangeId())
-		return
-	}
-
-	shardID := rd.GetReplicas()[0].GetShardId()
-	if !s.isLeader(shardID) {
-		return
-	}
-
-	rangeID := rd.GetRangeId()
-	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.nodeHost, shardID, s.liveness, rd))
-	rl, ok := rlIface.(*rangelease.Lease)
-	if !ok {
-		alert.UnexpectedEvent("unexpected_leases_map_type_error")
-		return
-	}
-
-	for attempt := 0; attempt < 3; attempt++ {
-		if !s.isLeader(shardID) {
-			break
-		}
-		if rl.Valid() {
-			break
-		}
-		err := rl.Lease()
-		if err == nil {
-			break
-		}
-		s.log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
-	}
-
-	if rl.Valid() {
-		for _, rul := range s.rangeUsageListeners {
-			rul.OnRangeLeaseAcquired(rd)
-		}
-		s.updateTags()
-	}
-}
-
-func (s *Store) releaseRangeLease(rangeID uint64) {
-	rlIface, ok := s.leases.Load(rangeID)
-	if !ok {
-		return
-	}
-	rl, ok := rlIface.(*rangelease.Lease)
-	if !ok {
-		alert.UnexpectedEvent("unexpected_leases_map_type_error")
-		return
-	}
-	s.leases.Delete(rangeID)
-	if !rl.Valid() {
-		return
-	}
-
-	rl.Release()
-	for _, rul := range s.rangeUsageListeners {
-		rul.OnRangeLeaseDropped(rl.GetRangeDescriptor())
-	}
-	s.updateTags()
-
 }
 
 func (s *Store) GetRange(shardID uint64) *rfpb.RangeDescriptor {
@@ -520,8 +430,9 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		go s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
 	}
 
+	s.leaseKeeper.AddRange(rd)
+
 	// Start goroutines for these so that Adding ranges is quick.
-	go s.maybeAcquireRangeLease(rd)
 	go s.updateTags()
 	go s.updateUsages(r)
 }
@@ -544,8 +455,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	// Start goroutines for these so that Removing ranges is quick.
-	go s.releaseRangeLease(rd.GetRangeId())
+	s.leaseKeeper.RemoveRange(rd)
 	go s.updateTags()
 }
 
@@ -631,15 +541,10 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 }
 
 func (s *Store) haveLease(rangeID uint64) bool {
-	if rlIface, ok := s.leases.Load(rangeID); ok {
-		if rl, ok := rlIface.(*rangelease.Lease); ok {
-			if rl.Valid() {
-				return true
-			}
-		} else {
-			alert.UnexpectedEvent("unexpected_leases_map_type_error")
-		}
+	if r, err := s.GetReplica(rangeID); err == nil {
+		return s.leaseKeeper.HaveLease(r.ShardID)
 	}
+	log.Warningf("haveLease check for unheld range: %d", rangeID)
 	return false
 }
 
@@ -647,7 +552,7 @@ func (s *Store) haveLease(rangeID uint64) bool {
 // an up-to-date range descriptor. It also checks that a local replica owns
 // the range lease for the requested range.
 func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
-	r, rd, err := s.validatedRange(header)
+	r, _, err := s.validatedRange(header)
 	if err != nil {
 		return nil, err
 	}
@@ -661,7 +566,6 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 		return r, nil
 	}
 
-	go s.maybeAcquireRangeLease(rd)
 	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
 }
 
@@ -833,7 +737,8 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	if _, _, err := s.validatedRange(req.GetHeader()); err != nil {
+	//	if _, _, err := s.validatedRange(req.GetHeader()); err != nil {
+	if _, err := s.LeasedRange(req.GetHeader()); err != nil {
 		return nil, err
 	}
 	shardID := req.GetHeader().GetReplica().GetShardId()
@@ -964,7 +869,7 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 			s.setMetaRangeBuf(userEvent.Payload)
 		}
 	default:
-		return
+		break
 	}
 }
 
@@ -991,10 +896,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	su.ReplicaCount = int64(len(s.openRanges))
 	s.rangeMu.Unlock()
 
-	s.leases.Range(func(key, value any) bool {
-		su.LeaseCount += 1
-		return true
-	})
+	su.LeaseCount = s.leaseKeeper.LeaseCount()
 
 	for _, ru := range s.usages.ReplicaUsages() {
 		su.ReadQps += ru.GetReadQps()
