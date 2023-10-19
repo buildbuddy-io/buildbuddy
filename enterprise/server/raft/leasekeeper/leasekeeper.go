@@ -37,7 +37,6 @@ type LeaseKeeper struct {
 }
 
 func New(nodeHost *dragonboat.NodeHost, liveness *nodeliveness.Liveness, listener *listener.RaftListener) *LeaseKeeper {
-	log.Printf("NEW LEASEKEEPER")
 	return &LeaseKeeper{
 		nodeHost: nodeHost,
 		liveness: liveness,
@@ -57,7 +56,6 @@ func (lk *LeaseKeeper) Start() {
 	lk.nodeLivenessUpdates, lk.cancelNodeLivenessUpdates = lk.liveness.AddListener()
 
 	go lk.watchLeases()
-	log.Printf("LEASEKEEPER STARTED")
 }
 
 func (lk *LeaseKeeper) Stop() {
@@ -71,7 +69,6 @@ func (lk *LeaseKeeper) Stop() {
 	lk.quitAll = nil
 	lk.cancelLeaderUpdates()
 	lk.cancelNodeLivenessUpdates()
-	log.Printf("LEASEKEEPER STOPPED")
 }
 
 type leaseAndContext struct {
@@ -81,7 +78,6 @@ type leaseAndContext struct {
 }
 
 func (lac *leaseAndContext) Update(leader bool) {
-	log.Printf("lac %s Update(%t)", lac.l, leader)
 	if lac.cancel != nil {
 		lac.cancel()
 	}
@@ -103,11 +99,9 @@ func (lac *leaseAndContext) Update(leader bool) {
 }
 
 func (lk *LeaseKeeper) watchLeases() {
-	log.Printf("LEASEKEEPER STARTING WATCH LEASES LOOP")
 	for {
 		select {
 		case info := <-lk.leaderUpdates:
-			log.Printf("LEASEKEEPER leader update")
 			leader := info.LeaderID == info.ReplicaID && info.Term > 0
 			lk.mu.Lock()
 			lk.leaders[shardID(info.ShardID)] = leader
@@ -117,7 +111,6 @@ func (lk *LeaseKeeper) watchLeases() {
 				go lac.Update(leader)
 			}
 		case <-lk.quitAll:
-			log.Printf("LEASEKEEPER quitALL")
 			lk.leases.Range(func(key, val any) bool {
 				lac := val.(leaseAndContext)
 				go lac.Update( /*leader=*/ false)
@@ -125,7 +118,6 @@ func (lk *LeaseKeeper) watchLeases() {
 			})
 			return
 		case <-lk.nodeLivenessUpdates:
-			log.Printf("LEASEKEEPER node liveness changed")
 			lk.leases.Range(func(key, val any) bool {
 				lk.mu.Lock()
 				leader := lk.leaders[key.(shardID)]
@@ -203,6 +195,5 @@ func (lk *LeaseKeeper) HaveLease(shard uint64) bool {
 		lac := lacI.(leaseAndContext)
 		return lac.l.Valid()
 	}
-	log.Warningf("LEASE NOT FOUND FOR SHARD %d", shard)
 	return false
 }
