@@ -3,6 +3,7 @@ package snaploader
 import (
 	"context"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"os"
 	"path/filepath"
 	"slices"
@@ -47,7 +48,8 @@ const (
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
 // as well as the key that should be written to.
-//
+var SnapshotToCache = flag.String("snapshot", "mem", "Snapshot to save to cache")
+
 // TODO: include a version number in the key somehow, so that
 // if we make breaking changes e.g. to the vmexec API or firecracker
 // version etc., we can ensure that incompatible snapshots don't get reused.
@@ -541,7 +543,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			forceCache := strings.Contains(fileName, "mem")
+			forceCache := strings.Contains(fileName, *SnapshotToCache)
 			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath, forceCache)
 		})
 	}
@@ -659,7 +661,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	var dirtyBytes, dirtyChunkCount int64
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount)
+		if strings.Contains(name, *SnapshotToCache) {
+			fmt.Printf("Cached %q in %s - %d MB (%d chunks) dirty\n", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount)
+		}
 	}()
 
 	size, err := cow.SizeBytes()

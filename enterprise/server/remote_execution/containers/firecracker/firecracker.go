@@ -108,7 +108,7 @@ const (
 	firecrackerSocketWaitTimeout = 3 * time.Second
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 30 * time.Second
+	vSocketDialTimeout = 100 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -197,7 +197,7 @@ const (
 	guestVFSMountDir = "/vfs"
 
 	// How long to allow for the VM to be finalized (paused, outputs copied, etc.)
-	finalizationTimeout = 10 * time.Second
+	finalizationTimeout = 100 * time.Second
 )
 
 var (

@@ -482,10 +482,24 @@ type CacheTC struct {
 	command  string
 }
 
+type CommandTC struct {
+	command string
+	name    string
+}
+
 func TestDirtyMemoryCDC(t *testing.T) {
+	flags.Set(t, "app.log_level", "fatal")
+	flags.Set(t, "snapshot", "mem")
+	log.Configure()
+
 	ctx := context.Background()
-	testCaches := make([]CacheTC, 0, 3)
+	testCaches := make([]CacheTC, 0)
+	commands := make([]CommandTC, 0)
+
+	noopCommand := ""
+	commands = append(commands, CommandTC{command: noopCommand, name: "no execution"})
 	simpleCommand := "exit"
+	commands = append(commands, CommandTC{command: simpleCommand, name: "no-op execution (`exit`)"})
 	bazelCommand := `
 		cd ~
 		if [ -d bazel-gazelle ]; then
@@ -498,6 +512,7 @@ func TestDirtyMemoryCDC(t *testing.T) {
 		echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
 		bazelisk build //...
 `
+	commands = append(commands, CommandTC{command: bazelCommand, name: "bazel build"})
 
 	// Setup env with pebble cache, compression + CDC enabled
 	pcCompressionCDCDir := testfs.MakeTempDir(t)
@@ -536,7 +551,8 @@ func TestDirtyMemoryCDC(t *testing.T) {
 	}
 	testCaches = append(testCaches, CacheTC{cacheDir: diskDir, c: dc, name: "disk"})
 
-	for _, cmdStr := range []string{simpleCommand, bazelCommand} {
+	cfg := getExecutorConfig(t)
+	for _, commandTC := range commands {
 		for _, tc := range testCaches {
 			env := getTestEnv(ctx, t, envOpts{c: tc.c})
 			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -553,14 +569,14 @@ func TestDirtyMemoryCDC(t *testing.T) {
 					EnableNetworking:  true,
 					ScratchDiskSizeMb: 20_000,
 				},
-				JailerRoot: tempJailerRoot(t),
+				ExecutorConfig: cfg,
 			}
 			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if err := container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
+			if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
 				t.Fatalf("unable to pull image: %s", err)
 			}
 
@@ -572,15 +588,18 @@ func TestDirtyMemoryCDC(t *testing.T) {
 					t.Fatal(err)
 				}
 			})
+
 			cmd := &repb.Command{
 				// Run a script that increments /workspace/count (on workspacefs) and
 				// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
 				// This will let us test whether the scratchfs is sticking around across
 				// runs, and whether workspacefs is being correctly reset across runs.
-				Arguments: []string{"sh", "-c", cmdStr},
+				Arguments: []string{"sh", "-c", commandTC.command},
 			}
-			res := c.Exec(ctx, cmd, nil /*=stdio*/)
-			require.NoError(t, res.Error)
+			if commandTC.command != "" {
+				res := c.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+			}
 
 			if err := c.Pause(ctx); err != nil {
 				t.Fatalf("unable to pause container: %s", err)
@@ -588,34 +607,33 @@ func TestDirtyMemoryCDC(t *testing.T) {
 
 			// After initial memory snapshot is saved, check size of cache
 			cacheSize := sizeDir(t, tc.cacheDir)
-			cmdDescription := "No-op"
-			if cmdStr != "exit" {
-				cmdDescription = "Bazel bulid"
-			}
-			fmt.Printf("\n\n For cache %s after %s: Original cache size with memory snapshot: %dMB", tc.name, cmdDescription, cacheSize/(1024*1024))
+			fmt.Printf("\nFor cache %s after %s:\nOriginal cache size with snapshot: %dMB\n", tc.name, commandTC.name, cacheSize/(1024*1024))
 
 			workDir = testfs.MakeDirAll(t, rootDir, "fork")
 			opts.ActionWorkingDirectory = workDir
 			c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 			require.NoError(t, err)
-			err = container.PullImageIfNecessary(ctx, env, c, container.PullCredentials{}, opts.ContainerImage)
+			err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 			require.NoError(t, err)
 			err = c.Unpause(ctx)
 			require.NoError(t, err)
-			res = c.Exec(ctx, cmd, nil)
-			require.NoError(t, res.Error)
+			if commandTC.command != "" {
+				res := c.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+			}
 			if err := c.Pause(ctx); err != nil {
 				t.Fatalf("unable to pause container: %s", err)
 			}
 
 			// After memory snapshot is dirtied and re-uploaded to cache, check size of cache
-			cacheSize = sizeDir(t, tc.cacheDir)
-			fmt.Printf("\n\n For cache %s after %s: New cache size with memory snapshot: %d MB", tc.name, cmdDescription, cacheSize/(1024*1024))
+			newCacheSize := sizeDir(t, tc.cacheDir)
+			fmt.Printf("New cache size with snapshot: %d MB\n", newCacheSize/(1024*1024))
 			t.Cleanup(func() {
 				if err := c.Remove(ctx); err != nil {
 					t.Fatal(err)
 				}
 			})
+			fmt.Printf("Difference in cache size: %d\n", (newCacheSize-cacheSize)/(1024*1024))
 		}
 	}
 }

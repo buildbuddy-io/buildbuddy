@@ -17,6 +17,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/authutil",
+        "//server/util/flag",
         "//server/util/hash",
         "//server/util/log",
         "//server/util/perms",
