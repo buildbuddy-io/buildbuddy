@@ -32,9 +32,10 @@ const (
 )
 
 var (
-	jwtKey      = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
-	newJwtKey   = flag.String("auth.new_jwt_key", "", "If set, new JWTs will be signed using this key. For verifications both this and the old JWT key will be tried.")
-	jwtDuration = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
+	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
+	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, JWT verifications will try both this and the old JWT key.", flag.Secret)
+	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
+	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
 )
 
 type Claims struct {
@@ -245,7 +246,7 @@ func assembleJWT(ctx context.Context, c *Claims) (string, error) {
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
 	key := *jwtKey
-	if *newJwtKey != "" {
+	if *newJwtKey != "" && *signUsingNewJwtKey {
 		key = *newJwtKey
 	}
 	tokenString, err := token.SignedString([]byte(key))
