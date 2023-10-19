@@ -29,6 +29,7 @@ type State = {
   isLoading: boolean;
 };
 
+const openAIAgreedLocalStorageKey = "agreedToUseOpenAI";
 export default class SuggestionButton extends React.Component<SuggestionButtonProps, State> {
   state: State = {
     isMenuOpen: false,
@@ -57,12 +58,27 @@ export default class SuggestionButton extends React.Component<SuggestionButtonPr
   }
 
   onClickAsk(service: string) {
+    if (localStorage.getItem(openAIAgreedLocalStorageKey)) {
+      this.makeRequest("");
+      return;
+    }
+
+    this.onOpenDialog();
+  }
+
+  makeRequest(service: string) {
+    localStorage.setItem(openAIAgreedLocalStorageKey, "true");
     this.setState({ isLoading: true, isMenuOpen: false, isDialogOpen: false });
     this.inFlightRpc = this.props.model.fetchSuggestions(service).finally(() => this.setState({ isLoading: false }));
   }
 
   render() {
-    if (!capabilities.config.botSuggestionsEnabled || !this.props.user || this.props.model.getStatus() != "Failed") {
+    if (
+      !capabilities.config.botSuggestionsEnabled ||
+      !this.props.user ||
+      !this.props.user?.selectedGroup?.botSuggestionsEnabled ||
+      this.props.model.getStatus() != "Failed"
+    ) {
       return <></>;
     }
 
@@ -88,7 +104,7 @@ export default class SuggestionButton extends React.Component<SuggestionButtonPr
           </OutlinedButtonGroup>
           <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
             <Menu>
-              <MenuItem onClick={this.onClickAsk.bind(this, "google")}>Ask Buddy (Powered by Google)</MenuItem>
+              <MenuItem onClick={this.makeRequest.bind(this, "google")}>Ask Buddy (Powered by Google)</MenuItem>
               <MenuItem onClick={this.onOpenDialog.bind(this)}>Ask Buddy (Powered by OpenAI)</MenuItem>
             </Menu>
           </Popup>
@@ -99,10 +115,7 @@ export default class SuggestionButton extends React.Component<SuggestionButtonPr
               <DialogTitle>Confirm using OpenAI</DialogTitle>
             </DialogHeader>
             <DialogBody>
-              <p>
-                Asking Buddy (powered by OpenAI) will send the redacted build logs of the current invocation to OpenAI.
-              </p>
-              <p>Asking Buddy (powered by Google) will keep your data inside of our Google Cloud data centers.</p>
+              <p>Asking Buddy will send the redacted build logs of the current invocation to OpenAI.</p>
               <p>
                 Please make sure there is no sensitive data in your build logs, and that you are okay with sending this
                 data to OpenAI before pressing OK.
@@ -111,7 +124,7 @@ export default class SuggestionButton extends React.Component<SuggestionButtonPr
             <DialogFooter>
               <DialogFooterButtons>
                 <OutlinedButton onClick={this.onCloseDialog.bind(this)}>Cancel</OutlinedButton>
-                <Button onClick={this.onClickAsk.bind(this, "openai")}>OK</Button>
+                <Button onClick={this.makeRequest.bind(this, "openai")}>OK</Button>
               </DialogFooterButtons>
             </DialogFooter>
           </Dialog>
