@@ -527,7 +527,7 @@ func (a *OpenIDAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (inte
 	return a.authenticateGRPCRequest(ctx, false /* acceptJWT= */)
 }
 
-func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, acceptJWT bool) (*claims.Claims, error) {
+func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, acceptJWT bool) (claims *claims.Claims, err error) {
 	p, ok := peer.FromContext(ctx)
 
 	if ok && p != nil && p.AuthInfo != nil {
@@ -539,6 +539,18 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 			return a.claimsFromAPIKeyID(ctx, certs[0].Subject.SerialNumber)
 		}
 	}
+
+	defer func() {
+		if status.IsUnauthenticatedError(err) {
+			if md, ok := metadata.FromIncomingContext(ctx); ok {
+				var sb strings.Builder
+				for k, v := range md {
+					sb.WriteString(fmt.Sprintf("%s=%s\n", k, strings.Join(v, ",")))
+				}
+				log.CtxWarningf(ctx, "HEADERS:\n%s", sb.String())
+			}
+		}
+	}()
 
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if certHeaders := md.Get(SSLCertHeader); len(certHeaders) > 0 {
