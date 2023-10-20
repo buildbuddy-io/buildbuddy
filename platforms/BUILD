@@ -1,25 +1,38 @@
 package(default_visibility = ["//visibility:public"])
 
-config_setting(
-    name = "linux_x86_64",
+platform(
+    name = "linux_amd64",
     constraint_values = [
+        "@platforms//cpu:x86_64",
         "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
     ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04:latest",
+        "dockerNetwork": "off",
+    },
 )
 
-config_setting(
-    name = "macos_x86_64",
+platform(
+    name = "macos_amd64",
     constraint_values = [
-        "@platforms//os:macos",
         "@platforms//cpu:x86_64",
+        "@platforms//os:macos",
     ],
+    exec_properties = {
+        "Arch": "amd64",
+        "OSFamily": "darwin",
+    },
 )
 
-config_setting(
+platform(
     name = "macos_arm64",
     constraint_values = [
-        "@platforms//os:macos",
         "@platforms//cpu:arm64",
+        "@platforms//os:macos",
     ],
+    exec_properties = {
+        "Arch": "arm64",
+        "OSFamily": "darwin",
+    },
 )
