@@ -38,7 +38,7 @@ build:remote-shared --remote_download_minimal
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
 build:remote-shared --platforms=@buildbuddy_toolchain//:platform_linux
-build:remote-shared --host_platform=@buildbuddy_toolchain//:platform_linux
+build:remote-shared --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux
 
 build --incompatible_enable_cc_toolchain_resolution
 
