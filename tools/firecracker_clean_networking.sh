@@ -22,3 +22,6 @@ echo >&2 "Restore backup with: sudo iptables-restore < $BACKUP_FILE"
 
 echo >&2 "Cleaning up iptables veth* rules"
 grep -vP '\bveth' <<<"$IPTABLES" | uniq | iptables-restore
+
+echo >&2 "Cleaning up any remaining firecracker processes"
+killall firecracker
