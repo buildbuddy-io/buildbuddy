@@ -39,9 +39,7 @@ func (s *Sample[T]) String() string {
 	return fmt.Sprintf("{key: %s, sizeBytes: %d, timestamp: %s}", s.Key, s.SizeBytes, s.Timestamp)
 }
 
-// OnEvict requests that the given key be evicted. The callback may return
-// skip=true to indicate that the given sample is no longer valid and should be
-// removed from the eviction pool.
+// OnEvict requests that the given key be evicted.
 type OnEvict[T Key] func(ctx context.Context, sample *Sample[T]) error
 
 // OnSample requests that n random samples be provided from the underlying data.
@@ -70,8 +68,7 @@ type LRU[T Key] struct {
 	evictionEvictLatencyUsec    prometheus.Observer
 	limiter                     *rate.Limiter
 
-	samplePool         []*Sample[T]
-	numEvictionWorkers int
+	samplePool []*Sample[T]
 
 	mu              sync.Mutex
 	ctx             context.Context
@@ -239,12 +236,36 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 	for i := len(l.samplePool) - 1; i >= 0; i-- {
 		sample := l.samplePool[i]
 
+		l.mu.Lock()
+		oldLocalSizeBytes := l.localSizeBytes
+		oldGlobalSizeBytes := l.globalSizeBytes
+		l.mu.Unlock()
+
 		log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
 		err := l.onEvict(l.ctx, sample)
 		if err != nil {
 			log.Warningf("Could not evict %q: %s", sample.Key, err)
 			continue
 		}
+
+		l.mu.Lock()
+		// The user (e.g. pebble cache) is the source of truth of the size
+		// data, but the LRU also needs to do its own accounting in between
+		// the times that the user provides a size update to the LRU.
+		// We skip our own accounting here if we detect that the size has
+		// changed since it means the user provided their own size update
+		// which takes priority.
+		if l.localSizeBytes == oldLocalSizeBytes {
+			l.localSizeBytes -= sample.SizeBytes
+		}
+		if l.globalSizeBytes == oldGlobalSizeBytes {
+			// Assume eviction on remote servers is happening at the same
+			// rate as local eviction. It's fine to be wrong as we expect the
+			// actual sizes to be periodically to be reset to the true numbers
+			// using UpdateSizeBytes from data received from other servers.
+			l.globalSizeBytes -= int64(float64(sample.SizeBytes) * float64(l.globalSizeBytes) / float64(l.localSizeBytes))
+		}
+		l.mu.Unlock()
 
 		l.samplePool = append(l.samplePool[:i], l.samplePool[i+1:]...)
 

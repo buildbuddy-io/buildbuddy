@@ -32,8 +32,6 @@ type testCache struct {
 	mu        sync.Mutex
 	data      []*entry
 	evictions []*entry
-	l         *approxlru.LRU[*entry]
-	sizeBytes int64
 }
 
 func (tc *testCache) Add(e *entry) {
@@ -51,8 +49,6 @@ func (tc *testCache) evict(ctx context.Context, sample *approxlru.Sample[*entry]
 				tc.evictions = append(tc.evictions, key)
 				tc.data[i] = tc.data[len(tc.data)-1]
 				tc.data = tc.data[:len(tc.data)-1]
-				tc.sizeBytes -= v.sizeBytes
-				tc.l.UpdateSizeBytes(tc.sizeBytes)
 			}
 			return nil
 		}
@@ -90,7 +86,7 @@ func waitForEviction(t *testing.T, l *approxlru.LRU[*entry]) {
 	}
 }
 
-func newCache(t *testing.T, maxSizeBytes int64) *testCache {
+func newCache(t *testing.T, maxSizeBytes int64) (*testCache, *approxlru.LRU[*entry]) {
 	c := &testCache{}
 	l, err := approxlru.New(&approxlru.Opts[*entry]{
 		SamplePoolSize:     100,
@@ -104,9 +100,8 @@ func newCache(t *testing.T, maxSizeBytes int64) *testCache {
 		},
 	})
 	require.NoError(t, err)
-	c.l = l
 	l.Start()
-	return c
+	return c, l
 }
 
 func fillCache(t *testing.T, c *testCache, n int, sizeBytes int64) {
@@ -120,18 +115,17 @@ func fillCache(t *testing.T, c *testCache, n int, sizeBytes int64) {
 		})
 		atime = atime.Add(1 * time.Hour)
 	}
-	c.sizeBytes = sizeBytes * int64(n)
 }
 
 func TestPartialEviction(t *testing.T) {
-	c := newCache(t, 9_000 /*=maxSizeBytes*/)
+	c, l := newCache(t, 9_000 /*=maxSizeBytes*/)
 
 	fillCache(t, c, 1000, 10 /*=sizeBytes*/)
 
 	// Inform the LRU about the new size of the underlying cache.
 	// Eviction should kick in and evict until the cache is down to 9_000.
-	c.l.UpdateSizeBytes(10_000)
-	waitForEviction(t, c.l)
+	l.UpdateSizeBytes(10_000)
+	waitForEviction(t, l)
 
 	var remainingAges []time.Time
 	for _, i := range c.data {
@@ -151,14 +145,14 @@ func TestPartialEviction(t *testing.T) {
 }
 
 func TestRefresh(t *testing.T) {
-	c := newCache(t, 9_000 /*=maxSizeBytes*/)
+	c, l := newCache(t, 9_000 /*=maxSizeBytes*/)
 
 	fillCache(t, c, 1000, 10 /*=sizeBytes*/)
 
 	// Inform the LRU about the new size of the underlying cache.
 	// Eviction should kick in and evict until the cache is down to 9_000.
-	c.l.UpdateSizeBytes(10_000)
-	waitForEviction(t, c.l)
+	l.UpdateSizeBytes(10_000)
+	waitForEviction(t, l)
 
 	// Update atimes on the oldest atimes to avoid evicting them.
 	var refreshedIDs []string
@@ -171,8 +165,8 @@ func TestRefresh(t *testing.T) {
 
 	// Tell the LRU that the cache is back to 10,000 so it evicts 1_000 more
 	// bytes.
-	c.l.UpdateSizeBytes(10_000)
-	waitForEviction(t, c.l)
+	l.UpdateSizeBytes(10_000)
+	waitForEviction(t, l)
 
 	c.mu.Lock()
 	for i := 0; i < 10; i++ {
