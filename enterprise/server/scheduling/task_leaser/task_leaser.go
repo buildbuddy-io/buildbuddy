@@ -79,6 +79,7 @@ func (t *TaskLeaser) pingServer(ctx context.Context) ([]byte, error) {
 		if !*enableReconnect || !status.IsUnavailableError(err) {
 			return nil, err
 		}
+		originalErr := err
 		// Server is unavailable (e.g. shutting down); retry. Note that we don't
 		// start the retry context timeout until after observing the disconnect
 		// error.
@@ -93,7 +94,7 @@ func (t *TaskLeaser) pingServer(ctx context.Context) ([]byte, error) {
 			r = retry.DefaultWithContext(ctx)
 		}
 		if !r.Next() {
-			return nil, err
+			return nil, originalErr
 		}
 	}
 	if rsp.GetReconnectToken() != "" {
