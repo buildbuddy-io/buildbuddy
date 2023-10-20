@@ -238,6 +238,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	md.InputFetchCompletedTimestamp = timestamppb.Now()
 
+	log.CtxInfof(ctx, "Transitioning to EXECUTING stage")
 	if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
 		return true, err
 	}
