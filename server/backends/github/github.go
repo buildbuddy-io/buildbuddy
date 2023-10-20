@@ -31,6 +31,7 @@ import (
 var (
 	statusNameSuffix = flag.String("github.status_name_suffix", "", "Suffix to be appended to all reported GitHub status names. Useful for differentiating BuildBuddy deployments. For example: '(dev)' ** Enterprise only **")
 	JwtKey           = flag.String("github.jwt_key", "", "The key to use when signing JWT tokens for github auth.", flag.Secret)
+	enterpriseHost   = flag.String("github.enterprise_host", "", "The Github enterprise hostname to use if using GitHub enterprise server, not including https:// and no trailing slash.", flag.Secret)
 
 	// TODO: Mark these deprecated once the new GitHub app is implemented.
 
@@ -229,7 +230,8 @@ func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, red
 		authURL = fmt.Sprintf("%s?state=%s", c.InstallURL, state)
 	} else {
 		authURL = fmt.Sprintf(
-			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
+			"https://%s/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
+			GithubHost(),
 			c.ClientID,
 			state,
 			url.QueryEscape(build_buddy_url.WithPath(redirectPath).String()),
@@ -379,7 +381,8 @@ func (c *OAuthHandler) Exchange(r *http.Request) (string, error) {
 
 	client := &http.Client{}
 	url := fmt.Sprintf(
-		"https://github.com/login/oauth/access_token?client_id=%s&client_secret=%s&code=%s&state=%s",
+		"https://%s/login/oauth/access_token?client_id=%s&client_secret=%s&code=%s&state=%s",
+		GithubHost(),
 		c.ClientID,
 		c.ClientSecret,
 		code,
@@ -463,7 +466,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 		return status.UnknownError("failed to populate GitHub token")
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/%s/statuses/%s", ownerRepo, commitSHA)
+	url := fmt.Sprintf("https://%s/repos/%s/statuses/%s", apiEndpoint(), ownerRepo, commitSHA)
 	body := new(bytes.Buffer)
 	if err := json.NewEncoder(body).Encode(appendStatusNameSuffix(payload)); err != nil {
 		return status.UnknownErrorf("failed to encode payload: %s", err)
@@ -618,7 +621,7 @@ func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func GetUserInfo(token string) (*GithubUserResponse, error) {
-	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://%s/user", apiEndpoint()), nil)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to create request: %s", err)
 	}
@@ -642,4 +645,22 @@ func GetUserInfo(token string) (*GithubUserResponse, error) {
 		return nil, status.WrapErrorf(err, "failed to unmarshal GitHub user response: %+v", string(body))
 	}
 	return &userResponse, nil
+}
+
+func IsEnterpriseConfigured() bool {
+	return *enterpriseHost != ""
+}
+
+func GithubHost() string {
+	if IsEnterpriseConfigured() {
+		return *enterpriseHost
+	}
+	return "github.com"
+}
+
+func apiEndpoint() string {
+	if IsEnterpriseConfigured() {
+		return *enterpriseHost + "/api/v3"
+	}
+	return "api.github.com"
 }
