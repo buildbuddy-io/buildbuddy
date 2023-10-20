@@ -804,6 +804,10 @@ func (m *Mmap) SetDigest(d *repb.Digest) {
 	m.lazyDigest = d
 }
 
+func (m *Mmap) LazyDigest() *repb.Digest {
+	return m.safeReadLazyDigest()
+}
+
 func (m *Mmap) Digest() (*repb.Digest, error) {
 	if d := m.safeReadLazyDigest(); d != nil {
 		return d, nil

@@ -568,7 +568,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		tree.Root.Files = append(tree.Root.Files, fn)
 		eg.Go(func() error {
 			ctx := egCtx
-			if cow.Dirty(c.Offset) {
+			dirty := cow.Dirty(c.Offset)
+			if dirty {
 				chunkSize, err := c.SizeBytes()
 				if err != nil {
 					return status.WrapError(err, "dirty chunk size")
@@ -583,6 +584,13 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 				}
 			}
 
+			// If the chunk was mapped but the lazy digest is not set, it could not
+			// have been fetched remotely, because we use the lazy digest to do so.
+			// This means we must have generated the chunk from a local file
+			// Note: This has to be called before we call c.Digest(), which sets
+			// the lazy digest
+			chunkFetchedRemotely := c.Mapped() && c.LazyDigest() != nil
+
 			// Get or compute the digest.
 			d, err := c.Digest()
 			if err != nil {
@@ -590,7 +598,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 			fn.Digest = d
 
-			if c.Mapped() {
+			// Don't cache artifacts that should already be in the cache
+			shouldCache := !chunkFetchedRemotely || dirty
+			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
 				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
 					return status.WrapError(err, "write chunk to cache")
