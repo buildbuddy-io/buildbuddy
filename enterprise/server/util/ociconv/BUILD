@@ -8,8 +8,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv",
     deps = [
         "//enterprise/server/remote_execution/containers/docker",
-        "//enterprise/server/util/container/credentials",
         "//enterprise/server/util/ext4",
+        "//enterprise/server/util/oci",
         "//server/util/disk",
         "//server/util/hash",
         "//server/util/log",

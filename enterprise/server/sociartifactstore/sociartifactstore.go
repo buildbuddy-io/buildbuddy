@@ -17,7 +17,7 @@ import (
 	"github.com/awslabs/soci-snapshotter/soci"
 	"github.com/awslabs/soci-snapshotter/ztoc"
 	"github.com/awslabs/soci-snapshotter/ztoc/compression"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -190,7 +190,7 @@ func checkAccess(ctx context.Context, imgRepo ctrname.Repository, img v1.Image, 
 	return nil
 }
 
-func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platform, creds credentials.Credentials) (targetImage ctrname.Digest, manifestConfig v1.Hash, err error) {
+func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platform, creds oci.Credentials) (targetImage ctrname.Digest, manifestConfig v1.Hash, err error) {
 	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, status.InvalidArgumentErrorf("invalid image %q", image)
@@ -242,7 +242,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err != nil {
 		return nil, err
 	}
-	creds, err := credentials.FromProto(req.Credentials)
+	creds, err := oci.CredentialsFromProto(req.Credentials)
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +345,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 	return getArtifactsResponse(imageConfigHash, sociIndexDigest, ztocDigests), nil
 }
 
-func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, configHash v1.Hash, credentials credentials.Credentials) (*repb.Digest, []*repb.Digest, error) {
+func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, configHash v1.Hash, credentials oci.Credentials) (*repb.Digest, []*repb.Digest, error) {
 	log.CtxInfof(ctx, "soci artifacts not found, generating them for image %s", imageRef.DigestStr())
 	image, err := fetchImageDescriptor(ctx, imageRef, credentials)
 	if err != nil {
@@ -358,7 +358,7 @@ func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrn
 	return index, ztocs, err
 }
 
-func fetchImageDescriptor(ctx context.Context, imageRef ctrname.Digest, credentials credentials.Credentials) (v1.Image, error) {
+func fetchImageDescriptor(ctx context.Context, imageRef ctrname.Digest, credentials oci.Credentials) (v1.Image, error) {
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
 	if !credentials.IsEmpty() {
 		authenticator := &authn.Basic{

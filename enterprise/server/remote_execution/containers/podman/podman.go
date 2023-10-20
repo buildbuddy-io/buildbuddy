@@ -21,7 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -460,7 +460,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	return args
 }
 
-func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds credentials.Credentials) *interfaces.CommandResult {
+func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	c.workDir = workDir
 	defer os.RemoveAll(c.cidFilePath())
 	result := &interfaces.CommandResult{
@@ -598,7 +598,7 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 	return false, nil
 }
 
-func (c *podmanCommandContainer) PullImage(ctx context.Context, creds credentials.Credentials) error {
+func (c *podmanCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	psi, _ := pullOperations.LoadOrStore(c.image, &pullStatus{&sync.RWMutex{}, false})
 	ps, ok := psi.(*pullStatus)
 	if !ok {
@@ -639,7 +639,7 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds credential
 	return nil
 }
 
-func (c *podmanCommandContainer) getSociArtifacts(ctx context.Context, creds credentials.Credentials) error {
+func (c *podmanCommandContainer) getSociArtifacts(ctx context.Context, creds oci.Credentials) error {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
 	if err != nil {
 		return err
@@ -788,7 +788,7 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 	return cid, ctx.Err()
 }
 
-func (c *podmanCommandContainer) pullImage(ctx context.Context, creds credentials.Credentials) error {
+func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Credentials) error {
 	podmanArgs := make([]string, 0, 2)
 
 	if c.imageIsStreamable {
@@ -807,7 +807,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds credential
 			// The soci-store, which streams container images from the remote
 			// repository and makes them available to the executor via a FUSE
 			// runs as a separate process and thus does not have access to the
-			// user-provided container access credentials. To address this,
+			// user-provided container access oci. To address this,
 			// send the credentials to the store via this gRPC service so it
 			// can cache and use them.
 			putCredsReq := sspb.PutCredentialsRequest{

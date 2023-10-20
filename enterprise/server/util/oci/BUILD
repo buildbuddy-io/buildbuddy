@@ -3,9 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
-    name = "credentials",
-    srcs = ["credentials.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials",
+    name = "oci",
+    srcs = ["oci.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci",
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",
@@ -17,11 +17,11 @@ go_library(
 )
 
 go_test(
-    name = "credentials_test",
+    name = "oci_test",
     size = "small",
-    srcs = ["credentials_test.go"],
+    srcs = ["oci_test.go"],
     deps = [
-        ":credentials",
+        ":oci",
         "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",
         "//server/util/status",

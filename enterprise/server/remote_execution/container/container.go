@@ -8,7 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -173,7 +173,7 @@ type CommandContainer interface {
 	//
 	// It is approximately the same as calling PullImageIfNecessary, Create,
 	// Exec, then Remove.
-	Run(ctx context.Context, command *repb.Command, workingDir string, creds credentials.Credentials) *interfaces.CommandResult
+	Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult
 
 	// IsImageCached returns whether the configured image is cached locally.
 	IsImageCached(ctx context.Context) (bool, error)
@@ -181,7 +181,7 @@ type CommandContainer interface {
 	// PullImage pulls the container image from the remote. It always
 	// re-authenticates the request, but may serve the image from a local cache
 	// if needed.
-	PullImage(ctx context.Context, creds credentials.Credentials) error
+	PullImage(ctx context.Context, creds oci.Credentials) error
 
 	// Create creates a new container and starts a top-level process inside it
 	// (`sleep infinity`) so that it stays alive and running until explicitly
@@ -225,7 +225,7 @@ type CommandContainer interface {
 
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
-func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds credentials.Credentials, imageRef string) error {
+func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
 	if *debugUseLocalImagesOnly {
 		return nil
 	}
@@ -264,7 +264,7 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 // NewImageCacheToken returns the token representing the authenticated group ID,
 // pull credentials, and image ref. For the same sets of those values, the
 // same token is always returned.
-func NewImageCacheToken(ctx context.Context, env environment.Env, creds credentials.Credentials, imageRef string) (interfaces.ImageCacheToken, error) {
+func NewImageCacheToken(ctx context.Context, env environment.Env, creds oci.Credentials, imageRef string) (interfaces.ImageCacheToken, error) {
 	groupID := ""
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err != nil {
@@ -344,7 +344,7 @@ type TracedCommandContainer struct {
 	Delegate CommandContainer
 }
 
-func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds credentials.Credentials) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -370,7 +370,7 @@ func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error
 	return t.Delegate.IsImageCached(ctx)
 }
 
-func (t *TracedCommandContainer) PullImage(ctx context.Context, creds credentials.Credentials) error {
+func (t *TracedCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 

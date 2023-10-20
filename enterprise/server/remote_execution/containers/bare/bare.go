@@ -7,7 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -47,7 +47,7 @@ func NewBareCommandContainer(opts *Opts) container.CommandContainer {
 	return &bareCommandContainer{opts: opts}
 }
 
-func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds credentials.Credentials) *interfaces.CommandResult {
+func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	return c.exec(ctx, command, workDir, nil /*=stdio*/)
 }
 
@@ -72,7 +72,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
-func (c *bareCommandContainer) PullImage(ctx context.Context, creds credentials.Credentials) error {
+func (c *bareCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	return nil
 }
 func (c *bareCommandContainer) Start(ctx context.Context) error   { return nil }

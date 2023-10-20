@@ -1,4 +1,4 @@
-package credentials
+package oci
 
 import (
 	"fmt"
@@ -27,21 +27,21 @@ type Credentials struct {
 	Password string
 }
 
-func FromProto(creds *rgpb.Credentials) (Credentials, error) {
-	return from(creds.GetUsername(), creds.GetPassword())
+func CredentialsFromProto(creds *rgpb.Credentials) (Credentials, error) {
+	return credentials(creds.GetUsername(), creds.GetPassword())
 }
 
 // Extracts the container registry Credentials from the provided platform
 // properties, falling back to credentials specified in
 // --executor.container_registries if the platform properties credentials are
 // absent.
-func FromProperties(props *platform.Properties) (Credentials, error) {
+func CredentialsFromProperties(props *platform.Properties) (Credentials, error) {
 	imageRef := props.ContainerImage
 	if imageRef == "" {
 		return Credentials{}, nil
 	}
 
-	creds, err := from(props.ContainerRegistryUsername, props.ContainerRegistryPassword)
+	creds, err := credentials(props.ContainerRegistryUsername, props.ContainerRegistryPassword)
 	if err != nil {
 		return Credentials{}, fmt.Errorf("Received invalid container-registry-username / container-registry-password combination: %w", err)
 	} else if !creds.IsEmpty() {
@@ -74,7 +74,7 @@ func FromProperties(props *platform.Properties) (Credentials, error) {
 	return Credentials{}, nil
 }
 
-func from(username, password string) (Credentials, error) {
+func credentials(username, password string) (Credentials, error) {
 	if username == "" && password != "" {
 		return Credentials{}, status.InvalidArgumentError(
 			"malformed credentials: password present with no username")

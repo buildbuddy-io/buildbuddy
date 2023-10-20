@@ -1,10 +1,10 @@
-package credentials_test
+package oci_test
 
 import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -14,27 +14,27 @@ import (
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
 
-func TestFromProto(t *testing.T) {
-	creds, err := credentials.FromProto(&rgpb.Credentials{
+func TestCredentialsFromProto(t *testing.T) {
+	creds, err := oci.CredentialsFromProto(&rgpb.Credentials{
 		Username: "",
 		Password: "",
 	})
 	require.NoError(t, err)
 	assert.True(t, creds.IsEmpty())
 
-	_, err = credentials.FromProto(&rgpb.Credentials{
+	_, err = oci.CredentialsFromProto(&rgpb.Credentials{
 		Username: "foo",
 		Password: "",
 	})
 	require.Error(t, err)
 
-	_, err = credentials.FromProto(&rgpb.Credentials{
+	_, err = oci.CredentialsFromProto(&rgpb.Credentials{
 		Username: "",
 		Password: "bar",
 	})
 	require.Error(t, err)
 
-	creds, err = credentials.FromProto(&rgpb.Credentials{
+	creds, err = oci.CredentialsFromProto(&rgpb.Credentials{
 		Username: "foo",
 		Password: "bar",
 	})
@@ -43,8 +43,8 @@ func TestFromProto(t *testing.T) {
 	assert.Equal(t, "foo:bar", creds.String())
 }
 
-func TestFromProperties(t *testing.T) {
-	registries := []credentials.Registry{
+func TestCredentialsFromProperties(t *testing.T) {
+	registries := []oci.Registry{
 		{
 			Hostnames: []string{"gcr.io", "us.gcr.io", "eu.gcr.io", "asia.gcr.io", "marketplace.gcr.io"},
 			Username:  "gcruser",
@@ -59,7 +59,7 @@ func TestFromProperties(t *testing.T) {
 	flags.Set(t, "executor.container_registries", registries)
 
 	props := &platform.Properties{}
-	c, err := credentials.FromProperties(props)
+	c, err := oci.CredentialsFromProperties(props)
 	require.NoError(t, err)
 	assert.True(t, c.IsEmpty())
 
@@ -68,7 +68,7 @@ func TestFromProperties(t *testing.T) {
 		ContainerRegistryUsername: "username",
 		ContainerRegistryPassword: "",
 	}
-	_, err = credentials.FromProperties(props)
+	_, err = oci.CredentialsFromProperties(props)
 	assert.True(t, status.IsInvalidArgumentError(err))
 
 	props = &platform.Properties{
@@ -76,19 +76,19 @@ func TestFromProperties(t *testing.T) {
 		ContainerRegistryUsername: "",
 		ContainerRegistryPassword: "password",
 	}
-	_, err = credentials.FromProperties(props)
+	_, err = oci.CredentialsFromProperties(props)
 	assert.True(t, status.IsInvalidArgumentError(err))
 
 	for _, testCase := range []struct {
 		imageRef            string
-		expectedCredentials credentials.Credentials
+		expectedCredentials oci.Credentials
 	}{
 		// Creds shouldn't be returned if there's no container image requested
-		{"", credentials.Credentials{}},
+		{"", oci.Credentials{}},
 		// Creds shouldn't be returned if the registry is unrecognized
-		{"unrecognized-registry.io/foo/bar", credentials.Credentials{}},
-		{"unrecognized-registry.io/foo/bar:latest", credentials.Credentials{}},
-		{"unrecognized-registry.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", credentials.Credentials{}},
+		{"unrecognized-registry.io/foo/bar", oci.Credentials{}},
+		{"unrecognized-registry.io/foo/bar:latest", oci.Credentials{}},
+		{"unrecognized-registry.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", oci.Credentials{}},
 		// Images with no domain should get defaulted to docker.io (Docker and
 		// other tools like `skopeo` assume docker.io as the default registry)
 		{"alpine", creds("dockeruser", "dockerpass")},
@@ -112,7 +112,7 @@ func TestFromProperties(t *testing.T) {
 	} {
 		props = &platform.Properties{ContainerImage: testCase.imageRef}
 
-		creds, err := credentials.FromProperties(props)
+		creds, err := oci.CredentialsFromProperties(props)
 
 		assert.NoError(t, err)
 		assert.Equal(
@@ -123,13 +123,13 @@ func TestFromProperties(t *testing.T) {
 	}
 }
 
-func creds(username, password string) credentials.Credentials {
-	return credentials.Credentials{Username: username, Password: password}
+func creds(username, password string) oci.Credentials {
+	return oci.Credentials{Username: username, Password: password}
 }
 
 func TestToProto(t *testing.T) {
 	assert.True(t,
 		proto.Equal(
 			&rgpb.Credentials{Username: "foo", Password: "bar"},
-			credentials.Credentials{Username: "foo", Password: "bar"}.ToProto()))
+			oci.Credentials{Username: "foo", Password: "bar"}.ToProto()))
 }

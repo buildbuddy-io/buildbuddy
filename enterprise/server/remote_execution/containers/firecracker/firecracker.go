@@ -31,9 +31,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -1628,7 +1628,7 @@ func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileS
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds credentials.Credentials) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds oci.Credentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1989,7 +1989,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 // PullImage pulls the container image from the remote. It always
 // re-authenticates the request, but may serve the image from a local cache
 // in order to avoid re-downloading the image.
-func (c *FirecrackerContainer) PullImage(ctx context.Context, creds credentials.Credentials) error {
+func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	if c.pulled {
 		return nil
 	}

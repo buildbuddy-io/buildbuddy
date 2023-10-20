@@ -7,7 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -20,17 +20,17 @@ import (
 )
 
 type FakeContainer struct {
-	RequiredPullCredentials credentials.Credentials
+	RequiredPullCredentials oci.Credentials
 	PullCount               int
 }
 
-func (c *FakeContainer) Run(context.Context, *repb.Command, string, credentials.Credentials) *interfaces.CommandResult {
+func (c *FakeContainer) Run(context.Context, *repb.Command, string, oci.Credentials) *interfaces.CommandResult {
 	return nil
 }
 func (c *FakeContainer) IsImageCached(context.Context) (bool, error) {
 	return c.PullCount > 0, nil
 }
-func (c *FakeContainer) PullImage(ctx context.Context, creds credentials.Credentials) error {
+func (c *FakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	if creds != c.RequiredPullCredentials {
 		return status.PermissionDeniedError("Permission denied: wrong pull credentials")
 	}
@@ -64,11 +64,11 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
 	ctx := userCtx(t, ta, "US1")
-	goodCreds1 := credentials.Credentials{
+	goodCreds1 := oci.Credentials{
 		Username: "user",
 		Password: "short-lived-token-1",
 	}
-	goodCreds2 := credentials.Credentials{
+	goodCreds2 := oci.Credentials{
 		Username: "user",
 		Password: "short-lived-token-2",
 	}
@@ -101,12 +101,12 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
 	ctx := userCtx(t, ta, "US1")
-	goodCreds := credentials.Credentials{
+	goodCreds := oci.Credentials{
 		Username: "user",
 		Password: "secret",
 	}
 	c := &FakeContainer{RequiredPullCredentials: goodCreds}
-	badCreds := credentials.Credentials{
+	badCreds := oci.Credentials{
 		Username: "user",
 		Password: "trying-to-guess-the-real-secret",
 	}
@@ -135,7 +135,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		token1, err := container.NewImageCacheToken(
 			userCtx(t, ta, "US1"),
 			env,
-			credentials.Credentials{Username: "user1", Password: "pass1"},
+			oci.Credentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
 
@@ -150,7 +150,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		token1, err := container.NewImageCacheToken(
 			userCtx(t, ta, "US1"),
 			env,
-			credentials.Credentials{Username: "user1", Password: "pass1"},
+			oci.Credentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
 
@@ -166,7 +166,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		token2, err := container.NewImageCacheToken(
 			userCtx(t, ta, "US2"),
 			env,
-			credentials.Credentials{Username: "user1", Password: "pass1"},
+			oci.Credentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
 
@@ -184,7 +184,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		anonToken, err := container.NewImageCacheToken(
 			context.Background(),
 			env,
-			credentials.Credentials{},
+			oci.Credentials{},
 			"alpine:latest",
 		)
 
@@ -203,7 +203,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		anonToken, err := container.NewImageCacheToken(
 			context.Background(),
 			env,
-			credentials.Credentials{},
+			oci.Credentials{},
 			"alpine:latest",
 		)
 
@@ -226,7 +226,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		immediatelyExpiredToken, err := container.NewImageCacheToken(
 			userCtx(t, ta, "US1"),
 			env,
-			credentials.Credentials{Username: "user1", Password: "pass1"},
+			oci.Credentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
 
