@@ -30,7 +30,6 @@ go_library(
         "//enterprise/server/remote_execution/uffd",
         "//enterprise/server/remote_execution/vbd",
         "//enterprise/server/remote_execution/vmexec_client",
-        "//enterprise/server/util/container/converter",
         "//enterprise/server/util/container/credentials",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/vfs_server",

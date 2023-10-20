@@ -31,8 +31,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/converter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/credentials"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -1712,7 +1712,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	workspaceFSPath := filepath.Join(c.getChroot(), workspaceFSName)
 
 	// Hardlink the ext4 image to the chroot at containerFSPath.
-	imageExt4Path, err := converter.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
+	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return status.UnavailableErrorf("disk image is unavailable: %s", err)
 	}
@@ -1979,7 +1979,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	diskImagePath, err := converter.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
+	diskImagePath, err := ociconv.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return false, err
 	}
@@ -2003,7 +2003,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds credentials.
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := converter.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
