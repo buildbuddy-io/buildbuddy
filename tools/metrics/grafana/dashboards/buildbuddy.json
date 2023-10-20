@@ -14119,6 +14119,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -14168,7 +14170,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 170
+            "y": 35
           },
           "id": 1127,
           "options": {
@@ -14179,7 +14181,8 @@
               "showLegend": false
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -14188,11 +14191,13 @@
                 "type": "prometheus",
                 "uid": "prom"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "1 - (avg by(mode,nodename) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"})))",
+              "expr": "1 - (avg by(mode,nodename) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"})))",
               "hide": false,
               "interval": "",
               "legendFormat": "{{nodename}}",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -14210,6 +14215,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "axisSoftMax": 100000000,
@@ -14259,7 +14266,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 170
+            "y": 35
           },
           "id": 1166,
           "options": {
@@ -14270,7 +14277,8 @@
               "showLegend": false
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -14279,10 +14287,12 @@
                 "type": "prometheus",
                 "uid": "prom"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "max by (nodename) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"}))",
+              "expr": "max by (nodename) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"}))",
               "interval": "",
               "legendFormat": "reads {{nodename}}",
+              "range": true,
               "refId": "A"
             },
             {
@@ -14290,11 +14300,13 @@
                 "type": "prometheus",
                 "uid": "prom"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "max by (nodename) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"}))\n",
+              "expr": "max by (nodename) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"}))\n",
               "hide": false,
               "interval": "",
               "legendFormat": "writes {{nodename}}",
+              "range": true,
               "refId": "B"
             }
           ],
@@ -14312,6 +14324,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "axisSoftMax": 100000000,
@@ -14361,7 +14375,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 178
+            "y": 43
           },
           "id": 1168,
           "options": {
@@ -14369,10 +14383,11 @@
               "calcs": [],
               "displayMode": "list",
               "placement": "bottom",
-              "showLegend": false
+              "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -14381,10 +14396,12 @@
                 "type": "prometheus",
                 "uid": "prom"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"})\n",
+              "expr": "rate(node_network_receive_bytes_total{device=~\"(ens|eth).*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"})\n",
               "interval": "",
               "legendFormat": "rx {{nodename}}",
+              "range": true,
               "refId": "A"
             },
             {
@@ -14392,11 +14409,13 @@
                 "type": "prometheus",
                 "uid": "prom"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"})\n",
+              "expr": "rate(node_network_transmit_bytes_total{device=~\"(ens|eth).*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"})\n",
               "hide": false,
               "interval": "",
               "legendFormat": "tx {{nodename}}",
+              "range": true,
               "refId": "B"
             }
           ],
@@ -14427,7 +14446,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 38
       },
       "id": 8,
       "panels": [
@@ -14659,7 +14678,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 39
       },
       "id": 1346,
       "panels": [
@@ -15173,7 +15192,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 40
       },
       "id": 5641,
       "panels": [
@@ -15863,33 +15882,7 @@
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
-        "regex": "^(gke-.*)-([0-9a-f]{8})-([0-9a-z]{4})$",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": {
-          "selected": false,
-          "text": "All",
-          "value": "$__all"
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prom"
-        },
-        "definition": "label_values(node_uname_info{region=\"$region\"}, nodename)",
-        "hide": 0,
-        "includeAll": true,
-        "multi": true,
-        "name": "kubenode",
-        "options": [],
-        "query": {
-          "query": "label_values(node_uname_info{region=\"$region\"}, nodename)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 2,
-        "regex": "",
+        "regex": "^(gke-.*)-([0-9a-f]{8})-(grp-)?([0-9a-z]{4})$",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
