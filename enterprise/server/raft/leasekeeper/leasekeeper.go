@@ -61,12 +61,7 @@ func (lk *LeaseKeeper) Start() {
 func (lk *LeaseKeeper) Stop() {
 	lk.mu.Lock()
 	defer lk.mu.Unlock()
-	if lk.quitAll == nil {
-		return
-	}
-
 	close(lk.quitAll)
-	lk.quitAll = nil
 	lk.cancelLeaderUpdates()
 	lk.cancelNodeLivenessUpdates()
 }
