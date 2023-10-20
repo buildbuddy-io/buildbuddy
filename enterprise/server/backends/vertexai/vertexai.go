@@ -18,7 +18,7 @@ import (
 var credentials = flag.String("vertexai.credentials", "", "The GCP credentials to use", flag.Secret)
 var projectID = flag.String("vertexai.project", "flame-build", "The GCP project ID to use")
 var region = flag.String("vertexai.region", "us-central1", "The GCP region to use")
-var modelID = flag.String("vertexai.model", "chat-bison@001", "The model ID to use")
+var modelID = flag.String("vertexai.model", "codechat-bison", "The model ID to use")
 
 const (
 	predictionEndpoint = "https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:predict"
@@ -116,8 +116,8 @@ type SafetyAttributes struct {
 }
 
 type Prediction struct {
-	Candidates       []Candidate      `json:"candidates"`
-	SafetyAttributes SafetyAttributes `json:"safetyAttributes"`
+	Candidates       []Candidate        `json:"candidates"`
+	SafetyAttributes []SafetyAttributes `json:"safetyAttributes"`
 }
 
 type PredictionResponse struct {

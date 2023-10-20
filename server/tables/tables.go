@@ -222,6 +222,7 @@ type Group struct {
 
 	SharingEnabled                    bool `gorm:"default:1"`
 	UserOwnedKeysEnabled              bool `gorm:"not null;default:0"`
+	BotSuggestionsEnabled             bool `gorm:"not null;default:1"`
 	RestrictCleanWorkflowRunsToAdmins bool `gorm:"not null;default:0"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
