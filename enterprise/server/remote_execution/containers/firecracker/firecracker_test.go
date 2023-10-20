@@ -706,7 +706,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 
 // Prints performance data about various Firecracker commands
 // Run with:
-// ./enterprise/server/remote_execution/containers/firecracker/test.sh --@io_bazel_rules_go//go/config:race  -- -test.run=TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking -test_manual_benchmark
+// ./enterprise/server/remote_execution/containers/firecracker/test.sh -- -test.run=TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking -test_manual_benchmark
 func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	if !*testManualBenchmark {
 		t.Skip()
