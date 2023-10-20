@@ -37,8 +37,9 @@ build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
-build:remote-shared --platforms=@buildbuddy_toolchain//:platform_linux
-build:remote-shared --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux
+# TODO(sluongng): split these into separate configs for each target platform
+build:remote-shared --platforms=//platforms:linux_x86_64
+build:remote-shared --extra_execution_platforms=//platforms:linux_x86_64
 
 build --incompatible_enable_cc_toolchain_resolution
 
