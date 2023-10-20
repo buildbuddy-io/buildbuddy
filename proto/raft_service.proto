@@ -15,14 +15,10 @@ service Api {
       returns (raft.RemoveReplicaResponse);
   rpc ListReplicas(raft.ListReplicasRequest)
       returns (raft.ListReplicasResponse);
-  rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
-  rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
   rpc TransferLeadership(TransferLeadershipRequest)
       returns (TransferLeadershipResponse);
 
   // Metadata API.
-  rpc Metadata(MetadataRequest) returns (MetadataResponse);
-  rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
-  rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
-  rpc SetMulti(SetMultiRequest) returns (SetMultiResponse);
+  rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
+  rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
 }
