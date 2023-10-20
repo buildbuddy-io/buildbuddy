@@ -24,7 +24,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 1,
+  "id": 8,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -14429,206 +14429,6 @@
         "x": 0,
         "y": 37
       },
-      "id": 962,
-      "panels": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "axisSoftMax": 104857600,
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "Bps"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byFrameRefID",
-                  "options": "E"
-                },
-                "properties": [
-                  {
-                    "id": "custom.axisPlacement",
-                    "value": "right"
-                  },
-                  {
-                    "id": "custom.stacking",
-                    "value": {
-                      "group": "A",
-                      "mode": "normal"
-                    }
-                  },
-                  {
-                    "id": "unit",
-                    "value": "percentunit"
-                  },
-                  {
-                    "id": "custom.axisSoftMax",
-                    "value": 1
-                  },
-                  {
-                    "id": "min",
-                    "value": 0
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 171
-          },
-          "id": 992,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single"
-            }
-          },
-          "repeat": "kubenode",
-          "repeatDirection": "h",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": false,
-              "expr": "rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
-              "interval": "",
-              "legendFormat": "{{device}} reads",
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": true,
-              "expr": "rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "{{device}} writes",
-              "refId": "B"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "{{device}} rx",
-              "refId": "C"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "{{device}} tx",
-              "refId": "D"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": true,
-              "expr": "1 - (avg by(mode) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})))",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "cpu",
-              "refId": "E"
-            }
-          ],
-          "title": "${kubenode} disk and network IO",
-          "type": "timeseries"
-        }
-      ],
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "refId": "A"
-        }
-      ],
-      "title": "Node disk/network IO",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prom"
-      },
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 38
-      },
       "id": 8,
       "panels": [
         {
@@ -14859,7 +14659,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 38
       },
       "id": 1346,
       "panels": [
@@ -15373,7 +15173,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 39
       },
       "id": 5641,
       "panels": [
