@@ -60,6 +60,7 @@ go_test(
         ":podman",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
