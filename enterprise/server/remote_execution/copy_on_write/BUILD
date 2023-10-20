@@ -11,9 +11,12 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_x_exp//maps",
+        "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
+        "@org_golang_x_time//rate",
     ],
 )
 
