@@ -2348,6 +2348,7 @@ func (p *PebbleCache) TestingWaitForGC() error {
 		done := 0
 		for _, e := range evictors {
 			e.mu.Lock()
+			e.lru.UpdateSizeBytes(e.sizeBytes)
 			maxAllowedSize := int64(JanitorCutoffThreshold * float64(e.part.MaxSizeBytes))
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
@@ -2857,9 +2858,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 
 	md, err := readFileMetadata(e.ctx, db, sample.Key.bytes)
 	if err != nil {
-		if status.IsNotFoundError(err) {
-			return
-		}
+		log.Infof("failed to read file metadata for key %s: %s", sample.Key, err)
 		return
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
