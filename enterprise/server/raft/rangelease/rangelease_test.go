@@ -166,6 +166,9 @@ func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender
 }
 
 func TestAcquireAndRelease(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	defer cancel()
+
 	proposer, sender := newTestingProposerAndSender(t)
 	liveness := nodeliveness.New("replicaID-1", sender)
 
@@ -179,10 +182,10 @@ func TestAcquireAndRelease(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, shardID, liveness, rd)
+	l := rangelease.New(proposer, liveness, rd)
 
 	// Should be able to get a rangelease.
-	err := l.Lease()
+	err := l.Lease(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be valid.
@@ -192,7 +195,7 @@ func TestAcquireAndRelease(t *testing.T) {
 	log.Printf("RangeLease: %s", l)
 
 	// Should be able to release a rangelease.
-	err = l.Release()
+	err = l.Release(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
@@ -201,6 +204,9 @@ func TestAcquireAndRelease(t *testing.T) {
 }
 
 func TestAcquireAndReleaseMetaRange(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	defer cancel()
+
 	proposer, sender := newTestingProposerAndSender(t)
 	liveness := nodeliveness.New("replicaID-2", sender)
 
@@ -214,10 +220,10 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, shardID, liveness, rd)
+	l := rangelease.New(proposer, liveness, rd)
 
 	// Should be able to get a rangelease.
-	err := l.Lease()
+	err := l.Lease(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be valid.
@@ -227,7 +233,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	log.Printf("RangeLease: %s", l)
 
 	// Should be able to release a rangelease.
-	err = l.Release()
+	err = l.Release(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
@@ -236,6 +242,9 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 }
 
 func TestMetaRangeLeaseKeepalive(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	defer cancel()
+
 	proposer, sender := newTestingProposerAndSender(t)
 	liveness := nodeliveness.New("replicaID-3", sender)
 
@@ -251,10 +260,10 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, shardID, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
-	err := l.Lease()
+	err := l.Lease(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be valid.
@@ -270,7 +279,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	require.True(t, valid)
 
 	// Should be able to release a rangelease.
-	err = l.Release()
+	err = l.Release(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
@@ -279,6 +288,9 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 }
 
 func TestNodeEpochInvalidation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	defer cancel()
+
 	proposer, sender := newTestingProposerAndSender(t)
 	liveness := nodeliveness.New("replicaID-4", sender)
 
@@ -292,10 +304,10 @@ func TestNodeEpochInvalidation(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, shardID, liveness, rd)
+	l := rangelease.New(proposer, liveness, rd)
 
 	// Should be able to get a rangelease.
-	err := l.Lease()
+	err := l.Lease(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be valid.
@@ -313,7 +325,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	require.False(t, valid)
 
 	// Should be able to re-lease it again.
-	err = l.Lease()
+	err = l.Lease(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be valid again.
