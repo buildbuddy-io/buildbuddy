@@ -33,8 +33,8 @@ import (
 )
 
 const (
-	// File name used for the rootfs snapshot artifact.
-	rootfsFileName = "rootfs.ext4"
+	// Chunk dir for the rootfs snapshot artifact.
+	rootfsDriveID = "rootfs"
 
 	// Max number of goroutines allowed to run concurrently when uploading a
 	// chunked file's contents to cache (one goroutine is spawned per chunk, and
@@ -212,9 +212,14 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 		return nil, err
 	}
 	rn := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
-	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
-	if err != nil {
-		return nil, err
+	var acResult *repb.ActionResult
+	{
+		ctx := cachetools.WithRequestTag(ctx, "vm:manifest")
+		r, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+		if err != nil {
+			return nil, err
+		}
+		acResult = r
 	}
 
 	tmpDir := l.env.GetFileCache().TempDir()
@@ -328,6 +333,7 @@ func chunkedFileProperty(chunkedFileTree *repb.Tree, propertyName string) (int64
 }
 
 func (l *FileCacheLoader) chunkedFileTree(ctx context.Context, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string) (*repb.Tree, error) {
+	ctx = cachetools.WithRequestTag(ctx, "vm:"+chunkedFileMetadata.GetPath()+"-tree")
 	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read chunked file tree: %s", status.Message(err))
@@ -346,6 +352,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 
 	for _, fileNode := range snapshot.manifest.Files {
 		outputPath := filepath.Join(outputDirectory, fileNode.GetName())
+		ctx := cachetools.WithRequestTag(ctx, "vm:"+fileNode.GetName())
 		if err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
 			return nil, err
 		}
@@ -392,6 +399,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		ar.OutputFiles = append(ar.OutputFiles, out)
 		eg.Go(func() error {
 			ctx := egCtx
+			ctx = cachetools.WithRequestTag(ctx, "vm:"+out.Path)
 			var d *repb.Digest
 			if *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing {
 				var err error
@@ -462,6 +470,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 
 	if *snaputil.EnableRemoteSnapshotSharing {
 		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+		ctx := cachetools.WithRequestTag(ctx, "vm:manifest")
 		return cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar)
 	}
 
@@ -492,6 +501,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 }
 
 func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, remoteInstanceName string, outputDirectory string) (cf *copy_on_write.COWStore, err error) {
+	ctx = cachetools.WithRequestTag(ctx, "vm:"+file.GetName())
 	dataDir := filepath.Join(outputDirectory, file.GetName())
 	if err := os.Mkdir(dataDir, 0755); err != nil {
 		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
@@ -568,6 +578,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		tree.Root.Files = append(tree.Root.Files, fn)
 		eg.Go(func() error {
 			ctx := egCtx
+			ctx = cachetools.WithRequestTag(ctx, "vm:"+name)
 			if cow.Dirty(c.Offset) {
 				chunkSize, err := c.SizeBytes()
 				if err != nil {
@@ -614,8 +625,11 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, remoteInstanceName, treeBytes); err != nil {
-		return nil, err
+	{
+		ctx := cachetools.WithRequestTag(ctx, "vm:"+name+"-tree")
+		if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, remoteInstanceName, treeBytes); err != nil {
+			return nil, err
+		}
 	}
 
 	gid, err := groupID(ctx, l.env)
@@ -683,7 +697,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 		if err != nil {
 			return nil, err
 		}
-		cf := unpacked.ChunkedFiles[rootfsFileName]
+		cf := unpacked.ChunkedFiles[rootfsDriveID]
 		if cf == nil {
 			return nil, status.InternalError("missing rootfs artifact in snapshot")
 		}
@@ -699,7 +713,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	}
 	// Add the COW to cache. This will also compute chunk digests.
 	opts := &CacheSnapshotOptions{
-		ChunkedFiles: map[string]*copy_on_write.COWStore{rootfsFileName: cow},
+		ChunkedFiles: map[string]*copy_on_write.COWStore{rootfsDriveID: cow},
 		Recycled:     false,
 	}
 	if err := l.CacheSnapshot(ctx, key, opts); err != nil {

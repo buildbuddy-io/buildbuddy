@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -31,11 +32,34 @@ const (
 	uploadBufSizeBytes    = 1000000 // 1MB
 	gRPCMaxSize           = int64(4000000)
 	maxCompressionBufSize = int64(4000000)
+
+	// RequestTagHeader is the gRPC header containing a tag that annotates the
+	// type of cache traffic in the request.
+	RequestTagHeader = "x-request-tag"
 )
 
 var (
 	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
 )
+
+// WithRequestTag returns a context that annotates outgoing cache requests
+// (reads and writes) with the given tag. This is useful for monitoring
+// purposes, as it allows splitting metrics by the "type" of cache traffic, if
+// known.
+func WithRequestTag(ctx context.Context, tag string) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, RequestTagHeader, tag)
+}
+
+// IncomingRequestTag returns the x-request-tag header supplied by the client.
+func IncomingRequestTag(ctx context.Context) string {
+	md, _ := metadata.FromIncomingContext(ctx)
+	for header, values := range md {
+		if header == RequestTagHeader && len(values) > 0 {
+			return values[len(values)-1]
+		}
+	}
+	return ""
+}
 
 type StreamBlobOpts struct {
 	Offset int64

@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
@@ -586,6 +587,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		}
 	}
 
+	ctx = cachetools.WithRequestTag(ctx, filepath.Base(dataDir))
 	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName)
 }
 

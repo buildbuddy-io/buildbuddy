@@ -276,6 +276,7 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 }
 
 func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
+	ctx = cachetools.WithRequestTag(ctx, "rbe:input")
 	rootInstanceDigest := digest.NewResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
@@ -384,6 +385,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
+	ctx = cachetools.WithRequestTag(ctx, "rbe:output")
 	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, actionResult, cmdResult)
 	if err != nil {
 		return err

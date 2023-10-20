@@ -12,6 +12,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/bazel_request",

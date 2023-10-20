@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"sync"
 	"syscall"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -38,11 +40,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -581,6 +585,9 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		t.Skip("Snapshot sharing is not enabled")
 	}
 
+	metrics.ServerUploadSizeBytes.Reset()
+	metrics.ServerDownloadSizeBytes.Reset()
+
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -703,6 +710,45 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	// and the current VM, but not from any of the other VMs sharing
 	// the same original snapshot
 	require.Equal(t, "Base\nFork remote fetch\n", string(res.Stdout))
+
+	// Spot-check a few upload/download metrics.
+	rootfsUpload := testmetrics.Histogram(t, metrics.ServerUploadSizeBytes, prometheus.Labels{
+		metrics.CacheTypeLabel:  "cas",
+		metrics.ServerName:      "byte_stream_server",
+		metrics.RequestTagLabel: "vm:rootfs",
+	}).GetSampleSum()
+	require.Greater(t, rootfsUpload, float64(0))
+	memoryDownload := testmetrics.Histogram(t, metrics.ServerDownloadSizeBytes, prometheus.Labels{
+		metrics.CacheTypeLabel:  "cas",
+		metrics.ServerName:      "byte_stream_server",
+		metrics.RequestTagLabel: "vm:memory",
+	}).GetSampleSum()
+	require.Greater(t, memoryDownload, float64(0))
+	// Check recorded labels against expected values.
+	var uploadTags []string
+	for _, m := range testmetrics.Collect(t, metrics.ServerUploadSizeBytes) {
+		uploadTags = append(uploadTags, testmetrics.Labels(m)["tag"])
+	}
+	sort.Strings(uploadTags)
+	var downloadTags []string
+	for _, m := range testmetrics.Collect(t, metrics.ServerDownloadSizeBytes) {
+		downloadTags = append(downloadTags, testmetrics.Labels(m)["tag"])
+	}
+	sort.Strings(downloadTags)
+	expectedTags := []string{
+		"vm:initrd.cpio",
+		"vm:manifest",
+		"vm:memory",
+		"vm:memory-tree",
+		"vm:rootfs",
+		"vm:rootfs-tree",
+		"vm:vmlinux",
+		"vm:vmstate.snap",
+		"vm:workspacefs",
+		"vm:workspacefs-tree",
+	}
+	assert.Equal(t, expectedTags, uploadTags, "unexpected cache upload request 'tag' values")
+	assert.Equal(t, expectedTags, downloadTags, "unexpected cache download request 'tag' values")
 }
 
 // Prints performance data about various Firecracker commands

@@ -45,6 +45,9 @@ const (
 	// Cache event type: `hit`, `miss`, or `upload`.
 	CacheEventTypeLabel = "cache_event_type"
 
+	// Cache request tag indicating the "type" of cache traffic, if known.
+	RequestTagLabel = "tag"
+
 	// Cache name: Custom name to describe the cache, like "pebble-cache".
 	CacheNameLabel = "cache_name"
 
@@ -369,6 +372,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		CacheEventTypeLabel,
+		RequestTagLabel,
 	})
 
 	CacheNumHitsExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -390,6 +394,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		RequestTagLabel,
 	})
 
 	CacheDownloadSizeBytesExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -416,6 +421,7 @@ var (
 		Help:      "Download duration for each file downloaded from the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
+		RequestTagLabel,
 	})
 
 	// #### Examples
@@ -437,6 +443,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		RequestTagLabel,
 	})
 
 	CacheUploadSizeBytesExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -463,6 +470,7 @@ var (
 		Help:      "Upload duration for each file uploaded to the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
+		RequestTagLabel,
 	})
 
 	// #### Examples
@@ -1816,6 +1824,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		RequestTagLabel,
 	})
 
 	ServerUncompressedUploadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1827,6 +1836,7 @@ var (
 		CacheTypeLabel,
 		ServerName,
 		GroupID,
+		RequestTagLabel,
 	})
 
 	ServerDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -1838,6 +1848,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		RequestTagLabel,
 	})
 
 	ServerUncompressedDownloadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1849,6 +1860,7 @@ var (
 		CacheTypeLabel,
 		ServerName,
 		GroupID,
+		RequestTagLabel,
 	})
 
 	DigestUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -1860,6 +1872,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		RequestTagLabel,
 	})
 
 	DigestDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -1871,6 +1884,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		RequestTagLabel,
 	})
 
 	Logs = promauto.NewCounterVec(prometheus.CounterOpts{

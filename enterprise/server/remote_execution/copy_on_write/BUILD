@@ -10,6 +10,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/status",
         "@org_golang_x_exp//maps",
