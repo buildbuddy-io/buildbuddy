@@ -62,37 +62,29 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Cas{
 			Cas: value,
 		}
-	case *rfpb.FileDeleteRequest:
-		req.Value = &rfpb.RequestUnion_FileDelete{
-			FileDelete: value,
-		}
-	case *rfpb.FileUpdateMetadataRequest:
-		req.Value = &rfpb.RequestUnion_FileUpdateMetadata{
-			FileUpdateMetadata: value,
-		}
-	case *rfpb.DeleteRangeRequest:
-		req.Value = &rfpb.RequestUnion_DeleteRange{
-			DeleteRange: value,
-		}
 	case *rfpb.SimpleSplitRequest:
 		req.Value = &rfpb.RequestUnion_SimpleSplit{
 			SimpleSplit: value,
 		}
-	case *rfpb.FindMissingRequest:
-		req.Value = &rfpb.RequestUnion_FindMissing{
-			FindMissing: value,
+	case *rfpb.GetRequest:
+		req.Value = &rfpb.RequestUnion_Get{
+			Get: value,
 		}
-	case *rfpb.GetMultiRequest:
-		req.Value = &rfpb.RequestUnion_GetMulti{
-			GetMulti: value,
+	case *rfpb.SetRequest:
+		req.Value = &rfpb.RequestUnion_Set{
+			Set: value,
 		}
-	case *rfpb.SetMultiRequest:
-		req.Value = &rfpb.RequestUnion_SetMulti{
-			SetMulti: value,
+	case *rfpb.DeleteRequest:
+		req.Value = &rfpb.RequestUnion_Delete{
+			Delete: value,
 		}
-	case *rfpb.MetadataRequest:
-		req.Value = &rfpb.RequestUnion_Metadata{
-			Metadata: value,
+	case *rfpb.FindRequest:
+		req.Value = &rfpb.RequestUnion_Find{
+			Find: value,
+		}
+	case *rfpb.UpdateAtimeRequest:
+		req.Value = &rfpb.RequestUnion_UpdateAtime{
+			UpdateAtime: value,
 		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
@@ -228,15 +220,6 @@ func (br *BatchResponse) CASResponse(n int) (*rfpb.CASResponse, error) {
 	return u.GetCas(), br.unionError(u)
 }
 
-func (br *BatchResponse) FileDeleteResponse(n int) (*rfpb.FileDeleteResponse, error) {
-	br.checkIndex(n)
-	if br.err != nil {
-		return nil, br.err
-	}
-	u := br.cmd.GetUnion()[n]
-	return u.GetFileDelete(), br.unionError(u)
-}
-
 func (br *BatchResponse) SimpleSplitResponse(n int) (*rfpb.SimpleSplitResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
@@ -246,38 +229,43 @@ func (br *BatchResponse) SimpleSplitResponse(n int) (*rfpb.SimpleSplitResponse, 
 	return u.GetSimpleSplit(), br.unionError(u)
 }
 
-func (br *BatchResponse) FindMissingResponse(n int) (*rfpb.FindMissingResponse, error) {
+func (br *BatchResponse) GetResponse(n int) (*rfpb.GetResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
 		return nil, br.err
 	}
 	u := br.cmd.GetUnion()[n]
-	return u.GetFindMissing(), br.unionError(u)
+	return u.GetGet(), br.unionError(u)
 }
-
-func (br *BatchResponse) GetMultiResponse(n int) (*rfpb.GetMultiResponse, error) {
+func (br *BatchResponse) SetResponse(n int) (*rfpb.SetResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
 		return nil, br.err
 	}
 	u := br.cmd.GetUnion()[n]
-	return u.GetGetMulti(), br.unionError(u)
+	return u.GetSet(), br.unionError(u)
 }
-
-func (br *BatchResponse) SetMultiResponse(n int) (*rfpb.SetMultiResponse, error) {
+func (br *BatchResponse) DeleteResponse(n int) (*rfpb.DeleteResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
 		return nil, br.err
 	}
 	u := br.cmd.GetUnion()[n]
-	return u.GetSetMulti(), br.unionError(u)
+	return u.GetDelete(), br.unionError(u)
 }
-
-func (br *BatchResponse) MetadataResponse(n int) (*rfpb.MetadataResponse, error) {
+func (br *BatchResponse) FindResponse(n int) (*rfpb.FindResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
 		return nil, br.err
 	}
 	u := br.cmd.GetUnion()[n]
-	return u.GetMetadata(), br.unionError(u)
+	return u.GetFind(), br.unionError(u)
+}
+func (br *BatchResponse) UpdateAtimeResponse(n int) (*rfpb.UpdateAtimeResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetUpdateAtime(), br.unionError(u)
 }

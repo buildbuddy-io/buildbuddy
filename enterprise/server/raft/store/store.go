@@ -732,6 +732,15 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	batch := req.GetBatch()
 	batch.Header = req.GetHeader()
 
+	if batch.Header != nil {
+		_, err := s.LeasedRange(batch.Header)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		s.log.Warningf("SyncRead without header: %+v", req)
+	}
+
 	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
@@ -743,83 +752,6 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	return &rfpb.SyncReadResponse{
 		Batch: batchResponse,
 	}, nil
-}
-
-func (s *Store) localRead(ctx context.Context, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	header := batch.GetHeader()
-
-	_, err := s.LeasedRange(header)
-	if err != nil {
-		return nil, err
-	}
-
-	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
-	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, header)
-		}
-		return nil, err
-	}
-	return rsp, nil
-}
-
-func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).FindMissingResponse(0)
-}
-
-func (s *Store) GetMulti(ctx context.Context, req *rfpb.GetMultiRequest) (*rfpb.GetMultiResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).GetMultiResponse(0)
-}
-
-func (s *Store) Metadata(ctx context.Context, req *rfpb.MetadataRequest) (*rfpb.MetadataResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).MetadataResponse(0)
-}
-
-func (s *Store) SetMulti(ctx context.Context, req *rfpb.SetMultiRequest) (*rfpb.SetMultiResponse, error) {
-	_, err := s.LeasedRange(req.GetHeader())
-	if err != nil {
-		return nil, err
-	}
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
-	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())
-		}
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).SetMultiResponse(0)
 }
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {

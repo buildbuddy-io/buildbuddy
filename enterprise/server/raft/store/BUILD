@@ -64,7 +64,6 @@ go_test(
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
-        "//proto:raft_service_go_proto",
         "//server/gossip",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
@@ -78,7 +77,6 @@ go_test(
         "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//raftio",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
 )

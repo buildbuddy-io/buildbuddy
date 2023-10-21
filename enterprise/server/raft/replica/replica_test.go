@@ -28,7 +28,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -128,21 +127,23 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 func reader(t *testing.T, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
 	fs := filestore.New()
 
-	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetMultiRequest{
-		FileRecords: []*rfpb.FileRecord{fileRecord},
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(t, err)
+
+	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
+		Key: fileMetadataKey,
 	}).ToBuf()
 	require.NoError(t, err)
 	readRsp, err := r.Lookup(buf)
 	require.NoError(t, err)
 	readBatch := rbuilder.NewBatchResponse(readRsp)
-	getMultiRsp, err := readBatch.GetMultiResponse(0)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(getMultiRsp.GetResponses()))
-	err = gstatus.ErrorProto(getMultiRsp.GetResponses()[0].GetStatus())
+	getRsp, err := readBatch.GetResponse(0)
 	if err != nil {
 		return nil, err
 	}
-	md := getMultiRsp.GetResponses()[0].GetFileMetadata()
+	md := getRsp.GetFileMetadata()
 	rc, err := fs.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), 0, 0)
 	require.NoError(t, err)
 	return rc, nil
@@ -232,8 +233,15 @@ func (wt *replicaTester) writeRandom(header *rfpb.Header, partition string, size
 }
 
 func (wt *replicaTester) delete(fileRecord *rfpb.FileRecord) {
-	entry := wt.em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
-		FileRecord: fileRecord,
+	fs := filestore.New()
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(wt.t, err)
+
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(wt.t, err)
+
+	entry := wt.em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
+		Key: fileMetadataKey,
 	}))
 	entries := []dbsm.Entry{entry}
 	deleteRsp, err := wt.repl.Update(entries)
@@ -598,6 +606,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 }
 
 func TestReplicaFileWriteDelete(t *testing.T) {
+	fs := filestore.New()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := newTestReplica(t, rootDir, 1, 1, store)
@@ -638,8 +647,13 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	}
 	// Delete the file.
 	{
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
-			FileRecord: fileRecord,
+		key, err := fs.PebbleKey(fileRecord)
+		require.NoError(t, err)
+		fileMetadataKey, err := key.Bytes(filestore.Version5)
+		require.NoError(t, err)
+
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
+			Key: fileMetadataKey,
 		}))
 		entries := []dbsm.Entry{entry}
 		deleteRsp, err := repl.Update(entries)

@@ -34,7 +34,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
-	"google.golang.org/protobuf/proto"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -371,26 +370,22 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 		return nil, err
 	}
 
-	var rsp *rfpb.GetMultiResponse
-	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		req := &rfpb.GetMultiRequest{
-			Header:      h,
-			FileRecords: []*rfpb.FileRecord{fileRecord},
-		}
-		r, err := c.GetMulti(ctx, req)
-		if err != nil {
-			return err
-		}
-		rsp = r
-		return nil
-	})
+	req, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
+		Key: fileMetadataKey,
+	}).ToProto()
 	if err != nil {
 		return nil, err
 	}
-	if len(rsp.GetResponses()) != 1 {
-		return nil, status.InternalError("GetMulti response did not contain requested FileRecord")
+	rsp, err := rc.sender.SyncRead(ctx, fileMetadataKey, req)
+	if err != nil {
+		return nil, err
 	}
-	md := rsp.GetResponses()[0].GetFileMetadata()
+	rspBatch := rbuilder.NewBatchResponseFromProto(rsp)
+	getRsp, err := rspBatch.GetResponse(0)
+	if err != nil {
+		return nil, err
+	}
+	md := getRsp.GetFileMetadata()
 	return rc.fileStorer.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), uncompressedOffset, limit)
 }
 
@@ -430,20 +425,14 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 			LastModifyUsec:  now.UnixMicro(),
 			LastAccessUsec:  now.UnixMicro(),
 		}
-		protoBytes, err := proto.Marshal(md)
-		if err != nil {
-			return err
-		}
-		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   fileMetadataKey,
-				Value: protoBytes,
-			},
+		req, err := rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+			Key:          fileMetadataKey,
+			FileMetadata: md,
 		}).ToProto()
 		if err != nil {
 			return err
 		}
-		writeRsp, err := rc.sender.SyncPropose(ctx, fileMetadataKey, writeReq)
+		writeRsp, err := rc.sender.SyncPropose(ctx, fileMetadataKey, req)
 		if err != nil {
 			return err
 		}
@@ -499,32 +488,52 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 	}
 
 	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
-		req := &rfpb.FindMissingRequest{Header: h}
+		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
-			fr, ok := k.Meta.(*rfpb.FileRecord)
-			if !ok {
-				return nil, status.InternalError("type is not *rfpb.FileRecord")
-			}
-			req.FileRecords = append(req.FileRecords, fr)
+			batch.Add(&rfpb.FindRequest{
+				Key: k.Key,
+			})
 		}
-		return c.FindMissing(ctx, req)
+		batchProto, err := batch.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		// TODO(tylerw): add a SyncReadMulti?
+		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
+			Header: h,
+			Batch:  batchProto,
+		})
+		if err != nil {
+			return nil, err
+		}
+		var missingDigests []*repb.Digest
+		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
+		for i, k := range keys {
+			findRsp, err := batchRsp.FindResponse(i)
+			if err != nil {
+				return nil, err
+			}
+			if !findRsp.GetPresent() {
+				fr := k.Meta.(*rfpb.FileRecord)
+				missingDigests = append(missingDigests, fr.GetDigest())
+			}
+		}
+		return missingDigests, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	var missingDigests []*repb.Digest
+	var allMissingDigests []*repb.Digest
 	for _, rsp := range rsps {
-		fmr, ok := rsp.(*rfpb.FindMissingResponse)
+		missing, ok := rsp.([]*repb.Digest)
 		if !ok {
-			return nil, status.InternalError("response not of type *rfpb.FindMissingResponse")
+			return nil, status.InternalError("response not of type []*repb.Digest")
 		}
-		for _, fr := range fmr.GetMissing() {
-			missingDigests = append(missingDigests, fr.GetDigest())
-		}
+		allMissingDigests = append(allMissingDigests, missing...)
 	}
 
-	return missingDigests, nil
+	return allMissingDigests, nil
 }
 
 func (rc *RaftCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
@@ -547,32 +556,47 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 	}
 
 	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
-		req := &rfpb.GetMultiRequest{Header: h}
+		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
-			fr, ok := k.Meta.(*rfpb.FileRecord)
-			if !ok {
-				return nil, status.InternalError("type is not *rfpb.FileRecord")
-			}
-			req.FileRecords = append(req.FileRecords, fr)
+			batch.Add(&rfpb.GetRequest{
+				Key: k.Key,
+			})
 		}
-		return c.GetMulti(ctx, req)
+		batchProto, err := batch.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		// TODO(tylerw): add a SyncReadMulti?
+		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
+			Header: h,
+			Batch:  batchProto,
+		})
+		if err != nil {
+			return nil, err
+		}
+		found := make(map[*repb.Digest][]byte)
+		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
+		for i, k := range keys {
+			r, err := batchRsp.GetResponse(i)
+			if err == nil {
+				fr := k.Meta.(*rfpb.FileRecord)
+				found[fr.GetDigest()] = r.GetFileMetadata().GetStorageMetadata().GetInlineMetadata().GetData()
+			}
+		}
+		return found, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	dataMap := make(map[*repb.Digest][]byte)
+	allFound := make(map[*repb.Digest][]byte)
 	for _, rsp := range rsps {
-		fmr, ok := rsp.(*rfpb.GetMultiResponse)
-		if !ok {
-			return nil, status.InternalError("response not of type *rfpb.GetMultiResponse")
-		}
-		for _, r := range fmr.GetResponses() {
-			dataMap[r.GetFileRecord().GetDigest()] = r.GetFileMetadata().GetStorageMetadata().GetInlineMetadata().GetData()
+		for k, v := range rsp.(map[*repb.Digest][]byte) {
+			allFound[k] = v
 		}
 	}
 
-	return dataMap, nil
+	return allFound, nil
 }
 
 func (rc *RaftCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {

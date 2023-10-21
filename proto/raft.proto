@@ -129,25 +129,6 @@ message VersionMetadata {
   int64 last_modify_usec = 2;
 }
 
-message FileDeleteRequest {
-  FileRecord file_record = 1;
-}
-
-message DeleteRangeRequest {
-  bytes start = 1;
-  bytes end = 2;
-}
-message DeleteRangeResponse {}
-
-message FileDeleteResponse {}
-
-message FileUpdateMetadataRequest {
-  FileRecord file_record = 1;
-  int64 last_access_usec = 2;
-}
-
-message FileUpdateMetadataResponse {}
-
 message DirectWriteRequest {
   KV kv = 1;
 }
@@ -219,21 +200,23 @@ message SimpleSplitResponse {
 // written to a log. Everything written via SyncPropose must be a RequestUnion
 // wrapped in a BatchCmdRequest..
 message RequestUnion {
-  reserved 1, 7, 8, 11, 12, 13;
   oneof value {
-    DirectWriteRequest direct_write = 2;
-    DirectReadRequest direct_read = 3;
-    IncrementRequest increment = 4;
-    ScanRequest scan = 5;
-    CASRequest cas = 6;
-    FileDeleteRequest file_delete = 9;
-    FileUpdateMetadataRequest file_update_metadata = 10;
-    DeleteRangeRequest delete_range = 14;
-    SimpleSplitRequest simple_split = 15;
-    FindMissingRequest find_missing = 16;
-    GetMultiRequest get_multi = 17;
-    SetMultiRequest set_multi = 18;
-    MetadataRequest metadata = 19;
+    DirectWriteRequest direct_write = 1;
+    DirectReadRequest direct_read = 2;
+    IncrementRequest increment = 3;
+    ScanRequest scan = 4;
+    CASRequest cas = 5;
+    SimpleSplitRequest simple_split = 6;
+
+    // The following operations are for getting and setting FileMetadata blobs.
+    GetRequest get = 7;
+    SetRequest set = 8;
+    DeleteRequest delete = 9;
+    FindRequest find = 10;
+
+    // The following operations are for reading and updating the atime of file
+    // metadata blobs.
+    UpdateAtimeRequest update_atime = 11;
   }
 }
 
@@ -242,23 +225,25 @@ message RequestUnion {
 // wrapped in a BatchCmdRequest and everything returned will be a
 // BatchCmdResponse.
 message ResponseUnion {
-  reserved 2, 8, 9, 12, 13, 14;
   google.rpc.Status status = 1;
 
   oneof value {
-    DirectWriteResponse direct_write = 3;
-    DirectReadResponse direct_read = 4;
-    IncrementResponse increment = 5;
-    ScanResponse scan = 6;
-    CASResponse cas = 7;
-    FileDeleteResponse file_delete = 10;
-    FileUpdateMetadataResponse file_update_metadata = 11;
-    DeleteRangeResponse delete_range = 15;
-    SimpleSplitResponse simple_split = 16;
-    FindMissingResponse find_missing = 17;
-    GetMultiResponse get_multi = 18;
-    SetMultiResponse set_multi = 19;
-    MetadataResponse metadata = 20;
+    DirectWriteResponse direct_write = 2;
+    DirectReadResponse direct_read = 3;
+    IncrementResponse increment = 4;
+    ScanResponse scan = 5;
+    CASResponse cas = 6;
+    SimpleSplitResponse simple_split = 7;
+
+    // The following operations are for getting and setting FileMetadata blobs.
+    GetResponse get = 8;
+    SetResponse set = 9;
+    DeleteResponse delete = 10;
+    FindResponse find = 11;
+
+    // The following operations are for reading and updating the atime of file
+    // metadata blobs.
+    UpdateAtimeResponse update_atime = 12;
   }
 }
 
@@ -267,11 +252,6 @@ message BatchCmdRequest {
 
   // Header will be validated by the state machine if set.
   Header header = 2;
-
-  // Normally unset. During a region split, if the split_tag is set to a value
-  // matching the current split lease tag, requests will be processed by the
-  // statemachine. Otherwise they will return an OutOfRange (splitting) error.
-  string split_tag = 3;
 }
 
 message BatchCmdResponse {
@@ -288,6 +268,7 @@ message BatchCmdResponse {
 // Gossip API, data that is broadcast / consumed via the gossip network.
 //
 ////////////////////////////////////////////////////////////////////////////////
+
 // A RegistryQuery can be sent via gossip to resolve a node. And other node
 // which has knowledge of the queried node may respond with a
 // RegistryQueryResponse.
@@ -537,72 +518,51 @@ message LoadSnapshotRequest {
 
 message LoadSnapshotResponse {}
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// Data API, used for shipping the actual bytes around, outside raft.
-//
-////////////////////////////////////////////////////////////////////////////////
-
-message MetadataRequest {
-  Header header = 1;
-  FileRecord file_record = 2;
-}
-
-message MetadataResponse {
-  FileMetadata file_metadata = 1;
-}
-
-message FindMissingRequest {
-  Header header = 1;
-  repeated FileRecord file_records = 2;
-}
-
-message FindMissingResponse {
-  repeated FileRecord missing = 1;
-}
-
-message GetMultiRequest {
-  Header header = 1;
-  repeated FileRecord file_records = 2;
-}
-
-message GetMultiResponse {
-  message Response {
-    // The FileRecord that was requested.
-    FileRecord file_record = 1;
-
-    // The FileMetadata that matches
-    FileMetadata file_metadata = 2;
-
-    // The result of attempting to upload that blob.
-    google.rpc.Status status = 3;
-  }
-
-  // The responses to the requests.
-  repeated Response responses = 1;
-}
-
-message SetMultiRequest {
-  Header header = 1;
-  repeated FileMetadata file_metadatas = 2;
-}
-
-message SetMultiResponse {
-  message Response {
-    // The blob digest to which this response corresponds.
-    FileRecord file_record = 1;
-
-    // The result of attempting to upload that blob.
-    google.rpc.Status status = 2;
-  }
-
-  // The responses to the requests.
-  repeated Response responses = 1;
-}
-
 message TransferLeadershipRequest {
   uint64 shard_id = 1;
   uint64 target_replica_id = 2;
 }
 
 message TransferLeadershipResponse {}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// FileMetadata CRUD API, used to get/set/update/delete FileMetadata records and
+// their atimes.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+message FindRequest {
+  bytes key = 1;
+}
+message FindResponse {
+  bool present = 1;
+}
+
+message GetRequest {
+  bytes key = 1;
+}
+message GetResponse {
+  FileMetadata file_metadata = 1;
+}
+
+message SetRequest {
+  bytes key = 1;
+  FileMetadata file_metadata = 2;
+}
+message SetResponse {}
+
+message DeleteRequest {
+  bytes key = 1;
+
+  // If set, match_atime must equal FileMetadata.LastAccessUsec for the delete
+  // to succeed. If it does not a FailedPrecondition will be returned.
+  int64 match_atime = 2;
+}
+message DeleteResponse {}
+
+message UpdateAtimeRequest {
+  bytes key = 1;
+  int64 access_time_usec = 2;
+}
+message UpdateAtimeResponse {}
