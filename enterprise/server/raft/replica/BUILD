@@ -16,6 +16,7 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/metrics",
+        "//server/util/approxlru",
         "//server/util/log",
         "//server/util/qps",
         "//server/util/rangemap",

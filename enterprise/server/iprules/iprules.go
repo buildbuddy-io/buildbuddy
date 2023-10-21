@@ -263,10 +263,8 @@ func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
 func (s *Service) Authorize(ctx context.Context) error {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
-		if authutil.IsAnonymousUserError(err) {
-			return nil
-		}
-		return err
+		// If auth failed we don't need to (and can't) apply IP rules.
+		return nil
 	}
 
 	// Server admins in impersonation mode can bypass IP rules.

@@ -11,6 +11,7 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -49,6 +50,22 @@ func TestEnforcementNotEnabled(t *testing.T) {
 
 	// Checking by group ID should also pass.
 	err = irs.AuthorizeGroup(authCtx, u.Groups[0].Group.GroupID)
+	require.NoError(t, err)
+}
+
+func TestUnauthenticated(t *testing.T) {
+	env := getEnv(t)
+	ctx := context.Background()
+
+	irs := newIPRulesService(t, env)
+
+	// Anonymous user should not be restricted by IP rules service.
+	err := irs.Authorize(ctx)
+	require.NoError(t, err)
+
+	// Invalid credentials (or any other error) should skip IP rule enforcement.
+	ctx = authutil.AuthContextWithError(ctx, status.UnauthenticatedError("Invalid API Key"))
+	err = irs.Authorize(ctx)
 	require.NoError(t, err)
 }
 

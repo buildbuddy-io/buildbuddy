@@ -222,6 +222,19 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             <span>Enable user-owned API keys</span>
           </label>
         )}
+        {capabilities.config.botSuggestionsEnabled && (
+          <label className="form-row input-label">
+            <input
+              autoComplete="off"
+              onFocus={this.onFocus.bind(this)}
+              onChange={this.onChange.bind(this)}
+              type="checkbox"
+              name="botSuggestionsEnabled"
+              checked={request.botSuggestionsEnabled}
+            />
+            <span>Enable "Ask Buddy" button</span>
+          </label>
+        )}
         {this.showAdvancedSettings() && capabilities.config.workflowsEnabled && (
           <label className="form-row input-label">
             <input

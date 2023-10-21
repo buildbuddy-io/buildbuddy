@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -1227,7 +1228,27 @@ func randomKey(partitionID string, n int) []byte {
 	return []byte(randKey)
 }
 
-func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rfpb.FileMetadata, error) {
+type LRUSample struct {
+	Bytes   []byte
+	RangeID uint64
+
+	// TODO(tylerw): remove in followup CL.
+	FileRecord *rfpb.FileRecord
+}
+
+func (s *LRUSample) ID() string {
+	return string(s.Bytes)
+}
+
+func (s *LRUSample) String() string {
+	return fmt.Sprintf("Range-%d %q", s.RangeID, s.ID())
+}
+
+func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*approxlru.Sample[*LRUSample], error) {
+	sm.rangeMu.RLock()
+	rangeID := sm.rangeDescriptor.GetRangeId()
+	sm.rangeMu.RUnlock()
+
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1241,23 +1262,44 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rf
 	})
 	defer iter.Close()
 
-	samples := make([]*rfpb.FileMetadata, 0, n)
-	// generate k random digests and for each:
-	//   - seek to the next valid key, and return that file record
-	for i := 0; i < n*2; i++ {
-		randKey := randomKey(partitionID, 64)
-		valid := iter.SeekGE(randKey)
-		if !valid {
-			continue
-		}
-		fileMetadata := &rfpb.FileMetadata{}
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			return nil, err
-		}
+	samples := make([]*approxlru.Sample[*LRUSample], 0, n)
+	var key filestore.PebbleKey
 
-		samples = append(samples, fileMetadata)
-		if len(samples) == n {
-			break
+	// Generate k random samples. Attempt this up to k*2 times, to account
+	// for the fact that some files sampled may be younger than
+	// minEvictionAge. We try hard!
+	for i := 0; i < n*2; i++ {
+		if !iter.Valid() {
+			// This should only happen once per call to sample(), or
+			// occasionally more if we've exhausted the iter.
+			randKey := randomKey(partitionID, 64)
+			iter.SeekGE(randKey)
+		}
+		for ; iter.Valid(); iter.Next() {
+			if _, err := key.FromBytes(iter.Key()); err != nil {
+				return nil, err
+			}
+
+			fileMetadata := &rfpb.FileMetadata{}
+			if err = proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+				return nil, err
+			}
+
+			keyBytes := make([]byte, len(iter.Key()))
+			copy(keyBytes, iter.Key())
+			sample := &approxlru.Sample[*LRUSample]{
+				Key: &LRUSample{
+					Bytes:      keyBytes,
+					RangeID:    rangeID,
+					FileRecord: fileMetadata.GetFileRecord(),
+				},
+				SizeBytes: fileMetadata.GetStoredSizeBytes(),
+				Timestamp: time.UnixMicro(fileMetadata.GetLastAccessUsec()),
+			}
+			samples = append(samples, sample)
+			if len(samples) == n {
+				return samples, nil
+			}
 		}
 	}
 

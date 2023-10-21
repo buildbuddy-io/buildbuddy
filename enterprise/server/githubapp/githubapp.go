@@ -901,6 +901,12 @@ func (a *GitHubApp) newAuthenticatedClient(ctx context.Context, accessToken stri
 	}
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 	tc := oauth2.NewClient(ctx, ts)
+
+	if gh_oauth.IsEnterpriseConfigured() {
+		host := fmt.Sprintf("https://%s/", gh_oauth.GithubHost())
+		return github.NewEnterpriseClient(host, host, tc)
+	}
+
 	return github.NewClient(tc), nil
 }
 
