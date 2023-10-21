@@ -194,14 +194,6 @@ func (sm *Replica) replicaLocalKey(key []byte) []byte {
 	return replicaSpecificKey(key, sm.ShardID, sm.ReplicaID)
 }
 
-func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
-	pebbleKey, err := sm.fileStorer.PebbleKey(fr)
-	if err != nil {
-		return nil, err
-	}
-	return pebbleKey.Bytes(filestore.Version5)
-}
-
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
