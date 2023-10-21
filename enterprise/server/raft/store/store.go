@@ -459,42 +459,12 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	go s.updateTags()
 }
 
-func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*usagetracker.ReplicaSample], error) {
-	r, rd, err := s.replicaForRange(rangeID)
+func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error) {
+	r, _, err := s.replicaForRange(rangeID)
 	if err != nil {
 		return nil, err
 	}
-	samples, err := r.Sample(ctx, partition, n)
-	if err != nil {
-		return nil, err
-	}
-
-	var rs []*approxlru.Sample[*usagetracker.ReplicaSample]
-	for _, samp := range samples {
-		pebbleKey, err := s.fileStorer.PebbleKey(samp.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
-		fileMetadataKey, err := pebbleKey.Bytes(filestore.Version2)
-		if err != nil {
-			return nil, err
-		}
-		sampleKey := &usagetracker.ReplicaSample{
-			Header: &rfpb.Header{
-				Replica:    rd.GetReplicas()[0],
-				RangeId:    rd.GetRangeId(),
-				Generation: rd.GetGeneration(),
-			},
-			Key:        string(fileMetadataKey),
-			FileRecord: samp.GetFileRecord(),
-		}
-		rs = append(rs, &approxlru.Sample[*usagetracker.ReplicaSample]{
-			Key:       sampleKey,
-			SizeBytes: samp.GetStoredSizeBytes(),
-			Timestamp: time.UnixMicro(samp.GetLastAccessUsec()),
-		})
-	}
-	return rs, nil
+	return r.Sample(ctx, partition, n)
 }
 
 func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDescriptor, error) {
