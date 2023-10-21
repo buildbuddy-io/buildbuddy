@@ -733,7 +733,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	batch.Header = req.GetHeader()
 
 	if batch.Header != nil {
-		_, err := s.LeasedRange(header)
+		_, err := s.LeasedRange(batch.Header)
 		if err != nil {
 			return nil, err
 		}

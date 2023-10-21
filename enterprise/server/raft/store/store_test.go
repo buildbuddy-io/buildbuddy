@@ -36,9 +36,7 @@ import (
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbConfig "github.com/lni/dragonboat/v4/config"
-	gstatus "google.golang.org/grpc/status"
 )
 
 func localAddr(t *testing.T) string {
@@ -330,25 +328,25 @@ func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.Fi
 	fs := filestore.New()
 	fk := metadataKey(t, fr)
 
-	err := ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		rsp, err := c.GetMulti(ctx, &rfpb.GetMultiRequest{
-			Header:      h,
-			FileRecords: []*rfpb.FileRecord{fr},
-		})
-		if err != nil {
-			return err
-		}
-		require.Equal(t, 1, len(rsp.GetResponses()))
-		err = gstatus.ErrorProto(rsp.GetResponses()[0].GetStatus())
-		require.NoError(t, err)
-		md := rsp.GetResponses()[0].GetFileMetadata()
-		rc, err := fs.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), 0, 0)
-		require.NoError(t, err)
-		d := testdigest.ReadDigestAndClose(t, rc)
-		require.True(t, proto.Equal(d, fr.GetDigest()))
-		return nil
-	})
+	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
+		Key: fk,
+	}).ToProto()
 	require.NoError(t, err)
+
+	rsp, err := ts.Sender.SyncRead(ctx, fk, readReq)
+	require.NoError(t, err)
+
+	rspBatch := rbuilder.NewBatchResponseFromProto(rsp)
+	require.NoError(t, rspBatch.AnyError())
+
+	getRsp, err := rspBatch.GetResponse(0)
+	require.NoError(t, err)
+
+	md := getRsp.GetFileMetadata()
+	rc, err := fs.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), 0, 0)
+	require.NoError(t, err)
+	d := testdigest.ReadDigestAndClose(t, rc)
+	require.True(t, proto.Equal(d, fr.GetDigest()))
 }
 
 func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int) []*rfpb.FileRecord {
