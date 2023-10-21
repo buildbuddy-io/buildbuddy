@@ -129,25 +129,6 @@ message VersionMetadata {
   int64 last_modify_usec = 2;
 }
 
-message FileDeleteRequest {
-  FileRecord file_record = 1;
-}
-
-message DeleteRangeRequest {
-  bytes start = 1;
-  bytes end = 2;
-}
-message DeleteRangeResponse {}
-
-message FileDeleteResponse {}
-
-message FileUpdateMetadataRequest {
-  FileRecord file_record = 1;
-  int64 last_access_usec = 2;
-}
-
-message FileUpdateMetadataResponse {}
-
 message DirectWriteRequest {
   KV kv = 1;
 }
@@ -235,8 +216,7 @@ message RequestUnion {
 
     // The following operations are for reading and updating the atime of file
     // metadata blobs.
-    GetAtimeRequest get_atime = 11;
-    UpdateAtimeRequest update_atime = 12;
+    UpdateAtimeRequest update_atime = 11;
   }
 }
 
@@ -263,8 +243,7 @@ message ResponseUnion {
 
     // The following operations are for reading and updating the atime of file
     // metadata blobs.
-    GetAtimeResponse get_atime = 12;
-    UpdateAtimeResponse update_atime = 13;
+    UpdateAtimeResponse update_atime = 12;
   }
 }
 
@@ -575,16 +554,12 @@ message SetResponse {}
 
 message DeleteRequest {
   bytes key = 1;
+
+  // If set, match_atime must equal FileMetadata.LastAccessUsec for the delete
+  // to succeed. If it does not a FailedPrecondition will be returned.
+  int64 match_atime = 2;
 }
 message DeleteResponse {}
-
-message GetAtimeRequest {
-  bytes key = 1;
-}
-message GetAtimeResponse {
-  // Last access time of the record.
-  int64 last_access_usec = 1;
-}
 
 message UpdateAtimeRequest {
   bytes key = 1;

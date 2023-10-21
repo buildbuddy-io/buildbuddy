@@ -52,7 +52,6 @@ go_test(
         "//server/util/status",
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
 )

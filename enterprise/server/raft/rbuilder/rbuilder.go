@@ -82,10 +82,6 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Find{
 			Find: value,
 		}
-	case *rfpb.GetAtimeRequest:
-		req.Value = &rfpb.RequestUnion_GetAtime{
-			GetAtime: value,
-		}
 	case *rfpb.UpdateAtimeRequest:
 		req.Value = &rfpb.RequestUnion_UpdateAtime{
 			UpdateAtime: value,
@@ -264,14 +260,6 @@ func (br *BatchResponse) FindResponse(n int) (*rfpb.FindResponse, error) {
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetFind(), br.unionError(u)
-}
-func (br *BatchResponse) GetAtimeResponse(n int) (*rfpb.GetAtimeResponse, error) {
-	br.checkIndex(n)
-	if br.err != nil {
-		return nil, br.err
-	}
-	u := br.cmd.GetUnion()[n]
-	return u.GetGetAtime(), br.unionError(u)
 }
 func (br *BatchResponse) UpdateAtimeResponse(n int) (*rfpb.UpdateAtimeResponse, error) {
 	br.checkIndex(n)

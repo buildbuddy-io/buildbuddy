@@ -133,10 +133,9 @@ func (pu *partitionUsage) RemoteUpdate(nhid string, update *rfpb.PartitionMetada
 }
 
 func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*replica.LRUSample]) error {
-	// TODO(tylerw): use CAS or similar to ensure we only delete records
-	// whose atimes have not changed.
-	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
-		FileRecord: sample.Key.FileRecord,
+	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
+		Key:        sample.Key.Bytes,
+		MatchAtime: sample.Timestamp.UnixMicro(),
 	})
 	batchCmd, err := deleteReq.ToProto()
 	if err != nil {

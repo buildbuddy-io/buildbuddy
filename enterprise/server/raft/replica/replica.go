@@ -531,36 +531,6 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	return sm.lastAppliedIndex, nil
 }
 
-func (sm *Replica) fileUpdateMetadata(wb pebble.Batch, req *rfpb.FileUpdateMetadataRequest) (*rfpb.FileUpdateMetadataResponse, error) {
-	iter := wb.NewIter(nil /*default iter options*/)
-	defer iter.Close()
-
-	fileMetadataKey, err := sm.fileMetadataKey(req.GetFileRecord())
-	if err != nil {
-		return nil, err
-	}
-
-	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
-	if err != nil {
-		return nil, err
-	}
-
-	if req.GetLastAccessUsec() != 0 {
-		fileMetadata.LastAccessUsec = req.GetLastAccessUsec()
-	}
-
-	d, err := proto.Marshal(fileMetadata)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := wb.Set(fileMetadataKey, d, nil); err != nil {
-		return nil, err
-	}
-
-	return &rfpb.FileUpdateMetadataResponse{}, nil
-}
-
 func (sm *Replica) directWrite(wb pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
 	err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
@@ -881,7 +851,7 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 	if err != nil {
 		return nil, err
 	}
-	sm.sendAccessTimeUpdate(fileMetadata)
+	sm.sendAccessTimeUpdate(req.GetKey(), fileMetadata)
 	return &rfpb.GetResponse{
 		FileMetadata: fileMetadata,
 	}, nil
@@ -923,6 +893,9 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 		}
 		return nil, err
 	}
+	if req.GetMatchAtime() != 0 && req.GetMatchAtime() != fileMetadata.GetLastAccessUsec() {
+		return nil, status.FailedPreconditionError("Atime mismatch")
+	}
 	if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
 		return nil, err
 	}
@@ -948,25 +921,6 @@ func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResp
 	present := iter.SeekGE(req.GetKey()) && bytes.Equal(iter.Key(), req.GetKey())
 	return &rfpb.FindResponse{
 		Present: present,
-	}, nil
-}
-
-func (sm *Replica) getAtime(db ReplicaReader, req *rfpb.GetAtimeRequest) (*rfpb.GetAtimeResponse, error) {
-	// Check that key is a valid PebbleKey.
-	var pk filestore.PebbleKey
-	if _, err := pk.FromBytes(req.GetKey()); err != nil {
-		return nil, err
-	}
-
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
-	if err != nil {
-		return nil, err
-	}
-	return &rfpb.GetAtimeResponse{
-		LastAccessUsec: fileMetadata.GetLastAccessUsec(),
 	}, nil
 }
 
@@ -1078,12 +1032,6 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 			Find: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_GetAtime:
-		r, err := sm.getAtime(db, value.GetAtime)
-		rsp.Value = &rfpb.ResponseUnion_GetAtime{
-			GetAtime: r,
-		}
-		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("Read handling for %+v not implemented.", req))
 	}
@@ -1119,7 +1067,7 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 }
 
 type accessTimeUpdate struct {
-	record *rfpb.FileRecord
+	key []byte
 }
 
 func olderThanThreshold(t time.Time, threshold time.Duration) bool {
@@ -1171,9 +1119,9 @@ func (sm *Replica) processAccessTimeUpdates() {
 	for {
 		select {
 		case accessTimeUpdate := <-sm.accesses:
-			batch.Add(&rfpb.FileUpdateMetadataRequest{
-				FileRecord:     accessTimeUpdate.record,
-				LastAccessUsec: time.Now().UnixMicro(),
+			batch.Add(&rfpb.UpdateAtimeRequest{
+				Key:            accessTimeUpdate.key,
+				AccessTimeUsec: time.Now().UnixMicro(),
 			})
 			if batch.Size() >= *atimeWriteBatchSize {
 				flush()
@@ -1195,13 +1143,15 @@ func (sm *Replica) processAccessTimeUpdates() {
 	}
 }
 
-func (sm *Replica) sendAccessTimeUpdate(fileMetadata *rfpb.FileMetadata) {
+func (sm *Replica) sendAccessTimeUpdate(key []byte, fileMetadata *rfpb.FileMetadata) {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 	if !olderThanThreshold(atime, *atimeUpdateThreshold) {
 		return
 	}
 
-	up := &accessTimeUpdate{fileMetadata.GetFileRecord()}
+	up := &accessTimeUpdate{
+		key: key,
+	}
 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
 	// so in that case just do a regular channel send. Otherwise; use a non-
@@ -1231,9 +1181,6 @@ func randomKey(partitionID string, n int) []byte {
 type LRUSample struct {
 	Bytes   []byte
 	RangeID uint64
-
-	// TODO(tylerw): remove in followup CL.
-	FileRecord *rfpb.FileRecord
 }
 
 func (s *LRUSample) ID() string {
@@ -1289,9 +1236,8 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*ap
 			copy(keyBytes, iter.Key())
 			sample := &approxlru.Sample[*LRUSample]{
 				Key: &LRUSample{
-					Bytes:      keyBytes,
-					RangeID:    rangeID,
-					FileRecord: fileMetadata.GetFileRecord(),
+					Bytes:   keyBytes,
+					RangeID: rangeID,
 				},
 				SizeBytes: fileMetadata.GetStoredSizeBytes(),
 				Timestamp: time.UnixMicro(fileMetadata.GetLastAccessUsec()),
