@@ -52,6 +52,7 @@ type PebbleCacheConfig struct {
 	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression"`
 	AverageChunkSizeBytes       int                     `yaml:"average_chunk_size_bytes"`
 	ClearCacheOnStartup         bool                    `yaml:"clear_cache_on_startup"`
+	ActiveKeyVersion            *int64                  `yaml:"active_key_version"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {
