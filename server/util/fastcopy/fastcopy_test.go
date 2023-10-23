@@ -41,6 +41,25 @@ func TestFastCopyFile(t *testing.T) {
 	require.NoError(t, err, "target file should exist")
 }
 
+func TestFastCopyWritableFile(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	source := testfs.MakeTempFile(t, ws, "foo")
+	target := path.Join(ws, "bar")
+
+	_, err := os.Stat(target)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, os.ErrNotExist))
+
+	err = fastcopy.FastCopy(source, target)
+	require.NoError(t, err)
+
+	info, err := os.Stat(target)
+	require.NoError(t, err, "target file should exist")
+
+	writable := fastcopy.Writable(info.Mode())
+	require.False(t, writable, "target should not be writable")
+}
+
 func TestFastCopyFileExist(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	source := testfs.MakeTempFile(t, ws, "foo")
