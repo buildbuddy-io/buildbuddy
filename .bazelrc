@@ -38,10 +38,9 @@ build:remote-shared --remote_download_minimal
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
 build:remote-shared --platforms=@buildbuddy_toolchain//:platform_linux
-build:remote-shared --host_platform=@buildbuddy_toolchain//:platform_linux
-build:remote-shared --crosstool_top=@buildbuddy_toolchain//:ubuntu_cc_toolchain_suite
-build:remote-shared --extra_toolchains=@buildbuddy_toolchain//:ubuntu_cc_toolchain
-build:remote-shared --extra_toolchains=//:sh_toolchain
+build:remote-shared --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux
+
+build --incompatible_enable_cc_toolchain_resolution
 
 # Build with --config=remote to use BuildBuddy RBE.
 build:remote --config=remote-shared
@@ -53,27 +52,9 @@ build:remote-dev --config=remote-shared
 build:remote-dev --config=cache-dev
 build:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 
-# Build with --config=target-linux to
-#   - Tell Bazel to build binaries for linux
-#   - Tell Bazel to use Linux-compatible toolchains to build
-build:target-linux --cpu=k8
-build:target-linux --host_cpu=k8
-# Write linux-target build outputs in a separate directory from host build outputs.
-build:target-linux --experimental_platform_in_output_dir
-
-# Build with --config=remote-target-linux* to build on remote Linux Executors.
-# from non-Linux machines (e.g. MacOS).
-#
-# Example usage in user.bazelrc:
-#   build --remote_header=x-buildbuddy-api-key=<foo>
-#   build:x --config=remote-target-linux
-#
-# Then you could start building/testing remotely with MacOS with:
-#   bazel test --config=x //...
-build:remote-target-linux --config=target-linux
-build:remote-target-linux --config=remote
-build:remote-target-linux-dev --config=target-linux
-build:remote-target-linux-dev --config=remote-dev
+# Write build outputs in a platform-specific directory,
+# avoid outputs being wiped and rewritten when switching between platforms.
+build --experimental_platform_in_output_dir
 
 # Configuration used for GitHub actions-based CI
 build:ci --config=remote
