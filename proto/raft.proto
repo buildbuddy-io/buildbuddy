@@ -397,6 +397,7 @@ message Header {
   enum ConsistencyMode {
     LINEARIZABLE = 0;
     STALE = 1;
+    RANGELEASE = 2;
   }
 
   // The consistency mode that should be used for this operation.

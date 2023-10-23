@@ -1038,17 +1038,7 @@ func lookupFileMetadata(iter pebble.Iterator, fileMetadataKey []byte) (*rfpb.Fil
 	return fileMetadata, nil
 }
 
-// validateRange checks that the requested range generation matches our range
-// generation. We perform the generation check both in the store and the replica
-// because of a race condition during splits. The replica may receive concurrent
-// read/write & split requests that may pass the store generation check and
-// enter the replica code. The split will hold the split lock and modify the
-// internal state with the new range information. goroutines that are unblocked
-// after the split lock is released need to verify that the generation has not
-// changed under them.
-func (sm *Replica) validateRange(header *rfpb.Header) error {
-	sm.rangeMu.RLock()
-	defer sm.rangeMu.RUnlock()
+func (sm *Replica) validateRangeNoLock(header *rfpb.Header) error {
 	if sm.rangeDescriptor == nil {
 		return status.FailedPreconditionError("range descriptor is not set")
 	}
@@ -1056,6 +1046,15 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, sm.rangeDescriptor.GetGeneration(), header.GetGeneration())
 	}
 	return nil
+}
+
+// validateRange checks that the requested range generation matches our range
+// generation. A rangeMu lock should be held for the duration of the operation
+// to ensure the range does not change.
+func (sm *Replica) validateRange(header *rfpb.Header) error {
+	sm.rangeMu.RLock()
+	defer sm.rangeMu.RUnlock()
+	return sm.validateRangeNoLock(header)
 }
 
 type accessTimeUpdate struct {
@@ -1392,21 +1391,37 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
+	batchReq := &rfpb.BatchCmdRequest{}
+	if err := proto.Unmarshal(reqBuf, batchReq); err != nil {
+		return nil, err
+	}
+
+	batchRsp, err := sm.BatchLookup(batchReq)
+	if err != nil {
+		return nil, err
+	}
+
+	rspBuf, err := proto.Marshal(batchRsp)
+	if err != nil {
+		return nil, err
+	}
+	return rspBuf, nil
+}
+
+func (sm *Replica) BatchLookup(batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	batchReq := &rfpb.BatchCmdRequest{}
-	if err := proto.Unmarshal(reqBuf, batchReq); err != nil {
-		return nil, err
-	}
 	batchRsp := &rfpb.BatchCmdResponse{}
 
 	var headerErr error
 	if batchReq.GetHeader() != nil {
-		headerErr = sm.validateRange(batchReq.GetHeader())
+		sm.rangeMu.RLock()
+		defer sm.rangeMu.RUnlock()
+		headerErr = sm.validateRangeNoLock(batchReq.GetHeader())
 		batchRsp.Status = statusProto(headerErr)
 	}
 
@@ -1419,11 +1434,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		}
 	}
 
-	rspBuf, err := proto.Marshal(batchRsp)
-	if err != nil {
-		return nil, err
-	}
-	return rspBuf, nil
+	return batchRsp, nil
 }
 
 // Sync synchronizes all in-core state of the state machine to persisted

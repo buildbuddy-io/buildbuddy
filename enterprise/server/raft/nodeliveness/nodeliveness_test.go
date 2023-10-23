@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 
@@ -75,7 +76,7 @@ func (tp *testingProposer) SyncPropose(ctx context.Context, _ []byte, batch *rfp
 	return nil, nil
 }
 
-func (tp *testingProposer) SyncRead(ctx context.Context, _ []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func (tp *testingProposer) SyncRead(ctx context.Context, _ []byte, batch *rfpb.BatchCmdRequest, mods ...sender.Option) (*rfpb.BatchCmdResponse, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 

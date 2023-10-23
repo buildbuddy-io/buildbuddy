@@ -376,7 +376,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := rc.sender.SyncRead(ctx, fileMetadataKey, req)
+	rsp, err := rc.sender.SyncRead(ctx, fileMetadataKey, req, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +519,7 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 			}
 		}
 		return missingDigests, nil
-	})
+	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +584,7 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 			}
 		}
 		return found, nil
-	})
+	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
 	}
