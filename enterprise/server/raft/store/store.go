@@ -733,9 +733,18 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	batch.Header = req.GetHeader()
 
 	if batch.Header != nil {
-		_, err := s.LeasedRange(batch.Header)
+		r, err := s.LeasedRange(batch.Header)
 		if err != nil {
 			return nil, err
+		}
+		// SHORTCUT: if this is a rangelease read, don't bother
+		// with the raft stuff below.
+		if batch.GetHeader().GetConsistencyMode() == rfpb.Header_RANGELEASE {
+			batchRsp, err := r.BatchLookup(batch)
+			if err != nil {
+				return nil, err
+			}
+			return &rfpb.SyncReadResponse{Batch: batchRsp}, nil
 		}
 	} else {
 		s.log.Warningf("SyncRead without header: %+v", req)
