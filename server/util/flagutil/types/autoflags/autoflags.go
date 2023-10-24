@@ -1,12 +1,11 @@
 package autoflags
 
 import (
+	"flag"
 	"log"
 	"net/url"
 	"reflect"
 	"time"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
@@ -60,9 +59,9 @@ var YAMLIgnoreTag = &yamlIgnoreTag{}
 // `SecretTag` to mark a flag that contains a secret that should be redacted in
 // output, or use `DeprecatedTag(migrationPlan)` to mark a flag that has been
 // deprecated and provide its migration plan.
-func New[T any](name string, defaultValue T, usage string, tags ...Taggable) *T {
+func New[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string, tags ...Taggable) *T {
 	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
-	Var(value, name, defaultValue, usage, tags...)
+	Var(flagset, value, name, defaultValue, usage, tags...)
 	return value
 }
 
@@ -72,35 +71,35 @@ func New[T any](name string, defaultValue T, usage string, tags ...Taggable) *T 
 // contains a secret that should be redacted in output, or use
 // `DeprecatedTag(migrationPlan)` to mark a flag that has been deprecated and
 // provide its migration plan.
-func Var[T any](value *T, name string, defaultValue T, usage string, tags ...Taggable) {
+func Var[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, usage string, tags ...Taggable) {
 	switch v := any(value).(type) {
 	case *bool:
-		common.DefaultFlagSet.BoolVar(v, name, any(defaultValue).(bool), usage)
+		flagset.BoolVar(v, name, any(defaultValue).(bool), usage)
 	case *time.Duration:
-		common.DefaultFlagSet.DurationVar(v, name, any(defaultValue).(time.Duration), usage)
+		flagset.DurationVar(v, name, any(defaultValue).(time.Duration), usage)
 	case *float64:
-		common.DefaultFlagSet.Float64Var(v, name, any(defaultValue).(float64), usage)
+		flagset.Float64Var(v, name, any(defaultValue).(float64), usage)
 	case *int:
-		common.DefaultFlagSet.IntVar(v, name, any(defaultValue).(int), usage)
+		flagset.IntVar(v, name, any(defaultValue).(int), usage)
 	case *int64:
-		common.DefaultFlagSet.Int64Var(v, name, any(defaultValue).(int64), usage)
+		flagset.Int64Var(v, name, any(defaultValue).(int64), usage)
 	case *uint:
-		common.DefaultFlagSet.UintVar(v, name, any(defaultValue).(uint), usage)
+		flagset.UintVar(v, name, any(defaultValue).(uint), usage)
 	case *uint64:
-		common.DefaultFlagSet.Uint64Var(v, name, any(defaultValue).(uint64), usage)
+		flagset.Uint64Var(v, name, any(defaultValue).(uint64), usage)
 	case *string:
-		common.DefaultFlagSet.StringVar(v, name, any(defaultValue).(string), usage)
+		flagset.StringVar(v, name, any(defaultValue).(string), usage)
 	case *[]string:
-		flagtypes.StringSliceVar(v, name, any(defaultValue).([]string), usage)
+		flagtypes.StringSliceVar(flagset, v, name, any(defaultValue).([]string), usage)
 	case *url.URL:
-		flagtypes.URLVar(v, name, any(defaultValue).(url.URL), usage)
+		flagtypes.URLVar(flagset, v, name, any(defaultValue).(url.URL), usage)
 	default:
 		if reflect.TypeOf(value).Elem().Kind() == reflect.Slice {
-			flagtypes.JSONSliceVar(value, name, defaultValue, usage)
+			flagtypes.JSONSliceVar(flagset, value, name, defaultValue, usage)
 			break
 		}
 		if reflect.TypeOf(value).Elem().Kind() == reflect.Struct {
-			flagtypes.JSONStructVar(value, name, defaultValue, usage)
+			flagtypes.JSONStructVar(flagset, value, name, defaultValue, usage)
 			break
 		}
 		log.Fatalf("Var was called from flag registry for flag %s with value %v of unrecognized type %T.", name, defaultValue, defaultValue)
@@ -108,9 +107,9 @@ func Var[T any](value *T, name string, defaultValue T, usage string, tags ...Tag
 	for _, tg := range tags {
 		switch v := any(tg).(type) {
 		case *secretTag:
-			flagtypes.Secret[T](name)
+			flagtypes.Secret[T](flagset, name)
 		case *deprecatedTag:
-			flagtypes.Deprecate[T](name, v.migrationPlan)
+			flagtypes.Deprecate[T](flagset, name, v.migrationPlan)
 		default:
 			tg.Tag(name)
 		}

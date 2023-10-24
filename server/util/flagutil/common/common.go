@@ -132,22 +132,22 @@ func ConvertFlagValue(value flag.Value) (any, error) {
 // be appended to the current slice value; otherwise, a slice value will replace
 // the current slice value. appendSlice has no effect if the values in question
 // are not slices.
-func SetValueForFlagName(name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
+func SetValueForFlagName(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
 	flg := DefaultFlagSet.Lookup(name)
 	if flg == nil {
 		return status.NotFoundErrorf("Undefined flag: %s", name)
 	}
-	return setValueFromFlagName(flg.Value, name, newValue, setFlags, appendSlice)
+	return setValueFromFlagName(flagset, flg.Value, name, newValue, setFlags, appendSlice)
 }
 
-func setValueFromFlagName(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
+func setValueFromFlagName(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
 	if v, ok := flagValue.(SetValueForFlagNameHooked); ok {
 		setHooks = append(setHooks, v.SetValueForFlagNameHook)
 	}
-	return SetValueWithCustomIndirectBehavior(flagValue, name, newValue, setFlags, appendSlice, setValueFromFlagName, setHooks...)
+	return SetValueWithCustomIndirectBehavior(flagset, flagValue, name, newValue, setFlags, appendSlice, setValueFromFlagName, setHooks...)
 }
 
-type SetValueForIndirectFxn func(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error
+type SetValueForIndirectFxn func(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error
 
 // SetValueWithCustomIndirectBehavior sets the value for a flag, but if the flag
 // passed is an alias for another flag or wraps another flag.Value, it instead
@@ -159,17 +159,17 @@ type SetValueForIndirectFxn func(flagValue flag.Value, name string, newValue any
 // the current slice value. appendSlice has no effect if the values in question
 // are not slices. setHooks is a slice of functions to call in order if the
 // flag.Value will be set.
-func SetValueWithCustomIndirectBehavior(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
+func SetValueWithCustomIndirectBehavior(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
 	if v, ok := flagValue.(IsNameAliasing); ok {
-		aliasedFlag := DefaultFlagSet.Lookup(v.AliasedName())
+		aliasedFlag := flagset.Lookup(v.AliasedName())
 		if aliasedFlag == nil {
 			return status.NotFoundErrorf("Flag %s aliases undefined flag: %s", name, v.AliasedName())
 		}
-		return setValueForIndirect(aliasedFlag.Value, v.AliasedName(), newValue, setFlags, appendSlice, setHooks...)
+		return setValueForIndirect(flagset, aliasedFlag.Value, v.AliasedName(), newValue, setFlags, appendSlice, setHooks...)
 	}
 	// Unwrap any wrapper values (e.g. DeprecatedFlag)
 	if v, ok := flagValue.(WrappingValue); ok {
-		return setValueForIndirect(v.WrappedValue(), name, newValue, setFlags, appendSlice, setHooks...)
+		return setValueForIndirect(flagset, v.WrappedValue(), name, newValue, setFlags, appendSlice, setHooks...)
 	}
 	var appendFlag Appendable
 	// For slice flags, append the values to the existing values if appendSlice is true
@@ -204,17 +204,17 @@ func SetValueWithCustomIndirectBehavior(flagValue flag.Value, name string, newVa
 
 // GetDereferencedValue retypes and returns the dereferenced Value for
 // a given flag name.
-func GetDereferencedValue[T any](name string) (T, error) {
-	flg := DefaultFlagSet.Lookup(name)
+func GetDereferencedValue[T any](flagset *flag.FlagSet, name string) (T, error) {
+	flg := flagset.Lookup(name)
 	if flg == nil {
 		return Zero[T](), status.NotFoundErrorf("Undefined flag: %s", name)
 	}
-	return getDereferencedValueFrom[T](flg.Value, flg.Name)
+	return getDereferencedValueFrom[T](flagset, flg.Value, flg.Name)
 }
 
-func getDereferencedValueFrom[T any](value flag.Value, name string) (T, error) {
+func getDereferencedValueFrom[T any](flagset *flag.FlagSet, value flag.Value, name string) (T, error) {
 	if v, ok := value.(IsNameAliasing); ok {
-		return GetDereferencedValue[T](v.AliasedName())
+		return GetDereferencedValue[T](flagset, v.AliasedName())
 	}
 	converted, err := ConvertFlagValue(value)
 	if err != nil {
@@ -238,10 +238,10 @@ func Zero[T any]() T {
 
 // ResetFlags resets all flags to their default values, as specified by
 // the string stored in the corresponding flag.DefValue.
-func ResetFlags() error {
+func ResetFlags(flagset *flag.FlagSet) error {
 	errors := []error{}
-	DefaultFlagSet.VisitAll(func(flg *flag.Flag) {
-		if err := setWithOverride(flg.Value, flg.Name, flg.DefValue, true); err != nil {
+	flagset.VisitAll(func(flg *flag.Flag) {
+		if err := setWithOverride(flagset, flg.Value, flg.Name, flg.DefValue, true); err != nil {
 			errors = append(errors, status.InternalErrorf("Error resetting flag %s: %s", flg.Name, err))
 			return
 		}
@@ -256,17 +256,17 @@ func ResetFlags() error {
 // the same type as the flag Value specified by name, calling
 // `Set.(newValueString)` on the new flag.Value, and then explicitly setting the
 // data pointed to by flagValue to the data pointed to by the new flag value.
-func SetWithOverride(name, newValueString string) error {
-	flg := flag.Lookup(name)
+func SetWithOverride(flagset *flag.FlagSet, name, newValueString string) error {
+	flg := flagset.Lookup(name)
 	if flg == nil {
 		return status.NotFoundErrorf("Error when attempting to override flag %s: Flag does not exist.", name)
 	}
 	flagValue := flg.Value
 
-	return setWithOverride(flagValue, name, newValueString, false)
+	return setWithOverride(flagset, flagValue, name, newValueString, false)
 }
 
-func setWithOverride(flagValue flag.Value, name, newValueString string, skipWrappers bool) error {
+func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValueString string, skipWrappers bool) error {
 	// Unwrap the value to ensure we have the real flag.Value, not a wrapper like,
 	// for example, DeprecatedFlag or FlagAlias.
 	unwrapped := UnwrapFlagValue(flagValue)
@@ -308,7 +308,7 @@ func setWithOverride(flagValue flag.Value, name, newValueString string, skipWrap
 	if skipWrappers {
 		value = unwrapped
 	}
-	if err := setValueFromFlagName(value, name, reflect.Indirect(reflect.ValueOf(newValue)).Interface(), map[string]struct{}{}, false); err != nil {
+	if err := setValueFromFlagName(flagset, value, name, reflect.Indirect(reflect.ValueOf(newValue)).Interface(), map[string]struct{}{}, false); err != nil {
 		return err
 	}
 	return nil
