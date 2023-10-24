@@ -10,6 +10,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/fastcopy",
     visibility = ["//visibility:public"],
     deps = select({
+        "@io_bazel_rules_go//go/platform:android": [
+            "@org_golang_x_sys//unix",
+        ],
         "@io_bazel_rules_go//go/platform:darwin": [
             "@org_golang_x_sys//unix",
         ],
