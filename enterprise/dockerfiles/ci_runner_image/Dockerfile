@@ -13,6 +13,31 @@ RUN curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/rele
 # at least for CI runs on the BB repo itself.
 RUN USE_BAZEL_VERSION=5.3.1 bazelisk version
 
+# Docker
+#
+# Note: gnupg is only needed to install Docker, so we uninstall it at the end of
+# this step and also run `apt-get autoremove` to get rid of the unnecessary
+# packages it came with.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      gnupg \
+      lsb-release \
+      && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo >/etc/apt/sources.list.d/docker.list "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
+    apt-get update && \
+    apt-get install -y \
+      docker-ce \
+      docker-ce-cli \
+      containerd.io \
+      && \
+    apt-get remove -y gnupg && \
+    apt-get autoremove -y && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Provision a non-root user named "buildbuddy" and set up passwordless sudo.
 # Non-root users are needed for some bazel toolchains, such as hermetic python.
 RUN apt-get update && apt-get install -y sudo && \
