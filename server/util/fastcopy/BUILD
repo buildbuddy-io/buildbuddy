@@ -27,9 +27,17 @@ go_library(
 go_test(
     name = "fastcopy_test",
     srcs = ["fastcopy_test.go"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "fastcopy_test",
+    },
+    tags = ["docker"],
     deps = [
         ":fastcopy",
         "//server/testutil/testfs",
+        "//server/testutil/testshell",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

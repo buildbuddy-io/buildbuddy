@@ -19,6 +19,8 @@ func reflink(source, destination string) error {
 	if err != nil {
 		return err
 	}
+	defer destFile.Close()
+
 	reflinkWasSuccessful := false
 	defer func() {
 		if !reflinkWasSuccessful {
