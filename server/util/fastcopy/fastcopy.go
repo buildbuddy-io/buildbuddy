@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-var enableFastcopyReflinking = flag.Bool("enable_fastcopy_reflinking", false, "If true, attempt to use `cp --reflink=auto` to link files")
+var enableFastcopyReflinking = flag.Bool("executor.enable_fastcopy_reflinking", false, "If true, attempt to use `cp --reflink=auto` to link files")
 
 func FastCopy(source, destination string) error {
 	if *enableFastcopyReflinking {
