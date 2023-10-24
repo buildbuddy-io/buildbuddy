@@ -125,7 +125,7 @@ shows the directories relevant to a firecracker container instance:
         # For ext4 images, the top-level directory is the sha256 of the
         # image name string.
         #
-        # See enterprise/server/util/container.go
+        # See enterprise/server/util/ociconv/ociconv.go
         #
         # Ex: sha256("gcr.io/flame-public/executor-docker-default:latest")
         - /1f89a08e2136061a0bf54aaea89e47b533504b4241a5ff98d96c3dcbe04a67f3/:
@@ -144,7 +144,7 @@ shows the directories relevant to a firecracker container instance:
         # For other VM resources, the dir name is the sha256 of the file
         # contents and the dir contains a single file matching that sha256.
         #
-        # See putFileIntoDir() in enterprise/server/util/container.go
+        # See putFileIntoDir() in enterprise/server/util/ociconv/ociconv.go
         #
         # Ex: sha256(fileContents("vmlinux"))
         - /fc81fa0933db7977b5e1d4b9ff3a757914b579c7812b63f9cdcabc035c7057e0/:

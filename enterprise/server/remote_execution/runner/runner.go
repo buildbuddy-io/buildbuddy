@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -240,8 +241,8 @@ func (r *commandRunner) String() string {
 		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
-func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
-	return container.GetPullCredentials(r.PlatformProperties)
+func (r *commandRunner) pullCredentials() (oci.Credentials, error) {
+	return oci.CredentialsFromProperties(r.PlatformProperties)
 }
 
 func (r *commandRunner) PrepareForTask(ctx context.Context) error {
@@ -776,7 +777,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 
-	creds, err := container.GetPullCredentials(platProps)
+	creds, err := oci.CredentialsFromProperties(platProps)
 	if err != nil {
 		return err
 	}

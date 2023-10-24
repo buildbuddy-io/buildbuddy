@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -17,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/docker/distribution/reference"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -49,17 +49,10 @@ var (
 	// operation fails due to the container already being removed.
 	ErrRemoved = status.UnavailableError("container has been removed")
 
-	containerRegistries     = flag.Slice("executor.container_registries", []ContainerRegistry{}, "")
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 
 	slowPullWarnOnce sync.Once
 )
-
-type ContainerRegistry struct {
-	Hostnames []string `yaml:"hostnames" json:"hostnames"`
-	Username  string   `yaml:"username" json:"username"`
-	Password  string   `yaml:"password" json:"password" config:"secret"`
-}
 
 type DockerDeviceMapping struct {
 	PathOnHost        string `yaml:"path_on_host" usage:"path to device that should be mapped from the host."`
@@ -180,7 +173,7 @@ type CommandContainer interface {
 	//
 	// It is approximately the same as calling PullImageIfNecessary, Create,
 	// Exec, then Remove.
-	Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult
+	Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult
 
 	// IsImageCached returns whether the configured image is cached locally.
 	IsImageCached(ctx context.Context) (bool, error)
@@ -188,7 +181,7 @@ type CommandContainer interface {
 	// PullImage pulls the container image from the remote. It always
 	// re-authenticates the request, but may serve the image from a local cache
 	// if needed.
-	PullImage(ctx context.Context, creds PullCredentials) error
+	PullImage(ctx context.Context, creds oci.Credentials) error
 
 	// Create creates a new container and starts a top-level process inside it
 	// (`sleep infinity`) so that it stays alive and running until explicitly
@@ -232,7 +225,7 @@ type CommandContainer interface {
 
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
-func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds PullCredentials, imageRef string) error {
+func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
 	if *debugUseLocalImagesOnly {
 		return nil
 	}
@@ -268,26 +261,10 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	return nil
 }
 
-type PullCredentials struct {
-	Username string
-	Password string
-}
-
-func (p PullCredentials) IsEmpty() bool {
-	return p == PullCredentials{}
-}
-
-func (p PullCredentials) String() string {
-	if p.IsEmpty() {
-		return ""
-	}
-	return p.Username + ":" + p.Password
-}
-
 // NewImageCacheToken returns the token representing the authenticated group ID,
 // pull credentials, and image ref. For the same sets of those values, the
 // same token is always returned.
-func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCredentials, imageRef string) (interfaces.ImageCacheToken, error) {
+func NewImageCacheToken(ctx context.Context, env environment.Env, creds oci.Credentials, imageRef string) (interfaces.ImageCacheToken, error) {
 	groupID := ""
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err != nil {
@@ -351,55 +328,6 @@ func (a *imageCacheAuthenticator) purgeExpiredTokens() {
 	}
 }
 
-// GetPullCredentials returns the image pull credentials for the given image
-// ref. If credentials are not returned, container implementations may still
-// invoke locally available credential helpers (for example, via `docker pull`
-// or `skopeo copy`)
-func GetPullCredentials(props *platform.Properties) (PullCredentials, error) {
-	imageRef := props.ContainerImage
-	if imageRef == "" {
-		return PullCredentials{}, nil
-	}
-
-	username := props.ContainerRegistryUsername
-	password := props.ContainerRegistryPassword
-	if username != "" && password == "" {
-		return PullCredentials{}, status.InvalidArgumentError(
-			"Received container-registry-username with no container-registry-password")
-	} else if username == "" && password != "" {
-		return PullCredentials{}, status.InvalidArgumentError(
-			"Received container-registry-password with no container-registry-username")
-	} else if username != "" || password != "" {
-		return PullCredentials{
-			Username: username,
-			Password: password,
-		}, nil
-	}
-
-	if len(*containerRegistries) == 0 {
-		return PullCredentials{}, nil
-	}
-
-	ref, err := reference.ParseNormalizedNamed(imageRef)
-	if err != nil {
-		log.Debugf("Failed to parse image ref %q: %s", imageRef, err)
-		return PullCredentials{}, nil
-	}
-	refHostname := reference.Domain(ref)
-	for _, cfg := range *containerRegistries {
-		for _, cfgHostname := range cfg.Hostnames {
-			if refHostname == cfgHostname {
-				return PullCredentials{
-					Username: cfg.Username,
-					Password: cfg.Password,
-				}, nil
-			}
-		}
-	}
-
-	return PullCredentials{}, nil
-}
-
 // TracedCommandContainer is a wrapper that creates tracing spans for all
 // CommandContainer methods. It also provides some basic protection against race
 // conditions, such as preventing Remove() from being called twice or while
@@ -416,7 +344,7 @@ type TracedCommandContainer struct {
 	Delegate CommandContainer
 }
 
-func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -442,7 +370,7 @@ func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error
 	return t.Delegate.IsImageCached(ctx)
 }
 
-func (t *TracedCommandContainer) PullImage(ctx context.Context, creds PullCredentials) error {
+func (t *TracedCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 

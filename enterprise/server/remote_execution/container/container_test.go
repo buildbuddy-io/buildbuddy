@@ -7,12 +7,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -21,17 +20,17 @@ import (
 )
 
 type FakeContainer struct {
-	RequiredPullCredentials container.PullCredentials
+	RequiredPullCredentials oci.Credentials
 	PullCount               int
 }
 
-func (c *FakeContainer) Run(context.Context, *repb.Command, string, container.PullCredentials) *interfaces.CommandResult {
+func (c *FakeContainer) Run(context.Context, *repb.Command, string, oci.Credentials) *interfaces.CommandResult {
 	return nil
 }
 func (c *FakeContainer) IsImageCached(context.Context) (bool, error) {
 	return c.PullCount > 0, nil
 }
-func (c *FakeContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+func (c *FakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	if creds != c.RequiredPullCredentials {
 		return status.PermissionDeniedError("Permission denied: wrong pull credentials")
 	}
@@ -65,11 +64,11 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
 	ctx := userCtx(t, ta, "US1")
-	goodCreds1 := container.PullCredentials{
+	goodCreds1 := oci.Credentials{
 		Username: "user",
 		Password: "short-lived-token-1",
 	}
-	goodCreds2 := container.PullCredentials{
+	goodCreds2 := oci.Credentials{
 		Username: "user",
 		Password: "short-lived-token-2",
 	}
@@ -102,12 +101,12 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
 	ctx := userCtx(t, ta, "US1")
-	goodCreds := container.PullCredentials{
+	goodCreds := oci.Credentials{
 		Username: "user",
 		Password: "secret",
 	}
 	c := &FakeContainer{RequiredPullCredentials: goodCreds}
-	badCreds := container.PullCredentials{
+	badCreds := oci.Credentials{
 		Username: "user",
 		Password: "trying-to-guess-the-real-secret",
 	}
@@ -136,7 +135,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		token1, err := container.NewImageCacheToken(
 			userCtx(t, ta, "US1"),
 			env,
-			container.PullCredentials{Username: "user1", Password: "pass1"},
+			oci.Credentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
 
@@ -151,7 +150,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		token1, err := container.NewImageCacheToken(
 			userCtx(t, ta, "US1"),
 			env,
-			container.PullCredentials{Username: "user1", Password: "pass1"},
+			oci.Credentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
 
@@ -167,7 +166,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		token2, err := container.NewImageCacheToken(
 			userCtx(t, ta, "US2"),
 			env,
-			container.PullCredentials{Username: "user1", Password: "pass1"},
+			oci.Credentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
 
@@ -185,7 +184,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		anonToken, err := container.NewImageCacheToken(
 			context.Background(),
 			env,
-			container.PullCredentials{},
+			oci.Credentials{},
 			"alpine:latest",
 		)
 
@@ -204,7 +203,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		anonToken, err := container.NewImageCacheToken(
 			context.Background(),
 			env,
-			container.PullCredentials{},
+			oci.Credentials{},
 			"alpine:latest",
 		)
 
@@ -227,7 +226,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		immediatelyExpiredToken, err := container.NewImageCacheToken(
 			userCtx(t, ta, "US1"),
 			env,
-			container.PullCredentials{Username: "user1", Password: "pass1"},
+			oci.Credentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
 
@@ -238,86 +237,4 @@ func TestImageCacheAuthenticator(t *testing.T) {
 
 		assert.False(t, isAuthorized, "Expired tokens should not be authorized")
 	}
-}
-
-func TestGetPullCredentials(t *testing.T) {
-	flags.Set(
-		t,
-		"executor.container_registries",
-		[]container.ContainerRegistry{
-			{
-				Hostnames: []string{"gcr.io", "us.gcr.io", "eu.gcr.io", "asia.gcr.io", "marketplace.gcr.io"},
-				Username:  "gcruser",
-				Password:  "gcrpass",
-			},
-			{
-				Hostnames: []string{"docker.io"},
-				Username:  "dockeruser",
-				Password:  "dockerpass",
-			},
-		},
-	)
-
-	props := &platform.Properties{
-		ContainerImage:            "missing-password.io",
-		ContainerRegistryUsername: "username",
-		ContainerRegistryPassword: "",
-	}
-	_, err := container.GetPullCredentials(props)
-	assert.True(t, status.IsInvalidArgumentError(err))
-
-	props = &platform.Properties{
-		ContainerImage:            "missing-username.io",
-		ContainerRegistryUsername: "",
-		ContainerRegistryPassword: "password",
-	}
-	_, err = container.GetPullCredentials(props)
-	assert.True(t, status.IsInvalidArgumentError(err))
-
-	for _, testCase := range []struct {
-		imageRef            string
-		expectedCredentials container.PullCredentials
-	}{
-		// Creds shouldn't be returned if there's no container image requested
-		{"", container.PullCredentials{}},
-		// Creds shouldn't be returned if the registry is unrecognized
-		{"unrecognized-registry.io/foo/bar", container.PullCredentials{}},
-		{"unrecognized-registry.io/foo/bar:latest", container.PullCredentials{}},
-		{"unrecognized-registry.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", container.PullCredentials{}},
-		// Images with no domain should get defaulted to docker.io (Docker and
-		// other tools like `skopeo` assume docker.io as the default registry)
-		{"alpine", creds("dockeruser", "dockerpass")},
-		{"alpine:latest", creds("dockeruser", "dockerpass")},
-		{"alpine@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("dockeruser", "dockerpass")},
-		// docker.io supports both `/image` and `/library/image` -- make sure we
-		// handle both
-		{"docker.io/alpine", creds("dockeruser", "dockerpass")},
-		{"docker.io/alpine:latest", creds("dockeruser", "dockerpass")},
-		{"docker.io/alpine@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("dockeruser", "dockerpass")},
-		{"docker.io/library/alpine:latest", creds("dockeruser", "dockerpass")},
-		{"docker.io/library/alpine@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("dockeruser", "dockerpass")},
-		// Non-docker registries should work as well
-		{"gcr.io/foo/bar", creds("gcruser", "gcrpass")},
-		{"gcr.io/foo/bar:latest", creds("gcruser", "gcrpass")},
-		{"gcr.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("gcruser", "gcrpass")},
-		// Subdomains should work too
-		{"marketplace.gcr.io/foo/bar", creds("gcruser", "gcrpass")},
-		{"marketplace.gcr.io/foo/bar:latest", creds("gcruser", "gcrpass")},
-		{"marketplace.gcr.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("gcruser", "gcrpass")},
-	} {
-		props = &platform.Properties{ContainerImage: testCase.imageRef}
-
-		creds, err := container.GetPullCredentials(props)
-
-		assert.NoError(t, err)
-		assert.Equal(
-			t, testCase.expectedCredentials, creds,
-			"unexpected credentials for image ref %q: %q",
-			testCase.imageRef, testCase.expectedCredentials,
-		)
-	}
-}
-
-func creds(user, pass string) container.PullCredentials {
-	return container.PullCredentials{Username: user, Password: pass}
 }

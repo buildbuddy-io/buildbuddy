@@ -19,6 +19,7 @@ go_library(
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
+        "//enterprise/server/util/oci",
         "//enterprise/server/util/vfs_server",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

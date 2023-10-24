@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -188,7 +189,7 @@ const (
 	ctrDidNotExitCleanly
 )
 
-func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -463,11 +464,11 @@ func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error
 	return false, nil
 }
 
-func (r *dockerCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+func (r *dockerCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	return PullImage(ctx, r.client, r.image, creds)
 }
 
-func PullImage(ctx context.Context, client *dockerclient.Client, image string, creds container.PullCredentials) error {
+func PullImage(ctx context.Context, client *dockerclient.Client, image string, creds oci.Credentials) error {
 	if !creds.IsEmpty() {
 		authCfg := dockertypes.AuthConfig{
 			Username: creds.Username,

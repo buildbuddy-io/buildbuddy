@@ -1,4 +1,4 @@
-package container
+package ociconv
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -111,7 +111,7 @@ func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage strin
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
+func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
 	existingPath, err := CachedDiskImagePath(ctx, workspaceDir, containerImage)
 	if err != nil {
 		return "", err
@@ -168,7 +168,7 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, wor
 	}
 }
 
-func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
+func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
 	hashedContainerName := hash.String(containerImage)
 	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 
@@ -197,7 +197,7 @@ func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, wor
 // image from an OCI container image reference.
 // NB: We use modern tools (not docker), that do not require root access. This
 // allows this binary to convert images even when not running as root.
-func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
+func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
 	// Make a temp directory to work in. Delete it when this fuction returns.
 	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
 	if err != nil {

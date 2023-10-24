@@ -32,6 +32,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -55,7 +57,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
-	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1627,7 +1628,7 @@ func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileS
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds container.PullCredentials) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds oci.Credentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1711,7 +1712,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	workspaceFSPath := filepath.Join(c.getChroot(), workspaceFSName)
 
 	// Hardlink the ext4 image to the chroot at containerFSPath.
-	imageExt4Path, err := containerutil.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
+	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return status.UnavailableErrorf("disk image is unavailable: %s", err)
 	}
@@ -1978,7 +1979,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	diskImagePath, err := containerutil.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
+	diskImagePath, err := ociconv.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return false, err
 	}
@@ -1988,7 +1989,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 // PullImage pulls the container image from the remote. It always
 // re-authenticates the request, but may serve the image from a local cache
 // in order to avoid re-downloading the image.
-func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	if c.pulled {
 		return nil
 	}
@@ -2002,7 +2003,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.Pu
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := containerutil.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}

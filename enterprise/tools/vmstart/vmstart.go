@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -152,7 +153,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
-		creds := container.PullCredentials{Username: *registryUser, Password: *registryPassword}
+		creds := oci.Credentials{Username: *registryUser, Password: *registryPassword}
 		if err := container.PullImageIfNecessary(ctx, env, c, creds, opts.ContainerImage); err != nil {
 			log.Fatalf("Unable to PullImageIfNecessary: %s", err)
 		}
