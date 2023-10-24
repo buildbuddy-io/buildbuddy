@@ -15,7 +15,11 @@ func reflink(source, destination string) error {
 	}
 	defer sourceFile.Close()
 
-	destFile, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+	info, err := sourceFile.Stat()
+	if err != nil {
+		return err
+	}
+	destFile, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE|os.O_EXCL, info.Mode())
 	if err != nil {
 		return err
 	}
