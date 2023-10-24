@@ -140,6 +140,11 @@ const (
 	// Maximum amount of time to wait for a pebble Sync. A warning will be
 	// logged if a sync takes longer than this.
 	maxSyncDuration = 10 * time.Second
+
+	// When a parition's size is lower than the SamplerSleepThreshold, the sampler thread
+	// will sleep for SamplerSleepDuration
+	SamplerSleepThreshold = float64(0.2)
+	SamplerSleepDuration  = 1 * time.Second
 )
 
 type sizeUpdateOp int
@@ -2537,6 +2542,17 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			return nil
 		default:
 		}
+
+		// When we started to populate a cache, we cannot find any eligible
+		// entries to evict. We will sleep for some time to prevent from
+		// constantly generating samples in vain.
+		e.mu.Lock()
+		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.MaxSizeBytes))
+		e.mu.Unlock()
+		if shouldSleep {
+			time.Sleep(SamplerSleepDuration)
+		}
+
 		// Refresh the iterator once a while
 		if shouldCreateNewIter {
 			shouldCreateNewIter = false
