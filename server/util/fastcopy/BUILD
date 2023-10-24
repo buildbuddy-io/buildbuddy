@@ -6,6 +6,7 @@ go_library(
         "fastcopy.go",
         "fastcopy_darwin.go",
         "fastcopy_linux.go",
+        "fastcopy_windows.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/fastcopy",
     visibility = ["//visibility:public"],
@@ -15,6 +16,9 @@ go_library(
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:windows": [
+            "//server/util/status",
         ],
         "//conditions:default": [],
     }),
