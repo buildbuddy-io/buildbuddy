@@ -78,6 +78,8 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   <div className="usage-value">{formatWithCommas(period.invocations)}</div>
                   <div className="usage-resource-name">Action cache hits</div>
                   <div className="usage-value">{formatWithCommas(period.actionCacheHits)}</div>
+                  <div className="usage-resource-name">Cached build minutes</div>
+                  <div className="usage-value">{formatMinutes(Number(period.totalCachedActionExecUsec))}</div>
                   <div className="usage-resource-name">Content addressable storage cache hits</div>
                   <div className="usage-value">{formatWithCommas(period.casCacheHits)}</div>
                   <div className="usage-resource-name">Total bytes downloaded from cache</div>
