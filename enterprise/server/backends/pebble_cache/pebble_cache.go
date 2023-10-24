@@ -2547,10 +2547,11 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		// entries to evict. We will sleep for some time to prevent from
 		// constantly generating samples in vain.
 		e.mu.Lock()
-		if e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.MaxSizeBytes)) {
+		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.MaxSizeBytes))
+		e.mu.Unlock()
+		if shouldSleep {
 			time.Sleep(SamplerSleepDuration)
 		}
-		e.mu.Unlock()
 
 		// Refresh the iterator once a while
 		if shouldCreateNewIter {
