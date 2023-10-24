@@ -53,12 +53,3 @@ func reflink(source, destination string) error {
 	reflinkWasSuccessful = true
 	return nil
 }
-
-func FastCopy(source, destination string) error {
-	if err := reflink(source, destination); err != nil {
-		if err := os.Link(source, destination); err != nil && !os.IsExist(err) {
-			return err
-		}
-	}
-	return nil
-}
