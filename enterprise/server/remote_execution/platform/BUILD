@@ -16,6 +16,7 @@ go_library(
         "//server/util/usageutil",
         "@com_github_docker_go_units//:go-units",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_x_exp//maps",
     ],
 )
 
