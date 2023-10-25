@@ -8,12 +8,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -23,11 +25,12 @@ var flags = flag.NewFlagSet("execute", flag.ContinueOnError)
 
 // Bazel-equivalent flags.
 var (
-	target        = flags.String("remote_executor", "grpcs://remote.buildbuddy.io", "Remote execution service target.")
-	instanceName  = flags.String("remote_instance_name", "", "Value to pass as an instance_name in the remote execution API.")
-	timeout       = flags.Duration("remote_timeout", 1*time.Hour, "Timeout used for the action.")
-	remoteHeaders = flag.New(flags, "remote_header", []string{}, "Header to be applied to all outgoing gRPC requests, as a `NAME=VALUE` pair. Can be specified more than once.")
-	actionEnv     = flag.New(flags, "action_env", []string{}, "Action environment variable, as a `NAME=VALUE` pair. Can be specified more than once.")
+	target         = flags.String("remote_executor", "grpcs://remote.buildbuddy.io", "Remote execution service target.")
+	instanceName   = flags.String("remote_instance_name", "", "Value to pass as an instance_name in the remote execution API.")
+	digestFunction = flags.String("digest_function", "", "Digest function used for content-addressable storage. Can be `\"sha256\" or \"blake3\"`.")
+	timeout        = flags.Duration("remote_timeout", 1*time.Hour, "Timeout used for the action.")
+	remoteHeaders  = flag.New(flags, "remote_header", []string{}, "Header to be applied to all outgoing gRPC requests, as a `NAME=VALUE` pair. Can be specified more than once.")
+	actionEnv      = flag.New(flags, "action_env", []string{}, "Action environment variable, as a `NAME=VALUE` pair. Can be specified more than once.")
 )
 
 // Flags specific to `bb execute`.
@@ -101,32 +104,56 @@ func execute(cmdArgs []string) error {
 	if err != nil {
 		return err
 	}
-	env := real_environment.NewRealEnv(nil /*=healthchecker*/)
+	env := real_environment.NewBatchEnv()
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 
-	cmd := rexec.Command(env, cmdArgs[0], cmdArgs[1:]...)
-	cmd.InstanceName = *instanceName
-	cmd.Platform = *execProperties
-	cmd.Env = *actionEnv
-	cmd.Timeout = *timeout
-	// TODO: use capabilities client and respect digest function & compressor.
+	environ, err := rexec.MakeEnv(*actionEnv...)
+	if err != nil {
+		return err
+	}
+	platform, err := rexec.MakePlatform(*execProperties...)
+	if err != nil {
+		return err
+	}
+	cmd := &repb.Command{
+		Arguments:            cmdArgs,
+		EnvironmentVariables: environ,
+		Platform:             platform,
+	}
+	action := &repb.Action{}
+	if *timeout > 0 {
+		action.Timeout = durationpb.New(*timeout)
+	}
+	// TODO: use capabilities client and respect remote digest function &
+	// compressor.
+	df, err := digest.ParseFunction(*digestFunction)
+	if err != nil {
+		return err
+	}
 	start := time.Now()
 	log.Debugf("Preparing action for %s", cmd)
-	if err := cmd.Upload(ctx); err != nil {
+	arn, err := rexec.Prepare(ctx, env, *instanceName, df, action, cmd, *inputRoot)
+	if err != nil {
 		return err
 	}
 	log.Debug("Starting /Execute request")
-	if err := cmd.Start(ctx); err != nil {
+	stream, err := rexec.Start(ctx, env, arn)
+	if err != nil {
 		return err
 	}
 	log.Debugf("Waiting for execution to complete")
-	if err := cmd.Wait(ctx); err != nil {
+	response, err := rexec.Wait(stream)
+	if err != nil {
 		return err
 	}
+	if response.Err != nil {
+		// We failed to execute.
+		return response.Err
+	}
 	log.Debugf("Downloading result")
-	res, err := cmd.Result(ctx)
+	res, err := rexec.GetResult(ctx, env, *instanceName, df, response.ExecuteResponse.GetResult())
 	if err != nil {
 		return status.WrapError(err, "execution failed")
 	}

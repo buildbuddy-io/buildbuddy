@@ -637,3 +637,15 @@ func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, erro
 	}
 	return d, buf, nil
 }
+
+// ParseFunction parses a digest function name to a proto.
+func ParseFunction(value string) (repb.DigestFunction_Value, error) {
+	switch value {
+	case "SHA256", "sha256", "":
+		return repb.DigestFunction_SHA256, nil
+	case "BLAKE3", "blake3":
+		return repb.DigestFunction_BLAKE3, nil
+	default:
+		return 0, status.InvalidArgumentErrorf("unknown digest function %q", value)
+	}
+}
