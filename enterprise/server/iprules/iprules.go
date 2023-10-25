@@ -3,6 +3,7 @@ package iprules
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
@@ -289,7 +291,18 @@ func (s *Service) Authorize(ctx context.Context) error {
 		}
 	}
 
-	return s.authorize(ctx, u.GetGroupID())
+	authErr := s.authorize(ctx, u.GetGroupID())
+	if authErr != nil {
+		si, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
+		var sb strings.Builder
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			for k, v := range md {
+				sb.WriteString(fmt.Sprintf("%s=%s\n", k, strings.Join(v, ",")))
+			}
+		}
+		log.CtxWarningf(ctx, "VVV ip check failed identity %v err %v\n%s", si, err, sb.String())
+	}
+	return authErr
 }
 
 func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
