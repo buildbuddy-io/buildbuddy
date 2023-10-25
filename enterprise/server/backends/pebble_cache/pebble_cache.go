@@ -898,8 +898,6 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 			minVersion = version
 		}
 
-		_ = limiter.Wait(p.env.GetServerContext())
-
 		moveKey := func() error {
 			keyBytes, err := key.Bytes(version)
 			if err != nil {
@@ -915,6 +913,9 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 				return status.UnknownErrorf("could not read key to be migrated: %s", err)
 			}
 			_ = closer.Close()
+
+			_ = limiter.Wait(p.env.GetServerContext())
+
 			if err := db.Set(keyBytes, valBytes, pebble.NoSync); err != nil {
 				return status.UnknownErrorf("could not write migrated key: %s", err)
 			}
