@@ -4610,114 +4610,6 @@
                 }
               },
               "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "binBps"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 73
-          },
-          "id": 6434,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "repeat": "cache_name",
-          "repeatDirection": "h",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "editorMode": "code",
-              "expr": "sum by(pod_name, partition_id) (deriv(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\", cache_name=\"${cache_name}\"}[10m]))",
-              "legendFormat": "{{partition_id}} partition size delta",
-              "range": true,
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "editorMode": "code",
-              "expr": "sum by(pod_name, partition_id) (rate(buildbuddy_remote_cache_disk_cache_partition_size_bytes_evicted{region=\"${region}\", cache_name=\"${cache_name}\"}[10m]))",
-              "hide": false,
-              "legendFormat": "{{partition_id}} size evicted",
-              "range": true,
-              "refId": "B"
-            }
-          ],
-          "title": "Bytes deleted per second (${cache_name})",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
               "max": 1,
               "min": 0,
               "thresholds": {
@@ -4740,7 +4632,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 73
           },
           "id": 2182,
           "options": {
@@ -4812,7 +4704,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 89
+            "y": 81
           },
           "heatmap": {},
           "hideZeroBuckets": false,
