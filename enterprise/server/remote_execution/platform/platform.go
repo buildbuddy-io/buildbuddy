@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"golang.org/x/exp/maps"
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -599,4 +601,28 @@ func DockerSocket() string {
 
 func DefaultImage() string {
 	return *defaultImage
+}
+
+// FromPairs parses a Platform from a list of NAME=VALUE pairs. If the same name
+// is specified more than once, the last one wins. The entries are sorted by
+// key, so that the platform is cache-friendly.
+func FromPairs(pairs ...string) (*repb.Platform, error) {
+	m := map[string]string{}
+	for _, s := range pairs {
+		parts := strings.SplitN(s, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid NAME=VALUE pair %q", s)
+		}
+		m[parts[0]] = parts[1]
+	}
+	names := maps.Keys(m)
+	sort.Strings(names)
+	p := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
+	for _, name := range names {
+		p.Properties = append(p.Properties, &repb.Platform_Property{
+			Name:  name,
+			Value: m[name],
+		})
+	}
+	return p, nil
 }
