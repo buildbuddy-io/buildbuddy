@@ -31,20 +31,24 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -94,7 +98,7 @@ type Cmd struct {
 	env           environment.Env
 	state         state
 	actionDigest  *repb.Digest
-	stream        *operation.RetryingStream
+	stream        *RetryingStream
 	response      *repb.ExecuteResponse
 	waitErr       error
 	commandResult *interfaces.CommandResult
@@ -111,7 +115,7 @@ func Command(env environment.Env, executable string, args ...string) *Cmd {
 // Close closes any streams established to the server.
 func (c *Cmd) Close() error {
 	if c.stream != nil {
-		c.stream.Close()
+		return c.stream.CloseSend()
 	}
 	return nil
 }
@@ -128,20 +132,13 @@ func (c *Cmd) Upload(ctx context.Context) error {
 	}
 	c.state = uploading
 
-	p, err := platform.FromPairs(c.Platform...)
+	p, err := AssemblePlatform(c.Platform...)
 	if err != nil {
 		return err
 	}
-	var envVars []*repb.Command_EnvironmentVariable
-	for _, kv := range c.Env {
-		parts := strings.SplitN(kv, "=", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid environment variable")
-		}
-		envVars = append(envVars, &repb.Command_EnvironmentVariable{
-			Name:  parts[0],
-			Value: parts[1],
-		})
+	envVars, err := AssembleEnvironmentVariables(c.Env...)
+	if err != nil {
+		return err
 	}
 	cmd := &repb.Command{
 		Arguments:            c.Arguments,
@@ -217,7 +214,7 @@ func (c *Cmd) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.stream = operation.NewRetryingStream(ctx, c.env.GetRemoteExecutionClient(), stream, "")
+	c.stream = NewRetryingStream(ctx, c.env.GetRemoteExecutionClient(), stream, "")
 	return nil
 }
 
@@ -229,7 +226,7 @@ func (c *Cmd) Wait(ctx context.Context) error {
 	c.state = waiting
 
 	defer func() {
-		c.stream.Close()
+		c.stream.CloseSend()
 		c.stream = nil
 	}()
 	for {
@@ -237,7 +234,7 @@ func (c *Cmd) Wait(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		msg, err := operation.Unpack(op)
+		msg, err := UnpackOperation(op)
 		if err != nil {
 			return err
 		}
@@ -299,4 +296,157 @@ func (c *Cmd) digestFunction() repb.DigestFunction_Value {
 		return c.DigestFunction
 	}
 	return defaultDigestFunction
+}
+
+// RetryingStream implements a reliable operation stream.
+//
+// It keeps track of the operation name internally, and provides a Recv() func
+// which re-establishes the stream transparently if the operation name has been
+// established.
+type RetryingStream struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	client repb.ExecutionClient
+	stream repb.Execution_ExecuteClient
+	name   string
+}
+
+func NewRetryingStream(ctx context.Context, client repb.ExecutionClient, stream repb.Execution_ExecuteClient, name string) *RetryingStream {
+	ctx, cancel := context.WithCancel(ctx)
+	return &RetryingStream{
+		ctx:    ctx,
+		cancel: cancel,
+		client: client,
+		stream: stream,
+		name:   name,
+	}
+}
+
+// Name returns the operation name, if known.
+func (s *RetryingStream) Name() string {
+	return s.name
+}
+
+// Recv attempts to reliably return the next operation on the named stream.
+//
+// If the stream is disconnected and the operation name has been received, it
+// will attempt to reconnect with WaitExecution.
+func (s *RetryingStream) Recv() (*longrunning.Operation, error) {
+	r := retry.DefaultWithContext(s.ctx)
+	for {
+		op, err := s.stream.Recv()
+		if err == nil {
+			if op.GetName() != "" {
+				s.name = op.GetName()
+			}
+			return op, nil
+		}
+		if !status.IsUnavailableError(err) || s.name == "" {
+			return nil, err
+		}
+		if !r.Next() {
+			return nil, s.ctx.Err()
+		}
+		req := &repb.WaitExecutionRequest{Name: s.name}
+		next, err := s.client.WaitExecution(s.ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		s.stream.CloseSend()
+		s.stream = next
+	}
+}
+
+func (s *RetryingStream) CloseSend() error {
+	var err error
+	if s.stream != nil {
+		err = s.stream.CloseSend()
+		s.stream = nil
+	}
+	s.client = nil
+	s.cancel()
+	return err
+}
+
+// ExecuteOperation contains an operation along with its execution-specific
+// payload.
+type ExecuteOperation struct {
+	*longrunning.Operation
+
+	// ExecuteOperationMetadata contains any metadata unpacked from the
+	// operation.
+	ExecuteOperationMetadata *repb.ExecuteOperationMetadata
+	// ExecuteResponse contains any response unpacked from the operation.
+	ExecuteResponse *repb.ExecuteResponse
+	// Err contains any error parsed from the ExecuteResponse status field.
+	Err error
+}
+
+// UnpackOperation unmarshals all expected execution-specific fields from the
+// given operationn.
+func UnpackOperation(op *longrunning.Operation) (*ExecuteOperation, error) {
+	msg := &ExecuteOperation{Operation: op}
+	if op.GetResponse() != nil {
+		msg.ExecuteResponse = &repb.ExecuteResponse{}
+		if err := op.GetResponse().UnmarshalTo(msg.ExecuteResponse); err != nil {
+			return nil, err
+		}
+	}
+	if op.GetMetadata() != nil {
+		msg.ExecuteOperationMetadata = &repb.ExecuteOperationMetadata{}
+		if err := op.GetMetadata().UnmarshalTo(msg.ExecuteOperationMetadata); err != nil {
+			return nil, err
+		}
+	}
+	msg.Err = gstatus.FromProto(msg.ExecuteResponse.GetStatus()).Err()
+	return msg, nil
+}
+
+// AssemblePlatform assembles a Platform proto from a list of NAME=VALUE pairs.
+// If the same name is specified more than once, the last one wins. The entries
+// are sorted by name, so that the platform is cache-friendly.
+func AssemblePlatform(pairs ...string) (*repb.Platform, error) {
+	m := map[string]string{}
+	for _, s := range pairs {
+		parts := strings.SplitN(s, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid NAME=VALUE pair %q", s)
+		}
+		m[parts[0]] = parts[1]
+	}
+	names := maps.Keys(m)
+	sort.Strings(names)
+	p := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
+	for _, name := range names {
+		p.Properties = append(p.Properties, &repb.Platform_Property{
+			Name:  name,
+			Value: m[name],
+		})
+	}
+	return p, nil
+}
+
+// AssembleEnvironmentVariables assembles a list of EnvironmentVariable protos
+// from a list of NAME=VALUE pairs. If the same name is specified more than
+// once, the last one wins. The entries are sorted by name, so that the
+// environment variables are cache-friendly.
+func AssembleEnvironmentVariables(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
+	m := map[string]string{}
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid environment variable")
+		}
+		m[parts[0]] = parts[1]
+	}
+	names := maps.Keys(m)
+	sort.Strings(names)
+	out := make([]*repb.Command_EnvironmentVariable, 0, len(m))
+	for _, name := range names {
+		out = append(out, &repb.Command_EnvironmentVariable{
+			Name:  name,
+			Value: m[name],
+		})
+	}
+	return out, nil
 }
