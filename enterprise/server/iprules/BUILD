@@ -22,6 +22,7 @@ go_library(
         "//server/util/role",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
