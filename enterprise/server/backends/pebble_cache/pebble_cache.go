@@ -240,7 +240,7 @@ type PebbleCache struct {
 	orphanedFilesDone chan struct{}
 
 	fileStorer filestore.Store
-	bufferPool *bytebufferpool.Pool
+	bufferPool *bytebufferpool.VariableSizePool
 
 	minBytesAutoZstdCompression int64
 
@@ -570,7 +570,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		accesses:                    make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:                    make([]*partitionEvictor, len(opts.Partitions)),
 		fileStorer:                  filestore.New(),
-		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
+		bufferPool:                  bytebufferpool.VariableSize(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
 		eventListener:               el,
 		includeMetadataSize:         opts.IncludeMetadataSize,
@@ -2122,13 +2122,13 @@ type zstdCompressor struct {
 
 	interfaces.CommittedWriteCloser
 	compressBuf []byte
-	bufferPool  *bytebufferpool.Pool
+	bufferPool  *bytebufferpool.VariableSizePool
 
 	numDecompressedBytes int
 	numCompressedBytes   int
 }
 
-func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
+func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.VariableSizePool, digestSize int64) *zstdCompressor {
 	compressBuf := bp.Get(digestSize)
 	return &zstdCompressor{
 		cacheName:            cacheName,
@@ -3109,7 +3109,7 @@ type compressionReader struct {
 	io.ReadCloser
 	readBuf     []byte
 	compressBuf []byte
-	bufferPool  *bytebufferpool.Pool
+	bufferPool  *bytebufferpool.VariableSizePool
 }
 
 func (r *compressionReader) Close() error {

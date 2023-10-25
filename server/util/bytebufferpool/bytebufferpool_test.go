@@ -8,7 +8,7 @@ import (
 )
 
 func TestBufferSize(t *testing.T) {
-	bp := bytebufferpool.New(1024)
+	bp := bytebufferpool.VariableSize(1024)
 
 	type test struct {
 		dataSize   int64
@@ -32,7 +32,7 @@ func TestBufferSize(t *testing.T) {
 }
 
 func TestReuse(t *testing.T) {
-	bp := bytebufferpool.New(1024)
+	bp := bytebufferpool.VariableSize(1024)
 
 	for i := 1; i < 20; i++ {
 		bp.Put(make([]byte, i))
