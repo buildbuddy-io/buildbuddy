@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -59,7 +60,6 @@ const (
 
 type IStore interface {
 	NodeDescriptor() *rfpb.NodeDescriptor
-	RefreshReplicaUsages() []*rfpb.ReplicaUsage
 	Sender() *sender.Sender
 	Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error)
 }
@@ -68,6 +68,7 @@ type Tracker struct {
 	store         IStore
 	gossipManager *gossip.GossipManager
 	partitions    []disk.Partition
+	updates       <-chan events.Event
 
 	quitChan      chan struct{}
 	mu            sync.Mutex
@@ -219,11 +220,12 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 	return samples, nil
 }
 
-func New(store IStore, gossipManager *gossip.GossipManager, partitions []disk.Partition) (*Tracker, error) {
+func New(store IStore, gossipManager *gossip.GossipManager, partitions []disk.Partition, updates <-chan events.Event) (*Tracker, error) {
 	ut := &Tracker{
 		store:         store,
 		gossipManager: gossipManager,
 		partitions:    partitions,
+		updates:       updates,
 		quitChan:      make(chan struct{}),
 		byRange:       make(map[uint64]*rfpb.ReplicaUsage),
 		byPartition:   make(map[string]*partitionUsage),
@@ -258,6 +260,7 @@ func New(store IStore, gossipManager *gossip.GossipManager, partitions []disk.Pa
 	}
 
 	go ut.broadcastLoop()
+	go ut.handleEvents()
 	gossipManager.AddListener(ut)
 	return ut, nil
 }
@@ -388,6 +391,41 @@ func (ut *Tracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage) {
 	}
 }
 
+func (ut *Tracker) handleEvents() {
+	for {
+		select {
+		case <-ut.quitChan:
+			return
+		case e := <-ut.updates:
+			ut.processSingleEvent(e)
+		}
+	}
+}
+
+func (ut *Tracker) processSingleEvent(e events.Event) {
+	switch e.EventType() {
+	case events.EventRangeUsageUpdated:
+		usageEvent, ok := e.(events.RangeUsageEvent)
+		if !ok {
+			return
+		}
+		if !usageEvent.Leased {
+			return
+		}
+		rd := usageEvent.RangeDescriptor
+		ut.LocalUpdate(rd.GetRangeId(), usageEvent.ReplicaUsage)
+	case events.EventRangeRemoved:
+		rangeEvent, ok := e.(events.RangeEvent)
+		if !ok {
+			return
+		}
+		rd := rangeEvent.RangeDescriptor
+		ut.RemoveRange(rd.GetRangeId())
+	default:
+		return
+	}
+}
+
 func (ut *Tracker) removeRangePartitions(rangeID uint64) {
 	for _, u := range ut.byPartition {
 		delete(u.replicas, rangeID)
@@ -415,11 +453,6 @@ func (ut *Tracker) ReplicaUsages() []*rfpb.ReplicaUsage {
 }
 
 func (ut *Tracker) computeUsage() *rfpb.NodePartitionUsage {
-	usages := ut.store.RefreshReplicaUsages()
-	for _, u := range usages {
-		ut.LocalUpdate(u.GetRangeId(), u)
-	}
-
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
 	nu := &rfpb.NodePartitionUsage{

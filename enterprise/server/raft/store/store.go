@@ -137,7 +137,8 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
 
-	usages, err := usagetracker.New(s, gossipManager, partitions)
+	eventCh, _ := s.AddEventListener()
+	usages, err := usagetracker.New(s, gossipManager, partitions, eventCh)
 	if err != nil {
 		return nil, err
 	}
@@ -386,20 +387,6 @@ func (s *Store) GetRange(shardID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(shardID)
 }
 
-func (s *Store) updateUsages(r *replica.Replica) error {
-	usage, err := r.Usage()
-	if err != nil {
-		return err
-	}
-	rangeID := usage.GetRangeId()
-	if !s.haveLease(rangeID) {
-		s.usages.RemoveRange(rangeID)
-		return nil
-	}
-	s.usages.LocalUpdate(rangeID, usage)
-	return nil
-}
-
 func (s *Store) sendRangeEvent(eventType events.EventType, rd *rfpb.RangeDescriptor) {
 	ev := events.RangeEvent{
 		Type:            eventType,
@@ -458,13 +445,11 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.leaseKeeper.AddRange(rd)
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.updateTags()
-	go s.updateUsages(r)
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Removing range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	s.replicas.Delete(rd.GetRangeId())
-	s.usages.RemoveRange(rd.GetRangeId())
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
@@ -482,6 +467,22 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.sendRangeEvent(events.EventRangeRemoved, rd)
 	s.leaseKeeper.RemoveRange(rd)
 	go s.updateTags()
+}
+
+func (s *Store) UpdateRangeUsage(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsage) {
+	up := events.RangeUsageEvent{
+		Type:            events.EventRangeUsageUpdated,
+		RangeDescriptor: rd,
+		ReplicaUsage:    usage,
+		Leased:          s.haveLease(rd.GetRangeId()),
+	}
+
+	select {
+	case s.events <- up:
+		break
+	default:
+		s.log.Warningf("dropped usage update: %+v", up)
+	}
 }
 
 func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error) {
@@ -565,7 +566,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
-	r := replica.New(s.leaser, shardID, replicaID, s, s.events)
+	r := replica.New(s.leaser, shardID, replicaID, s)
 	return r
 }
 
@@ -819,7 +820,7 @@ func (s *Store) renewNodeLiveness() {
 		if err == nil {
 			return
 		}
-		s.log.Errorf("Error leasing node liveness record: %s", err)
+		s.log.Warningf("Error leasing node liveness record: %s", err)
 	}
 }
 
@@ -851,32 +852,6 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	}
 	su.TotalBytesUsed = int64(diskEstimateBytes)
 	return su
-}
-
-// TODO(tylerw): remove this; let usagetracker listen on events channel.
-func (s *Store) RefreshReplicaUsages() []*rfpb.ReplicaUsage {
-	s.rangeMu.RLock()
-	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
-	for _, rd := range s.openRanges {
-		openRanges = append(openRanges, rd)
-	}
-	s.rangeMu.RUnlock()
-
-	var usages []*rfpb.ReplicaUsage
-	for _, rd := range openRanges {
-		r, err := s.GetReplica(rd.GetRangeId())
-		if err != nil {
-			log.Warningf("could not get replica %d to refresh usage: %s", rd.GetRangeId(), err)
-			continue
-		}
-		u, err := r.Usage()
-		if err != nil {
-			log.Warningf("could not refresh usage for replica %d: %s", rd.GetRangeId(), err)
-			continue
-		}
-		usages = append(usages, u)
-	}
-	return usages
 }
 
 func (s *Store) updateTags() error {

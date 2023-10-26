@@ -71,6 +71,7 @@ type RangeUsageEvent struct {
 	Type            EventType
 	RangeDescriptor *rfpb.RangeDescriptor
 	ReplicaUsage    *rfpb.ReplicaUsage
+	Leased          bool
 }
 
 func (u RangeUsageEvent) EventType() EventType {

@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/events",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",

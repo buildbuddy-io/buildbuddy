@@ -325,7 +325,7 @@ func (h *Liveness) keepLeaseAlive(quitLease chan struct{}) {
 
 		select {
 		case <-quitLease:
-			// TODO(tylerw): attempt to drop lease gracefully.
+			h.clearLease()
 			return
 		case <-time.After(ttr):
 			h.ensureValidLease(true /*=forceRenewal*/)

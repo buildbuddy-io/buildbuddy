@@ -46,8 +46,9 @@ type fakeStore struct {
 	fileReadFn fileReadFn
 }
 
-func (fs *fakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
-func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
+func (fs *fakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)               {}
+func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)            {}
+func (fs *fakeStore) UpdateRangeUsage(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsage) {}
 func (fs *fakeStore) Sender() *sender.Sender {
 	return nil
 }
@@ -72,7 +73,7 @@ func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, sto
 		db.Close()
 	})
 
-	return replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/)
+	return replica.New(leaser, shardID, replicaID, store)
 }
 
 func TestOpenCloseReplica(t *testing.T) {
