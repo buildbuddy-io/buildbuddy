@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/raft/events",
         "//enterprise/server/raft/listener",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rangelease",

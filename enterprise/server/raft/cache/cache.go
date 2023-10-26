@@ -246,8 +246,10 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return nil, err
 	}
 
+	eventsCh, _ := rc.store.AddEventListener()
+
 	// start the driver once bringup is complete.
-	rc.driver = driver.New(rc.store, rc.gossipManager)
+	rc.driver = driver.New(rc.store, rc.gossipManager, eventsCh)
 	go func() {
 		for !rc.clusterStarter.Done() {
 			time.Sleep(100 * time.Millisecond)
