@@ -47,7 +47,7 @@ type CacheProxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
-	bufferPool            *bytebufferpool.Pool
+	readBufPool           *bytebufferpool.VariableSizePool
 	writeBufPool          sync.Pool
 	mu                    *sync.Mutex
 	server                *grpc.Server
