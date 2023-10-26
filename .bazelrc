@@ -99,11 +99,13 @@ build:workflows --@io_bazel_rules_go//go/config:race
 build:linux-workflows --config=remote-shared
 build:linux-workflows --config=workflows
 build:linux-workflows --config=buildbuddy_remote_executor
+build:linux-workflows --build_metadata=TAGS=linux-workflow
 
 # Configuration used for Mac workflows
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
 build:mac-workflows --config=cache
 build:mac-workflows --config=workflows
+build:mac-workflows --build_metadata=TAGS=mac-workflow
 
 # Configuration used for all builds of artifacts released to GitHub
 build:release-shared -c opt
