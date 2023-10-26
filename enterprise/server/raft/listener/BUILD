@@ -7,7 +7,6 @@ go_library(
     srcs = ["listener.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener",
     deps = [
-        "//proto:raft_go_proto",
         "//server/util/log",
         "@com_github_lni_dragonboat_v4//raftio",
     ],
