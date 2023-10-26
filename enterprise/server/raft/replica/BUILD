@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica",
     deps = [
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/events",
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",

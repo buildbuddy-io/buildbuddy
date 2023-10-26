@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -91,7 +93,7 @@ type ClusterMap struct {
 	rangeUsage map[uint64]*rfpb.ReplicaUsage
 
 	// map of nhid -> replicas running on node
-	replicas map[string]replicaSet
+	replicas replicaSet
 }
 
 type timestampedUsage struct {
@@ -107,7 +109,7 @@ func NewClusterMap() *ClusterMap {
 		leaveTime:    make(map[string]time.Time),
 		leasedRanges: make(map[uint64]*rfpb.RangeDescriptor),
 		rangeUsage:   make(map[uint64]*rfpb.ReplicaUsage),
-		replicas:     make(map[string]replicaSet),
+		replicas:     make(replicaSet),
 	}
 }
 
@@ -131,7 +133,7 @@ func (cm *ClusterMap) ObserveNode(nhid string, usage *rfpb.StoreUsage, nodeStatu
 	return nil
 }
 
-func (cm *ClusterMap) ObserveLocalReplicaUsage(nhid string, usage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) error {
+func (cm *ClusterMap) ObserveLocalReplicaUsage(usage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) error {
 	if usage == nil {
 		return status.FailedPreconditionError("nil range usage")
 	}
@@ -141,24 +143,17 @@ func (cm *ClusterMap) ObserveLocalReplicaUsage(nhid string, usage *rfpb.ReplicaU
 
 	cm.rangeUsage[rd.GetRangeId()] = usage
 
-	if _, ok := cm.replicas[nhid]; !ok {
-		cm.replicas[nhid] = NewReplicaSet()
-	}
-	cm.replicas[nhid].Add(usage.GetReplica())
+	cm.replicas.Add(usage.GetReplica())
 
 	return nil
 }
 
-func (cm *ClusterMap) OnReplicaUsageUpdate(nhid string, ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {
-	if err := cm.ObserveLocalReplicaUsage(nhid, ru, rd); err != nil {
-		log.Errorf("Error observing local range usage: %s", err)
-	}
-}
 func (cm *ClusterMap) OnRangeLeaseAcquired(rd *rfpb.RangeDescriptor) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.leasedRanges[rd.GetRangeId()] = rd
 }
+
 func (cm *ClusterMap) OnRangeLeaseDropped(rd *rfpb.RangeDescriptor) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -225,26 +220,28 @@ func (cm *ClusterMap) MeanProposeQPS() float64 {
 type Driver struct {
 	store         rfspb.ApiServer
 	gossipManager *gossip.GossipManager
-	mu            *sync.Mutex
-	started       bool
-	quit          chan struct{}
-	ClusterMap    *ClusterMap
-	startTime     time.Time
+	updates       <-chan events.Event
+
+	mu         *sync.Mutex
+	ClusterMap *ClusterMap
+	startTime  time.Time
+
+	eg       *errgroup.Group
+	egCancel context.CancelFunc
 }
 
-func New(store *store.Store, gossipManager *gossip.GossipManager) *Driver {
+func New(store *store.Store, gossipManager *gossip.GossipManager, updates <-chan events.Event) *Driver {
 	d := &Driver{
 		store:         store,
 		gossipManager: gossipManager,
+		updates:       updates,
 		mu:            &sync.Mutex{},
-		started:       false,
 		ClusterMap:    NewClusterMap(),
 		startTime:     time.Now(),
 	}
 	// Register the driver as a gossip listener so that it receives
 	// gossip callbacks.
 	gossipManager.AddListener(d)
-	store.AddRangeUsageListener(d.ClusterMap)
 	statusz.AddSection("raft_driver", "Placement Driver", d)
 	return d
 }
@@ -256,26 +253,38 @@ func (d *Driver) Start() error {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.started {
-		return nil
-	}
 
-	d.quit = make(chan struct{})
-	go d.manageClustersLoop()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	d.egCancel = cancelFunc
 
-	d.started = true
+	eg, gctx := errgroup.WithContext(ctx)
+	d.eg = eg
+
+	eg.Go(func() error {
+		return d.handleEvents(gctx)
+	})
+	eg.Go(func() error {
+		return d.manageClustersLoop(gctx)
+	})
+
 	log.Debugf("Driver started")
 	return nil
 }
 
 func (d *Driver) Stop() error {
+	now := time.Now()
+	defer func() {
+		log.Printf("Driver shutdown finished in %s", time.Since(now))
+	}()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if !d.started {
-		return nil
+
+	if d.egCancel != nil {
+		d.egCancel()
+		d.eg.Wait()
 	}
-	close(d.quit)
-	d.started = false
+
 	log.Debugf("Driver stopped")
 	return nil
 }
@@ -283,17 +292,53 @@ func (d *Driver) Stop() error {
 // manageClustersLoop loops does not return; call it from a goroutine.
 // It will loop forever calling "manageClusters" until the quit channel
 // is closed by driver.Close().
-func (d *Driver) manageClustersLoop() {
+func (d *Driver) manageClustersLoop(ctx context.Context) error {
 	for {
 		select {
-		case <-d.quit:
-			return
+		case <-ctx.Done():
+			return nil
 		case <-time.After(*driverPollInterval):
 			err := d.manageClusters()
 			if err != nil {
 				log.Errorf("Manage clusters error: %s", err)
 			}
 		}
+	}
+}
+
+func (d *Driver) handleEvents(ctx context.Context) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case e := <-d.updates:
+			d.processSingleEvent(e)
+		}
+	}
+}
+
+func (d *Driver) processSingleEvent(e events.Event) {
+	switch e.EventType() {
+	case events.EventRangeUsageUpdated:
+		rangeUsageEvent, ok := e.(events.RangeUsageEvent)
+		if !ok {
+			return
+		}
+		d.ClusterMap.ObserveLocalReplicaUsage(rangeUsageEvent.ReplicaUsage, rangeUsageEvent.RangeDescriptor)
+	case events.EventRangeLeaseAcquired:
+		rangeEvent, ok := e.(events.RangeEvent)
+		if !ok {
+			return
+		}
+		d.ClusterMap.OnRangeLeaseAcquired(rangeEvent.RangeDescriptor)
+	case events.EventRangeLeaseDropped:
+		rangeEvent, ok := e.(events.RangeEvent)
+		if !ok {
+			return
+		}
+		d.ClusterMap.OnRangeLeaseDropped(rangeEvent.RangeDescriptor)
+	default:
+		return
 	}
 }
 

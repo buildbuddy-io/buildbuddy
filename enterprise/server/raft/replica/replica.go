@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -114,9 +115,9 @@ type Replica struct {
 
 	fileStorer filestore.Store
 
-	quitChan     chan struct{}
-	accesses     chan *accessTimeUpdate
-	usageUpdates chan<- *rfpb.ReplicaUsage
+	quitChan  chan struct{}
+	accesses  chan *accessTimeUpdate
+	broadcast chan<- events.Event
 
 	readQPS        *qps.Counter
 	raftProposeQPS *qps.Counter
@@ -236,15 +237,22 @@ func rdString(rd *rfpb.RangeDescriptor) string {
 	return fmt.Sprintf("Range(%d) [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 }
 
-func (sm *Replica) notifyListenersOfUsage(usage *rfpb.ReplicaUsage) {
-	if sm.usageUpdates == nil {
+func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsage) {
+	if sm.broadcast == nil {
+		log.Errorf("broadcast is nil")
 		return
 	}
+	up := events.RangeUsageEvent{
+		Type:            events.EventRangeUsageUpdated,
+		RangeDescriptor: rd,
+		ReplicaUsage:    usage,
+	}
+
 	select {
-	case sm.usageUpdates <- usage:
+	case sm.broadcast <- up:
 		break
 	default:
-		sm.log.Warningf("dropped usage update")
+		sm.log.Warningf("dropped usage update: %+v", up)
 	}
 }
 
@@ -274,7 +282,9 @@ func (sm *Replica) setRange(key, val []byte) error {
 	sm.store.AddRange(sm.rangeDescriptor, sm)
 
 	if usage, err := sm.Usage(); err == nil {
-		sm.notifyListenersOfUsage(usage)
+		sm.notifyListenersOfUsage(sm.rangeDescriptor, usage)
+	} else {
+		log.Errorf("Error computing usage upon opening replica: %s", err)
 	}
 	return nil
 }
@@ -1360,7 +1370,10 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
 		} else {
-			sm.notifyListenersOfUsage(usage)
+			sm.rangeMu.RLock()
+			rd := sm.rangeDescriptor
+			sm.rangeMu.RUnlock()
+			sm.notifyListenersOfUsage(rd, usage)
 		}
 		sm.lastUsageCheckIndex = sm.lastAppliedIndex
 	}
@@ -1734,7 +1747,7 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, usageUpdates chan<- *rfpb.ReplicaUsage) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,
@@ -1747,5 +1760,6 @@ func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, usageUpd
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
 		readQPS:             qps.NewCounter(),
 		raftProposeQPS:      qps.NewCounter(),
+		broadcast:           broadcast,
 	}
 }

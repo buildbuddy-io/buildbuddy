@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
@@ -82,22 +83,25 @@ type Store struct {
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
 
-	usageUpdates        chan *rfpb.ReplicaUsage
-	usages              *usagetracker.Tracker
-	rangeUsageListeners []RangeUsageListener
+	eventsMu       sync.Mutex
+	events         chan events.Event
+	eventListeners []chan events.Event
+
+	usages *usagetracker.Tracker
 
 	metaRangeMu   sync.Mutex
 	metaRangeData []byte
 
 	fileStorer filestore.Store
 
-	closeLeaderUpdatesChan func()
-	eg                     errgroup.Group
-	egCancel               context.CancelFunc
+	eg       *errgroup.Group
+	egCancel context.CancelFunc
 }
 
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
 	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
+
+	eventsChan := make(chan events.Event, 100)
 	s := &Store{
 		rootDir:       rootDir,
 		grpcAddr:      grpcAddress,
@@ -111,14 +115,16 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		liveness:      nodeLiveness,
 		log:           log.NamedSubLogger(nodeHost.ID()),
 
-		rangeMu:             sync.RWMutex{},
-		openRanges:          make(map[uint64]*rfpb.RangeDescriptor),
-		rangeUsageListeners: make([]RangeUsageListener, 0),
+		rangeMu:    sync.RWMutex{},
+		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
-		leaseKeeper: leasekeeper.New(nodeHost, nodeLiveness, listener),
+		leaseKeeper: leasekeeper.New(nodeHost, nodeLiveness, listener, eventsChan),
 		replicas:    sync.Map{},
 
-		usageUpdates:  make(chan *rfpb.ReplicaUsage, 100),
+		eventsMu:       sync.Mutex{},
+		events:         eventsChan,
+		eventListeners: make([]chan events.Event, 0),
+
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 		fileStorer:    filestore.New(),
@@ -245,36 +251,43 @@ func (s *Store) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (s *Store) handleUsageUpdates(ctx context.Context, usageUpdatesChan <-chan *rfpb.ReplicaUsage) error {
+func (s *Store) handleEvents(ctx context.Context) error {
 	for {
 		select {
-		case usage := <-usageUpdatesChan:
-			if rd := s.lookupRange(usage.GetRangeId()); rd != nil {
-				s.NotifyUsage(usage, rd)
-			} else {
-				log.Warningf("Usage update for unknown range: %d", usage.GetRangeId())
+		case e := <-s.events:
+			log.Debugf("event: %+v", e)
+			s.eventsMu.Lock()
+			for _, ch := range s.eventListeners {
+				select {
+				case ch <- e:
+					continue
+				default:
+					log.Warningf("Dropped event: %s", e)
+				}
 			}
+			s.eventsMu.Unlock()
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-func (s *Store) NotifyUsage(replicaUsage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {
-	for _, rep := range rd.GetReplicas() {
-		ru := proto.Clone(replicaUsage).(*rfpb.ReplicaUsage)
-		ru.Replica = rep
+func (s *Store) AddEventListener() (<-chan events.Event, func()) {
+	s.eventsMu.Lock()
+	defer s.eventsMu.Unlock()
 
-		nhid, _, err := s.registry.ResolveNHID(rep.GetShardId(), rep.GetReplicaId())
-		if err != nil {
-			log.Errorf("Error resolving nhid: %s", err)
-			return
-		}
-		for _, rul := range s.rangeUsageListeners {
-			rul.OnReplicaUsageUpdate(nhid, ru, rd)
+	ch := make(chan events.Event, 10)
+	s.eventListeners = append(s.eventListeners, ch)
+	closeFunc := func() {
+		s.eventsMu.Lock()
+		defer s.eventsMu.Unlock()
+		for i, l := range s.eventListeners {
+			if l == ch {
+				s.eventListeners = append(s.eventListeners[:i], s.eventListeners[:i+1]...)
+			}
 		}
 	}
-	s.updateTags()
+	return ch, closeFunc
 }
 
 func (s *Store) Start() error {
@@ -298,14 +311,20 @@ func (s *Store) Start() error {
 	s.egCancel = cancelFunc
 
 	eg, gctx := errgroup.WithContext(ctx)
+	s.eg = eg
 	eg.Go(func() error {
-		return s.handleUsageUpdates(gctx, s.usageUpdates)
+		return s.handleEvents(gctx)
 	})
 	s.leaseKeeper.Start()
 	return nil
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	now := time.Now()
+	defer func() {
+		log.Printf("Store shutdown finished in %s", time.Since(now))
+	}()
+
 	s.leaseKeeper.Stop()
 
 	s.egCancel()
@@ -381,14 +400,18 @@ func (s *Store) updateUsages(r *replica.Replica) error {
 	return nil
 }
 
-type RangeUsageListener interface {
-	OnReplicaUsageUpdate(nhid string, ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor)
-	OnRangeLeaseAcquired(rd *rfpb.RangeDescriptor)
-	OnRangeLeaseDropped(rd *rfpb.RangeDescriptor)
-}
+func (s *Store) sendRangeEvent(eventType events.EventType, rd *rfpb.RangeDescriptor) {
+	ev := events.RangeEvent{
+		Type:            eventType,
+		RangeDescriptor: rd,
+	}
 
-func (s *Store) AddRangeUsageListener(rul RangeUsageListener) {
-	s.rangeUsageListeners = append(s.rangeUsageListeners, rul)
+	select {
+	case s.events <- ev:
+		break
+	default:
+		s.log.Warningf("Dropping range event: %+v", ev)
+	}
 }
 
 // We need to implement the Add/RemoveRange interface so that stores opened and
@@ -419,6 +442,8 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
+	s.sendRangeEvent(events.EventRangeAdded, rd)
+
 	if rangelease.ContainsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -431,7 +456,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 
 	s.leaseKeeper.AddRange(rd)
-
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.updateTags()
 	go s.updateUsages(r)
@@ -455,6 +479,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
+	s.sendRangeEvent(events.EventRangeRemoved, rd)
 	s.leaseKeeper.RemoveRange(rd)
 	go s.updateTags()
 }
@@ -540,7 +565,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
-	r := replica.New(s.leaser, shardID, replicaID, s, s.usageUpdates)
+	r := replica.New(s.leaser, shardID, replicaID, s, s.events)
 	return r
 }
 
@@ -828,6 +853,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	return su
 }
 
+// TODO(tylerw): remove this; let usagetracker listen on events channel.
 func (s *Store) RefreshReplicaUsages() []*rfpb.ReplicaUsage {
 	s.rangeMu.RLock()
 	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
