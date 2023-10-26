@@ -40,6 +40,10 @@ message SnapshotKey {
   // The unique ID of the runner that is allowed to access this snapshot.
   // TODO: Remove this once "forkable" snapshots are implemented.
   string runner_id = 4;
+
+  // Git ref associated with the snapshot. For workflows, this represents the
+  // branch that was checked out when running the workflow.
+  string ref = 5;
 }
 
 // Manifest represents a snapshot's VM configuration along with

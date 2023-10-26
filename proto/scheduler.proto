@@ -122,6 +122,39 @@ message SchedulingMetadata {
   string executor_group_id = 5;
   // Group ID of the user that issued the Execute request.
   string task_group_id = 6;
+
+  // Firecracker remote snapshot sharing options.
+  //
+  // These allow matching tasks to remote snapshots based on properties other
+  // than Platform properties, since the Platform is hashed as part of the
+  // routing key.
+  //
+  // In particular, we would like to match tasks to snapshots based on the
+  // desired git revision of the repo in the snapshot, but we don't want the git
+  // revision info as part of the Platform (since the revision changes
+  // frequently, e.g. PR branch name).
+  //
+  // If not set, tasks will not be matched to remote snapshots at all, and
+  // instead only be matched to snapshots in the executor's local cache.
+  RemoteSnapshotOptions remote_snapshot_options = 9;
+}
+
+message RemoteSnapshotOptions {
+  // Primary git ref associated with the snapshot.
+  //
+  // When reading the snapshot from remote cache, the snapshot associated with
+  // this ref will be preferred if it exists, otherwise the fallback ref will be
+  // used.
+  //
+  // When writing the snapshot back to cache, this ref (not the fallback_ref)
+  // will always be used as the ref part of the key.
+  //
+  // Example: "my-cool-branch".
+  string ref = 1;
+
+  // Optional fallback ref in case the preferred one is unavailable.
+  // Example: "main"
+  string fallback_ref = 2;
 }
 
 message ScheduleTaskRequest {
