@@ -1,30 +1,5 @@
-// package rexec provides a command interface similar to the "os/exec" package
-// but runs commands using a remote execution client.
-//
-// Basic usage: you can just call Result() to run a command end-to-end,
-// including uploading the Action, Command, and input root dir to cache:
-//
-//	cmd := rexec.Command(env, "echo", "hello")
-//	res, err := cmd.Result(ctx)
-//	if err != nil {
-//		return err
-//	}
-//	fmt.Println(string(res.Stdout)) // prints "hello"
-//
-// You can also manually walk the command through its lifecycle:
-//
-//	// TODO: handle errors!
-//	cmd := rexec.Command(env, "echo" "hello")
-//	err := cmd.Upload(ctx)
-//	err = cmd.Start(ctx)
-//	err = cmd.Wait(ctx)
-//	res, err := cmd.Result(ctx)
-//
-// Command properties are configured by setting attributes on *Cmd:
-//
-//	cmd.Dir = "/path/to/input_root_dir"
-//	cmd.Env = []string{"FOO=BAR"}
-//	cmd.Platform = []string{"recycle-runner=true"}
+// package rexec provides a collection of utility functions for remote execution
+// clients.
 package rexec
 
 import (
@@ -33,7 +8,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -44,122 +18,79 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/longrunning"
-	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	defaultDigestFunction = repb.DigestFunction_SHA256
-)
-
-type state int
-
-const (
-	initial state = iota
-	uploading
-	starting
-	waiting
-)
-
-// Cmd provides a handle on a remote command.
-// It is not safe for concurrent use.
-type Cmd struct {
-	// Arguments are the executable and arguments for the command.
-	Arguments []string
-	// Dir is a local dir to be used as the action's root directory. The current
-	// directory contents will be uploaded from there, and outputs will be
-	// written there.
-	//
-	// Unlike exec.Cmd, an empty string here means "do not upload inputs or
-	// download outputs", rather than "use the current working directory".
-	Dir string
-	// Env is a slice of "NAME=VALUE" pairs to be used as environment variables.
-	// Unlike exec.Cmd, a nil value here means "use an empty env" instead of
-	// "use the current command's environment".
-	Env []string
-
-	// InstanceName is the remote instance name.
-	InstanceName string
-	// Platform is a slice of "NAME=VALUE" pairs to be used as platform
-	// properties.
-	Platform []string
-	// DigestFunction is the digest function to use for CAS transfers (defaults
-	// to SHA256).
-	DigestFunction repb.DigestFunction_Value
-	// Timeout is the timeout to be applied to the remote command. Note that the
-	// context timeout used for execution only applies to the RPC. Unless this
-	// timeout is also specified, the remote execution may continue beyond the
-	// local context deadline.
-	Timeout time.Duration
-
-	env           environment.Env
-	state         state
-	actionDigest  *repb.Digest
-	stream        *RetryingStream
-	response      *repb.ExecuteResponse
-	waitErr       error
-	commandResult *interfaces.CommandResult
+// AssembleEnv assembles a list of EnvironmentVariable protos from a list of
+// NAME=VALUE pairs. If the same name is specified more than once, the last one
+// wins. The entries are sorted by name, so that the environment variables are
+// cache-friendly.
+func AssembleEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
+	m := map[string]string{}
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid environment variable %q (expected NAME=VALUE)", pair)
+		}
+		m[parts[0]] = parts[1]
+	}
+	names := maps.Keys(m)
+	sort.Strings(names)
+	out := make([]*repb.Command_EnvironmentVariable, 0, len(m))
+	for _, name := range names {
+		out = append(out, &repb.Command_EnvironmentVariable{
+			Name:  name,
+			Value: m[name],
+		})
+	}
+	return out, nil
 }
 
-// Command returns a new Cmd from the given executable and arguments.
-func Command(env environment.Env, executable string, args ...string) *Cmd {
-	return &Cmd{
-		env:       env,
-		Arguments: append([]string{executable}, args...),
+// AssemblePlatform assembles a Platform proto from a list of NAME=VALUE pairs.
+// If the same name is specified more than once, the last one wins. The entries
+// are sorted by name, so that the platform is cache-friendly.
+func AssemblePlatform(pairs ...string) (*repb.Platform, error) {
+	m := map[string]string{}
+	for _, s := range pairs {
+		parts := strings.SplitN(s, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid exec property %q (expected NAME=VALUE)", s)
+		}
+		m[parts[0]] = parts[1]
 	}
+	names := maps.Keys(m)
+	sort.Strings(names)
+	p := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
+	for _, name := range names {
+		p.Properties = append(p.Properties, &repb.Platform_Property{
+			Name:  name,
+			Value: m[name],
+		})
+	}
+	return p, nil
 }
 
-// Close closes any streams established to the server.
-func (c *Cmd) Close() error {
-	if c.stream != nil {
-		return c.stream.CloseSend()
-	}
-	return nil
-}
-
-func (c *Cmd) String() string {
-	return fmt.Sprintf("%s", c.Arguments)
-}
-
-// Upload transfers all of the data to cache that is needed to run the action.
-// This includes the Action and Command protos, as well as the input tree.
-func (c *Cmd) Upload(ctx context.Context) error {
-	if c.state >= uploading {
-		return nil
-	}
-	c.state = uploading
-
-	p, err := AssemblePlatform(c.Platform...)
-	if err != nil {
-		return err
-	}
-	envVars, err := AssembleEnvironmentVariables(c.Env...)
-	if err != nil {
-		return err
-	}
-	cmd := &repb.Command{
-		Arguments:            c.Arguments,
-		EnvironmentVariables: envVars,
-		Platform:             p,
-	}
+// Prepare transfers the given Command and local input root directory to cache,
+// and populates the resulting digests into the given Action. An empty string
+// for input root means that an empty directory will be used as the input root.
+// A resource name pointing to the remote Action is returned.
+func Prepare(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command, localInputRoot string) (*rspb.ResourceName, error) {
 	var commandDigest, inputRootDigest *repb.Digest
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		ctx := egctx
-		d, err := cachetools.UploadProto(ctx, c.env.GetByteStreamClient(), c.InstanceName, c.digestFunction(), cmd)
+		d, err := cachetools.UploadProto(egctx, env.GetByteStreamClient(), instanceName, digestFunction, cmd)
 		if err != nil {
 			return err
 		}
 		commandDigest = d
 		return nil
 	})
-	if c.Dir != "" {
+	if localInputRoot != "" {
 		eg.Go(func() error {
-			ctx := egctx
-			d, _, err := cachetools.UploadDirectoryToCAS(ctx, c.env, c.InstanceName, c.digestFunction(), c.Dir)
+			d, _, err := cachetools.UploadDirectoryToCAS(egctx, env, instanceName, digestFunction, localInputRoot)
 			if err != nil {
 				return err
 			}
@@ -167,135 +98,83 @@ func (c *Cmd) Upload(ctx context.Context) error {
 			return nil
 		})
 	} else {
-		d, err := digest.ComputeForMessage(&repb.Directory{}, c.digestFunction())
+		d, err := digest.Compute(bytes.NewReader(nil), digestFunction)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		inputRootDigest = d
 	}
 	if err := eg.Wait(); err != nil {
-		return err
+		return nil, err
 	}
-	a := &repb.Action{
-		CommandDigest:   commandDigest,
-		InputRootDigest: inputRootDigest,
-	}
-	if c.Timeout != 0 {
-		a.Timeout = durationpb.New(c.Timeout)
-	}
-	ad, err := cachetools.UploadProto(ctx, c.env.GetByteStreamClient(), c.InstanceName, c.digestFunction(), a)
+	action.CommandDigest = commandDigest
+	action.InputRootDigest = inputRootDigest
+	actionDigest, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, digestFunction, action)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	c.actionDigest = ad
-	return nil
+	actionResourceName := digest.NewResourceName(actionDigest, instanceName, rspb.CacheType_CAS, digestFunction).ToProto()
+	return actionResourceName, nil
 }
 
-// Start calls Upload if it has not already been called, then initiates an
-// Execute request. It does not wait for the Execute stream to be completed.
-func (c *Cmd) Start(ctx context.Context) error {
-	if c.state >= starting {
-		return nil
-	}
-	c.state = starting
-
-	if c.actionDigest == nil {
-		if err := c.Upload(ctx); err != nil {
-			return err
-		}
-	}
+// Start begins an Execute stream for the given remote action.
+func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.ResourceName) (*RetryingStream, error) {
 	req := &repb.ExecuteRequest{
-		InstanceName:    c.InstanceName,
+		InstanceName:    actionResourceName.GetInstanceName(),
+		ActionDigest:    actionResourceName.GetDigest(),
+		DigestFunction:  actionResourceName.GetDigestFunction(),
 		SkipCacheLookup: true,
-		ActionDigest:    c.actionDigest,
-		DigestFunction:  c.digestFunction(),
 	}
-	stream, err := c.env.GetRemoteExecutionClient().Execute(ctx, req)
+	stream, err := env.GetRemoteExecutionClient().Execute(ctx, req)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	c.stream = NewRetryingStream(ctx, c.env.GetRemoteExecutionClient(), stream, "")
-	return nil
+	return NewRetryingStream(ctx, env.GetRemoteExecutionClient(), stream, ""), nil
 }
 
-// Wait waits for command execution to complete.
-func (c *Cmd) Wait(ctx context.Context) error {
-	if c.state >= waiting {
-		return nil
-	}
-	c.state = waiting
-
-	defer func() {
-		c.stream.CloseSend()
-		c.stream = nil
-	}()
+// Wait waits for command execution to complete, and returns the COMPLETE stage
+// operation response.
+func Wait(stream *RetryingStream) (*ExecuteOperation, error) {
 	for {
-		op, err := c.stream.Recv()
+		op, err := stream.Recv()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		msg, err := UnpackOperation(op)
 		if err != nil {
-			return err
-		}
-		if msg.ExecuteResponse != nil {
-			c.response = msg.ExecuteResponse
+			return nil, err
 		}
 		if msg.Operation.GetDone() {
-			return msg.Err
+			return msg, nil
 		}
 	}
-}
-
-func (c *Cmd) Run(ctx context.Context) error {
-	if err := c.Start(ctx); err != nil {
-		return err
-	}
-	return c.Wait(ctx)
 }
 
 // Result runs the command and returns the result. If the command has already
 // been started, it waits for the existing execution to complete.
-func (c *Cmd) Result(ctx context.Context) (*interfaces.CommandResult, error) {
-	if c.commandResult != nil {
-		return c.commandResult, nil
-	}
-	if err := c.Run(ctx); err != nil {
-		return nil, err
-	}
-	res := c.response.GetResult()
+func GetResult(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, res *repb.ActionResult) (*interfaces.CommandResult, error) {
 	var stdout, stderr bytes.Buffer
 	eg, egctx := errgroup.WithContext(ctx)
 	if res.GetStdoutDigest() != nil {
 		eg.Go(func() error {
-			ctx := egctx
-			rn := digest.NewResourceName(res.GetStdoutDigest(), c.InstanceName, rspb.CacheType_CAS, c.digestFunction())
-			return cachetools.GetBlob(ctx, c.env.GetByteStreamClient(), rn, &stdout)
+			rn := digest.NewResourceName(res.GetStdoutDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
+			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, &stdout)
 		})
 	}
 	if res.GetStderrDigest() != nil {
 		eg.Go(func() error {
-			ctx := egctx
-			rn := digest.NewResourceName(res.GetStderrDigest(), c.InstanceName, rspb.CacheType_CAS, c.digestFunction())
-			return cachetools.GetBlob(ctx, c.env.GetByteStreamClient(), rn, &stderr)
+			rn := digest.NewResourceName(res.GetStderrDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
+			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, &stderr)
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	c.commandResult = &interfaces.CommandResult{
+	return &interfaces.CommandResult{
 		ExitCode: int(res.GetExitCode()),
 		Stdout:   stdout.Bytes(),
 		Stderr:   stderr.Bytes(),
-	}
-	return c.commandResult, nil
-}
-
-func (c *Cmd) digestFunction() repb.DigestFunction_Value {
-	if c.DigestFunction != 0 {
-		return c.DigestFunction
-	}
-	return defaultDigestFunction
+	}, nil
 }
 
 // RetryingStream implements a reliable operation stream.
@@ -400,53 +279,4 @@ func UnpackOperation(op *longrunning.Operation) (*ExecuteOperation, error) {
 	}
 	msg.Err = gstatus.FromProto(msg.ExecuteResponse.GetStatus()).Err()
 	return msg, nil
-}
-
-// AssemblePlatform assembles a Platform proto from a list of NAME=VALUE pairs.
-// If the same name is specified more than once, the last one wins. The entries
-// are sorted by name, so that the platform is cache-friendly.
-func AssemblePlatform(pairs ...string) (*repb.Platform, error) {
-	m := map[string]string{}
-	for _, s := range pairs {
-		parts := strings.SplitN(s, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid NAME=VALUE pair %q", s)
-		}
-		m[parts[0]] = parts[1]
-	}
-	names := maps.Keys(m)
-	sort.Strings(names)
-	p := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
-	for _, name := range names {
-		p.Properties = append(p.Properties, &repb.Platform_Property{
-			Name:  name,
-			Value: m[name],
-		})
-	}
-	return p, nil
-}
-
-// AssembleEnvironmentVariables assembles a list of EnvironmentVariable protos
-// from a list of NAME=VALUE pairs. If the same name is specified more than
-// once, the last one wins. The entries are sorted by name, so that the
-// environment variables are cache-friendly.
-func AssembleEnvironmentVariables(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
-	m := map[string]string{}
-	for _, pair := range pairs {
-		parts := strings.SplitN(pair, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid environment variable")
-		}
-		m[parts[0]] = parts[1]
-	}
-	names := maps.Keys(m)
-	sort.Strings(names)
-	out := make([]*repb.Command_EnvironmentVariable, 0, len(m))
-	for _, name := range names {
-		out = append(out, &repb.Command_EnvironmentVariable{
-			Name:  name,
-			Value: m[name],
-		})
-	}
-	return out, nil
 }
