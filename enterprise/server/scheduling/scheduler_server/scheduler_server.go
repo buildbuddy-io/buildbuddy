@@ -1362,6 +1362,11 @@ func (s *SchedulerServer) isShuttingDown() bool {
 	}
 }
 
+type leaseMessage struct {
+	req *scpb.LeaseTaskRequest
+	err error
+}
+
 // TODO(vadim): we should verify that the executor is authorized to read the task
 func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error {
 	ctx := stream.Context()
@@ -1391,8 +1396,37 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		} // Success case will be logged by ReEnqueueTask flow.
 	}()
 
+	msgs := make(chan *leaseMessage)
+	go func() {
+		for {
+			req, err := stream.Recv()
+			select {
+			case msgs <- &leaseMessage{req, err}:
+			case <-stream.Context().Done():
+				return
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	livenessTicker := time.NewTicker(*leaseInterval)
+	defer livenessTicker.Stop()
 	for {
-		req, err := stream.Recv()
+		var req *scpb.LeaseTaskRequest
+		var err error
+		select {
+		case msg := <-msgs:
+			req = msg.req
+			err = msg.err
+		case <-livenessTicker.C:
+			if time.Since(lastCheckin) > (*leaseInterval + *leaseGracePeriod) {
+				err = status.DeadlineExceededError("lease was not renewed by executor and expired")
+			} else {
+				continue
+			}
+		}
 		if err == io.EOF {
 			log.CtxWarningf(ctx, "LeaseTask %q got EOF: %s", taskID, err)
 			break
@@ -1412,10 +1446,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if taskID == "" {
 			taskID = req.GetTaskId()
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
-		}
-		if time.Since(lastCheckin) > (*leaseInterval + *leaseGracePeriod) {
-			log.CtxWarningf(ctx, "LeaseTask %q client went away after %s", taskID, time.Since(lastCheckin))
-			break
 		}
 		rsp := &scpb.LeaseTaskResponse{
 			LeaseDurationSeconds: int64(leaseInterval.Seconds()),
