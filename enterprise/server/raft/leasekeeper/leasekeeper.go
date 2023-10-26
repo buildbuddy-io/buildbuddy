@@ -62,6 +62,11 @@ func (lk *LeaseKeeper) Start() {
 }
 
 func (lk *LeaseKeeper) Stop() {
+	now := time.Now()
+	defer func() {
+		log.Printf("Leasekeeper shutdown finished in %s", time.Since(now))
+	}()
+
 	lk.mu.Lock()
 	defer lk.mu.Unlock()
 	close(lk.quitAll)

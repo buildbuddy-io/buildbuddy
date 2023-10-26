@@ -252,20 +252,24 @@ func (s *Store) Statusz(ctx context.Context) string {
 }
 
 func (s *Store) handleEvents(ctx context.Context) error {
-	for e := range s.events {
-		log.Debugf("event: %+v", e)
-		s.eventsMu.Lock()
-		for _, ch := range s.eventListeners {
-			select {
-			case ch <- e:
-				continue
-			default:
-				log.Warningf("Dropped event: %s", e)
+	for {
+		select {
+		case e := <-s.events:
+			log.Debugf("event: %+v", e)
+			s.eventsMu.Lock()
+			for _, ch := range s.eventListeners {
+				select {
+				case ch <- e:
+					continue
+				default:
+					log.Warningf("Dropped event: %s", e)
+				}
 			}
+			s.eventsMu.Unlock()
+		case <-ctx.Done():
+			return nil
 		}
-		s.eventsMu.Unlock()
 	}
-	return nil
 }
 
 func (s *Store) AddEventListener() (<-chan events.Event, func()) {
@@ -316,6 +320,11 @@ func (s *Store) Start() error {
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	now := time.Now()
+	defer func() {
+		log.Printf("Store shutdown finished in %s", time.Since(now))
+	}()
+
 	s.leaseKeeper.Stop()
 
 	s.egCancel()

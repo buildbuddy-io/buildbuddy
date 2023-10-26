@@ -272,6 +272,11 @@ func (d *Driver) Start() error {
 }
 
 func (d *Driver) Stop() error {
+	now := time.Now()
+	defer func() {
+		log.Printf("Driver shutdown finished in %s", time.Since(now))
+	}()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
