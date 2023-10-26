@@ -47,7 +47,7 @@ type CacheProxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
-	readBufPool           *bytebufferpool.Pool
+	readBufPool           *bytebufferpool.VariableSizePool
 	writeBufPool          sync.Pool
 	mu                    *sync.Mutex
 	server                *grpc.Server
@@ -63,7 +63,7 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 		env:         env,
 		cache:       c,
 		log:         log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
-		readBufPool: bytebufferpool.New(readBufSizeBytes),
+		readBufPool: bytebufferpool.VariableSize(readBufSizeBytes),
 		writeBufPool: sync.Pool{
 			New: func() any {
 				return bufio.NewWriterSize(io.Discard, readBufSizeBytes)

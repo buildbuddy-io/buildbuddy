@@ -38,7 +38,7 @@ var (
 type ByteStreamServer struct {
 	env        environment.Env
 	cache      interfaces.Cache
-	bufferPool *bytebufferpool.Pool
+	bufferPool *bytebufferpool.VariableSizePool
 }
 
 func Register(env environment.Env) error {
@@ -62,7 +62,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.New(readBufSizeBytes),
+		bufferPool: bytebufferpool.VariableSize(readBufSizeBytes),
 	}, nil
 }
 
