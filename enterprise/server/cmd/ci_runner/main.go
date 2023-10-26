@@ -1692,6 +1692,7 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	if identity := os.Getenv(clientIdentityEnvVar); identity != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-client-identity="+identity)
+		lines = append(lines, "build --bes_header=x-buildbuddy-client-identity="+identity)
 	}
 
 	// Primitive configs pointing to BB endpoints. These are purposely very
