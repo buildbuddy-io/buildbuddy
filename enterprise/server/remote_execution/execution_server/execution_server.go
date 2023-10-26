@@ -815,7 +815,9 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	for {
 		msg, ok := <-streamPubSubChan
 		if !ok {
-			log.CtxInfof(ctx, "WaitExecution %q: exiting early because PubSub channel was closed", req.GetName())
+			if ctx.Err() != nil {
+				log.CtxInfof(ctx, "WaitExecution %q: client disconnected before action completed: %s", req.GetName(), ctx.Err())
+			}
 			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 		}
 		var data string
