@@ -1,11 +1,9 @@
-// package rexec provides a collection of utility functions for remote execution
-// clients.
+// package rexec provides utility functions for remote execution clients.
 package rexec
 
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -24,18 +22,14 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-// AssembleEnv assembles a list of EnvironmentVariable protos from a list of
+// MakeEnv assembles a list of EnvironmentVariable protos from a list of
 // NAME=VALUE pairs. If the same name is specified more than once, the last one
 // wins. The entries are sorted by name, so that the environment variables are
 // cache-friendly.
-func AssembleEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
-	m := map[string]string{}
-	for _, pair := range pairs {
-		parts := strings.SplitN(pair, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid environment variable %q (expected NAME=VALUE)", pair)
-		}
-		m[parts[0]] = parts[1]
+func MakeEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
+	m, err := parsePairs(pairs)
+	if err != nil {
+		return nil, err
 	}
 	names := maps.Keys(m)
 	sort.Strings(names)
@@ -49,17 +43,13 @@ func AssembleEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
 	return out, nil
 }
 
-// AssemblePlatform assembles a Platform proto from a list of NAME=VALUE pairs.
-// If the same name is specified more than once, the last one wins. The entries
-// are sorted by name, so that the platform is cache-friendly.
-func AssemblePlatform(pairs ...string) (*repb.Platform, error) {
-	m := map[string]string{}
-	for _, s := range pairs {
-		parts := strings.SplitN(s, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid exec property %q (expected NAME=VALUE)", s)
-		}
-		m[parts[0]] = parts[1]
+// MakePlatform assembles a Platform proto from a list of NAME=VALUE pairs. If
+// the same name is specified more than once, the last one wins. The entries are
+// sorted by name, so that the platform is cache-friendly.
+func MakePlatform(pairs ...string) (*repb.Platform, error) {
+	m, err := parsePairs(pairs)
+	if err != nil {
+		return nil, err
 	}
 	names := maps.Keys(m)
 	sort.Strings(names)
@@ -73,11 +63,25 @@ func AssemblePlatform(pairs ...string) (*repb.Platform, error) {
 	return p, nil
 }
 
+// parsePairs parses a list of "NAME=VALUE" pairs into a map. If the same NAME
+// appears more than once, the last one wins.
+func parsePairs(pairs []string) (map[string]string, error) {
+	m := map[string]string{}
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, status.InvalidArgumentErrorf("invalid environment variable %q (expected NAME=VALUE)", pair)
+		}
+		m[parts[0]] = parts[1]
+	}
+	return m, nil
+}
+
 // Prepare transfers the given Command and local input root directory to cache,
 // and populates the resulting digests into the given Action. An empty string
 // for input root means that an empty directory will be used as the input root.
 // A resource name pointing to the remote Action is returned.
-func Prepare(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command, localInputRoot string) (*rspb.ResourceName, error) {
+func Prepare(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command, inputRootDir string) (*rspb.ResourceName, error) {
 	var commandDigest, inputRootDigest *repb.Digest
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -88,9 +92,9 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 		commandDigest = d
 		return nil
 	})
-	if localInputRoot != "" {
+	if inputRootDir != "" {
 		eg.Go(func() error {
-			d, _, err := cachetools.UploadDirectoryToCAS(egctx, env, instanceName, digestFunction, localInputRoot)
+			d, _, err := cachetools.UploadDirectoryToCAS(egctx, env, instanceName, digestFunction, inputRootDir)
 			if err != nil {
 				return err
 			}
@@ -140,7 +144,7 @@ func Wait(stream *RetryingStream) (*ExecuteOperation, error) {
 		if err != nil {
 			return nil, err
 		}
-		msg, err := UnpackOperation(op)
+		msg, err := unpackOperation(op)
 		if err != nil {
 			return nil, err
 		}
@@ -261,9 +265,9 @@ type ExecuteOperation struct {
 	Err error
 }
 
-// UnpackOperation unmarshals all expected execution-specific fields from the
+// unpackOperation unmarshals all expected execution-specific fields from the
 // given operationn.
-func UnpackOperation(op *longrunning.Operation) (*ExecuteOperation, error) {
+func unpackOperation(op *longrunning.Operation) (*ExecuteOperation, error) {
 	msg := &ExecuteOperation{Operation: op}
 	if op.GetResponse() != nil {
 		msg.ExecuteResponse = &repb.ExecuteResponse{}
