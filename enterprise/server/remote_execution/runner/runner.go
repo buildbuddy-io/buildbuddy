@@ -781,11 +781,10 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	if err != nil {
 		return err
 	}
-	err = container.PullImageIfNecessary(
-		ctx, p.env,
-		c, creds, platProps.ContainerImage,
-	)
-	if err != nil {
+	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
+	// the auth result, since it makes it tricker to debug per-action
+	// misconfiguration.
+	if err := c.PullImage(ctx, creds); err != nil {
 		return err
 	}
 	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, cfg.Image, time.Since(start))
