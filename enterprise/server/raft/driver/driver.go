@@ -280,8 +280,10 @@ func (d *Driver) Stop() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.egCancel()
-	d.eg.Wait()
+	if d.egCancel != nil {
+		d.egCancel()
+		d.eg.Wait()
+	}
 
 	log.Debugf("Driver stopped")
 	return nil
