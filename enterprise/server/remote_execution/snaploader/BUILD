@@ -26,6 +26,7 @@ go_library(
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_x_exp//slices",
         "@org_golang_x_sync//errgroup",
     ],
 )
