@@ -16,11 +16,16 @@ var YAMLIgnore = autoflags.YAMLIgnoreTag
 
 var NewFlagSet = flag.NewFlagSet
 var ContinueOnError = flag.ContinueOnError
+var ErrHelp = flag.ErrHelp
 var CommandLine = flag.CommandLine
 var Args = flag.Args
 
 type Flag = flag.Flag
 type FlagSet = flag.FlagSet
+
+func New[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string, tags ...autoflags.Taggable) *T {
+	return autoflags.New[T](flagset, name, defaultValue, usage, tags...)
+}
 
 func Parse() {
 	flag.Parse()

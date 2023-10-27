@@ -432,11 +432,11 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rs
 	// is a new style hash, so lookup the type based on that value.
 	digestFunction := InferOldStyleDigestFunctionInDesperation(d)
 	if dfString, ok := result["digest_function"]; ok && dfString != "" {
-		if df, ok := repb.DigestFunction_Value_value[strings.ToUpper(dfString)]; ok {
-			digestFunction = repb.DigestFunction_Value(df)
-		} else {
-			return nil, status.InvalidArgumentErrorf("Unknown digest function: %q", dfString)
+		df, err := ParseFunction(dfString)
+		if err != nil {
+			return nil, err
 		}
+		digestFunction = df
 	}
 	r := NewResourceName(d, instanceName, cacheType, digestFunction)
 	r.SetCompressor(compressor)
@@ -636,4 +636,12 @@ func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, erro
 		return nil, nil, err
 	}
 	return d, buf, nil
+}
+
+// ParseFunction parses a digest function name to a proto.
+func ParseFunction(s string) (repb.DigestFunction_Value, error) {
+	if df, ok := repb.DigestFunction_Value_value[strings.ToUpper(s)]; ok {
+		return repb.DigestFunction_Value(df), nil
+	}
+	return 0, status.InvalidArgumentErrorf("unknown digest function %q", s)
 }

@@ -116,6 +116,7 @@ type RealEnv struct {
 	serverNotificationService        interfaces.ServerNotificationService
 }
 
+// NewRealEnv returns an environment for use in servers.
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 	return &RealEnv{
 		healthChecker:       h,
@@ -123,6 +124,11 @@ func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 		executionClients:    make(map[string]*executionClientConfig, 0),
 		httpServerWaitGroup: &sync.WaitGroup{},
 	}
+}
+
+// NewBatchEnv returns an environment for use in command line tools.
+func NewBatchEnv() *RealEnv {
+	return NewRealEnv(nil)
 }
 
 // Required -- no SETTERs for these.
