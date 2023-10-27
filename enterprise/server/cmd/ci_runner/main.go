@@ -502,23 +502,6 @@ func run() error {
 	}
 	ws.rootDir = rootDir
 
-	if *workflowID != "" {
-		if err := os.Setenv("CI", "true"); err != nil {
-			return status.WrapError(err, "set CI=true")
-		}
-	}
-
-	// Set convenience env vars (best-effort).
-	if *prNumber != 0 {
-		os.Setenv("GIT_PR_NUMBER", fmt.Sprint(*prNumber))
-	}
-	if *commitSHA != "" {
-		os.Setenv("GIT_COMMIT", fmt.Sprint(*commitSHA))
-	}
-	if *pushedBranch != "" {
-		os.Setenv("GIT_BRANCH", fmt.Sprint(*pushedBranch))
-	}
-
 	// Set BUILDBUDDY_CI_RUNNER_ABSPATH so that we can re-invoke ourselves
 	// as the git credential helper reliably, even after chdir.
 	absPath, err := filepath.Abs(os.Args[0])
