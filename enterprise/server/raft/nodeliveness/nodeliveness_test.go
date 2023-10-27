@@ -2,6 +2,7 @@ package nodeliveness_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 type testingProposer struct {
 	t    testing.TB
 	Data map[string]string
+	mu   sync.Mutex
 }
 
 func newTestingProposer(t testing.TB) *testingProposer {
@@ -51,6 +53,8 @@ func (tp *testingProposer) SyncPropose(ctx context.Context, _ []byte, batch *rfp
 	if len(batch.GetUnion()) != 1 {
 		tp.t.Fatal("Only one cmd at a time is allowed.")
 	}
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
 	for _, req := range batch.GetUnion() {
 		switch value := req.Value.(type) {
 		case *rfpb.RequestUnion_Cas:
