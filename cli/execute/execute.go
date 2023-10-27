@@ -27,7 +27,7 @@ var flags = flag.NewFlagSet("execute", flag.ContinueOnError)
 var (
 	target         = flags.String("remote_executor", "grpcs://remote.buildbuddy.io", "Remote execution service target.")
 	instanceName   = flags.String("remote_instance_name", "", "Value to pass as an instance_name in the remote execution API.")
-	digestFunction = flags.String("digest_function", "", "Digest function used for content-addressable storage. Can be `\"sha256\" or \"blake3\"`.")
+	digestFunction = flags.String("digest_function", "sha256", "Digest function used for content-addressable storage. Can be `\"sha256\" or \"blake3\"`.")
 	timeout        = flags.Duration("remote_timeout", 1*time.Hour, "Timeout used for the action.")
 	remoteHeaders  = flag.New(flags, "remote_header", []string{}, "Header to be applied to all outgoing gRPC requests, as a `NAME=VALUE` pair. Can be specified more than once.")
 	actionEnv      = flag.New(flags, "action_env", []string{}, "Action environment variable, as a `NAME=VALUE` pair. Can be specified more than once.")
