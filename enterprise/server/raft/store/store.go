@@ -118,8 +118,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
-		leaseKeeper: leasekeeper.New(nodeHost, nodeLiveness, listener, eventsChan),
-		replicas:    sync.Map{},
+		replicas: sync.Map{},
 
 		eventsMu:       sync.Mutex{},
 		events:         eventsChan,
@@ -136,6 +135,8 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 	}
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
+
+	s.leaseKeeper = leasekeeper.New(s.leaser, nodeHost, nodeLiveness, listener, eventsChan)
 
 	usages, err := usagetracker.New(s, gossipManager, partitions)
 	if err != nil {

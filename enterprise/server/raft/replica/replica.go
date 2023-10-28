@@ -174,25 +174,12 @@ func batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) {
 	return nil, false
 }
 
-func replicaSpecificSuffix(shardID, replicaID uint64) []byte {
-	return []byte(fmt.Sprintf("-c%04dn%04d", shardID, replicaID))
-}
-
 func (sm *Replica) replicaSuffix() []byte {
-	return replicaSpecificSuffix(sm.ShardID, sm.ReplicaID)
-}
-
-func replicaSpecificKey(key []byte, shardID, replicaID uint64) []byte {
-	suffix := replicaSpecificSuffix(shardID, replicaID)
-	if bytes.HasSuffix(key, suffix) {
-		log.Debugf("Key %q already has replica suffix!", key)
-		return key
-	}
-	return append(key, suffix...)
+	return keys.ReplicaSpecificSuffix(sm.ShardID)
 }
 
 func (sm *Replica) replicaLocalKey(key []byte) []byte {
-	return replicaSpecificKey(key, sm.ShardID, sm.ReplicaID)
+	return keys.ReplicaSpecificKey(key, sm.ShardID)
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
@@ -761,7 +748,7 @@ func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*
 		return nil, err
 	}
 	defer db.Close()
-	peerRangeKey := replicaSpecificKey(constants.LocalRangeKey, req.GetNewShardId(), sm.ReplicaID)
+	peerRangeKey := keys.ReplicaSpecificKey(constants.LocalRangeKey, req.GetNewShardId())
 	if err := db.Set(peerRangeKey, buf, pebble.Sync); err != nil {
 		return nil, err
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -36,6 +37,7 @@ func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 }
 
 type Lease struct {
+	leaser   pebble.Leaser
 	nodeHost client.NodeHost
 	shardID  uint64
 	liveness *nodeliveness.Liveness
@@ -43,16 +45,17 @@ type Lease struct {
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
 
-	rangeDescriptor *rfpb.RangeDescriptor
-	mu              sync.RWMutex
-	leaseRecord     *rfpb.RangeLeaseRecord
+	rangeDescriptor  *rfpb.RangeDescriptor
+	mu               sync.RWMutex
+	leaseRecord      *rfpb.RangeLeaseRecord
+	leaseRecordBytes []byte
 
 	timeUntilLeaseRenewal time.Duration
 	stopped               bool
 	quitLease             chan struct{}
 }
 
-func New(nodeHost client.NodeHost, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
+func New(leaser pebble.Leaser, nodeHost client.NodeHost, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
 	var shardID uint64
 	for _, rep := range rd.GetReplicas() {
 		shardID = rep.GetShardId()
@@ -60,6 +63,7 @@ func New(nodeHost client.NodeHost, liveness *nodeliveness.Liveness, rd *rfpb.Ran
 	}
 
 	return &Lease{
+		leaser:                leaser,
 		nodeHost:              nodeHost,
 		shardID:               shardID,
 		liveness:              liveness,
@@ -116,6 +120,29 @@ func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: nil")
 	}
 
+	db, err := l.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+
+	// UGH OK THIS WORKS BUT IT IS SLOW AND REDUCES QPS A LOT BECAUSE IT REQUIRES
+	// HITTING PEBBLE?
+	// A FASTER APPROACH WOULD BE TO LET THE LEASE HAVE A REFERENCE TO THE REPLICA
+	// AND THE REPLICA UPDATE AN IN-MEMORY RANGELEASEBUF WHENEVER THE KEY IS UPDATED
+	// THIS WOULD MAKE THIS CHECK FAST.
+	// ACTUALLY THE SLOWNESS MAY JUST BE FROM THE RACE DETECTOR.
+	rangeLeasekey := keys.ReplicaSpecificKey(constants.LocalRangeLeaseKey, l.shardID)
+	leaseVal, closer, err := db.Get(rangeLeasekey)
+	if err != nil {
+		return status.FailedPreconditionError("Lease not present in DB")
+	}
+	defer closer.Close()
+	if !bytes.Equal(leaseVal, l.leaseRecordBytes) {
+		return status.FailedPreconditionError("Lease in DB mismatched")
+	}
+
 	// This is a node epoch based lease, so check node and epoch.
 	if nl := rl.GetNodeLiveness(); nl != nil {
 		return l.liveness.BlockingValidateNodeLiveness(nl)
@@ -164,6 +191,7 @@ func (l *Lease) clearLeaseValue(ctx context.Context) error {
 	_, err := l.sendCasRequest(ctx, expectedValue, nil)
 	if err == nil {
 		l.leaseRecord = nil
+		l.leaseRecordBytes = nil
 	}
 	return err
 }
@@ -194,15 +222,6 @@ func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
 }
 
 func (l *Lease) renewLease(ctx context.Context) error {
-	var expectedValue []byte
-	if l.leaseRecord != nil {
-		buf, err := proto.Marshal(l.leaseRecord)
-		if err != nil {
-			return err
-		}
-		expectedValue = buf
-	}
-
 	leaseRequest, err := l.assembleLeaseRequest()
 	if err != nil {
 		return err
@@ -212,28 +231,20 @@ func (l *Lease) renewLease(ctx context.Context) error {
 		return err
 	}
 
-	if bytes.Equal(newVal, expectedValue) {
-		// For node-epoch based leases, forcing renewal is kind of non-
-		// sensical. Rather than prevent this at a higher level, we
-		// detect the case where we are trying to set the lease to the
-		// already set value, and short-circuit renewal.
+	if bytes.Equal(newVal, l.leaseRecordBytes) {
 		return nil
 	}
 
-	kv, err := l.sendCasRequest(ctx, expectedValue, newVal)
+	kv, err := l.sendCasRequest(ctx, l.leaseRecordBytes, newVal)
 	if err == nil {
 		// This means we set the lease succesfully.
 		l.leaseRecord = leaseRequest
+		l.leaseRecordBytes = newVal
 	} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
 		// This means another lease was active -- we should save it, so that
 		// we can correctly set the expected value with our next CAS request,
 		// and witness its epoch so that our next set request has a higher one.
-		activeLease := &rfpb.RangeLeaseRecord{}
-		err := proto.Unmarshal(kv.GetValue(), activeLease)
-		if err != nil {
-			return err
-		}
-		l.leaseRecord = activeLease
+		l.leaseRecordBytes = kv.GetValue()
 	} else {
 		return err
 	}

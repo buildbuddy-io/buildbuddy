@@ -2,6 +2,7 @@ package keys
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 )
 
@@ -42,4 +43,16 @@ func IsLocalKey(key Key) bool {
 // range identified by the given key prefix.
 func Range(key []byte) ([]byte, []byte) {
 	return MakeKey(key, MinByte), MakeKey(key, MaxByte)
+}
+
+func ReplicaSpecificSuffix(shardID uint64) []byte {
+	return []byte(fmt.Sprintf("-c%04d", shardID))
+}
+
+func ReplicaSpecificKey(key []byte, shardID uint64) []byte {
+	suffix := ReplicaSpecificSuffix(shardID)
+	if bytes.HasSuffix(key, suffix) {
+		return key
+	}
+	return append(key, suffix...)
 }

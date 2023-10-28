@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -19,6 +20,7 @@ import (
 type shardID uint64
 
 type LeaseKeeper struct {
+	leaser    pebble.Leaser
 	nodeHost  *dragonboat.NodeHost
 	liveness  *nodeliveness.Liveness
 	listener  *listener.RaftListener
@@ -38,8 +40,9 @@ type LeaseKeeper struct {
 	cancelNodeLivenessUpdates func()
 }
 
-func New(nodeHost *dragonboat.NodeHost, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event) *LeaseKeeper {
+func New(leaser pebble.Leaser, nodeHost *dragonboat.NodeHost, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event) *LeaseKeeper {
 	return &LeaseKeeper{
+		leaser:    leaser,
 		nodeHost:  nodeHost,
 		liveness:  liveness,
 		listener:  listener,
@@ -69,7 +72,9 @@ func (lk *LeaseKeeper) Stop() {
 
 	lk.mu.Lock()
 	defer lk.mu.Unlock()
-	close(lk.quitAll)
+	if lk.quitAll != nil {
+		close(lk.quitAll)
+	}
 	lk.cancelLeaderUpdates()
 	lk.cancelNodeLivenessUpdates()
 }
@@ -102,24 +107,35 @@ func (lac *leaseAndContext) Update(leader bool) {
 
 	valid := lac.l.Valid()
 	start := time.Now()
-	if leader {
-		if err := lac.l.Lease(lac.ctx); err != nil {
-			log.Errorf("Error while updating rangelease (%s): %s", lac.l.String(), err)
+
+	for {
+		select {
+		case <-lac.ctx.Done():
 			return
+		default:
+			break
 		}
-		log.Debugf("Updated lease state [%s] %s after callback", lac.l.String(), time.Since(start))
-		if !valid {
-			lac.broadcastLeaseStatus(events.EventRangeLeaseAcquired)
+		
+		if leader {
+			if err := lac.l.Lease(lac.ctx); err != nil {
+				log.Errorf("Error while updating rangelease (%s): %s", lac.l.String(), err)
+				continue
+			}
+			log.Debugf("Updated lease state [%s] %s after callback", lac.l.String(), time.Since(start))
+			if !valid {
+				lac.broadcastLeaseStatus(events.EventRangeLeaseAcquired)
+			}
+		} else {
+			// This is a no-op if we don't have the lease.
+			if err := lac.l.Release(lac.ctx); err != nil {
+				log.Errorf("Error dropping rangelease (%s): %s", lac.l, err)
+				continue
+			}
+			if valid {
+				lac.broadcastLeaseStatus(events.EventRangeLeaseDropped)
+			}
 		}
-	} else {
-		// This is a no-op if we don't have the lease.
-		if err := lac.l.Release(lac.ctx); err != nil {
-			log.Errorf("Error dropping rangelease (%s): %s", lac.l, err)
-			return
-		}
-		if valid {
-			lac.broadcastLeaseStatus(events.EventRangeLeaseDropped)
-		}
+		break
 	}
 }
 
@@ -157,7 +173,7 @@ func (lk *LeaseKeeper) watchLeases() {
 
 func (lk *LeaseKeeper) newLeaseAndContext(rd *rfpb.RangeDescriptor) leaseAndContext {
 	return leaseAndContext{
-		l:         rangelease.New(lk.nodeHost, lk.liveness, rd),
+		l:         rangelease.New(lk.leaser, lk.nodeHost, lk.liveness, rd),
 		broadcast: lk.broadcast,
 	}
 }

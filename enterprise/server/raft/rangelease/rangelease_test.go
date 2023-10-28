@@ -1,6 +1,7 @@
 package rangelease_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -29,9 +32,9 @@ import (
 const shardID = 1
 
 type testingProposer struct {
-	t    testing.TB
-	id   string
-	Data map[string]string
+	t      testing.TB
+	id     string
+	leaser pebble.Leaser
 }
 
 var _ sender.ISender = &testingSender{}
@@ -70,7 +73,7 @@ func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Sessio
 	if err := proto.Unmarshal(cmd, batch); err != nil {
 		return sm.Result{}, err
 	}
-	// This is "fake" sender that only supports CAS values and stores them in a local map for ease of testing.
+	// This is "fake" sender that only supports CAS values.
 	if len(batch.GetUnion()) != 1 {
 		tp.t.Fatal("Only one cmd at a time is allowed.")
 	}
@@ -78,18 +81,28 @@ func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Sessio
 		switch value := req.Value.(type) {
 		case *rfpb.RequestUnion_Cas:
 			kv := value.Cas.GetKv()
-			key := string(kv.GetKey())
-			expected := string(value.Cas.GetExpectedValue())
-			existing := tp.Data[key]
-			if expected != existing {
+			expected := value.Cas.GetExpectedValue()
+
+			key := keys.ReplicaSpecificKey(kv.GetKey(), 1)
+			db, err := tp.leaser.DB()
+			require.NoError(tp.t, err)
+			defer db.Close()
+
+			existing, closer, err := db.Get(key)
+			if err == nil {
+				defer closer.Close()
+			} else if err != pebble.ErrNotFound {
+				tp.t.Fatal(err)
+			}
+			if !bytes.Equal(expected, existing) {
 				currentKV := &rfpb.KV{
 					Key:   kv.Key,
-					Value: []byte(existing),
+					Value: existing,
 				}
 				return tp.cmdResponse(currentKV, status.FailedPreconditionError(constants.CASErrorMessage)), nil
 			}
-			tp.Data[key] = string(kv.GetValue())
-			return tp.cmdResponse(kv, nil), nil
+			err = db.Set(key, kv.GetValue(), pebble.Sync)
+			return tp.cmdResponse(kv, nil), err
 		default:
 			break
 		}
@@ -141,12 +154,19 @@ func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.Ba
 }
 
 func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "rangelease", &pebble.Options{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db.Close()
+	})
+
 	randID, err := random.RandomString(10)
 	require.NoError(t, err)
 	p := &testingProposer{
-		t:    t,
-		id:   randID,
-		Data: make(map[string]string),
+		t:      t,
+		id:     randID,
+		leaser: pebble.NewDBLeaser(db),
 	}
 	return p, &testingSender{p}
 }
@@ -168,7 +188,7 @@ func TestAcquireAndRelease(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer.leaser, proposer, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -206,7 +226,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer.leaser, proposer, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -246,7 +266,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer.leaser, proposer, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -290,7 +310,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer.leaser, proposer, liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
