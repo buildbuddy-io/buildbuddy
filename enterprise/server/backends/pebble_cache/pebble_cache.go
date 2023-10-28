@@ -817,6 +817,12 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if err != nil {
 		return err
 	}
+	keyBytes, err := key.Bytes(version)
+	if err != nil {
+		return err
+	}
+
+	log.Debugf("[%s] atime update for %q: key %#v metadata %+v", p.name, string(keyBytes), key, md)
 
 	atime := time.UnixMicro(md.GetLastAccessUsec())
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
@@ -824,10 +830,6 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	}
 	md.LastAccessUsec = p.clock.Now().UnixMicro()
 	protoBytes, err := proto.Marshal(md)
-	if err != nil {
-		return err
-	}
-	keyBytes, err := key.Bytes(version)
 	if err != nil {
 		return err
 	}
@@ -2297,6 +2299,13 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	}
 
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
+		log.CtxDebugf(ctx, "[%s] set entry %q: key %#v metadata %+v", p.name, string(keyBytes), key, md)
+		if key.EncryptionKeyID() != md.GetEncryptionMetadata().GetEncryptionKeyId() && len(md.GetStorageMetadata().GetChunkedMetadata().GetResource()) == 0 {
+			err := status.FailedPreconditionErrorf("key vs metadata encryption mismatch for %q: %q vs %q", string(keyBytes), key.EncryptionKeyID(), md.GetEncryptionMetadata().GetEncryptionKeyId())
+			alert.UnexpectedEvent("key_metadata_encryption_mismatch", err.Error())
+			return err
+		}
+
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
 		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md, len(keyBytes))
 

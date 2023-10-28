@@ -120,6 +120,10 @@ type PebbleKey struct {
 	fullKey []byte
 }
 
+func (pmk PebbleKey) EncryptionKeyID() string {
+	return pmk.encryptionKeyID
+}
+
 func (pmk PebbleKey) String() string {
 	fmk, err := pmk.Bytes(UndefinedKeyVersion)
 	if err != nil {
