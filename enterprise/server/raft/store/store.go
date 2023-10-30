@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -613,6 +614,7 @@ func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeader
 // Snapshots the cluster *on this node*. This is a local operation and does not
 // create a snapshot on other nodes that are members of this cluster.
 func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
+	defer canary.Start("SnapshotCluster", 10*time.Second)()
 	if _, ok := ctx.Deadline(); !ok {
 		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
 		defer cancel()
@@ -653,6 +655,7 @@ func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest)
 }
 
 func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error {
+	defer canary.Start("AddPeer", 10*time.Second)()
 	rd := s.lookupRange(sourceShardID)
 	if rd == nil {
 		return status.FailedPreconditionErrorf("cluster %d not found on this node", sourceShardID)

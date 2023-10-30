@@ -11,6 +11,7 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/environment",
+        "//server/util/canary",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/retry",
