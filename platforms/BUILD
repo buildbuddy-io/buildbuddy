@@ -68,15 +68,20 @@ platform(
 load("@local_config_platform//:constraints.bzl", "HOST_CONSTRAINTS")
 
 platform(
-    name = "buildbuddy_rbe_default",
+    name = "buildbuddy_rbe_local_config_platform",
     constraint_values = HOST_CONSTRAINTS,
     parents = [":exec_linux"] if "@platforms//os:linux" in HOST_CONSTRAINTS else [":exec_darwin"] if "@platforms//os:osx" in HOST_CONSTRAINTS else [],
 )
 
 platform(
-    name = "buildbuddy_rbe_default_with_clang",
+    name = "buildbuddy_rbe_local_config_platform_with_clang",
     constraint_values = ["@bazel_tools//tools/cpp:clang"],
-    parents = [":buildbuddy_rbe_default"],
+    parents = [":buildbuddy_rbe_local_config_platform"],
+)
+
+platform(
+    name = "buildbuddy_rbe_local_config_platform_default",
+    parents = [":buildbuddy_rbe_local_config_platform"] if "//:static" else [":buildbuddy_rbe_local_config_platform_with_clang"],
 )
 
 platform(
@@ -92,6 +97,11 @@ platform(
 )
 
 platform(
+    name = "buildbuddy_rbe_linux_x86_64_default",
+    parents = [":buildbuddy_rbe_linux_x86_64"] if "//:static" else [":buildbuddy_rbe_linux_x86_64_with_clang"],
+)
+
+platform(
     name = "buildbuddy_rbe_darwin_x86_64",
     constraint_values = ["@platforms//cpu:x86_64"],
     parents = [":exec_darwin"],
@@ -104,6 +114,11 @@ platform(
 )
 
 platform(
+    name = "buildbuddy_rbe_darwin_x86_64_default",
+    parents = [":buildbuddy_rbe_darwin_x86_64"] if "//:static" else [":buildbuddy_rbe_darwin_x86_64_with_clang"],
+)
+
+platform(
     name = "buildbuddy_rbe_darwin_arm64",
     constraint_values = ["@platforms//cpu:aarch64"],
     parents = [":exec_darwin"],
@@ -113,4 +128,9 @@ platform(
     name = "buildbuddy_rbe_darwin_arm64_with_clang",
     constraint_values = ["@bazel_tools//tools/cpp:clang"],
     parents = [":buildbuddy_rbe_darwin_arm64"],
+)
+
+platform(
+    name = "buildbuddy_rbe_darwin_arm64_default",
+    parents = [":buildbuddy_rbe_darwin_arm64"] if "//:static" else [":buildbuddy_rbe_darwin_arm64_with_clang"],
 )

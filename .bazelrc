@@ -31,94 +31,52 @@ build:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 build:cache --remote_upload_local_results
 build:cache --experimental_remote_cache_compression
 
-# Flags shared across remote configs; must use in concert with
-# remote-shared-dynamic or remote-shared-static
+# Flags shared across remote configs
 build:remote-shared --remote_upload_local_results
 build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
-build:remote-shared --platforms=@buildbuddy_toolchain//:platform_bare_linux
-build:remote-shared --extra_execution_platforms=@buildbuddy_toolchain//:platform_bare_linux
+build:remote-shared --platforms=//platforms:buildbuddy_rbe_local_config_platform_default
+build:remote-shared --extra_execution_platforms=//platforms:buildbuddy_rbe_local_config_platform_default
 
 build --incompatible_enable_cc_toolchain_resolution
 
-# Flags to link dynamically when building remotely
-build:remote-shared-dynamic --platforms=//platforms:buildbuddy_rbe_default_with_clang
-build:remote-shared-dynamic --host_platform=//platforms:buildbuddy_rbe_default_with_clang
-build:remote-shared-dynamic --crosstool_top=@buildbuddy_toolchain//:ubuntu_cc_toolchain_suite
-build:remote-shared-dynamic --extra_toolchains=@buildbuddy_toolchain//:ubuntu_cc_toolchain
-
-# Flags to link statically when building remotely
-build:remote-shared-static --config=static
-build:remote-shared-static --platforms=//platforms:buildbuddy_rbe_default
-build:remote-shared-static --host_platform=//platforms:buildbuddy_rbe_default
-
 # Build with --config=remote to use BuildBuddy RBE.
-build:remote --config=remote-dynamic
-
-build:remote-dynamic --config=remote-shared
-build:remote-dynamic --config=remote-shared-dynamic
-build:remote-dynamic --config=cache
-build:remote-dynamic --remote_executor=grpcs://buildbuddy.buildbuddy.io
-
-build:remote-static --config=remote-shared
-build:remote-static --config=remote-shared-static
-build:remote-static --config=cache
-build:remote-static --remote_executor=grpcs://buildbuddy.buildbuddy.io
+build:remote --config=remote-shared
+build:remote --config=cache
+build:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
 
 # Build with --config=remote-dev to use BuildBuddy RBE.
-build:remote-dev --config=remote-dev-dynamic
-
-build:remote-dev-dynamic --config=remote-shared
-build:remote-dev-dynamic --config=remote-shared-dynamic
-build:remote-dev-dynamic --config=cache-dev
-build:remote-dev-dynamic --remote_executor=grpcs://buildbuddy.buildbuddy.dev
-
-build:remote-dev-static --config=remote-shared
-build:remote-dev-static --config=remote-shared-static
-build:remote-dev-static --config=cache-dev
-build:remote-dev-static --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+build:remote-dev --config=remote-shared
+build:remote-dev --config=cache-dev
+build:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 
 # Write build outputs in a platform-specific directory,
 # avoid outputs being wiped and rewritten when switching between platforms.
 build --experimental_platform_in_output_dir
 
 # Configuration used for GitHub actions-based CI
-build:ci-shared --build_metadata=ROLE=CI
-build:ci-shared --build_metadata=VISIBILITY=PUBLIC
-build:ci-shared --remote_instance_name=buildbuddy-io/buildbuddy/ci
-build:ci-shared --repository_cache=/home/runner/repo-cache/
-build:ci-shared --flaky_test_attempts=2
-build:ci-shared --color=yes
-build:ci-shared --disk_cache=
-# build:ci-shared --@io_bazel_rules_go//go/config:race
-
-build:ci --config=ci-dynamic
-
-build:ci-dynamic --config=remote-dynamic
-build:ci-dynamic --config=ci-shared
-
-build:ci-static --config=remote-static
-build:ci-static --config=ci-shared
+build:ci --config=remote
+build:ci --build_metadata=ROLE=CI
+build:ci --build_metadata=VISIBILITY=PUBLIC
+build:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
+build:ci --repository_cache=/home/runner/repo-cache/
+build:ci --flaky_test_attempts=2
+build:ci --color=yes
+build:ci --disk_cache=
+# build:ci --@io_bazel_rules_go//go/config:race
 
 # Configuration used for untrusted GitHub actions-based CI
-build:untrusted-ci-shared --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
-build:untrusted-ci-shared --repository_cache=/home/runner/repo-cache/untrusted/
-build:untrusted-ci-shared --disk_cache=
-build:untrusted-ci-shared --flaky_test_attempts=2
-build:untrusted-ci-shared --remote_executor=grpcs://remote.buildbuddy.io
-build:untrusted-ci-shared --bes_results_url=https://app.buildbuddy.io/invocation/
-build:untrusted-ci-shared --bes_backend=grpcs://remote.buildbuddy.io
-build:untrusted-ci-shared --remote_cache=grpcs://remote.buildbuddy.io
-
-build:untrusted-ci --config=untrusted-ci-dynamic
-
-build:untrusted-ci-dynamic --config=remote-dynamic
-build:untrusted-ci-dynamic --config=untrusted-ci-shared
-
-build:untrusted-ci-static --config=remote-static
-build:untrusted-ci-static --config=untrusted-ci-shared
+build:untrusted-ci --config=remote
+build:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
+build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
+build:untrusted-ci --disk_cache=
+build:untrusted-ci --flaky_test_attempts=2
+build:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
+build:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
+build:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
+build:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
 # Configuration used for all BuildBuddy workflows
 build:workflows --experimental_remote_cache_compression
@@ -138,17 +96,9 @@ build:workflows --config=buildbuddy_remote_cache
 build:workflows --@io_bazel_rules_go//go/config:race
 
 # Configuration used for Linux workflows
-build:linux-workflows --config=linux-workflows-dynamic
-
-build:linux-workflows-dynamic --config=remote-shared
-build:linux-workflows-dynamic --config=remote-shared-dynamic
-build:linux-workflows-dynamic --config=workflows
-build:linux-workflows-dynamic --config=buildbuddy_remote_executor
-
-build:linux-workflows-static --config=remote-shared
-build:linux-workflows-static --config=remote-shared-static
-build:linux-workflows-static --config=workflows
-build:linux-workflows-static --config=buildbuddy_remote_executor
+build:linux-workflows --config=remote-shared
+build:linux-workflows --config=workflows
+build:linux-workflows --config=buildbuddy_remote_executor
 
 # Configuration used for Mac workflows
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
@@ -162,17 +112,10 @@ build:release-shared --define release=true
 build:release-shared --strip=always
 
 # Configuration used for Linux releases
-build:release --config=release-dynamic
-
-build:release-dynamic --config=release-shared
-build:release-dynamic --config=remote-dynamic
-build:release-dynamic --remote_instance_name=buildbuddy-io/buildbuddy/release
-build:release-dynamic --remote_download_toplevel
-
-build:release-static --config=release-shared
-build:release-static --config=remote-static
-build:release-static --remote_instance_name=buildbuddy-io/buildbuddy/release
-build:release-static --remote_download_toplevel
+build:release --config=release-shared
+build:release --config=remote
+build:release --remote_instance_name=buildbuddy-io/buildbuddy/release
+build:release --remote_download_toplevel
 
 # Configuration used for release-mac workflow
 build:release-mac --config=release-shared
@@ -181,15 +124,9 @@ build:release-mac --config=release-shared
 build:release-m1 --config=release-shared
 
 # Configuration used for Buildbuddy auto-release
-build:auto-release --config=auto-release-dynamic
-
-build:auto-release-dynamic --config=remote-dynamic
-build:auto-release-dynamic --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
-build:auto-release-dynamic -c opt
-
-build:auto-release-static --config=remote-static
-build:auto-release-static --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
-build:auto-release-static -c opt
+build:auto-release --config=remote
+build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
+build:auto-release -c opt
 
 # On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your env
 # to avoid permissions errors.
