@@ -530,7 +530,7 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	if err := sm.loadReplicaState(db); err != nil {
 		return 0, err
 	}
-	//go sm.processAccessTimeUpdates()
+	go sm.processAccessTimeUpdates()
 	return sm.lastAppliedIndex, nil
 }
 
