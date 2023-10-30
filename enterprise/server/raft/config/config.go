@@ -10,11 +10,12 @@ func GetRaftConfig(shardID, replicaID uint64) dbConfig.Config {
 		ShardID:            shardID,
 		WaitReady:          true,
 		PreVote:            true,
-		ElectionRTT:        200,
-		HeartbeatRTT:       20,
+		ElectionRTT:        20,
+		HeartbeatRTT:       2,
 		CheckQuorum:        true,
 		SnapshotEntries:    1000000,
 		CompactionOverhead: 1000,
+		OrderedConfigChange: true,
 	}
 	return rc
 }
