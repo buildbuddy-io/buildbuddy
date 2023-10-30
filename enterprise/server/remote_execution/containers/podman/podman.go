@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -127,6 +128,13 @@ const (
 
 	sociStorePath         = "/var/lib/soci-store/store"
 	sociStoreCredCacheTtl = 1 * time.Hour
+
+	// How long to cache the result of `podman image exists` when it returns
+	// true. A short duration is used to help recover from rare scenarios in
+	// which the image might be deleted externally.
+	imageExistsCacheTTL = 5 * time.Minute
+	// Max number of entries to store in the `podman image exists` cache.
+	imageExistsCacheSize = 1000
 )
 
 type pullStatus struct {
@@ -140,6 +148,7 @@ type Provider struct {
 	imageStreamingEnabled   bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
 	sociStoreKeychainClient sspb.LocalKeychainClient
+	imageExistsCache        *lru.LRU[time.Time]
 }
 
 func prepareSociStore(ctx context.Context) error {
@@ -231,12 +240,22 @@ graphroot = "/var/lib/containers/storage"
 			return nil, err
 		}
 	}
+
+	imageExistsCache, err := lru.NewLRU(&lru.Config[time.Time]{
+		MaxSize: imageExistsCacheSize,
+		SizeFn:  func(time.Time) int64 { return 1 },
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Provider{
 		env:                     env,
 		imageStreamingEnabled:   *imageStreamingEnabled,
 		sociArtifactStoreClient: sociArtifactStoreClient,
 		sociStoreKeychainClient: sociStoreKeychainClient,
 		buildRoot:               buildRoot,
+		imageExistsCache:        imageExistsCache,
 	}, nil
 }
 
@@ -296,8 +315,8 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 		imageIsStreamable:       imageIsStreamable,
 		sociArtifactStoreClient: p.sociArtifactStoreClient,
 		sociStoreKeychainClient: p.sociStoreKeychainClient,
-
-		buildRoot: p.buildRoot,
+		imageExistsCache:        p.imageExistsCache,
+		buildRoot:               p.buildRoot,
 		options: &PodmanOptions{
 			ForceRoot:          props.DockerForceRoot,
 			Init:               props.DockerInit,
@@ -330,7 +349,8 @@ type PodmanOptions struct {
 
 // podmanCommandContainer containerizes a single command's execution using a Podman container.
 type podmanCommandContainer struct {
-	env environment.Env
+	env              environment.Env
+	imageExistsCache *lru.LRU[time.Time]
 
 	image     string
 	buildRoot string
@@ -582,20 +602,27 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	// Try to avoid the `pull` command which results in a network roundtrip.
-	listResult := runPodman(ctx, "image", &commandutil.Stdio{}, "inspect", "--format={{.ID}}", c.image)
-	if listResult.ExitCode == podmanInternalExitCode {
-		return false, nil
-	} else if listResult.Error != nil {
-		return false, listResult.Error
-	}
-
-	if strings.TrimSpace(string(listResult.Stdout)) != "" {
-		// Found at least one image matching the ref; `docker run` should succeed
-		// without pulling the image.
+	t, ok := c.imageExistsCache.Get(c.image)
+	if ok && time.Since(t) < imageExistsCacheTTL {
 		return true, nil
 	}
-	return false, nil
+
+	res := runPodman(ctx, "image", &commandutil.Stdio{}, "exists", c.image)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	// Exit code 0 = exists, 1 = does not exist. Other exit codes indicate
+	// errors.
+	if !(res.ExitCode == 0 || res.ExitCode == 1) {
+		return false, status.InternalErrorf("'podman image exists' failed (code %d): stderr: %q", res.ExitCode, string(res.Stderr))
+	}
+
+	if res.ExitCode == 1 {
+		return false, nil
+	}
+
+	c.imageExistsCache.Add(c.image, time.Now())
+	return true, nil
 }
 
 func (c *podmanCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
@@ -851,6 +878,10 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 	if pullResult.ExitCode != 0 {
 		return status.UnavailableErrorf("podman pull failed: exit code %d, output: %s", pullResult.ExitCode, output.String())
 	}
+
+	// Since we just pulled the image, we can skip the next call to 'podman
+	// image exists'.
+	c.imageExistsCache.Add(c.image, time.Now())
 	return nil
 }
 
@@ -999,12 +1030,14 @@ func (c *podmanCommandContainer) maybeCleanupCorruptedImages(ctx context.Context
 	}
 	result.Error = status.UnavailableError("a storage corruption occurred")
 	result.ExitCode = commandutil.NoExitCode
-	return removeImage(ctx, c.image)
+	return c.removeImage(ctx, c.image)
 }
 
-func removeImage(ctx context.Context, imageName string) error {
+func (c *podmanCommandContainer) removeImage(ctx context.Context, imageName string) error {
 	ctx, cancel := background.ExtendContextForFinalization(ctx, containerFinalizationTimeout)
 	defer cancel()
+
+	defer c.imageExistsCache.Remove(imageName)
 
 	result := runPodman(ctx, "rmi", &commandutil.Stdio{}, imageName)
 	if result.Error != nil {
