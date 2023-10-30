@@ -169,6 +169,10 @@ build:macos --cxxopt=-std=c++17
 build:windows --host_cxxopt=/std:c++17
 build:windows --cxxopt=/std:c++17
 
+# Static build
+build:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl,@zig_sdk//toolchain:linux_arm64_musl
+build:static --per_file_copt='external/zlib/.*@-fPIC'
+
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
 test:webdriver-debug --test_arg=-webdriver_debug

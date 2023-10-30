@@ -489,7 +489,5 @@ zig_toolchains()
 
 register_toolchains(
     "//toolchains:sh_toolchain",
-    # "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
-    "@zig_sdk//toolchain:linux_amd64_musl",
-    "@zig_sdk//toolchain:linux_arm64_musl",
+    "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
 )

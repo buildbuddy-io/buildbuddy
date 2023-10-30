@@ -28,3 +28,11 @@ go_binary(
     pure = "on",
     static = "on",
 )
+
+go_binary(
+    name = "goinit_static",
+    embed = [":goinit_lib"],
+    cgo = True,
+    race = "off",
+    static = "on",
+)
