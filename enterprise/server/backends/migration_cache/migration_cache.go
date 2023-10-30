@@ -915,8 +915,7 @@ func (mc *MigrationCache) copyDataInBackground() error {
 	// concurrently queued as the cache is shutting down, and if we try to enqueue a copy to the closed
 	// channel it will panic
 	for len(mc.copyChan) > 0 {
-		c := <-mc.copyChan
-		mc.copy(c)
+		<-mc.copyChan
 	}
 	return nil
 }
