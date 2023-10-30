@@ -2901,7 +2901,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 
 	log.Infof("[%s] VVV delete file %q", e.cacheName, sample.Key)
 	if err := e.deleteFile(key, version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
-		log.Errorf("Error evicting file for key %q: %s (ignoring)", sample.Key, err)
+		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}
 	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
