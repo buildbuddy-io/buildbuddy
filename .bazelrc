@@ -1,5 +1,5 @@
 build --enable_platform_specific_config=true
-query --enable_platform_specific_config=true
+# query --enable_platform_specific_config=true
 
 # Skymeld merges the analysis phase and execution phase.
 # This allows build and test executions to start before the analysis phase finishes,
@@ -44,15 +44,15 @@ build:remote-shared --extra_execution_platforms=@buildbuddy_toolchain//:platform
 build --incompatible_enable_cc_toolchain_resolution
 
 # Flags to link dynamically when building remotely
-build:remote-shared-dynamic --platforms=@buildbuddy_toolchain//:platform_linux
-build:remote-shared-dynamic --host_platform=@buildbuddy_toolchain//:platform_linux
+build:remote-shared-dynamic --platforms=//platforms:buildbuddy_rbe_default_with_clang
+build:remote-shared-dynamic --host_platform=//platforms:buildbuddy_rbe_default_with_clang
 build:remote-shared-dynamic --crosstool_top=@buildbuddy_toolchain//:ubuntu_cc_toolchain_suite
 build:remote-shared-dynamic --extra_toolchains=@buildbuddy_toolchain//:ubuntu_cc_toolchain
 
 # Flags to link statically when building remotely
 build:remote-shared-static --config=static
-build:remote-shared-static --platforms=@buildbuddy_toolchain//:platform_bare_linux
-build:remote-shared-static --host_platform=@buildbuddy_toolchain//:platform_bare_linux
+build:remote-shared-static --platforms=//platforms:buildbuddy_rbe_default
+build:remote-shared-static --host_platform=//platforms:buildbuddy_rbe_default
 
 # Build with --config=remote to use BuildBuddy RBE.
 build:remote --config=remote-dynamic

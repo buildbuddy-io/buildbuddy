@@ -208,6 +208,11 @@ config_setting(
     values = {"define": "release=true"},
 )
 
+config_setting(
+    name = "static",
+    flag_values = {"@io_bazel_rules_go//go/config:static": "true"},
+)
+
 package_group(
     name = "os",
     packages = [
