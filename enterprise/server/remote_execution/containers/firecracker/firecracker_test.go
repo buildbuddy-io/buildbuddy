@@ -878,15 +878,15 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		workDir := testfs.MakeDirAll(t, rootDir, "work")
 		cmd := &repb.Command{Arguments: []string{"bash", "-c", `
 				 cd ~
-				 if [ -d bazel-gazelle ]; then
+				 if [ -d buildbuddy ]; then
 					echo "Directory exists."
 				 else
-					git clone https://github.com/bazelbuild/bazel-gazelle
+					git clone https://github.com/buildbuddy-io/buildbuddy --filter=blob:none
 				 fi
-				 cd bazel-gazelle
+				 cd buildbuddy
 				 # See https://github.com/bazelbuild/bazelisk/issues/220
 				 echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
-				 bazelisk build //...
+				 bazelisk build //enterprise/server/...
 			`}}
 		opts = firecracker.ContainerOpts{
 			ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
