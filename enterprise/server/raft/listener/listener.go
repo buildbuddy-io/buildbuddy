@@ -49,8 +49,6 @@ func (rl *RaftListener) AddLeaderChangeListener() (<-chan raftio.LeaderInfo, fun
 }
 
 func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
-	log.Debugf("LeaderUpdated: %+v", info)
-
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	rl.lastLeaderInfo = &info

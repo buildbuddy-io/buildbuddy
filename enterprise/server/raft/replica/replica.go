@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -1299,6 +1300,7 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*ap
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
+	defer canary.Start("replica.Update", time.Second)()
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1399,6 +1401,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 // The Lookup method is a read only method, it should never change the state
 // of IOnDiskStateMachine.
 func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
+	defer canary.Start("replica.Lookup", time.Second)()
 	reqBuf, ok := key.([]byte)
 	if !ok {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")

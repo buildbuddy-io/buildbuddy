@@ -30,6 +30,7 @@ go_library(
         "//server/resources",
         "//server/util/alert",
         "//server/util/approxlru",
+        "//server/util/canary",
         "//server/util/disk",
         "//server/util/grpc_server",
         "//server/util/log",

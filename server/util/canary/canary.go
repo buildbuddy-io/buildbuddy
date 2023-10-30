@@ -58,8 +58,8 @@ func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn C
 //
 // Example:
 //
-//	defer canary.Start(100 * time.Millisecond)()
-func Start(expectedDuration time.Duration) CancelFunc {
+//	defer canary.Start("tag", 100 * time.Millisecond)()
+func Start(tag string, expectedDuration time.Duration) CancelFunc {
 	location := "unknown"
 	if pc, _, _, ok := runtime.Caller(1); ok {
 		details := runtime.FuncForPC(pc)
@@ -68,11 +68,11 @@ func Start(expectedDuration time.Duration) CancelFunc {
 	}
 
 	lateFunc := func(taken time.Duration) {
-		log.Warningf("%s still running after %s; should have finished in %s", location, taken, expectedDuration)
+		log.Warningf("%s: %s still running after %s; should have finished in %s", tag, location, taken, expectedDuration)
 	}
 
 	doneFunc := func(taken time.Duration) {
-		log.Warningf("%s finished. Took %s; should have finished in %s", location, taken, expectedDuration)
+		log.Warningf("%s: %s finished. Took %s; should have finished in %s", tag, location, taken, expectedDuration)
 	}
 	return StartWithLateFn(expectedDuration, lateFunc, doneFunc)
 }
