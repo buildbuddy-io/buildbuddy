@@ -135,7 +135,6 @@ build:static --action_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 build:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl,@zig_sdk//toolchain:linux_arm64_musl
 build:static --@io_bazel_rules_go//go/config:static=true
 build:static --copt=-fPIC
-build:static --action_env BUILDBUDDY_TOOLCHAIN_OVERRIDE_USE_EXTERNAL_CC=1
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
