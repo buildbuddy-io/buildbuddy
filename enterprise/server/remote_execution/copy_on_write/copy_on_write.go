@@ -461,12 +461,17 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 	if err := syscall.Ftruncate(fd, size); err != nil {
 		return nil, nil, err
 	}
-	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, s.remoteInstanceName)
+
+	ogChunk = s.chunks[offset]
+	chunkSource := snaputil.ChunkSourceHole
+	if ogChunk != nil {
+		chunkSource = ogChunk.source
+	}
+	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, chunkSource, s.remoteInstanceName)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	ogChunk = s.chunks[offset]
 	s.chunks[offset] = newChunk
 	s.dirty[offset] = true
 
@@ -572,7 +577,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 				return nil, err
 			}
 		}
-		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset, remoteInstanceName)
+		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset, snaputil.ChunkSourceLocalFile, remoteInstanceName)
 	}
 
 	// TODO: iterate through the file with multiple goroutines
@@ -607,7 +612,7 @@ type Mmap struct {
 	// Mutex protects the subsequent fields
 	mu         sync.RWMutex
 	data       []byte
-	mapped     bool
+	source     snaputil.ChunkSource
 	closed     bool
 	lazyDigest *repb.Digest
 }
@@ -627,13 +632,16 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 		remoteInstanceName: remoteInstanceName,
 		Offset:             offset,
 		data:               nil,
-		mapped:             false,
+		source:             snaputil.ChunkSourceUnmapped,
 		dataDir:            dataDir,
 		lazyDigest:         digest,
 	}, nil
 }
 
-func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64, remoteInstanceName string) (*Mmap, error) {
+func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string) (*Mmap, error) {
+	if source == snaputil.ChunkSourceUnmapped {
+		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
+	}
 	data, err := mmapDataFromFd(fd, size)
 	if err != nil {
 		return nil, err
@@ -644,7 +652,7 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, siz
 		env:                env,
 		Offset:             offset,
 		data:               data,
-		mapped:             true,
+		source:             source,
 		dataDir:            dataDir,
 	}, nil
 }
@@ -679,7 +687,7 @@ func (m *Mmap) initMap() error {
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
-	if m.mapped {
+	if m.source != snaputil.ChunkSourceUnmapped {
 		return nil
 	}
 	if m.lazyDigest == nil {
@@ -687,7 +695,8 @@ func (m *Mmap) initMap() error {
 	}
 
 	outputPath := filepath.Join(m.dataDir, ChunkName(m.Offset, false /*dirty*/))
-	if err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, m.remoteInstanceName, outputPath); err != nil {
+	artifactSrc, err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, m.remoteInstanceName, outputPath)
+	if err != nil {
 		return status.WrapErrorf(err, "fetch snapshot chunk for offset %d digest %s", m.Offset, m.lazyDigest.Hash)
 	}
 
@@ -697,7 +706,7 @@ func (m *Mmap) initMap() error {
 	}
 
 	m.data = data
-	m.mapped = true
+	m.source = artifactSrc
 	return nil
 }
 
@@ -745,10 +754,10 @@ func (m *Mmap) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.closed = true
-	if !m.mapped {
+	if m.source == snaputil.ChunkSourceUnmapped {
 		return nil
 	}
-	m.mapped = false
+	m.source = snaputil.ChunkSourceUnmapped
 	return syscall.Munmap(m.data)
 }
 
@@ -779,11 +788,17 @@ func (m *Mmap) StartAddress() (uintptr, error) {
 func (m *Mmap) safeReadMapped() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.mapped
+	return m.source != snaputil.ChunkSourceUnmapped
 }
 
 func (m *Mmap) Mapped() bool {
 	return m.safeReadMapped()
+}
+
+func (m *Mmap) SafeReadSource() snaputil.ChunkSource {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.source
 }
 
 func (m *Mmap) safeReadClosed() bool {

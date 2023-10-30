@@ -46,8 +46,9 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, "", b)
 	require.NoError(t, err)
 	outputPath := filepath.Join(tmpDir, "fetch")
-	err = snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPath)
+	chunkSrc, err := snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPath)
 	require.NoError(t, err)
+	require.Equal(t, snaputil.ChunkSourceLocalFilecache, chunkSrc)
 
 	// Read bytes from outputPath and validate with original bytes
 	fetchedStr := testfs.ReadFileAsString(t, tmpDir, "fetch")
@@ -62,8 +63,9 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	err = env.GetCache().Delete(ctx, rn)
 	require.NoError(t, err)
 	outputPathLocalFetch := filepath.Join(tmpDir, "fetch_local")
-	err = snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPathLocalFetch)
+	chunkSrc, err = snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPathLocalFetch)
 	require.NoError(t, err)
+	require.Equal(t, snaputil.ChunkSourceLocalFilecache, chunkSrc)
 	fetchedStr = testfs.ReadFileAsString(t, tmpDir, "fetch_local")
 	require.Equal(t, randomStr, fetchedStr)
 
@@ -73,8 +75,9 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	deleted := fc.DeleteFile(&repb.FileNode{Digest: d})
 	require.True(t, deleted)
 	outputPathRemoteFetch := filepath.Join(tmpDir, "fetch_remote")
-	err = snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPathRemoteFetch)
+	chunkSrc, err = snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPathRemoteFetch)
 	require.NoError(t, err)
+	require.Equal(t, snaputil.ChunkSourceRemoteCache, chunkSrc)
 	fetchedStr = testfs.ReadFileAsString(t, tmpDir, "fetch_remote")
 	require.Equal(t, randomStr, fetchedStr)
 
