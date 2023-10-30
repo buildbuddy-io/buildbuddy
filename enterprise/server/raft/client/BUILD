@@ -14,7 +14,6 @@ go_library(
         "//server/util/canary",
         "//server/util/grpc_client",
         "//server/util/log",
-        "//server/util/retry",
         "//server/util/status",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//client",
