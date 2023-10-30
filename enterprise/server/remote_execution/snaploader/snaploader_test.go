@@ -93,6 +93,8 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 }
 
 func TestUnpackFallbackKey(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
 	const maxFilecacheSizeBytes = 20_000_000 // 20 MB
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -121,7 +123,7 @@ func TestUnpackFallbackKey(t *testing.T) {
 	require.Equal(t, "main", keys.GetBranchKey().GetRef())
 	require.Empty(t, keys.GetFallbackKeys())
 
-	opts := makeFakeSnapshot(t, workDir)
+	opts := makeFakeSnapshot(t, workDir, true /*=enableRemote*/)
 	err = loader.CacheSnapshot(ctx, keys.GetBranchKey(), opts)
 	require.NoError(t, err)
 
@@ -146,7 +148,7 @@ func TestUnpackFallbackKey(t *testing.T) {
 
 	// Sanity check that the branch key is not found in cache, to make sure
 	// we're actually falling back.
-	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: forkKeys.GetBranchKey()})
+	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: forkKeys.GetBranchKey()}, true /*=enableRemote*/)
 	require.Error(t, err)
 
 	// Now try unpacking with the complete PR key set, including fallbacks. This
@@ -259,11 +261,7 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 
 	// Delete some artifacts from the local cache, so we can test fetching artifacts
 	// from both the local and remote cache
-<<<<<<< HEAD
-	snapMetadata, err := loader.GetSnapshot(ctx, key, true)
-=======
-	snapMetadata, err := loader.GetSnapshot(ctx, keys)
->>>>>>> 04d73b83c (executor: use git refs for snapshot read/write)
+	snapMetadata, err := loader.GetSnapshot(ctx, keys, true)
 	require.NoError(t, err)
 	for i, f := range snapMetadata.GetFiles() {
 		if i%2 == 0 {
@@ -334,11 +332,7 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	require.NoError(t, err)
 
 	// Delete some artifacts from the remote cache (arbitrarily the first one for simplicity)
-<<<<<<< HEAD
-	snapMetadata, err := loader.GetSnapshot(ctx, key, true)
-=======
-	snapMetadata, err := loader.GetSnapshot(ctx, keys)
->>>>>>> 04d73b83c (executor: use git refs for snapshot read/write)
+	snapMetadata, err := loader.GetSnapshot(ctx, keys, true)
 	require.NoError(t, err)
 	for _, f := range snapMetadata.GetFiles() {
 		rn := digest.NewResourceName(f.GetDigest(), "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3).ToProto()
@@ -357,11 +351,7 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 
 	// Even though the assets still exist in the local cache, the remote cache
 	// should serve as the source of truth on whether a snapshot is valid
-<<<<<<< HEAD
-	_, err = loader.GetSnapshot(ctx, key, true)
-=======
-	_, err = loader.GetSnapshot(ctx, keys)
->>>>>>> 04d73b83c (executor: use git refs for snapshot read/write)
+	_, err = loader.GetSnapshot(ctx, keys, true)
 	require.Error(t, err)
 }
 
@@ -407,23 +397,14 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 		_ = mustUnpack(t, ctx, loader, originalKeys, workDirB, optsA)
 
 		// Fetching snapshot with same group id different instance name should fail
-<<<<<<< HEAD
-		keyNewInstanceName := keyWithInstanceName(t, "remote-C")
-		_, err = loader.GetSnapshot(ctx, keyNewInstanceName, enableRemote)
-=======
 		keysNewInstanceName := keysWithInstanceName(t, "remote-C")
-		_, err = loader.GetSnapshot(ctx, keysNewInstanceName)
->>>>>>> 04d73b83c (executor: use git refs for snapshot read/write)
+		_, err = loader.GetSnapshot(ctx, keysNewInstanceName, enableRemote)
 		require.Error(t, err)
 
 		// Fetching snapshot with different group id same instance name should fail
 		ctxNewGroup, err := auth.WithAuthenticatedUser(context.Background(), "US2")
 		require.NoError(t, err)
-<<<<<<< HEAD
-		_, err = loader.GetSnapshot(ctxNewGroup, originalKey, enableRemote)
-=======
-		_, err = loader.GetSnapshot(ctxNewGroup, originalKeys)
->>>>>>> 04d73b83c (executor: use git refs for snapshot read/write)
+		_, err = loader.GetSnapshot(ctxNewGroup, originalKeys, enableRemote)
 		require.Error(t, err)
 	}
 }
@@ -469,13 +450,8 @@ func writeRandomRange(t *testing.T, store *copy_on_write.COWStore) {
 
 // Unpacks a snapshot to outDir and asserts that the contents match the
 // originally cached contents.
-<<<<<<< HEAD
-func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, snapshotKey *fcpb.SnapshotKey, outDir string, originalSnapshot *snaploader.CacheSnapshotOptions) *snaploader.UnpackedSnapshot {
-	snap, err := loader.GetSnapshot(ctx, snapshotKey, true /*enableRemote*/)
-=======
 func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, snapshotKeySet *fcpb.SnapshotKeySet, outDir string, originalSnapshot *snaploader.CacheSnapshotOptions) *snaploader.UnpackedSnapshot {
-	snap, err := loader.GetSnapshot(ctx, snapshotKeySet)
->>>>>>> 04d73b83c (executor: use git refs for snapshot read/write)
+	snap, err := loader.GetSnapshot(ctx, snapshotKeySet, true /*enableRemote*/)
 	require.NoError(t, err)
 	unpacked, err := loader.UnpackSnapshot(ctx, snap, outDir)
 	require.NoError(t, err)

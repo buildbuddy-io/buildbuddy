@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -23,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -75,9 +75,16 @@ func SnapshotKeySet(task *repb.ExecutionTask, configurationHash, runnerID string
 }
 
 func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string) {
+	if !*snaputil.EnableRemoteSnapshotSharing && !*snaputil.EnableLocalSnapshotSharing {
+		return "", nil
+	}
+
 	// NOTE: keep these names in sync with workflow service
 	branchRef = getEnv(task, "GIT_BRANCH")
 	if branchRef == "" {
+		// Workflow actions should always have GIT_BRANCH set, so if we don't
+		// see this env var then assume we're not dealing with a workflow, and
+		// so we shouldn't respect fallback refs.
 		return "", nil
 	}
 	for _, fallback := range []string{"GIT_BASE_BRANCH", "GIT_REPO_DEFAULT_BRANCH"} {
@@ -281,8 +288,9 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 			log.CtxInfof(ctx, "Found fallback snapshot ref=%q in cache", key.GetRef())
 		}
 		return &Snapshot{
-			key:      key,
-			manifest: manifest,
+			key:           key,
+			manifest:      manifest,
+			remoteEnabled: remoteEnabled,
 		}, nil
 	}
 	return nil, lastErr
@@ -295,7 +303,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 			log.CtxInfof(ctx, "Failed to fetch remote snapshot manifest: %s", err)
 			return nil, status.WrapError(err, "fetch remote manifest")
 		}
-		log.CtxInfof(ctx, "Fetched remote snapshot manifest")
+		log.CtxInfof(ctx, "Fetched remote snapshot manifest %s", keyDebugString(ctx, l.env, key))
 		return manifest, nil
 	}
 
@@ -831,7 +839,10 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 		return cf, nil
 	}
 	// containerfs is not available in cache; convert the EXT4 image to a
-	// ChunkedFile then add it to cache.
+	// ChunkedFile then add it to cache. Note that we don't use remote instance
+	// name here, since OCI -> ext4 conversion is expensive and we want to
+	// ensure that this is a one-time thing.
+	//
 	// TODO(bduffany): single-flight this.
 	start := time.Now()
 	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, "" /*=instanceName*/, *snaputil.EnableRemoteSnapshotSharing)

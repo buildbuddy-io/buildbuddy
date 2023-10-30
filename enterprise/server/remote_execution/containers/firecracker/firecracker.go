@@ -840,10 +840,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	snaploaderStart := time.Now()
-	// Note: we only update the main snapshot here, i.e. the one corresponding
-	// to the pushed git branch. We do not update the fallback key(s) that we
-	// might've read from, i.e. the ones corresponding to the PR base branch or
-	// repo's default branch.
+	// Note: we only update the snapshot corresponding to the pushed git branch.
+	// We do not update the snapshot for any fallback key(s) that we may have
+	// read from, i.e. ones corresponding to the PR's base branch or the repo's
+	// default branch.
 	if err := c.loader.CacheSnapshot(ctx, c.snapshotKeySet.GetBranchKey(), opts); err != nil {
 		return status.WrapError(err, "add snapshot to cache")
 	}
