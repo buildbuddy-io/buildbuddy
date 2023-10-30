@@ -2866,6 +2866,7 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 }
 
 func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
+	log.Infof("[%s] VVV doEvict %q", e.cacheName, sample.Key)
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		log.Warningf("unable to get db: %s", err)
@@ -2887,13 +2888,18 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		log.Infof("failed to read file metadata for key %s: %s", sample.Key, err)
 		return
 	}
+
+	log.Infof("[%s] VVV read metadata %q: %+v", e.cacheName, sample.Key, md)
+
 	atime := time.UnixMicro(md.GetLastAccessUsec())
 	age := time.Since(atime)
 	if !sample.Timestamp.Equal(atime) {
+		log.Infof("[%s] VVV atime mismatch %q %d %d", e.cacheName, sample.Key, md.GetLastAccessUsec(), sample.Timestamp.UnixMicro())
 		// atime have been updated. Do not evict.
 		return
 	}
 
+	log.Infof("[%s] VVV delete file %q", e.cacheName, sample.Key)
 	if err := e.deleteFile(key, version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
 		log.Errorf("Error evicting file for key %q: %s (ignoring)", sample.Key, err)
 		return
@@ -2948,6 +2954,7 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore
 	}
 	defer db.Close()
 
+	log.Infof("[%s] VVV delete key %q", e.cacheName, keyBytes)
 	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
 		return err
 	}
@@ -2955,6 +2962,7 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore
 	switch {
 	case storageMetadata.GetFileMetadata() != nil:
 		fp := e.fileStorer.FilePath(e.blobDir, storageMetadata.GetFileMetadata())
+		log.Infof("[%s] VVV delete file for key %q %q", e.cacheName, keyBytes, fp)
 		if err := disk.DeleteFile(context.TODO(), fp); err != nil {
 			return err
 		}
