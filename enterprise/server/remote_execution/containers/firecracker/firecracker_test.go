@@ -2138,8 +2138,7 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 	flags.Set(t, "executor.firecracker_health_check_timeout", 2*time.Second)
 
 	ctx := context.Background()
-	env := getTestEnv(ctx, t)
-	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	env := getTestEnv(ctx, t, envOpts{})
 	workDir := testfs.MakeTempDir(t)
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         imageWithDockerInstalled,
@@ -2151,9 +2150,9 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 		},
 		JailerRoot: tempJailerRoot(t),
 	}
-	c, err := firecracker.NewContainer(ctx, env, auth, &repb.ExecutionTask{}, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
-	err = container.PullImageIfNecessary(ctx, env, auth, c, container.PullCredentials{}, opts.ContainerImage)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 	require.NoError(t, err)
 	err = c.Create(ctx, workDir)
 	require.NoError(t, err)

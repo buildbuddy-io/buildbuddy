@@ -1827,7 +1827,6 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 				healthCheckErrCh <- err
 				return
 			}
-			continue
 		}
 	}()
 	select {
