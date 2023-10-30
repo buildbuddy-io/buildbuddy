@@ -187,6 +187,9 @@ func (s *ExecutionServer) pubSubChannelForExecutionID(executionID string) *pubsu
 }
 
 func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID, snippet string, stage repb.ExecutionStage_Value) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	if s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
@@ -220,6 +223,9 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 }
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	// Add the invocation links to Redis. MySQL insertion sometimes can take a
 	// longer time to finish and the insertion can be finished after the
 	// execution is complete.
@@ -417,6 +423,9 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 }
 
 func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	scheduler := s.env.GetSchedulerService()
 	if scheduler == nil {
 		return "", status.FailedPreconditionErrorf("No scheduler service configured")

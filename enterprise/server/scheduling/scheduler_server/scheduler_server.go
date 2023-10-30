@@ -679,6 +679,9 @@ func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode 
 }
 
 func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	key := np.key.redisUnclaimedTasksKey()
 	m := &redis.Z{
 		Member: taskID,
@@ -1116,6 +1119,9 @@ func (s *SchedulerServer) redisKeyForTask(taskID string) string {
 }
 
 func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	serializedMetadata, err := proto.Marshal(metadata)
 	if err != nil {
 		return status.InternalErrorf("unable to serialize scheduling metadata: %v", err)
