@@ -2516,8 +2516,7 @@ func (e *partitionEvictor) processEviction(quitChan chan struct{}) {
 	}
 	eg.Wait()
 	for len(e.deletes) > 0 {
-		s := <-e.deletes
-		e.doEvict(s)
+		<-e.deletes
 	}
 }
 
