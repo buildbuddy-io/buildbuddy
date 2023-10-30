@@ -133,11 +133,14 @@ func execute(cmdArgs []string) error {
 		return err
 	}
 	start := time.Now()
+	stageStart := start
 	log.Debugf("Preparing action for %s", cmd)
 	arn, err := rexec.Prepare(ctx, env, *instanceName, df, action, cmd, *inputRoot)
 	if err != nil {
 		return err
 	}
+	log.Debugf("Uploaded inputs in %s", time.Since(stageStart))
+	stageStart = time.Now()
 	log.Debug("Starting /Execute request")
 	stream, err := rexec.Start(ctx, env, arn)
 	if err != nil {
@@ -152,11 +155,14 @@ func execute(cmdArgs []string) error {
 		// We failed to execute.
 		return response.Err
 	}
+	log.Debugf("Execution completed in %s", time.Since(stageStart))
+	stageStart = time.Now()
 	log.Debugf("Downloading result")
 	res, err := rexec.GetResult(ctx, env, *instanceName, df, response.ExecuteResponse.GetResult())
 	if err != nil {
 		return status.WrapError(err, "execution failed")
 	}
+	log.Debugf("Downloaded results in %s", time.Since(stageStart))
 	log.Debugf("End-to-end execution time: %s", time.Since(start))
 
 	os.Stdout.Write(res.Stdout)
