@@ -679,6 +679,9 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 		InitialMember: initialMembers,
 		Join:          false,
 	})
+	if status.IsAlreadyExistsError(err) {
+		return nil
+	}
 	return err
 }
 
