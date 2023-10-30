@@ -110,7 +110,7 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"some_url", "https://token@foo.com", "https://foo.com"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
-		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
+		{"host_platform", "//platforms:buildbuddy_rbe_local_config_platform_default", "//platforms:buildbuddy_rbe_local_config_platform_default"},
 		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=bar,BAZ="},
 		{"build_metadata", "FOO=A=1,BAR=SECRET=SECRET@buildbuddy.io", "FOO=A=1,BAR=buildbuddy.io"},
 		{"some_other_flag", "PATTERN=@//foo", "//foo"},
