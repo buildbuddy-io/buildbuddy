@@ -74,7 +74,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .getTreeDirectorySizes({
         rootDigest: rootDigest,
         instanceName: remoteInstanceName,
-        /* TODO(jdhollen): pass back the DigestFunction used for the invocation. */
+        digestFunction: this.props.model.getDigestFunction(),
       })
       .then((r) => {
         const sizes = new Map<string, Number>();

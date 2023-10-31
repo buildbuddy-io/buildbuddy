@@ -407,6 +407,7 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
+        "//proto:remote_execution_ts_proto",
         "//proto:suggestion_ts_proto",
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/moment",

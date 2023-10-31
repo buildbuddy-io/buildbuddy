@@ -4,6 +4,7 @@ import React from "react";
 import { Subject } from "rxjs";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { api_key } from "../../proto/api_key_ts_proto";
+import { build } from "../../proto/remote_execution_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
@@ -362,6 +363,18 @@ export default class InvocationModel {
 
   getRemoteInstanceName() {
     return this.optionsMap.get("remote_instance_name") ?? "";
+  }
+
+  getDigestFunction() {
+    const digestFnName = this.optionsMap.get("digest_function");
+    if (!digestFnName) {
+      return undefined;
+    }
+    const digestFnEnum =
+      build.bazel.remote.execution.v2.DigestFunction.Value[
+        digestFnName as keyof typeof build.bazel.remote.execution.v2.DigestFunction.Value
+      ];
+    return digestFnEnum || undefined;
   }
 
   getDigestFunctionDir() {
