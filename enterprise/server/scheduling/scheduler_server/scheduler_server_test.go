@@ -214,21 +214,17 @@ type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
 
-	ctx       context.Context
-	cancelCtx context.CancelFunc
+	ctx context.Context
 
 	mu    sync.Mutex
 	tasks map[string]struct{}
 }
 
-func newFakeExecutor(t *testing.T, schedulerClient scpb.SchedulerClient) *fakeExecutor {
-	// reuse contet from test?
-	ctx, cancel := context.WithCancel(context.Background())
+func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.SchedulerClient) *fakeExecutor {
 	return &fakeExecutor{
 		t:               t,
 		schedulerClient: schedulerClient,
 		ctx:             ctx,
-		cancelCtx:       cancel,
 		tasks:           make(map[string]struct{}),
 	}
 }
@@ -352,7 +348,7 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env) string
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 	env, ctx := getEnv(t, true, true, "user1")
 
-	fe := newFakeExecutor(t, env.GetSchedulerClient())
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
 	taskID := scheduleTask(ctx, t, env)
@@ -372,7 +368,7 @@ func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
 	env, ctx := getEnv(t, true, true, "user1")
 
-	fe := newFakeExecutor(t, env.GetSchedulerClient())
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
 	taskID := scheduleTask(ctx, t, env)
@@ -393,7 +389,7 @@ func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
 func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
 	env, ctx := getEnv(t, true, true, "user1")
 
-	fe := newFakeExecutor(t, env.GetSchedulerClient())
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
 	taskID := scheduleTask(ctx, t, env)
