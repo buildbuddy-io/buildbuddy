@@ -2250,12 +2250,15 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `
 			set -e
+			# Wait a little bit so that we can collect stats
+			sleep 0.5
 			# Freeze vmexec server (SIGSTOP)
 			ps aux | grep '\--vmexec' | grep -v grep | awk '{print $2}' | xargs kill -STOP
 		`},
 	}
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.True(t, status.IsUnavailableError(res.Error), "expected Unavailable err, got %s", res.Error)
+	require.GreaterOrEqual(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
 }
 
 func TestFirecrackerStressIO(t *testing.T) {
