@@ -13,11 +13,26 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/translate"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 
 	langs "github.com/buildbuddy-io/buildbuddy/cli/fix/langs"
 
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
 	buildifier "github.com/bazelbuild/buildtools/buildifier"
+)
+
+var (
+	flags = flag.NewFlagSet("fix", flag.ContinueOnError)
+	diff  = flags.Bool("diff", false, "Don't apply fixes, just print a diff showing the changes that would be applied.")
+)
+
+const (
+	usage = `
+usage: bb fix [ --diff ]
+
+Applies fixes to WORKSPACE and BUILD files.
+Use the --diff flag to print suggested fixes without applying.
+`
 )
 
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9 ]+`)
@@ -31,6 +46,16 @@ func HandleFix(args []string) (exitCode int, err error) {
 	if idx != 0 {
 		log.Debugf("Unexpected flag: %s", args[0])
 		return 1, nil
+	}
+
+	if err := arg.ParseFlagSet(flags, args[idx+1:]); err != nil {
+		if err == flag.ErrHelp {
+			log.Print(usage)
+			flags.SetOutput(os.Stderr)
+			flags.PrintDefaults()
+			return 1, nil
+		}
+		return -1, err
 	}
 
 	_, _, err = workspace.CreateWorkspaceFileIfNotExists()
@@ -49,14 +74,14 @@ func HandleFix(args []string) (exitCode int, err error) {
 }
 
 func runGazelle() {
-	// Run gazelle with the transformed args so far (e.g. if we ran bb with
-	// `--verbose=1`, this will make sure we don't pass `--verbose=1` to
-	// gazelle, which doesn't understand that flag).
 	originalArgs := os.Args
 	defer func() {
 		os.Args = originalArgs
 	}()
 	os.Args = []string{"gazelle"}
+	if *diff {
+		os.Args = append(os.Args, "-mode=diff")
+	}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
 	gazelle.Run()
 }
@@ -106,6 +131,11 @@ func walk() error {
 		return err
 	}
 
+	if *diff {
+		// TODO: support diff mode for other fixes
+		return nil
+	}
+
 	// Add any necessary dependencies for languages that are used in the repo.
 	for l := range foundLanguages {
 		for _, d := range l.Deps() {
@@ -145,7 +175,11 @@ func runBuildifier(path string) {
 	defer func() {
 		os.Args = originalArgs
 	}()
-	os.Args = []string{"buildifier", path}
+	os.Args = []string{"buildifier"}
+	if *diff {
+		os.Args = append(os.Args, "-mode=diff")
+	}
+	os.Args = append(os.Args, path)
 	buildifier.Run()
 }
 

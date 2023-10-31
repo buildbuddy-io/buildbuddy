@@ -40,7 +40,7 @@ function run() {
 }
 
 run BuildFiles \
-  "$BB_PATH" fix -mode=diff
+  "$BB_PATH" fix --diff
 
 run GoDeps \
   env GO_PATH="$GO_PATH" \
