@@ -233,19 +233,18 @@ func (e *fakeExecutor) Register() {
 	stream, err := e.schedulerClient.RegisterAndStreamWork(e.ctx)
 	require.NoError(e.t, err)
 	go func() {
+		err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
+			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{
+				Node: &scpb.ExecutionNode{
+					Os:                    defaultOS,
+					Arch:                  defaultArch,
+					Host:                  "foo",
+					AssignableMemoryBytes: 1000000,
+					AssignableMilliCpu:    1000000,
+				}},
+		})
+		require.NoError(e.t, err)
 		for {
-			err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
-				RegisterExecutorRequest: &scpb.RegisterExecutorRequest{
-					Node: &scpb.ExecutionNode{
-						Os:                    defaultOS,
-						Arch:                  defaultArch,
-						Host:                  "foo",
-						AssignableMemoryBytes: 1000000,
-						AssignableMilliCpu:    1000000,
-					}},
-			})
-			require.NoError(e.t, err)
-
 			req, err := stream.Recv()
 			if status.IsUnavailableError(err) {
 				return
