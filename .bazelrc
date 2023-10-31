@@ -129,8 +129,8 @@ build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 build:auto-release -c opt
 
 # On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your
-# action-env in user.bazelrc to avoid permissions errors.
-build:static --action_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+# repo_env in user.bazelrc to avoid permissions errors.
+build:static --repo_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 build:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl,@zig_sdk//toolchain:linux_arm64_musl
 build:static --@io_bazel_rules_go//go/config:static=true
 build:static --copt=-fPIC
