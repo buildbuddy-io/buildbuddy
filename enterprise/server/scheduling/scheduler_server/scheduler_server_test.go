@@ -309,16 +309,16 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 }
 
 func scheduleTask(ctx context.Context, t *testing.T, env environment.Env) string {
-	id, err := uuid.NewRandom()
-	require.NoError(t, err)
-	taskID := id.String()
-
-	task := &repb.ExecutionTask{
-		ExecutionId: taskID,
-	}
-	taskBytes, err := proto.Marshal(task)
-	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
+		id, err := uuid.NewRandom()
+		require.NoError(t, err)
+		taskID := id.String()
+
+		task := &repb.ExecutionTask{
+			ExecutionId: taskID,
+		}
+		taskBytes, err := proto.Marshal(task)
+		require.NoError(t, err)
 		_, err = env.GetSchedulerService().ScheduleTask(ctx, &scpb.ScheduleTaskRequest{
 			TaskId: taskID,
 			Metadata: &scpb.SchedulingMetadata{
@@ -339,10 +339,11 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env) string
 		}
 		require.NoError(t, err)
 		if err == nil {
-			break
+			return taskID
 		}
 	}
-	return taskID
+	require.FailNow(t, "could not schedule task")
+	return ""
 }
 
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
