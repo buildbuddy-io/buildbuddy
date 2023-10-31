@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
@@ -49,6 +50,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	cdbpebble "github.com/cockroachdb/pebble"
 )
 
 var (
@@ -81,7 +83,7 @@ var (
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
 
-	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
+	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
 
 	// Compression related flags
@@ -534,6 +536,12 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		pebbleOptions.Cache = c
 	}
 
+	desc, err := cdbpebble.Peek(opts.RootDirectory, vfs.Default)
+	if err != nil {
+		return nil, err
+	}
+	created := !desc.Exists
+
 	db, err := pebble.Open(opts.RootDirectory, opts.Name, pebbleOptions)
 	if err != nil {
 		return nil, err
@@ -575,10 +583,18 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		includeMetadataSize:         opts.IncludeMetadataSize,
 	}
 
-	versionMetadata, err := pc.databaseVersionMetadata()
-	if err != nil {
-		return nil, err
+	versionMetadata := pc.maxDatabaseVersionMetadata()
+	if *opts.ActiveKeyVersion >= 0 {
+		versionMetadata.MinVersion = *opts.ActiveKeyVersion
+		versionMetadata.MaxVersion = *opts.ActiveKeyVersion
 	}
+	if !created {
+		versionMetadata, err = pc.DatabaseVersionMetadata()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	pc.minDBVersion, pc.maxDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetMinVersion()), filestore.PebbleKeyVersion(versionMetadata.GetMaxVersion())
 	if pc.activeDatabaseVersion() < pc.minDBVersion {
 		pc.minDBVersion = pc.activeDatabaseVersion()
@@ -710,9 +726,18 @@ func (p *PebbleCache) databaseVersionKey() []byte {
 	return key
 }
 
+func (p *PebbleCache) maxDatabaseVersionMetadata() *rfpb.VersionMetadata {
+	maxKeyVersion := int64(filestore.MaxKeyVersion) - 1
+	return &rfpb.VersionMetadata{
+		MinVersion:     maxKeyVersion,
+		MaxVersion:     maxKeyVersion,
+		LastModifyUsec: p.clock.Now().UnixMicro(),
+	}
+}
+
 // databaseVersionKey returns the database-wide version metadata which
 // contains the database version.
-func (p *PebbleCache) databaseVersionMetadata() (*rfpb.VersionMetadata, error) {
+func (p *PebbleCache) DatabaseVersionMetadata() (*rfpb.VersionMetadata, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -722,8 +747,7 @@ func (p *PebbleCache) databaseVersionMetadata() (*rfpb.VersionMetadata, error) {
 	buf, err := pebble.GetCopy(db, p.databaseVersionKey())
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			// If the key is not present in the DB; return an empty
-			// proto.
+			// If the key is not present in the DB; return an empty proto.
 			return &rfpb.VersionMetadata{}, nil
 		}
 		return nil, err
@@ -752,6 +776,9 @@ func (p *PebbleCache) maxDatabaseVersion() filestore.PebbleKeyVersion {
 }
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
+	if p.activeKeyVersion < 0 {
+		return p.maxDBVersion
+	}
 	return filestore.PebbleKeyVersion(p.activeKeyVersion)
 }
 
@@ -762,7 +789,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 	unlockFn := p.locker.Lock(string(versionKey))
 	defer unlockFn()
 
-	oldVersionMetadata, err := p.databaseVersionMetadata()
+	oldVersionMetadata, err := p.DatabaseVersionMetadata()
 	if err != nil {
 		return err
 	}
