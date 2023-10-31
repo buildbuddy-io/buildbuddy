@@ -96,9 +96,13 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		ctx, cancel = context.WithTimeout(ctx, DefaultContextTimeout)
 		defer cancel()
 	}
+	var lastErr error
 	for {
 		select {
 		case <-ctx.Done():
+			if lastErr != nil {
+				return lastErr
+			}
 			return ctx.Err()
 		default:
 			break
@@ -109,6 +113,7 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		cancel()
 
 		if err != nil {
+			lastErr = err
 			if dragonboat.IsTempError(err) {
 				continue
 			}
