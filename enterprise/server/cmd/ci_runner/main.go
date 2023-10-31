@@ -1186,7 +1186,8 @@ func printCommandLine(out io.Writer, command string, args ...string) {
 	for _, arg := range args {
 		cmdLine += " " + toShellToken(arg)
 	}
-	out.Write([]byte(aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine)))
+	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
+	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine))
 }
 
 // TODO: Handle shell variable expansion. Probably want to run this with sh -c
@@ -1613,10 +1614,13 @@ func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError)
 	return strings.TrimSpace(output), nil
 }
 
+func formatNowUTC() string {
+	return time.Now().UTC().Format("2006-01-02 15:04:05.000 UTC")
+}
+
 func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
-	io.WriteString(out, ansiGray)
+	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
 	io.WriteString(out, fmt.Sprintf(format, args...))
-	io.WriteString(out, ansiReset)
 	io.WriteString(out, "\n")
 }
 
