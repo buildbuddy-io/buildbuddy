@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Tue, 18 Jul 2023 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 01 Nov 2023 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Bazelcon 2023 Recap]]></title>
+            <link>https://www.buildbuddy.io/blog/bazelcon-2023</link>
+            <guid>https://www.buildbuddy.io/blog/bazelcon-2023</guid>
+            <pubDate>Wed, 01 Nov 2023 12:00:00 GMT</pubDate>
+            <description><![CDATA[Another year, another Bazelcon! This year's edition was held in Munich, Germany, and featured two days of talks by Bazel maintainers, contributers, and users. Among the Bazel users represented as this year's conference were: Booking.com, RabbitMQ, Spotify, Stripe, Uber, and more.]]></description>
+            <category>bazelcon</category>
+            <category>company</category>
+        </item>
         <item>
             <title><![CDATA[BuildBuddy Named to Inaugural Redpoint InfraRed 100]]></title>
             <link>https://www.buildbuddy.io/blog/redpoint-infrared-100</link>

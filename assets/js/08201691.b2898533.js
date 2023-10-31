@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[7139],{61248:function(e){e.exports=JSON.parse('{"permalink":"/blog/tags/company","page":1,"postsPerPage":10,"totalPages":2,"totalCount":14,"nextPage":"/blog/tags/company/page/2","blogDescription":"Blog","blogTitle":"Blog"}')}}]);
