@@ -38,6 +38,7 @@ go_library(
         "//enterprise/server/util/vsock",
         "//enterprise/vmsupport:bundle",
         "//proto:firecracker_go_proto",
+        "//proto:health_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//proto:vmexec_go_proto",
