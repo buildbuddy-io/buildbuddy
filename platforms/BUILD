@@ -1,3 +1,6 @@
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE")
+load("@local_config_platform//:constraints.bzl", "HOST_CONSTRAINTS")
+
 package(default_visibility = ["//visibility:public"])
 
 platform(
@@ -43,8 +46,6 @@ platform(
     },
 )
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE")
-
 platform(
     name = "exec_linux",
     exec_properties = {
@@ -64,8 +65,6 @@ platform(
     },
     constraint_values = ["@platforms//os:macos"]
 )
-
-load("@local_config_platform//:constraints.bzl", "HOST_CONSTRAINTS")
 
 platform(
     name = "buildbuddy_rbe_local_config_platform",
