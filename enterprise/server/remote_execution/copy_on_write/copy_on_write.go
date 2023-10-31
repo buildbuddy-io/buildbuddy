@@ -9,6 +9,7 @@ import (
 	"sort"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
@@ -66,6 +67,10 @@ type COWStore struct {
 
 	// Concurrency-safe pool of buffers that can be used for copying chunks
 	copyBufPool sync.Pool
+
+	// Milliseconds
+	TotalReadTime  int64
+	TotalWriteTime int64
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -182,6 +187,7 @@ func (c *COWStore) chunkStartOffset(off int64) int64 {
 }
 
 func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
+	start := time.Now()
 	if err := checkBounds("read", c.totalSizeBytes, p, off); err != nil {
 		return 0, err
 	}
@@ -249,10 +255,12 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		off += int64(readSize)
 		chunkOffset += c.chunkSizeBytes
 	}
+	c.TotalReadTime += time.Since(start).Milliseconds()
 	return n, nil
 }
 
 func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
+	start := time.Now()
 	if err := checkBounds("write", c.totalSizeBytes, p, off); err != nil {
 		return 0, err
 	}
@@ -287,6 +295,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		p = p[writeSize:]
 		chunkOffset += c.chunkSizeBytes
 	}
+	c.TotalWriteTime += time.Since(start).Milliseconds()
 	return n, nil
 }
 

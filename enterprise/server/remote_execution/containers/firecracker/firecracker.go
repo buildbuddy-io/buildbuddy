@@ -1,7 +1,6 @@
 package firecracker
 
 import (
-	"math/rand"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -10,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -1205,6 +1205,7 @@ func (c *FirecrackerContainer) newID(ctx context.Context) error {
 		return err
 	}
 	vmIdx := rand.Intn(maxVMSPerHost)
+	fmt.Printf("VMidx is %d", vmIdx)
 	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
 	c.id = u.String()
 	c.vmIdx = vmIdx
@@ -2204,6 +2205,9 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
 			lastErr = err
 		}
+		fmt.Printf("\nUFFD total copy time is %d ms\n", c.uffdHandler.TotalCopyTime)
+		fmt.Printf("\nUFFD total mapping time is %d ms\n", c.uffdHandler.TotalMappingTime)
+		fmt.Printf("\nUFFD total time is %d ms\n", c.uffdHandler.TotalTime)
 		c.uffdHandler = nil
 	}
 	if c.memoryStore != nil {

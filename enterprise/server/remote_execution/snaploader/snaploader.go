@@ -438,6 +438,8 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 			dir.TreeDigest = treeDigest
 			return nil
 		})
+		fmt.Printf("\nTotal read time for %s is: %d ms\n", name, cow.TotalReadTime)
+		fmt.Printf("Total write time for %s is: %d ms\n", name, cow.TotalWriteTime)
 	}
 
 	if err := eg.Wait(); err != nil {

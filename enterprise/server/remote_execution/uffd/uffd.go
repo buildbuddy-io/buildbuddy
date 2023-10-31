@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
@@ -85,6 +86,11 @@ type Handler struct {
 
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
+
+	// Milliseconds
+	TotalCopyTime    int64
+	TotalMappingTime int64
+	TotalTime        int64
 }
 
 func NewHandler() (*Handler, error) {
@@ -250,6 +256,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
 		}
 
+		startMapTime := time.Now()
 		mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
 		if err != nil {
 			return err
@@ -296,11 +303,17 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		if remainder := storeLength - int64(faultStoreOffset); remainder < int64(pageSize) {
 			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
 		}
+		mapTime := time.Since(startMapTime).Milliseconds()
+		h.TotalMappingTime += mapTime
 
+		copyStartTime := time.Now()
 		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
 		if err != nil {
 			return err
 		}
+		copyTime := time.Since(copyStartTime).Milliseconds()
+		h.TotalCopyTime += copyTime
+		h.TotalTime += time.Since(startMapTime).Milliseconds()
 	}
 }
 
