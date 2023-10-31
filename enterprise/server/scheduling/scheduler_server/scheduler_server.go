@@ -1516,7 +1516,11 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			// by someone else.
 			if err == nil || status.IsPermissionDeniedError(err) {
 				claimed = false
-				log.CtxInfof(ctx, "LeaseTask task %q successfully released by %q", taskID, executorID)
+				if err == nil {
+					log.CtxInfof(ctx, "LeaseTask task %q successfully released by %q", taskID, executorID)
+				} else {
+					log.CtxInfof(ctx, "LeaseTask task %q is already claimed by another executor", taskID)
+				}
 			} else {
 				log.CtxWarningf(ctx, "Could not release lease for task %q: %s", taskID, err)
 			}
