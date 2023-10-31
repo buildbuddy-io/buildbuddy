@@ -32,6 +32,7 @@ type TaskLeaser struct {
 	env            environment.Env
 	executorID     string
 	taskID         string
+	leaseID        string
 	reconnectToken string
 	quit           chan struct{}
 	mu             sync.Mutex // protects stream
@@ -100,14 +101,18 @@ func (t *TaskLeaser) pingServer(ctx context.Context) ([]byte, error) {
 	if rsp.GetReconnectToken() != "" {
 		t.reconnectToken = rsp.GetReconnectToken()
 	}
+	if rsp.GetLeaseId() != "" {
+		t.leaseID = rsp.GetLeaseId()
+	}
 	t.ttl = time.Duration(rsp.GetLeaseDurationSeconds()) * time.Second
 	return rsp.GetSerializedTask(), nil
 }
 
 func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 	req := &scpb.ReEnqueueTaskRequest{
-		TaskId: t.taskID,
-		Reason: reason,
+		TaskId:  t.taskID,
+		LeaseId: t.leaseID,
+		Reason:  reason,
 	}
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *apiKey)
