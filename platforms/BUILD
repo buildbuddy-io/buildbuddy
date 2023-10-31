@@ -69,7 +69,7 @@ platform(
 platform(
     name = "buildbuddy_rbe_local_config_platform",
     constraint_values = HOST_CONSTRAINTS,
-    parents = [":exec_linux"] if "@platforms//os:linux" in HOST_CONSTRAINTS else [":exec_darwin"] if "@platforms//os:osx" in HOST_CONSTRAINTS else [],
+    parents = [":exec_linux"] if "@platforms//os:linux" in HOST_CONSTRAINTS else [":exec_darwin"] if "@platforms//os:osx" in HOST_CONSTRAINTS else ["@local_config_platform//:host"],
 )
 
 platform(
