@@ -2234,7 +2234,7 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 			MemSizeMb:         250,
 			ScratchDiskSizeMb: 50,
 		},
-		JailerRoot: tempJailerRoot(t),
+		ExecutorConfig: getExecutorConfig(t),
 	}
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
