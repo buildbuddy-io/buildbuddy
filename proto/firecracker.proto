@@ -21,7 +21,7 @@ message VMConfiguration {
   bool enable_dockerd_tcp = 7;
   string kernel_version = 8;
   string firecracker_version = 9;
-  string goinit_version = 10;
+  string guest_api_version = 10;
 
   // TODO: add container_image here?
 }

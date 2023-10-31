@@ -11,6 +11,7 @@ import (
 	"hash"
 	"io"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -363,6 +364,15 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
 		SizeBytes: n,
 	}, nil
+}
+
+func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return Compute(f, digestType)
 }
 
 // AddInvocationIDToDigest combines the hash of the input digest and input invocationID and re-hash.

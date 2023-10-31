@@ -20,6 +20,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "embed"
+
 	"github.com/armon/circbuf"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -78,7 +80,27 @@ var enableUFFD = flag.Bool("executor.firecracker_enable_uffd", false, "Enables u
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 
+//go:embed guest_api_hash.sha256
+var GuestAPIHash string
+
 const (
+	// goinitVersion determines the version of the go init binary that this
+	// executor supports. This version needs to be bumped when making
+	// incompatible changes to the goinit binary. This includes but is not
+	// limited to:
+	//
+	// - Adding new platform prop based features that depend on goinit support,
+	//   such as dockerd init options.
+	// - Adding new features to the vmexec.Exec service.
+	//
+	// We manually maintain this version instead of using a hash of the goinit
+	// binary because we expect the hash to be unstable, likely changing with
+	// each executor release.
+	//
+	// NOTE: this is part of the snapshot cache key, so bumping this version
+	// will make existing cached snapshots unusable.
+	GuestAPIVersion = "0"
+
 	// How long to wait for the VMM to listen on the firecracker socket.
 	firecrackerSocketWaitTimeout = 3 * time.Second
 
@@ -176,18 +198,8 @@ const (
 )
 
 var (
-	locateBinariesOnceMap sync.Map
-	locateBinariesError   error
-	masqueradingOnce      sync.Once
-	masqueradingErr       error
-
-	// kernel + initrd
-	kernelImagePath string
-	initrdImagePath string
-
-	// firecracker + jailer
-	firecrackerBinPath string
-	jailerBinPath      string
+	masqueradingOnce sync.Once
+	masqueradingErr  error
 
 	vmIdx   int
 	vmIdxMu sync.Mutex
@@ -306,13 +318,78 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 	return true
 }
 
-type Provider struct {
-	env          environment.Env
-	dockerClient *dockerclient.Client
-	buildRoot    string
+// ExecutorConfig contains configuration that is computed once at executor
+// startup and applies to all VMs created by the executor.
+type ExecutorConfig struct {
+	JailerRoot string
+
+	InitrdImagePath       string
+	KernelImagePath       string
+	FirecrackerBinaryPath string
+	JailerBinaryPath      string
+
+	KernelVersion      string
+	FirecrackerVersion string
+	GuestAPIVersion    string
 }
 
-func NewProvider(env environment.Env, hostBuildRoot string) *Provider {
+// GetExecutorConfig computes the ExecutorConfig for this executor instance.
+//
+// WARNING: The given buildRootDir will be used as the jailer root dir. Because
+// of the limitation on the length of unix sock file paths (103), this directory
+// path needs to be short. Specifically, a full sock path will look like:
+// /tmp/firecracker/217d4de0-4b28-401b-891b-18e087718ad1/root/run/fc.sock
+// everything after "/tmp" is 65 characters, so 38 are left for the jailerRoot.
+func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfig, error) {
+	bundle := vmsupport_bundle.Get()
+	initrdPath, err := putFileIntoDir(ctx, bundle, "enterprise/vmsupport/bin/initrd.cpio", buildRootDir, 0755)
+	if err != nil {
+		return nil, err
+	}
+	kernelPath, err := putFileIntoDir(ctx, bundle, "enterprise/vmsupport/bin/vmlinux", buildRootDir, 0755)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: when running as root, these should come from the bundle instead of
+	// $PATH, since we don't need to rely on the user having configured special
+	// perms on these binaries.
+	firecrackerPath, err := exec.LookPath("firecracker")
+	if err != nil {
+		return nil, err
+	}
+	jailerPath, err := exec.LookPath("jailer")
+	if err != nil {
+		return nil, err
+	}
+	kernelDigest, err := digest.ComputeForFile(kernelPath, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	firecrackerDigest, err := digest.ComputeForFile(firecrackerPath, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	return &ExecutorConfig{
+		// For now just use the build root dir as the jailer root dir, since
+		// these are guaranteed to be on the same FS.
+		JailerRoot:            buildRootDir,
+		InitrdImagePath:       initrdPath,
+		KernelImagePath:       kernelPath,
+		FirecrackerBinaryPath: firecrackerPath,
+		JailerBinaryPath:      jailerPath,
+		KernelVersion:         kernelDigest.GetHash(),
+		FirecrackerVersion:    firecrackerDigest.GetHash(),
+		GuestAPIVersion:       GuestAPIVersion,
+	}, nil
+}
+
+type Provider struct {
+	env            environment.Env
+	dockerClient   *dockerclient.Client
+	executorConfig *ExecutorConfig
+}
+
+func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 	// Best effort trying to initialize the docker client. If it fails, we'll
 	// simply fall back to use skopeo to download and cache container images.
 	client, err := docker.NewClient()
@@ -320,11 +397,16 @@ func NewProvider(env environment.Env, hostBuildRoot string) *Provider {
 		client = nil
 	}
 
-	return &Provider{
-		env:          env,
-		dockerClient: client,
-		buildRoot:    hostBuildRoot,
+	executorConfig, err := GetExecutorConfig(env.GetServerContext(), hostBuildRoot)
+	if err != nil {
+		return nil, err
 	}
+
+	return &Provider{
+		env:            env,
+		dockerClient:   client,
+		executorConfig: executorConfig,
+	}, nil
 }
 
 func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
@@ -350,7 +432,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 		User:                   props.DockerUser,
 		DockerClient:           p.dockerClient,
 		ActionWorkingDirectory: workingDir,
-		JailerRoot:             p.buildRoot,
+		ExecutorConfig:         p.executorConfig,
 	}
 	c, err := NewContainer(ctx, p.env, task.GetExecutionTask(), opts)
 	if err != nil {
@@ -388,6 +470,7 @@ type FirecrackerContainer struct {
 	// including VM startup time
 	currentTaskInitTimeUsec int64
 
+	executorConfig *ExecutorConfig
 	// dockerClient is used to optimize image pulls by reusing image layers from
 	// the Docker cache as well as deduping multiple requests for the same image.
 	dockerClient *dockerclient.Client
@@ -436,37 +519,25 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	if err != nil {
 		return nil, err
 	}
-
-	// WARNING: because of the limitation on the length of unix sock file
-	// paths (103), this directory path needs to be short. Specifically, a
-	// full sock path will look like:
-	// /tmp/firecracker/217d4de0-4b28-401b-891b-18e087718ad1/root/run/fc.sock
-	// everything after "/tmp" is 65 characters, so 38 are left for the
-	// jailerRoot.
-	if opts.JailerRoot == "" {
-		opts.JailerRoot = "/tmp"
+	if opts.ExecutorConfig == nil {
+		return nil, status.InvalidArgumentError("missing opts.ExecutorConfig")
 	}
-	if len(opts.JailerRoot) > 38 {
-		return nil, status.InvalidArgumentErrorf("JailerRoot must be < 38 characters. Was %q (%d).", opts.JailerRoot, len(opts.JailerRoot))
+	if len(opts.ExecutorConfig.JailerRoot) > 38 {
+		return nil, status.InvalidArgumentErrorf("build root dir %q length %d exceeds 38 character limit", opts.ExecutorConfig.JailerRoot, len(opts.ExecutorConfig.JailerRoot))
 	}
-	if err := disk.EnsureDirectoryExists(opts.JailerRoot); err != nil {
+	if err := disk.EnsureDirectoryExists(opts.ExecutorConfig.JailerRoot); err != nil {
 		return nil, err
 	}
 
-	// Ensure our kernel and initrd exist on the same filesystem where we'll
-	// be jailing containers. This allows us to hardlink these files rather
-	// than copying them around over and over again.
-	if err := copyStaticFiles(context.Background(), env, opts.JailerRoot); err != nil {
-		return nil, err
-	}
 	loader, err := snaploader.New(env)
 	if err != nil {
 		return nil, err
 	}
 
 	c := &FirecrackerContainer{
-		vmConfig:           opts.VMConfiguration,
-		jailerRoot:         opts.JailerRoot,
+		vmConfig:           proto.Clone(opts.VMConfiguration).(*fcpb.VMConfiguration),
+		executorConfig:     opts.ExecutorConfig,
+		jailerRoot:         opts.ExecutorConfig.JailerRoot,
 		dockerClient:       opts.DockerClient,
 		containerImage:     opts.ContainerImage,
 		user:               opts.User,
@@ -478,12 +549,15 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		cancelVmCtx:        func(err error) {},
 	}
 
+	c.vmConfig.KernelVersion = c.executorConfig.KernelVersion
+	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
+	c.vmConfig.GuestApiVersion = c.executorConfig.GuestAPIVersion
+
 	if opts.ForceVMIdx != 0 {
 		c.vmIdx = opts.ForceVMIdx
 	}
 
 	if opts.SavedState == nil {
-		c.vmConfig = proto.Clone(c.vmConfig).(*fcpb.VMConfiguration)
 		c.vmConfig.DebugMode = *debugTerminal
 
 		if err := c.newID(ctx); err != nil {
@@ -627,6 +701,10 @@ func alignToMultiple(n int64, multiple int64) int64 {
 	return n + multiple - remainder
 }
 
+func (c *FirecrackerContainer) SnapshotKey() *fcpb.SnapshotKey {
+	return proto.Clone(c.snapshotKey).(*fcpb.SnapshotKey)
+}
+
 // State returns the container state to be persisted to disk so that this
 // container can be reconstructed from the state on disk after an executor
 // restart.
@@ -712,8 +790,8 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	opts := &snaploader.CacheSnapshotOptions{
 		VMConfiguration:     c.vmConfig,
 		VMStateSnapshotPath: filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:     kernelImagePath,
-		InitrdImagePath:     initrdImagePath,
+		KernelImagePath:     c.executorConfig.KernelImagePath,
+		InitrdImagePath:     c.executorConfig.InitrdImagePath,
 		ChunkedFiles:        map[string]*copy_on_write.COWStore{},
 		Recycled:            c.recycled,
 	}
@@ -785,13 +863,13 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		Seccomp:           fcclient.SeccompConfig{Enabled: true},
 		DisableValidation: true,
 		JailerCfg: &fcclient.JailerConfig{
-			JailerBinary:   jailerBinPath,
+			JailerBinary:   c.executorConfig.JailerBinaryPath,
 			ChrootBaseDir:  c.jailerRoot,
 			ID:             c.id,
 			UID:            fcclient.Int(unix.Geteuid()),
 			GID:            fcclient.Int(unix.Getegid()),
 			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
-			ExecFile:       firecrackerBinPath,
+			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
 			Stdout:         c.vmLogWriter(),
 			Stderr:         c.vmLogWriter(),
@@ -1156,6 +1234,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	}
 
 	// Pass some flags to the init script.
+	//
+	// !!! WARNING !!!
+	//
+	// When adding new flags, you'll probably want to bump goinitVersion,
+	// otherwise the flags will not actually be used until all of the older
+	// snapshots expire from cache (which can take an indefinite amount of
+	// time).
 	if c.vmConfig.DebugMode {
 		bootArgs = "-debug_mode " + bootArgs
 	}
@@ -1178,8 +1263,8 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
-		KernelImagePath: kernelImagePath,
-		InitrdPath:      initrdImagePath,
+		KernelImagePath: c.executorConfig.KernelImagePath,
+		InitrdPath:      c.executorConfig.InitrdImagePath,
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),
 		NetNS:           netNS,
@@ -1191,14 +1276,14 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			{Path: firecrackerVSockPath},
 		},
 		JailerCfg: &fcclient.JailerConfig{
-			JailerBinary:   jailerBinPath,
+			JailerBinary:   c.executorConfig.JailerBinaryPath,
 			ChrootBaseDir:  c.jailerRoot,
 			ID:             c.id,
 			UID:            fcclient.Int(unix.Geteuid()),
 			GID:            fcclient.Int(unix.Getegid()),
 			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
-			ExecFile:       firecrackerBinPath,
-			ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
+			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
+			ChrootStrategy: fcclient.NewNaiveChrootStrategy(c.executorConfig.KernelImagePath),
 			Stdout:         c.vmLogWriter(),
 			Stderr:         c.vmLogWriter(),
 			CgroupVersion:  cgroupVersion,
@@ -1264,30 +1349,6 @@ func (c *FirecrackerContainer) vmLogWriter() io.Writer {
 		return io.MultiWriter(c.vmLog, os.Stderr)
 	}
 	return c.vmLog
-}
-
-func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string) error {
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
-
-	locateBinariesOnce, _ := locateBinariesOnceMap.LoadOrStore(workingDir, &sync.Once{})
-	locateBinariesOnce.(*sync.Once).Do(func() {
-		fsys := vmsupport_bundle.Get()
-		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, fsys, "enterprise/vmsupport/bin/initrd.cpio", workingDir, 0755)
-		if locateBinariesError != nil {
-			return
-		}
-		kernelImagePath, locateBinariesError = putFileIntoDir(ctx, fsys, "enterprise/vmsupport/bin/vmlinux", workingDir, 0755)
-		if locateBinariesError != nil {
-			return
-		}
-		firecrackerBinPath, locateBinariesError = exec.LookPath("firecracker")
-		if locateBinariesError != nil {
-			return
-		}
-		jailerBinPath, locateBinariesError = exec.LookPath("jailer")
-	})
-	return locateBinariesError
 }
 
 type loopMount struct {

@@ -28,7 +28,7 @@ var (
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
-	enableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
+	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
@@ -337,7 +337,7 @@ func GetExecutorProperties() *ExecutorProperties {
 		}
 	}
 
-	if *enableFirecracker {
+	if *EnableFirecracker {
 		if runtime.GOOS == "darwin" {
 			log.Warning("Firecracker was enabled, but is unsupported on darwin. Ignoring.")
 		} else {

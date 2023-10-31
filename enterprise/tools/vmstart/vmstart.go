@@ -125,6 +125,10 @@ func main() {
 	if *forceVMIdx != -1 {
 		vmIdx = *forceVMIdx
 	}
+	cfg, err := firecracker.GetExecutorConfig(ctx, "/tmp/remote_build/")
+	if err != nil {
+		log.Fatalf("Failed to get executor configuration: %s", err)
+	}
 	opts := firecracker.ContainerOpts{
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
@@ -135,7 +139,7 @@ func main() {
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,
 		ForceVMIdx:             vmIdx,
-		JailerRoot:             "/tmp/remote_build/",
+		ExecutorConfig:         cfg,
 	}
 
 	var c *firecracker.FirecrackerContainer
