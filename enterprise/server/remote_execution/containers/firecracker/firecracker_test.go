@@ -893,7 +893,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 			ActionWorkingDirectory: workDir,
 			VMConfiguration: &fcpb.VMConfiguration{
 				NumCpus:           6,
-				MemSizeMb:         8000,
+				MemSizeMb:         10000,
 				EnableNetworking:  true,
 				ScratchDiskSizeMb: 20_000,
 			},
@@ -903,35 +903,56 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		// Run bazel on a clean runner. Local and remote cache are empty
 		start := time.Now()
 		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		fmt.Printf("Time for NewContainer: %s", time.Since(start))
 		require.NoError(t, err)
-		containersToCleanup = append(containersToCleanup, c)
+//		containersToCleanup = append(containersToCleanup, c)
+		s := time.Now()
 		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+		fmt.Printf("Time for PullImageIfNecessary: %s", time.Since(s))
 		require.NoError(t, err)
+		s = time.Now()
 		err = c.Create(ctx, opts.ActionWorkingDirectory)
+		fmt.Printf("Time for Create: %s", time.Since(s))
 		require.NoError(t, err)
+		s = time.Now()
 		res := c.Exec(ctx, cmd, nil)
+		fmt.Printf("Time for Exec: %s", time.Since(s))
+		fmt.Printf("Stdout is %s, Stderr is %s", string(res.Stdout), string(res.Stderr))
 		require.NoError(t, res.Error)
 		require.Contains(t, string(res.Stderr), "Build completed successfully")
 		fmt.Printf("(remote_snapshot_sharing=%v) Bazel build on a clean runner took %s.\n", enableRemote, time.Since(start))
 		err = c.Pause(ctx)
+		require.NoError(t, err)
+		err = c.Remove(ctx)
 		require.NoError(t, err)
 
 		// Run a bazel test on a recycled runner - 100% locally cached
 		start = time.Now()
 		workDir = testfs.MakeDirAll(t, rootDir, "work-fork-locally-cached")
 		opts.ActionWorkingDirectory = workDir
+		s = time.Now()
 		c, err = firecracker.NewContainer(ctx, env, task, opts)
+		fmt.Printf("Time for NewContainer: %s", time.Since(s))
 		require.NoError(t, err)
-		containersToCleanup = append(containersToCleanup, c)
+//		containersToCleanup = append(containersToCleanup, c)
+		s = time.Now()
 		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+		fmt.Printf("Time for PullImage: %s", time.Since(s))
 		require.NoError(t, err)
+		s = time.Now()
 		err = c.Unpause(ctx)
+		fmt.Printf("Time for Unpause: %s", time.Since(s))
 		require.NoError(t, err)
+		s = time.Now()
 		res = c.Exec(ctx, cmd, nil)
+		fmt.Printf("Time for Exec: %s", time.Since(s))
+		fmt.Printf("Stdout is %s, Stderr is %s", string(res.Stdout), string(res.Stderr))
 		require.NoError(t, res.Error)
 		require.Contains(t, string(res.Stderr), "Build completed successfully")
 		require.Contains(t, string(res.Stdout), "Directory exists")
 		fmt.Printf("(remote_snapshot_sharing=%v) Bazel build on a recycled runner (100%% locally cached) took %s.\n", enableRemote, time.Since(start))
+		err = c.Remove(ctx)
+		require.NoError(t, err)
 
 		// Evict 30% of artifacts from local cache.
 		// If only local snapshot sharing is enabled, will be forced to run
@@ -964,12 +985,13 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		opts.ActionWorkingDirectory = workDir
 		c, err = firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
-		containersToCleanup = append(containersToCleanup, c)
+//		containersToCleanup = append(containersToCleanup, c)
 		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 		require.NoError(t, err)
 		err = c.Create(ctx, workDir)
 		require.NoError(t, err)
 		res = c.Exec(ctx, cmd, nil)
+		fmt.Printf("Stdout is %s, Stderr is %s", string(res.Stdout), string(res.Stderr))
 		require.NoError(t, res.Error)
 		require.Contains(t, string(res.Stderr), "Build completed successfully")
 		if enableRemote {
@@ -978,6 +1000,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		} else {
 			fmt.Printf("(remote_snapshot_sharing=%v) Bazel build (30%% locally cached) took %s. Could not start from snapshot, had to prepare clean runner.\n", enableRemote, time.Since(start))
 		}
+		err = c.Remove(ctx)
+		require.NoError(t, err)
 
 		// Evict all artifacts from filecache.
 		// If only local snapshot sharing is enabled, will be forced to run
@@ -994,12 +1018,13 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		opts.ActionWorkingDirectory = workDir
 		c, err = firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
-		containersToCleanup = append(containersToCleanup, c)
+//		containersToCleanup = append(containersToCleanup, c)
 		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 		require.NoError(t, err)
 		err = c.Create(ctx, workDir)
 		require.NoError(t, err)
 		res = c.Exec(ctx, cmd, nil)
+		fmt.Printf("Stdout is %s, Stderr is %s", string(res.Stdout), string(res.Stderr))
 		require.NoError(t, res.Error)
 		require.Contains(t, string(res.Stderr), "Build completed successfully")
 		if enableRemote {
@@ -1008,6 +1033,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		} else {
 			fmt.Printf("(remote_snapshot_sharing=%v) Bazel build (0%% locally cached) took %s. Could not start from snapshot, had to prepare clean runner.\n", enableRemote, time.Since(start))
 		}
+		err = c.Remove(ctx)
+		require.NoError(t, err)
 		fmt.Println()
 	}
 
