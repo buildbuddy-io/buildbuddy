@@ -152,13 +152,17 @@ var (
 		`)
 	// Releases a claim if currently claimed, placing the lease into
 	// "reconnecting" state if the reconnect token arg is set.
+	// Return values:
+	//  - 0 if task is not claimed
+	//  - 1 if the claim was released
+	//  - 2 if lease ID was supplied and did not match the current lease ID
 	redisReleaseClaim = redis.NewScript(`
 		if redis.call("hget", KEYS[1], "claimed") == "1" then
 			local leaseId = redis.call("hget", KEYS[1], "leaseId")
 			-- Ignore the request if the claim has an ID but it doesn't match
 			-- the supplied ID.
 			if leaseId and ARGV[3] ~= "" and leaseId ~= ARGV[3] then
-				return 0
+				return 2
 			end
 			if ARGV[1] ~= "" then
 				redis.call("hset", KEYS[1], "reconnectToken", ARGV[1])
@@ -1187,6 +1191,9 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reco
 		return err
 	}
 	if c, ok := r.(int64); !ok || c != 1 {
+		if c == 2 {
+			return status.PermissionDeniedErrorf("task %q already been re-claimed", taskID)
+		}
 		return status.NotFoundErrorf("unable to release task claim for task %s", taskID)
 	}
 	log.CtxDebugf(ctx, "Released task claim in Redis (reconnecting=%t)", reconnectToken != "")
@@ -1505,7 +1512,9 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			// for backwards compatibility with older executors.
 
 			err := s.unclaimTask(ctx, taskID, leaseID, "" /*reconnectToken*/)
-			if err == nil {
+			// a "permission denied" error means that the lease is already owned
+			// by someone else.
+			if err == nil || status.IsPermissionDeniedError(err) {
 				claimed = false
 				log.CtxInfof(ctx, "LeaseTask task %q successfully released by %q", taskID, executorID)
 			} else {
@@ -1762,6 +1771,11 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		return status.ResourceExhaustedErrorf(msg)
 	}
 	if err := s.unclaimTask(ctx, taskID, leaseID, reconnectToken); err != nil {
+		// A "permission denied" error means the task is already claimed
+		// by a different leaseholder so we shouldn't touch it.
+		if status.IsPermissionDeniedError(err) {
+			return err
+		}
 		log.CtxDebugf(ctx, "Failed to unclaim task: %s", err)
 		// Proceed despite error - it's fine if it's already unclaimed.
 	}
