@@ -830,7 +830,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 
 		ctx = context.Background()
 		// Set large cache size (100GB) to ensure artifacts aren't evicted
-		env = getTestEnv(ctx, t, envOpts{cacheSize: 100_000_000_000})
+		env = getTestEnv(ctx, t, envOpts{cacheSize: 100_000_000_000, cacheRootDir: "/tmp/maggie_fc_snapshot", filecacheRootDir: "/tmp/maggie_fc_snapshot"})
 		cfg = getExecutorConfig(t)
 		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
@@ -905,7 +905,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		c, err := firecracker.NewContainer(ctx, env, task, opts)
 		fmt.Printf("Time for NewContainer: %s", time.Since(start))
 		require.NoError(t, err)
-//		containersToCleanup = append(containersToCleanup, c)
+		//		containersToCleanup = append(containersToCleanup, c)
 		s := time.Now()
 		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 		fmt.Printf("Time for PullImageIfNecessary: %s", time.Since(s))
@@ -934,7 +934,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		c, err = firecracker.NewContainer(ctx, env, task, opts)
 		fmt.Printf("Time for NewContainer: %s", time.Since(s))
 		require.NoError(t, err)
-//		containersToCleanup = append(containersToCleanup, c)
+		//		containersToCleanup = append(containersToCleanup, c)
 		s = time.Now()
 		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 		fmt.Printf("Time for PullImage: %s", time.Since(s))
@@ -985,7 +985,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		opts.ActionWorkingDirectory = workDir
 		c, err = firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
-//		containersToCleanup = append(containersToCleanup, c)
+		//		containersToCleanup = append(containersToCleanup, c)
 		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 		require.NoError(t, err)
 		err = c.Create(ctx, workDir)
@@ -1018,7 +1018,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		opts.ActionWorkingDirectory = workDir
 		c, err = firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
-//		containersToCleanup = append(containersToCleanup, c)
+		//		containersToCleanup = append(containersToCleanup, c)
 		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 		require.NoError(t, err)
 		err = c.Create(ctx, workDir)
