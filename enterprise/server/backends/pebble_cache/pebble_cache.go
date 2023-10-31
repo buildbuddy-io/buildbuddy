@@ -376,12 +376,12 @@ func Register(env environment.Env) error {
 		return status.InternalErrorf("Error configuring pebble cache: %s", err)
 	}
 	if *forceCompaction {
-		log.Infof("Pebble Cache: starting manual compaction...")
+		log.Infof("Pebble Cache [%s]: starting manual compaction...", c.name)
 		start := time.Now()
 		err := c.db.Compact(keys.MinByte, keys.MaxByte, true /*=parallelize*/)
-		log.Infof("Pebble Cache: manual compaction finished in %s", time.Since(start))
+		log.Infof("Pebble Cache [%s]: manual compaction finished in %s", c.name, time.Since(start))
 		if err != nil {
-			log.Errorf("Error during compaction: %s", err)
+			log.Errorf("[%s] Error during compaction: %s", c.name, err)
 		}
 	}
 	c.Start()
@@ -390,7 +390,7 @@ func Register(env environment.Env) error {
 	})
 
 	if env.GetCache() != nil {
-		log.Warningf("Overriding configured cache with pebble_cache.")
+		log.Warningf("Overriding configured cache with pebble cache [%s].", c.name)
 	}
 	env.SetCache(c)
 	return nil
@@ -594,7 +594,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := pc.updateDatabaseVersions(pc.minDBVersion, pc.maxDBVersion); err != nil {
 		return nil, err
 	}
-	log.Infof("Min DB version: %d, Max DB version: %d, Active version: %d", pc.minDBVersion, pc.maxDBVersion, pc.activeDatabaseVersion())
+	log.Infof("[%s] Min DB version: %d, Max DB version: %d, Active version: %d", pc.name, pc.minDBVersion, pc.maxDBVersion, pc.activeDatabaseVersion())
 
 	// Only enable migrators if the data stored in the database lags the
 	// currently active version.
@@ -643,7 +643,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		if !hasPartition(opts.Partitions, dstPartitionID) {
 			return nil, status.InvalidArgumentErrorf("Copy operation invalid destination partition ID %q", srcPartitionID)
 		}
-		log.Infof("Copying data from partition %s to partition %s", srcPartitionID, dstPartitionID)
+		log.Infof("[%s] Copying data from partition %s to partition %s", pc.name, srcPartitionID, dstPartitionID)
 		if err := pc.copyPartitionData(srcPartitionID, dstPartitionID); err != nil {
 			return nil, status.UnknownErrorf("could not copy partition data: %s", err)
 		}
@@ -795,7 +795,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 	p.minDBVersion = minVersion
 	p.maxDBVersion = maxVersion
 
-	log.Printf("Pebble Cache: db version changed from %+v to %+v", oldVersionMetadata, newVersionMetadata)
+	log.Printf("Pebble Cache [%s]: db version changed from %+v to %+v", p.name, oldVersionMetadata, newVersionMetadata)
 	return nil
 }
 
@@ -879,7 +879,7 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		}
 
 		if time.Since(lastStatusUpdate) > 10*time.Second {
-			log.Infof("Pebble Cache: data migration progress: saw %d keys, migrated %d to version: %d in %s. Current key: %q", keysSeen, keysMigrated, maxVersion, time.Since(migrationStart), string(iter.Key()))
+			log.Infof("Pebble Cache [%s]: data migration progress: saw %d keys, migrated %d to version: %d in %s. Current key: %q", p.name, keysSeen, keysMigrated, maxVersion, time.Since(migrationStart), string(iter.Key()))
 			lastStatusUpdate = time.Now()
 		}
 		var key filestore.PebbleKey
@@ -963,7 +963,7 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		maxVersion = p.activeDatabaseVersion()
 	}
 
-	log.Infof("Pebble Cache: data migration complete: migrated %d keys to version: %d", keysMigrated, maxVersion)
+	log.Infof("Pebble Cache [%s]: data migration complete: migrated %d keys to version: %d", p.name, keysMigrated, maxVersion)
 	return p.updateDatabaseVersions(minVersion, maxVersion)
 }
 
@@ -972,7 +972,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 		select {
 		case accessTimeUpdate := <-p.accesses:
 			if err := p.updateAtime(accessTimeUpdate.key); err != nil {
-				log.Warningf("Error updating atime: %s", err)
+				log.Warningf("[%s] Error updating atime: %s", p.name, err)
 			}
 		case <-quitChan:
 			// Drain any updates in the queue before exiting.
@@ -980,7 +980,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 				select {
 				case u := <-p.accesses:
 					if err := p.updateAtime(u.key); err != nil {
-						log.Warningf("Error updating atime: %s", err)
+						log.Warningf("[%s] Error updating atime: %s", p.name, err)
 					}
 				default:
 					return nil
@@ -1060,7 +1060,7 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 		}
 		numKeysCopied++
 		if time.Since(lastUpdate) > 10*time.Second {
-			log.Infof("Partition copy in progress, copied %d keys, last key: %s", numKeysCopied, string(iter.Key()))
+			log.Infof("[%s] Partition copy in progress, copied %d keys, last key: %s", p.name, numKeysCopied, string(iter.Key()))
 			lastUpdate = time.Now()
 		}
 	}
@@ -1117,7 +1117,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 		}
 		parts := strings.Split(relPath, sep)
 		if len(parts) < 3 {
-			log.Warningf("Skipping orphaned file: %q", path)
+			log.Warningf("[%s] Skipping orphaned file: %q", p.name, path)
 			return nil
 		}
 		prefixIndex := len(parts) - 2
@@ -1139,25 +1139,25 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 				if err != nil {
 					return err
 				}
-				log.Infof("Would delete orphaned file: %s (last modified: %s) which is not in cache", path, fi.ModTime())
+				log.Infof("[%s] Would delete orphaned file: %s (last modified: %s) which is not in cache", p.name, path, fi.ModTime())
 			} else {
 				if err := os.Remove(path); err == nil {
-					log.Infof("Removed orphaned file: %q", path)
+					log.Infof("[%s] Removed orphaned file: %q", p.name, path)
 				}
 			}
 			orphanCount += 1
 		}
 
 		if orphanCount%1000 == 0 && orphanCount != 0 {
-			log.Infof("Removed %d orphans", orphanCount)
+			log.Infof("[%s] Removed %d orphans", p.name, orphanCount)
 		}
 		return nil
 	}
 	blobDir := p.blobDir()
 	if err := filepath.WalkDir(blobDir, walkFn); err != nil {
-		alert.UnexpectedEvent("pebble_cache_error_deleting_orphans", "err: %s", err)
+		alert.UnexpectedEvent("pebble_cache_error_deleting_orphans", "err [%s]: %s", p.name, err)
 	}
-	log.Infof("Pebble Cache: deleteOrphanedFiles removed %d files", orphanCount)
+	log.Infof("Pebble Cache [%s]: deleteOrphanedFiles removed %d files", p.name, orphanCount)
 	close(p.orphanedFilesDone)
 	return nil
 }
@@ -1178,7 +1178,7 @@ func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
 		}
 		err := p.backgroundRepairIteration(quitChan, opts)
 		if err != nil {
-			log.Warningf("Pebble Cache: backgroundRepairIteration failed: %s", err)
+			log.Warningf("Pebble Cache [%s]: backgroundRepairIteration failed: %s", p.name, err)
 		} else {
 			if fixMissingFiles {
 				close(p.brokenFilesDone)
@@ -1202,7 +1202,7 @@ type repairOpts struct {
 
 func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *partitionEvictor, quitChan chan struct{}, opts *repairOpts) {
 	partitionID := evictor.part.ID
-	log.Infof("Pebble Cache: backgroundRepair starting for partition %q", partitionID)
+	log.Infof("Pebble Cache [%s]: backgroundRepair starting for partition %q", p.name, partitionID)
 
 	keyPrefix := []byte(fmt.Sprintf("%s/%s", evictor.partitionKeyPrefix(), filestore.GroupIDPrefix))
 	if opts.deleteEntriesWithMissingFiles {
@@ -1261,7 +1261,7 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 		}
 
 		if time.Since(lastUpdate) > 1*time.Minute {
-			log.Infof("Pebble Cache: backgroundRepair for %q in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s", partitionID, pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)))
+			log.Infof("Pebble Cache [%s]: backgroundRepair for %q in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s", p.name, partitionID, pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)))
 			lastUpdate = time.Now()
 		}
 
@@ -1272,12 +1272,12 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 		var key filestore.PebbleKey
 		version, err := key.FromBytes(keyBytes)
 		if err != nil {
-			log.Errorf("Error parsing key: %s", err)
+			log.Errorf("[%s] Error parsing key: %s", p.name, err)
 			continue
 		}
 
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
+			log.Errorf("[%s] Error unmarshaling metadata when scanning for broken files: %s", p.name, err)
 			continue
 		}
 
@@ -1306,7 +1306,7 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 				_ = modLim.Wait(p.env.GetServerContext())
 				err := evictor.deleteFile(key, version, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
 				if err != nil {
-					log.Warningf("Could not delete old AC key %q: %s", key.String(), err)
+					log.Warningf("[%s] Could not delete old AC key %q: %s", p.name, key.String(), err)
 				} else {
 					removedEntry = true
 					oldACEntries++
@@ -1320,18 +1320,18 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 			uncompressedBytes += fileMetadata.GetStoredSizeBytes()
 		}
 	}
-	log.Infof("Pebble Cache: backgroundRepair for %q scanned %s records (%s uncompressed entries remaining using %s bytes [%s])", partitionID, pr.Sprint(totalCount), pr.Sprint(uncompressedCount), pr.Sprint(uncompressedBytes), units.BytesSize(float64(uncompressedBytes)))
+	log.Infof("Pebble Cache [%s]: backgroundRepair for %q scanned %s records (%s uncompressed entries remaining using %s bytes [%s])", p.name, partitionID, pr.Sprint(totalCount), pr.Sprint(uncompressedCount), pr.Sprint(uncompressedBytes), units.BytesSize(float64(uncompressedBytes)))
 	if opts.deleteEntriesWithMissingFiles {
-		log.Infof("Pebble Cache: backgroundRepair for %q deleted %d keys with missing files", partitionID, missingFiles)
+		log.Infof("Pebble Cache [%s]: backgroundRepair for %q deleted %d keys with missing files", p.name, partitionID, missingFiles)
 	}
 	if opts.deleteACEntriesOlderThan != 0 {
-		log.Infof("Pebble Cache: backgroundRepair for %q deleted %s AC keys older than %s using %s", partitionID, pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan, units.BytesSize(float64(oldACEntriesBytes)))
+		log.Infof("Pebble Cache [%s]: backgroundRepair for %q deleted %s AC keys older than %s using %s", p.name, partitionID, pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan, units.BytesSize(float64(oldACEntriesBytes)))
 	}
 	return
 }
 
 func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *repairOpts) error {
-	log.Infof("Pebble Cache: backgroundRepairIteration starting")
+	log.Infof("Pebble Cache [%s]: backgroundRepairIteration starting", p.name)
 
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -1348,7 +1348,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		p.backgroundRepairPartition(db, e, quitChan, opts)
 	}
 
-	log.Infof("Pebble Cache: backgroundRepairIteration finished")
+	log.Infof("Pebble Cache [%s]: backgroundRepairIteration finished", p.name)
 
 	return nil
 }
@@ -1540,9 +1540,9 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 		if err != nil && status.IsNotFoundError(err) {
 			return false
 		}
-		log.Warningf("Metadata record %q was found but file (%+v) not found on disk: %s", key.String(), fileMetadata, causeErr)
+		log.Warningf("[%s] Metadata record %q was found but file (%+v) not found on disk: %s", p.name, key.String(), fileMetadata, causeErr)
 		if err != nil {
-			log.Warningf("Error deleting metadata: %s", err)
+			log.Warningf("[%s] Error deleting metadata: %s", p.name, err)
 			return false
 		}
 		return true
@@ -1671,11 +1671,11 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
 		if copyErr != nil {
-			log.Warningf("GetMulti encountered error when copying %s: %s", r.GetDigest().GetHash(), copyErr)
+			log.Warningf("[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
 			continue
 		}
 		if closeErr != nil {
-			log.Warningf("GetMulti cannot close reader when copying %s: %s", r.GetDigest().GetHash(), closeErr)
+			log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
 			continue
 		}
 		foundMap[r.GetDigest()] = append([]byte{}, buf.Bytes()...)
@@ -1740,7 +1740,7 @@ func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec in
 		case p.accesses <- up:
 			return
 		default:
-			log.Warningf("Dropping atime update for %q", key.String())
+			log.Warningf("[%s] Dropping atime update for %q", p.name, key.String())
 		}
 	}
 }
@@ -1856,7 +1856,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 
 	// TODO(tylerw): Make version aware.
 	if err := p.deleteFileAndMetadata(ctx, key, filestore.UndefinedKeyVersion, md); err != nil {
-		log.Errorf("Error deleting old record %q: %s", key.String(), err)
+		log.Errorf("[%s] Error deleting old record %q: %s", p.name, key.String(), err)
 		return err
 	}
 	return nil
@@ -1982,7 +1982,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		}
 
 		if numChunks := len(md.GetStorageMetadata().GetChunkedMetadata().GetResource()); numChunks <= 1 {
-			log.Errorf("expected to have more than one chunks, but actually have %d for digest %s", numChunks, fileRecord.GetDigest().GetHash())
+			log.Errorf("[%s] expected to have more than one chunks, but actually have %d for digest %s", p.name, numChunks, fileRecord.GetDigest().GetHash())
 			return status.InternalErrorf("invalid number of chunks (%d)", numChunks)
 		}
 		return p.writeMetadata(ctx, db, key, md)
@@ -2473,7 +2473,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 	pe.lru = l
 
 	start := time.Now()
-	log.Infof("Pebble Cache: Initializing cache partition %q...", part.ID)
+	log.Infof("Pebble Cache [%s]: Initializing cache partition %q...", pe.cacheName, part.ID)
 	sizeBytes, casCount, acCount, err := pe.computeSize()
 	if err != nil {
 		return nil, err
@@ -2483,7 +2483,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 	pe.acCount = acCount
 	pe.lru.UpdateSizeBytes(sizeBytes)
 
-	log.Infof("Pebble Cache: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
+	log.Infof("Pebble Cache [%s]: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", pe.cacheName, part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
 	return pe, nil
 }
 
@@ -2523,7 +2523,7 @@ func (e *partitionEvictor) processEviction(quitChan chan struct{}) {
 func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
-		log.Warningf("cannot generate samples for eviction: failed to get db: %s", err)
+		log.Warningf("[%s] cannot generate samples for eviction: failed to get db: %s", e.cacheName, err)
 		return err
 	}
 	defer db.Close()
@@ -2583,7 +2583,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			// we exausted the iter.
 			randomKey, err := e.randomKey(64)
 			if err != nil {
-				log.Warningf("cannot generate samples for eviction: failed to get random key: %s", err)
+				log.Warningf("[%s] cannot generate samples for eviction: failed to get random key: %s", e.cacheName, err)
 				return err
 			}
 			valid := iter.SeekGE(randomKey)
@@ -2594,14 +2594,14 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		}
 		var key filestore.PebbleKey
 		if _, err := key.FromBytes(iter.Key()); err != nil {
-			log.Warningf("cannot generate sample for eviction, skipping: failed to read key: %s", err)
+			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read key: %s", e.cacheName, err)
 			continue
 		}
 
 		fileMetadata := &rfpb.FileMetadata{}
 		err = proto.Unmarshal(iter.Value(), fileMetadata)
 		if err != nil {
-			log.Warningf("cannot generate sample for eviction, skipping: failed to read proto: %s", err)
+			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
 		}
 
@@ -2667,7 +2667,7 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, deltaSize int64)
 	case rspb.CacheType_AC:
 		e.acCount += deltaCount
 	case rspb.CacheType_UNKNOWN_CACHE_TYPE:
-		log.Errorf("Cannot update cache size: resource of unknown type")
+		log.Errorf("[%s] Cannot update cache size: resource of unknown type", e.cacheName)
 	}
 	e.sizeBytes += deltaSize
 	e.lru.UpdateSizeBytes(e.sizeBytes)
@@ -2705,7 +2705,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		} else if bytes.Contains(iter.Key(), acDir) {
 			acCount += 1
 		} else {
-			log.Warningf("Unidentified file (not CAS or AC): %q", iter.Key())
+			log.Warningf("[%s] Unidentified file (not CAS or AC): %q", e.cacheName, iter.Key())
 		}
 	}
 
@@ -2762,7 +2762,7 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	if !*forceCalculateMetadata {
 		partitionMD, err := e.lookupPartitionMetadata()
 		if err == nil {
-			log.Infof("Loaded partition %q metadata from cache: %+v", e.part.ID, partitionMD)
+			log.Infof("[%s] Loaded partition %q metadata from cache: %+v", e.cacheName, e.part.ID, partitionMD)
 			return partitionMD.GetSizeBytes(), partitionMD.GetCasCount(), partitionMD.GetAcCount(), nil
 		} else if !status.IsNotFoundError(err) {
 			return 0, 0, 0, err
@@ -2867,7 +2867,7 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
-		log.Warningf("unable to get db: %s", err)
+		log.Warningf("[%s] unable to get db: %s", e.cacheName, err)
 		return
 	}
 	defer db.Close()
@@ -2875,7 +2875,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	var key filestore.PebbleKey
 	version, err := key.FromBytes(sample.Key.bytes)
 	if err != nil {
-		log.Warningf("unable to read key %s: %s", sample.Key, err)
+		log.Warningf("[%s] unable to read key %s: %s", e.cacheName, sample.Key, err)
 		return
 	}
 	unlockFn := e.locker.Lock(key.LockID())
@@ -2883,7 +2883,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 
 	md, err := readFileMetadata(e.ctx, db, sample.Key.bytes)
 	if err != nil {
-		log.Infof("failed to read file metadata for key %s: %s", sample.Key, err)
+		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
 		return
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
@@ -2894,7 +2894,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	}
 
 	if err := e.deleteFile(key, version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
-		log.Errorf("Error evicting file for key %q: %s (ignoring)", sample.Key, err)
+		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}
 	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
@@ -2989,7 +2989,7 @@ func (e *partitionEvictor) run(quitChan chan struct{}) error {
 func (p *PebbleCache) flushPartitionMetadata() {
 	for _, e := range p.evictors {
 		if err := e.flushPartitionMetadata(p.db); err != nil {
-			log.Warningf("could not flush partition metadata: %s", err)
+			log.Warningf("[%s] could not flush partition metadata: %s", e.cacheName, err)
 		}
 	}
 }
@@ -3086,7 +3086,7 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 		case <-time.After(metricsRefreshPeriod):
 			fsu := gosigar.FileSystemUsage{}
 			if err := fsu.Get(p.rootDirectory); err != nil {
-				log.Warningf("could not retrieve filesystem stats: %s", err)
+				log.Warningf("[%s] could not retrieve filesystem stats: %s", p.name, err)
 			} else {
 				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Set(float64(fsu.Total))
 				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Set(float64(fsu.Avail))
@@ -3097,7 +3097,7 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 			}
 
 			if err := p.updatePebbleMetrics(); err != nil {
-				log.Warningf("could not update pebble metrics: %s", err)
+				log.Warningf("[%s] could not update pebble metrics: %s", p.name, err)
 			}
 		}
 	}
@@ -3338,17 +3338,17 @@ func (p *PebbleCache) Start() error {
 }
 
 func (p *PebbleCache) Stop() error {
-	log.Info("Pebble Cache: beginning shutdown")
+	log.Infof("Pebble Cache [%s]: beginning shutdown", p.name)
 	close(p.quitChan)
 	if err := p.eg.Wait(); err != nil {
 		return err
 	}
-	log.Info("Pebble Cache: waitgroups finished")
+	log.Infof("Pebble Cache [%s]: waitgroups finished", p.name)
 
 	// Wait for all active requests to be finished.
 	p.leaser.Close()
 
-	log.Infof("Pebble Cache: finished serving requests")
+	log.Infof("Pebble Cache [%s]: finished serving requests", p.name)
 
 	// Wait for all enqueued size updates to be processed.
 	close(p.edits)
@@ -3356,7 +3356,7 @@ func (p *PebbleCache) Stop() error {
 		return err
 	}
 
-	log.Infof("Pebble Cache: finished processing size updates")
+	log.Infof("Pebble Cache [%s]: finished processing size updates", p.name)
 
 	// Write out the final partition metadata.
 	p.flushPartitionMetadata()
@@ -3364,7 +3364,7 @@ func (p *PebbleCache) Stop() error {
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
-	log.Infof("Pebble Cache: db flushed")
+	log.Infof("Pebble Cache [%s]: db flushed", p.name)
 
 	return p.db.Close()
 }
