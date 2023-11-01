@@ -262,6 +262,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
+	log.CtxInfof(ctx, "VVV check existence %s", digest.String(casRN.GetDigest()))
 	exists, err := s.cache.Contains(ctx, casRN.ToProto())
 	if err != nil {
 		return nil, err
@@ -274,6 +275,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if r.IsEmpty() {
 		committedWriteCloser = ioutil.DiscardWriteCloser()
 	} else {
+		log.CtxInfof(ctx, "VVV create writer %s", digest.String(casRN.GetDigest()))
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
@@ -355,6 +357,8 @@ func (w *writeState) Close() error {
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 
+	log.CtxInfof(ctx, "VVV start write")
+
 	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
 	if err != nil {
 		return err
@@ -405,25 +409,34 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 		}
+
+		log.CtxInfof(ctx, "VVV write %d bytes", len(req.Data))
+
 		if err := streamState.Write(req.Data); err != nil {
 			return err
 		}
 
+		log.CtxInfof(ctx, "VVV done write %d bytes", len(req.Data))
+
 		if req.FinishWrite {
+			log.CtxInfof(ctx, "VVV flush")
 			// Note: Need to Flush before committing, since this
 			// flushes any currently buffered bytes from the
 			// decompressor to the cache writer.
 			if err := streamState.Flush(); err != nil {
 				return err
 			}
+			log.CtxInfof(ctx, "VVV commit")
 			if err := streamState.Commit(); err != nil {
 				return err
 			}
+			log.CtxInfof(ctx, "VVV send final response")
 			return stream.SendAndClose(&bspb.WriteResponse{
 				CommittedSize: streamState.offset,
 			})
 		}
 	}
+	log.CtxInfof(ctx, "VVV weird return")
 	return nil
 }
 
