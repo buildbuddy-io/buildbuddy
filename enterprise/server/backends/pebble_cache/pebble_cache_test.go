@@ -2232,8 +2232,8 @@ func TestSpecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	maxSizeBytes := int64(1_000_000) // 1MB
 	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
 
-	// Confirm that a newly-created pebble database with an unspecified key
-	// version is written at the highest available key version.
+	// Confirm that a newly-created pebble database with an specified key
+	// version is written at that key version.
 	activeKeyVersion := int64(filestore.Version2)
 	options.ActiveKeyVersion = &activeKeyVersion
 	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})

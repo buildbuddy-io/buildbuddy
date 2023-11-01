@@ -583,16 +583,15 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		includeMetadataSize:         opts.IncludeMetadataSize,
 	}
 
-	versionMetadata := pc.maxDatabaseVersionMetadata()
-	if *opts.ActiveKeyVersion >= 0 {
+	versionMetadata, err := pc.DatabaseVersionMetadata()
+	if err != nil {
+		return nil, err
+	}
+	if created && *opts.ActiveKeyVersion < 0 {
+		versionMetadata = pc.maxDatabaseVersionMetadata()
+	} else if created {
 		versionMetadata.MinVersion = *opts.ActiveKeyVersion
 		versionMetadata.MaxVersion = *opts.ActiveKeyVersion
-	}
-	if !created {
-		versionMetadata, err = pc.DatabaseVersionMetadata()
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	pc.minDBVersion, pc.maxDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetMinVersion()), filestore.PebbleKeyVersion(versionMetadata.GetMaxVersion())
