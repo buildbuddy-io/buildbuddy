@@ -5,15 +5,29 @@
 load("@bazel_tools//tools/sh:sh_toolchain.bzl", "sh_toolchain")
 
 sh_toolchain(
-    name = "bash_rbe_ubuntu1604",
+    name = "bash_rbe",
     path = "/bin/bash",
 )
 
 toolchain(
     name = "sh_toolchain",
+    toolchain = ":bash_rbe",
+    toolchain_type = "@bazel_tools//tools/sh:toolchain_type",
+)
+
+# A duplicate of @buildbuddy_toolchain//:ubuntu_cc_toolchain, but without
+# cpp compiler constraint_value.
+# TODO(sluongng): upstream this to buildbuddy-toolchain
+toolchain(
+    name = "ubuntu_cc_toolchain",
     exec_compatible_with = [
+        "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    toolchain = ":bash_rbe_ubuntu1604",
-    toolchain_type = "@bazel_tools//tools/sh:toolchain_type",
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    toolchain = "@buildbuddy_toolchain//:ubuntu_local_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
