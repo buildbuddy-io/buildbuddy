@@ -167,6 +167,7 @@ func setHeadersFromContext(ctx context.Context) context.Context {
 // middleware to the request.
 func authStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	ctxFn := func(ctx context.Context) context.Context {
+		log.CtxInfof(ctx, "VVV auth interceptor")
 		return addAuthToContext(env, ctx)
 	}
 	return ContextReplacingStreamServerInterceptor(ctxFn)
@@ -183,12 +184,14 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 
 func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		log.CtxInfof(stream.Context(), "VVV role auth interceptor")
 		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
 			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
 			if err := role_filter.AuthorizeRPC(stream.Context(), env, methodName); err != nil {
 				return err
 			}
 		}
+		log.CtxInfof(stream.Context(), "VVV actual handler")
 		return handler(srv, stream)
 	}
 }
@@ -218,6 +221,7 @@ func ipAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercept
 
 func ipAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		log.CtxInfof(stream.Context(), "VVV ip auth interceptor")
 		if irs := env.GetIPRulesService(); irs != nil {
 			if err := irs.Authorize(stream.Context()); err != nil {
 				return err
@@ -242,6 +246,7 @@ func identityUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 
 func identityStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		log.CtxInfof(stream.Context(), "VVV identity interceptor")
 		if cis := env.GetClientIdentityService(); cis != nil {
 			newCtx, err := cis.ValidateIncomingIdentity(stream.Context())
 			if err != nil {
@@ -359,6 +364,7 @@ func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercepto
 
 func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		log.CtxInfof(stream.Context(), "VVV quota interceptor")
 		allow := true
 		var err error
 		if qm := env.GetQuotaManager(); qm != nil {
