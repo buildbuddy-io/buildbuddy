@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -143,23 +145,46 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
 
+	detectStall := func(name string, work func()) {
+		start := time.Now()
+		ticker := time.NewTicker(10 * time.Second)
+		done := make(chan struct{})
+		defer ticker.Stop()
+		defer close(done)
+		go func() {
+			for {
+				select {
+				case <-stream.Context().Done():
+					return
+				case <-done:
+					return
+				case <-ticker.C:
+					alert.UnexpectedEvent("byte_stream_read_stall", "op name %q resource %q", name, req.GetResourceName())
+					log.CtxWarningf(stream.Context(), "ByteStream.Read %q for %q stalled for %s", name, req.GetResourceName(), time.Since(start))
+				}
+			}
+		}()
+		work()
+	}
+
 	bytesTransferredToClient := 0
 	for {
-		n, err := io.ReadFull(reader, copyBuf)
+		var n int
+		detectStall("cache_read", func() {
+			n, err = io.ReadFull(reader, copyBuf)
+		})
 		bytesTransferredToClient += n
 		if err == io.EOF {
 			break
-		} else if err == io.ErrUnexpectedEOF {
-			if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
-				return err
-			}
-		} else if err != nil {
+		}
+		if err != nil && err != io.ErrUnexpectedEOF {
 			return err
-		} else {
-			if err := stream.Send(&bspb.ReadResponse{Data: copyBuf}); err != nil {
-				return err
-			}
-			continue
+		}
+		detectStall("stream_send", func() {
+			err = stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]})
+		})
+		if err != nil {
+			return err
 		}
 	}
 	// If the reader was not passed through the compressor above, the data will be sent
@@ -170,7 +195,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	downloadTracker.CloseWithBytesTransferred(bytesFromCache, int64(bytesTransferredToClient), r.GetCompressor(), "byte_stream_server")
-	return err
+	return nil
 }
 
 // `Write()` is used to send the contents of a resource as a sequence of
