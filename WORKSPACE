@@ -464,5 +464,5 @@ rules_proto_toolchains()
 
 register_toolchains(
     "//toolchains:sh_toolchain",
-    "//toolchains:ubuntu_cc_toolchain",
+    "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
 )
