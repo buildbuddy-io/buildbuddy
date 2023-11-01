@@ -447,7 +447,7 @@ func SetOptionDefaults(opts *Options) {
 		opts.MinEvictionAge = &DefaultMinEvictionAge
 	}
 	if opts.ActiveKeyVersion == nil {
-		defaultVersion := int64(filestore.UndefinedKeyVersion)
+		defaultVersion := int64(filestore.UnspecifiedKeyVersion)
 		opts.ActiveKeyVersion = &defaultVersion
 	}
 	if opts.SampleBufferSize == nil {
