@@ -1860,8 +1860,10 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 	health := hlpb.NewHealthClient(conn)
 
 	defer container.Metrics.Unregister(c)
+	var lastObservedStats *repb.UsageStats
 	statsListener := func(stats *repb.UsageStats) {
 		container.Metrics.Observe(c, stats)
+		lastObservedStats = stats
 	}
 
 	resultCh := make(chan *interfaces.CommandResult, 1)
@@ -1894,7 +1896,9 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 	case res := <-resultCh:
 		return res
 	case err := <-healthCheckErrCh:
-		return commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
+		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
+		res.UsageStats = lastObservedStats
+		return res
 	}
 }
 
