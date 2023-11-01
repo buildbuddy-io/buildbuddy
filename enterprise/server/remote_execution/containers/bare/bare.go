@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -46,7 +47,7 @@ func NewBareCommandContainer(opts *Opts) container.CommandContainer {
 	return &bareCommandContainer{opts: opts}
 }
 
-func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
+func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	return c.exec(ctx, command, workDir, nil /*=stdio*/)
 }
 
@@ -55,11 +56,11 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 	return nil
 }
 
-func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
+func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult {
 	return c.exec(ctx, cmd, c.WorkDir, stdio)
 }
 
-func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
+func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *commandutil.Stdio) *interfaces.CommandResult {
 	var statsListener procstats.Listener
 	if c.opts.EnableStats {
 		defer container.Metrics.Unregister(c)
@@ -71,7 +72,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
-func (c *bareCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+func (c *bareCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	return nil
 }
 func (c *bareCommandContainer) Start(ctx context.Context) error   { return nil }

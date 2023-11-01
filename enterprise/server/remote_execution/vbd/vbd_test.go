@@ -47,6 +47,11 @@ func TestVBD(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(fSize), s.Size())
 
+	// Try cleaning up VBD mounts while the VBD is mounted; this should succeed,
+	// and should not affect our currently mounted VBD.
+	err = vbd.CleanStaleMounts()
+	require.NoError(t, err)
+
 	// Try random reads and writes to the virtual file
 	{
 		f, err := os.OpenFile(filepath.Join(dir, vbd.FileName), os.O_RDWR, 0)
@@ -82,6 +87,10 @@ func TestVBD(t *testing.T) {
 				copy(b[offset:offset+length], p)
 			}
 		}
+		// Try sync() on the virtual file (this is a NOP for now, but should at
+		// least not fail)
+		err = f.Sync()
+		require.NoError(t, err)
 	}
 }
 

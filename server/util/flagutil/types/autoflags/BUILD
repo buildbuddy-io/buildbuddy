@@ -9,7 +9,6 @@ go_library(
         "//server/util/flagutil:__subpackages__",
     ],
     deps = [
-        "//server/util/flagutil/common",
         "//server/util/flagutil/types",
         "//server/util/flagutil/yaml",
     ],

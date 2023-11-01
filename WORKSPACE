@@ -461,3 +461,8 @@ load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_
 rules_proto_dependencies()
 
 rules_proto_toolchains()
+
+register_toolchains(
+    "//toolchains:sh_toolchain",
+    "//toolchains:ubuntu_cc_toolchain",
+)

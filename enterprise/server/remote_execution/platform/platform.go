@@ -28,7 +28,7 @@ var (
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
-	enableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
+	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
@@ -39,7 +39,7 @@ const (
 	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	Ubuntu20_04Image = "gcr.io/flame-public/rbe-ubuntu20-04@sha256:036ae8c90876fa22da9ace6f8218e614f4cd500a154fc162973fff691e72d28e"
 
-	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:ba33bd1b3acdfe980b958baf7d05c2041c9d4183d15fdf665dd236289d777709"
+	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:6381c06bee2910e66903784b4a90cb9ff08823686da46cf6874902c9f8428e69"
 	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:eb81189af1cec44b5348751f75ec7aea516d0de675b8461235f4cc4e553a34b5"
 
 	// overrideHeaderPrefix is a prefix used to override platform props via
@@ -337,7 +337,7 @@ func GetExecutorProperties() *ExecutorProperties {
 		}
 	}
 
-	if *enableFirecracker {
+	if *EnableFirecracker {
 		if runtime.GOOS == "darwin" {
 			log.Warning("Firecracker was enabled, but is unsupported on darwin. Ignoring.")
 		} else {
@@ -475,7 +475,6 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			Value: usageutil.ClientOrigin(),
 		})
 
-		// TODO(vadim): find a way to limit this to shared executors
 		if cis := env.GetClientIdentityService(); cis != nil {
 			h, err := cis.IdentityHeader(&interfaces.ClientIdentity{
 				Origin: interfaces.ClientIdentityInternalOrigin,

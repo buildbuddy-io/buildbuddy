@@ -16,6 +16,7 @@ function Component() {
           component={<Globe />}
           lessPadding={true}
           flipped={true}
+          gradientButton={true}
         />
         <Hero
           title="Globally distributed"

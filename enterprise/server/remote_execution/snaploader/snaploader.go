@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -33,6 +35,11 @@ import (
 const (
 	// File name used for the rootfs snapshot artifact.
 	rootfsFileName = "rootfs.ext4"
+
+	// Max number of goroutines allowed to run concurrently when uploading a
+	// chunked file's contents to cache (one goroutine is spawned per chunk, and
+	// this limit applies per-file).
+	chunkedFileWriteConcurrency = 4
 )
 
 // NewKey returns the cache key for a snapshot.
@@ -181,8 +188,10 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if *snaputil.EnableRemoteSnapshotSharing {
 		manifest, err = l.fetchRemoteManifest(ctx, key)
 		if err != nil {
+			log.CtxInfof(ctx, "Failed to fetch remote snapshot manifest: %s", err)
 			return nil, status.WrapError(err, "fetch remote manifest")
 		}
+		log.CtxInfof(ctx, "Fetched remote snapshot manifest")
 	} else {
 		manifest, err = l.getLocalManifest(ctx, key)
 		if err != nil {
@@ -370,37 +379,74 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		OutputDirectories: []*repb.OutputDirectory{},
 	}
 
+	eg, egCtx := errgroup.WithContext(ctx)
+
 	// Put the files from the snapshot into the cache and record their
 	// names and digests in an ActionResult so they can be unpacked later.
 	for _, filePath := range enumerateFiles(opts) {
-		fileName := filepath.Base(filePath)
-		d, err := fileDigest(filePath)
-		if err != nil {
-			return err
+		filePath := filePath
+		out := &repb.OutputFile{
+			Path: filepath.Base(filePath),
+			// Digest is computed in goroutine.
 		}
-		ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{
-			Path:         fileName,
-			Digest:       d,
-			IsExecutable: false,
+		ar.OutputFiles = append(ar.OutputFiles, out)
+		eg.Go(func() error {
+			ctx := egCtx
+			var d *repb.Digest
+			if *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing {
+				var err error
+				d, err = fileDigest(filePath)
+				if err != nil {
+					return err
+				}
+			} else {
+				// If snapshot sharing is disabled, don't compute the digest for the
+				// file because it is costly. Because the runner ID is in the key
+				// when snapshot sharing is disabled,  we don't need to worry about
+				// multiple runners trying to access the same key simultaneously
+				gid, err := groupID(ctx, l.env)
+				if err != nil {
+					return err
+				}
+				fileName := filepath.Base(filePath)
+				info, err := os.Stat(filePath)
+				if err != nil {
+					return err
+				}
+				d = &repb.Digest{
+					Hash:      hashStrings(gid, key.InstanceName, key.PlatformHash, key.ConfigurationHash, key.RunnerId, fileName),
+					SizeBytes: info.Size(),
+				}
+			}
+			out.Digest = d
+			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath)
 		})
-
-		if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath); err != nil {
-			return err
-		}
 	}
 	for name, cow := range opts.ChunkedFiles {
-		treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts.Recycled)
-		if err != nil {
-			return status.WrapErrorf(err, "cache %q COW", name)
+		name, cow := name, cow
+		dir := &repb.OutputDirectory{
+			Path: name,
+			// TreeDigest is computed in goroutine.
 		}
-		ar.OutputDirectories = append(ar.OutputDirectories, &repb.OutputDirectory{
-			Path:       name,
-			TreeDigest: treeDigest,
+		ar.OutputDirectories = append(ar.OutputDirectories, dir)
+		eg.Go(func() error {
+			ctx := egCtx
+			treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts.Recycled)
+			if err != nil {
+				return status.WrapErrorf(err, "cache %q COW", name)
+			}
+			dir.TreeDigest = treeDigest
+			return nil
 		})
 	}
 
-	// Write the ActionResult to the cache. We'll retrieve this later in order
-	// to unpack the snapshot.
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	// Write the ActionResult to the cache only after we've successfully
+	// uploaded all snapshot related artifacts. We'll retrieve this later in
+	// order to unpack the snapshot.
 	return l.cacheActionResult(ctx, key, ar)
 }
 
@@ -480,6 +526,12 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, recycled bool) (*repb.Digest, error) {
+	var dirtyBytes, dirtyChunkCount int64
+	start := time.Now()
+	defer func() {
+		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount)
+	}()
+
 	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err
@@ -503,41 +555,54 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		},
 	}
 
-	dirtyChunkCount := 0
-	var dirtyBytes int64
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(chunkedFileWriteConcurrency)
+
 	chunks := cow.SortedChunks()
 	for _, c := range chunks {
-		if cow.Dirty(c.Offset) {
-			dirtyChunkCount++
-			chunkSize, err := c.SizeBytes()
+		c := c
+		fn := &repb.FileNode{
+			Name: fmt.Sprintf("%d", c.Offset),
+			// Digest is computed in goroutine.
+		}
+		tree.Root.Files = append(tree.Root.Files, fn)
+		eg.Go(func() error {
+			ctx := egCtx
+			if cow.Dirty(c.Offset) {
+				chunkSize, err := c.SizeBytes()
+				if err != nil {
+					return status.WrapError(err, "dirty chunk size")
+				}
+				atomic.AddInt64(&dirtyChunkCount, 1)
+				atomic.AddInt64(&dirtyBytes, chunkSize)
+
+				// Sync dirty chunks to make sure the underlying file is up to date
+				// before we add it to cache.
+				if err := c.Sync(); err != nil {
+					return status.WrapError(err, "sync dirty chunk")
+				}
+			}
+
+			// Get or compute the digest.
+			d, err := c.Digest()
 			if err != nil {
-				return nil, status.WrapError(err, "dirty chunk size")
+				return status.WrapError(err, "compute digest")
 			}
-			dirtyBytes += chunkSize
+			fn.Digest = d
 
-			// Sync dirty chunks to make sure the underlying file is up to date
-			// before we add it to cache.
-			if err := c.Sync(); err != nil {
-				return nil, status.WrapError(err, "sync dirty chunk")
+			if c.Mapped() {
+				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
+				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
+					return status.WrapError(err, "write chunk to cache")
+				}
 			}
-		}
-		d, err := c.Digest()
-		if err != nil {
-			return nil, err
-		}
 
-		if c.Mapped() {
-			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-			if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
-				return nil, err
-			}
-		}
-
-		tree.Root.Files = append(tree.Root.Files, &repb.FileNode{
-			Name:         fmt.Sprintf("%d", c.Offset),
-			Digest:       d,
-			IsExecutable: false,
+			return nil
 		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, status.WrapError(err, "cache chunks")
 	}
 
 	// Save ActionCache Tree to the cache

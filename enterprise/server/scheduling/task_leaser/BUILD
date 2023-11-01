@@ -12,6 +12,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",

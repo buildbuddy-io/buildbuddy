@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -60,7 +59,7 @@ func TestExecStreamed_Stdio(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	stdin := strings.NewReader("baz-stdin")
-	stdio := &container.Stdio{
+	stdio := &commandutil.Stdio{
 		Stdin:  stdin,
 		Stdout: &stdout,
 		Stderr: &stderr,

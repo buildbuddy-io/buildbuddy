@@ -36,9 +36,10 @@ func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 }
 
 type Lease struct {
-	nodeHost      client.NodeHost
-	shardID       uint64
-	liveness      *nodeliveness.Liveness
+	nodeHost client.NodeHost
+	shardID  uint64
+	liveness *nodeliveness.Liveness
+
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
 
@@ -51,7 +52,13 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(nodeHost client.NodeHost, shardID uint64, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
+func New(nodeHost client.NodeHost, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
+	var shardID uint64
+	for _, rep := range rd.GetReplicas() {
+		shardID = rep.GetShardId()
+		break
+	}
+
 	return &Lease{
 		nodeHost:              nodeHost,
 		shardID:               shardID,
@@ -63,7 +70,6 @@ func New(nodeHost client.NodeHost, shardID uint64, liveness *nodeliveness.Livene
 		leaseRecord:           &rfpb.RangeLeaseRecord{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
 		stopped:               true,
-		quitLease:             make(chan struct{}),
 	}
 }
 
@@ -73,12 +79,17 @@ func (l *Lease) WithTimeouts(leaseDuration, gracePeriod time.Duration) *Lease {
 	return l
 }
 
-func (l *Lease) Lease() error {
-	_, err := l.ensureValidLease(false)
+func (l *Lease) Lease(ctx context.Context) error {
+	_, err := l.ensureValidLease(ctx, false)
 	return err
 }
 
-func (l *Lease) Release() error {
+func (l *Lease) Release(ctx context.Context) error {
+	err := l.dropLease(ctx)
+	return err
+}
+
+func (l *Lease) dropLease(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -93,11 +104,7 @@ func (l *Lease) Release() error {
 	if !valid {
 		return nil
 	}
-
-	if l.verifyLease(l.leaseRecord) == nil {
-		return l.clearLease()
-	}
-	return nil
+	return l.clearLeaseValue(ctx)
 }
 
 func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
@@ -108,8 +115,9 @@ func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 	if rl == nil {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: nil")
 	}
+
+	// This is a node epoch based lease, so check node and epoch.
 	if nl := rl.GetNodeLiveness(); nl != nil {
-		// This is a node epoch based lease, so check node and epoch.
 		return l.liveness.BlockingValidateNodeLiveness(nl)
 	}
 
@@ -135,7 +143,6 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	}
 	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.shardID, casRequest)
 	if err != nil {
-		// This indicates a communication error proposing the message.
 		return nil, err
 	}
 	casResponse, err := rbuilder.NewBatchResponseFromProto(rsp).CASResponse(0)
@@ -145,7 +152,7 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	return nil, err
 }
 
-func (l *Lease) clearLease() error {
+func (l *Lease) clearLeaseValue(ctx context.Context) error {
 	var expectedValue []byte
 	if l.leaseRecord != nil {
 		buf, err := proto.Marshal(l.leaseRecord)
@@ -154,8 +161,7 @@ func (l *Lease) clearLease() error {
 		}
 		expectedValue = buf
 	}
-
-	_, err := l.sendCasRequest(context.TODO(), expectedValue, nil)
+	_, err := l.sendCasRequest(ctx, expectedValue, nil)
 	if err == nil {
 		l.leaseRecord = nil
 	}
@@ -187,15 +193,7 @@ func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
 	return leaseRecord, nil
 }
 
-func (l *Lease) getShardID() (uint64, error) {
-	replicas := l.rangeDescriptor.GetReplicas()
-	for _, replicaDescriptor := range replicas {
-		return replicaDescriptor.GetShardId(), nil
-	}
-	return 0, status.FailedPreconditionError("No replicas in range")
-}
-
-func (l *Lease) renewLease() error {
+func (l *Lease) renewLease(ctx context.Context) error {
 	var expectedValue []byte
 	if l.leaseRecord != nil {
 		buf, err := proto.Marshal(l.leaseRecord)
@@ -222,7 +220,7 @@ func (l *Lease) renewLease() error {
 		return nil
 	}
 
-	kv, err := l.sendCasRequest(context.TODO(), expectedValue, newVal)
+	kv, err := l.sendCasRequest(ctx, expectedValue, newVal)
 	if err == nil {
 		// This means we set the lease succesfully.
 		l.leaseRecord = leaseRequest
@@ -251,7 +249,7 @@ func (l *Lease) renewLease() error {
 	return nil
 }
 
-func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, error) {
+func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.RangeLeaseRecord, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -266,7 +264,7 @@ func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, err
 
 	renewed := false
 	for !renewed {
-		if err := l.renewLease(); err != nil {
+		if err := l.renewLease(ctx); err != nil {
 			return nil, err
 		}
 		if err := l.verifyLease(l.leaseRecord); err == nil {
@@ -286,19 +284,19 @@ func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, err
 		if l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 			// Only start the renew-goroutine for time-based
 			// leases which need periodic renewal.
-			go l.keepLeaseAlive()
+			go l.keepLeaseAlive(context.TODO())
 		}
 	}
 	return l.leaseRecord, nil
 }
 
-func (l *Lease) keepLeaseAlive() {
+func (l *Lease) keepLeaseAlive(ctx context.Context) {
 	for {
 		select {
 		case <-l.quitLease:
 			return
 		case <-time.After(l.timeUntilLeaseRenewal):
-			l.ensureValidLease(true /*forceRenewal*/)
+			l.ensureValidLease(ctx, true /*forceRenewal*/)
 		}
 	}
 }

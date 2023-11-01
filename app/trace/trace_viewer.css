@@ -6,7 +6,8 @@
 }
 
 .trace-viewer .panel {
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow-x: scroll;
   overflow-y: scroll;
 }
@@ -24,6 +25,7 @@
 .trace-viewer .panel-container {
   border-radius: 2px;
   border: 2px solid #eee;
+  box-sizing: border-box;
 }
 
 .trace-viewer .panel::-webkit-scrollbar-thumb {

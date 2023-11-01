@@ -113,8 +113,10 @@ type RealEnv struct {
 	ipRulesService                   interfaces.IPRulesService
 	serverIdentityService            interfaces.ClientIdentityService
 	imageCacheAuthenticator          interfaces.ImageCacheAuthenticator
+	serverNotificationService        interfaces.ServerNotificationService
 }
 
+// NewRealEnv returns an environment for use in servers.
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 	return &RealEnv{
 		healthChecker:       h,
@@ -122,6 +124,11 @@ func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 		executionClients:    make(map[string]*executionClientConfig, 0),
 		httpServerWaitGroup: &sync.WaitGroup{},
 	}
+}
+
+// NewBatchEnv returns an environment for use in command line tools.
+func NewBatchEnv() *RealEnv {
+	return NewRealEnv(nil)
 }
 
 // Required -- no SETTERs for these.
@@ -652,4 +659,12 @@ func (r *RealEnv) GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticato
 
 func (r *RealEnv) SetImageCacheAuthenticator(val interfaces.ImageCacheAuthenticator) {
 	r.imageCacheAuthenticator = val
+}
+
+func (r *RealEnv) GetServerNotificationService() interfaces.ServerNotificationService {
+	return r.serverNotificationService
+}
+
+func (r *RealEnv) SetServerNotificationService(service interfaces.ServerNotificationService) {
+	r.serverNotificationService = service
 }

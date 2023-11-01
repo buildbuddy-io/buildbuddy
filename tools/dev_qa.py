@@ -105,7 +105,7 @@ REPO_CONFIGS = [
         "repo_url": "https://github.com/tensorflow/tensorflow",
         "command": """
             bazel build tensorflow \
-                --config=rbe_cpu_linux \
+                --config=rbe_linux_cpu \
                 --config=monolithic \
                 --remote_executor=remote.buildbuddy.dev \
                 --remote_cache=remote.buildbuddy.dev \

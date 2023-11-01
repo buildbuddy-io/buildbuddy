@@ -237,7 +237,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       {capabilities.createOrg && <EditOrgComponent user={this.props.user} />}
                     </>
                   )}
-                  {activeTabId === TabId.OrgMembers && capabilities.userManagement && (
+                  {activeTabId === TabId.OrgMembers && (
                     <>
                       <div className="settings-option-title">Members of {this.props.user.selectedGroupName()}</div>
                       <OrgMembersComponent user={this.props.user} />

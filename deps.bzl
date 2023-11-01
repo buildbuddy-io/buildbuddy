@@ -3400,8 +3400,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_klauspost_compress",
         importpath = "github.com/klauspost/compress",
-        sum = "h1:91SKEy4K37vkp255cJ8QesJhjyRO0hn9i9G0GoUwLsk=",
-        version = "v1.16.6",
+        sum = "h1:RlWWUY/Dr4fL8qk9YG7DTZ7PDgME2V4csBXA8L/ixi4=",
+        version = "v1.17.2",
     )
     go_repository(
         name = "com_github_klauspost_cpuid",
@@ -7061,16 +7061,16 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
 
     http_file(
         name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.10-linux-amd64"],
-        sha256 = "6c49f9c3eacec7e2d65afec3557bdb5946154ecc9c8d42055fd9e85e4c7bd9c1",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.11-linux-amd64"],
+        sha256 = "ced6494956909e0e8c1858d4a896107c240cfb8a967c009c08ce7f14803b72c6",
         executable = True,
         downloaded_file_path = "soci-store",
     )
 
     http_file(
         name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.10-linux-amd64-race"],
-        sha256 = "c802e1792cd5f59129448b71272d00259e64de6225072b00c0e99621287f1e8f",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.11-linux-amd64-race"],
+        sha256 = "f5787a0183b7d33fcfaca3c8e3244a001fe6bcaccfc5007bb7a8b4284a6430bd",
         executable = True,
         downloaded_file_path = "soci-store-race",
     )
@@ -7139,5 +7139,13 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "org_kernel_git_linux_kernel-vmlinux",
         sha256 = "4582d9c5d572c0449f55cc1cf317bf154dc0ff25df97378991f7c5bc9554f14e",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-4582d9c5d572c0449f55cc1cf317bf154dc0ff25df97378991f7c5bc9554f14e"],
+        executable = True,
+    )
+
+    # TODO: mac build
+    http_file(
+        name = "org_llvm_llvm_clang-format_linux-x86_64",
+        sha256 = "85b1c2591274422234955e906aee39e6f793a88a74f3efc49a1852a0646ce08f",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-14_linux-x86_64"],
         executable = True,
     )

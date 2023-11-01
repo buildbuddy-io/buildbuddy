@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -35,7 +34,7 @@ time.sleep(%f)
 
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
-	return commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &container.Stdio{})
+	return commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &commandutil.Stdio{})
 }
 
 func nopStatsListener(*repb.UsageStats) {}

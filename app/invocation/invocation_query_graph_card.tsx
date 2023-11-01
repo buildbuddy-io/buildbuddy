@@ -155,7 +155,7 @@ function renderInsightsSections(nodes: Set<string>, edges: Edge[]): React.ReactN
           {sortedTargetNodeCounts.map(([dep, count]) => (
             <React.Fragment key={dep}>
               <div className="summary-numeric-value">{count}</div>
-              <div>{dep}</div>
+              <div>{dep.replaceAll("\\n", "\n")}</div>
             </React.Fragment>
           ))}
         </div>
@@ -166,7 +166,7 @@ function renderInsightsSections(nodes: Set<string>, edges: Edge[]): React.ReactN
           {sortedSourceNodeCounts.map(([dep, count]) => (
             <React.Fragment key={dep}>
               <div className="summary-numeric-value">{count}</div>
-              <div>{dep}</div>
+              <div>{dep.replaceAll("\\n", "\n")}</div>
             </React.Fragment>
           ))}
         </div>

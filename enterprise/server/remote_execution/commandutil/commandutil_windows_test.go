@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
@@ -19,7 +18,7 @@ func TestRun_Win_NormalExit_NoError(t *testing.T) {
 	for _, tc := range []int{0, 1, 137} {
 		t.Run(fmt.Sprintf("exit%d", tc), func(t *testing.T) {
 			cmd := &repb.Command{Arguments: []string{"powershell", "-c", fmt.Sprintf("Exit %d", tc)}}
-			res := commandutil.Run(context.Background(), cmd, ".", nopStatsListener, &container.Stdio{})
+			res := commandutil.Run(context.Background(), cmd, ".", nopStatsListener, &commandutil.Stdio{})
 
 			assert.NoError(t, res.Error)
 			assert.Equal(t, tc, res.ExitCode)
@@ -47,7 +46,7 @@ func TestComplexProcessTree(t *testing.T) {
 		Get-Job | Wait-Job
 		`},
 	}
-	res := commandutil.Run(context.Background(), cmd, workDir, nopStatsListener, &container.Stdio{})
+	res := commandutil.Run(context.Background(), cmd, workDir, nopStatsListener, &commandutil.Stdio{})
 
 	// Assert
 	assert.NoError(t, res.Error)

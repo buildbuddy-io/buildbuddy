@@ -211,6 +211,9 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interf
 }
 
 func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
+	if err, ok := authutil.AuthErrorFromContext(ctx); ok {
+		return nil, err
+	}
 	if jwt, ok := ctx.Value(jwtHeader).(string); ok {
 		return a.authenticateJWT(jwt)
 	}

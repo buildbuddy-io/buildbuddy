@@ -10,7 +10,7 @@ function Component(props) {
           <h2 className={common.title}>{props.title || "Build better today."}</h2>
           <a
             href={props.href || "https://app.buildbuddy.io"}
-            className={`${common.button} ${common.buttonPrimary} ${styles.button}`}>
+            className={`${common.button} ${common.buttonGradient} ${styles.button}`}>
             {props.text || `Get Started for Free`}
           </a>
         </div>

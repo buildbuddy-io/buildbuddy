@@ -55,11 +55,8 @@ message LeaseTaskRequest {
   // support reconnection.
   bool supports_reconnect = 7;
 
-  // The reconnect token that was returned by the server when the task was
-  // previously transitioned to "reconnecting" state. If the reconnect token is
-  // valid and the reconnection grace period has not yet elapsed, then the
-  // client will be allowed to reclaim the task, effectively resuming the
-  // previous lease.
+  // The token issued by the server when initially establishing the lease. This
+  // should be set by the client when attempting to retry a disconnected lease.
   string reconnect_token = 8;
 }
 
@@ -76,10 +73,12 @@ message LeaseTaskResponse {
   // Whether or not the lease was closed cleanly.
   bool closed_cleanly = 3;
 
-  // If present, the lease has been placed into "reconnecting" state due to the
-  // server shutting down. The client should immediately terminate the current
-  // lease stream and initiate a new LeaseTask stream with this token.
+  // A token that may be used to retry the lease if it disconnects.
   string reconnect_token = 4;
+
+  // ID for this lease. The scheduler will ignore any mutation requests if the
+  // provided lease ID doesn't match the current lease ID.
+  string lease_id = 5;
 }
 
 message TaskSize {
@@ -143,6 +142,9 @@ message ReEnqueueTaskRequest {
   string task_id = 1;
   // Optional reason for the re-enqueue (may be visible to end-user).
   string reason = 2;
+  // Lease ID of the claim on the task. The request will be ignored if the
+  // lease ID doesn't match the current lease ID.
+  string lease_id = 3;
 }
 
 message ReEnqueueTaskResponse {

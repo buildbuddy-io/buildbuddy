@@ -520,6 +520,16 @@ var (
 		CacheNameLabel,
 	})
 
+	DiskCacheBytesEvicted = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_partition_size_bytes_evicted",
+		Help:      "Number of bytes in the partition evicted.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	DiskCachePartitionSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -2043,6 +2053,16 @@ var (
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_atime_update_count",
 		Help:      "Count of processed atime updates.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
+	PebbleCacheEvictionSamplesChanSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_eviction_samples_chan_size",
+		Help:      "Num of items in eviction samples chan",
 	}, []string{
 		PartitionID,
 		CacheNameLabel,

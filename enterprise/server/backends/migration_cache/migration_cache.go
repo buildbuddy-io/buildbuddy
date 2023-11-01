@@ -158,6 +158,7 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 		MinEvictionAge:              cfg.MinEvictionAge,
 		AverageChunkSizeBytes:       cfg.AverageChunkSizeBytes,
 		ClearCacheOnStartup:         cfg.ClearCacheOnStartup,
+		ActiveKeyVersion:            cfg.ActiveKeyVersion,
 	}
 	c, err := pebble_cache.NewPebbleCache(env, opts)
 	if err != nil {
@@ -914,8 +915,7 @@ func (mc *MigrationCache) copyDataInBackground() error {
 	// concurrently queued as the cache is shutting down, and if we try to enqueue a copy to the closed
 	// channel it will panic
 	for len(mc.copyChan) > 0 {
-		c := <-mc.copyChan
-		mc.copy(c)
+		<-mc.copyChan
 	}
 	return nil
 }

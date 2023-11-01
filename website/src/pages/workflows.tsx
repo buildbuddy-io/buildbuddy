@@ -18,6 +18,7 @@ function Component() {
           primaryButtonHref="https://app.buildbuddy.io/workflows/"
           secondaryButtonText="Workflow Docs"
           secondaryButtonHref="/docs/workflows-introduction"
+          gradientButton={true}
         />
 
         <CTA title="Try Workflows today!" href="https://app.buildbuddy.io/workflows/" />

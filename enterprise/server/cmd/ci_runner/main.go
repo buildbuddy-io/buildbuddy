@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -103,6 +104,8 @@ const (
 
 	ansiGray  = "\033[90m"
 	ansiReset = "\033[0m"
+
+	clientIdentityEnvVar = "BB_GRPC_CLIENT_IDENTITY"
 )
 
 var (
@@ -469,6 +472,9 @@ func run() error {
 	if ws.buildbuddyAPIKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, ws.buildbuddyAPIKey)
 	}
+	if ci := os.Getenv(clientIdentityEnvVar); ci != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, clientidentity.IdentityHeaderName, ci)
+	}
 
 	buildEventReporter, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 	if err != nil {
@@ -496,11 +502,6 @@ func run() error {
 	}
 	ws.rootDir = rootDir
 
-	if *workflowID != "" {
-		if err := os.Setenv("CI", "true"); err != nil {
-			return status.WrapError(err, "set CI=true")
-		}
-	}
 	// Set BUILDBUDDY_CI_RUNNER_ABSPATH so that we can re-invoke ourselves
 	// as the git credential helper reliably, even after chdir.
 	absPath, err := filepath.Abs(os.Args[0])
@@ -1185,7 +1186,8 @@ func printCommandLine(out io.Writer, command string, args ...string) {
 	for _, arg := range args {
 		cmdLine += " " + toShellToken(arg)
 	}
-	out.Write([]byte(aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine)))
+	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
+	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine))
 }
 
 // TODO: Handle shell variable expansion. Probably want to run this with sh -c
@@ -1612,10 +1614,13 @@ func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError)
 	return strings.TrimSpace(output), nil
 }
 
+func formatNowUTC() string {
+	return time.Now().UTC().Format("2006-01-02 15:04:05.000 UTC")
+}
+
 func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
-	io.WriteString(out, ansiGray)
+	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
 	io.WriteString(out, fmt.Sprintf(format, args...))
-	io.WriteString(out, ansiReset)
 	io.WriteString(out, "\n")
 }
 
@@ -1672,8 +1677,9 @@ func writeBazelrc(path, invocationID string) error {
 		lines = append(lines, "build --remote_header=x-buildbuddy-origin="+origin)
 		lines = append(lines, "build --bes_header=x-buildbuddy-origin="+origin)
 	}
-	if identity := os.Getenv("BB_GRPC_CLIENT_IDENTITY"); identity != "" {
+	if identity := os.Getenv(clientIdentityEnvVar); identity != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-client-identity="+identity)
+		lines = append(lines, "build --bes_header=x-buildbuddy-client-identity="+identity)
 	}
 
 	// Primitive configs pointing to BB endpoints. These are purposely very

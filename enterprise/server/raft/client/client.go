@@ -8,9 +8,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
@@ -22,9 +22,9 @@ import (
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
-// If a request is received that will result in a nodehost.Sync{Propose/Read},
-// but not deadline is set, defaultContextTimeout will be applied.
-const DefaultContextTimeout = 60 * time.Second
+// A default timeout that can be applied to raft requests that do not have one
+// set.
+const DefaultContextTimeout = 10 * time.Second
 
 type NodeHost interface {
 	ID() string
@@ -75,16 +75,45 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 	return c.getClient(ctx, peer)
 }
 
-func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
-	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, DefaultContextTimeout)
-		defer cancel()
-		ctx = c
+func singleOpTimeout(ctx context.Context) time.Duration {
+	// This value should be approximately 10x the config.RTTMilliseconds,
+	// but we want to include a little more time for the operation itself to
+	// complete.
+	const maxTimeout = time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		if dur := deadline.Sub(time.Now()); dur < maxTimeout {
+			return dur
+		}
 	}
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
-		err := nhf(ctx)
+	return maxTimeout
+}
+
+func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
+	// Ensure that the outer context has a timeout set to limit the total
+	// time we'll attempt to run an operation.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultContextTimeout)
+		defer cancel()
+	}
+	var lastErr error
+	for {
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return lastErr
+			}
+			return ctx.Err()
+		default:
+			break
+		}
+
+		opCtx, cancel := context.WithTimeout(ctx, singleOpTimeout(ctx))
+		err := nhf(opCtx)
+		cancel()
+
 		if err != nil {
+			lastErr = err
 			if dragonboat.IsTempError(err) {
 				continue
 			}
@@ -92,7 +121,6 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		}
 		return nil
 	}
-	return status.DeadlineExceededErrorf("exceeded retry limit for node host function")
 }
 
 func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
@@ -103,6 +131,7 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	}
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
+		defer canary.Start("nodehost.SyncPropose", time.Second)()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
 			return err
@@ -120,13 +149,6 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	return batchResponse, err
 }
 
-func getTimeout(ctx context.Context) time.Duration {
-	if deadline, ok := ctx.Deadline(); ok {
-		return deadline.Sub(time.Now())
-	}
-	return DefaultContextTimeout
-}
-
 func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
@@ -141,16 +163,28 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdR
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
 		case rfpb.Header_LINEARIZABLE:
-			rs, err := nodehost.ReadIndex(shardID, getTimeout(ctx))
+			rs, err := nodehost.ReadIndex(shardID, singleOpTimeout(ctx))
 			if err != nil {
 				return err
 			}
 			v := <-rs.ResultC()
-			if !v.Completed() {
-				return status.FailedPreconditionError("Failed to read node index")
+			if v.Completed() {
+				raftResponseIface, err = nodehost.ReadLocalNode(rs, buf)
+				return err
+			} else if v.Rejected() {
+				return dragonboat.ErrRejected
+			} else if v.Timeout() {
+				return dragonboat.ErrTimeout
+			} else if v.Terminated() {
+				return dragonboat.ErrShardClosed
+			} else if v.Dropped() {
+				return dragonboat.ErrShardNotReady
+			} else if v.Aborted() {
+				return dragonboat.ErrAborted
+			} else {
+				return status.FailedPreconditionError("Failed to read result")
 			}
-			raftResponseIface, err = nodehost.ReadLocalNode(rs, buf)
-			return err
+
 		case rfpb.Header_STALE:
 			raftResponseIface, err = nodehost.StaleRead(shardID, buf)
 			return err

@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//server/environment",
@@ -41,7 +42,9 @@ go_test(
     tags = ["docker"],
     deps = [
         ":docker",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",

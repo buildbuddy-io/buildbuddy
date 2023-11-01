@@ -148,7 +148,8 @@ func FileExists(ctx context.Context, fullPath string) (bool, error) {
 
 type WaitOpts struct {
 	// Timeout specifies how long to wait for a file to exist before returning
-	// context.DeadlineExceeded.
+	// context.DeadlineExceeded. A negative value indicates that the parent
+	// context's timeout should be used.
 	Timeout time.Duration
 
 	// PollInterval specifies how often to poll the filesystem to check whether
@@ -169,9 +170,11 @@ func WaitUntilExists(ctx context.Context, path string, opts WaitOpts) error {
 	if opts.PollInterval == 0 {
 		opts.PollInterval = defaultWaitPollInterval
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
-	defer cancel()
+	if opts.Timeout >= 0 {
+		c, cancel := context.WithTimeout(ctx, opts.Timeout)
+		defer cancel()
+		ctx = c
+	}
 
 	ticker := time.NewTicker(opts.PollInterval)
 	defer ticker.Stop()

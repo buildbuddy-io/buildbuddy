@@ -47,168 +47,168 @@ func replaceIgnoreSetForTesting(t *testing.T) map[string]struct{} {
 
 func TestNew(t *testing.T) {
 	flags := replaceFlagsForTesting(t) //nolint:SA4006
-	flagBool := New("bool", false, "")
-	err := common.SetValueForFlagName("bool", true, map[string]struct{}{}, true)
+	flagBool := New(flags, "bool", false, "")
+	err := common.SetValueForFlagName(flags, "bool", true, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, true, *flagBool)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagBool = New("bool", false, "")
-	err = common.SetValueForFlagName("bool", true, map[string]struct{}{"bool": {}}, true)
+	flagBool = New(flags, "bool", false, "")
+	err = common.SetValueForFlagName(flags, "bool", true, map[string]struct{}{"bool": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, false, *flagBool)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagInt := New("int", 2, "")
-	err = common.SetValueForFlagName("int", 1, map[string]struct{}{}, true)
+	flagInt := New(flags, "int", 2, "")
+	err = common.SetValueForFlagName(flags, "int", 1, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, *flagInt)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagInt = New("int", 2, "")
-	err = common.SetValueForFlagName("int", 1, map[string]struct{}{"int": {}}, true)
+	flagInt = New(flags, "int", 2, "")
+	err = common.SetValueForFlagName(flags, "int", 1, map[string]struct{}{"int": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, 2, *flagInt)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagInt64 := New("int64", int64(2), "")
-	err = common.SetValueForFlagName("int64", 1, map[string]struct{}{}, true)
+	flagInt64 := New(flags, "int64", int64(2), "")
+	err = common.SetValueForFlagName(flags, "int64", 1, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), *flagInt64)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagInt64 = New("int64", int64(2), "")
-	err = common.SetValueForFlagName("int64", 1, map[string]struct{}{"int64": {}}, true)
+	flagInt64 = New(flags, "int64", int64(2), "")
+	err = common.SetValueForFlagName(flags, "int64", 1, map[string]struct{}{"int64": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), *flagInt64)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagUint := New("uint", uint(2), "")
-	err = common.SetValueForFlagName("uint", 1, map[string]struct{}{}, true)
+	flagUint := New(flags, "uint", uint(2), "")
+	err = common.SetValueForFlagName(flags, "uint", 1, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, uint(1), *flagUint)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagUint = New("uint", uint(2), "")
-	err = common.SetValueForFlagName("uint", 1, map[string]struct{}{"uint": {}}, true)
+	flagUint = New(flags, "uint", uint(2), "")
+	err = common.SetValueForFlagName(flags, "uint", 1, map[string]struct{}{"uint": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, uint(2), *flagUint)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagUint64 := New("uint64", uint64(2), "")
-	err = common.SetValueForFlagName("uint64", 1, map[string]struct{}{}, true)
+	flagUint64 := New(flags, "uint64", uint64(2), "")
+	err = common.SetValueForFlagName(flags, "uint64", 1, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), *flagUint64)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagUint64 = New("uint64", uint64(2), "")
-	err = common.SetValueForFlagName("uint64", 1, map[string]struct{}{"uint64": {}}, true)
+	flagUint64 = New(flags, "uint64", uint64(2), "")
+	err = common.SetValueForFlagName(flags, "uint64", 1, map[string]struct{}{"uint64": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(2), *flagUint64)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagFloat64 := New("float64", float64(2), "")
-	err = common.SetValueForFlagName("float64", 1, map[string]struct{}{}, true)
+	flagFloat64 := New(flags, "float64", float64(2), "")
+	err = common.SetValueForFlagName(flags, "float64", 1, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, float64(1), *flagFloat64)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagFloat64 = New("float64", float64(2), "")
-	err = common.SetValueForFlagName("float64", 1, map[string]struct{}{"float64": {}}, true)
+	flagFloat64 = New(flags, "float64", float64(2), "")
+	err = common.SetValueForFlagName(flags, "float64", 1, map[string]struct{}{"float64": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, float64(2), *flagFloat64)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagString := New("string", "2", "")
-	err = common.SetValueForFlagName("string", "1", map[string]struct{}{}, true)
+	flagString := New(flags, "string", "2", "")
+	err = common.SetValueForFlagName(flags, "string", "1", map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, "1", *flagString)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagString = New("string", "2", "")
-	err = common.SetValueForFlagName("string", "1", map[string]struct{}{"string": {}}, true)
+	flagString = New(flags, "string", "2", "")
+	err = common.SetValueForFlagName(flags, "string", "1", map[string]struct{}{"string": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, "2", *flagString)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	defaultURL := url.URL{Scheme: "https", Host: "www.example.com"}
-	flagURL := New("url", defaultURL, "")
+	flagURL := New(flags, "url", defaultURL, "")
 	u, err := url.Parse("https://www.example.com:8080")
 	require.NoError(t, err)
-	err = common.SetValueForFlagName("url", *u, map[string]struct{}{}, true)
+	err = common.SetValueForFlagName(flags, "url", *u, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, url.URL{Scheme: "https", Host: "www.example.com"}, defaultURL)
 	assert.Equal(t, url.URL{Scheme: "https", Host: "www.example.com:8080"}, *flagURL)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	flagURL = New("url", url.URL{Scheme: "https", Host: "www.example.com"}, "")
+	flagURL = New(flags, "url", url.URL{Scheme: "https", Host: "www.example.com"}, "")
 	u, err = url.Parse("https://www.example.com:8080")
 	require.NoError(t, err)
-	err = common.SetValueForFlagName("url", *u, map[string]struct{}{"url": {}}, true)
+	err = common.SetValueForFlagName(flags, "url", *u, map[string]struct{}{"url": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, url.URL{Scheme: "https", Host: "www.example.com"}, *flagURL)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	defaultStringSlice := []string{"1", "2"}
-	stringSlice := New("string_slice", defaultStringSlice, "")
-	err = common.SetValueForFlagName("string_slice", []string{"3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, map[string]struct{}{}, true)
+	stringSlice := New(flags, "string_slice", defaultStringSlice, "")
+	err = common.SetValueForFlagName(flags, "string_slice", []string{"3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, defaultStringSlice)
 	assert.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, *stringSlice)
 
 	flags = replaceFlagsForTesting(t)
-	stringSlice = New("string_slice", defaultStringSlice, "")
-	err = common.SetValueForFlagName("string_slice", []string{"3"}, map[string]struct{}{"string_slice": {}}, true)
+	stringSlice = New(flags, "string_slice", defaultStringSlice, "")
+	err = common.SetValueForFlagName(flags, "string_slice", []string{"3"}, map[string]struct{}{"string_slice": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, defaultStringSlice)
 	assert.Equal(t, []string{"1", "2", "3"}, *(*[]string)(flags.Lookup("string_slice").Value.(*flagtypes.StringSliceFlag)))
 	assert.Equal(t, []string{"1", "2", "3"}, *stringSlice)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	stringSlice = New("string_slice", defaultStringSlice, "")
-	err = common.SetValueForFlagName("string_slice", []string{"3"}, map[string]struct{}{}, false)
+	stringSlice = New(flags, "string_slice", defaultStringSlice, "")
+	err = common.SetValueForFlagName(flags, "string_slice", []string{"3"}, map[string]struct{}{}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, defaultStringSlice)
 	assert.Equal(t, []string{"3"}, *stringSlice)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	stringSlice = New("string_slice", defaultStringSlice, "")
-	err = common.SetValueForFlagName("string_slice", []string{"3"}, map[string]struct{}{"string_slice": {}}, false)
+	stringSlice = New(flags, "string_slice", defaultStringSlice, "")
+	err = common.SetValueForFlagName(flags, "string_slice", []string{"3"}, map[string]struct{}{"string_slice": {}}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, defaultStringSlice)
 	assert.Equal(t, []string{"1", "2"}, *stringSlice)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
 	defaultStructSlice := []testStruct{{Field: 1}, {Field: 2}}
-	structSlice := New("struct_slice", defaultStructSlice, "")
-	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{}, true)
+	structSlice := New(flags, "struct_slice", defaultStructSlice, "")
+	err = common.SetValueForFlagName(flags, "struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{}, true)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}, {Field: 3}}, *structSlice)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	structSlice = New("struct_slice", defaultStructSlice, "")
-	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{"struct_slice": {}}, true)
+	structSlice = New(flags, "struct_slice", defaultStructSlice, "")
+	err = common.SetValueForFlagName(flags, "struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{"struct_slice": {}}, true)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, defaultStructSlice)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}, {Field: 3}}, *structSlice)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	structSlice = New("struct_slice", defaultStructSlice, "")
-	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{}, false)
+	structSlice = New(flags, "struct_slice", defaultStructSlice, "")
+	err = common.SetValueForFlagName(flags, "struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 3}}, *structSlice)
 
 	flags = replaceFlagsForTesting(t) //nolint:SA4006
-	structSlice = New("struct_slice", defaultStructSlice, "")
-	err = common.SetValueForFlagName("struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{"struct_slice": {}}, false)
+	structSlice = New(flags, "struct_slice", defaultStructSlice, "")
+	err = common.SetValueForFlagName(flags, "struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{"struct_slice": {}}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, *structSlice)
 }
 
 func TestYAMLIgnoreTag(t *testing.T) {
-	_ = replaceFlagsForTesting(t)
+	flags := replaceFlagsForTesting(t)
 	_ = replaceIgnoreSetForTesting(t)
-	flagBool := New("bool", false, "", YAMLIgnoreTag)
+	flagBool := New(flags, "bool", false, "", YAMLIgnoreTag)
 
 	yamlData := `
 	bool: true

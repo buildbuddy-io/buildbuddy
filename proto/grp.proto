@@ -61,6 +61,9 @@ message Group {
   // Controls whether user-owned API keys are enabled.
   bool user_owned_keys_enabled = 11;
 
+  // Whether to show "Ask Buddy" for the organization.
+  bool bot_suggestions_enabled = 15;
+
   // Default URL from the group. If custom subdomains are enabled this will
   // reference the group subdomain, otherwise it will point to the default
   // BuildBuddy URL.
@@ -216,6 +219,9 @@ message CreateGroupRequest {
 
   // Whether to enable user-owned API keys.
   bool user_owned_keys_enabled = 7;
+
+  // Whether to show "Ask Buddy" for the organization.
+  bool bot_suggestions_enabled = 8;
 }
 
 message CreateGroupResponse {
@@ -271,6 +277,9 @@ message UpdateGroupRequest {
   // Whether the "run workflow from clean workspace" button should be
   // admin-only.
   bool restrict_clean_workflow_runs_to_admins = 10;
+
+  // Whether to show "Ask Buddy" for the organization.
+  bool bot_suggestions_enabled = 11;
 }
 
 message UpdateGroupResponse {

@@ -20,6 +20,17 @@ import (
 const (
 	// FileName is the name of the single file exposed under the mount dir.
 	FileName = "file"
+
+	// flockSuffix is a suffix given to the lock file associated with the VBD
+	// mount. The lock file is created as a sibling of the mount directory, with
+	// this suffix appended.
+	//
+	// Note: normally, a cleaner approach would be to just lock the directory
+	// itself. However, that doesn't work in this case, because we're mounting
+	// something over the directory path, causing the underlying directory node
+	// to change before/after mounting. flock() locks the underlying node, not
+	// the path name. See `man 2 flock` for more info.
+	flockSuffix = ".lock"
 )
 
 // BlockDevice is the interface backing VBD IO operations.
@@ -36,6 +47,7 @@ type FS struct {
 	store     BlockDevice
 	root      *Node
 	server    *fuse.Server
+	lockFile  *os.File
 	mountPath string
 }
 
@@ -61,6 +73,18 @@ func (f *FS) Mount(path string) error {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return err
 	}
+
+	// Note: we use a sibling lock file rather than just locking the VBD mount
+	// directory, since the mount directory path no longer refers to the same
+	// underlying node once the FUSE dir is mounted to it.
+	lockFile, err := os.Create(path + flockSuffix)
+	if err != nil {
+		return status.WrapError(err, "create file lock")
+	}
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return status.WrapError(err, "acquire file lock")
+	}
+	f.lockFile = lockFile
 
 	nodeAttrTimeout := 6 * time.Hour
 	opts := &fusefs.Options{
@@ -101,8 +125,18 @@ func (f *FS) Unmount() error {
 	err := f.server.Unmount()
 	f.server.Wait()
 	f.server = nil
-	if err := os.Remove(f.mountPath); err != nil {
-		log.Errorf("Failed to unmount vbd: %s", err)
+	if err == nil {
+		// If we successfully unmounted, then the mount path should point to
+		// an empty dir. Remove it.
+		if err := os.Remove(f.mountPath); err != nil {
+			log.Errorf("Failed to unmount vbd: %s", err)
+		}
+	}
+	if err := os.Remove(f.lockFile.Name()); err != nil {
+		log.Errorf("Failed to remove vbd lock file: %s", err)
+	}
+	if err := f.lockFile.Close(); err != nil {
+		log.Errorf("Failed to unlock vbd lock file: %s", err)
 	}
 	log.Debugf("Unmounted %s", f.mountPath)
 	return err
@@ -143,6 +177,7 @@ type fileHandle struct {
 
 var _ fusefs.FileReader = (*fileHandle)(nil)
 var _ fusefs.FileWriter = (*fileHandle)(nil)
+var _ fusefs.FileFsyncer = (*fileHandle)(nil)
 
 func (h *fileHandle) Read(ctx context.Context, p []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
 	return &reader{h.file, off, len(p)}, 0
@@ -155,6 +190,11 @@ func (h *fileHandle) Write(ctx context.Context, p []byte, off int64) (uint32, sy
 		return uint32(n), syscall.EIO
 	}
 	return uint32(n), 0
+}
+
+func (h *fileHandle) Fsync(ctx context.Context, flags uint32) syscall.Errno {
+	// Do nothing for now; snaploader will sync contents to disk before adding to cache.
+	return fusefs.OK
 }
 
 type reader struct {
@@ -184,8 +224,9 @@ func (r *reader) Size() int {
 
 func (r *reader) Done() {}
 
-// UnmountAll unmounts all VBD devices on the system.
-func UnmountAll() error {
+// CleanStaleMounts unmounts all VBD mounts on the system that are not currently
+// in use.
+func CleanStaleMounts() error {
 	f, err := os.Open("/proc/mounts")
 	if err != nil {
 		return err
@@ -202,10 +243,38 @@ func UnmountAll() error {
 		if name != "vbd" {
 			continue
 		}
+
+		// We keep a lockfile for each VBD mount that determines whether it's
+		// still in use. If we can successfully lock it, then it must no longer
+		// be in use by any process, and should be safe to unmount.
+
+		f, err := os.Open(path + flockSuffix)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// The dir was removed since we initially listed the mounts;
+				// this is normal.
+				continue
+			}
+			return status.InternalErrorf("unmount vbd: open lockfile: %s", err)
+		}
+		defer f.Close()
+		// Try to lock the file but don't block if it's in use.
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			log.Debugf("Not unmounting in-use vbd mount at %q", path)
+			continue
+		}
+
 		b, err := exec.Command("fusermount", "-u", path).CombinedOutput()
 		if err != nil {
 			return status.InternalErrorf("unmount vbd: fusermount -u: %q", string(b))
 		}
+
+		// Clean up the lock file too.
+		if err := os.Remove(f.Name()); err != nil {
+			log.Warningf("Failed to remove vbd lockfile: %s", err)
+		}
+
+		log.Debugf("Unmounted stale vbd at %q", path)
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"hash"
 	"io"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -365,6 +366,15 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 	}, nil
 }
 
+func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return Compute(f, digestType)
+}
+
 // AddInvocationIDToDigest combines the hash of the input digest and input invocationID and re-hash.
 // This is only to be used for failed action results.
 func AddInvocationIDToDigest(digest *repb.Digest, digestType repb.DigestFunction_Value, invocationID string) (*repb.Digest, error) {
@@ -432,11 +442,11 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rs
 	// is a new style hash, so lookup the type based on that value.
 	digestFunction := InferOldStyleDigestFunctionInDesperation(d)
 	if dfString, ok := result["digest_function"]; ok && dfString != "" {
-		if df, ok := repb.DigestFunction_Value_value[strings.ToUpper(dfString)]; ok {
-			digestFunction = repb.DigestFunction_Value(df)
-		} else {
-			return nil, status.InvalidArgumentErrorf("Unknown digest function: %q", dfString)
+		df, err := ParseFunction(dfString)
+		if err != nil {
+			return nil, err
 		}
+		digestFunction = df
 	}
 	r := NewResourceName(d, instanceName, cacheType, digestFunction)
 	r.SetCompressor(compressor)
@@ -636,4 +646,12 @@ func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, erro
 		return nil, nil, err
 	}
 	return d, buf, nil
+}
+
+// ParseFunction parses a digest function name to a proto.
+func ParseFunction(s string) (repb.DigestFunction_Value, error) {
+	if df, ok := repb.DigestFunction_Value_value[strings.ToUpper(s)]; ok {
+		return repb.DigestFunction_Value(df), nil
+	}
+	return 0, status.InvalidArgumentErrorf("unknown digest function %q", s)
 }

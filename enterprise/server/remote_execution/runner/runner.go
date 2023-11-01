@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -66,6 +67,8 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+
+	enableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
 )
 
 const (
@@ -238,8 +241,8 @@ func (r *commandRunner) String() string {
 		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
-func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
-	return container.GetPullCredentials(r.env, r.PlatformProperties)
+func (r *commandRunner) pullCredentials() (oci.Credentials, error) {
+	return oci.CredentialsFromProperties(r.PlatformProperties)
 }
 
 func (r *commandRunner) PrepareForTask(ctx context.Context) error {
@@ -378,7 +381,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, &container.Stdio{})
+	return r.Container.Exec(ctx, command, &commandutil.Stdio{})
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
@@ -491,7 +494,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &container.Stdio{})
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &commandutil.Stdio{})
 	return res.Error
 }
 
@@ -774,15 +777,14 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 
-	creds, err := container.GetPullCredentials(p.env, platProps)
+	creds, err := oci.CredentialsFromProperties(platProps)
 	if err != nil {
 		return err
 	}
-	err = container.PullImageIfNecessary(
-		ctx, p.env,
-		c, creds, platProps.ContainerImage,
-	)
-	if err != nil {
+	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
+	// the auth result, since it makes it tricker to debug per-action
+	// misconfiguration.
+	if err := c.PullImage(ctx, creds); err != nil {
 		return err
 	}
 	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, cfg.Image, time.Since(start))
@@ -883,7 +885,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
-	if props.RecycleRunner && err != nil {
+	if !*enableAnonymousRecycling && (props.RecycleRunner && err != nil) {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
@@ -1485,7 +1487,7 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
 
-		stdio := &container.Stdio{
+		stdio := &commandutil.Stdio{
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
 			Stderr: &r.stderr,

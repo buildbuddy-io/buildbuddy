@@ -2,12 +2,12 @@ package clientidentity
 
 import (
 	"context"
-	"flag"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
 	"github.com/jonboulle/clockwork"
@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	signingKey = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.")
+	signingKey = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
 	client     = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
 	origin     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
 )
@@ -95,7 +95,12 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 		return ctx, nil
 	}
 	if len(vals) > 1 {
-		return ctx, status.NotFoundError("multiple identity headers present")
+		// When --experimental_remote_downloader is enabled in Bazel, it seems
+		// to send the header twice. To workaround this, we accept the header
+		// as long as it has the same value.
+		if len(vals) != 2 || vals[0] != vals[1] {
+			return ctx, status.PermissionDeniedError("multiple identity headers present")
+		}
 	}
 	headerValue := vals[0]
 	c := &claims{}

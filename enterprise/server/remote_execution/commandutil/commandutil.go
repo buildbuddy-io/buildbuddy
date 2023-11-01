@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -44,9 +43,19 @@ var (
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
 
-func constructExecCommand(command *repb.Command, workDir string, stdio *container.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+// Stdio specifies standard input / output readers for a command.
+type Stdio struct {
+	// Stdin is an optional stdin source for the executed process.
+	Stdin io.Reader
+	// Stdout is an optional stdout sink for the executed process.
+	Stdout io.Writer
+	// Stderr is an optional stderr sink for the executed process.
+	Stderr io.Writer
+}
+
+func constructExecCommand(command *repb.Command, workDir string, stdio *Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
-		stdio = &container.Stdio{}
+		stdio = &Stdio{}
 	}
 	executable, args := splitExecutableArgs(command.GetArguments())
 	// Note: we don't use CommandContext here because the default behavior of
@@ -114,7 +123,7 @@ func RetryIfTextFileBusy(fn func() error) error {
 // invoked each time stats are measured. In addition, the last recorded stats
 // will be returned in CommandResult.Stats. Note that enabling stats incurs some
 // overhead, so a nil callback should be used if stats aren't needed.
-func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *container.Stdio) *interfaces.CommandResult {
+func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *Stdio) *interfaces.CommandResult {
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 	var stats *repb.UsageStats

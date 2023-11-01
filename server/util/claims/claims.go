@@ -2,6 +2,7 @@ package claims
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -31,8 +32,10 @@ const (
 )
 
 var (
-	jwtKey      = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
-	jwtDuration = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
+	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
+	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, JWT verifications will try both this and the old JWT key.", flag.Secret)
+	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
+	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
 )
 
 type Claims struct {
@@ -109,12 +112,32 @@ func (c *Claims) GetEnforceIPRules() bool {
 }
 
 func ParseClaims(token string) (*Claims, error) {
-	claims := &Claims{}
-	_, err := jwt.ParseWithClaims(token, claims, jwtKeyFunc)
-	if err != nil {
-		return nil, err
+	keys := []string{*jwtKey}
+	if *newJwtKey != "" {
+		// Try the new key first.
+		keys = []string{*newJwtKey, *jwtKey}
 	}
-	return claims, nil
+
+	var lastErr error
+	claims := &Claims{}
+	for _, key := range keys {
+		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+			return []byte(key), nil
+		})
+		if err == nil {
+			return claims, nil
+		}
+		lastErr = err
+
+		var validationErr *jwt.ValidationError
+		if errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0 {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return nil, lastErr
 }
 
 func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
@@ -222,7 +245,11 @@ func assembleJWT(ctx context.Context, c *Claims) (string, error) {
 	expiresAt -= (expiresAt % 60)
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	tokenString, err := token.SignedString([]byte(*jwtKey))
+	key := *jwtKey
+	if *newJwtKey != "" && *signUsingNewJwtKey {
+		key = *newJwtKey
+	}
+	tokenString, err := token.SignedString([]byte(key))
 	return tokenString, err
 }
 
@@ -325,8 +352,4 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 	c.mu.Unlock()
 
 	return claims, nil
-}
-
-func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
-	return []byte(*jwtKey), nil
 }

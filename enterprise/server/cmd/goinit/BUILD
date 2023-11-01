@@ -2,6 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+exports_files(srcs = ["main.go"])
+
 go_library(
     name = "goinit_lib",
     srcs = ["main.go"],
@@ -10,7 +12,9 @@ go_library(
         "//enterprise/server/util/vsock",
         "//enterprise/server/vmexec",
         "//enterprise/server/vmvfs:vmvfs_lib",
+        "//proto:health_go_proto",
         "//proto:vmexec_go_proto",
+        "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/retry",
         "//server/util/rlimit",

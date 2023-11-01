@@ -264,6 +264,7 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 			UrlIdentifier:                     urlIdentifier,
 			SharingEnabled:                    g.SharingEnabled,
 			UserOwnedKeysEnabled:              g.UserOwnedKeysEnabled,
+			BotSuggestionsEnabled:             g.BotSuggestionsEnabled,
 			UseGroupOwnedExecutors:            g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
 			RestrictCleanWorkflowRunsToAdmins: g.RestrictCleanWorkflowRunsToAdmins,
 			EnforceIpRules:                    g.EnforceIPRules,
@@ -495,6 +496,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		OwnedDomain:            groupOwnedDomain,
 		SharingEnabled:         req.GetSharingEnabled(),
 		UserOwnedKeysEnabled:   req.GetUserOwnedKeysEnabled(),
+		BotSuggestionsEnabled:  req.GetBotSuggestionsEnabled(),
 		UseGroupOwnedExecutors: &useGroupOwnedExecutors,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
@@ -546,6 +548,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	group.SharingEnabled = req.GetSharingEnabled()
 	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
 	group.UserOwnedKeysEnabled = req.GetUserOwnedKeysEnabled()
+	group.BotSuggestionsEnabled = req.GetBotSuggestionsEnabled()
 	group.UseGroupOwnedExecutors = &useGroupOwnedExecutors
 	group.SuggestionPreference = req.GetSuggestionPreference()
 	group.RestrictCleanWorkflowRunsToAdmins = req.GetRestrictCleanWorkflowRunsToAdmins()

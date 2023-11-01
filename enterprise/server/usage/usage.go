@@ -387,6 +387,10 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 			return nil
 		}
 		// Row doesn't exist yet; create.
+		tu.UsageID, err = tables.PrimaryKeyForTable(tu.TableName())
+		if err != nil {
+			return err
+		}
 		return tx.Create(tu).Error
 	})
 }

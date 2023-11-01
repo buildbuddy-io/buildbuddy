@@ -222,6 +222,7 @@ type Group struct {
 
 	SharingEnabled                    bool `gorm:"default:1"`
 	UserOwnedKeysEnabled              bool `gorm:"not null;default:0"`
+	BotSuggestionsEnabled             bool `gorm:"not null;default:1"`
 	RestrictCleanWorkflowRunsToAdmins bool `gorm:"not null;default:0"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
@@ -633,6 +634,9 @@ type UsageLabels struct {
 // Usage holds usage counter values for a group during a particular time period.
 type Usage struct {
 	Model
+
+	// TODO(bduffany): backfill this, then make it a primary key.
+	UsageID string
 
 	GroupID string `gorm:"not null;index:group_period_region_index_v2,priority:1"`
 

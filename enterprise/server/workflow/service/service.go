@@ -1100,7 +1100,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if err != nil {
 		return nil, err
 	}
-	envVars := []*repb.Command_EnvironmentVariable{}
+	envVars := []*repb.Command_EnvironmentVariable{
+		{Name: "CI", Value: "true"},
+		{Name: "GIT_COMMIT", Value: wd.SHA},
+		{Name: "GIT_BRANCH", Value: wd.PushedBranch},
+		{Name: "GIT_BASE_BRANCH", Value: wd.TargetBranch},
+		{Name: "GIT_REPO_DEFAULT_BRANCH", Value: wd.TargetRepoDefaultBranch},
+		{Name: "GIT_PR_NUMBER", Value: fmt.Sprintf("%d", wd.PullRequestNumber)},
+	}
 	containerImage := ""
 	isolationType := ""
 	os := strings.ToLower(workflowAction.OS)

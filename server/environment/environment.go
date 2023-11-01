@@ -165,4 +165,6 @@ type Env interface {
 	GetClientIdentityService() interfaces.ClientIdentityService
 	GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticator
 	SetImageCacheAuthenticator(interfaces.ImageCacheAuthenticator)
+	GetServerNotificationService() interfaces.ServerNotificationService
+	SetServerNotificationService(service interfaces.ServerNotificationService)
 }

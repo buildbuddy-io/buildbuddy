@@ -106,10 +106,14 @@ func (gm *GossipManager) getTags() map[string]string {
 }
 
 func (gm *GossipManager) SendUserEvent(name string, payload []byte, coalesce bool) error {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
 	return gm.serfInstance.UserEvent(name, payload, coalesce)
 }
 
 func (gm *GossipManager) Query(name string, payload []byte, params *serf.QueryParam) (*serf.QueryResponse, error) {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
 	return gm.serfInstance.Query(name, payload, params)
 }
 

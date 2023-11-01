@@ -1,19 +1,24 @@
 package filecache_test
 
 import (
+	"fmt"
 	"io/fs"
-	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -160,6 +165,74 @@ func TestFileCacheOverwrite(t *testing.T) {
 			// No evictions should have occurred.
 			lastEvictionAge := testmetrics.GaugeValue(t, metrics.FileCacheLastEvictionAgeUsec)
 			require.Equal(t, float64(0), lastEvictionAge, "last eviction age should still be 0 - no evictions should have occurred")
+		})
+	}
+}
+
+func BenchmarkFilecacheLink(b *testing.B) {
+	flags.Set(b, "app.log_level", "warn")
+	log.Configure()
+
+	for _, test := range []struct {
+		Name         string
+		Ops          int
+		ReadFraction float64
+	}{
+		{Name: "100%Link/0%Add/5K", Ops: 5000, ReadFraction: 1},
+		{Name: "95%Link/5%Add/5K", Ops: 5000, ReadFraction: 0.95},
+	} {
+		b.Run(test.Name, func(b *testing.B) {
+			root := testfs.MakeTempDir(b)
+			fc, err := filecache.NewFileCache(root, 1_000_000, false /*=delete*/)
+			require.NoError(b, err)
+			fc.WaitForDirectoryScanToComplete()
+			tmp := fc.TempDir()
+
+			// Create 1K small files
+			g := digest.RandomGenerator(0)
+			var nodes []*repb.FileNode
+			for i := 0; i < test.Ops; i++ {
+				d, buf, err := g.RandomDigestBuf(20)
+				require.NoError(b, err)
+				name := fmt.Sprint(i)
+				path := filepath.Join(tmp, name)
+				err = os.WriteFile(path, buf, 0644)
+				require.NoError(b, err)
+				node := &repb.FileNode{
+					Name:   name,
+					Digest: d,
+				}
+				nodes = append(nodes, node)
+				err = fc.AddFile(node, path)
+				require.NoError(b, err)
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				// Fast link all of the files we created
+				out := testfs.MakeTempDir(b)
+				eg := &errgroup.Group{}
+				eg.SetLimit(100)
+				for _, node := range nodes {
+					node := node
+					eg.Go(func() error {
+						if rand.Float64() > test.ReadFraction {
+							err := fc.AddFile(node, filepath.Join(tmp, node.GetName()))
+							if err != nil {
+								require.FailNowf(b, "fast link failed", "%s", err)
+							}
+							return nil
+						}
+
+						ok := fc.FastLinkFile(node, filepath.Join(out, fmt.Sprint(node.GetName())))
+						if !ok {
+							require.FailNowf(b, "link failed", "")
+						}
+						return nil
+					})
+				}
+				eg.Wait()
+			}
 		})
 	}
 }

@@ -10,6 +10,17 @@ actions:
           - "*"
     bazel_commands:
       - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare --build_metadata=TAGS=linux-workflow
+  - name: Check style
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    bazel_commands:
+      - run //tools/checkstyle --config=linux-workflows
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:

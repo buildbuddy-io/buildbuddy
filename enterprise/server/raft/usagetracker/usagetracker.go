@@ -10,9 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
@@ -22,7 +23,6 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/hashicorp/serf/serf"
-	"github.com/lni/dragonboat/v4"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
@@ -60,10 +60,8 @@ const (
 type IStore interface {
 	NodeDescriptor() *rfpb.NodeDescriptor
 	RefreshReplicaUsages() []*rfpb.ReplicaUsage
-
-	NodeHost() *dragonboat.NodeHost
-	Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*ReplicaSample], error)
-	Metadata(ctx context.Context, req *rfpb.MetadataRequest) (*rfpb.MetadataResponse, error)
+	Sender() *sender.Sender
+	Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error)
 }
 
 type Tracker struct {
@@ -88,7 +86,7 @@ type partitionUsage struct {
 	store IStore
 
 	mu  sync.Mutex
-	lru *approxlru.LRU[*ReplicaSample]
+	lru *approxlru.LRU[*replica.LRUSample]
 	// Global view of usage, keyed by Node Host ID.
 	nodes map[string]*nodePartitionUsage
 	// Usage information for local replicas, keyed by Range ID.
@@ -134,20 +132,26 @@ func (pu *partitionUsage) RemoteUpdate(nhid string, update *rfpb.PartitionMetada
 	}
 }
 
-func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) (skip bool, err error) {
-	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
-		FileRecord: sample.Key.FileRecord,
+func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*replica.LRUSample]) error {
+	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
+		Key:        sample.Key.Bytes,
+		MatchAtime: sample.Timestamp.UnixMicro(),
 	})
-	rsp, err := client.SyncProposeLocalBatch(ctx, pu.store.NodeHost(), sample.Key.Header.GetReplica().GetShardId(), deleteReq)
+	batchCmd, err := deleteReq.ToProto()
 	if err != nil {
-		return false, status.InternalErrorf("could not propose eviction: %s", err)
+		return err
 	}
-	if err := rsp.AnyError(); err != nil {
+	rsp, err := pu.store.Sender().SyncPropose(ctx, sample.Key.Bytes, batchCmd)
+	if err != nil {
+		return status.InternalErrorf("could not propose eviction: %s", err)
+	}
+	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
+	if err := batchRsp.AnyError(); err != nil {
 		if status.IsNotFoundError(err) || status.IsOutOfRangeError(err) {
 			log.Infof("Skipping eviction for %q: %s", sample.Key, err)
-			return true, nil
+			return nil
 		}
-		return false, status.InternalErrorf("eviction request failed: %s", rsp.AnyError())
+		return status.InternalErrorf("eviction request failed: %s", err)
 	}
 
 	ageMillis := float64(time.Since(sample.Timestamp).Milliseconds())
@@ -159,12 +163,12 @@ func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*R
 	defer pu.mu.Unlock()
 	// Update local replica information to reflect the eviction. Don't need
 	// to wait for a proactive update from the replica.
-	u, ok := pu.replicas[sample.Key.Header.GetRangeId()]
+	u, ok := pu.replicas[sample.Key.RangeID]
 	if ok {
 		u.SizeBytes -= sample.SizeBytes
 		u.TotalCount--
 	} else {
-		log.Warningf("eviction succeeded but range %d wasn't found", sample.Key.Header.GetRangeId())
+		log.Warningf("eviction succeeded but range %d wasn't found", sample.Key.RangeID)
 	}
 
 	// Assume eviction on all stores is happening at a similar rate as on the
@@ -179,10 +183,10 @@ func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*R
 		}
 	}
 
-	return false, nil
+	return nil
 }
 
-func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sample[*ReplicaSample], error) {
+func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sample[*replica.LRUSample], error) {
 	pu.mu.Lock()
 	defer pu.mu.Unlock()
 	totalCount := int64(0)
@@ -196,7 +200,7 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 		return nil, status.FailedPreconditionError("cannot sample empty partition")
 	}
 
-	var samples []*approxlru.Sample[*ReplicaSample]
+	var samples []*approxlru.Sample[*replica.LRUSample]
 	for len(samples) < n {
 		rn := rand.Int63n(totalCount)
 		count := int64(0)
@@ -213,33 +217,6 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 		}
 	}
 	return samples, nil
-}
-
-func (pu *partitionUsage) refresh(ctx context.Context, key *ReplicaSample) (skip bool, timestamp time.Time, err error) {
-	rsp, err := pu.store.Metadata(ctx, &rfpb.MetadataRequest{Header: key.Header, FileRecord: key.FileRecord})
-	if err != nil {
-		if status.IsNotFoundError(err) || status.IsOutOfRangeError(err) {
-			log.Infof("Skipping refresh for %q: %s", key, err)
-			return true, time.Time{}, nil
-		}
-		return false, time.Time{}, err
-	}
-	atime := time.UnixMicro(rsp.GetFileMetadata().GetLastAccessUsec())
-	return false, atime, nil
-}
-
-type ReplicaSample struct {
-	Header     *rfpb.Header
-	Key        string
-	FileRecord *rfpb.FileRecord
-}
-
-func (rs *ReplicaSample) ID() string {
-	return rs.Key
-}
-
-func (rs *ReplicaSample) String() string {
-	return fmt.Sprintf("hdr: %+v, key: %s", rs.Header, rs.Key)
 }
 
 func New(store IStore, gossipManager *gossip.GossipManager, partitions []disk.Partition) (*Tracker, error) {
@@ -262,18 +239,15 @@ func New(store IStore, gossipManager *gossip.GossipManager, partitions []disk.Pa
 		}
 		ut.byPartition[p.ID] = u
 		maxSizeBytes := int64(evictionCutoffThreshold * float64(p.MaxSizeBytes))
-		l, err := approxlru.New(&approxlru.Opts[*ReplicaSample]{
+		l, err := approxlru.New(&approxlru.Opts[*replica.LRUSample]{
 			SamplePoolSize:     *samplePoolSize,
 			SamplesPerEviction: *samplesPerEviction,
 			MaxSizeBytes:       maxSizeBytes,
-			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) (skip bool, err error) {
+			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*replica.LRUSample]) error {
 				return u.evict(ctx, sample)
 			},
-			OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*ReplicaSample], error) {
+			OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*replica.LRUSample], error) {
 				return u.sample(ctx, n)
-			},
-			OnRefresh: func(ctx context.Context, key *ReplicaSample) (skip bool, timestamp time.Time, err error) {
-				return u.refresh(ctx, key)
 			},
 		})
 		if err != nil {

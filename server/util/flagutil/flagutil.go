@@ -11,20 +11,26 @@ import (
 // be appended to the current slice value; otherwise, a slice value will replace
 // the current slice value. appendSlice has no effect if the values in question
 // are not slices.
-var SetValueForFlagName = common.SetValueForFlagName
+func SetValueForFlagName(name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
+	return common.SetValueForFlagName(common.DefaultFlagSet, name, newValue, setFlags, appendSlice)
+}
 
 // SetWithOverride sets the flag's value by creating a new, empty flag.Value of
 // the same type as the flag Value specified by name, calling
 // `Set.(newValueString)` on the new flag.Value, and then explicitly setting the
 // data pointed to by flagValue to the data pointed to by the new flag value.
-var SetWithOverride = common.SetWithOverride
+func SetWithOverride(name, newValueString string) error {
+	return common.SetWithOverride(common.DefaultFlagSet, name, newValueString)
+}
 
 // ResetFlags resets all flags to their default values, as specified by
 // the string stored in the corresponding flag.DefValue.
-var ResetFlags = common.ResetFlags
+func ResetFlags() error {
+	return common.ResetFlags(common.DefaultFlagSet)
+}
 
 // GetDereferencedValue retypes and returns the dereferenced Value for
 // a given flag name.
 func GetDereferencedValue[T any](name string) (T, error) {
-	return common.GetDereferencedValue[T](name)
+	return common.GetDereferencedValue[T](common.DefaultFlagSet, name)
 }

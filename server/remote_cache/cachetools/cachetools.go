@@ -399,7 +399,7 @@ type BatchCASUploader struct {
 	once            *sync.Once
 	compress        bool
 	eg              *errgroup.Group
-	bufferPool      *bytebufferpool.Pool
+	bufferPool      *bytebufferpool.VariableSizePool
 	unsentBatchReq  *repb.BatchUpdateBlobsRequest
 	uploads         map[digest.Key]struct{}
 	instanceName    string
@@ -417,7 +417,7 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		once:            &sync.Once{},
 		compress:        false,
 		eg:              eg,
-		bufferPool:      bytebufferpool.New(uploadBufSizeBytes),
+		bufferPool:      bytebufferpool.VariableSize(uploadBufSizeBytes),
 		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
 		unsentBatchSize: 0,
 		instanceName:    instanceName,

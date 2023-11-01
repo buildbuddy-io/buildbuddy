@@ -42,7 +42,12 @@
   font-weight: 600;
 }
 
-.logo {
-  height: 100px;
+.logos {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   margin-top: 32px;
+  gap: 64px;
+  padding: 32px;
 }

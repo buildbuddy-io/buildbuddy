@@ -19,6 +19,9 @@ message VMConfiguration {
   bool init_dockerd = 5;
   bool debug_mode = 6;
   bool enable_dockerd_tcp = 7;
+  string kernel_version = 8;
+  string firecracker_version = 9;
+  string guest_api_version = 10;
 
   // TODO: add container_image here?
 }
@@ -37,6 +40,10 @@ message SnapshotKey {
   // The unique ID of the runner that is allowed to access this snapshot.
   // TODO: Remove this once "forkable" snapshots are implemented.
   string runner_id = 4;
+
+  // Git ref associated with the snapshot. For workflows, this represents the
+  // branch that was checked out when running the workflow.
+  string ref = 5;
 }
 
 // Manifest represents a snapshot's VM configuration along with

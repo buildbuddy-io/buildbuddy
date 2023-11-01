@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package server_notification;
+
+// Request to invalidate cached IP rule information for the specified group ID.
+message InvalidateIPRulesCache {
+  string group_id = 1;
+}
+
+message Notification {
+  // Only one of the fields should be set.
+
+  InvalidateIPRulesCache invalidate_ip_rules_cache = 1;
+}

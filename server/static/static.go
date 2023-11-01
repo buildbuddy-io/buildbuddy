@@ -37,7 +37,7 @@ const (
 var (
 	defaultToDenseMode                     = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
 	codeEditorEnabled                      = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
-	userManagementEnabled                  = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.")
+	userManagementEnabled                  = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.", flag.Deprecated("This flag has no effect and will be removed in the future."))
 	testGridV2Enabled                      = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
 	usageEnabled                           = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
 	expandedSuggestionsEnabled             = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
@@ -164,7 +164,6 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		SsoEnabled:                             env.GetAuthenticator().SSOEnabled(),
 		GlobalFilterEnabled:                    true,
 		UsageEnabled:                           *usageEnabled,
-		UserManagementEnabled:                  *userManagementEnabled,
 		ForceUserOwnedDarwinExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		TestGridV2Enabled:                      *testGridV2Enabled,
 		DetailedCacheStatsEnabled:              hit_tracker.DetailedStatsEnabled(),

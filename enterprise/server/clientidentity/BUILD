@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/interfaces",
+        "//server/util/flag",
         "//server/util/status",
         "@com_github_golang_jwt_jwt//:jwt",
         "@com_github_jonboulle_clockwork//:clockwork",
@@ -23,6 +24,7 @@ go_test(
         ":clientidentity",
         "//server/interfaces",
         "//server/util/random",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_golang_jwt_jwt//:jwt",
         "@com_github_jonboulle_clockwork//:clockwork",

@@ -12,8 +12,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
@@ -28,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -36,7 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -79,22 +81,28 @@ type Store struct {
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
 
-	leases              sync.Map // map of uint64 rangeID -> *rangelease.Lease
-	replicas            sync.Map // map of uint64 rangeID -> *replica.Replica
-	usages              *usagetracker.Tracker
-	rangeUsageListeners []RangeUsageListener
+	leaseKeeper *leasekeeper.LeaseKeeper
+	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
+
+	eventsMu       sync.Mutex
+	events         chan events.Event
+	eventListeners []chan events.Event
+
+	usages *usagetracker.Tracker
 
 	metaRangeMu   sync.Mutex
 	metaRangeData []byte
 
 	fileStorer filestore.Store
 
-	closeLeaderUpdatesChan func()
-	eg                     errgroup.Group
-	egCancel               context.CancelFunc
+	eg       *errgroup.Group
+	egCancel context.CancelFunc
 }
 
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
+	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
+
+	eventsChan := make(chan events.Event, 100)
 	s := &Store{
 		rootDir:       rootDir,
 		grpcAddr:      grpcAddress,
@@ -105,15 +113,18 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		registry:      registry,
 		listener:      listener,
 		apiClient:     apiClient,
-		liveness:      nodeliveness.New(nodeHost.ID(), sender),
+		liveness:      nodeLiveness,
 		log:           log.NamedSubLogger(nodeHost.ID()),
 
-		rangeMu:             sync.RWMutex{},
-		openRanges:          make(map[uint64]*rfpb.RangeDescriptor),
-		rangeUsageListeners: make([]RangeUsageListener, 0),
+		rangeMu:    sync.RWMutex{},
+		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
-		leases:   sync.Map{},
-		replicas: sync.Map{},
+		leaseKeeper: leasekeeper.New(nodeHost, nodeLiveness, listener, eventsChan),
+		replicas:    sync.Map{},
+
+		eventsMu:       sync.Mutex{},
+		events:         eventsChan,
+		eventListeners: make([]chan events.Event, 0),
 
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
@@ -200,7 +211,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
-		su.GetLeaseCount(),
+		s.leaseKeeper.LeaseCount(),
 		su.GetReadQps(),
 		su.GetRaftProposeQps(),
 		su.GetTotalBytesUsed()/1e6,
@@ -225,7 +236,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 		}
 		isLeader := 0
 		if rd := s.lookupRange(r.ShardID); rd != nil {
-			if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok && rlIface.(*rangelease.Lease).Valid() {
+			if s.leaseKeeper.HaveLease(rd.GetRangeId()) {
 				isLeader = 1
 			}
 		}
@@ -241,40 +252,43 @@ func (s *Store) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (s *Store) handleLeaderUpdates(ctx context.Context, leaderUpdatesChan <-chan raftio.LeaderInfo) error {
+func (s *Store) handleEvents(ctx context.Context) error {
 	for {
 		select {
-		case info := <-leaderUpdatesChan:
-			if !s.isLeader(info.ShardID) {
-				continue
+		case e := <-s.events:
+			log.Debugf("event: %+v", e)
+			s.eventsMu.Lock()
+			for _, ch := range s.eventListeners {
+				select {
+				case ch <- e:
+					continue
+				default:
+					log.Warningf("Dropped event: %s", e)
+				}
 			}
-			rd := s.lookupRange(info.ShardID)
-			if rd == nil {
-				log.Errorf("Got callback for shard %d but range not found", info.ShardID)
-				continue
-			}
-			go s.maybeAcquireRangeLease(rd)
+			s.eventsMu.Unlock()
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-func (s *Store) NotifyUsage(replicaUsage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {
-	for _, rep := range rd.GetReplicas() {
-		ru := proto.Clone(replicaUsage).(*rfpb.ReplicaUsage)
-		ru.Replica = rep
+func (s *Store) AddEventListener() (<-chan events.Event, func()) {
+	s.eventsMu.Lock()
+	defer s.eventsMu.Unlock()
 
-		nhid, _, err := s.registry.ResolveNHID(rep.GetShardId(), rep.GetReplicaId())
-		if err != nil {
-			log.Errorf("Error resolving nhid: %s", err)
-			return
-		}
-		for _, rul := range s.rangeUsageListeners {
-			rul.OnReplicaUsageUpdate(nhid, ru, rd)
+	ch := make(chan events.Event, 10)
+	s.eventListeners = append(s.eventListeners, ch)
+	closeFunc := func() {
+		s.eventsMu.Lock()
+		defer s.eventsMu.Unlock()
+		for i, l := range s.eventListeners {
+			if l == ch {
+				s.eventListeners = append(s.eventListeners[:i], s.eventListeners[:i+1]...)
+			}
 		}
 	}
-	s.updateTags()
+	return ch, closeFunc
 }
 
 func (s *Store) Start() error {
@@ -294,26 +308,28 @@ func (s *Store) Start() error {
 		s.grpcServer.Serve(lis)
 	}()
 
-	leaderUpdatesChan, closeLeaderUpdatesChan := s.listener.AddLeaderChangeListener()
-	s.closeLeaderUpdatesChan = closeLeaderUpdatesChan
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	s.egCancel = cancelFunc
 
 	eg, gctx := errgroup.WithContext(ctx)
+	s.eg = eg
 	eg.Go(func() error {
-		return s.handleLeaderUpdates(gctx, leaderUpdatesChan)
+		return s.handleEvents(gctx)
 	})
-
+	s.leaseKeeper.Start()
 	return nil
 }
 
 func (s *Store) Stop(ctx context.Context) error {
-	s.dropLeadershipForShutdown()
+	now := time.Now()
+	defer func() {
+		log.Printf("Store shutdown finished in %s", time.Since(now))
+	}()
+
+	s.leaseKeeper.Stop()
 
 	s.egCancel()
 	s.eg.Wait()
-	s.closeLeaderUpdatesChan()
 
 	s.log.Info("Store: waitgroups finished")
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
@@ -367,70 +383,6 @@ func (s *Store) dropLeadershipForShutdown() {
 	eg.Wait()
 }
 
-func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
-	if len(rd.GetReplicas()) == 0 {
-		s.log.Debugf("Not acquiring range %d lease: no replicas", rd.GetRangeId())
-		return
-	}
-
-	shardID := rd.GetReplicas()[0].GetShardId()
-	if !s.isLeader(shardID) {
-		return
-	}
-
-	rangeID := rd.GetRangeId()
-	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.nodeHost, shardID, s.liveness, rd))
-	rl, ok := rlIface.(*rangelease.Lease)
-	if !ok {
-		alert.UnexpectedEvent("unexpected_leases_map_type_error")
-		return
-	}
-
-	for attempt := 0; attempt < 3; attempt++ {
-		if !s.isLeader(shardID) {
-			break
-		}
-		if rl.Valid() {
-			break
-		}
-		err := rl.Lease()
-		if err == nil {
-			break
-		}
-		s.log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
-	}
-
-	if rl.Valid() {
-		for _, rul := range s.rangeUsageListeners {
-			rul.OnRangeLeaseAcquired(rd)
-		}
-		s.updateTags()
-	}
-}
-
-func (s *Store) releaseRangeLease(rangeID uint64) {
-	rlIface, ok := s.leases.Load(rangeID)
-	if !ok {
-		return
-	}
-	rl, ok := rlIface.(*rangelease.Lease)
-	if !ok {
-		alert.UnexpectedEvent("unexpected_leases_map_type_error")
-		return
-	}
-	s.leases.Delete(rangeID)
-	if !rl.Valid() {
-		return
-	}
-
-	rl.Release()
-	for _, rul := range s.rangeUsageListeners {
-		rul.OnRangeLeaseDropped(rl.GetRangeDescriptor())
-	}
-	s.updateTags()
-
-}
-
 func (s *Store) GetRange(shardID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(shardID)
 }
@@ -449,14 +401,18 @@ func (s *Store) updateUsages(r *replica.Replica) error {
 	return nil
 }
 
-type RangeUsageListener interface {
-	OnReplicaUsageUpdate(nhid string, ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor)
-	OnRangeLeaseAcquired(rd *rfpb.RangeDescriptor)
-	OnRangeLeaseDropped(rd *rfpb.RangeDescriptor)
-}
+func (s *Store) sendRangeEvent(eventType events.EventType, rd *rfpb.RangeDescriptor) {
+	ev := events.RangeEvent{
+		Type:            eventType,
+		RangeDescriptor: rd,
+	}
 
-func (s *Store) AddRangeUsageListener(rul RangeUsageListener) {
-	s.rangeUsageListeners = append(s.rangeUsageListeners, rul)
+	select {
+	case s.events <- ev:
+		break
+	default:
+		s.log.Warningf("Dropping range event: %+v", ev)
+	}
 }
 
 // We need to implement the Add/RemoveRange interface so that stores opened and
@@ -487,6 +443,8 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
+	s.sendRangeEvent(events.EventRangeAdded, rd)
+
 	if rangelease.ContainsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -498,8 +456,8 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		go s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
 	}
 
+	s.leaseKeeper.AddRange(rd)
 	// Start goroutines for these so that Adding ranges is quick.
-	go s.maybeAcquireRangeLease(rd)
 	go s.updateTags()
 	go s.updateUsages(r)
 }
@@ -522,47 +480,17 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	// Start goroutines for these so that Removing ranges is quick.
-	go s.releaseRangeLease(rd.GetRangeId())
+	s.sendRangeEvent(events.EventRangeRemoved, rd)
+	s.leaseKeeper.RemoveRange(rd)
 	go s.updateTags()
 }
 
-func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*usagetracker.ReplicaSample], error) {
-	r, rd, err := s.replicaForRange(rangeID)
+func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error) {
+	r, _, err := s.replicaForRange(rangeID)
 	if err != nil {
 		return nil, err
 	}
-	samples, err := r.Sample(ctx, partition, n)
-	if err != nil {
-		return nil, err
-	}
-
-	var rs []*approxlru.Sample[*usagetracker.ReplicaSample]
-	for _, samp := range samples {
-		pebbleKey, err := s.fileStorer.PebbleKey(samp.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
-		fileMetadataKey, err := pebbleKey.Bytes(filestore.Version2)
-		if err != nil {
-			return nil, err
-		}
-		sampleKey := &usagetracker.ReplicaSample{
-			Header: &rfpb.Header{
-				Replica:    rd.GetReplicas()[0],
-				RangeId:    rd.GetRangeId(),
-				Generation: rd.GetGeneration(),
-			},
-			Key:        string(fileMetadataKey),
-			FileRecord: samp.GetFileRecord(),
-		}
-		rs = append(rs, &approxlru.Sample[*usagetracker.ReplicaSample]{
-			Key:       sampleKey,
-			SizeBytes: samp.GetStoredSizeBytes(),
-			Timestamp: time.UnixMicro(samp.GetLastAccessUsec()),
-		})
-	}
-	return rs, nil
+	return r.Sample(ctx, partition, n)
 }
 
 func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDescriptor, error) {
@@ -609,15 +537,10 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 }
 
 func (s *Store) haveLease(rangeID uint64) bool {
-	if rlIface, ok := s.leases.Load(rangeID); ok {
-		if rl, ok := rlIface.(*rangelease.Lease); ok {
-			if rl.Valid() {
-				return true
-			}
-		} else {
-			alert.UnexpectedEvent("unexpected_leases_map_type_error")
-		}
+	if r, err := s.GetReplica(rangeID); err == nil {
+		return s.leaseKeeper.HaveLease(r.ShardID)
 	}
+	log.Warningf("haveLease check for unheld range: %d", rangeID)
 	return false
 }
 
@@ -625,7 +548,7 @@ func (s *Store) haveLease(rangeID uint64) bool {
 // an up-to-date range descriptor. It also checks that a local replica owns
 // the range lease for the requested range.
 func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
-	r, rd, err := s.validatedRange(header)
+	r, _, err := s.validatedRange(header)
 	if err != nil {
 		return nil, err
 	}
@@ -639,12 +562,11 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 		return r, nil
 	}
 
-	go s.maybeAcquireRangeLease(rd)
 	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
-	r := replica.New(s.leaser, shardID, replicaID, s)
+	r := replica.New(s.leaser, shardID, replicaID, s, s.events)
 	return r
 }
 
@@ -692,6 +614,7 @@ func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeader
 // Snapshots the cluster *on this node*. This is a local operation and does not
 // create a snapshot on other nodes that are members of this cluster.
 func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
+	defer canary.Start("SnapshotCluster", 10*time.Second)()
 	if _, ok := ctx.Deadline(); !ok {
 		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
 		defer cancel()
@@ -732,6 +655,7 @@ func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest)
 }
 
 func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error {
+	defer canary.Start("AddPeer", 10*time.Second)()
 	rd := s.lookupRange(sourceShardID)
 	if rd == nil {
 		return status.FailedPreconditionErrorf("cluster %d not found on this node", sourceShardID)
@@ -755,6 +679,9 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 		InitialMember: initialMembers,
 		Join:          false,
 	})
+	if status.IsAlreadyExistsError(err) {
+		return nil
+	}
 	return err
 }
 
@@ -811,7 +738,8 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	if _, _, err := s.validatedRange(req.GetHeader()); err != nil {
+	//	if _, _, err := s.validatedRange(req.GetHeader()); err != nil {
+	if _, err := s.LeasedRange(req.GetHeader()); err != nil {
 		return nil, err
 	}
 	shardID := req.GetHeader().GetReplica().GetShardId()
@@ -835,6 +763,24 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	batch := req.GetBatch()
 	batch.Header = req.GetHeader()
 
+	if batch.Header != nil {
+		r, err := s.LeasedRange(batch.Header)
+		if err != nil {
+			return nil, err
+		}
+		// SHORTCUT: if this is a rangelease read, don't bother
+		// with the raft stuff below.
+		if batch.GetHeader().GetConsistencyMode() == rfpb.Header_RANGELEASE {
+			batchRsp, err := r.BatchLookup(batch)
+			if err != nil {
+				return nil, err
+			}
+			return &rfpb.SyncReadResponse{Batch: batchRsp}, nil
+		}
+	} else {
+		s.log.Warningf("SyncRead without header: %+v", req)
+	}
+
 	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
@@ -846,83 +792,6 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	return &rfpb.SyncReadResponse{
 		Batch: batchResponse,
 	}, nil
-}
-
-func (s *Store) localRead(ctx context.Context, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	header := batch.GetHeader()
-
-	_, err := s.LeasedRange(header)
-	if err != nil {
-		return nil, err
-	}
-
-	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
-	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, header)
-		}
-		return nil, err
-	}
-	return rsp, nil
-}
-
-func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).FindMissingResponse(0)
-}
-
-func (s *Store) GetMulti(ctx context.Context, req *rfpb.GetMultiRequest) (*rfpb.GetMultiResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).GetMultiResponse(0)
-}
-
-func (s *Store) Metadata(ctx context.Context, req *rfpb.MetadataRequest) (*rfpb.MetadataResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).MetadataResponse(0)
-}
-
-func (s *Store) SetMulti(ctx context.Context, req *rfpb.SetMultiRequest) (*rfpb.SetMultiResponse, error) {
-	_, err := s.LeasedRange(req.GetHeader())
-	if err != nil {
-		return nil, err
-	}
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
-	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())
-		}
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).SetMultiResponse(0)
 }
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
@@ -942,7 +811,7 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 			s.setMetaRangeBuf(userEvent.Payload)
 		}
 	default:
-		return
+		break
 	}
 }
 
@@ -969,10 +838,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	su.ReplicaCount = int64(len(s.openRanges))
 	s.rangeMu.Unlock()
 
-	s.leases.Range(func(key, value any) bool {
-		su.LeaseCount += 1
-		return true
-	})
+	su.LeaseCount = s.leaseKeeper.LeaseCount()
 
 	for _, ru := range s.usages.ReplicaUsages() {
 		su.ReadQps += ru.GetReadQps()
@@ -993,6 +859,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	return su
 }
 
+// TODO(tylerw): remove this; let usagetracker listen on events channel.
 func (s *Store) RefreshReplicaUsages() []*rfpb.ReplicaUsage {
 	s.rangeMu.RLock()
 	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))

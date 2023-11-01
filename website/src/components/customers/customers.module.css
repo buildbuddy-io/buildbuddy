@@ -1,0 +1,33 @@
+.customerSection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 64px 0 48px 0;
+  width: 100%;
+  background-color: #f5f5f7;
+}
+
+.header {
+  font-weight: 700;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.customers {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 32px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 32px 64px;
+  box-sizing: border-box;
+}
+
+.customers .image {
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

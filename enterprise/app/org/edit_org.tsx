@@ -35,6 +35,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
       autoPopulateFromOwnedDomain: Boolean(group.ownedDomain),
       sharingEnabled: group.sharingEnabled,
       userOwnedKeysEnabled: group.userOwnedKeysEnabled,
+      botSuggestionsEnabled: group.botSuggestionsEnabled,
       useGroupOwnedExecutors: group.useGroupOwnedExecutors,
       suggestionPreference: group.suggestionPreference,
       restrictCleanWorkflowRunsToAdmins: group.restrictCleanWorkflowRunsToAdmins,

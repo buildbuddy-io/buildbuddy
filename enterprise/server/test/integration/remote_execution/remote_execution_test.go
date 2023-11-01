@@ -1692,7 +1692,7 @@ func TestActionMerging(t *testing.T) {
 	require.Equal(t, op3, op4, "expected actions to be merged")
 }
 
-func TestAppShutdownDuringExecution(t *testing.T) {
+func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 	// Set a short progress publish interval since we want to test killing an
 	// app while an update stream is in progress, and want to catch the error
 	// early.
@@ -1759,7 +1759,98 @@ func TestAppShutdownDuringExecution(t *testing.T) {
 
 	// Simulate the shutdown grace period elapsing, which should cause a
 	// hard stop of the gRPC server on app 1.
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	app1.Stop()
+
+	eg := &errgroup.Group{}
+	for _, cmd := range cmds {
+		cmd := cmd
+		eg.Go(func() error {
+			// Maybe let the command continue execution for a bit, then exit.
+			randSleepMillis(0, 50)
+
+			cmd.Exit(0)
+			res := cmd.Wait()
+			require.Equal(t, 0, res.ExitCode)
+			return res.Err
+		})
+	}
+	err := eg.Wait()
+	require.NoError(t, err)
+
+	// Make sure we only ever started a single task execution per command (tasks
+	// should not be re-executed just because the app goes down).
+	tasksStartedCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount) - initialTasksStartedCount
+	require.Equal(t, float64(len(cmds)), tasksStartedCount, "no tasks should have been retried")
+}
+
+func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
+	// Set a short lease TTL since we want to test killing an app while an
+	// update stream is in progress, and want to catch the error early.
+	flags.Set(t, "remote_execution.lease_duration", 50*time.Millisecond)
+	initialTasksStartedCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+
+	rbe := rbetest.NewRBETestEnv(t)
+
+	app1 := rbe.AddBuildBuddyServer()
+	app2 := rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	// Set up a custom proxy director that makes sure we choose app1 for the
+	// initial LeaseTask request, so that we can test stopping app1 while
+	// the task is in progress.
+	var mu sync.Mutex
+	app1Healthy := true
+	director := func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+		mu.Lock()
+		target := ""
+		if app1Healthy && fullMethodName == "/scheduler.Scheduler/LeaseTask" {
+			log.Debugf("Routing %q to app 1", fullMethodName)
+			target = app1.GRPCAddress()
+		} else {
+			log.Debugf("Routing %q to app 2", fullMethodName)
+			target = app2.GRPCAddress()
+		}
+		mu.Unlock()
+
+		conn, err := grpc_client.DialSimple(target)
+		if err != nil {
+			return nil, nil, err
+		}
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+		}
+		return ctx, conn, nil
+	}
+	rbe.AppProxy.Director = director
+
+	var cmds []*rbetest.ControlledCommand
+	for i := 0; i < 10; i++ {
+		cmd := rbe.ExecuteControlledCommand(fmt.Sprintf("cmd-%d", i), &rbetest.ExecuteControlledOpts{
+			// Allow reconnecting with WaitExecution since the test will hard
+			// stop the app, which kills the Execute stream.
+			AllowReconnect: true,
+		})
+		cmds = append(cmds, cmd)
+	}
+	for _, cmd := range cmds {
+		cmd.WaitStarted()
+	}
+
+	// Maybe give enough time for a few lease pings to occur.
+	randSleepMillis(0, 100)
+
+	// Initiate a graceful shutdown of app 1 and have the proxy start directing
+	// to app2. As soon as the graceful shutdown starts, the executor should try
+	// to reconnect to a different app.
+	mu.Lock()
+	app1Healthy = false
+	mu.Unlock()
+	app1.Shutdown()
+
+	// Simulate the shutdown grace period elapsing, which should cause a
+	// hard stop of the gRPC server on app 1.
+	time.Sleep(200 * time.Millisecond)
 	app1.Stop()
 
 	eg := &errgroup.Group{}

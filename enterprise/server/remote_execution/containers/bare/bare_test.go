@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 
@@ -53,7 +53,7 @@ func TestHelloWorldOnBareMetal(t *testing.T) {
 	defer cancel()
 
 	bareContainer := bare.NewBareCommandContainer(&bare.Opts{})
-	result := bareContainer.Run(ctx, cmd, tempDir, container.PullCredentials{})
+	result := bareContainer.Run(ctx, cmd, tempDir, oci.Credentials{})
 
 	if result.Error != nil {
 		t.Fatal(result.Error)

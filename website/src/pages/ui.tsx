@@ -16,6 +16,7 @@ function Component() {
           flipped={true}
           bigImage={true}
           lessPadding={true}
+          gradientButton={true}
         />
         <Hero
           title="Timing profile"
@@ -63,7 +64,7 @@ function Component() {
           bigImage={true}
         />
         <Hero
-          title="Downloadable artifacts"
+          title="Download artifacts"
           subtitle="Download the outputs of your builds from the remote cache with just a single click."
           image={require("../../static/img/artifacts.png")}
           bigImage={true}
@@ -83,7 +84,7 @@ function Component() {
           flipped={true}
         />
         <Hero
-          title="Live updating"
+          title="Live updates"
           subtitle="See the current state of your builds and tests in real-time, whether they're local or on CI."
           image={require("../../static/img/live.png")}
           bigImage={true}

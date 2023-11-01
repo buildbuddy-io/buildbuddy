@@ -120,6 +120,10 @@ type PebbleKey struct {
 	fullKey []byte
 }
 
+func (pmk PebbleKey) EncryptionKeyID() string {
+	return pmk.encryptionKeyID
+}
+
 func (pmk PebbleKey) String() string {
 	fmk, err := pmk.Bytes(UndefinedKeyVersion)
 	if err != nil {
@@ -152,10 +156,6 @@ func (pmk PebbleKey) CacheType() rspb.CacheType {
 
 func (pmk PebbleKey) Hash() string {
 	return pmk.hash
-}
-
-func (pmk PebbleKey) GroupID() string {
-	return pmk.groupID
 }
 
 func remapANONToFixedGroupID(groupID string) string {

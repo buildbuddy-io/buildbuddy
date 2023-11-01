@@ -8,7 +8,7 @@ function Component() {
     <div className={common.section}>
       <div className={common.container}>
         <div className={common.centeredText}>
-          <h2 className={common.title}>BuildBuddy is enterprise Bazel</h2>
+          <h2 className={common.title}>BuildBuddy is Enterprise Bazel</h2>
           <div className={common.subtitle}>
             BuildBuddy brings the power of Bazel to your organization, along with mission-critical features,
             enterprise-grade stability, and 24/7 expert support.

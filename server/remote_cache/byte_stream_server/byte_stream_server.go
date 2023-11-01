@@ -38,7 +38,7 @@ var (
 type ByteStreamServer struct {
 	env        environment.Env
 	cache      interfaces.Cache
-	bufferPool *bytebufferpool.Pool
+	bufferPool *bytebufferpool.VariableSizePool
 }
 
 func Register(env environment.Env) error {
@@ -62,15 +62,8 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.New(readBufSizeBytes),
+		bufferPool: bytebufferpool.VariableSize(readBufSizeBytes),
 	}, nil
-}
-
-func minInt64(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func checkReadPreconditions(req *bspb.ReadRequest) error {

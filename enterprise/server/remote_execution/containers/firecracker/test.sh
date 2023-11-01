@@ -14,6 +14,9 @@ set -e
 : "${RUN_UNDER:=sudo}"
 : "${TARGET:=firecracker_test_blockio}"
 
+# Make sure buildozer is installed
+./tools/buildozer.sh
+
 BAZEL_ARGS=()
 # Read test 'args' attribute into GO_TEST_ARGS array
 mapfile -t GO_TEST_ARGS < <(

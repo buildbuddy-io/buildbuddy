@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -28,13 +27,13 @@ const (
 )
 
 // Execute executes the command using the ExecStreamed API.
-func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, statsListener procstats.Listener, stdio *container.Stdio) *interfaces.CommandResult {
+func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, statsListener procstats.Listener, stdio *commandutil.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	var stderr, stdout bytes.Buffer
 	if stdio == nil {
-		stdio = &container.Stdio{}
+		stdio = &commandutil.Stdio{}
 	}
 	stdoutw := io.Writer(&stdout)
 	if stdio.Stdout != nil {

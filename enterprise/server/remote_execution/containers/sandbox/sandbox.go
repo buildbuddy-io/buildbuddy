@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -85,7 +86,7 @@ func NewRegexPath(expr string) sbxPath {
 }
 
 func runSimpleCommand(ctx context.Context, command []string) *interfaces.CommandResult {
-	return commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, &container.Stdio{})
+	return commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, &commandutil.Stdio{})
 }
 
 func computeSandboxingSupported(ctx context.Context) bool {
@@ -285,7 +286,7 @@ func New(options *Options) container.CommandContainer {
 	}
 }
 
-func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
+func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, workDir string, stdio *commandutil.Stdio) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(sandbox) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -314,8 +315,8 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 	return result
 }
 
-func (c *sandbox) Run(ctx context.Context, command *repb.Command, workDir string, _ container.PullCredentials) *interfaces.CommandResult {
-	return c.runCmdInSandbox(ctx, command, workDir, &container.Stdio{})
+func (c *sandbox) Run(ctx context.Context, command *repb.Command, workDir string, _ oci.Credentials) *interfaces.CommandResult {
+	return c.runCmdInSandbox(ctx, command, workDir, &commandutil.Stdio{})
 }
 
 func (c *sandbox) Create(ctx context.Context, workDir string) error {
@@ -323,16 +324,16 @@ func (c *sandbox) Create(ctx context.Context, workDir string) error {
 	return nil
 }
 
-func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
+func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult {
 	return c.runCmdInSandbox(ctx, cmd, c.WorkDir, stdio)
 }
 
-func (c *sandbox) IsImageCached(ctx context.Context) (bool, error)                      { return false, nil }
-func (c *sandbox) PullImage(ctx context.Context, creds container.PullCredentials) error { return nil }
-func (c *sandbox) Start(ctx context.Context) error                                      { return nil }
-func (c *sandbox) Remove(ctx context.Context) error                                     { return nil }
-func (c *sandbox) Pause(ctx context.Context) error                                      { return nil }
-func (c *sandbox) Unpause(ctx context.Context) error                                    { return nil }
+func (c *sandbox) IsImageCached(ctx context.Context) (bool, error)            { return false, nil }
+func (c *sandbox) PullImage(ctx context.Context, creds oci.Credentials) error { return nil }
+func (c *sandbox) Start(ctx context.Context) error                            { return nil }
+func (c *sandbox) Remove(ctx context.Context) error                           { return nil }
+func (c *sandbox) Pause(ctx context.Context) error                            { return nil }
+func (c *sandbox) Unpause(ctx context.Context) error                          { return nil }
 func (c *sandbox) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
 }

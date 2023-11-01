@@ -2,6 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+exports_files(srcs = ["vmexec.go"])
+
 go_library(
     name = "vmexec",
     srcs = ["vmexec.go"],
@@ -29,7 +31,6 @@ go_test(
     deps = [
         ":vmexec",
         "//enterprise/server/remote_execution/commandutil",
-        "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/vmexec_client",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",

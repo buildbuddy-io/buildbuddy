@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -63,7 +65,7 @@ func TestDockerRun(t *testing.T) {
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
-	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.Equal(t, expectedResult, res)
 }
@@ -115,7 +117,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	})
 
 	err = container.PullImageIfNecessary(
-		ctx, env, c, container.PullCredentials{},
+		ctx, env, c, oci.Credentials{},
 		"mirror.gcr.io/library/busybox",
 	)
 	require.NoError(t, err)
@@ -128,7 +130,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	// the docker container.
 	isContainerRunning = true
 
-	res := c.Exec(ctx, cmd, &container.Stdio{})
+	res := c.Exec(ctx, cmd, &commandutil.Stdio{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, res, expectedResult)
@@ -147,7 +149,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	assert.Greater(t, stats.MemoryBytes, int64(0))
 
 	// Try executing the same command again after unpausing.
-	res = c.Exec(ctx, cmd, &container.Stdio{})
+	res = c.Exec(ctx, cmd, &commandutil.Stdio{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, res, expectedResult)
@@ -189,22 +191,23 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(
-		ctx, env, c, container.PullCredentials{}, "mirror.gcr.io/library/busybox")
+		ctx, env, c, oci.Credentials{}, "mirror.gcr.io/library/busybox")
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	go func() {
 		// Wait for output file to be created, then cancel the context.
 		defer cancel()
-		err := disk.WaitUntilExists(ctx, filepath.Join(workDir, "output.txt"), disk.WaitOpts{})
+		opts := disk.WaitOpts{Timeout: -1}
+		err := disk.WaitUntilExists(ctx, filepath.Join(workDir, "output.txt"), opts)
 		require.NoError(t, err)
 		// Wait a little bit for stdout/stderr to be flushed to docker logs.
 		time.Sleep(500 * time.Millisecond)
 	}()
 
-	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsUnavailableError(res.Error),
@@ -251,7 +254,7 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(
-		ctx, env, c, container.PullCredentials{}, "mirror.gcr.io/library/busybox")
+		ctx, env, c, oci.Credentials{}, "mirror.gcr.io/library/busybox")
 	require.NoError(t, err)
 
 	err = c.Create(ctx, workDir)
@@ -263,7 +266,7 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	res := c.Exec(ctx, cmd, &container.Stdio{})
+	res := c.Exec(ctx, cmd, &commandutil.Stdio{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -309,7 +312,7 @@ func TestDockerExec_Stdio(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 	err = container.PullImageIfNecessary(
-		ctx, env, c, container.PullCredentials{},
+		ctx, env, c, oci.Credentials{},
 		"mirror.gcr.io/library/busybox",
 	)
 	require.NoError(t, err)
@@ -317,7 +320,7 @@ func TestDockerExec_Stdio(t *testing.T) {
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
-	res := c.Exec(ctx, cmd, &container.Stdio{
+	res := c.Exec(ctx, cmd, &commandutil.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -357,7 +360,7 @@ func TestDockerRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
-	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
+	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -124,6 +125,10 @@ func run() (exitCode int, err error) {
 		return exitCode, err
 	}
 	exitCode, err = upload.HandleUpload(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = execute.HandleExecute(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
