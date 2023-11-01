@@ -34,7 +34,7 @@ func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn C
 
 	start := time.Now()
 	go func() {
-		t := time.NewTimer(expectedDuration)
+		t := time.NewTicker(expectedDuration)
 		defer t.Stop()
 		for {
 			select {

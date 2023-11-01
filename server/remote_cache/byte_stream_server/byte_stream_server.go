@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -146,25 +147,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	defer s.bufferPool.Put(copyBuf)
 
 	detectStall := func(name string, work func()) {
-		start := time.Now()
-		ticker := time.NewTicker(10 * time.Second)
-		done := make(chan struct{})
-		defer ticker.Stop()
-		defer close(done)
-		go func() {
-			for {
-				select {
-				case <-stream.Context().Done():
-					return
-				case <-done:
-					return
-				case <-ticker.C:
-					alert.UnexpectedEvent("byte_stream_read_stall", "op name %q resource %q", name, req.GetResourceName())
-					log.CtxWarningf(stream.Context(), "ByteStream.Read %q for %q stalled for %s", name, req.GetResourceName(), time.Since(start))
-				}
-			}
-		}()
+		cancel := canary.StartWithLateFn(10*time.Second, func(timeTaken time.Duration) {
+			alert.UnexpectedEvent("byte_stream_read_stall", "op name %q resource %q", name, req.GetResourceName())
+			log.CtxWarningf(stream.Context(), "ByteStream.Read %q for %q stalled for %s", name, req.GetResourceName(), timeTaken)
+		}, func(timeTaken time.Duration) {})
 		work()
+		cancel()
 	}
 
 	bytesTransferredToClient := 0

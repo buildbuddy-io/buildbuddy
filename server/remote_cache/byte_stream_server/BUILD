@@ -17,6 +17,7 @@ go_library(
         "//server/util/alert",
         "//server/util/bazel_request",
         "//server/util/bytebufferpool",
+        "//server/util/canary",
         "//server/util/capabilities",
         "//server/util/compression",
         "//server/util/ioutil",
