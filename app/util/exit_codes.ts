@@ -1,3 +1,4 @@
+// From https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java#L38
 export function exitCode(exitCode: string) {
   switch (exitCode) {
     case "SUCCESS":
@@ -9,7 +10,7 @@ export function exitCode(exitCode: string) {
     case "COMMAND_LINE_ERROR":
       return "Bad command line";
     case "TESTS_FAILED":
-      return "Tests failed";
+      return "Test failed";
     case "PARTIAL_ANALYSIS_FAILURE":
     case "ANALYSIS_FAILURE":
       return "Analysis failed";
