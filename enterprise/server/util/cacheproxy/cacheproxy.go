@@ -372,6 +372,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
 		if writeCloser == nil {
+			ctx = log.EnrichContext(ctx, "digest", rn.GetDigest().GetHash())
 			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
@@ -381,15 +382,19 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			writeCloser = wc
 			handoffPeer = req.GetHandoffPeer()
 		}
+		log.CtxInfof(ctx, "VVV distributed write %d bytes", len(req.Data))
 		n, err := writeCloser.Write(req.Data)
 		if err != nil {
 			return err
 		}
+		log.CtxInfof(ctx, "VVV distributed done write %d bytes", len(req.Data))
 		bytesWritten += int64(n)
 		if req.FinishWrite {
+			log.CtxInfof(ctx, "VVV distributed commit")
 			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
+			log.CtxInfof(ctx, "VVV done commit")
 			// TODO(vadim): use handoff peer from request once client is including it in the FinishWrite request.
 			if handoffPeer != "" {
 				c.callHintedHandoffCB(ctx, handoffPeer, rn)
@@ -625,10 +630,13 @@ func (wc *streamWriteCloser) Commit() error {
 		HandoffPeer: wc.handoffPeer,
 		Resource:    wc.r,
 	}
+	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy send commit")
 	if err := wc.stream.Send(req); err != nil {
 		return err
 	}
+	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy wait for response")
 	_, err := wc.stream.CloseAndRecv()
+	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy commit done")
 	return err
 }
 

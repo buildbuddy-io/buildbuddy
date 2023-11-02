@@ -232,17 +232,20 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 	return nil
 }
 
-func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
+func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (context.Context, *writeState, error) {
 	r, err := digest.ParseUploadResourceName(req.ResourceName)
 	if err != nil {
-		return nil, err
+		return ctx, nil, err
 	}
+
+	ctx = log.EnrichContext(ctx, "digest", r.GetDigest().GetHash())
+
 	if !s.supportsCompressor(r.GetCompressor()) {
-		return nil, status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
+		return ctx, nil, status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
-		return nil, err
+		return ctx, nil, err
 	}
 
 	ws := &writeState{
@@ -265,10 +268,10 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	log.CtxInfof(ctx, "VVV check existence %s", digest.String(casRN.GetDigest()))
 	exists, err := s.cache.Contains(ctx, casRN.ToProto())
 	if err != nil {
-		return nil, err
+		return ctx, nil, err
 	}
 	if exists {
-		return nil, status.AlreadyExistsError("Already exists")
+		return ctx, nil, status.AlreadyExistsError("Already exists")
 	}
 
 	var committedWriteCloser interfaces.CommittedWriteCloser
@@ -278,7 +281,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		log.CtxInfof(ctx, "VVV create writer %s", digest.String(casRN.GetDigest()))
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
 		if err != nil {
-			return nil, err
+			return ctx, nil, err
 		}
 		committedWriteCloser = cacheWriter
 	}
@@ -287,7 +290,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
 	if err != nil {
-		return nil, err
+		return ctx, nil, err
 	}
 	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
 	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
@@ -298,7 +301,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 			// but wrap the checksum in a decompressor to validate the decompressed data
 			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
 			if err != nil {
-				return nil, err
+				return ctx, nil, err
 			}
 			ws.writer = io.MultiWriter(decompressingChecksum, committedWriteCloser)
 			ws.decompressorCloser = decompressingChecksum
@@ -306,14 +309,14 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
 			decompressor, err := compression.NewZstdDecompressor(ws.writer)
 			if err != nil {
-				return nil, err
+				return ctx, nil, err
 			}
 			ws.writer = decompressor
 			ws.decompressorCloser = decompressor
 		}
 	}
 
-	return ws, nil
+	return ctx, ws, nil
 }
 
 func (w *writeState) Write(buf []byte) error {
@@ -388,7 +391,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return s.handleAlreadyExists(ctx, ht, stream, req)
 			}
 
-			streamState, err = s.initStreamState(ctx, req)
+			ctx, streamState, err = s.initStreamState(ctx, req)
 			if status.IsAlreadyExistsError(err) {
 				return s.handleAlreadyExists(ctx, ht, stream, req)
 			}
