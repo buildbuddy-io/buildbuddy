@@ -59,20 +59,41 @@ func NewKey(task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb
 	}, nil
 }
 
-// manifestKey returns the key for the snapshot manifest
+// localManifestKey returns the key for the local snapshot manifest.
 //
 // Because we always want runners to use the newest manifest/snapshot, this
 // doesn't actually create a digest of the manifest contents. It just takes a
 // hash of shared properties, for which the snapshot should be shared
-func manifestKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) (*repb.Digest, error) {
+func localManifestKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) (*repb.Digest, error) {
+	// Note: filecache does not have explicit group AC partitioning unlike
+	// remote cache, so we need to manually hash in the group ID as part of the
+	// key.
 	gid, err := groupID(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	kd, err := digest.ComputeForMessage(s, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
 	return &repb.Digest{
-		Hash:      hashStrings(gid, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerId, ".manifest"),
+		Hash:      hashStrings(gid, kd.GetHash(), ".manifest"),
+		SizeBytes: 1, /*=arbitrary size*/
+	}, nil
+}
+
+// remoteManifestKey returns the key for the remote snapshot manifest.
+func remoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
+	kd, err := digest.ComputeForMessage(s, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	// Note: .manifest is not a real file that we ever create on disk, it's
+	// effectively just part of the cache key used to locate the manifest.
+	return &repb.Digest{
+		Hash:      hashStrings(kd.GetHash(), ".manifest"),
 		SizeBytes: 1, /*=arbitrary size*/
 	}, nil
 }
@@ -207,7 +228,7 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
 func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := manifestKey(ctx, l.env, key)
+	d, err := remoteManifestKey(key)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +243,7 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 }
 
 func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := manifestKey(ctx, l.env, key)
+	d, err := localManifestKey(ctx, l.env, key)
 	if err != nil {
 		return nil, err
 	}
@@ -455,16 +476,19 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
-	d, err := manifestKey(ctx, l.env, key)
-	if err != nil {
-		return err
-	}
-
 	if *snaputil.EnableRemoteSnapshotSharing {
+		d, err := remoteManifestKey(key)
+		if err != nil {
+			return err
+		}
 		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
 		return cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar)
 	}
 
+	d, err := localManifestKey(ctx, l.env, key)
+	if err != nil {
+		return err
+	}
 	manifestNode := &repb.FileNode{Digest: d}
 	_, localCacheErr := filecacheutil.Write(l.env.GetFileCache(), manifestNode, b)
 	return localCacheErr
