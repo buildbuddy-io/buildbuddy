@@ -5,6 +5,12 @@ platform(
     constraint_values = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
+        # This helps us differentiate between the default local platform, which does not have this,
+        # and the remote platform, which does have this.
+        # For more information, see //toolchains:BUILD comments.
+        #
+        # We can remove this constraint value once we migrated to a hermetic toolchain.
+        "@bazel_tools//tools/cpp:gcc",
     ],
     exec_properties = {
         "OSFamily": "Linux",
