@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	affinityRoutingPermitted = flag.Bool("executor.affinity_routing_permitted", true, "If set, along with the 'affinity-routing' platform property, then (experimental) affinity routing is used. If false, then affinity routing is never used. This flag is intended to be used as an emergency shut-off for this experimental feature.")
+	affinityRoutingEnabled = flag.Bool("executor.affinity_routing_enabled", true, "Enables affinity routing, which attempts to route actions to the executor that most recently ran that action.")
 )
 
 const (
@@ -276,9 +276,7 @@ func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
 type affinityRouter struct{}
 
 func (affinityRouter) Applies(params routingParams) bool {
-	return *affinityRoutingPermitted &&
-		platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.AffinityRoutingPropertyName)) &&
-		getFirstOutput(params.cmd) != ""
+	return *affinityRoutingEnabled && getFirstOutput(params.cmd) != ""
 }
 
 func (affinityRouter) preferredNodeLimit(params routingParams) int {
@@ -322,6 +320,9 @@ func (s affinityRouter) RoutingInfo(params routingParams) (int, string, error) {
 }
 
 func getFirstOutput(cmd *repb.Command) string {
+	if cmd == nil {
+		return ""
+	}
 	if len(cmd.OutputPaths) > 0 && cmd.OutputPaths[0] != "" {
 		return cmd.OutputPaths[0]
 	} else if len(cmd.OutputFiles) > 0 && cmd.OutputFiles[0] != "" {

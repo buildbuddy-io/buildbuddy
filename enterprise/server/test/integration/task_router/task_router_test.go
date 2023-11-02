@@ -234,7 +234,7 @@ func TestTaskRouter_RankNodes_AffinityRoutingDisabled(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
 	ctx := withAuthUser(t, context.Background(), env, "US1")
-	flags.Set(t, "executor.affinity_routing_permitted", false)
+	flags.Set(t, "executor.affinity_routing_enabled", false)
 	cmd := &repb.Command{
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
@@ -250,7 +250,7 @@ func TestTaskRouter_RankNodes_AffinityRoutingDisabled(t *testing.T) {
 
 	nodes := sequentiallyNumberedNodes(100)
 
-	// No nodes should be preferred as affinity routing is not permitted.
+	// No nodes should be preferred as affinity routing is disabled.
 	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 	require.ElementsMatch(t, nodes, ranked)
 	requireNonSequential(t, ranked)
