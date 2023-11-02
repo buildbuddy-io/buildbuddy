@@ -112,3 +112,15 @@ func (c *Counter) Write(p []byte) (n int, err error) {
 func (c *Counter) Count() int64 {
 	return c.n
 }
+
+// ReadTryFillBuffer tries to fill the given buffer by repeatedly reading
+// from the reader until it runs out of data. If the underlying reader does
+// not have enough data left to fill the buffer, the returned buffer will only
+// be partially filled.
+func ReadTryFillBuffer(r io.Reader, buf []byte) (int, error) {
+	n, err := io.ReadFull(r, buf)
+	if err == io.ErrUnexpectedEOF {
+		return n, nil
+	}
+	return n, err
+}
