@@ -259,8 +259,10 @@ func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
 }
 
 func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *rspb.ResourceName) {
+	log.CtxInfof(ctx, "hand off to %q", peer)
 	c.hintedHandoffsMu.Lock()
 	defer c.hintedHandoffsMu.Unlock()
+	log.CtxInfof(ctx, "hand off to %q after locking", peer)
 	if _, ok := c.hintedHandoffsByPeer[peer]; !ok {
 		// If this is the first hinted handoff for this peer we've
 		// received, then initialize the channel.
@@ -270,6 +272,7 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *r
 		ctx: ctx,
 		r:   r,
 	}
+	log.CtxInfof(ctx, "hand off to %q write to channel", peer)
 	select {
 	case c.hintedHandoffsByPeer[peer] <- order:
 		log.Debugf("Wrote order %+v to %q's hinted handoff channel", order, peer)
@@ -277,6 +280,7 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *r
 	default:
 		log.Warningf("Buffer full: unable to store hinted handoff for %q", peer)
 	}
+	log.CtxInfof(ctx, "hand off to %q enqueue done", peer)
 }
 
 func (c *Cache) handleHintedHandoffs(peer string) {
