@@ -35,7 +35,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/cockroachdb/pebble/vfs"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
@@ -50,7 +49,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
-	cdbpebble "github.com/cockroachdb/pebble"
 )
 
 var (
@@ -536,11 +534,11 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		pebbleOptions.Cache = c
 	}
 
-	desc, err := cdbpebble.Peek(opts.RootDirectory, vfs.Default)
+	desc, err := pebble.Peek(opts.RootDirectory, pebble.DefaultFS)
 	if err != nil {
 		return nil, err
 	}
-	created := !desc.Exists
+	newlyCreated := !desc.Exists
 
 	db, err := pebble.Open(opts.RootDirectory, opts.Name, pebbleOptions)
 	if err != nil {
@@ -587,11 +585,16 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	if created && *opts.ActiveKeyVersion < 0 {
+	if newlyCreated && *opts.ActiveKeyVersion < 0 {
 		versionMetadata = pc.maxDatabaseVersionMetadata()
-	} else if created {
+	} else if newlyCreated {
 		versionMetadata.MinVersion = *opts.ActiveKeyVersion
 		versionMetadata.MaxVersion = *opts.ActiveKeyVersion
+		versionMetadata.LastModifyUsec = clock.Now().UnixMicro()
+	}
+
+	if *opts.ActiveKeyVersion < 0 {
+		pc.setActiveDatabaseVersion(filestore.PebbleKeyVersion(versionMetadata.MaxVersion))
 	}
 
 	pc.minDBVersion, pc.maxDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetMinVersion()), filestore.PebbleKeyVersion(versionMetadata.GetMaxVersion())
@@ -772,6 +775,10 @@ func (p *PebbleCache) maxDatabaseVersion() filestore.PebbleKeyVersion {
 	unlockFn := p.locker.RLock(string(p.databaseVersionKey()))
 	defer unlockFn()
 	return p.maxDBVersion
+}
+
+func (p *PebbleCache) setActiveDatabaseVersion(version filestore.PebbleKeyVersion) {
+	p.activeKeyVersion = int64(version)
 }
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {

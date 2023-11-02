@@ -2185,7 +2185,7 @@ func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	assert.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MinVersion)
 	assert.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MaxVersion)
 
-	pc.Stop()
+	require.NoError(t, pc.Stop())
 }
 
 func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
@@ -2206,7 +2206,7 @@ func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
 		assert.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
 
-		pc.Stop()
+		require.NoError(t, pc.Stop())
 	}
 
 	// Re-open the database with an unspecified version and confirm it sets the
@@ -2220,7 +2220,7 @@ func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
 		assert.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
 
-		pc.Stop()
+		require.NoError(t, pc.Stop())
 	}
 }
 
@@ -2242,7 +2242,7 @@ func TestSpecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
 	assert.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
 
-	pc.Stop()
+	require.NoError(t, pc.Stop())
 }
 
 func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
@@ -2263,8 +2263,7 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
 		assert.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
 
-		pc.TestingWaitForGC()
-		pc.Stop()
+		require.NoError(t, pc.Stop())
 	}
 
 	// Re-open the database with version 3 as the active key version and
@@ -2279,7 +2278,7 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
 		assert.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
 
-		pc.Stop()
+		require.NoError(t, pc.Stop())
 	}
 
 	// Re-open the database with version 1 as the active key version and
@@ -2287,13 +2286,26 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	{
 		activeKeyVersion := int64(filestore.Version1)
 		options.ActiveKeyVersion = &activeKeyVersion
-		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-3"})
+		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
 		assert.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
 		assert.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
 
-		pc.Stop()
+		require.NoError(t, pc.Stop())
+	}
+
+	// Finally, open again with version 2 as the active key version.
+	{
+		activeKeyVersion := int64(filestore.Version2)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		assert.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
+		assert.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
 	}
 }
 
@@ -2303,8 +2315,7 @@ func openPebbleCache(ctx context.Context, t *testing.T, te *testenv.TestEnv, opt
 	pc.Start()
 	for _, d := range data {
 		r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, d)
-		err = pc.Set(ctx, r, buf)
-		require.NoError(t, err)
+		require.NoError(t, pc.Set(ctx, r, buf))
 	}
 	return pc
 }
