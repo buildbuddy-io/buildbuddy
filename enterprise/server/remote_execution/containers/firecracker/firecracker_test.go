@@ -90,6 +90,12 @@ var (
 func init() {
 	// Set umask to match the executor process.
 	syscall.Umask(0)
+
+	// Some tests need iptables which is in /usr/sbin.
+	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 }
 
 func TestGuestAPIVersion(t *testing.T) {
@@ -239,10 +245,6 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
-
-	// Some tests need iptables which is in /usr/sbin.
-	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
-	require.NoError(t, err)
 
 	return env
 }
