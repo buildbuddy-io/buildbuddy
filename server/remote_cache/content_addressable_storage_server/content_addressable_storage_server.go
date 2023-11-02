@@ -279,6 +279,7 @@ type downloadTrackerData struct {
 // Every error on individual read will be returned in the corresponding digest
 // status.
 func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
+	log.CtxInfof(ctx, "BatchReadBlobs first %s", digest.String(req.GetDigests()[0]))
 	rsp := &repb.BatchReadBlobsResponse{}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
@@ -314,7 +315,9 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			cacheRequest = append(cacheRequest, rn.ToProto())
 		}
 	}
+	log.CtxInfof(ctx, "BatchReadBlobs GetMulti first %s", digest.String(req.GetDigests()[0]))
 	cacheRsp, err := s.cache.GetMulti(ctx, cacheRequest)
+	log.CtxInfof(ctx, "BatchReadBlobs GetMulti done first %s", digest.String(req.GetDigests()[0]))
 
 	for _, rn := range requestedResources {
 		if rn.IsEmpty() {

@@ -615,7 +615,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	}
 
 	start := time.Now()
-	log.CtxInfof(ff.ctx, "BatchReadBlobs RPC %d", len(req.GetDigests()))
+	log.CtxInfof(ff.ctx, "BatchReadBlobs RPC %d first %s", len(req.GetDigests()), digest.String(req.GetDigests()[0]))
 	rsp, err := casClient.BatchReadBlobs(ctx, req)
 	log.CtxInfof(ff.ctx, "BatchReadBlobs RPC %d took %s", len(req.GetDigests()), time.Since(start))
 	if err != nil {
