@@ -2,6 +2,7 @@ package scheduler_server
 
 import (
 	"context"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
@@ -39,7 +41,13 @@ func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remot
 func (f *fakeTaskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
 }
 
-func getEnv(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string) (*testenv.TestEnv, context.Context) {
+type schedulerOpts struct {
+	userOwnedEnabled  bool
+	groupOwnedEnabled bool
+	clock             clockwork.Clock
+}
+
+func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
@@ -51,7 +59,7 @@ func getEnv(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string)
 	err := execution_server.Register(env)
 	require.NoError(t, err)
 	env.SetTaskRouter(&fakeTaskRouter{})
-	s, err := NewSchedulerServer(env)
+	s, err := NewSchedulerServerWithOptions(env, &Options{Clock: opts.clock})
 	require.NoError(t, err)
 	env.SetSchedulerService(s)
 
@@ -68,11 +76,11 @@ func getEnv(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string)
 	env.SetSchedulerClient(sc)
 
 	testUsers := make(map[string]interfaces.UserInfo, 0)
-	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: groupOwnedEnabled}
+	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
 
 	ta := testauth.NewTestAuthenticator(testUsers)
 	env.SetAuthenticator(ta)
-	s.enableUserOwnedExecutors = userOwnedEnabled
+	s.enableUserOwnedExecutors = opts.userOwnedEnabled
 
 	if user != "" {
 		authenticatedCtx, err := ta.WithAuthenticatedUser(context.Background(), user)
@@ -83,7 +91,7 @@ func getEnv(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string)
 }
 
 func getScheduleServer(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string) (*SchedulerServer, context.Context) {
-	env, ctx := getEnv(t, userOwnedEnabled, groupOwnedEnabled, user)
+	env, ctx := getEnv(t, &schedulerOpts{userOwnedEnabled: userOwnedEnabled, groupOwnedEnabled: groupOwnedEnabled}, user)
 	return env.GetSchedulerService().(*SchedulerServer), ctx
 }
 
@@ -278,6 +286,18 @@ func (e *fakeExecutor) WaitForTask(taskID string) {
 	require.FailNowf(e.t, "executor did not receive task", "task %q", taskID)
 }
 
+func (e *fakeExecutor) EnsureTaskNotReceived(taskID string) {
+	// Allow some time for re-enqueuing, etc. No easy way around this,
+	// unfortunately.
+	time.Sleep(100 * time.Millisecond)
+	e.mu.Lock()
+	_, ok := e.tasks[taskID]
+	e.mu.Unlock()
+	if ok {
+		require.FailNowf(e.t, "executor received task but was not expecting it", "task %q", taskID)
+	}
+}
+
 func (e *fakeExecutor) ResetTasks() {
 	e.mu.Lock()
 	e.tasks = make(map[string]struct{})
@@ -285,8 +305,24 @@ func (e *fakeExecutor) ResetTasks() {
 }
 
 type taskLease struct {
+	t       *testing.T
 	stream  scpb.Scheduler_LeaseTaskClient
+	taskID  string
 	leaseID string
+}
+
+func (tl *taskLease) Renew() error {
+	err := tl.stream.Send(&scpb.LeaseTaskRequest{
+		TaskId: tl.taskID,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tl.stream.Recv()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (e *fakeExecutor) Claim(taskID string) *taskLease {
@@ -301,7 +337,9 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 	require.NotZero(e.t, rsp.GetLeaseDurationSeconds())
 
 	lease := &taskLease{
+		t:       e.t,
 		stream:  stream,
+		taskID:  taskID,
 		leaseID: rsp.GetLeaseId(),
 	}
 	return lease
@@ -346,7 +384,7 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env) string
 }
 
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
-	env, ctx := getEnv(t, true, true, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
@@ -366,7 +404,7 @@ func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 }
 
 func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
-	env, ctx := getEnv(t, true, true, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
@@ -387,7 +425,7 @@ func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
 }
 
 func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
-	env, ctx := getEnv(t, true, true, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
@@ -402,4 +440,41 @@ func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
 		LeaseId: "bad lease ID",
 	})
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestLeaseExpiration(t *testing.T) {
+	flags.Set(t, "remote_execution.lease_duration", 10*time.Second)
+	flags.Set(t, "remote_execution.lease_grace_period", 10*time.Second)
+
+	fakeClock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{clock: fakeClock}, "user1")
+
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	taskID := scheduleTask(ctx, t, env)
+	fe.WaitForTask(taskID)
+	lease := fe.Claim(taskID)
+
+	// Reset known tasks so that we can tell if the task gets re-enqueued.
+	fe.ResetTasks()
+	// Lease should expire after 20 seconds so there should be no expiration
+	// right now.
+	fakeClock.Advance(19 * time.Second)
+	fe.EnsureTaskNotReceived(taskID)
+
+	// Renew task lease to avoid expiration.
+	err := lease.Renew()
+	require.NoError(t, err)
+	// Get close to expiration, but lease should not expire yet.
+	fakeClock.Advance(20 * time.Second)
+	fe.EnsureTaskNotReceived(taskID)
+
+	// Move past the grace period. Task should be re-enqueued.
+	fakeClock.Advance(2 * time.Second)
+	fe.WaitForTask(taskID)
+
+	// Lease renewal should fail as the stream should be broken.
+	err = lease.Renew()
+	require.ErrorIs(t, io.EOF, err)
 }
