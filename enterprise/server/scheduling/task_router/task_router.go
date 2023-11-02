@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	affinityRoutingEnabled = flag.Bool("executor.affinity_routing_enabled", true, "Enables affinity routing, which attempts to route actions to the executor that most recently ran that action. This flag is intended for disabling this feature in an emergency.")
+	affinityRoutingEnabled = flag.Bool("executor.affinity_routing_enabled", true, "Enables affinity routing, which attempts to route actions to the executor that most recently ran that action.")
 )
 
 const (
