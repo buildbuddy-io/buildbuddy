@@ -1864,11 +1864,9 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 	var lastObservedStats *repb.UsageStats
 	statsListener := func(stats *repb.UsageStats) {
 		container.Metrics.Observe(c, stats)
-		{
-			lastObservedStatsMutex.Lock()
-			defer lastObservedStatsMutex.Unlock()
-			lastObservedStats = stats
-		}
+		lastObservedStatsMutex.Lock()
+		lastObservedStats = stats
+		lastObservedStatsMutex.Unlock()
 	}
 
 	resultCh := make(chan *interfaces.CommandResult, 1)
@@ -1902,11 +1900,9 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 		return res
 	case err := <-healthCheckErrCh:
 		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
-		{
-			lastObservedStatsMutex.Lock()
-			defer lastObservedStatsMutex.Unlock()
-			res.UsageStats = lastObservedStats
-		}
+		lastObservedStatsMutex.Lock()
+		res.UsageStats = lastObservedStats
+		lastObservedStatsMutex.Unlock()
 		return res
 	}
 }
