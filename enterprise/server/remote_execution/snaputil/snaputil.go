@@ -22,6 +22,7 @@ import (
 
 var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
 var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd and executor.firecracker_enable_uffd are true.")
+var RemoteSnapshotReadonly = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
 
 func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) error {
 	node := &repb.FileNode{Digest: d}
@@ -75,7 +76,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 // if remote snapshot sharing is enabled
 func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, path string) error {
 	localCacheErr := cacheLocally(localCache, d, path)
-	if !*EnableRemoteSnapshotSharing {
+	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly {
 		return localCacheErr
 	}
 
