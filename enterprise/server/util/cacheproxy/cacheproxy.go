@@ -601,9 +601,11 @@ type streamWriteCloser struct {
 	isolation     *dcpb.Isolation
 	handoffPeer   string
 	bytesUploaded int64
+	peer          string
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
+	log.CtxInfof(wc.stream.Context(), "VVV write %d bytes to peer %q", len(data), wc.peer)
 	req := &dcpb.WriteRequest{
 		Isolation:   wc.isolation,
 		Key:         wc.key,
@@ -613,8 +615,11 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		Resource:    wc.r,
 	}
 	err := wc.stream.Send(req)
+	log.CtxInfof(wc.stream.Context(), "VVV done write %d bytes to peer %q err %v", len(data), wc.peer, err)
 	if err == io.EOF {
+		log.CtxInfof(wc.stream.Context(), "VVV wait for final err from peer %q", wc.peer)
 		_, streamErr := wc.stream.CloseAndRecv()
+		log.CtxInfof(wc.stream.Context(), "VVV got stream err %v from peer %q", streamErr, wc.peer)
 		if streamErr != nil {
 			return 0, streamErr
 		}
@@ -630,13 +635,13 @@ func (wc *streamWriteCloser) Commit() error {
 		HandoffPeer: wc.handoffPeer,
 		Resource:    wc.r,
 	}
-	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy send commit")
+	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy send commit to peer %q", wc.peer)
 	if err := wc.stream.Send(req); err != nil {
 		return err
 	}
-	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy wait for response")
+	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy wait for response from peer %q", wc.peer)
 	_, err := wc.stream.CloseAndRecv()
-	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy commit done")
+	log.CtxInfof(wc.stream.Context(), "VVV cacheproxy commit done to peer %q", wc.peer)
 	return err
 }
 
@@ -709,6 +714,8 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		return nil, err
 	}
 
+	log.CtxInfof(ctx, "opened stream to %q", peer)
+
 	wc := &streamWriteCloser{
 		cancelFunc:    cancel,
 		isolation:     isolation,
@@ -717,6 +724,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		bytesUploaded: 0,
 		stream:        stream,
 		r:             r,
+		peer:          peer,
 	}
 	return c.newBufferedStreamWriteCloser(wc), nil
 }
