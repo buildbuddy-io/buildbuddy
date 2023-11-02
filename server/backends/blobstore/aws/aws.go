@@ -147,9 +147,9 @@ func (a *AwsS3BlobStore) bucketExists(ctx context.Context, bucketName string) (b
 	}
 	var nf *s3types.NotFound
 	if errors.As(err, &nf) {
-		return false, err
+		return false, nil
 	}
-	return false, nil
+	return false, err
 }
 
 func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName string) error {
