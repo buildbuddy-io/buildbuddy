@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -96,6 +97,25 @@ func remoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 		Hash:      hashStrings(kd.GetHash(), ".manifest"),
 		SizeBytes: 1, /*=arbitrary size*/
 	}, nil
+}
+
+func keyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) string {
+	d, err := remoteManifestKey(s)
+	var dStr string
+	if err != nil {
+		dStr = fmt.Sprintf("<error: %s>", err)
+	} else {
+		dStr = digest.String(d)
+	}
+	gid, err := groupID(ctx, env)
+	if err != nil {
+		gid = fmt.Sprintf("<error: %s>", err)
+	}
+	jb, err := protojson.Marshal(s)
+	if err != nil {
+		jb = []byte(fmt.Sprintf("%q", err))
+	}
+	return fmt.Sprintf(`{"group_id": %q, "instance_name": %q, "key_digest": %q, "key": %s}`, gid, s.InstanceName, dStr, string(jb))
 }
 
 func fileDigest(filePath string) (*repb.Digest, error) {
@@ -212,7 +232,7 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 			log.CtxInfof(ctx, "Failed to fetch remote snapshot manifest: %s", err)
 			return nil, status.WrapError(err, "fetch remote manifest")
 		}
-		log.CtxInfof(ctx, "Fetched remote snapshot manifest")
+		log.CtxInfof(ctx, "Fetched remote snapshot manifest %s", keyDebugString(ctx, l.env, key))
 	} else {
 		manifest, err = l.getLocalManifest(ctx, key)
 		if err != nil {
