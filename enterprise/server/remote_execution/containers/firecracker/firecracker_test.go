@@ -960,6 +960,10 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		// If remote is enabled, will fetch missing artifacts from remote cache.
 		loader, err := snaploader.New(env)
 		require.NoError(t, err)
+		// Augment VMConfiguration with additional fields set in NewContainer
+		opts.VMConfiguration.KernelVersion = cfg.KernelVersion
+		opts.VMConfiguration.FirecrackerVersion = cfg.FirecrackerVersion
+		opts.VMConfiguration.GuestApiVersion = cfg.GuestAPIVersion
 		configHash, err := digest.ComputeForMessage(opts.VMConfiguration, repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 		snapshotKey, err := snaploader.NewKey(task, configHash.GetHash(), "")
