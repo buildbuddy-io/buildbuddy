@@ -397,12 +397,17 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			log.CtxInfof(ctx, "VVV done commit")
 			// TODO(vadim): use handoff peer from request once client is including it in the FinishWrite request.
 			if handoffPeer != "" {
+				log.CtxInfof(ctx, "VVV hand off")
 				c.callHintedHandoffCB(ctx, handoffPeer, rn)
+				log.CtxInfof(ctx, "VVV hand off done")
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
-			return stream.SendAndClose(&dcpb.WriteResponse{
+			log.CtxInfof(ctx, "VVV send final write response")
+			err := stream.SendAndClose(&dcpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
+			log.CtxInfof(ctx, "VVV done send final write response %v", err)
+			return err
 		}
 	}
 	return nil
