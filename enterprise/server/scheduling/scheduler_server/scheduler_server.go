@@ -136,6 +136,7 @@ var (
 
 		-- If the client supports reconnect, validate reconnectToken if
 		-- the lease is still in its reconnection grace period.
+		local isNewAttempt = true
 		if ARGV[1] == "true" then
 			local token = redis.call("hget", KEYS[1], "reconnectToken")
 			if token ~= nil and token ~= "" then
@@ -143,10 +144,12 @@ var (
 				if token ~= ARGV[2] and periodEnd > tonumber(ARGV[3]) then
 					return 12
 				end
+				isNewAttempt = false
 			end
 		end
-
-		redis.call("hincrby", KEYS[1], "attemptCount", 1)
+		if isNewAttempt then
+			redis.call("hincrby", KEYS[1], "attemptCount", 1)
+		end
 		redis.call("hset", KEYS[1], "leaseId", ARGV[4])	
 
 		return redis.call("hset", KEYS[1], "claimed", "1")
