@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/debugutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -275,14 +276,24 @@ func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb
 }
 
 func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.GetMultiResponse, error) {
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "serve GetMulti %s", digest.String(req.GetResources()[0].GetDigest()))
+	}
+
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	r := getResources(req.GetResources(), req.GetIsolation(), req.GetKey())
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "serve GetMulti %s query underlying cache", digest.String(req.GetResources()[0].GetDigest()))
+	}
 	found, err := c.cache.GetMulti(ctx, r)
 	if err != nil {
 		return nil, err
+	}
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "serve GetMulti %s prepare response", digest.String(req.GetResources()[0].GetDigest()))
 	}
 	rsp := &dcpb.GetMultiResponse{}
 	for d, buf := range found {
@@ -504,13 +515,22 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation 
 		req.Key = append(req.Key, key)
 		req.Resources = append(req.Resources, r)
 	}
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "RemoteGetMulti get client for %s", peer)
+	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
 	}
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "RemoteGetMulti GOT client for %s", peer)
+	}
 	rsp, err := client.GetMulti(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "RemoteGetMulti GOT RESPONSE from %s", peer)
 	}
 	resultMap := make(map[*repb.Digest][]byte, len(rsp.GetKeyValue()))
 	for _, keyValue := range rsp.GetKeyValue() {

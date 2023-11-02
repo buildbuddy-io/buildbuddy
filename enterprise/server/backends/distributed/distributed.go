@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/debugutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -462,6 +463,9 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		if debugutil.IsEnabled(ctx) {
+			log.CtxInfof(ctx, "remoteGetMulti use local cache")
+		}
 		return c.local.GetMulti(ctx, rns)
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, rns)
@@ -803,6 +807,9 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "GetMulti start")
+	}
 	isolation := getIsolation(resources)
 	if isolation == nil {
 		return nil, nil

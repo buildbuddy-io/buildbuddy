@@ -15,6 +15,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/util/bytebufferpool",
+        "//server/util/debugutil",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/ioutil",

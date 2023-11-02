@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/debugutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -316,6 +317,11 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 	}
 	log.CtxInfof(ctx, "BatchReadBlobs GetMulti first %s", digest.String(req.GetDigests()[0]))
+
+	if req.GetDigests()[0].GetSizeBytes() > 50000 {
+		ctx = debugutil.Enable(ctx)
+	}
+
 	cacheRsp, err := s.cache.GetMulti(ctx, cacheRequest)
 	log.CtxInfof(ctx, "BatchReadBlobs GetMulti done first %s", digest.String(req.GetDigests()[0]))
 

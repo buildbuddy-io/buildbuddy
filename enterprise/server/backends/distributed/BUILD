@@ -19,6 +19,7 @@ go_library(
         "//server/resources",
         "//server/util/background",
         "//server/util/consistent_hash",
+        "//server/util/debugutil",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/peerset",
