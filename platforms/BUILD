@@ -4,9 +4,8 @@ load("@local_config_platform//:constraints.bzl", "HOST_CONSTRAINTS")
 package(default_visibility = ["//visibility:public"])
 
 platform(
-    name = "linux_x86_64",
+    name = "linux",
     constraint_values = [
-        "@platforms//cpu:x86_64",
         "@platforms//os:linux",
         # This helps us differentiate between the default local platform, which does not have this,
         # and the remote platform, which does have this.
@@ -17,17 +16,20 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04:latest",
+        "container-image": "docker://" + UBUNTU20_04_IMAGE,
         "dockerNetwork": "off",
     },
 )
 
 platform(
-    name = "macos_x86_64",
-    constraint_values = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:macos",
-    ],
+    name = "linux_x86_64",
+    constraint_values = ["@platforms//cpu:x86_64"],
+    parents = [":linux"],
+)
+
+platform(
+    name = "macos",
+    constraint_values = ["@platforms//os:macos"],
     exec_properties = {
         "Arch": "amd64",
         "OSFamily": "darwin",
@@ -35,41 +37,21 @@ platform(
 )
 
 platform(
+    name = "macos_x86_64",
+    constraint_values = ["@platforms//cpu:x86_64"],
+    parents = [":macos"],
+)
+
+platform(
     name = "macos_arm64",
-    constraint_values = [
-        "@platforms//cpu:arm64",
-        "@platforms//os:macos",
-    ],
-    exec_properties = {
-        "Arch": "arm64",
-        "OSFamily": "darwin",
-    },
-)
-
-platform(
-    name = "exec_linux",
-    exec_properties = {
-        "OSFamily": "Linux",
-        "container-image": "docker://" + UBUNTU20_04_IMAGE,
-        "dockerNetwork": "off",
-    },
-    constraint_values = ["@platforms//os:linux"]
-)
-
-platform(
-    name = "exec_darwin",
-    exec_properties = {
-        "OSFamily": "Darwin",
-        "container-image": "none",
-        "dockerNetwork": "off",
-    },
-    constraint_values = ["@platforms//os:macos"]
+    constraint_values = ["@platforms//cpu:arm64"],
+    parents = [":macos"],
 )
 
 platform(
     name = "buildbuddy_rbe_local_config_platform",
     constraint_values = HOST_CONSTRAINTS,
-    parents = [":exec_linux"] if "@platforms//os:linux" in HOST_CONSTRAINTS else [":exec_darwin"] if "@platforms//os:osx" in HOST_CONSTRAINTS else ["@local_config_platform//:host"],
+    parents = [":linux"] if "@platforms//os:linux" in HOST_CONSTRAINTS else [":macos"] if "@platforms//os:osx" in HOST_CONSTRAINTS else ["@local_config_platform//:host"],
 )
 
 platform(
