@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/cockroachdb/pebble"
 	"github.com/jonboulle/clockwork"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -2182,8 +2181,8 @@ func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	require.NoError(t, err)
-	assert.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MinVersion)
-	assert.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MaxVersion)
+	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MaxVersion)
 
 	require.NoError(t, pc.Stop())
 }
@@ -2203,8 +2202,8 @@ func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-		assert.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2217,8 +2216,8 @@ func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-2"})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-		assert.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2239,8 +2238,8 @@ func TestSpecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
 	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	require.NoError(t, err)
-	assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-	assert.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+	require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
 
 	require.NoError(t, pc.Stop())
 }
@@ -2260,8 +2259,8 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-		assert.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2275,8 +2274,8 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		assert.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
-		assert.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2289,8 +2288,8 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		assert.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
-		assert.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
@@ -2302,8 +2301,8 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		assert.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
-		assert.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+		require.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
 	}
