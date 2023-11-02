@@ -496,7 +496,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
-	if *snaputil.EnableRemoteSnapshotSharing {
+	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly {
 		d, err := remoteManifestKey(key)
 		if err != nil {
 			return err
