@@ -20,9 +20,12 @@ go_library(
         "//server/util/compression",
         "//server/util/ioutil",
         "//server/util/log",
+        "//server/util/pbwireutil",
         "//server/util/prefix",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//encoding",
+        "@org_golang_google_protobuf//encoding/protowire",
     ],
 )
 

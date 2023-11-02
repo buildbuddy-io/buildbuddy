@@ -51,6 +51,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -226,6 +228,10 @@ func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
 	if bsServer := env.GetByteStreamServer(); bsServer != nil {
 		// Register to handle bytestream (upload and download) messages.
 		bspb.RegisterByteStreamServer(grpcServer, bsServer)
+		bsCodec := &byte_stream_server.FastCodec{
+			Codec: encoding.GetCodec(proto.Name),
+		}
+		encoding.RegisterCodec(bsCodec)
 	}
 	if acServer := env.GetActionCacheServer(); acServer != nil {
 		// Register to handle action cache (upload and download) messages.

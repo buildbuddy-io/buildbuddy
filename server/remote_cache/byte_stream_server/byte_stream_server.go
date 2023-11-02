@@ -16,8 +16,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/protobuf/encoding/protowire"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -546,4 +550,47 @@ func (s *Checksum) Check(r *digest.ResourceName) error {
 		return status.DataLossErrorf("Uploaded bytes length (%d bytes) did not match digest (%d).", s.BytesWritten(), d.GetSizeBytes())
 	}
 	return nil
+}
+
+type FastCodec struct {
+	encoding.Codec
+}
+
+func (bs *FastCodec) Marshal(v interface{}) ([]byte, error) {
+	return bs.Codec.Marshal(v)
+}
+
+func (bs *FastCodec) Unmarshal(data []byte, v interface{}) error {
+	if rr, ok := v.(*bspb.ReadRequest); ok {
+		if resourceName, idx := pbwireutil.ConsumeFirstString(data, 1); idx != -1 {
+			rr.ResourceName = resourceName
+		}
+		if readOffset, idx := pbwireutil.ConsumeFirstVarint(data, 2); idx != -1 {
+			rr.ReadOffset = int64(readOffset)
+		}
+		if readLimit, idx := pbwireutil.ConsumeFirstVarint(data, 3); idx != -1 {
+			rr.ReadLimit = int64(readLimit)
+		}
+		return nil
+	}
+	if wr, ok := v.(*bspb.WriteRequest); ok {
+		if resourceName, idx := pbwireutil.ConsumeFirstString(data, 1); idx != -1 {
+			wr.ResourceName = resourceName
+		}
+		if writeOffset, idx := pbwireutil.ConsumeFirstVarint(data, 2); idx != -1 {
+			wr.WriteOffset = int64(writeOffset)
+		}
+		if finishWriteUint, idx := pbwireutil.ConsumeFirstVarint(data, 3); idx != -1 {
+			wr.FinishWrite = protowire.DecodeBool(finishWriteUint)
+		}
+		if data, idx := pbwireutil.ConsumeFirstBytes(data, 10); idx != -1 {
+			wr.Data = data
+		}
+		return nil
+	}
+	return bs.Codec.Unmarshal(data, v)
+}
+
+func (bs *FastCodec) String() string {
+	return "stupid.ass.codec"
 }
