@@ -466,7 +466,11 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		if debugutil.IsEnabled(ctx) {
 			log.CtxInfof(ctx, "remoteGetMulti use local cache")
 		}
-		return c.local.GetMulti(ctx, rns)
+		rsp, err := c.local.GetMulti(ctx, rns)
+		if debugutil.IsEnabled(ctx) {
+			log.CtxInfof(ctx, "remoteGetMulti done use local cache")
+		}
+		return rsp, err
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, rns)
 }
@@ -842,7 +846,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			peer := ps.GetNextPeer()
 			// If no peers remain, skip this digest, we can't do anything more.
 			if peer == "" {
-				c.log.Debugf("Exhausted all peers for %q. Peerset: %+v", h, ps)
+				log.CtxDebugf(ctx, "Exhausted all peers for %q. Peerset: %+v", h, ps)
 				continue
 			}
 			peerRequests[peer] = append(peerRequests[peer], perHashResources[0])
@@ -859,6 +863,9 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			break
 		}
 		eg, gCtx := errgroup.WithContext(ctx)
+		if debugutil.IsEnabled(ctx) {
+			log.CtxInfof(ctx, "GetMulti do batch")
+		}
 		for peer, resources := range peerRequests {
 			peer := peer
 			resources := resources
@@ -867,7 +874,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
-					c.log.Debugf("GetMulti: peer %q returned err: %s", peer, err)
+					log.CtxDebugf(gCtx, "GetMulti: peer %q returned err: %s", peer, err)
 					for _, r := range resources {
 						hash := r.GetDigest().GetHash()
 						peerMap[hash].MarkPeerAsFailed(peer)
@@ -884,9 +891,12 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			if err != context.Canceled {
 				// Don't log context cancelled errors, they are common and expected when
 				// clients cancel a request.
-				c.log.Debugf("Error checking contains batch; will retry: %s", err)
+				log.CtxDebugf(ctx, "Error checking contains batch; will retry: %s", err)
 			}
 			continue
+		}
+		if debugutil.IsEnabled(ctx) {
+			log.CtxInfof(ctx, "done batch")
 		}
 		if len(gotMap) == len(hashResources) {
 			// If we've found everything, we can exit now.
@@ -904,8 +914,14 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			backfills = append(backfills, c.getBackfillOrders(r, ps)...)
 		}
 	}
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "backfill peers")
+	}
 	if err := c.backfillPeers(ctx, backfills); err != nil {
 		c.log.Debugf("Error backfilling peers: %s", err)
+	}
+	if debugutil.IsEnabled(ctx) {
+		log.CtxInfof(ctx, "done backfill peers")
 	}
 
 	rsp := make(map[*repb.Digest][]byte, len(resources))
