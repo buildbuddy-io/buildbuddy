@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -81,6 +82,9 @@ var (
 	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
 
 	exitWhenReady = flag.Bool("exit_when_ready", false, "If set, the app will exit as soon as it becomes ready (useful for migrations)")
+
+	mutexProfileFraction = flag.Int("mutex_profile_fraction", 0, "The fraction of mutex contention events reported. (1/rate, 0 disables)")
+	blockProfileRate     = flag.Int("block_profile_rate", 0, "The fraction of goroutine blocking events reported. (1/rate, 0 disables)")
 
 	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
@@ -273,6 +277,9 @@ func StartAndRunServices(env environment.Env) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
+
+	runtime.SetMutexProfileFraction(*mutexProfileFraction)
+	runtime.SetBlockProfileRate(*blockProfileRate)
 
 	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
 	if err != nil {
