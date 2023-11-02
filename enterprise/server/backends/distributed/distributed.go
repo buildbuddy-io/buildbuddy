@@ -281,10 +281,11 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *r
 
 func (c *Cache) handleHintedHandoffs(peer string) {
 	c.hintedHandoffsMu.RLock()
-	defer c.hintedHandoffsMu.RUnlock()
+	handoffs := c.hintedHandoffsByPeer[peer]
+	c.hintedHandoffsMu.RUnlock()
 	for {
 		select {
-		case handoffOrder := <-c.hintedHandoffsByPeer[peer]:
+		case handoffOrder := <-handoffs:
 			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
 			err := c.sendFile(ctx, handoffOrder.r, peer)
 			if err != nil {
