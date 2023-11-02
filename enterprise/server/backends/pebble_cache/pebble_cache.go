@@ -2273,7 +2273,12 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		return err
 	}
 
-	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
+	writeOpt := pebble.NoSync
+	if md.GetStorageMetadata().GetFileMetadata() != nil {
+		writeOpt = pebble.Sync
+	}
+
+	if err = db.Set(keyBytes, protoBytes, writeOpt); err == nil {
 		if key.EncryptionKeyID() != md.GetEncryptionMetadata().GetEncryptionKeyId() && len(md.GetStorageMetadata().GetChunkedMetadata().GetResource()) == 0 {
 			err := status.FailedPreconditionErrorf("key vs metadata encryption mismatch for %q: %q vs %q", string(keyBytes), key.EncryptionKeyID(), md.GetEncryptionMetadata().GetEncryptionKeyId())
 			alert.UnexpectedEvent("key_metadata_encryption_mismatch", err.Error())
@@ -2921,7 +2926,12 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore
 	}
 	defer db.Close()
 
-	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
+	writeOpts := pebble.NoSync
+	if storageMetadata.GetFileMetadata() != nil {
+		writeOpts = pebble.Sync
+	}
+
+	if err := db.Delete(keyBytes, writeOpts); err != nil {
 		return err
 	}
 
