@@ -152,6 +152,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return false, status.FailedPreconditionError("No connection to cache backend.")
 	}
 
+	ctx, err = uuid.SetInContext(ctx)
+	if err != nil {
+		return false, err
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 

@@ -614,7 +614,10 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		return status.FailedPreconditionErrorf("cannot batch download files when casClient is not set")
 	}
 
+	start := time.Now()
+	log.CtxInfof(ff.ctx, "BatchReadBlobs RPC %d", len(req.GetDigests()))
 	rsp, err := casClient.BatchReadBlobs(ctx, req)
+	log.CtxInfof(ff.ctx, "BatchReadBlobs RPC %d took %s", len(req.GetDigests()), time.Since(start))
 	if err != nil {
 		return err
 	}
@@ -673,10 +676,13 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 			}
 		}
 	}
+	log.CtxInfof(ff.ctx, "batchDownloadFiles done %d", len(req.GetDigests()))
 	return nil
 }
 
 func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
+	log.CtxInfof(ff.ctx, "FetchFiles")
+
 	newRequest := func() *repb.BatchReadBlobsRequest {
 		r := &repb.BatchReadBlobsRequest{
 			InstanceName:   ff.instanceName,
@@ -782,6 +788,7 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 // bytestreamReadFiles reads the given digest from the bytestream and creates
 // files pointing to those contents.
 func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, d *repb.Digest, fps []*FilePointer, opts *DownloadTreeOpts) error {
+	log.CtxInfof(ff.ctx, "bytestreamReadFiles %s", digest.String(d))
 	bsClient := ff.env.GetByteStreamClient()
 	if bsClient == nil {
 		return status.FailedPreconditionErrorf("cannot bytestream read files when bsClient is not set")
@@ -803,9 +810,12 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if ff.supportsCompression() {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
+	log.CtxInfof(ff.ctx, "GetBlob %s", digest.String(resourceName.GetDigest()))
+	start := time.Now()
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, f); err != nil {
 		return err
 	}
+	log.CtxInfof(ff.ctx, "GetBlob done %s took %s", digest.String(resourceName.GetDigest()), time.Since(start))
 
 	ff.statsMu.Lock()
 	ff.stats.FileDownloadSizeBytes += d.GetSizeBytes()
@@ -829,6 +839,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 			return err
 		}
 	}
+	log.CtxInfof(ff.ctx, "bytestreamReadFiles done %s", digest.String(d))
 	return nil
 }
 
@@ -874,6 +885,8 @@ type DownloadTreeOpts struct {
 }
 
 func DownloadTree(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
+	log.CtxInfof(ctx, "DownloadTree")
+
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
