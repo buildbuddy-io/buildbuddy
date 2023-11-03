@@ -204,14 +204,16 @@ func main() {
 
 	// TODO(iain): would be neat to pull stats directly from web here, however
 	// the page is rendered with js, so just wgetting it doesn't work.
-	log.Infof("control runs (tag: %s)", controlTag)
+	log.Infof("control runs")
 	for i := 0; i < *iterations; i++ {
 		log.Info(control[i])
 	}
+	log.Infof("trends: https://app.buildbuddy.dev/trends/?tag=%s", controlTag)
 	log.Infof("test runs (tag: %s)", testTag)
 	for i := 0; i < *iterations; i++ {
 		log.Info(test[i])
 	}
+	log.Infof("trends: https://app.buildbuddy.dev/trends/?tag=%s", testTag)
 
 	log.Info("MySQL query to get control stats:")
 	log.Info(getSQLQuery(control))
