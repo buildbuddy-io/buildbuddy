@@ -15,7 +15,7 @@
 
 .create-repo-page .repo-block {
   flex-direction: column;
-  width: 50vw;
+  width: 90vw;
   max-width: 600px;
   box-sizing: border-box;
   margin: 24px 0 0 0;
