@@ -18,7 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -29,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -76,6 +79,10 @@ type RemoteSnapshotKey struct {
 func getToolEnv() *real_environment.RealEnv {
 	healthChecker := healthcheck.NewHealthChecker("tool")
 	re := real_environment.NewRealEnv(healthChecker)
+
+	if err := tracing.Configure(re); err != nil {
+		log.Fatalf("Failed to configure tracing: %s", err)
+	}
 
 	fc, err := filecache.NewFileCache(*snapshotDir, *snapshotDirMaxBytes, false)
 	if err != nil {
@@ -141,6 +148,7 @@ func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 func main() {
 	flag.Parse()
 
+	flagutil.SetValueForFlagName("app.trace_fraction", 1, nil, false)
 	flagutil.SetValueForFlagName("executor.firecracker_debug_stream_vm_logs", true, nil, false)
 	if *tty {
 		flagutil.SetValueForFlagName("executor.firecracker_debug_terminal", true, nil, false)
@@ -167,8 +175,22 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	run(ctx, env)
+
+	// Shut down and wait for traces to be flushed
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func run(ctx context.Context, env environment.Env) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	if err := networking.DeleteNetNamespaces(ctx); err != nil {
 		log.Warningf("Failed to clean up network namespaces: %s", err)
+	}
+	if err := vbd.CleanStaleMounts(); err != nil {
+		log.Warningf("Failed to clean stale VBD mounts: %s", err)
 	}
 
 	if *apiKey != "" {
