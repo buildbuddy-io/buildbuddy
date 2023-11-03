@@ -4,5 +4,5 @@ def get_parent_from_constraints(constraints):
             return ":linux_x86_64"
         return ":linux"
     if "@platforms//os:osx" in constraints:
-        return ":macos" 
+        return ":macos"
     return "@local_config_platform//:host"
