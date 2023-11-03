@@ -525,7 +525,7 @@ type eagerFetchData struct {
 }
 
 func (s *COWStore) eagerFetchNextChunks(offset int64) {
-	currentOffset := offset
+	currentOffset := offset + s.chunkSizeBytes
 	for i := 0; i < numChunksToEagerFetch; i++ {
 		s.sendNonBlockingEagerFetch(currentOffset)
 		currentOffset += s.chunkSizeBytes
