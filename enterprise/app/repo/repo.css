@@ -11,12 +11,13 @@
 .create-repo-page .card {
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
   border: 1px solid hsl(240 5.9% 90%);
+  border-radius: 16px;
 }
 
 .create-repo-page .repo-block {
   flex-direction: column;
   width: 90vw;
-  max-width: 600px;
+  max-width: 512px;
   box-sizing: border-box;
   margin: 24px 0 0 0;
 }
@@ -50,11 +51,15 @@
   flex-grow: 1;
 }
 
+.create-repo-page .select-wrapper {
+  width: 100%;
+}
+
 .create-repo-page .repo-picker input,
 .create-repo-page .repo-picker select,
 .create-repo-page .repo-picker button,
 .create-repo-page .deployment-config input {
-  padding: 12px;
+  padding: 16px 12px;
   width: 100%;
   border-radius: 8px;
   border: 1px solid #aaa;
@@ -75,7 +80,7 @@
   padding: 16px 32px;
   font-weight: 600;
   border: 0;
-  border-radius: 100px;
+  border-radius: 16px;
   font-size: 18px;
   cursor: pointer;
   border: 3px solid #424242;
@@ -120,11 +125,26 @@
   cursor: default;
 }
 
+.create-repo-page .repo-form {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+
+.create-repo-page .repo-form-header {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.create-repo-page .repo-form-header input {
+  width: initial;
+}
+
 .create-repo-page .repo-private {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 1.2em;
   cursor: pointer;
 }
 
@@ -134,7 +154,7 @@
   width: 100%;
   padding-bottom: 16px;
   margin-bottom: 8px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .create-repo-page .login-buttons .repo-title {
@@ -257,4 +277,10 @@
   flex-shrink: 0;
   object-fit: cover;
   object-position: 0 50%;
+}
+
+@media (max-width: 540px) {
+  .create-repo-page .repo-picker {
+    flex-direction: column;
+  }
 }

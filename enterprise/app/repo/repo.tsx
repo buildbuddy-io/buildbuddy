@@ -444,17 +444,21 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                   </div>
                 </div>
               )}
-            <div>
-              <div>Repository name</div>
+            <div className="repo-form">
+              <div className="repo-form-header">
+                <div>Repository name</div>
+                <div>
+                  <label className="repo-private">
+                    Private
+                    <Checkbox checked={this.state.private} onChange={this.handlePrivateChanged.bind(this)} />
+                  </label>
+                </div>
+              </div>
               <div>
                 <TextInput value={this.state.repoName} onChange={this.handleRepoChanged.bind(this)} />
               </div>
             </div>
           </div>
-          <label className="repo-private">
-            <Checkbox checked={this.state.private} onChange={this.handlePrivateChanged.bind(this)} />
-            Create private git repository
-          </label>
           {!this.state.repoResponse && (
             <button
               disabled={this.state.isCreating}
@@ -478,7 +482,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
           )}
         </div>
         {this.getSecrets().length > 0 && (
-          <div className={`repo-block card repo-create`}>
+          <div className={`repo-block card repo-create ${!this.state.repoResponse && "disabled"}`}>
             <div className="repo-title">Configure deployment</div>
             {Boolean(this.getUnsetSecrets().length) && (
               <div className="deployment-configs">
@@ -500,7 +504,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
               </div>
             )}
             <button
-              disabled={!this.state.repoResponse || this.state.isDeploying || Boolean(this.state.workflowResponse)}
+              disabled={this.state.isDeploying || Boolean(this.state.workflowResponse)}
               className="create-button"
               onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
               <GoogleIcon />
