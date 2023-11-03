@@ -795,7 +795,11 @@ func (m *Mmap) Mapped() bool {
 	return m.safeReadMapped()
 }
 
-func (m *Mmap) SafeReadSource() snaputil.ChunkSource {
+func (m *Mmap) Source() snaputil.ChunkSource {
+	return m.safeReadSource()
+}
+
+func (m *Mmap) safeReadSource() snaputil.ChunkSource {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.source

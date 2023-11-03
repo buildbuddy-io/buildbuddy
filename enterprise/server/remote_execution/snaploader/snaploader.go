@@ -594,7 +594,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 			fn.Digest = d
 
-			chunkSrc := c.SafeReadSource()
+			chunkSrc := c.Source()
 			// If the chunk was pulled from a cache and is not dirty, we don't need
 			// to re-cache it.
 			// If it was chunked directly from a snapshot file, it may not exist
