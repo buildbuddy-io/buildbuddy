@@ -1,10 +1,15 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+# gazelle:default_visibility //enterprise:__subpackages__,//server/static:__pkg__
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "//server/static:__pkg__",
+])
+
 go_library(
     name = "githubauth",
     srcs = ["githubauth.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/githubauth",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/githubapp",
         "//server/backends/github",
@@ -20,5 +25,3 @@ go_library(
         "@com_github_google_uuid//:uuid",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

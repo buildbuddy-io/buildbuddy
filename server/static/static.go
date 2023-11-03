@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubauth"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -23,9 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	iss_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
-	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 )
 
@@ -153,18 +149,18 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		DefaultToDenseMode:                     *defaultToDenseMode,
 		GithubEnabled:                          github.IsLegacyOAuthAppEnabled(),
 		GithubAppEnabled:                       env.GetGitHubApp() != nil,
-		GithubAuthEnabled:                      githubauth.IsEnabled(env),
+		GithubAuthEnabled:                      githubAuthEnabled(env),
 		AnonymousUsageEnabled:                  env.GetAuthenticator().AnonymousUsageEnabled(ctx),
 		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),
-		UserOwnedExecutorsEnabled:              remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
-		ExecutorKeyCreationEnabled:             remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
-		WorkflowsEnabled:                       remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
+		UserOwnedExecutorsEnabled:              remoteExecutionEnabled() && userOwnedExecutorsEnabled(),
+		ExecutorKeyCreationEnabled:             remoteExecutionEnabled() && *enableExecutorKeyCreation,
+		WorkflowsEnabled:                       remoteExecutionEnabled() && *enableWorkflows,
 		CodeEditorEnabled:                      *codeEditorEnabled,
-		RemoteExecutionEnabled:                 remote_execution_config.RemoteExecutionEnabled(),
+		RemoteExecutionEnabled:                 remoteExecutionEnabled(),
 		SsoEnabled:                             env.GetAuthenticator().SSOEnabled(),
 		GlobalFilterEnabled:                    true,
 		UsageEnabled:                           *usageEnabled,
-		ForceUserOwnedDarwinExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
+		ForceUserOwnedDarwinExecutors:          remoteExecutionEnabled() && forceUserOwnedDarwinExecutors(),
 		TestGridV2Enabled:                      *testGridV2Enabled,
 		DetailedCacheStatsEnabled:              hit_tracker.DetailedStatsEnabled(),
 		ExpandedSuggestionsEnabled:             *expandedSuggestionsEnabled,
@@ -172,7 +168,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		SecretsEnabled:                         env.GetSecretService() != nil,
 		TestOutputManifestsEnabled:             *testOutputManifestsEnabled,
 		UserOwnedKeysEnabled:                   env.GetAuthDB() != nil && env.GetAuthDB().GetUserOwnedKeysEnabled(),
-		TrendsHeatmapEnabled:                   iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
+		TrendsHeatmapEnabled:                   trendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:                   *patternFilterEnabled,
 		BotSuggestionsEnabled:                  env.GetSuggestionService() != nil,
 		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
