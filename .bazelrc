@@ -1,5 +1,5 @@
 build --enable_platform_specific_config=true
-# query --enable_platform_specific_config=true
+query --enable_platform_specific_config=true
 
 # Skymeld merges the analysis phase and execution phase.
 # This allows build and test executions to start before the analysis phase finishes,
