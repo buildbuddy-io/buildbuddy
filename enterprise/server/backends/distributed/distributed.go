@@ -272,10 +272,10 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *r
 	}
 	select {
 	case c.hintedHandoffsByPeer[peer] <- order:
-		log.Debugf("Wrote order %+v to %q's hinted handoff channel", order, peer)
+		c.log.CtxDebugf(ctx, "Wrote order %+v to %q's hinted handoff channel", order, peer)
 		// write was sucessful
 	default:
-		log.Warningf("Buffer full: unable to store hinted handoff for %q", peer)
+		c.log.CtxWarningf(ctx, "Buffer full: unable to store hinted handoff for %q", peer)
 	}
 }
 
@@ -289,10 +289,10 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
 			err := c.sendFile(ctx, handoffOrder.r, peer)
 			if err != nil {
-				c.log.Warningf("unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
+				c.log.CtxWarningf(ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
 				return
 			}
-			c.log.Debugf("completed hinted handoff to peer: %q", peer)
+			c.log.CtxDebugf(ctx, "completed hinted handoff to peer: %q", peer)
 			cancel()
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
@@ -546,10 +546,14 @@ func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
 	return deduped
 }
 
-func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) error {
+func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (err error) {
 	if len(backfills) == 0 {
 		return nil
 	}
+	start := time.Now()
+	defer func() {
+		c.log.CtxDebugf(ctx, "backfill took %s err %v", time.Since(start), err)
+	}()
 	backfills = dedupeBackfills(backfills)
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, bf := range backfills {
@@ -588,7 +592,7 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 	ps := c.readPeers(r.GetDigest())
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
-			c.log.Debugf("Error backfilling peers: %s", err)
+			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
 		}
 	}
 
@@ -596,11 +600,11 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 		exists, err := c.remoteContains(ctx, peer, r)
 		if err == nil {
 			if exists {
-				c.log.Debugf("Contains(%q) found on peer %q", r.GetDigest(), peer)
+				c.log.CtxDebugf(ctx, "Contains(%q) found on peer %q", r.GetDigest(), peer)
 				backfill()
 				return exists, err
 			}
-			c.log.Debugf("Contains(%q) not found on peer %q (err: %+v)", r.GetDigest(), peer, err)
+			c.log.CtxDebugf(ctx, "Contains(%q) not found on peer %q (err: %+v)", r.GetDigest(), peer, err)
 			continue
 		}
 
@@ -617,20 +621,20 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		md, err := c.remoteMetadata(ctx, peer, r)
 		if err == nil {
-			c.log.Debugf("Metadata(%q) found on peer %q", d, peer)
+			c.log.CtxDebugf(ctx, "Metadata(%q) found on peer %q", d, peer)
 			return md, nil
 		}
 		if status.IsNotFoundError(err) {
-			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.ResourceIsolationString(r), peer)
+			c.log.CtxDebugf(ctx, "Metadata(%q) not found on peer %s", cacheproxy.ResourceIsolationString(r), peer)
 			continue
 		}
-		c.log.Debugf("Metadata(%q) lookup failed on peer %s: (err: %v)", cacheproxy.ResourceIsolationString(r), peer, err)
+		c.log.CtxDebugf(ctx, "Metadata(%q) lookup failed on peer %s: (err: %v)", cacheproxy.ResourceIsolationString(r), peer, err)
 
 		// Got an error -- mark this peer as failed and try the next one.
 		ps.MarkPeerAsFailed(peer)
 	}
 
-	c.log.Debugf("Exhausted all peers attempting to query metadata %q. Peerset: %+v", d.GetHash(), ps)
+	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to query metadata %q. Peerset: %+v", d.GetHash(), ps)
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q.", d.GetHash())
 }
 
@@ -667,7 +671,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			peer := ps.GetNextPeer()
 			// If no peers remain, skip this digest, we can't do anything more.
 			if peer == "" {
-				c.log.Debugf("Exhausted all peers for %q. Peerset: %+v", h, ps)
+				c.log.CtxDebugf(ctx, "Exhausted all peers for %q. Peerset: %+v", h, ps)
 				continue
 			}
 			peerRequests[peer] = append(peerRequests[peer], perHashResources[0])
@@ -679,7 +683,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 					stillMissing = append(stillMissing, h)
 				}
 			}
-			c.log.Debugf("FindMissing: digests not found: %+v", stillMissing)
+			c.log.CtxDebugf(ctx, "FindMissing: digests not found: %+v", stillMissing)
 			// If we aren't able to plan any more batch requests, that means
 			// we're out of peers and should exit, returning what we have.
 			break
@@ -716,7 +720,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			if err != context.Canceled {
 				// Don't log context cancelled errors, they are common and expected when
 				// clients cancel a request.
-				c.log.Debugf("Error checking contains batch; will retry: %s", err)
+				c.log.CtxDebugf(ctx, "Error checking contains batch; will retry: %s", err)
 			}
 			continue
 		}
@@ -735,7 +739,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		backfills = append(backfills, c.getBackfillOrders(r, ps)...)
 	}
 	if err := c.backfillPeers(ctx, backfills); err != nil {
-		c.log.Debugf("Error backfilling peers: %s", err)
+		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
 	}
 
 	var missing []*repb.Digest
@@ -769,19 +773,19 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 	ps := c.readPeers(rn.GetDigest())
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
-			c.log.Debugf("Error backfilling peers: %s", err)
+			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
 		}
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
 		if err == nil {
-			c.log.Debugf("Reader(%q) found on peer %s", cacheproxy.ResourceIsolationString(rn), peer)
+			c.log.CtxDebugf(ctx, "Reader(%q) found on peer %s", cacheproxy.ResourceIsolationString(rn), peer)
 			backfill()
 			return r, err
 		}
 		if status.IsNotFoundError(err) {
-			c.log.Debugf("Reader(%q) not found on peer %s", cacheproxy.ResourceIsolationString(rn), peer)
+			c.log.CtxDebugf(ctx, "Reader(%q) not found on peer %s", cacheproxy.ResourceIsolationString(rn), peer)
 			continue
 		}
 
@@ -789,7 +793,7 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 		ps.MarkPeerAsFailed(peer)
 
 	}
-	c.log.Debugf("Exhausted all peers attempting to query metadata %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
+	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to query metadata %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
@@ -835,7 +839,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			peer := ps.GetNextPeer()
 			// If no peers remain, skip this digest, we can't do anything more.
 			if peer == "" {
-				c.log.Debugf("Exhausted all peers for %q. Peerset: %+v", h, ps)
+				c.log.CtxDebugf(ctx, "Exhausted all peers for %q. Peerset: %+v", h, ps)
 				continue
 			}
 			peerRequests[peer] = append(peerRequests[peer], perHashResources[0])
@@ -860,7 +864,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
-					c.log.Debugf("GetMulti: peer %q returned err: %s", peer, err)
+					c.log.CtxDebugf(ctx, "GetMulti: peer %q returned err: %s", peer, err)
 					for _, r := range resources {
 						hash := r.GetDigest().GetHash()
 						peerMap[hash].MarkPeerAsFailed(peer)
@@ -877,7 +881,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			if err != context.Canceled {
 				// Don't log context cancelled errors, they are common and expected when
 				// clients cancel a request.
-				c.log.Debugf("Error checking contains batch; will retry: %s", err)
+				c.log.CtxDebugf(ctx, "Error checking contains batch; will retry: %s", err)
 			}
 			continue
 		}
@@ -898,7 +902,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		}
 	}
 	if err := c.backfillPeers(ctx, backfills); err != nil {
-		c.log.Debugf("Error backfilling peers: %s", err)
+		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
 	}
 
 	rsp := make(map[*repb.Digest][]byte, len(resources))
@@ -949,7 +953,7 @@ func (mc *multiWriteCloser) Commit() error {
 			if err := wc.Commit(); err != nil {
 				return err
 			}
-			mc.log.Debugf("Successfully wrote %s to %q", cacheproxy.ResourceIsolationString(mc.r), peer)
+			mc.log.CtxDebugf(mc.ctx, "Successfully wrote %s to %q", cacheproxy.ResourceIsolationString(mc.r), peer)
 			return nil
 		})
 	}
@@ -959,7 +963,7 @@ func (mc *multiWriteCloser) Commit() error {
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
-		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", cacheproxy.ResourceIsolationString(mc.r), peers)
+		mc.log.CtxDebugf(mc.ctx, "Writer(%q) successfully wrote to peers %s", cacheproxy.ResourceIsolationString(mc.r), peers)
 	}
 	return err
 }
@@ -971,7 +975,7 @@ func (mc *multiWriteCloser) Close() error {
 		peer := peer
 		eg.Go(func() error {
 			if err := wc.Close(); err != nil {
-				log.Errorf("Error closing peer %q writer: %s", peer, err)
+				mc.log.CtxErrorf(mc.ctx, "Error closing peer %q writer: %s", peer, err)
 			}
 			return nil
 		})
@@ -999,7 +1003,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r)
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
-			log.Infof("Error opening remote writer for %q to peer %q: %s", r.GetDigest().GetHash(), peer, err)
+			c.log.CtxInfof(ctx, "Error opening remote writer for %q to peer %q: %s", r.GetDigest().GetHash(), peer, err)
 			continue
 		}
 		mwc.peerClosers[peer] = rwc
@@ -1010,7 +1014,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 			openPeers = append(openPeers, peer)
 		}
 		allPeers := append(ps.PreferredPeers, ps.FallbackPeers...)
-		log.Infof("Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", r.Digest.GetHash(), allPeers, openPeers, ps)
+		c.log.CtxInfof(ctx, "Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", r.Digest.GetHash(), allPeers, openPeers, ps)
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(mwc.peerClosers), c.config.ReplicationFactor)
 	}
 	return mwc, nil
