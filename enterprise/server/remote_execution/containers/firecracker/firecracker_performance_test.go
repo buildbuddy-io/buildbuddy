@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/stretchr/testify/require"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -31,6 +32,13 @@ import (
 var testManualBenchmark = flag.Bool("test_manual_benchmark", false, "Whether to run manual benchmarking tests.")
 var testCacheRoot = flag.String("test_cache_root", "", "If set, use this as the cache root dir for the manual benchmark test. This is useful if you want to use a cached snapshot to speed up re-running tests.")
 var testSingleBuild = flag.Bool("test_single_build", false, "Whether to only run one test build. This can be useful because the whole test takes a long time to run.")
+
+// To enable tracing, start a jaeger instance with:
+// `docker run -d --name jaeger -p 16686:16686 -p 14268:14268 jaegertracing/all-in-one:1.23`
+// View traces at http://localhost:16686
+// To port-forward the UI from a GCP VM, you can run:
+// `gcloud compute ssh gcp_vm_name -- -NL 16686:localhost:16686`
+var enableTracing = flag.Bool("manual_benchmark_enable_tracing", false, "Whether to enable tracing with jaeger.")
 
 // Prints performance data about various Firecracker commands
 // Run with:
@@ -82,6 +90,13 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		cfg = getExecutorConfig(t)
 		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
+		if *enableTracing {
+			flags.Set(t, "app.trace_fraction", 1)
+		}
+		flags.Set(t, "app.trace_jaeger_collector", "http://localhost:14268/api/traces")
+		err = tracing.Configure(env)
+		require.NoError(t, err)
+
 		task = &repb.ExecutionTask{
 			Command: &repb.Command{
 				// Note: platform must match in order to share snapshots
@@ -98,10 +113,13 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 				ContainerImage:         busyboxImage,
 				ActionWorkingDirectory: workDir,
 				VMConfiguration: &fcpb.VMConfiguration{
-					NumCpus:           1,
-					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-					EnableNetworking:  false,
-					ScratchDiskSizeMb: 100,
+					NumCpus:            1,
+					MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
+					EnableNetworking:   false,
+					ScratchDiskSizeMb:  100,
+					KernelVersion:      cfg.KernelVersion,
+					FirecrackerVersion: cfg.FirecrackerVersion,
+					GuestApiVersion:    cfg.GuestAPIVersion,
 				},
 				ExecutorConfig: cfg,
 			}
@@ -157,6 +175,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 
 		// Run bazel on a clean runner. Local and remote cache are empty
 		start := time.Now()
+		ctx, span := tracing.StartSpan(ctx)
 		c, err := firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
 		containersToCleanup = append(containersToCleanup, c)
@@ -170,6 +189,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		fmt.Printf("(remote_snapshot_sharing=%v) Bazel build on a clean runner took %s.\n", enableRemote, time.Since(start))
 		err = c.Pause(ctx)
 		require.NoError(t, err)
+		span.End()
 
 		if *testSingleBuild {
 			t.Fatal("Exiting early because test_single_build flag was set")
