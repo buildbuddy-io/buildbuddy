@@ -170,6 +170,14 @@ build:macos --cxxopt=-std=c++17
 build:windows --host_cxxopt=/std:c++17
 build:windows --cxxopt=/std:c++17
 
+# Special config to help build FOSS without the //enterprise source code (WIP)
+#
+# Usage:
+#
+#   bazel build --config=foss server
+#
+build:foss --@io_bazel_rules_go//go/config:tags=buildbuddy_foss
+
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
 test:webdriver-debug --test_arg=-webdriver_debug
