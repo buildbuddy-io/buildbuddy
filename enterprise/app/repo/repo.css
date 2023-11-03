@@ -15,7 +15,7 @@
 
 .create-repo-page .repo-block {
   flex-direction: column;
-  width: 50vw;
+  width: 90vw;
   max-width: 600px;
   box-sizing: border-box;
   margin: 24px 0 0 0;
@@ -78,12 +78,12 @@
   border-radius: 100px;
   font-size: 18px;
   cursor: pointer;
-  border: 3px solid rgba(255, 255, 255, 0.9);
-  background-color: #000;
-  color: #fff;
+  border: 3px solid #424242;
+  background-color: #fff;
+  color: #424242;
   transition: 300ms ease-in-out;
   box-sizing: border-box;
-  gap: 8px;
+  gap: 12px;
 }
 
 .create-repo-page .view-buttons .view-button,
@@ -111,10 +111,12 @@
 
 .create-repo-page .code-button {
   background-color: #4caf50;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  color: #fff;
 }
 
 .create-repo-page .create-button:disabled {
-  background-color: #aaa;
+  opacity: 0.5;
   cursor: default;
 }
 

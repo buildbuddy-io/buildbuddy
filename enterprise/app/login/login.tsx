@@ -4,12 +4,13 @@ import capabilities from "../../../app/capabilities/capabilities";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import Input from "../../../app/components/input/input";
-import Button from "../../../app/components/button/button";
 import alertService from "../../../app/alert/alert_service";
 import { grp } from "../../../proto/group_ts_proto";
-import { ArrowRight, Github, HelpCircle, Lock, User } from "lucide-react";
+import { ArrowRight, Lock, User } from "lucide-react";
 import popup from "../../../app/util/popup";
 import error_service from "../../../app/errors/error_service";
+import { GoogleIcon } from "../../../app/icons/google";
+import { GithubIcon } from "../../../app/icons/github";
 
 interface State {
   orgName?: string;
@@ -107,16 +108,16 @@ export default class LoginComponent extends React.Component<Props, State> {
     this.setState({ ssoSlug: e.target.value });
   }
 
-  authProviderName() {
-    if (!capabilities.config.configuredIssuers.length) {
-      return "";
-    }
-    if (capabilities.config.configuredIssuers[0].includes("accounts.google.com")) {
-      return "with Google";
-    }
-    if (capabilities.config.configuredIssuers[0].includes("okta.com")) {
-      return "with Okta";
-    }
+  isGoogleConfigured() {
+    return (
+      capabilities.config.configuredIssuers.length &&
+      capabilities.config.configuredIssuers[0].includes("accounts.google.com")
+    );
+  }
+  isOktaConfigured() {
+    return (
+      capabilities.config.configuredIssuers.length && capabilities.config.configuredIssuers[0].includes("okta.com")
+    );
   }
 
   render() {
@@ -133,15 +134,27 @@ export default class LoginComponent extends React.Component<Props, State> {
         <div className="container">
           <div className="login-box">
             <div className="login-buttons">
-              <button debug-id="login-button" className="google-button" onClick={this.handleLoginClicked.bind(this)}>
-                <User /> Continue {this.authProviderName()}
-              </button>
+              {!this.isGoogleConfigured() && !this.isOktaConfigured() && (
+                <button debug-id="login-button" className="login-button" onClick={this.handleLoginClicked.bind(this)}>
+                  <User /> Continue
+                </button>
+              )}
+              {this.isGoogleConfigured() && (
+                <button debug-id="login-button" className="google-button" onClick={this.handleLoginClicked.bind(this)}>
+                  <GoogleIcon /> Continue with Google
+                </button>
+              )}
+              {this.isOktaConfigured() && (
+                <button debug-id="login-button" className="login-button" onClick={this.handleLoginClicked.bind(this)}>
+                  <User /> Continue with Okta
+                </button>
+              )}
               {capabilities.config.githubAuthEnabled && (
                 <button
                   debug-id="github-button"
                   className="github-button"
                   onClick={this.handleGithubClicked.bind(this)}>
-                  <Github /> Continue with GitHub
+                  <GithubIcon /> Continue with GitHub
                 </button>
               )}
               {capabilities.sso && (

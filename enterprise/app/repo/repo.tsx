@@ -4,7 +4,7 @@ import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { repo } from "../../../proto/repo_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
-import { BookCopy, ChevronRightSquare, CloudIcon, Folders, Github } from "lucide-react";
+import { BookCopy, ChevronRightSquare, Folders, Github } from "lucide-react";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import Select from "../../../app/components/select/select";
 import Checkbox from "../../../app/components/checkbox/checkbox";
@@ -15,6 +15,8 @@ import { secrets } from "../../../proto/secrets_ts_proto";
 import router from "../../../app/router/router";
 import popup from "../../../app/util/popup";
 import picker_service from "../../../app/picker/picker_service";
+import { GithubIcon } from "../../../app/icons/github";
+import { GoogleIcon } from "../../../app/icons/google";
 
 export interface RepoComponentProps {
   path: string;
@@ -458,7 +460,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
               disabled={this.state.isCreating}
               className="create-button"
               onClick={this.handleCreateClicked.bind(this)}>
-              <Github /> {this.state.isCreating ? "Creating..." : "Create repository"}
+              <GithubIcon /> {this.state.isCreating ? "Creating..." : "Create GitHub repository"}
             </button>
           )}
           {this.state.repoResponse && (
@@ -501,7 +503,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
               disabled={!this.state.repoResponse || this.state.isDeploying || Boolean(this.state.workflowResponse)}
               className="create-button"
               onClick={() => this.handleDeployClicked(this.state.repoResponse!)}>
-              <CloudIcon />{" "}
+              <GoogleIcon />
               {this.state.isDeploying || this.state.workflowResponse
                 ? `Deploying${deployDestination}...`
                 : `Deploy${deployDestination}`}
