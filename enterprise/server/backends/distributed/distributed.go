@@ -546,10 +546,14 @@ func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
 	return deduped
 }
 
-func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) error {
+func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (err error) {
 	if len(backfills) == 0 {
 		return nil
 	}
+	start := time.Now()
+	defer func() {
+		log.CtxDebugf(ctx, "backfill took %s err %v", time.Since(start), err)
+	}()
 	backfills = dedupeBackfills(backfills)
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, bf := range backfills {
