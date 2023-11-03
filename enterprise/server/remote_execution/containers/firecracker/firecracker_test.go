@@ -945,7 +945,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		require.NoError(t, err)
 		snapshotKey, err := snaploader.NewKey(task, configHash.GetHash(), "")
 		require.NoError(t, err)
-		snapMetadata, err := loader.GetSnapshot(ctx, snapshotKey)
+		snapMetadata, err := loader.GetSnapshot(ctx, snapshotKey, enableRemote)
 		require.NoError(t, err)
 		for _, f := range snapMetadata.GetFiles() {
 			if rand.Intn(100) < 30 {
@@ -1101,7 +1101,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		require.NoError(t, err)
 		snapshotKey, err := snaploader.NewKey(task, configHash.GetHash(), "")
 		require.NoError(t, err)
-		snapMetadata, err := loader.GetSnapshot(ctx, snapshotKey)
+		snapMetadata, err := loader.GetSnapshot(ctx, snapshotKey, true)
 		require.NoError(t, err)
 		for _, f := range snapMetadata.GetFiles() {
 			if rand.Intn(100) < 30 {
