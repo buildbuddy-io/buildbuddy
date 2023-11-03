@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
