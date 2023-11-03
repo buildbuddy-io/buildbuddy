@@ -38,6 +38,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	// Fetch from remote cache
 	buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
 	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, buf); err != nil {
 		return status.WrapError(err, "remote fetch snapshot artifact")
 	}
