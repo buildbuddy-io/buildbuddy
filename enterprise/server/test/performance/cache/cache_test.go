@@ -114,9 +114,13 @@ func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) 
 
 func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
 	testRootDir := testfs.MakeTempDir(t)
+	activeKeyVersion := int64(5)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
-		RootDirectory: testRootDir,
-		MaxSizeBytes:  maxSizeBytes,
+		RootDirectory:         testRootDir,
+		MaxSizeBytes:          maxSizeBytes,
+		ActiveKeyVersion:      &activeKeyVersion,
+		AverageChunkSizeBytes: 524288,
+		IncludeMetadataSize:   true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -205,18 +209,18 @@ type namedCache struct {
 }
 
 func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
-	dc := getDiskCache(b, te)
-	ddc := getDistributedCache(b, te, dc)
-	pc := getPebbleCache(b, te)
-	dpc := getDistributedCache(b, te, pc)
+	//dc := getDiskCache(b, te)
+	//ddc := getDistributedCache(b, te, dc)
+	//pc := getPebbleCache(b, te)
+	//dpc := getDistributedCache(b, te, pc)
 
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
-		{getMemoryCache(b), "Memory"},
-		{getDiskCache(b, te), "Disk"},
-		{ddc, "DDisk"},
+		//{getMemoryCache(b), "Memory"},
+		//{getDiskCache(b, te), "Disk"},
+		//{ddc, "DDisk"},
 		{getPebbleCache(b, te), "Pebble"},
-		{dpc, "DPebble"},
+		//{dpc, "DPebble"},
 	}
 	return caches
 }
