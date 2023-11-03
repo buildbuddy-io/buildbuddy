@@ -3321,6 +3321,7 @@ func (p *PebbleCache) Stop() error {
 
 	// Flushed db after all waitgroups finished to reduce the change of lost
 	// evictions during app restarts
+	p.flushPartitionMetadata()
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
