@@ -386,6 +386,11 @@ func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfi
 	}, nil
 }
 
+type RunnerConfig struct {
+	platform *repb.Platform
+	instanceName string
+}
+
 type Provider struct {
 	env            environment.Env
 	dockerClient   *dockerclient.Client
@@ -463,6 +468,8 @@ type FirecrackerContainer struct {
 	// Whether networking has been set up (and needs to be cleaned up).
 	isNetworkSetup bool
 
+	// Whether the container supports recycling
+	supportsRecycling bool
 	// Whether the VM was recycled.
 	recycled bool
 
@@ -473,7 +480,14 @@ type FirecrackerContainer struct {
 	// including VM startup time
 	currentTaskInitTimeUsec int64
 
+	// ExecutorConfig contains configuration that is computed once at executor
+	// startup and applies to all VMs created by the executor.
 	executorConfig *ExecutorConfig
+	// RunnerConfig contains configuration about the runner this container is
+	// associated with. It does not change over the lifetime of the container,
+	// even if the container is reused
+	runnerConfig RunnerConfig
+
 	// dockerClient is used to optimize image pulls by reusing image layers from
 	// the Docker cache as well as deduping multiple requests for the same image.
 	dockerClient *dockerclient.Client
@@ -550,6 +564,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmLog:              vmLog,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
 		cancelVmCtx:        func(err error) {},
+		supportsRecycling:  platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName)),
 	}
 
 	c.vmConfig.KernelVersion = c.executorConfig.KernelVersion
@@ -583,12 +598,11 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		}
 		// If recycling is enabled and a snapshot exists, then when calling
 		// Create(), load the snapshot instead of creating a new VM.
-
-		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
-		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
-			_, err := loader.GetSnapshot(ctx, c.snapshotKey)
-			c.createFromSnapshot = (err == nil)
-		}
+		//recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
+		//if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
+		//	_, err := loader.GetSnapshot(ctx, c.snapshotKey)
+		//	c.createFromSnapshot = (err == nil)
+		//}
 	} else {
 		c.snapshotKey = opts.SavedState.GetSnapshotKey()
 
@@ -1732,8 +1746,10 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	return cmdResult
 }
 
-// Create creates a new VM and starts a top-level process inside it listening
-// for commands to execute.
+// Firecracker containers should always attempt to start from a snapshot for
+// performance reasons, even if you call `Create`.
+// `Unpause` and `Create` should operate identically, and
+// are only maintained to meet the Container interface
 func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir string) error {
 	c.actionWorkingDir = actionWorkingDir
 
@@ -1756,6 +1772,20 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return err
 }
 
+// init will try to load a snapshot if available, and fallback to creating a new VM
+// If local snapshot sharing is not enabled, we should still try to create a new one
+// when we go through create
+func (c *FirecrackerContainer) init(ctx context.Context) error {
+	// Should this check be in or outside of init?
+	if c.supportsRecycling {
+		// TODO(Brandon): Replace with snapshotKeySet
+		// Problem: We don't have these variables
+		c.snapshotKey, err := snaploader.NewKey(task, cd.GetHash(), runnerID)
+	}
+}
+
+// Create creates a new VM and starts a top-level process inside it listening
+// for commands to execute.
 func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
 	c.rmOnce = &sync.Once{}

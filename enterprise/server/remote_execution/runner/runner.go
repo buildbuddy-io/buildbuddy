@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"io"
 	"math"
 	"os"
@@ -900,7 +901,17 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		Platform:            task.GetCommand().GetPlatform(),
 		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
 	}
-	if props.RecycleRunner {
+	// If snapshot sharing is enabled, a firecracker VM can be cloned from the
+	// cache and does not rely on previous state set on the runner, so we can
+	// circumvent the runner pool. In fact we *should* circumvent the runner pool
+	// and create a new runner with data from the incoming task, which can be used
+	// to find a better snapshot match than a runner created for a stale task
+	// (Ex. If runner A was created for branch `feature_one` and an incoming
+	// workload is for branch `feature_two`, we should create a new runner intended
+	//// for `feature_two`, rather than reuse the runner for branch `feature_one`, which would be more stale
+	snapshotEnabledRunner := platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType &&
+		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+	if props.RecycleRunner && !snapshotEnabledRunner {
 		r := p.takeWithRetry(ctx, key)
 		if r != nil {
 			p.mu.Lock()
@@ -922,15 +933,19 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		DebugId:           debugID,
 		AssignedTaskCount: 1,
 	}
-	metrics.RecycleRunnerRequests.With(prometheus.Labels{
-		metrics.RecycleRunnerRequestStatusLabel: missStatusLabel,
-	}).Inc()
-	return p.newRunner(ctx, props, st, state)
+
+	// Move this somewhere else for firecracker?
+	if !snapshotEnabledRunner {
+		metrics.RecycleRunnerRequests.With(prometheus.Labels{
+			metrics.RecycleRunnerRequestStatusLabel: missStatusLabel,
+		}).Inc()
+	}
+	return p.newRunner(ctx, props, st, state, !snapshotEnabledRunner)
 }
 
 // newRunner creates a runner either for the given task (if set) or restores the
 // runner from the given state.ContainerState.
-func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState) (*commandRunner, error) {
+func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState, addToPool bool) (*commandRunner, error) {
 	if st == nil && state.GetContainerState() == nil {
 		return nil, status.FailedPreconditionError("either a task or saved container state is required to create a runner")
 	}
@@ -972,10 +987,13 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	if p.isShuttingDown {
 		return nil, status.UnavailableErrorf("Could not get a new task runner because the executor is shutting down.")
 	}
-	p.runners = append(p.runners, r)
-	p.pendingRemovals.Add(1)
-	r.removeCallback = func() {
-		p.pendingRemovals.Done()
+
+	if addToPool {
+		p.runners = append(p.runners, r)
+		p.pendingRemovals.Add(1)
+		r.removeCallback = func() {
+			p.pendingRemovals.Done()
+		}
 	}
 	log.CtxInfof(ctx, "Created new %s runner %s for task", props.WorkloadIsolationType, r)
 	return r, nil

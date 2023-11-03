@@ -212,6 +212,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	log.CtxInfof(ctx, "Getting a runner for task.")
+	// TODO: Could modify this - instead of using the runner pool
+	// If firecracker + remote snapshot sharing enabled, construct a custom runner
 	r, err := s.runnerPool.Get(ctx, st)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
