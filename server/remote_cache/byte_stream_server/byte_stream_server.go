@@ -83,6 +83,7 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
 func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	log.CtxTracef(stream.Context(), "Read")
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
@@ -110,6 +111,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
+	log.CtxTracef(stream.Context(), "Create Reader")
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		ht.TrackMiss(r.GetDigest())
@@ -145,22 +147,21 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	bytesTransferredToClient := 0
 	for {
-		n, err := io.ReadFull(reader, copyBuf)
+		log.CtxTracef(stream.Context(), "Read chunk")
+		n, err := ioutil.ReadTryFillBuffer(reader, copyBuf)
+		log.CtxTracef(stream.Context(), "Read %d bytes", n)
 		bytesTransferredToClient += n
 		if err == io.EOF {
 			break
-		} else if err == io.ErrUnexpectedEOF {
-			if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
-				return err
-			}
-		} else if err != nil {
-			return err
-		} else {
-			if err := stream.Send(&bspb.ReadResponse{Data: copyBuf}); err != nil {
-				return err
-			}
-			continue
 		}
+		if err != nil {
+			return err
+		}
+		log.CtxTracef(stream.Context(), "Send %d bytes", n)
+		if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
+			return err
+		}
+		log.CtxTracef(stream.Context(), "Sent %d bytes", n)
 	}
 	// If the reader was not passed through the compressor above, the data will be sent
 	// as is from the cache to the client, and the number of bytes will be equal
@@ -169,7 +170,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		bytesFromCache = counter.Count()
 	}
 
+	log.CtxTracef(stream.Context(), "Update tracker")
 	downloadTracker.CloseWithBytesTransferred(bytesFromCache, int64(bytesTransferredToClient), r.GetCompressor(), "byte_stream_server")
+	log.CtxTracef(stream.Context(), "Return")
 	return err
 }
 
