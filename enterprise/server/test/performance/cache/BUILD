@@ -10,6 +10,7 @@ go_test(
     deps = [
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",
+        "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/backends/disk_cache",
         "//server/backends/memory_cache",
@@ -20,6 +21,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testport",
+        "//server/util/compression",
         "//server/util/log",
         "//server/util/prefix",
     ],
