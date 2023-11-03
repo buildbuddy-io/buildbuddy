@@ -199,6 +199,16 @@ func (l *Logger) Debugf(format string, args ...interface{}) {
 	l.zl.Debug().Msgf(format, args...)
 }
 
+// CtxDebugf logs to the DEBUG log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func (l *Logger) CtxDebugf(ctx context.Context, format string, args ...interface{}) {
+	e := l.zl.Debug()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
+}
+
 // Info logs to the INFO log.
 func (l *Logger) Info(message string) {
 	l.zl.Info().Msg(message)
@@ -207,6 +217,16 @@ func (l *Logger) Info(message string) {
 // Infof logs to the INFO log. Arguments are handled in the manner of fmt.Printf.
 func (l *Logger) Infof(format string, args ...interface{}) {
 	l.zl.Info().Msgf(format, args...)
+}
+
+// CtxInfof logs to the INFO log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func (l *Logger) CtxInfof(ctx context.Context, format string, args ...interface{}) {
+	e := l.zl.Info()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
 }
 
 // Warning logs to the WARNING log.
@@ -225,6 +245,19 @@ func (l *Logger) Warningf(format string, args ...interface{}) {
 	}).Inc()
 }
 
+// CtxWarningf logs to the WARNING log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func (l *Logger) CtxWarningf(ctx context.Context, format string, args ...interface{}) {
+	e := l.zl.Warn()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "warning",
+	}).Inc()
+}
+
 // Error logs to the ERROR log.
 func (l *Logger) Error(message string) {
 	l.zl.Error().Msg(message)
@@ -236,6 +269,19 @@ func (l *Logger) Error(message string) {
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func (l *Logger) Errorf(format string, args ...interface{}) {
 	l.zl.Error().Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "error",
+	}).Inc()
+}
+
+// CtxErrorf logs to the ERROR log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func (l *Logger) CtxErrorf(ctx context.Context, format string, args ...interface{}) {
+	e := l.zl.Error()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
 	metrics.Logs.With(prometheus.Labels{
 		metrics.StatusHumanReadableLabel: "error",
 	}).Inc()
