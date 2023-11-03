@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -559,6 +560,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	eg.SetLimit(chunkedFileWriteConcurrency)
 
 	chunks := cow.SortedChunks()
+	var mu sync.RWMutex
 	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
 	for _, c := range chunks {
 		c := c
@@ -604,7 +606,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 					return status.WrapError(err, "write chunk to cache")
 				}
 			}
+			mu.Lock()
 			chunkSourceCounter[chunkSrc]++
+			mu.Unlock()
 
 			return nil
 		})
