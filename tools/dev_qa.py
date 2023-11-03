@@ -59,9 +59,9 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
-                --extra_execution_platforms=//platforms:local_config_platform \
-                --host_platform=//platforms:local_config_platform \
-                --platforms=//platforms:local_config_platform \
+                --extra_execution_platforms=@buildbuddy_toolchain//:platform \
+                --host_platform=@buildbuddy_toolchain//:platform \
+                --platforms=@buildbuddy_toolchain//:platform \
                 --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --build_metadata=TAGS=dev-qa
         """,
@@ -76,9 +76,9 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
-                --extra_execution_platforms=//platforms:local_config_platform \
-                --host_platform=//platforms:local_config_platform \
-                --platforms=//platforms:local_config_platform \
+                --extra_execution_platforms=@buildbuddy_toolchain//:platform \
+                --host_platform=@buildbuddy_toolchain//:platform \
+                --platforms=@buildbuddy_toolchain//:platform \
                 --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --noincompatible_disallow_empty_glob \
                 --java_runtime_version=remotejdk_17 \

@@ -22,8 +22,8 @@ bazel build server \
   --remote_instance_name=$(date +%s) \
   --host_cpu=k8 --cpu=k8 \
   --crosstool_top=@buildbuddy_toolchain//:ubuntu1604_cc_toolchain_suite \
-  --host_platform=//platforms:buildbuddy_rbe_linux_x86_64_default \
-  --platforms=//platforms:buildbuddy_rbe_linux_x86_64_default \
+  --host_platform=@buildbuddy_toolchain//:platform_linux \
+  --platforms=@buildbuddy_toolchain//:platform_linux \
   --extra_toolchains=@buildbuddy_toolchain//:ubuntu1604_cc_toolchain \
   --remote_download_minimal \
   --verbose_failures \
