@@ -681,10 +681,10 @@ type RemoteExecutionService interface {
 }
 
 type FileCache interface {
-	FastLinkFile(f *repb.FileNode, outputPath string) bool
-	DeleteFile(f *repb.FileNode) bool
-	AddFile(f *repb.FileNode, existingFilePath string) error
-	ContainsFile(node *repb.FileNode) bool
+	FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string) bool
+	DeleteFile(ctx context.Context, f *repb.FileNode) bool
+	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error
+	ContainsFile(ctx context.Context, node *repb.FileNode) bool
 	WaitForDirectoryScanToComplete()
 
 	// TempDir returns a directory that is guaranteed to be on the same device
