@@ -208,6 +208,10 @@ const (
 	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
 	SnapshotSharingStatus = "snapshot_sharing_status"
 
+	// For chunked snapshot files, describes the initialization source of the
+	// chunk (Ex. `remote_cache` or `local_filecache`)
+	ChunkSource = "chunk_source"
+
 	// For remote execution runners, describes the recycling status (Ex.
 	// 'clean' if the runner is not recycled or 'recycled')
 	RecycledRunnerStatus = "recycled_runner_status"
@@ -1037,6 +1041,18 @@ var (
 		GroupID,
 		FileName,
 		RecycledRunnerStatus,
+	})
+
+	COWSnapshotChunkSourceRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_chunk_source_ratio",
+		Help:      "After a copy-on-write snapshot has been used, the percentage of chunks that were initialized by the given source.",
+	}, []string{
+		GroupID,
+		FileName,
+		RecycledRunnerStatus,
+		ChunkSource,
 	})
 
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{

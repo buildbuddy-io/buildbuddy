@@ -24,15 +24,34 @@ var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_shari
 var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd and executor.firecracker_enable_uffd are true.")
 var RemoteSnapshotReadonly = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
 
-func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) error {
+// ChunkSource represents how a snapshot chunk was initialized
+type ChunkSource int
+
+const (
+	// ChunkSourceUnmapped means the lazy chunk has not been initialized yet
+	ChunkSourceUnmapped ChunkSource = iota
+	// ChunkSourceHole means the chunk was initialized as a hole - i.e. it started
+	// with empty data, though it may have been written to since
+	ChunkSourceHole
+	// ChunkSourceLocalFile means the chunk was created by splitting a snapshot file on disk
+	// into chunks (i.e. this is the first time we're using this snapshot, and it's
+	// not yet cached)
+	ChunkSourceLocalFile
+	// ChunkSourceLocalFilecache means the chunk was fetched from the local filecache
+	ChunkSourceLocalFilecache
+	// ChunkSourceRemoteCache means the chunk was fetched from the remote cache
+	ChunkSourceRemoteCache
+)
+
+func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
 	node := &repb.FileNode{Digest: d}
 	fetchedLocally := localCache.FastLinkFile(node, outputPath)
 	if fetchedLocally {
-		return nil
+		return ChunkSourceLocalFilecache, nil
 	}
 
 	if !*EnableRemoteSnapshotSharing {
-		return status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+		return ChunkSourceUnmapped, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
 	}
 
 	// Fetch from remote cache
@@ -40,7 +59,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, buf); err != nil {
-		return status.WrapError(err, "remote fetch snapshot artifact")
+		return ChunkSourceUnmapped, status.WrapError(err, "remote fetch snapshot artifact")
 	}
 
 	// Write file to outputDir so it can be used by the VM
@@ -51,7 +70,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 		log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
 	}
 
-	return writeErr
+	return ChunkSourceRemoteCache, writeErr
 }
 
 func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
@@ -66,7 +85,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 		}
 	}()
 
-	if err := GetArtifact(ctx, localCache, bsClient, d, instanceName, tmpPath); err != nil {
+	if _, err := GetArtifact(ctx, localCache, bsClient, d, instanceName, tmpPath); err != nil {
 		return nil, err
 	}
 
@@ -123,4 +142,21 @@ func cacheLocally(localCache interfaces.FileCache, d *repb.Digest, path string) 
 		return localCache.AddFile(fileNode, path)
 	}
 	return nil
+}
+
+func ChunkSourceLabel(c ChunkSource) string {
+	switch c {
+	case ChunkSourceUnmapped:
+		return "unmapped"
+	case ChunkSourceLocalFile:
+		return "local_file"
+	case ChunkSourceLocalFilecache:
+		return "local_filecache"
+	case ChunkSourceHole:
+		return "hole"
+	case ChunkSourceRemoteCache:
+		return "remote_cache"
+	default:
+		return "invalid_chunk_source"
+	}
 }

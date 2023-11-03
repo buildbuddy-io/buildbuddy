@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -523,7 +524,7 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	s, err := f.Stat()
 	require.NoError(t, err)
 
-	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, int(f.Fd()), int(s.Size()), 0, "")
+	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, int(f.Fd()), int(s.Size()), 0, snaputil.ChunkSourceLocalFile, "")
 	require.NoError(t, err)
 	return mmap, path
 }

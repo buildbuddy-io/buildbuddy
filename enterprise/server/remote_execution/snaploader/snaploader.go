@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -387,7 +388,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 
 	for _, fileNode := range snapshot.manifest.Files {
 		outputPath := filepath.Join(outputDirectory, fileNode.GetName())
-		if err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
+		if _, err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
 			return nil, err
 		}
 	}
@@ -603,6 +604,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	eg.SetLimit(chunkedFileWriteConcurrency)
 
 	chunks := cow.SortedChunks()
+	var mu sync.RWMutex
+	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
 	for _, c := range chunks {
 		c := c
 		fn := &repb.FileNode{
@@ -612,7 +615,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		tree.Root.Files = append(tree.Root.Files, fn)
 		eg.Go(func() error {
 			ctx := egCtx
-			if cow.Dirty(c.Offset) {
+			dirty := cow.Dirty(c.Offset)
+			if dirty {
 				chunkSize, err := c.SizeBytes()
 				if err != nil {
 					return status.WrapError(err, "dirty chunk size")
@@ -634,12 +638,21 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 			fn.Digest = d
 
-			if c.Mapped() {
+			chunkSrc := c.Source()
+			// If the chunk was pulled from a cache and is not dirty, we don't need
+			// to re-cache it.
+			// If it was chunked directly from a snapshot file, it may not exist
+			// in the cache yet, and we should cache it.
+			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
+			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
 				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
 					return status.WrapError(err, "write chunk to cache")
 				}
 			}
+			mu.Lock()
+			chunkSourceCounter[chunkSrc]++
+			mu.Unlock()
 
 			return nil
 		})
@@ -680,6 +693,15 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		metrics.FileName:             name,
 		metrics.RecycledRunnerStatus: recycleStatus,
 	}).Add(float64(dirtyBytes))
+
+	for chunkSrc, count := range chunkSourceCounter {
+		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
+			metrics.GroupID:              gid,
+			metrics.FileName:             name,
+			metrics.RecycledRunnerStatus: recycleStatus,
+			metrics.ChunkSource:          snaputil.ChunkSourceLabel(chunkSrc),
+		}).Observe(float64(count / len(chunks)))
+	}
 
 	return treeDigest, nil
 }
