@@ -2,6 +2,7 @@ package copy_on_write
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -34,17 +35,14 @@ const (
 	// churning through stale data
 	eagerFetchChanSize = 100
 
-	maxEagerFetchesPerSec = 100
-
-	// Max number of goroutines allowed to run concurrently when eagerly
-	// fetching chunks
-	eagerFetchConcurrency = 4
-
 	// If we access a chunk, we will queue this number of contiguous chunks
 	// to be eagerly fetched in the background, anticipating that they will
 	// also be accessed
 	numChunksToEagerFetch = 4
 )
+
+var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
+var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 8, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
 
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
@@ -538,9 +536,9 @@ func (s *COWStore) sendNonBlockingEagerFetch(offset int64) {
 }
 
 func (s *COWStore) eagerFetchChunksInBackground() {
-	rateLimiter := rate.NewLimiter(rate.Limit(maxEagerFetchesPerSec), 1)
+	rateLimiter := rate.NewLimiter(rate.Limit(*maxEagerFetchesPerSec), 1)
 	eg := &errgroup.Group{}
-	eg.SetLimit(eagerFetchConcurrency)
+	eg.SetLimit(*eagerFetchConcurrency)
 
 	for {
 		select {
