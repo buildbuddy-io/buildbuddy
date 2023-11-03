@@ -9,7 +9,6 @@ ts_library(
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
-        "//app/components/button",
         "//app/components/input",
         "//app/errors:error_service",
         "//app/icons:github",
