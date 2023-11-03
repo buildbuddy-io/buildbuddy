@@ -49,69 +49,7 @@ platform(
 )
 
 platform(
-    name = "buildbuddy_rbe_local_config_platform",
+    name = "local_config_platform",
     constraint_values = HOST_CONSTRAINTS,
     parents = [":linux"] if "@platforms//os:linux" in HOST_CONSTRAINTS else [":macos"] if "@platforms//os:osx" in HOST_CONSTRAINTS else ["@local_config_platform//:host"],
-)
-
-platform(
-    name = "buildbuddy_rbe_local_config_platform_with_clang",
-    constraint_values = ["@bazel_tools//tools/cpp:clang"],
-    parents = [":buildbuddy_rbe_local_config_platform"],
-)
-
-platform(
-    name = "buildbuddy_rbe_local_config_platform_default",
-    parents = [":buildbuddy_rbe_local_config_platform"] if "//:static" else [":buildbuddy_rbe_local_config_platform_with_clang"],
-)
-
-platform(
-    name = "buildbuddy_rbe_linux_x86_64",
-    constraint_values = ["@platforms//cpu:x86_64"],
-    parents = [":exec_linux"],
-)
-
-platform(
-    name = "buildbuddy_rbe_linux_x86_64_with_clang",
-    constraint_values = ["@bazel_tools//tools/cpp:clang"],
-    parents = [":buildbuddy_rbe_linux_x86_64"],
-)
-
-platform(
-    name = "buildbuddy_rbe_linux_x86_64_default",
-    parents = [":buildbuddy_rbe_linux_x86_64"] if "//:static" else [":buildbuddy_rbe_linux_x86_64_with_clang"],
-)
-
-platform(
-    name = "buildbuddy_rbe_darwin_x86_64",
-    constraint_values = ["@platforms//cpu:x86_64"],
-    parents = [":exec_darwin"],
-)
-
-platform(
-    name = "buildbuddy_rbe_darwin_x86_64_with_clang",
-    constraint_values = ["@bazel_tools//tools/cpp:clang"],
-    parents = [":buildbuddy_rbe_darwin_x86_64"],
-)
-
-platform(
-    name = "buildbuddy_rbe_darwin_x86_64_default",
-    parents = [":buildbuddy_rbe_darwin_x86_64"] if "//:static" else [":buildbuddy_rbe_darwin_x86_64_with_clang"],
-)
-
-platform(
-    name = "buildbuddy_rbe_darwin_arm64",
-    constraint_values = ["@platforms//cpu:aarch64"],
-    parents = [":exec_darwin"],
-)
-
-platform(
-    name = "buildbuddy_rbe_darwin_arm64_with_clang",
-    constraint_values = ["@bazel_tools//tools/cpp:clang"],
-    parents = [":buildbuddy_rbe_darwin_arm64"],
-)
-
-platform(
-    name = "buildbuddy_rbe_darwin_arm64_default",
-    parents = [":buildbuddy_rbe_darwin_arm64"] if "//:static" else [":buildbuddy_rbe_darwin_arm64_with_clang"],
 )

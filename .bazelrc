@@ -37,8 +37,8 @@ build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
-build:remote-shared --platforms=//platforms:buildbuddy_rbe_local_config_platform_default
-build:remote-shared --extra_execution_platforms=//platforms:buildbuddy_rbe_local_config_platform_default
+build:remote-shared --platforms=//platforms:local_config_platform
+build:remote-shared --extra_execution_platforms=//platforms:local_config_platform
 
 build --incompatible_enable_cc_toolchain_resolution
 
