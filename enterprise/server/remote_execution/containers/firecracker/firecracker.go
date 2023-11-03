@@ -210,6 +210,18 @@ var (
 	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 )
 
+func init() {
+	// Configure firecracker request timeout (default: 500ms).
+	//
+	// We're increasing it from the default here since we do some remote reads
+	// during ResumeVM to handle page faults with UFFD.
+	//
+	// This 30s timeout was determined as the time it takes to load a bb repo
+	// snapshot in dev with a cold filecache (10s), times 3 to account for tail
+	// latency + larger VMs that could take longer to resume.
+	os.Setenv("FIRECRACKER_GO_SDK_REQUEST_TIMEOUT_MILLISECONDS", fmt.Sprint(30_000))
+}
+
 func openFile(ctx context.Context, fsys fs.FS, fileName string) (io.ReadCloser, error) {
 	// If the file exists on the filesystem, use that.
 	if path, err := exec.LookPath(fileName); err == nil {
