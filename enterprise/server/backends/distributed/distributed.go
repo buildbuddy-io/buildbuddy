@@ -468,8 +468,10 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 }
 func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		log.CtxTracef(ctx, "use local reader")
 		return c.local.Reader(ctx, r, offset, limit)
 	}
+	log.CtxTracef(ctx, "use remote reader")
 	return c.cacheProxy.RemoteReader(ctx, peer, r, offset, limit)
 }
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

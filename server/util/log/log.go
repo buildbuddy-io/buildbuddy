@@ -367,10 +367,9 @@ func Debugf(format string, args ...interface{}) {
 // Logs are enriched with information from the context
 // (e.g. invocation_id, request_id)
 func CtxTracef(ctx context.Context, format string, args ...interface{}) {
-	if v, ok := ctx.Value("x-buildbuddy-log-trace-id").(string); ok {
+	if _, ok := ctx.Value("x-buildbuddy-log-trace-id").(string); ok {
 		e := log.Debug()
 		enrichEventFromContext(ctx, e)
-		e.Str("trace_id", v)
 		e.Msgf(format, args...)
 	}
 }

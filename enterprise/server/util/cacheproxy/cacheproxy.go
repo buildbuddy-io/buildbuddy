@@ -555,12 +555,15 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.Reso
 	go func() {
 		readOnce := false
 		for {
+			log.CtxTracef(ctx, "reading from peer")
 			rsp, err := stream.Recv()
+			log.CtxTracef(ctx, "read from peer")
 			if !readOnce {
 				firstError <- err
 				readOnce = true
 			}
 			if err == io.EOF {
+				log.CtxTracef(ctx, "done read from peer")
 				writer.Close()
 				break
 			}

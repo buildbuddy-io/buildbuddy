@@ -34,7 +34,7 @@ var (
 func SetInContext(ctx context.Context) (context.Context, error) {
 	u, err := guuid.NewRandom()
 	if err != nil {
-		return nil, err
+		return ctx, err
 	}
 	return log.EnrichContext(ctx, "request_id", u.String()), nil
 }

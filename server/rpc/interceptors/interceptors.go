@@ -97,8 +97,9 @@ func addAuthToContext(env environment.Env, ctx context.Context) context.Context 
 }
 
 func addRequestIdToContext(ctx context.Context) context.Context {
-	if rctx, err := uuid.SetInContext(ctx); err == nil {
-		return rctx
+	ctx, _ = uuid.SetInContext(ctx)
+	if v, ok := ctx.Value("x-buildbuddy-log-trace-id").(string); ok {
+		ctx = log.EnrichContext(ctx, "trace_id", v)
 	}
 	return ctx
 }
