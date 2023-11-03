@@ -12,6 +12,8 @@ ts_library(
         "//app/components/button",
         "//app/components/input",
         "//app/errors:error_service",
+        "//app/icons:github",
+        "//app/icons:google",
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:popup",
