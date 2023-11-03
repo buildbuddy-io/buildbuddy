@@ -1,5 +1,6 @@
 load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE")
 load("@local_config_platform//:constraints.bzl", "HOST_CONSTRAINTS")
+load(":platforms.bzl", "get_parent_from_constraints")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,7 +17,6 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "container-image": "docker://" + UBUNTU20_04_IMAGE,
         "dockerNetwork": "off",
     },
 )
@@ -24,6 +24,7 @@ platform(
 platform(
     name = "linux_x86_64",
     constraint_values = ["@platforms//cpu:x86_64"],
+    exec_properties = {"container-image": "docker://" + UBUNTU20_04_IMAGE},
     parents = [":linux"],
 )
 
@@ -51,5 +52,5 @@ platform(
 platform(
     name = "local_config_platform",
     constraint_values = HOST_CONSTRAINTS,
-    parents = [":linux"] if "@platforms//os:linux" in HOST_CONSTRAINTS else [":macos"] if "@platforms//os:osx" in HOST_CONSTRAINTS else ["@local_config_platform//:host"],
+    parents = [get_parent_from_constraints(HOST_CONSTRAINTS)],
 )

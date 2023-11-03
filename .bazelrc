@@ -37,8 +37,8 @@ build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
-build:remote-shared --platforms=//platforms:local_config_platform
-build:remote-shared --extra_execution_platforms=//platforms:local_config_platform
+build:remote-shared --platforms=//platforms:linux_x86_64
+build:remote-shared --extra_execution_platforms=//platforms:linux_x86_64
 
 build --incompatible_enable_cc_toolchain_resolution
 
@@ -128,10 +128,13 @@ build:auto-release --config=remote
 build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 build:auto-release -c opt
 
+# Static build configuration. MacOS is currently unsupported.
 # On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your
 # repo_env in user.bazelrc to avoid permissions errors.
 build:static --repo_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-build:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl,@zig_sdk//toolchain:linux_arm64_musl
+build:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl
+# amd64 is not yet tested, so we leave this toolchain commented out for now.
+# build:static --extra_toolchains=@zig_sdk//toolchain:linux_arm64_musl
 build:static --@io_bazel_rules_go//go/config:static=true
 build:static --copt=-fPIC
 
