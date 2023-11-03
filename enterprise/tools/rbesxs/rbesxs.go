@@ -112,7 +112,7 @@ func getSQLQuery(bbUrls []string) string {
 		split := strings.Split(bbUrl, "/")
 		invocationIds[i] = split[len(split)-1]
 	}
-	return "SELECT invocation_id, duration_usec, action_cache_hits, action_cache_misses, cas_cache_hits, cas_cache_misses, total_download_size_bytes, total_upload_size_bytes FROM Invocations WHERE (invocation_id='" + strings.Join(invocationIds, "' OR invocation_id='") + "');"
+	return "SELECT invocation_id, duration_usec, action_cache_hits, action_cache_misses, cas_cache_hits, cas_cache_uploads, total_download_size_bytes, total_upload_size_bytes FROM Invocations WHERE (invocation_id='" + strings.Join(invocationIds, "' OR invocation_id='") + "');"
 }
 
 func main() {
