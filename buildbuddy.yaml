@@ -20,7 +20,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --static --test_tag_filters=-performance,-webdriver,-docker,-bare --build_metadata=TAGS=linux-workflow
+      - test //... --config=linux-workflows --config=static --test_tag_filters=-performance,-webdriver,-docker,-bare --build_metadata=TAGS=linux-workflow
   - name: Check style
     container_image: ubuntu-20.04
     triggers:
