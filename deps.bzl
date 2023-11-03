@@ -5145,6 +5145,13 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.2.2",
     )
     go_repository(
+        name = "com_github_valyala_gozstd",
+        importpath = "github.com/valyala/gozstd",
+        sum = "h1:xPnnnvjmaDDitMFfDxmQ4vpx0+3CdTg2o3lALvXTU/g=",
+        version = "v1.20.1",
+    )
+
+    go_repository(
         name = "com_github_valyala_histogram",
         importpath = "github.com/valyala/histogram",
         sum = "h1:wyYGAZZt3CpwUiIb9AU/Zbllg1llXyrtApRS815OLoQ=",

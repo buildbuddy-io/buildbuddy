@@ -9,8 +9,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
+	zstd "github.com/valyala/gozstd"
 )
 
 var (
