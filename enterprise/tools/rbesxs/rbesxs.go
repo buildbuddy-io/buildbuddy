@@ -173,7 +173,7 @@ func main() {
 		log.Infof("iteration %d: control finished: %s", i, control[i])
 
 		// TODO(iain): it might be interesting/useful to support running test
-		// and control in parallel to isolate time-effects.
+		// and control in parallel to isolate time effects.
 		remoteInstanceName = randomString()
 		if *doSetup {
 			bazelClean(ctx, *testRepo)
