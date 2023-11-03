@@ -3346,7 +3346,7 @@ func (p *PebbleCache) Stop() error {
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
-	log.Infof("Pebble Cache [%s]: db flushed", p.name)
+	log.Infof("Pebble Cache [%s]: db flushed again", p.name)
 
 	return p.db.Close()
 }
