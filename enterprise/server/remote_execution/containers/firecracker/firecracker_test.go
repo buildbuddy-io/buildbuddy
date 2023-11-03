@@ -74,6 +74,7 @@ const (
 
 var (
 	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
+	testCacheRoot    = flag.String("test_cache_root", "", "If set, use this as the disk cache root dir. Useful if you want to use a cached snapshot to speed up re-running tests.")
 	// TODO(bduffany): make the bazel test a benchmark, and run it for both
 	// NBD and non-NBD.
 	testBazelBuild      = flag.Bool("test_bazel_build", false, "Whether to test a bazel build.")
@@ -832,7 +833,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 
 		ctx = context.Background()
 		// Set large cache size (100GB) to ensure artifacts aren't evicted
-		env = getTestEnv(ctx, t, envOpts{cacheSize: 100_000_000_000})
+		env = getTestEnv(ctx, t, envOpts{cacheSize: 100_000_000_000, cacheRootDir: *testCacheRoot})
 		cfg = getExecutorConfig(t)
 		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
@@ -880,27 +881,34 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		workDir := testfs.MakeDirAll(t, rootDir, "work")
 		cmd := &repb.Command{Arguments: []string{"bash", "-c", `
 				 cd ~
-				 if [ -d bazel-gazelle ]; then
+				 if [ -d buildbuddy ]; then
 					echo "Directory exists."
 				 else
-					git clone https://github.com/bazelbuild/bazel-gazelle
+					git clone https://github.com/buildbuddy-io/buildbuddy --filter=blob:none
 				 fi
-				 cd bazel-gazelle
+				 cd buildbuddy
 				 # See https://github.com/bazelbuild/bazelisk/issues/220
 				 echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
-				 bazelisk build //...
+				 bazelisk build //enterprise/server/...
 			`}}
 		opts = firecracker.ContainerOpts{
 			ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
 			ActionWorkingDirectory: workDir,
 			VMConfiguration: &fcpb.VMConfiguration{
 				NumCpus:           6,
-				MemSizeMb:         8000,
+				MemSizeMb:         10000,
 				EnableNetworking:  true,
 				ScratchDiskSizeMb: 20_000,
 			},
 			ExecutorConfig: cfg,
 		}
+		// firecracker.NewContainer() mutates the ContainerOpts set on the container
+		// The opts are used to generate the snapshot key, so update the same fields
+		// here, so manually constructed snapshot keys in this test match keys constructed
+		// by the container
+		opts.VMConfiguration.KernelVersion = cfg.KernelVersion
+		opts.VMConfiguration.FirecrackerVersion = cfg.FirecrackerVersion
+		opts.VMConfiguration.GuestApiVersion = cfg.GuestAPIVersion
 
 		// Run bazel on a clean runner. Local and remote cache are empty
 		start := time.Now()
