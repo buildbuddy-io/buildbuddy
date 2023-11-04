@@ -304,7 +304,7 @@ func (c *fileCache) WaitForDirectoryScanToComplete() {
 
 // Read atomically reads a file from filecache.
 func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
-	tmp, err := tempPath(c, node.GetDigest().GetHash())
+	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, erro
 
 // Write atomically writes the given bytes to filecache.
 func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
-	tmp, err := tempPath(c, node.GetDigest().GetHash())
+	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return 0, err
 	}
@@ -344,10 +344,10 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 	return n, nil
 }
 
-func tempPath(fc interfaces.FileCache, name string) (string, error) {
+func (c *fileCache) tempPath(name string) (string, error) {
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(fc.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
+	return filepath.Join(c.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
 }
