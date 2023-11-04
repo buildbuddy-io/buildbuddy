@@ -11,7 +11,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -268,7 +267,7 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 		return nil, err
 	}
 	manifestNode := &repb.FileNode{Digest: d}
-	buf, err := filecacheutil.Read(l.env.GetFileCache(), manifestNode)
+	buf, err := l.env.GetFileCache().Read(ctx, manifestNode)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
 	}
@@ -510,7 +509,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		return err
 	}
 	manifestNode := &repb.FileNode{Digest: d}
-	_, localCacheErr := filecacheutil.Write(l.env.GetFileCache(), manifestNode, b)
+	_, localCacheErr := l.env.GetFileCache().Write(ctx, manifestNode, b)
 	return localCacheErr
 }
 
@@ -518,7 +517,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 // ActionResult validation will check this
 func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *fcpb.SnapshotManifest) error {
 	for _, f := range manifest.GetFiles() {
-		if !l.env.GetFileCache().ContainsFile(f) {
+		if !l.env.GetFileCache().ContainsFile(ctx, f) {
 			return status.NotFoundErrorf("file %q not found (digest %q)", f.GetName(), digest.String(f.GetDigest()))
 		}
 	}
@@ -527,7 +526,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 			node := &repb.FileNode{
 				Digest: c.GetDigest(),
 			}
-			if !l.env.GetFileCache().ContainsFile(node) {
+			if !l.env.GetFileCache().ContainsFile(ctx, node) {
 				return status.NotFoundErrorf("chunked file %q missing chunk at offset 0x%x (digest %q)", cf.GetName(), c.GetOffset(), digest.String(node.Digest))
 			}
 		}

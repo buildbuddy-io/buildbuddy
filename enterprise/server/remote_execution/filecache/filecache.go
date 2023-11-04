@@ -3,6 +3,7 @@ package filecache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -298,4 +300,54 @@ func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
 
 func (c *fileCache) WaitForDirectoryScanToComplete() {
 	<-c.dirScanDone
+}
+
+// Read atomically reads a file from filecache.
+func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
+	tmp, err := tempPath(c, node.GetDigest().GetHash())
+	if err != nil {
+		return nil, err
+	}
+	if !c.FastLinkFile(ctx, node, tmp) {
+		return nil, status.NotFoundErrorf("digest %s not found", node.GetDigest().GetHash())
+	}
+	defer func() {
+		if err := os.Remove(tmp); err != nil {
+			log.Warningf("Failed to remove filecache temp file: %s", err)
+		}
+	}()
+	return os.ReadFile(tmp)
+}
+
+// Write atomically writes the given bytes to filecache.
+func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
+	tmp, err := tempPath(c, node.GetDigest().GetHash())
+	if err != nil {
+		return 0, err
+	}
+	f, err := os.Create(tmp)
+	if err != nil {
+		return 0, status.InternalErrorf("filecache temp file creation failed: %s", err)
+	}
+	defer func() {
+		if err := os.Remove(tmp); err != nil {
+			log.Warningf("Failed to remove filecache temp file: %s", err)
+		}
+	}()
+	n, err = f.Write(b)
+	if err != nil {
+		return n, err
+	}
+	if err := c.AddFile(ctx, node, tmp); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func tempPath(fc interfaces.FileCache, name string) (string, error) {
+	randStr, err := random.RandomString(10)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(fc.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
 }

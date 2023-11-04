@@ -15,6 +15,7 @@ go_library(
         "//server/util/fastcopy",
         "//server/util/log",
         "//server/util/lru",
+        "//server/util/random",
         "//server/util/status",
         "//server/util/uuid",
         "@com_github_prometheus_client_golang//prometheus",
