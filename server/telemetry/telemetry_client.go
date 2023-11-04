@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/google/uuid"
 
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
@@ -208,7 +207,7 @@ func getFeatures(env environment.Env) *telpb.TelemetryFeature {
 
 	return &telpb.TelemetryFeature{
 		CacheEnabled: cache != nil,
-		RbeEnabled:   remote_execution_config.RemoteExecutionEnabled(),
+		RbeEnabled:   remoteExecutionEnabled(),
 		ApiEnabled:   api != nil,
 		AuthEnabled:  authenticator != nil,
 	}

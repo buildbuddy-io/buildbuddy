@@ -177,6 +177,7 @@ build:windows --cxxopt=/std:c++17
 #   bazel build --config=foss server
 #
 build:foss --@io_bazel_rules_go//go/config:tags=buildbuddy_foss
+query:foss --@io_bazel_rules_go//go/config:tags=buildbuddy_foss
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.

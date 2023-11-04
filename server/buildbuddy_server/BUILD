@@ -2,13 +2,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "buildbuddy_server",
-    srcs = ["buildbuddy_server.go"],
+    srcs = [
+        "buildbuddy_server.go",
+        "buildbuddy_server_enterprise.go",
+        "buildbuddy_server_foss.go",  #keep
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/auditlog",
-        "//enterprise/server/gcplink",
-        "//enterprise/server/remote_execution/config",
         "//proto:api_key_go_proto",
         "//proto:auditlog_go_proto",
         "//proto:bazel_config_go_proto",
@@ -64,7 +65,14 @@ go_library(
         "//server/util/urlutil",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
-    ],
+    ] + select({
+        "//platforms/configs:buildbuddy_foss": [],
+        "//conditions:default": [
+            "//enterprise/server/auditlog",
+            "//enterprise/server/gcplink",
+            "//enterprise/server/remote_execution/config",
+        ],
+    }),  #keep
 )
 
 go_test(

@@ -1,10 +1,15 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+# gazelle:default_visibility //enterprise:__subpackages__,//server/buildbuddy_server:__pkg__
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "//server/buildbuddy_server:__pkg__",
+])
+
 go_library(
     name = "auditlog",
     srcs = ["auditlog.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:auditlog_go_proto",
         "//server/environment",
@@ -22,5 +27,3 @@ go_library(
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
