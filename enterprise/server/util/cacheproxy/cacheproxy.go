@@ -581,7 +581,13 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.Reso
 				writer.CloseWithError(err)
 				break
 			}
-			writer.Write(rsp.Data)
+			log.CtxTracef(ctx, "write %d bytes to pipe", len(rsp.Data))
+			n, err := writer.Write(rsp.Data)
+			if err != nil {
+				log.CtxTracef(ctx, "error writing data to pipe: %s", err)
+			} else {
+				log.CtxTracef(ctx, "wrote %d to pipe", n)
+			}
 		}
 	}()
 	err = <-firstError

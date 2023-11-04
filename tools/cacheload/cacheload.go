@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/sync/errgroup"
@@ -155,18 +156,20 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.
 	retrier := retry.DefaultWithContext(ctx)
 	var err error
 	for retrier.Next() {
-		if *readBatch {
-			_, err = batchReadSingleBlob(ctx, casClient, resourceName)
-		} else {
-			err = cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+		id, err := uuid.NewRandom()
+		if err != nil {
+			return err
 		}
+		ctx := metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-log-trace-id", id.String())
+		start := time.Now()
+		err = cachetools.GetBlob(ctx, client, resourceName, io.Discard)
 		incrementPromErrorMetric(err)
 		if err == nil {
 			return nil
 		} else if status.IsUnavailableError(err) {
 			continue
 		}
-		return err
+		return status.WrapErrorf(err, "could not read %q, id %q, started at %q", digest.String(resourceName.GetDigest()), id, start)
 	}
 	return err
 }
