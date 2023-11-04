@@ -585,6 +585,7 @@ func (d *doubleReader) Close() error {
 }
 
 func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	log.CtxTracef(ctx, "migration_cache.Reader")
 	if err := mc.checkSafeToMigrate(ctx); err != nil {
 		return nil, err
 	}
@@ -631,6 +632,8 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 
 	srcReader, srcErr := mc.src.Reader(ctx, r, uncompressedOffset, limit)
 	eg.Wait()
+
+	log.CtxTracef(ctx, "double read wait done")
 
 	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
 	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
@@ -683,6 +686,8 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 			}
 		}()
 	}
+
+	log.CtxTracef(ctx, "migration created local reader")
 
 	return dr, nil
 }

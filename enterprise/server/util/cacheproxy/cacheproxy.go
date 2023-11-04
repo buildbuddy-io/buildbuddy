@@ -303,12 +303,14 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 }
 
 func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
+	log.CtxTracef(stream.Context(), "cacheproxy.Read")
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
 		return err
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
 	rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
+	log.CtxTracef(stream.Context(), "create local reader")
 	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
@@ -325,16 +327,20 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	defer c.readBufPool.Put(copyBuf)
 
 	for {
+		log.CtxTracef(stream.Context(), "fill buffer from cache")
 		n, err := ioutil.ReadTryFillBuffer(reader, copyBuf)
 		if err == io.EOF {
 			break
 		}
+		log.CtxTracef(stream.Context(), "read %d from cache", n)
 		if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf[:n]}); err != nil {
 			return err
 		}
+		log.CtxTracef(stream.Context(), "sent %d from cache", n)
 	}
 
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
+	log.CtxTracef(stream.Context(), "done cacheproxy.Read")
 	return err
 }
 
@@ -555,7 +561,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.Reso
 	go func() {
 		readOnce := false
 		for {
-			log.CtxTracef(ctx, "reading from peer")
+			log.CtxTracef(ctx, "reading from peer %q", peer)
 			rsp, err := stream.Recv()
 			if err != nil {
 				log.CtxTracef(ctx, "error reading from peer: %s", err)

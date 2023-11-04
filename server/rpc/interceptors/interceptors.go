@@ -100,6 +100,7 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 	ctx, _ = uuid.SetInContext(ctx)
 	if v, ok := ctx.Value("x-buildbuddy-log-trace-id").(string); ok {
 		ctx = log.EnrichContext(ctx, "trace_id", v)
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-log-trace-id", v)
 	}
 	return ctx
 }
