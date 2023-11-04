@@ -268,12 +268,12 @@ func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	}
 }
 
-func uploadFiles(uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
+func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
 		if fc != nil && uploadableFile.dir == nil {
 			node := uploadableFile.FileNode()
-			if err := fc.AddFile(node, uploadableFile.fullFilePath); err != nil {
+			if err := fc.AddFile(ctx, node, uploadableFile.fullFilePath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
@@ -454,7 +454,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
-	if err := uploadFiles(uploader, env.GetFileCache(), filesToUpload); err != nil {
+	if err := uploadFiles(ctx, uploader, env.GetFileCache(), filesToUpload); err != nil {
 		return nil, err
 	}
 
@@ -548,11 +548,11 @@ func copyFile(src *FilePointer, dest *FilePointer, opts *DownloadTreeOpts) error
 
 // linkFileFromFileCache attempts to link the given file path from the local
 // file cache, and returns whether the linking was successful.
-func linkFileFromFileCache(d *repb.Digest, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
+func linkFileFromFileCache(ctx context.Context, d *repb.Digest, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
 	if err := removeExisting(fp, opts); err != nil {
 		return false, err
 	}
-	return fc.FastLinkFile(fp.FileNode, fp.FullPath), nil
+	return fc.FastLinkFile(ctx, fp.FileNode, fp.FullPath), nil
 }
 
 // FileMap is a map of digests to file pointers containing the contents
@@ -661,7 +661,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 			return err
 		}
 		if fileCache != nil {
-			if err := fileCache.AddFile(ptr.FileNode, ptr.FullPath); err != nil {
+			if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
@@ -714,7 +714,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		for _, fp := range filePointers {
 			d := fp.FileNode.GetDigest()
 			if fileCache != nil {
-				linked, err := linkFileFromFileCache(d, fp, fileCache, opts)
+				linked, err := linkFileFromFileCache(ff.ctx, d, fp, fileCache, opts)
 				if err != nil {
 					return err
 				}
@@ -817,7 +817,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	}
 	fileCache := ff.env.GetFileCache()
 	if fileCache != nil {
-		if err := fileCache.AddFile(fp.FileNode, fp.FullPath); err != nil {
+		if err := fileCache.AddFile(ff.ctx, fp.FileNode, fp.FullPath); err != nil {
 			log.Warningf("Error adding file to filecache: %s", err)
 		}
 	}
