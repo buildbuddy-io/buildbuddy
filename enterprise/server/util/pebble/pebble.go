@@ -137,6 +137,8 @@ type Batch interface {
 	Count() uint32
 
 	Reader() pebble.BatchReader
+
+	Reset()
 }
 
 // IPebbleDB is an interface the covers the methods on a pebble.DB used by our
@@ -250,6 +252,9 @@ func (ib *instrumentedBatch) Apply(batch Batch, opts *pebble.WriteOptions) error
 
 func (ib *instrumentedBatch) Reader() pebble.BatchReader {
 	return ib.batch.Reader()
+}
+func (ib *instrumentedBatch) Reset() {
+	ib.batch.Reset()
 }
 
 type opMetrics struct {
