@@ -506,6 +506,8 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 	ogChunk = s.chunks[offset]
 	chunkSource := snaputil.ChunkSourceHole
 	if ogChunk != nil {
+		ogChunk.mu.RLock()
+		defer ogChunk.mu.RUnlock()
 		chunkSource = ogChunk.source
 	}
 	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, chunkSource, s.remoteInstanceName)
