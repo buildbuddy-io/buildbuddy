@@ -511,9 +511,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 				return nil, nil, err
 			}
 		}
-		ogChunk.mu.RLock()
 		chunkSource = ogChunk.source
-		ogChunk.mu.RUnlock()
 	}
 	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, chunkSource, s.remoteInstanceName)
 	if err != nil {
