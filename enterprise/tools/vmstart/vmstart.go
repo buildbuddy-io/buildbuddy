@@ -9,8 +9,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -102,35 +100,20 @@ func getToolEnv() *real_environment.RealEnv {
 	return re
 }
 
-func parseSnapshotKeyJSON(in string) (*RemoteSnapshotKey, *fcpb.SnapshotKey) {
+func parseSnapshotKeyJSON(in string) (*RemoteSnapshotKey, *fcpb.SnapshotKey, error) {
 	k := &RemoteSnapshotKey{}
 	if err := json.Unmarshal([]byte(in), k); err != nil {
-		log.Fatalf("Failed to parse remote snapshot key: %s", err)
+		return nil, nil, status.WrapError(err, "unmarshal snapshot key JSON")
 	}
 	b, err := json.Marshal(k.Key)
 	if err != nil {
-		log.Fatalf("Failed to marshal SnapshotKey: %s", err)
+		return nil, nil, status.WrapError(err, "marshal SnapshotKey")
 	}
 	pk := &fcpb.SnapshotKey{}
 	if err := protojson.Unmarshal(b, pk); err != nil {
-		log.Fatalf("Failed to unmashal SnapshotKey: %s", err)
+		return nil, nil, status.WrapError(err, "unmarshal SnapshotKey")
 	}
-	return k, pk
-}
-
-func parseDigest(in string) *repb.Digest {
-	parts := strings.SplitN(in, "/", 2)
-	if len(parts) != 2 || len(parts[0]) != 64 {
-		log.Fatalf("Error parsing snapshotID %q (not in hash/size form)", in)
-	}
-	i, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		log.Fatalf("Error parsing snapshotID %q: %s", in, err)
-	}
-	return &repb.Digest{
-		Hash:      parts[0],
-		SizeBytes: i,
-	}
+	return k, pk, nil
 }
 
 func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.ResourceName) (*repb.Action, *repb.Command, error) {
@@ -175,14 +158,18 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	run(ctx, env)
+	if err := run(ctx, env); err != nil {
+		log.Errorf("Run failed: %s", err)
+	} else {
+		log.Infof("Run completed.")
+	}
 
 	// Shut down and wait for traces to be flushed
 	env.GetHealthChecker().Shutdown()
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
-func run(ctx context.Context, env environment.Env) {
+func run(ctx context.Context, env environment.Env) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -203,7 +190,7 @@ func run(ctx context.Context, env environment.Env) {
 
 	emptyActionDir, err := os.MkdirTemp("", "fc-container-*")
 	if err != nil {
-		log.Fatalf("unable to make temp dir: %s", err)
+		return status.WrapError(err, "make temp dir")
 	}
 
 	vmIdx := 100 + rand.Intn(100)
@@ -212,7 +199,7 @@ func run(ctx context.Context, env environment.Env) {
 	}
 	cfg, err := firecracker.GetExecutorConfig(ctx, "/tmp/remote_build/")
 	if err != nil {
-		log.Fatalf("Failed to get executor configuration: %s", err)
+		return status.WrapError(err, "get executor config")
 	}
 	opts := firecracker.ContainerOpts{
 		VMConfiguration: &fcpb.VMConfiguration{
@@ -232,29 +219,43 @@ func run(ctx context.Context, env environment.Env) {
 		// Runner recycling is needed to allow starting from snapshot.
 		p, err := rexec.MakePlatform("recycle-runner=true")
 		if err != nil {
-			log.Fatal(err.Error())
+			return status.WrapError(err, "make platform")
 		}
 		task := &repb.ExecutionTask{Command: &repb.Command{Platform: p}}
-		_, key := parseSnapshotKeyJSON(*remoteSnapshotKeyJSON)
+		_, key, err := parseSnapshotKeyJSON(*remoteSnapshotKeyJSON)
+		if err != nil {
+			return err
+		}
 		opts.SavedState = &rnpb.FirecrackerState{SnapshotKey: key}
 		c, err = firecracker.NewContainer(ctx, env, task, opts)
 		if err != nil {
-			log.Fatalf("Error creating container: %s", err)
+			return status.WrapError(err, "init")
 		}
+		defer func() {
+			log.Infof("Removing VM...")
+			if err := c.Remove(ctx); err != nil {
+				log.Errorf("Error removing container: %s", err)
+			}
+		}()
 		if err := c.LoadSnapshot(ctx); err != nil {
-			log.Fatalf("Error loading snapshot: %s", err)
+			return status.WrapError(err, "load snapshot")
 		}
 	} else {
 		c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 		if err != nil {
-			log.Fatalf("Error creating container: %s", err)
+			return status.WrapError(err, "init")
 		}
+		defer func() {
+			if err := c.Remove(ctx); err != nil {
+				log.Errorf("Error removing container: %s", err)
+			}
+		}()
 		creds := oci.Credentials{Username: *registryUser, Password: *registryPassword}
 		if err := container.PullImageIfNecessary(ctx, env, c, creds, opts.ContainerImage); err != nil {
-			log.Fatalf("Unable to PullImageIfNecessary: %s", err)
+			return status.WrapError(err, "pull image")
 		}
 		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-			log.Fatalf("Unable to Create container: %s", err)
+			return status.WrapError(err, "create")
 		}
 	}
 
@@ -265,9 +266,10 @@ func run(ctx context.Context, env environment.Env) {
 			<-sigc
 			log.Errorf("Capturing snapshot...")
 			if err := c.Pause(ctx); err != nil {
-				log.Fatalf("Error dumping snapshot: %s", err)
+				log.Errorf("Error dumping snapshot: %s", err)
+			} else {
+				log.Printf("Saved snapshot")
 			}
-			log.Printf("Saved snapshot")
 		}
 	}()
 
@@ -283,7 +285,7 @@ func run(ctx context.Context, env environment.Env) {
 	if *actionDigest != "" {
 		actionInstanceDigest, err := digest.ParseDownloadResourceName(*actionDigest)
 		if err != nil {
-			log.Fatalf("Error parsing action digest %q: %s", *actionDigest, err)
+			return status.WrapErrorf(err, "parse digest %q", *actionDigest)
 		}
 
 		// For backwards compatibility with the existing behavior of this code:
@@ -295,7 +297,7 @@ func run(ctx context.Context, env environment.Env) {
 
 		action, cmd, err := getActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
 		if err != nil {
-			log.Fatal(err.Error())
+			return status.WrapError(err, "get action and command")
 		}
 		out, _ := prototext.Marshal(action)
 		log.Infof("Action:\n%s", string(out))
@@ -304,7 +306,7 @@ func run(ctx context.Context, env environment.Env) {
 
 		tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewResourceName(action.GetInputRootDigest(), *remoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction()))
 		if err != nil {
-			log.Fatalf("Could not fetch input root structure: %s", err)
+			return status.WrapError(err, "get tree")
 		}
 
 		c.SetTaskFileSystemLayout(&container.FileSystemLayout{
@@ -316,7 +318,7 @@ func run(ctx context.Context, env environment.Env) {
 
 		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, &vmfspb.PrepareRequest{})
 		if err != nil {
-			log.Fatalf("Error preparing VFS: %s", err)
+			return status.WrapError(err, "prepare VFS")
 		}
 	}
 
@@ -349,7 +351,5 @@ func run(ctx context.Context, env environment.Env) {
 		}
 	}
 
-	if err := c.Remove(ctx); err != nil {
-		log.Errorf("Error removing container: %s", err)
-	}
+	return nil
 }
