@@ -214,7 +214,7 @@ func groupIDStringFromContext(ctx context.Context) string {
 	if c, err := claims.ClaimsFromContext(ctx); err == nil {
 		return strings.ToUpper(c.GroupID)
 	}
-	return "ANON"
+	return interfaces.AuthAnonymousUser
 }
 
 func key(ctx context.Context, node *repb.FileNode) string {
