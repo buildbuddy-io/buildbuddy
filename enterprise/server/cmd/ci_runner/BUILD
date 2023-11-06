@@ -51,7 +51,7 @@ go_library(
 go_binary(
     name = "ci_runner",
     embed = [":main"],
-    pure = "on",
+    #pure = "on",
     static = "on",
 )
 
