@@ -38,7 +38,6 @@ write_file(
                     "asmdecl",
                     "assign",
                     "atomicalign",
-                    # "cgocall",
                     "buildtag",
                     "cgocall",
                     "composites",
@@ -207,6 +206,11 @@ config_setting(
 config_setting(
     name = "release_build",
     values = {"define": "release=true"},
+)
+
+config_setting(
+    name = "static",
+    flag_values = {"@io_bazel_rules_go//go/config:static": "true"},
 )
 
 package_group(

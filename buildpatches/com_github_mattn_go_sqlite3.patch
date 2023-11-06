@@ -1,0 +1,37 @@
+From 7639b60b4d2cb4c62b1c39ed8ff424fa0917cec7 Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Fri, 13 Oct 2023 10:53:13 -0400
+Subject: [PATCH] patch
+
+---
+ BUILD.bazel | 1 +
+ sqlite3.go  | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/BUILD.bazel b/BUILD.bazel
+index fa95473..b8e3848 100644
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -90,6 +90,7 @@ go_library(
+             "-I.",
+         ],
+         "@io_bazel_rules_go//go/platform:linux": [
++            "-D_LARGEFILE64_SOURCE",
+             "-DHAVE_PREAD64=1 -DHAVE_PWRITE64=1",
+             "-I.",
+         ],
+diff --git a/sqlite3.go b/sqlite3.go
+index 5e4e2ff..d87bd31 100644
+--- a/sqlite3.go
++++ b/sqlite3.go
+@@ -21,6 +21,7 @@ package sqlite3
+ #cgo CFLAGS: -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
+ #cgo CFLAGS: -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT
+ #cgo CFLAGS: -Wno-deprecated-declarations
++#cgo linux,!android CFLAGS: -D_LARGEFILE64_SOURCE
+ #cgo linux,!android CFLAGS: -DHAVE_PREAD64=1 -DHAVE_PWRITE64=1
+ #cgo openbsd CFLAGS: -I/usr/local/include
+ #cgo openbsd LDFLAGS: -L/usr/local/lib
+-- 
+2.30.2
+
