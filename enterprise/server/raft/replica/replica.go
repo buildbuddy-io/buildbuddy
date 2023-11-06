@@ -1049,23 +1049,14 @@ func lookupFileMetadata(iter pebble.Iterator, fileMetadataKey []byte) (*rfpb.Fil
 	return fileMetadata, nil
 }
 
-func (sm *Replica) validateRangeNoLock(header *rfpb.Header) error {
-	if sm.rangeDescriptor == nil {
+func validateHeaderAgainstRange(rangeDescriptor *rfpb.RangeDescriptor, header *rfpb.Header) error {
+	if rangeDescriptor == nil {
 		return status.FailedPreconditionError("range descriptor is not set")
 	}
-	if sm.rangeDescriptor.GetGeneration() != header.GetGeneration() {
-		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, sm.rangeDescriptor.GetGeneration(), header.GetGeneration())
+	if rangeDescriptor.GetGeneration() != header.GetGeneration() {
+		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rangeDescriptor.GetGeneration(), header.GetGeneration())
 	}
 	return nil
-}
-
-// validateRange checks that the requested range generation matches our range
-// generation. A rangeMu lock should be held for the duration of the operation
-// to ensure the range does not change.
-func (sm *Replica) validateRange(header *rfpb.Header) error {
-	sm.rangeMu.RLock()
-	defer sm.rangeMu.RUnlock()
-	return sm.validateRangeNoLock(header)
 }
 
 type accessTimeUpdate struct {
@@ -1254,6 +1245,15 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*ap
 	return samples, nil
 }
 
+func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
+	// Update the local in-memory range descriptor iff this batch modified
+	// it.
+	localRangeKey := sm.replicaLocalKey(constants.LocalRangeKey)
+	if buf, ok := batchContainsKey(wb, localRangeKey); ok {
+		sm.setRange(localRangeKey, buf)
+	}
+}
+
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
 // is a list of continuous proposed and committed commands from clients, they
 // are provided together as a batch so the IOnDiskStateMachine implementation
@@ -1299,6 +1299,73 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*ap
 //
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
+func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Entry, error) {
+	// This method should return errors if something truly fails in an
+	// unrecoverable way (proto marshal/unmarshal, pebble batch commit) but
+	// otherwise normal request handling errors are encoded in the response
+	// and the statemachine keeps progressing.
+	batchReq := &rfpb.BatchCmdRequest{}
+	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
+		return entry, err
+	}
+
+	sm.rangeMu.RLock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.RUnlock()
+
+	// Increment QPS counters.
+	rangeID := rd.GetRangeId()
+	metrics.RaftProposals.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+	}).Inc()
+	sm.raftProposeQPS.Inc()
+
+	// All of the data in a BatchCmdRequest is handled in a single pebble
+	// write batch. That means that if any part of a batch update fails,
+	// none of the batch will be applied.
+	wb := db.NewIndexedBatch()
+	defer wb.Close()
+
+	batchRsp := &rfpb.BatchCmdResponse{}
+	var headerErr error
+	if header := batchReq.GetHeader(); header != nil {
+		headerErr = validateHeaderAgainstRange(rd, header)
+		batchRsp.Status = statusProto(headerErr)
+	}
+	if headerErr == nil {
+		for _, union := range batchReq.GetUnion() {
+			rsp := &rfpb.ResponseUnion{}
+			sm.handlePropose(wb, union, rsp)
+			if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
+				// Log Update() errors (except Compare-And-Set)
+				// errors.
+				sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
+			}
+			batchRsp.Union = append(batchRsp.Union, rsp)
+		}
+	}
+	rspBuf, err := proto.Marshal(batchRsp)
+	if err != nil {
+		return entry, err
+	}
+	entry.Result = dbsm.Result{
+		Value: uint64(len(entry.Cmd)),
+		Data:  rspBuf,
+	}
+	appliedIndex := uint64ToBytes(entry.Index)
+	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
+	if err := wb.Commit(pebble.NoSync); err != nil {
+		return entry, err
+	} else {
+		// If the batch commit was successful, update the replica's in-
+		// memory state.
+		sm.updateInMemoryState(wb)
+		sm.lastAppliedIndex = entry.Index
+	}
+
+	return entry, nil
+}
+
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	defer canary.Start("replica.Update", time.Second)()
 	db, err := sm.leaser.DB()
@@ -1307,64 +1374,12 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	}
 	defer db.Close()
 
-	for idx, entry := range entries {
-		// Insert all of the data in the batch.
-		batchReq := &rfpb.BatchCmdRequest{}
-		batchRsp := &rfpb.BatchCmdResponse{}
-		if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
-			return nil, err
-		}
-
-		wb := db.NewIndexedBatch()
-		defer wb.Close()
-
-		var headerErr error
-		if batchReq.GetHeader() != nil {
-			headerErr = sm.validateRange(batchReq.GetHeader())
-			batchRsp.Status = statusProto(headerErr)
-		}
-
-		if headerErr == nil {
-			for _, union := range batchReq.GetUnion() {
-				rsp := &rfpb.ResponseUnion{}
-				sm.handlePropose(wb, union, rsp)
-				if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
-					sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
-				}
-				batchRsp.Union = append(batchRsp.Union, rsp)
-			}
-		}
-
-		rspBuf, err := proto.Marshal(batchRsp)
+	for i, entry := range entries {
+		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
 			return nil, err
 		}
-		rangeID := batchReq.GetHeader().GetRangeId()
-
-		entries[idx].Result = dbsm.Result{
-			Value: uint64(len(entries[idx].Cmd)),
-			Data:  rspBuf,
-		}
-		metrics.RaftProposals.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
-		}).Inc()
-		sm.raftProposeQPS.Inc()
-		appliedIndex := uint64ToBytes(entry.Index)
-		if err := sm.rangeCheckedSet(wb, constants.LastAppliedIndexKey, appliedIndex); err != nil {
-			return nil, err
-		}
-
-		if err := wb.Commit(pebble.NoSync); err != nil {
-			return nil, err
-		}
-
-		// Update the local in-memory range descriptor iff this batch
-		// modified it and the batch was successfully committed.
-		localRangeKey := sm.replicaLocalKey(constants.LocalRangeKey)
-		if buf, ok := batchContainsKey(wb, localRangeKey); ok {
-			sm.setRange(localRangeKey, buf)
-		}
-		sm.lastAppliedIndex = entry.Index
+		entries[i] = e
 	}
 
 	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > entriesBetweenUsageChecks {
@@ -1434,10 +1449,12 @@ func (sm *Replica) BatchLookup(batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdRe
 	batchRsp := &rfpb.BatchCmdResponse{}
 
 	var headerErr error
-	if batchReq.GetHeader() != nil {
+	if header := batchReq.GetHeader(); header != nil {
 		sm.rangeMu.RLock()
-		defer sm.rangeMu.RUnlock()
-		headerErr = sm.validateRangeNoLock(batchReq.GetHeader())
+		rd := sm.rangeDescriptor
+		sm.rangeMu.RUnlock()
+
+		headerErr = validateHeaderAgainstRange(rd, header)
 		batchRsp.Status = statusProto(headerErr)
 	}
 
