@@ -108,8 +108,8 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/unusedresult",
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
-        "-S1019",  # Uninteresting: omit default arguments to 'make()'.
-        "-S1023",  # Uninteresting:  "unnecessary" but reachable returns/breaks.
+        "-S1019",  # Uninteresting: Simplify make call by omitting redundant arguments.
+        "-S1023",  # Uninteresting:  Omit redundant control flow.
         "-S1028",
         "-S1030",
         "-S1031",
