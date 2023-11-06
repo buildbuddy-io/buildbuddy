@@ -212,7 +212,7 @@ func groupSpecificKey(groupID string, node *repb.FileNode) string {
 
 func groupIDStringFromContext(ctx context.Context) string {
 	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		return strings.ToUpper(c.GroupID)
+		return c.GroupID
 	}
 	return interfaces.AuthAnonymousUser
 }
