@@ -1,0 +1,34 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+new file mode 100644
+index 0000000..7ab2087
+--- /dev/null
++++ b/MODULE.bazel
+@@ -0,0 +1,6 @@
++module(
++    name = "soci_snapshotter",
++    version = "0.0.8",
++)
++
++bazel_dep(name = "zlib", version = "1.3")
+diff --git a/WORKSPACE.bzlmod b/WORKSPACE.bzlmod
+new file mode 100644
+index 0000000..fafa28d
+--- /dev/null
++++ b/WORKSPACE.bzlmod
+@@ -0,0 +1,2 @@
++# When Bzlmod is enabled, this file replaces the content of the original WORKSPACE
++# and makes sure no WORKSPACE prefix or suffix are added when Bzlmod is enabled.
+diff --git a/ztoc/compression/BUILD.bazel b/ztoc/compression/BUILD.bazel
+index 0d10a4d..bca5dac 100644
+--- a/ztoc/compression/BUILD.bazel
++++ b/ztoc/compression/BUILD.bazel
+@@ -11,7 +11,8 @@ go_library(
+         "zinfo.go",
+     ],
+     cgo = True,
+-    clinkopts = ["-Lztoc/compression/ztoc/out -l:libz.a"],
++    cdeps = ["@zlib//:zlib"],
++    clinkopts = ["-Lztoc/compression/ztoc/out"],
+     copts = ["-Iztoc/compression/ztoc/compression"],
+     importpath = "github.com/awslabs/soci-snapshotter/ztoc/compression",
+     visibility = ["//visibility:public"],

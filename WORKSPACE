@@ -19,12 +19,13 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "884fa7b014167fed6bf7cb8520652e364a904e57d3ce172419af30db5ce6217c",
-    strip_prefix = "rules_go-5206498b4f67ff3e6a9222a923cf67ff5191754e",
+    sha256 = "f6f5ede97567d1c61d6d5227848bb13f419e4ea195b81ba4ca451f20bcd03d66",
+    strip_prefix = "rules_go-4706a513acc1f6e5125b476936060ff71bfb8723",
     urls = [
-        # TODO(sluongng): this track the unreleased version v0.42.0 of rules_go to help us upgrade to Go 1.21
-        # We should replace this once rules_go v0.42.0 is released.
-        "https://github.com/bazelbuild/rules_go/archive/5206498b4f67ff3e6a9222a923cf67ff5191754e.zip",
+        # TODO(sluongng): this track the unreleased version v0.43.0 of rules_go.
+        # See https://github.com/bazelbuild/rules_go/pull/3722#issuecomment-1787954611 for more information.
+        # We should replace this once rules_go v0.43.0 is released.
+        "https://github.com/bazelbuild/rules_go/archive/4706a513acc1f6e5125b476936060ff71bfb8723.zip",
     ],
 )
 
@@ -40,6 +41,13 @@ http_archive(
         "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.32.0/bazel-gazelle-v0.32.0.tar.gz",
         "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.32.0/bazel-gazelle-v0.32.0.tar.gz",
     ],
+)
+
+http_archive(
+    name = "com_google_absl",
+    sha256 = "987ce98f02eefbaf930d6e38ab16aa05737234d7afbab2d5c4ea7adbe50c28ed",
+    strip_prefix = "abseil-cpp-20230802.1",
+    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20230802.1.tar.gz"],
 )
 
 load(":deps.bzl", "install_go_mod_dependencies", "install_static_dependencies")
@@ -461,6 +469,24 @@ load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_
 rules_proto_dependencies()
 
 rules_proto_toolchains()
+
+HERMETIC_CC_TOOLCHAIN_VERSION = "v2.1.2"
+
+http_archive(
+    name = "hermetic_cc_toolchain",
+    sha256 = "28fc71b9b3191c312ee83faa1dc65b38eb70c3a57740368f7e7c7a49bedf3106",
+    urls = [
+        "https://mirror.bazel.build/github.com/uber/hermetic_cc_toolchain/releases/download/{0}/hermetic_cc_toolchain-{0}.tar.gz".format(HERMETIC_CC_TOOLCHAIN_VERSION),
+        "https://github.com/uber/hermetic_cc_toolchain/releases/download/{0}/hermetic_cc_toolchain-{0}.tar.gz".format(HERMETIC_CC_TOOLCHAIN_VERSION),
+    ],
+)
+
+load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
+
+# Plain zig_toolchains() will pick reasonable defaults. See
+# toolchain/defs.bzl:toolchains on how to change the Zig SDK version and
+# download URL.
+zig_toolchains()
 
 register_toolchains(
     "//toolchains:sh_toolchain",

@@ -4,7 +4,7 @@ title: Privacy Policy
 
 # Privacy Policy
 
-<div class="pill">Updated August 18, 2022</div>
+<div class="pill">Updated November 3, 2023</div>
 
 This privacy policy (“Policy”) describes how ITERATION, Inc. and its related companies (“Company”) collect, use and share personal information of consumer users of this website, buildbuddy.io (the “Site”). This Policy also applies to any of our other websites that post this Policy. This Policy does not apply to websites that post different statements.
 
@@ -12,19 +12,19 @@ This privacy policy (“Policy”) describes how ITERATION, Inc. and its related
 
 We get information about you in a range of ways.
 
-## Information You Give Us.
+## Information You Give Us
 
 We collect your‎ name, email address as well as other information you directly give us on our Site.
 
-## Information We Get From Others.
+## Information We Get From Others
 
 We may get information about you from other sources. We may add this to information we get from this Site.
 
-## Information Automatically Collected.
+## Information Automatically Collected
 
 We automatically log information about you and your computer. For example, when visiting our Site, we log your computer operating system type, browser type, browser language, the website you visited before browsing to our Site, pages you viewed, how long you spent on a page, access times and information about your use of and actions on our Site.
 
-## Cookies.
+## Cookies
 
 We may log information using "cookies." Cookies are small data files stored on your hard drive by a website. We may use both session Cookies (which expire once you close your web browser) and persistent Cookies (which stay on your computer until you delete them) to provide you with a more personal and interactive experience on our Site. This type of information is collected to make the Site more useful to you and to tailor the experience with us to meet your special interests and needs.
 
@@ -54,6 +54,10 @@ We may share personal information as follows:
 - We may share information in an emergency. This includes protecting the safety of our employees and agents, our customers, or any person.
 - We may share information with those who need it to do work for us.
 - We may also share aggregated and/or anonymized data with others for their own uses.
+
+## Google APIs
+
+Our use and transfer to any other app of information received from Google APIs will adhere to [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy#additional_requirements_for_specific_api_scopes), including the Limited Use requirements.
 
 ## Information Choices and Changes
 

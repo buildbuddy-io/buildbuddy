@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/static",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/githubauth",
         "//enterprise/server/invocation_stat_service/config",
         "//enterprise/server/remote_execution/config",
         "//enterprise/server/scheduling/scheduler_server/config",

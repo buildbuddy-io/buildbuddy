@@ -29,6 +29,14 @@ go_library(
 go_binary(
     name = "goinit",
     embed = [":goinit_lib"],
-    pure = "on",
-    static = "on",
+    # "pure" causes the init file to require an ELF interpreter which the kernel
+    # does not have access to if we are bulding statically.
+    pure = select({
+        "//:static": "auto",
+        "//conditions:default": "on",
+    }),
+    # static = select({
+    #    "//:static": "on",
+    #    "//conditions:default": "auto",
+    # }),
 )

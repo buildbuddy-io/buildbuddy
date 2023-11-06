@@ -3319,6 +3319,14 @@ func (p *PebbleCache) Stop() error {
 	}
 	log.Infof("Pebble Cache [%s]: waitgroups finished", p.name)
 
+	// Flushed db after all waitgroups finished to reduce the change of lost
+	// evictions during app restarts
+	p.flushPartitionMetadata()
+	if err := p.db.Flush(); err != nil {
+		return err
+	}
+	log.Infof("Pebble Cache [%s]: db flushed", p.name)
+
 	// Wait for all active requests to be finished.
 	p.leaser.Close()
 
@@ -3338,7 +3346,7 @@ func (p *PebbleCache) Stop() error {
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
-	log.Infof("Pebble Cache [%s]: db flushed", p.name)
+	log.Infof("Pebble Cache [%s]: db flushed again", p.name)
 
 	return p.db.Close()
 }

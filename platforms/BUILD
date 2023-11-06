@@ -1,9 +1,12 @@
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE")
+load("@local_config_platform//:constraints.bzl", "HOST_CONSTRAINTS")
+load(":platforms.bzl", "get_parent_from_constraints")
+
 package(default_visibility = ["//visibility:public"])
 
 platform(
-    name = "linux_x86_64",
+    name = "linux",
     constraint_values = [
-        "@platforms//cpu:x86_64",
         "@platforms//os:linux",
         # This helps us differentiate between the default local platform, which does not have this,
         # and the remote platform, which does have this.
@@ -14,17 +17,20 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04:latest",
         "dockerNetwork": "off",
     },
 )
 
 platform(
-    name = "macos_x86_64",
-    constraint_values = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:macos",
-    ],
+    name = "linux_x86_64",
+    constraint_values = ["@platforms//cpu:x86_64"],
+    exec_properties = {"container-image": "docker://" + UBUNTU20_04_IMAGE},
+    parents = [":linux"],
+)
+
+platform(
+    name = "macos",
+    constraint_values = ["@platforms//os:macos"],
     exec_properties = {
         "Arch": "amd64",
         "OSFamily": "darwin",
@@ -32,13 +38,19 @@ platform(
 )
 
 platform(
+    name = "macos_x86_64",
+    constraint_values = ["@platforms//cpu:x86_64"],
+    parents = [":macos"],
+)
+
+platform(
     name = "macos_arm64",
-    constraint_values = [
-        "@platforms//cpu:arm64",
-        "@platforms//os:macos",
-    ],
-    exec_properties = {
-        "Arch": "arm64",
-        "OSFamily": "darwin",
-    },
+    constraint_values = ["@platforms//cpu:arm64"],
+    parents = [":macos"],
+)
+
+platform(
+    name = "local_config_platform",
+    constraint_values = HOST_CONSTRAINTS,
+    parents = [get_parent_from_constraints(HOST_CONSTRAINTS)],
 )

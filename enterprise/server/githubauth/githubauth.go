@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -41,10 +40,6 @@ func NewGithubAuthenticator(env environment.Env) *githubAuthenticator {
 	return &githubAuthenticator{
 		env: env,
 	}
-}
-
-func IsEnabled(env environment.Env) bool {
-	return githubapp.IsEnabled() && *github.JwtKey != ""
 }
 
 func (a *githubAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
