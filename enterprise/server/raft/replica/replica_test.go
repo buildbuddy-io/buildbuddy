@@ -731,3 +731,176 @@ func TestUsage(t *testing.T) {
 		}
 	}
 }
+
+func TestTransactionPrepareAndCommit(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &fakeStore{}
+	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err = repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	wb := db.NewBatch()
+	txid := []byte("TX1")
+	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("bar"),
+		},
+	}).ToProto()
+	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	require.NoError(t, err)
+
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
+
+	wb = db.NewBatch()
+	txid2 := []byte("TX2")
+	badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("baz"),
+		},
+	}).ToProto()
+	_, err = repl.PrepareTransaction(wb, txid2, badCmd)
+	require.Error(t, err)
+	require.NoError(t, wb.Close())
+
+	// Do a DirectWrite.
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("just-an-innocent-write"),
+		},
+	}))
+	entries := []dbsm.Entry{entry}
+	rsp, err := repl.Update(entries)
+	require.NoError(t, err)
+	require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+
+	err = repl.CommitTransaction(txid)
+	require.NoError(t, err)
+
+	buf, closer, err := db.Get([]byte("foo"))
+	require.NoError(t, err)
+	defer closer.Close()
+	require.Equal(t, []byte("bar"), buf)
+}
+
+func TestTransactionPrepareAndRollback(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &fakeStore{}
+	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err = repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	wb := db.NewBatch()
+	txid := []byte("TX1")
+	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("bar"),
+		},
+	}).ToProto()
+	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	require.NoError(t, err)
+
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
+
+	err = repl.RollbackTransaction(txid)
+	require.NoError(t, err)
+
+	buf, _, err := db.Get([]byte("foo"))
+	require.Error(t, err)
+	require.Nil(t, buf)
+}
+
+func TestTransactionsSurviveRestart(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &fakeStore{}
+	txid := []byte("TX1")
+
+	{
+		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		require.NotNil(t, repl)
+
+		stopc := make(chan struct{})
+		_, err = repl.Open(stopc)
+		require.NoError(t, err)
+
+		em := newEntryMaker(t)
+		writeDefaultRangeDescriptor(t, em, repl)
+
+		wb := db.NewBatch()
+		cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("bar"),
+			},
+		}).ToProto()
+		_, err = repl.PrepareTransaction(wb, txid, cmd)
+		require.NoError(t, err)
+
+		require.NoError(t, wb.Commit(pebble.Sync))
+		require.NoError(t, wb.Close())
+
+		err = repl.Close()
+		require.NoError(t, err)
+	}
+
+	{
+		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		require.NotNil(t, repl)
+
+		stopc := make(chan struct{})
+		_, err = repl.Open(stopc)
+		require.NoError(t, err)
+
+		err = repl.CommitTransaction(txid)
+		require.NoError(t, err)
+
+		buf, closer, err := db.Get([]byte("foo"))
+		require.NoError(t, err)
+		defer closer.Close()
+		require.Equal(t, []byte("bar"), buf)
+	}
+}
