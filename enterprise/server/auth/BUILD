@@ -9,6 +9,7 @@ go_library(
         "//enterprise/server/githubauth",
         "//enterprise/server/oidc",
         "//enterprise/server/saml",
+        "//server/backends/github",
         "//server/environment",
         "//server/interfaces",
         "//server/nullauth",

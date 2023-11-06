@@ -57,6 +57,10 @@ const (
 	installationIDCookieName = "Github-Linked-Installation-ID"
 )
 
+func AuthEnabled(env environment.Env) bool {
+	return env.GetGitHubApp() != nil && *JwtKey != ""
+}
+
 // State represents a status value that GitHub's statuses API understands.
 type State string
 
