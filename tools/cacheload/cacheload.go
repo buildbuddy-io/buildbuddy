@@ -155,7 +155,7 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.
 	var err error
 	for retrier.Next() {
 		if *readBatch {
-			_, err = cachetools.BatchReadSingleBlob(ctx, casClient, resourceName)
+			_, err = batchReadSingleBlob(ctx, casClient, resourceName)
 		} else {
 			err = cachetools.GetBlob(ctx, client, resourceName, io.Discard)
 		}
@@ -168,6 +168,19 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.
 		return err
 	}
 	return err
+}
+
+func batchReadSingleBlob(ctx context.Context, casClient repb.ContentAddressableStorageClient, rn *digest.ResourceName) ([]byte, error) {
+	responses, err := cachetools.BatchReadBlobs(ctx, casClient, &repb.BatchReadBlobsRequest{
+		InstanceName:          rn.GetInstanceName(),
+		AcceptableCompressors: []repb.Compressor_Value{rn.GetCompressor()},
+		DigestFunction:        rn.GetDigestFunction(),
+		Digests:               []*repb.Digest{rn.GetDigest()},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return responses[0].Data, responses[0].Err
 }
 
 func main() {

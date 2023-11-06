@@ -132,7 +132,7 @@ type BlobResponse struct {
 //
 // It validates the response so that if the returned err is nil, then all
 // digests in the request are guaranteed to have a corresponding map entry.
-func BatchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.BatchReadBlobsRequest) (map[string]*BlobResponse, error) {
+func BatchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.BatchReadBlobsRequest) ([]*BlobResponse, error) {
 	res, err := casClient.BatchReadBlobs(ctx, req)
 	if err != nil {
 		return nil, err
@@ -148,13 +148,13 @@ func BatchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 		}
 	}
 	// Build the results map, decompressing if needed and validating digests.
-	results := make(map[string]*BlobResponse, len(res.Responses))
+	results := make([]*BlobResponse, 0, len(res.Responses))
 	for _, res := range res.Responses {
 		delete(expected, res.GetDigest().GetHash())
 
 		err := gstatus.ErrorProto(res.GetStatus())
 		if err != nil {
-			results[res.GetDigest().GetHash()] = &BlobResponse{Err: err}
+			results = append(results, &BlobResponse{Err: err})
 			continue
 		}
 		data := res.Data
@@ -169,38 +169,22 @@ func BatchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 			data = d
 		}
 		// Validate digest
-		actualDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
+		downloadedContentDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
 		if err != nil {
 			return nil, err
 		}
-		if actualDigest.GetHash() != res.GetDigest().GetHash() || actualDigest.GetSizeBytes() != res.GetDigest().GetSizeBytes() {
-			return nil, status.UnknownErrorf("digest validation failed: expected %q, got %q", digest.String(res.GetDigest()), digest.String(actualDigest))
+		if downloadedContentDigest.GetHash() != res.GetDigest().GetHash() || downloadedContentDigest.GetSizeBytes() != res.GetDigest().GetSizeBytes() {
+			return nil, status.UnknownErrorf("digest validation failed: expected %q, got %q", digest.String(res.GetDigest()), digest.String(downloadedContentDigest))
 		}
-		results[res.GetDigest().GetHash()] = &BlobResponse{
+		results = append(results, &BlobResponse{
 			Digest: res.GetDigest(),
 			Data:   data,
-		}
+		})
 	}
 	if len(expected) > 0 {
 		return nil, status.UnknownErrorf("missing digests in response: %s", maps.Keys(expected))
 	}
 	return results, nil
-}
-
-// BatchReadSingleBlob reads a single blob using the BatchReadBlobs API. It
-// should only be used for small blobs.
-func BatchReadSingleBlob(ctx context.Context, casClient repb.ContentAddressableStorageClient, rn *digest.ResourceName) ([]byte, error) {
-	m, err := BatchReadBlobs(ctx, casClient, &repb.BatchReadBlobsRequest{
-		InstanceName:          rn.GetInstanceName(),
-		AcceptableCompressors: []repb.Compressor_Value{rn.GetCompressor()},
-		DigestFunction:        rn.GetDigestFunction(),
-		Digests:               []*repb.Digest{rn.GetDigest()},
-	})
-	if err != nil {
-		return nil, err
-	}
-	res := m[rn.GetDigest().GetHash()]
-	return res.Data, res.Err
 }
 
 func computeDigest(in io.ReadSeeker, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.ResourceName, error) {
