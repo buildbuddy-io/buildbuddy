@@ -506,9 +506,14 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 	ogChunk = s.chunks[offset]
 	chunkSource := snaputil.ChunkSourceHole
 	if ogChunk != nil {
+		if !ogChunk.safeReadMapped() {
+			if err := ogChunk.initMap(); err != nil {
+				return nil, nil, err
+			}
+		}
 		ogChunk.mu.RLock()
-		defer ogChunk.mu.RUnlock()
 		chunkSource = ogChunk.source
+		ogChunk.mu.RUnlock()
 	}
 	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, chunkSource, s.remoteInstanceName)
 	if err != nil {
@@ -790,7 +795,6 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 	return data, nil
 }
 
-// TODO(Maggie): Pre-emptively initialize chunks in the background on startup
 func (m *Mmap) initMap() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
