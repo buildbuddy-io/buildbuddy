@@ -364,9 +364,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		r.p.mu.Lock()
 		r.state = ready
 		r.p.mu.Unlock()
-		break
 	case ready:
-		break
 	case removed:
 		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:

@@ -113,7 +113,7 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *cop
 	h.stoppedChan = make(chan struct{})
 	// Stop() will wait until this is closed to verify the handler has completed
 	// handling open requests
-	h.handleDoneChan = make(chan struct{}, 0)
+	h.handleDoneChan = make(chan struct{})
 
 	// Create a FD that can be used to terminate Poll early
 	pipeRead, pipeWrite, err := os.Pipe()

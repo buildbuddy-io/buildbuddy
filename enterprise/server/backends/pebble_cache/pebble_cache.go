@@ -1302,7 +1302,6 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 	if opts.deleteEntriesWithMissingFiles {
 		log.Infof("Pebble Cache [%s]: backgroundRepair for %q deleted %d keys with missing files", p.name, partitionID, missingFiles)
 	}
-	return
 }
 
 func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *repairOpts) error {
@@ -2876,7 +2875,6 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	metrics.DiskCacheBytesEvicted.With(lbls).Add(float64(sample.SizeBytes))
 	metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
 	metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
-	return
 }
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
@@ -3263,7 +3261,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 }
 
 func (p *PebbleCache) Start() error {
-	p.quitChan = make(chan struct{}, 0)
+	p.quitChan = make(chan struct{})
 	for _, evictor := range p.evictors {
 		evictor := evictor
 		p.eg.Go(func() error {

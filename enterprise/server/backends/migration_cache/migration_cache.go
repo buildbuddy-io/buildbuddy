@@ -664,7 +664,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		pw:           pw,
 		pr:           pr,
 		mu:           sync.Mutex{},
-		done:         make(chan struct{}, 0),
+		done:         make(chan struct{}),
 	}
 
 	if shouldDecompressAndVerify {
@@ -1002,7 +1002,7 @@ func cacheTypeLabel(ct rspb.CacheType) string {
 }
 
 func (mc *MigrationCache) Start() error {
-	mc.quitChan = make(chan struct{}, 0)
+	mc.quitChan = make(chan struct{})
 	mc.eg.Go(func() error {
 		mc.copyDataInBackground()
 		return nil

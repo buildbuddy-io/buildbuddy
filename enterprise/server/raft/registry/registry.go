@@ -92,12 +92,10 @@ func (n *StaticRegistry) getConnectionKey(addr string, shardID uint64) string {
 
 // Remove removes a remote from the node registry.
 func (n *StaticRegistry) Remove(shardID uint64, replicaID uint64) {
-	return
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (n *StaticRegistry) RemoveShard(shardID uint64) {
-	return
 }
 
 func (n *StaticRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
@@ -344,12 +342,10 @@ func (d *DynamicNodeRegistry) Add(shardID uint64, replicaID uint64, target strin
 
 // Remove removes a remote from the node registry.
 func (d *DynamicNodeRegistry) Remove(shardID uint64, replicaID uint64) {
-	return
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (d *DynamicNodeRegistry) RemoveShard(shardID uint64) {
-	return
 }
 
 func (d *DynamicNodeRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
