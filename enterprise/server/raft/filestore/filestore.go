@@ -69,9 +69,17 @@ func fileRecordSegments(r *rfpb.FileRecord) (partID string, groupID string, isol
 type PebbleKeyVersion int
 
 const (
+	// PebbleKeyVersion representing an unspecified key version. When this is
+	// the active key version, the database will select an active key version
+	// to use based on existing database contents and the maximum known key
+	// version.
+	//
+	// This is in a different const block so as not to affect the iota below.
+	UnspecifiedKeyVersion PebbleKeyVersion = -1
+
 	// UndefinedKeyVersion is the version of all keys in the database
 	// that have not yet been versioned.
-	UndefinedKeyVersion PebbleKeyVersion = iota
+	UndefinedKeyVersion PebbleKeyVersion = iota - 1
 
 	// Version1 is the first key version that includes a version in the
 	// key path, to disambiguate reading old keys.
@@ -96,11 +104,10 @@ const (
 	// name, groupID, and digest.
 	Version5
 
-	// TestingMaxKeyVersion should not be used directly -- it is always
-	// 1 more than the highest defined version, which allows for tests
-	// to iterate across all versions from UndefinedKeyVersion to
-	// TestingMaxKeyVersion and check cross compatibility.
-	TestingMaxKeyVersion
+	// MaxKeyVersion is always 1 more than the highest defined version, which
+	// allows for tests to iterate across all versions from UndefinedKeyVersion
+	// to MaxKeyVersion and check cross compatibility.
+	MaxKeyVersion
 )
 
 type PebbleKey struct {

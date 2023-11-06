@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -2163,6 +2164,159 @@ func TestDeleteEmptyDirs(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000) // 1MB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	// Confirm that a newly-created pebble database with an unspecified key
+	// version is written at the highest available key version.
+	activeKeyVersion := int64(filestore.UnspecifiedKeyVersion)
+	options.ActiveKeyVersion = &activeKeyVersion
+	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
+	versionMetadata, err := pc.DatabaseVersionMetadata()
+	require.NoError(t, err)
+	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MaxVersion)
+
+	require.NoError(t, pc.Stop())
+}
+
+func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000) // 1MB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	// Create a database with version 2 keys
+	{
+		activeKeyVersion := int64(filestore.Version2)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+
+	// Re-open the database with an unspecified version and confirm it sets the
+	// active version to version 2.
+	{
+		activeKeyVersion := int64(filestore.UnspecifiedKeyVersion)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-2"})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+}
+
+func TestSpecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000) // 1MB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	// Confirm that a newly-created pebble database with an specified key
+	// version is written at that key version.
+	activeKeyVersion := int64(filestore.Version2)
+	options.ActiveKeyVersion = &activeKeyVersion
+	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
+	versionMetadata, err := pc.DatabaseVersionMetadata()
+	require.NoError(t, err)
+	require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+
+	require.NoError(t, pc.Stop())
+}
+
+func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000) // 1MB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	// Create a database with version 2 keys
+	{
+		activeKeyVersion := int64(filestore.Version2)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+
+	// Re-open the database with version 3 as the active key version and
+	// confirm the version metadata is [2, 3]. Don't write anything though, to
+	// avoid migrating the data.
+	{
+		activeKeyVersion := int64(filestore.Version3)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+
+	// Re-open the database with version 1 as the active key version and
+	// confirm the version metadata is [1, 3].
+	{
+		activeKeyVersion := int64(filestore.Version1)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+
+	// Finally, open again with version 2 as the active key version.
+	{
+		activeKeyVersion := int64(filestore.Version2)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+}
+
+func openPebbleCache(ctx context.Context, t *testing.T, te *testenv.TestEnv, opts *pebble_cache.Options, data []string) *pebble_cache.PebbleCache {
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+	for _, d := range data {
+		r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, d)
+		require.NoError(t, pc.Set(ctx, r, buf))
+	}
+	return pc
 }
 
 func TestMigrateVersions(t *testing.T) {

@@ -52,6 +52,7 @@ go_test(
         ":pebble_cache",
         "//enterprise/server/backends/kms",
         "//enterprise/server/crypter_service",
+        "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
