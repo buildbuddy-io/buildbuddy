@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
@@ -42,7 +43,7 @@ func Register(ctx context.Context, env environment.Env) error {
 		userAuthenticators = append(userAuthenticators, samlAuthenticator)
 	}
 
-	if githubauth.IsEnabled(env) {
+	if github.AuthEnabled(env) {
 		ga := githubauth.NewGithubAuthenticator(env)
 		httpAuthenticators = append(httpAuthenticators, ga)
 		userAuthenticators = append(userAuthenticators, ga)
