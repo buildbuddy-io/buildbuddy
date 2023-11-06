@@ -608,7 +608,7 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 	fileADigest := setFile(t, env, ctx, instanceName, fileAContents)
 	fileBDigest := setFile(t, env, ctx, instanceName, fileBContents)
 	tmp := testfs.MakeTempDir(t)
-	addToFileCache(t, env, tmp, fileAContents)
+	addToFileCache(t, ctx, env, tmp, fileAContents)
 
 	childDir := &repb.Directory{
 		Files: []*repb.FileNode{
@@ -776,7 +776,7 @@ func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceNa
 	return d
 }
 
-func addToFileCache(t *testing.T, env *testenv.TestEnv, tempDir, data string) {
+func addToFileCache(t *testing.T, ctx context.Context, env *testenv.TestEnv, tempDir, data string) {
 	path := testfs.MakeTempFile(t, tempDir, "filecache-tmp-*")
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
@@ -791,6 +791,6 @@ func addToFileCache(t *testing.T, env *testenv.TestEnv, tempDir, data string) {
 		t.Fatal(err)
 	}
 	t.Logf("Added digest %s/%d to filecache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
-	err = env.GetFileCache().AddFile(&repb.FileNode{Name: filepath.Base(path), Digest: d}, path)
+	err = env.GetFileCache().AddFile(ctx, &repb.FileNode{Name: filepath.Base(path), Digest: d}, path)
 	require.NoError(t, err)
 }

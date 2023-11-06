@@ -949,14 +949,14 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		require.NoError(t, err)
 		for _, f := range snapMetadata.GetFiles() {
 			if rand.Intn(100) < 30 {
-				deleted := env.GetFileCache().DeleteFile(f)
+				deleted := env.GetFileCache().DeleteFile(ctx, f)
 				require.True(t, deleted)
 			}
 		}
 		for _, f := range snapMetadata.GetChunkedFiles() {
 			for _, c := range f.GetChunks() {
 				if rand.Intn(100) < 30 {
-					_ = env.GetFileCache().DeleteFile(&repb.FileNode{Digest: c.Digest})
+					_ = env.GetFileCache().DeleteFile(ctx, &repb.FileNode{Digest: c.Digest})
 				}
 			}
 		}
@@ -1105,14 +1105,14 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		require.NoError(t, err)
 		for _, f := range snapMetadata.GetFiles() {
 			if rand.Intn(100) < 30 {
-				deleted := env.GetFileCache().DeleteFile(f)
+				deleted := env.GetFileCache().DeleteFile(ctx, f)
 				require.True(t, deleted)
 			}
 		}
 		for _, f := range snapMetadata.GetChunkedFiles() {
 			for _, c := range f.GetChunks() {
 				if rand.Intn(100) < 30 {
-					_ = env.GetFileCache().DeleteFile(&repb.FileNode{Digest: c.Digest})
+					_ = env.GetFileCache().DeleteFile(ctx, &repb.FileNode{Digest: c.Digest})
 				}
 			}
 		}

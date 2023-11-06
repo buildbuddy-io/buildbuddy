@@ -164,7 +164,7 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		// executor run this task once to estimate the size.
 		return nil
 	}
-	return applyMinimums(&scpb.TaskSize{
+	return applyMinimums(task, &scpb.TaskSize{
 		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
 	})
@@ -174,7 +174,7 @@ func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb
 	if s.model == nil {
 		return nil
 	}
-	return applyMinimums(s.model.Predict(ctx, task))
+	return applyMinimums(task, s.model.Predict(ctx, task))
 }
 
 func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
@@ -301,14 +301,14 @@ func commandKey(cmd *repb.Command) (string, error) {
 	return fmt.Sprintf("%s/%x", arg0, sha256.Sum256(b)), nil
 }
 
-func testSize(testSize string) (int64, int64) {
+func estimateFromTestSize(testSize string) (int64, int64) {
 	mb := 0
 	cpu := 0
 
 	switch testSize {
 	case "small":
 		mb = 20
-		cpu = 600
+		cpu = 1000
 	case "medium":
 		mb = 100
 		cpu = 1000
@@ -326,6 +326,15 @@ func testSize(testSize string) (int64, int64) {
 	return int64(mb * 1e6), int64(cpu)
 }
 
+func testSize(task *repb.ExecutionTask) (s string, ok bool) {
+	for _, envVar := range task.GetCommand().GetEnvironmentVariables() {
+		if envVar.GetName() == testSizeEnvVar {
+			return envVar.GetValue(), true
+		}
+	}
+	return "", false
+}
+
 // Estimate returns the default task size estimate for a task. It respects hints
 // from the task such as test size and estimated compute units, but does not use
 // information about historical task executions.
@@ -334,7 +343,7 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 	if err != nil {
 		log.Infof("Failed to parse task properties, using default estimation: %s", err)
 
-		return applyMinimums(&scpb.TaskSize{
+		return applyMinimums(task, &scpb.TaskSize{
 			EstimatedMemoryBytes:   DefaultMemEstimate,
 			EstimatedMilliCpu:      DefaultCPUEstimate,
 			EstimatedFreeDiskBytes: DefaultFreeDiskEstimate,
@@ -349,12 +358,10 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 	cpuEstimate := DefaultCPUEstimate
 	freeDiskEstimate := DefaultFreeDiskEstimate
 
-	for _, envVar := range task.GetCommand().GetEnvironmentVariables() {
-		if envVar.GetName() == testSizeEnvVar {
-			memEstimate, cpuEstimate = testSize(envVar.GetValue())
-			break
-		}
+	if s, ok := testSize(task); ok {
+		memEstimate, cpuEstimate = estimateFromTestSize(s)
 	}
+
 	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
 		memEstimate += FirecrackerAdditionalMemEstimateBytes
 		// Note: props.InitDockerd is only supported for docker-in-firecracker.
@@ -382,23 +389,32 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 		freeDiskEstimate = MaxEstimatedFreeDisk
 	}
 
-	return applyMinimums(&scpb.TaskSize{
+	return applyMinimums(task, &scpb.TaskSize{
 		EstimatedMemoryBytes:   memEstimate,
 		EstimatedMilliCpu:      cpuEstimate,
 		EstimatedFreeDiskBytes: freeDiskEstimate,
 	})
 }
 
-func applyMinimums(size *scpb.TaskSize) *scpb.TaskSize {
+func applyMinimums(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 	if size == nil {
 		return nil
 	}
 	clone := proto.Clone(size).(*scpb.TaskSize)
-	if clone.EstimatedMilliCpu < MinimumMilliCPU {
-		clone.EstimatedMilliCpu = MinimumMilliCPU
+
+	minMemoryBytes := MinimumMemoryBytes
+	minMilliCPU := MinimumMilliCPU
+	// Test actions have higher minimums, determined by the test size ("small",
+	// "medium", etc.)
+	if s, ok := testSize(task); ok {
+		minMemoryBytes, minMilliCPU = estimateFromTestSize(s)
 	}
-	if clone.EstimatedMemoryBytes < MinimumMemoryBytes {
-		clone.EstimatedMemoryBytes = MinimumMemoryBytes
+
+	if clone.EstimatedMilliCpu < minMilliCPU {
+		clone.EstimatedMilliCpu = minMilliCPU
+	}
+	if clone.EstimatedMemoryBytes < minMemoryBytes {
+		clone.EstimatedMemoryBytes = minMemoryBytes
 	}
 	return clone
 }

@@ -32,7 +32,7 @@ func TestEstimate_TestTask_RespectsTestSize(t *testing.T) {
 		size                                  string
 		expectedMemoryBytes, expectedMilliCPU int64
 	}{
-		{"small", 20 * 1e6, 600},
+		{"small", 20 * 1e6, 1000},
 		{"enormous", 800 * 1e6, 1000},
 	} {
 		ts := tasksize.Estimate(&repb.ExecutionTask{
@@ -58,9 +58,9 @@ func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 		expectedMilliCPU    int64
 		expectedDiskBytes   int64
 	}{
-		{"small", platform.BareContainerType, false /*=initDockerd*/, 20 * 1e6, 600, tasksize.DefaultFreeDiskEstimate},
+		{"small", platform.BareContainerType, false /*=initDockerd*/, 20 * 1e6, 1000, tasksize.DefaultFreeDiskEstimate},
 		{"enormous", platform.BareContainerType, false /*=initDockerd*/, 800 * 1e6, 1000, tasksize.DefaultFreeDiskEstimate},
-		{"small", platform.FirecrackerContainerType, false /*=initDockerd*/, 20*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes, 600, tasksize.DefaultFreeDiskEstimate},
+		{"small", platform.FirecrackerContainerType, false /*=initDockerd*/, 20*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate},
 		{"enormous", platform.FirecrackerContainerType, true /*=initDockerd*/, 800*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes + tasksize.DockerInFirecrackerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate + tasksize.DockerInFirecrackerAdditionalDiskEstimateBytes},
 	} {
 		ts := tasksize.Estimate(&repb.ExecutionTask{
@@ -221,4 +221,20 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 	ts := sizer.Get(ctx, task)
 	assert.Equal(t, tasksize.MinimumMilliCPU, ts.GetEstimatedMilliCpu())
 	assert.Equal(t, tasksize.MinimumMemoryBytes, ts.GetEstimatedMemoryBytes())
+
+	// Test actions have different minimums.
+	task = &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"test.sh"},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "TEST_SIZE", Value: "enormous"},
+			},
+		},
+	}
+	err = sizer.Update(ctx, task.GetCommand(), md)
+	require.NoError(t, err)
+
+	ts = sizer.Get(ctx, task)
+	assert.Equal(t, int64(1000), ts.GetEstimatedMilliCpu())
+	assert.Equal(t, int64(800*1e6), ts.GetEstimatedMemoryBytes())
 }
