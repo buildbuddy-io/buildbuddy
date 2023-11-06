@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
@@ -116,6 +117,74 @@ func getBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
 	_, err := getBlobChunk(ctx, bsClient, r, &StreamBlobOpts{Offset: 0, Limit: 0}, out)
 	return err
+}
+
+// BlobResponse is a response to an individual blob in a BatchReadBlobs request.
+type BlobResponse struct {
+	Digest *repb.Digest
+	Data   []byte
+
+	Err error
+}
+
+// BatchReadBlobs issues a BatchReadBlobs request and returns a mapping from
+// digest hash to byte payload.
+//
+// It validates the response so that if the returned err is nil, then all
+// digests in the request are guaranteed to have a corresponding map entry.
+func BatchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.BatchReadBlobsRequest) ([]*BlobResponse, error) {
+	res, err := casClient.BatchReadBlobs(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	expected := map[string]struct{}{}
+	for _, d := range req.GetDigests() {
+		expected[d.GetHash()] = struct{}{}
+	}
+	// Validate that the response doesn't contain any unexpected digests.
+	for _, res := range res.Responses {
+		if _, ok := expected[res.GetDigest().GetHash()]; !ok {
+			return nil, status.UnknownErrorf("unexpected digest in batch response: %q", digest.String(res.GetDigest()))
+		}
+	}
+	// Build the results map, decompressing if needed and validating digests.
+	results := make([]*BlobResponse, 0, len(res.Responses))
+	for _, res := range res.Responses {
+		delete(expected, res.GetDigest().GetHash())
+
+		err := gstatus.ErrorProto(res.GetStatus())
+		if err != nil {
+			results = append(results, &BlobResponse{Err: err})
+			continue
+		}
+		data := res.Data
+		// TODO: parallel decompression
+		// TODO: accept decompression buffer map as optional arg
+		if res.GetCompressor() == repb.Compressor_ZSTD {
+			buf := make([]byte, 0, res.GetDigest().GetSizeBytes())
+			d, err := compression.DecompressZstd(buf, res.Data)
+			if err != nil {
+				return nil, status.WrapError(err, "decompress blob")
+			}
+			data = d
+		}
+		// Validate digest
+		downloadedContentDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
+		if err != nil {
+			return nil, err
+		}
+		if downloadedContentDigest.GetHash() != res.GetDigest().GetHash() || downloadedContentDigest.GetSizeBytes() != res.GetDigest().GetSizeBytes() {
+			return nil, status.UnknownErrorf("digest validation failed: expected %q, got %q", digest.String(res.GetDigest()), digest.String(downloadedContentDigest))
+		}
+		results = append(results, &BlobResponse{
+			Digest: res.GetDigest(),
+			Data:   data,
+		})
+	}
+	if len(expected) > 0 {
+		return nil, status.UnknownErrorf("missing digests in response: %s", maps.Keys(expected))
+	}
+	return results, nil
 }
 
 func computeDigest(in io.ReadSeeker, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.ResourceName, error) {

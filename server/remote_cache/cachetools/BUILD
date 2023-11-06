@@ -19,6 +19,7 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_x_exp//maps",
         "@org_golang_x_sync//errgroup",
     ],
 )
