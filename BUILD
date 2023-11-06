@@ -108,9 +108,6 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/unusedresult",
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
-        "-S1019",
-        "-S1023",
-        "-S1025",
         "-S1028",
         "-S1030",
         "-S1031",

@@ -121,7 +121,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 		ioBlockSize:    int64(stat.Sys().(*syscall.Stat_t).Blksize),
 		eagerFetchChan: make(chan *eagerFetchData, eagerFetchChanSize),
 		eagerFetchEg:   &errgroup.Group{},
-		quitChan:       make(chan struct{}, 0),
+		quitChan:       make(chan struct{}),
 	}
 
 	s.eagerFetchEg.Go(func() error {

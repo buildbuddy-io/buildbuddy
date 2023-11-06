@@ -328,7 +328,7 @@ func (c *Cache) StartListening() {
 	if !c.finishedShutdown {
 		return
 	}
-	c.shutDownChan = make(chan struct{}, 0)
+	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
 	go func() {
 		log.Infof("Distributed cache listening on %q", c.config.ListenAddr)

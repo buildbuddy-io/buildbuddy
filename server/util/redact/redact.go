@@ -499,7 +499,6 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		{
 		}
 	}
-	return
 }
 
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
