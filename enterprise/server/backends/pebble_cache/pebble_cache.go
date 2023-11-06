@@ -596,7 +596,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 
 	if *opts.ActiveKeyVersion < 0 {
-		pc.setActiveDatabaseVersion(filestore.PebbleKeyVersion(versionMetadata.MaxVersion))
+		pc.activeKeyVersion = int64(versionMetadata.MaxVersion)
 	}
 
 	pc.minDBVersion, pc.maxDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetMinVersion()), filestore.PebbleKeyVersion(versionMetadata.GetMaxVersion())
@@ -730,15 +730,6 @@ func (p *PebbleCache) databaseVersionKey() []byte {
 	return key
 }
 
-func (p *PebbleCache) maxDatabaseVersionMetadata() *rfpb.VersionMetadata {
-	maxKeyVersion := int64(filestore.MaxKeyVersion) - 1
-	return &rfpb.VersionMetadata{
-		MinVersion:     maxKeyVersion,
-		MaxVersion:     maxKeyVersion,
-		LastModifyUsec: p.clock.Now().UnixMicro(),
-	}
-}
-
 // databaseVersionKey returns the database-wide version metadata which
 // contains the database version.
 func (p *PebbleCache) DatabaseVersionMetadata() (*rfpb.VersionMetadata, error) {
@@ -777,10 +768,6 @@ func (p *PebbleCache) maxDatabaseVersion() filestore.PebbleKeyVersion {
 	unlockFn := p.locker.RLock(string(p.databaseVersionKey()))
 	defer unlockFn()
 	return p.maxDBVersion
-}
-
-func (p *PebbleCache) setActiveDatabaseVersion(version filestore.PebbleKeyVersion) {
-	p.activeKeyVersion = int64(version)
 }
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {

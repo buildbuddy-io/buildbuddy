@@ -24,13 +24,14 @@ var (
 	warnAboutLeaks = flag.Bool("cache.pebble.warn_about_leaks", true, "If set, warn about leaked DB handles")
 )
 
-var DefaultFS = vfs.Default
 var NoSync = pebble.NoSync
 var Sync = pebble.Sync
 var ErrNotFound = pebble.ErrNotFound
 
 var NewCache = pebble.NewCache
 var WithFlushedWAL = pebble.WithFlushedWAL
+var Peek = pebble.Peek
+var DefaultFS = vfs.Default
 
 type Options = pebble.Options
 type IterOptions = pebble.IterOptions
@@ -40,6 +41,7 @@ type EventListener = pebble.EventListener
 type WriteStallBeginInfo = pebble.WriteStallBeginInfo
 type DiskSlowInfo = pebble.DiskSlowInfo
 type DBDesc = pebble.DBDesc
+
 type FS = vfs.FS
 
 type Iterator interface {
@@ -377,20 +379,6 @@ func (idb *instrumentedDB) NewBatch() Batch {
 func (idb *instrumentedDB) NewIndexedBatch() Batch {
 	batch := idb.db.NewIndexedBatch()
 	return &instrumentedBatch{batch, batch, idb}
-}
-
-func Peek(dirname string, fs FS) (*DBDesc, error) {
-	metricsLabels := prometheus.Labels{
-		metrics.PebbleOperation: "peek",
-		metrics.PebbleID:        "unknown",
-	}
-	opMetrics := opMetrics{
-		count: metrics.PebbleCachePebbleOpCount.With(metricsLabels),
-		hist:  metrics.PebbleCachePebbleOpLatencyUsec.With(metricsLabels),
-	}
-	t := opMetrics.Track()
-	defer t.Done()
-	return pebble.Peek(dirname, fs)
 }
 
 func Open(dbDir string, id string, options *pebble.Options) (IPebbleDB, error) {
