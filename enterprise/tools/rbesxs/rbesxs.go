@@ -1,4 +1,7 @@
-// Utility for running a remote execution side-by-side test.
+// Utility for running a remote execution side-by-side comparison test to
+// evaluate performance changes. This tool sequentially runs several control
+// then test builds and spits out an SQL query that grabs performance metrics
+// (e.g. time and cache performance) about those builds for analysis.
 //
 // Example usage:
 //
@@ -97,7 +100,7 @@ func newCommand(target, environment, apiKey, remoteInstanceName, tag string, ext
 }
 
 func bazelClean(ctx context.Context, workDir string) {
-	result := commandutil.Run(ctx, &repb.Command{Arguments: []string{"bazel", "clean"}}, workDir, nil, nil)
+	result := commandutil.Run(ctx, &repb.Command{Arguments: []string{"bazel", "clean", "--async"}}, workDir, nil, nil)
 	if result.ExitCode != 0 {
 		log.Fatalf("bazel clean failed: %s", string(result.Stderr))
 	}
