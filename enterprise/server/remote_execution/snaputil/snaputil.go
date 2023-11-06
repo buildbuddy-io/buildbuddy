@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -23,6 +24,7 @@ import (
 var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
 var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd and executor.firecracker_enable_uffd are true.")
 var RemoteSnapshotReadonly = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
+var VerboseLogging = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 
 // ChunkSource represents how a snapshot chunk was initialized
 type ChunkSource int
@@ -52,6 +54,12 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 
 	if !*EnableRemoteSnapshotSharing {
 		return ChunkSourceUnmapped, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+	}
+
+	if *VerboseLogging {
+		start := time.Now()
+		log.CtxDebugf(ctx, "Fetching remote snapshot artifact...")
+		defer func() { log.CtxDebugf(ctx, "Fetched remote snapshot artifact in %s", time.Since(start)) }()
 	}
 
 	// Fetch from remote cache
@@ -98,6 +106,12 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	localCacheErr := cacheLocally(localCache, d, path)
 	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly {
 		return localCacheErr
+	}
+
+	if *VerboseLogging {
+		start := time.Now()
+		log.CtxDebugf(ctx, "Uploading snapshot artifact...")
+		defer func() { log.CtxDebugf(ctx, "Uploaded snapshot artifact in %s", time.Since(start)) }()
 	}
 
 	rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
