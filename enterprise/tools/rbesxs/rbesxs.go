@@ -1,7 +1,9 @@
 // Utility for running a remote execution side-by-side comparison test to
-// evaluate performance changes. This tool sequentially runs several control
-// then test builds and spits out an SQL query that grabs performance metrics
-// (e.g. time and cache performance) about those builds for analysis.
+// evaluate remote execution changes. This tool sequentially runs several
+// control then test builds and spits out an SQL query that grabs performance
+// metrics (e.g. time and cache performance) about those builds for analysis.
+// It may be useful for evaluating the performance / cost impact of
+// remote-execution or caching changes, for example.
 //
 // Example usage:
 //
