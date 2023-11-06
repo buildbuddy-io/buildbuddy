@@ -113,6 +113,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		fc.WaitForDirectoryScanToComplete()
 
 		writeFile(t, baseDir, "my/fun/file", false)
 		node := nodeFromString("my/fun/file", false)
@@ -123,8 +124,6 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		node = nodeFromString("my/evil/file", false)
 		err = fc.AddFile(authedCtx, node, filepath.Join(baseDir, "my/evil/file"))
 		require.NoError(t, err)
-
-		fc.WaitForDirectoryScanToComplete()
 	}
 	{
 		// Recreate filecache and wait for it to scan exsting files.
