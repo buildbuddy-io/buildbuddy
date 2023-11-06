@@ -585,11 +585,13 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	if newlyCreated && *opts.ActiveKeyVersion < 0 {
-		versionMetadata = pc.maxDatabaseVersionMetadata()
-	} else if newlyCreated {
-		versionMetadata.MinVersion = *opts.ActiveKeyVersion
-		versionMetadata.MaxVersion = *opts.ActiveKeyVersion
+	if newlyCreated {
+		activeVersion := *opts.ActiveKeyVersion
+		if activeVersion < 0 {
+			activeVersion = int64(filestore.MaxKeyVersion) - 1
+		}
+		versionMetadata.MinVersion = activeVersion
+		versionMetadata.MaxVersion = activeVersion
 		versionMetadata.LastModifyUsec = clock.Now().UnixMicro()
 	}
 
@@ -782,9 +784,6 @@ func (p *PebbleCache) setActiveDatabaseVersion(version filestore.PebbleKeyVersio
 }
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
-	if p.activeKeyVersion < 0 {
-		return p.maxDBVersion
-	}
 	return filestore.PebbleKeyVersion(p.activeKeyVersion)
 }
 

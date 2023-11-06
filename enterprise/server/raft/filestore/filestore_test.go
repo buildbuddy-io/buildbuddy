@@ -15,6 +15,18 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
+// These constants are presisted, so care must be taken to not change them.
+func TestKeyVersionDefinitions(t *testing.T) {
+	assert.Equal(t, -1, int(filestore.UnspecifiedKeyVersion))
+	assert.Equal(t, 0, int(filestore.UndefinedKeyVersion))
+	assert.Equal(t, 1, int(filestore.Version1))
+	assert.Equal(t, 2, int(filestore.Version2))
+	assert.Equal(t, 3, int(filestore.Version3))
+	assert.Equal(t, 4, int(filestore.Version4))
+	assert.Equal(t, 5, int(filestore.Version5))
+	assert.Equal(t, 6, int(filestore.MaxKeyVersion))
+}
+
 func TestKeyVersionCrossCompatibility(t *testing.T) {
 	testGroupID := "GR7890"
 	partitionID := "FOO"

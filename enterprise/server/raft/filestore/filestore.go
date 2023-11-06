@@ -76,12 +76,10 @@ const (
 	//
 	// This is in a different const block so as not to affect the iota below.
 	UnspecifiedKeyVersion PebbleKeyVersion = -1
-)
 
-const (
 	// UndefinedKeyVersion is the version of all keys in the database
 	// that have not yet been versioned.
-	UndefinedKeyVersion PebbleKeyVersion = iota
+	UndefinedKeyVersion PebbleKeyVersion = iota - 1
 
 	// Version1 is the first key version that includes a version in the
 	// key path, to disambiguate reading old keys.
