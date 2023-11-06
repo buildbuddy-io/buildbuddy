@@ -16,12 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -613,28 +611,28 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	if casClient == nil {
 		return status.FailedPreconditionErrorf("cannot batch download files when casClient is not set")
 	}
-
-	rsp, err := casClient.BatchReadBlobs(ctx, req)
+	responses, err := cachetools.BatchReadBlobs(ctx, ff.env.GetContentAddressableStorageClient(), req)
 	if err != nil {
 		return err
 	}
 
 	ff.statsMu.Lock()
-	for _, fileResponse := range rsp.GetResponses() {
-		if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
+	for _, res := range responses {
+		if res.Err != nil {
 			continue
 		}
-		ff.stats.FileDownloadSizeBytes += fileResponse.GetDigest().GetSizeBytes()
+		// TODO: measure compressed size
+		ff.stats.FileDownloadSizeBytes += res.Digest.GetSizeBytes()
 		ff.stats.FileDownloadCount += 1
 	}
 	ff.statsMu.Unlock()
 
 	fileCache := ff.env.GetFileCache()
-	for _, fileResponse := range rsp.GetResponses() {
-		if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
-			return digest.MissingDigestError(fileResponse.GetDigest())
+	for _, res := range responses {
+		if res.Err != nil {
+			return digest.MissingDigestError(res.Digest)
 		}
-		d := fileResponse.GetDigest()
+		d := res.Digest
 		ptrs, ok := filesToFetch[digest.NewKey(d)]
 		if !ok {
 			return status.InternalErrorf("Fetched unrequested file: %q", d)
@@ -642,22 +640,8 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		if len(ptrs) == 0 {
 			continue
 		}
-		data := fileResponse.GetData()
-		if fileResponse.GetCompressor() == repb.Compressor_ZSTD {
-			data, err = compression.DecompressZstd(nil, data)
-			if err != nil {
-				return err
-			}
-		}
-		computedDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
-		if err != nil {
-			return err
-		}
-		if computedDigest.GetHash() != d.GetHash() {
-			return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest.GetHash(), d.GetHash())
-		}
 		ptr := ptrs[0]
-		if err := writeFile(ptr, data); err != nil {
+		if err := writeFile(ptr, res.Data); err != nil {
 			return err
 		}
 		if fileCache != nil {

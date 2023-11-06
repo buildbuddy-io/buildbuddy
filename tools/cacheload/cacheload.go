@@ -42,6 +42,7 @@ var (
 
 	blobSize        = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
 	readCompressed  = flag.Bool("read_compressed", false, "Whether to request compressed blobs when reading.")
+	readBatch       = flag.Bool("read_batch", false, "Whether to use BatchReadBlobs for reads.")
 	writeCompressed = flag.Bool("write_compressed", false, "Whether to write compressed blobs.")
 	recycleRate     = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
 	timeout         = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
@@ -145,7 +146,7 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 	return nil, err
 }
 
-func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest) error {
+func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, d *repb.Digest) error {
 	resourceName := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	if *readCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
@@ -153,7 +154,11 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest)
 	retrier := retry.DefaultWithContext(ctx)
 	var err error
 	for retrier.Next() {
-		err := cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+		if *readBatch {
+			_, err = cachetools.BatchReadSingleBlob(ctx, casClient, resourceName)
+		} else {
+			err = cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+		}
 		incrementPromErrorMetric(err)
 		if err == nil {
 			return nil
@@ -167,6 +172,9 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest)
 
 func main() {
 	flag.Parse()
+	if err := log.Configure(); err != nil {
+		log.Fatalf("Failed to configure logging: %s", err)
+	}
 
 	digestGenerator = digest.RandomGenerator(time.Now().Unix())
 	ctx := context.Background()
@@ -192,6 +200,7 @@ func main() {
 	log.Printf("Connected to target: %q", *cacheTarget)
 
 	bsClient := bspb.NewByteStreamClient(conn)
+	casClient := repb.NewContentAddressableStorageClient(conn)
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
@@ -281,7 +290,7 @@ func main() {
 						return err
 					}
 					ctx, cancel := context.WithTimeout(gctx, *timeout)
-					err := readBlob(ctx, bsClient, d)
+					err := readBlob(ctx, bsClient, casClient, d)
 					cancel()
 					if err != nil {
 						log.Errorf("Read err: %s", err)
