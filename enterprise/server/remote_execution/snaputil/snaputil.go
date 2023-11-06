@@ -1,7 +1,6 @@
 package snaputil
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -43,7 +42,7 @@ const (
 	ChunkSourceRemoteCache
 )
 
-func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
+func GetArtifact(ctx context.Context, localCache interfaces.FileCache, casClient repb.ContentAddressableStorageClient, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
 	node := &repb.FileNode{Digest: d}
 	fetchedLocally := localCache.FastLinkFile(node, outputPath)
 	if fetchedLocally {
@@ -55,15 +54,15 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	}
 
 	// Fetch from remote cache
-	buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
 	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
-	if err := cachetools.GetBlob(ctx, bsClient, r, buf); err != nil {
+	b, err := cachetools.BatchReadSingleBlob(ctx, casClient, r)
+	if err != nil {
 		return ChunkSourceUnmapped, status.WrapError(err, "remote fetch snapshot artifact")
 	}
 
 	// Write file to outputDir so it can be used by the VM
-	writeErr := os.WriteFile(outputPath, buf.Bytes(), 0777)
+	writeErr := os.WriteFile(outputPath, b, 0777)
 
 	// Save to local cache so next time fetching won't require a remote get
 	if err := cacheLocally(localCache, d, outputPath); err != nil {
@@ -73,7 +72,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	return ChunkSourceRemoteCache, writeErr
 }
 
-func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
+func GetBytes(ctx context.Context, localCache interfaces.FileCache, casClient repb.ContentAddressableStorageClient, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return nil, err
@@ -85,7 +84,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 		}
 	}()
 
-	if _, err := GetArtifact(ctx, localCache, bsClient, d, instanceName, tmpPath); err != nil {
+	if _, err := GetArtifact(ctx, localCache, casClient, d, instanceName, tmpPath); err != nil {
 		return nil, err
 	}
 
