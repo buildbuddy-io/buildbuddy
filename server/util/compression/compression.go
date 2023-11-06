@@ -10,7 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/prometheus/client_golang/prometheus"
-	zstd "github.com/valyala/gozstd"
+	"github.com/valyala/gozstd"
 )
 
 var (
@@ -25,12 +25,8 @@ var (
 	zstdDecoderPool = NewZstdDecoderPool()
 )
 
-func mustGetZstdEncoder() *zstd.Encoder {
-	enc, err := zstd.NewWriter(nil)
-	if err != nil {
-		panic(err)
-	}
-	return enc
+func mustGetZstdEncoder() *gozstd.Writer {
+	return gozstd.NewWriter(nil)
 }
 
 // CompressZstd compresses a chunk of data into dst using zstd compression at
@@ -38,22 +34,13 @@ func mustGetZstdEncoder() *zstd.Encoder {
 // allocated.
 func CompressZstd(dst []byte, src []byte) []byte {
 	metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(len(src)))
-	return zstdEncoder.EncodeAll(src, dst[:0])
+	return gozstd.Compress(dst[:0], src)
 }
 
 // DecompressZstd decompresses a full chunk of zstd data into dst. If dst is
 // not big enough then a new buffer will be allocated.
 func DecompressZstd(dst []byte, src []byte) ([]byte, error) {
-	dec, err := zstdDecoderPool.Get(nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := zstdDecoderPool.Put(dec); err != nil {
-			log.Errorf("Failed to return zstd decoder to pool: %s", err)
-		}
-	}()
-	buf, err := dec.DecodeAll(src, dst[:0])
+	buf, err := gozstd.Decompress(dst[:0], src)
 	metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(len(buf)))
 	return buf, err
 }
@@ -205,7 +192,7 @@ func NewZstdDecompressingReader(reader io.ReadCloser) (io.ReadCloser, error) {
 // goroutines, it can be garbage collected before the wrapped decoder can.
 // When garbage collected, a finalizer automatically closes the wrapped decoder,
 // thus allowing the decoder to be garbage collected as well.
-type DecoderRef struct{ *zstd.Decoder }
+type DecoderRef struct{ *gozstd.Reader }
 
 // ZstdDecoderPool allows reusing zstd decoders to avoid excessive allocations.
 type ZstdDecoderPool struct {
@@ -216,13 +203,10 @@ func NewZstdDecoderPool() *ZstdDecoderPool {
 	return &ZstdDecoderPool{
 		pool: sync.Pool{
 			New: func() interface{} {
-				dc, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
-				if err != nil {
-					return err
-				}
+				dc := gozstd.NewReader(nil)
 				ref := &DecoderRef{dc}
 				runtime.SetFinalizer(ref, func(ref *DecoderRef) {
-					ref.Decoder.Close()
+					ref.Reader.Release()
 				})
 				return ref
 			},
@@ -242,17 +226,13 @@ func (p *ZstdDecoderPool) Get(reader io.Reader) (*DecoderRef, error) {
 	}
 	// No need to check this type assertion since Put can only accept decoders.
 	decoder := val.(*DecoderRef)
-	if err := decoder.Reset(reader); err != nil {
-		return nil, err
-	}
+	decoder.Reset(reader, nil)
 	return decoder, nil
 }
 
 func (p *ZstdDecoderPool) Put(ref *DecoderRef) error {
 	// Release reference to enclosed reader before adding back to the pool.
-	if err := ref.Reset(nil); err != nil {
-		return err
-	}
+	ref.Reset(nil, nil)
 	p.pool.Put(ref)
 	return nil
 }

@@ -9,7 +9,7 @@ go_library(
         "//server/metrics",
         "//server/util/log",
         "@com_github_prometheus_client_golang//prometheus",
-        "@com_github_valyala_gozstd//:gozstd",
+        "@com_github_valyala_gozstd//:go_default_library",
     ],
 )
 
