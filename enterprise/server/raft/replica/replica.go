@@ -1746,6 +1746,10 @@ func (sm *Replica) Close() error {
 	if sm.store != nil && rangeDescriptor != nil {
 		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
+
+	sm.readQPS.Stop()
+	sm.raftProposeQPS.Stop()
+
 	return nil
 }
 
@@ -1761,8 +1765,8 @@ func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcas
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", shardID, replicaID)),
 		fileStorer:          filestore.New(),
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
-		readQPS:             qps.NewCounter(),
-		raftProposeQPS:      qps.NewCounter(),
+		readQPS:             qps.NewCounter(1 * time.Minute),
+		raftProposeQPS:      qps.NewCounter(1 * time.Minute),
 		broadcast:           broadcast,
 	}
 }
