@@ -101,7 +101,7 @@ func TestFilecache(t *testing.T) {
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
 }
 
-func TestFileCacheScanExisting(t *testing.T) {
+func TestFileCacheGroupIsolation(t *testing.T) {
 	ctx := context.TODO()
 	fcDir := testfs.MakeTempDir(t)
 	baseDir := testfs.MakeTempDir(t)
