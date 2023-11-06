@@ -220,6 +220,12 @@ const (
 	FileName = "file_name"
 )
 
+// Label value constants
+const (
+	HitStatusLabel  = "hit"
+	MissStatusLabel = "miss"
+)
+
 // Other constants
 const (
 	bbNamespace = "buildbuddy"

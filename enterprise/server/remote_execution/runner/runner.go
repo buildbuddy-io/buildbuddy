@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -104,11 +105,6 @@ const (
 	// Maximum number of attempts to take a paused runner from the pool before
 	// giving up and creating a new runner.
 	maxUnpauseAttempts = 5
-
-	// Label assigned to runner pool request count metric for fulfilled requests.
-	hitStatusLabel = "hit"
-	// Label assigned to runner pool request count metric for unfulfilled requests.
-	missStatusLabel = "miss"
 
 	// Value for persisent workers that support the JSON persistent worker protocol.
 	workerProtocolJSONValue = "json"
@@ -900,7 +896,18 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		Platform:            task.GetCommand().GetPlatform(),
 		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
 	}
-	if props.RecycleRunner {
+
+	// If snapshot sharing is enabled, a firecracker VM can be cloned from the
+	// cache and does not rely on previous state set on the runner, so we can
+	// circumvent the runner pool. In fact we *should* circumvent the runner pool
+	// and create a new runner with data from the incoming task, which can be used
+	// to find a better snapshot match than a runner created for a stale task
+	// (Ex. If runner A was created for branch `feature_one` and an incoming
+	// workload is for branch `feature_two`, we should create a new runner intended
+	// for `feature_two`, rather than reuse the runner for branch `feature_one`, which would be more stale
+	snapshotEnabledRunner := platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType &&
+		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+	if props.RecycleRunner && !snapshotEnabledRunner {
 		r := p.takeWithRetry(ctx, key)
 		if r != nil {
 			p.mu.Lock()
@@ -910,10 +917,18 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			p.mu.Unlock()
 			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
-				metrics.RecycleRunnerRequestStatusLabel: hitStatusLabel,
+				metrics.RecycleRunnerRequestStatusLabel: metrics.HitStatusLabel,
 			}).Inc()
 			return r, nil
 		}
+	}
+
+	if !snapshotEnabledRunner {
+		// For snapshot enabled runners, the RecycleRunnerRequests metric
+		// is emitted in snaploader.go
+		metrics.RecycleRunnerRequests.With(prometheus.Labels{
+			metrics.RecycleRunnerRequestStatusLabel: metrics.MissStatusLabel,
+		}).Inc()
 	}
 
 	debugID, _ := random.RandomString(8)
@@ -922,10 +937,16 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		DebugId:           debugID,
 		AssignedTaskCount: 1,
 	}
-	metrics.RecycleRunnerRequests.With(prometheus.Labels{
-		metrics.RecycleRunnerRequestStatusLabel: missStatusLabel,
-	}).Inc()
-	return p.newRunner(ctx, props, st, state)
+
+	r, err := p.newRunner(ctx, props, st, state)
+	if err != nil {
+		return nil, err
+	}
+
+	if snapshotEnabledRunner {
+		r.doNotReuse = true
+	}
+	return r, nil
 }
 
 // newRunner creates a runner either for the given task (if set) or restores the
