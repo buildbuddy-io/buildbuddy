@@ -1,6 +1,7 @@
 package filecache_test
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"math/rand"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -47,6 +49,7 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 }
 
 func TestFilecache(t *testing.T) {
+	ctx := context.TODO()
 	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
@@ -60,45 +63,112 @@ func TestFilecache(t *testing.T) {
 
 	// Add a file and make sure we can hardlink it
 	node := nodeFromString("my/fun/file", false)
-	err = fc.AddFile(node, filepath.Join(baseDir, "my/fun/file"))
+	err = fc.AddFile(ctx, node, filepath.Join(baseDir, "my/fun/file"))
 	require.NoError(t, err)
-	linked := fc.FastLinkFile(node, filepath.Join(baseDir, "my/fun/fastlinked-file"))
+	linked := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/fastlinked-file"))
 	assert.True(t, linked, "existing file should link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-file"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/fastlinked-file"), "my/fun/file")
 
 	// Make sure that when we try to hardlink a non-existent file, it doesn't link
 	nonexistentNode := nodeFromString("my/fun/nonexistentfile", false)
-	notLinked := fc.FastLinkFile(nonexistentNode, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"))
+	notLinked := fc.FastLinkFile(ctx, nonexistentNode, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"))
 	assert.False(t, notLinked, "nonexistet file should not link")
 	assert.NoFileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"))
 
 	// Make sure that when we try to link the existing file as an executable file, it doesn't link
 	executableNode := nodeFromString("my/fun/file", true)
-	notLinkedExecutable := fc.FastLinkFile(executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
+	notLinkedExecutable := fc.FastLinkFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 	assert.False(t, notLinkedExecutable, "executable file should not link")
 	assert.NoFileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 
 	// Replace the original file with an executable one
 	os.Remove(filepath.Join(baseDir, "my/fun/file"))
 	writeFile(t, baseDir, "my/fun/file", true)
-	err = fc.AddFile(executableNode, filepath.Join(baseDir, "my/fun/file"))
+	err = fc.AddFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/file"))
 	require.NoError(t, err)
 
 	// Make sure the link now works
-	linkedExecutable := fc.FastLinkFile(executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
+	linkedExecutable := fc.FastLinkFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 	assert.True(t, linkedExecutable, "executable file should link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"), "my/fun/file-executable")
 
 	// Make sure the original link still works
-	secondLink := fc.FastLinkFile(node, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
+	secondLink := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
 }
 
+func TestFileCacheGroupIsolation(t *testing.T) {
+	ctx := context.TODO()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	authedCtx := claims.AuthContextFromClaims(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+
+	{
+		// Create a filecache and add a couple files.
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fc.WaitForDirectoryScanToComplete()
+
+		writeFile(t, baseDir, "my/fun/file", false)
+		node := nodeFromString("my/fun/file", false)
+		err = fc.AddFile(ctx, node, filepath.Join(baseDir, "my/fun/file"))
+		require.NoError(t, err)
+
+		writeFile(t, baseDir, "my/evil/file", false)
+		node = nodeFromString("my/evil/file", false)
+		err = fc.AddFile(authedCtx, node, filepath.Join(baseDir, "my/evil/file"))
+		require.NoError(t, err)
+	}
+	{
+		// Recreate filecache and wait for it to scan exsting files.
+		// Ensure that they are still present.
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fc.WaitForDirectoryScanToComplete()
+
+		node := nodeFromString("my/fun/file", false)
+		linked := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/fastlinked-file"))
+		assert.True(t, linked, "existing file should link")
+		assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-file"))
+		assertFileContents(t, filepath.Join(baseDir, "my/fun/fastlinked-file"), "my/fun/file")
+
+		evilNode := nodeFromString("my/evil/file", false)
+		evilLinked := fc.FastLinkFile(authedCtx, evilNode, filepath.Join(baseDir, "my/evil/fastlinked-file"))
+		assert.True(t, evilLinked, "existing file should link")
+		assert.FileExists(t, filepath.Join(baseDir, "my/evil/fastlinked-file"))
+		assertFileContents(t, filepath.Join(baseDir, "my/evil/fastlinked-file"), "my/evil/file")
+	}
+	{
+		// Recreate filecache and wait for it to scan exsting files.
+		// Ensure that permissions are preserved.
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fc.WaitForDirectoryScanToComplete()
+
+		node := nodeFromString("my/fun/file", false)
+		linked := fc.FastLinkFile(authedCtx, node, filepath.Join(baseDir, "my/unauthed/fun-file"))
+		assert.False(t, linked, "unowned file should not link")
+		assert.NoFileExists(t, filepath.Join(baseDir, "my/unauthed/fun-file"))
+
+		evilNode := nodeFromString("my/evil/file", false)
+		evilLinked := fc.FastLinkFile(ctx, evilNode, filepath.Join(baseDir, "my/unauthed/evil-file"))
+		assert.False(t, evilLinked, "unowned file should not link")
+		assert.NoFileExists(t, filepath.Join(baseDir, "my/unauthed/evil-file"))
+	}
+}
+
 func TestFileCacheOverwrite(t *testing.T) {
+	ctx := context.TODO()
 	for _, test := range []struct {
 		Name       string
 		Executable bool
@@ -117,9 +187,9 @@ func TestFileCacheOverwrite(t *testing.T) {
 			node := nodeFromString("file1-content", test.Executable)
 			{
 				// Add node for the first time
-				err = fc.AddFile(node, filepath.Join(tempDir, "file1"))
+				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file1"))
 				require.NoError(t, err)
-				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file1-link1"))
+				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file1-link1"))
 				require.True(t, linked, "expected cache hit after writing file")
 				// Verify all file contents
 				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
@@ -129,9 +199,9 @@ func TestFileCacheOverwrite(t *testing.T) {
 			}
 			{
 				// Overwrite existing node entry
-				err = fc.AddFile(node, filepath.Join(tempDir, "file1"))
+				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file1"))
 				require.NoError(t, err)
-				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file1-link2"))
+				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file1-link2"))
 				require.True(t, linked, "expected cache hit after overwriting file")
 				// Verify all file contents
 				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
@@ -145,9 +215,9 @@ func TestFileCacheOverwrite(t *testing.T) {
 				// Overwrite again, this time the contents don't match the
 				// digest (filecache supports this, similar to AC).
 				writeFileContent(t, tempDir, "file2", "file2-content", test.Executable)
-				err = fc.AddFile(node, filepath.Join(tempDir, "file2"))
+				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file2"))
 				require.NoError(t, err)
-				linked := fc.FastLinkFile(node, filepath.Join(tempDir, "file2-link1"))
+				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file2-link1"))
 				require.True(t, linked, "expected cache hit after overwriting file with different digest")
 				// Verify all file contents
 				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
@@ -170,6 +240,7 @@ func TestFileCacheOverwrite(t *testing.T) {
 }
 
 func BenchmarkFilecacheLink(b *testing.B) {
+	ctx := context.TODO()
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
 
@@ -203,7 +274,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 					Digest: d,
 				}
 				nodes = append(nodes, node)
-				err = fc.AddFile(node, path)
+				err = fc.AddFile(ctx, node, path)
 				require.NoError(b, err)
 			}
 
@@ -217,14 +288,14 @@ func BenchmarkFilecacheLink(b *testing.B) {
 					node := node
 					eg.Go(func() error {
 						if rand.Float64() > test.ReadFraction {
-							err := fc.AddFile(node, filepath.Join(tmp, node.GetName()))
+							err := fc.AddFile(ctx, node, filepath.Join(tmp, node.GetName()))
 							if err != nil {
 								require.FailNowf(b, "fast link failed", "%s", err)
 							}
 							return nil
 						}
 
-						ok := fc.FastLinkFile(node, filepath.Join(out, fmt.Sprint(node.GetName())))
+						ok := fc.FastLinkFile(ctx, node, filepath.Join(out, fmt.Sprint(node.GetName())))
 						if !ok {
 							require.FailNowf(b, "link failed", "")
 						}

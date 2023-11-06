@@ -72,7 +72,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	// Rewrite artifact and delete from local cache, make sure we can still read
 	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), d, "", b)
 	require.NoError(t, err)
-	deleted := fc.DeleteFile(&repb.FileNode{Digest: d})
+	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d})
 	require.True(t, deleted)
 	outputPathRemoteFetch := filepath.Join(tmpDir, "fetch_remote")
 	chunkSrc, err = snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), d, "", outputPathRemoteFetch)
@@ -114,7 +114,7 @@ func TestCacheAndFetchBytes(t *testing.T) {
 	require.Equal(t, randomStr, string(fetchedBytes))
 
 	// Delete from local cache, make sure we can still read
-	deleted := fc.DeleteFile(&repb.FileNode{Digest: d})
+	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d})
 	require.True(t, deleted)
 	fetchedBytes, err = snaputil.GetBytes(ctx, fc, env.GetByteStreamClient(), d, "", tmpDir)
 	require.NoError(t, err)

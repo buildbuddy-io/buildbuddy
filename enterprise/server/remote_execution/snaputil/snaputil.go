@@ -47,7 +47,7 @@ const (
 
 func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
 	node := &repb.FileNode{Digest: d}
-	fetchedLocally := localCache.FastLinkFile(node, outputPath)
+	fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
 	if fetchedLocally {
 		return ChunkSourceLocalFilecache, nil
 	}
@@ -74,7 +74,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	writeErr := os.WriteFile(outputPath, buf.Bytes(), 0777)
 
 	// Save to local cache so next time fetching won't require a remote get
-	if err := cacheLocally(localCache, d, outputPath); err != nil {
+	if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
 		log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
 	}
 
@@ -103,7 +103,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled
 func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, path string) error {
-	localCacheErr := cacheLocally(localCache, d, path)
+	localCacheErr := cacheLocally(ctx, localCache, d, path)
 	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly {
 		return localCacheErr
 	}
@@ -148,12 +148,12 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 
 // cacheLocally copies the data at `path` to the local filecache with
 // the given `key`
-func cacheLocally(localCache interfaces.FileCache, d *repb.Digest, path string) error {
+func cacheLocally(ctx context.Context, localCache interfaces.FileCache, d *repb.Digest, path string) error {
 	fileNode := &repb.FileNode{Digest: d}
 	// If EnableLocalSnapshotSharing=true and we're computing real unloadedChunks,
 	// the files will be immutable. We won't need to re-save them to file cache
-	if !*EnableLocalSnapshotSharing || !localCache.ContainsFile(fileNode) {
-		return localCache.AddFile(fileNode, path)
+	if !*EnableLocalSnapshotSharing || !localCache.ContainsFile(ctx, fileNode) {
+		return localCache.AddFile(ctx, fileNode, path)
 	}
 	return nil
 }
