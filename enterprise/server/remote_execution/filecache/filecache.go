@@ -237,13 +237,24 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 			Inc()
 	}()
 
-	v, ok := c.l.Get(key(ctx, node))
+	groupID := groupIDStringFromContext(ctx)
+	key := groupSpecificKey(groupID, node)
+
+	v, ok := c.l.Get(key)
 	if !ok {
 		return false
 	}
-	if err := fastcopy.FastCopy(v.value, outputPath); err != nil {
-		log.Warningf("Error fast linking file: %s", err.Error())
-		return false
+
+	if groupID == interfaces.AuthAnonymousUser {
+		if err := fastcopy.Clone(v.value, outputPath); err != nil {
+			log.Warningf("Error fast linking file: %s", err.Error())
+			return false
+		}
+	} else {
+		if err := fastcopy.FastCopy(v.value, outputPath); err != nil {
+			log.Warningf("Error fast linking file: %s", err.Error())
+			return false
+		}
 	}
 	return true
 }
