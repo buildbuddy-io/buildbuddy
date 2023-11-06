@@ -1245,6 +1245,15 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*ap
 	return samples, nil
 }
 
+func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
+	// Update the local in-memory range descriptor iff this batch modified
+	// it.
+	localRangeKey := sm.replicaLocalKey(constants.LocalRangeKey)
+	if buf, ok := batchContainsKey(wb, localRangeKey); ok {
+		sm.setRange(localRangeKey, buf)
+	}
+}
+
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
 // is a list of continuous proposed and committed commands from clients, they
 // are provided together as a batch so the IOnDiskStateMachine implementation
@@ -1311,9 +1320,9 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	}).Inc()
 	sm.raftProposeQPS.Inc()
 
-	// All of the data in a BatchCmdRequest is handled in a single
-	// pebble write batch. That means that if any part of a batch
-	// update fails, none of the batch will be applied.
+	// All of the data in a BatchCmdRequest is handled in a single pebble
+	// write batch. That means that if any part of a batch update fails,
+	// none of the batch will be applied.
 	wb := db.NewIndexedBatch()
 	defer wb.Close()
 
@@ -1328,7 +1337,8 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 			rsp := &rfpb.ResponseUnion{}
 			sm.handlePropose(wb, union, rsp)
 			if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
-				// Log Update() errors (except Compare-And-Set) errors.
+				// Log Update() errors (except Compare-And-Set)
+				// errors.
 				sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
 			}
 			batchRsp.Union = append(batchRsp.Union, rsp)
@@ -1346,15 +1356,13 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
 	if err := wb.Commit(pebble.NoSync); err != nil {
 		return entry, err
+	} else {
+		// If the batch commit was successful, update the replica's in-
+		// memory state.
+		sm.updateInMemoryState(wb)
+		sm.lastAppliedIndex = entry.Index
 	}
 
-	// Update the local in-memory range descriptor iff this batch
-	// modified it and the batch was successfully committed.
-	localRangeKey := sm.replicaLocalKey(constants.LocalRangeKey)
-	if buf, ok := batchContainsKey(wb, localRangeKey); ok {
-		sm.setRange(localRangeKey, buf)
-	}
-	sm.lastAppliedIndex = entry.Index
 	return entry, nil
 }
 
