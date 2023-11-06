@@ -39,6 +39,7 @@ var (
 	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
+	qpsAvgWindow = flag.Duration("qps_avg_window", 5*time.Second, "QPS averaging window")
 
 	blobSize        = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
 	readCompressed  = flag.Bool("read_compressed", false, "Whether to request compressed blobs when reading.")
@@ -216,8 +217,10 @@ func main() {
 	writtenDigests := make(chan *repb.Digest, 10000)
 	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
 
-	writeQPSCounter := qps.NewCounter()
-	readQPSCounter := qps.NewCounter()
+	writeQPSCounter := qps.NewCounter(*qpsAvgWindow)
+	defer writeQPSCounter.Stop()
+	readQPSCounter := qps.NewCounter(*qpsAvgWindow)
+	defer readQPSCounter.Stop()
 
 	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), 1)
 	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), 1)
@@ -228,7 +231,7 @@ func main() {
 			case <-gctx.Done():
 				return nil
 			case <-time.After(time.Second):
-				log.Printf("Write: %d, Read: %d QPS", writeQPSCounter.Get(), readQPSCounter.Get())
+				log.Printf("Write: %.1f, Read: %.1f QPS (%s avg)", writeQPSCounter.Get(), readQPSCounter.Get(), *qpsAvgWindow)
 			}
 		}
 	})
