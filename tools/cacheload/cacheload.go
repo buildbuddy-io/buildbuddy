@@ -39,9 +39,11 @@ var (
 	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
+	qpsAvgWindow = flag.Duration("qps_avg_window", 5*time.Second, "QPS averaging window")
 
 	blobSize        = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
 	readCompressed  = flag.Bool("read_compressed", false, "Whether to request compressed blobs when reading.")
+	readBatch       = flag.Bool("read_batch", false, "Whether to use BatchReadBlobs for reads.")
 	writeCompressed = flag.Bool("write_compressed", false, "Whether to write compressed blobs.")
 	recycleRate     = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
 	timeout         = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
@@ -145,7 +147,7 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 	return nil, err
 }
 
-func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest) error {
+func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, d *repb.Digest) error {
 	resourceName := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	if *readCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
@@ -153,7 +155,11 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest)
 	retrier := retry.DefaultWithContext(ctx)
 	var err error
 	for retrier.Next() {
-		err := cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+		if *readBatch {
+			_, err = batchReadSingleBlob(ctx, casClient, resourceName)
+		} else {
+			err = cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+		}
 		incrementPromErrorMetric(err)
 		if err == nil {
 			return nil
@@ -165,8 +171,24 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest)
 	return err
 }
 
+func batchReadSingleBlob(ctx context.Context, casClient repb.ContentAddressableStorageClient, rn *digest.ResourceName) ([]byte, error) {
+	responses, err := cachetools.BatchReadBlobs(ctx, casClient, &repb.BatchReadBlobsRequest{
+		InstanceName:          rn.GetInstanceName(),
+		AcceptableCompressors: []repb.Compressor_Value{rn.GetCompressor()},
+		DigestFunction:        rn.GetDigestFunction(),
+		Digests:               []*repb.Digest{rn.GetDigest()},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return responses[0].Data, responses[0].Err
+}
+
 func main() {
 	flag.Parse()
+	if err := log.Configure(); err != nil {
+		log.Fatalf("Failed to configure logging: %s", err)
+	}
 
 	digestGenerator = digest.RandomGenerator(time.Now().Unix())
 	ctx := context.Background()
@@ -192,6 +214,7 @@ func main() {
 	log.Printf("Connected to target: %q", *cacheTarget)
 
 	bsClient := bspb.NewByteStreamClient(conn)
+	casClient := repb.NewContentAddressableStorageClient(conn)
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
@@ -216,8 +239,10 @@ func main() {
 	writtenDigests := make(chan *repb.Digest, 10000)
 	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
 
-	writeQPSCounter := qps.NewCounter()
-	readQPSCounter := qps.NewCounter()
+	writeQPSCounter := qps.NewCounter(*qpsAvgWindow)
+	defer writeQPSCounter.Stop()
+	readQPSCounter := qps.NewCounter(*qpsAvgWindow)
+	defer readQPSCounter.Stop()
 
 	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), 1)
 	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), 1)
@@ -228,7 +253,7 @@ func main() {
 			case <-gctx.Done():
 				return nil
 			case <-time.After(time.Second):
-				log.Printf("Write: %d, Read: %d QPS", writeQPSCounter.Get(), readQPSCounter.Get())
+				log.Printf("Write: %.1f, Read: %.1f QPS (%s avg)", writeQPSCounter.Get(), readQPSCounter.Get(), *qpsAvgWindow)
 			}
 		}
 	})
@@ -281,7 +306,7 @@ func main() {
 						return err
 					}
 					ctx, cancel := context.WithTimeout(gctx, *timeout)
-					err := readBlob(ctx, bsClient, d)
+					err := readBlob(ctx, bsClient, casClient, d)
 					cancel()
 					if err != nil {
 						log.Errorf("Read err: %s", err)
