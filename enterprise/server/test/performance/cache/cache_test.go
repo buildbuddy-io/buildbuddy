@@ -58,6 +58,18 @@ type digestBuf struct {
 	buf []byte
 }
 
+func makeCompressibleDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestBuf {
+	digestBufs := make([]*digestBuf, 0, numDigests)
+	for i := 0; i < numDigests; i++ {
+		r, buf := testdigest.RandomCompressibleCASResourceBuf(t, digestSizeBytes, "")
+		digestBufs = append(digestBufs, &digestBuf{
+			d:   r,
+			buf: buf,
+		})
+	}
+	return digestBufs
+}
+
 func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestBuf {
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
@@ -133,7 +145,7 @@ func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
 }
 
 func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -148,7 +160,7 @@ func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 }
 
 func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -164,7 +176,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 }
 
 func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	var sumBytes int64
@@ -185,7 +197,7 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 }
 
 func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	for _, dbuf := range digestBufs {
@@ -226,7 +238,7 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 }
 
 func BenchmarkSet(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000}
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
@@ -241,7 +253,7 @@ func BenchmarkSet(b *testing.B) {
 }
 
 func BenchmarkGet(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000}
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
@@ -256,7 +268,7 @@ func BenchmarkGet(b *testing.B) {
 }
 
 func BenchmarkGetMulti(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000}
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
@@ -271,7 +283,7 @@ func BenchmarkGetMulti(b *testing.B) {
 }
 
 func BenchmarkFindMissing(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000}
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
