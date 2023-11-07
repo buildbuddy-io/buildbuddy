@@ -57,6 +57,10 @@ type COWStore struct {
 	env                environment.Env
 	remoteInstanceName string
 
+	// Whether the store supports remote fetching/caching of artifacts
+	// in addition to local caching
+	remoteEnabled bool
+
 	mu sync.RWMutex // Protects chunks and dirty
 
 	// chunks is a mapping of chunk offset to the backing data store
@@ -92,7 +96,7 @@ type COWStore struct {
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string) (*COWStore, error) {
+func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -106,6 +110,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
 		chunks:             chunkMap,
 		dirty:              make(map[int64]bool, 0),
 		dataDir:            dataDir,
@@ -513,7 +518,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 		}
 		chunkSource = ogChunk.source
 	}
-	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, chunkSource, s.remoteInstanceName)
+	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -606,7 +611,7 @@ func (s *COWStore) fetchChunk(offset int64) error {
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string) (store *COWStore, err error) {
+func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (store *COWStore, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -690,7 +695,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 				return nil, err
 			}
 		}
-		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset, snaputil.ChunkSourceLocalFile, remoteInstanceName)
+		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset, snaputil.ChunkSourceLocalFile, remoteInstanceName, remoteEnabled)
 	}
 
 	// TODO: iterate through the file with multiple goroutines
@@ -704,7 +709,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		}
 	}
 
-	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName)
+	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite
@@ -719,6 +724,10 @@ type Mmap struct {
 	env                environment.Env
 	remoteInstanceName string
 
+	// Whether the store supports remote fetching/caching of artifacts
+	// in addition to local caching
+	remoteEnabled bool
+
 	Offset  int64
 	dataDir string
 
@@ -732,7 +741,7 @@ type Mmap struct {
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
 // written to.
-func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest, remoteInstanceName string) (*Mmap, error) {
+func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
 	if dataDir == "" {
 		return nil, status.FailedPreconditionError("missing dataDir")
 	}
@@ -743,6 +752,7 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
 		Offset:             offset,
 		data:               nil,
 		source:             snaputil.ChunkSourceUnmapped,
@@ -751,7 +761,7 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 	}, nil
 }
 
-func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string) (*Mmap, error) {
+func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
 	if source == snaputil.ChunkSourceUnmapped {
 		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
 	}
@@ -761,6 +771,7 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, siz
 	}
 	return &Mmap{
 		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
 		ctx:                ctx,
 		env:                env,
 		Offset:             offset,
@@ -807,7 +818,7 @@ func (m *Mmap) initMap() error {
 	}
 
 	outputPath := filepath.Join(m.dataDir, ChunkName(m.Offset, false /*dirty*/))
-	artifactSrc, err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, m.remoteInstanceName, outputPath)
+	artifactSrc, err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.remoteEnabled, m.lazyDigest, m.remoteInstanceName, outputPath)
 	if err != nil {
 		return status.WrapErrorf(err, "fetch snapshot chunk for offset %d digest %s", m.Offset, m.lazyDigest.Hash)
 	}

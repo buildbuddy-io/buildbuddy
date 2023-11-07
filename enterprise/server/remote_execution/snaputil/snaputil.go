@@ -45,14 +45,14 @@ const (
 	ChunkSourceRemoteCache
 )
 
-func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
+func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
 	node := &repb.FileNode{Digest: d}
 	fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
 	if fetchedLocally {
 		return ChunkSourceLocalFilecache, nil
 	}
 
-	if !*EnableRemoteSnapshotSharing {
+	if !*EnableRemoteSnapshotSharing || !remoteEnabled {
 		return ChunkSourceUnmapped, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
 	}
 
@@ -81,7 +81,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	return ChunkSourceRemoteCache, writeErr
 }
 
-func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
+func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 		}
 	}()
 
-	if _, err := GetArtifact(ctx, localCache, bsClient, d, instanceName, tmpPath); err != nil {
+	if _, err := GetArtifact(ctx, localCache, bsClient, remoteEnabled, d, instanceName, tmpPath); err != nil {
 		return nil, err
 	}
 
@@ -102,9 +102,9 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, path string) error {
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string) error {
 	localCacheErr := cacheLocally(ctx, localCache, d, path)
-	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly {
+	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
 		return localCacheErr
 	}
 
@@ -127,7 +127,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, b []byte) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, b []byte) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
@@ -143,7 +143,7 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	return Cache(ctx, localCache, bsClient, d, remoteInstanceName, tmpPath)
+	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath)
 }
 
 // cacheLocally copies the data at `path` to the local filecache with
