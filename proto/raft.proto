@@ -185,6 +185,11 @@ message CASResponse {
   KV kv = 1;
 }
 
+message FindSplitPointRequest {}
+message FindSplitPointResponse {
+  bytes split_key = 1;
+}
+
 message SimpleSplitRequest {
   uint64 source_range_id = 1;
   uint64 new_shard_id = 2;
@@ -207,6 +212,7 @@ message RequestUnion {
     ScanRequest scan = 4;
     CASRequest cas = 5;
     SimpleSplitRequest simple_split = 6;
+    FindSplitPointRequest find_split_point = 14;
 
     // The following operations are for getting and setting FileMetadata blobs.
     GetRequest get = 7;
@@ -234,6 +240,7 @@ message ResponseUnion {
     ScanResponse scan = 5;
     CASResponse cas = 6;
     SimpleSplitResponse simple_split = 7;
+    FindSplitPointResponse find_split_point = 15;
 
     // The following operations are for getting and setting FileMetadata blobs.
     GetResponse get = 8;
@@ -247,11 +254,39 @@ message ResponseUnion {
   }
 }
 
-message BatchCmdRequest {
-  repeated RequestUnion union = 1;
+message TxnRequest {
+  optional bytes transaction_id = 1;
+  message Statement {
+    uint64 shard_id = 1;
+    repeated RequestUnion union = 2;
+  }
+  repeated Statement statements = 2;
+}
 
+message TxnResponse {
+  repeated BatchCmdResponse responses = 1;
+}
+
+enum FinalizeOperation {
+  UNKNOWN_OPERATION = 0;
+  ROLLBACK = 1;
+  COMMIT = 2;
+}
+
+message BatchCmdRequest {
   // Header will be validated by the state machine if set.
-  Header header = 2;
+  Header header = 1;
+
+  // RequestUnion contains the union of reads/writes to process in this request.
+  repeated RequestUnion union = 2;
+
+  // If a transaction_id is set and finalize_operation is unset, then the ops
+  // in union will be PREPARED and locks will be acquired on any written rows.
+  optional bytes transaction_id = 3;
+
+  // If finalize_operation is set, a previously created transaction can be
+  // COMMITTED or ROLLED BACK. When this field is set, union must be unset.
+  optional FinalizeOperation finalize_operation = 4;
 }
 
 message BatchCmdResponse {
