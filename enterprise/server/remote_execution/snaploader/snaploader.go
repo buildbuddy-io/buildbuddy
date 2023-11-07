@@ -511,7 +511,11 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 			return err
 		}
 		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
-		return cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar)
+		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar); err != nil {
+			return err
+		}
+		log.CtxInfof(ctx, "Cached remote snapshot manifest %s", keyDebugString(ctx, l.env, key))
+		return nil
 	}
 
 	d, err := localManifestKey(ctx, l.env, key)
