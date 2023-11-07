@@ -334,8 +334,29 @@ func logRequestUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		start := time.Now()
+		log.CtxTracef(stream.Context(), "calling %q", info.FullMethod)
+		//var mu sync.Mutex
+		//done := false
+		//if log.TraceEnabled(stream.Context()) {
+		//	go func() {
+		//		time.Sleep(3 * time.Second)
+		//		mu.Lock()
+		//		defer mu.Unlock()
+		//		if done {
+		//			return
+		//		}
+		//		bs := &bytes.Buffer{}
+		//		pprof.Lookup("goroutine").WriteTo(bs, 1)
+		//		log.CtxDebugf(stream.Context(), "[goroutines dump]\n%s", bs.String())
+		//	}()
+		//}
 		err := handler(srv, stream)
+		//mu.Lock()
+		//done = true
+		//mu.Unlock()
+		log.CtxTracef(stream.Context(), "done calling %q", info.FullMethod)
 		log.LogGRPCRequest(stream.Context(), info.FullMethod, time.Since(start), err)
+		log.CtxTracef(stream.Context(), "done logging %q", info.FullMethod)
 		return err
 	}
 }

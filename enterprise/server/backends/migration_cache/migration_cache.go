@@ -444,6 +444,7 @@ func (mc *MigrationCache) Delete(ctx context.Context, r *rspb.ResourceName) erro
 }
 
 type doubleReader struct {
+	ctx  context.Context
 	src  io.ReadCloser
 	dest io.ReadCloser
 
@@ -542,7 +543,9 @@ func (d *doubleReader) Close() error {
 	if d.dest != nil {
 		if d.decompressor != nil {
 			eg.Go(func() error {
-				d.pw.Close()
+				log.CtxTracef(d.ctx, "close pw")
+				err := d.pw.Close()
+				log.CtxTracef(d.ctx, "close pw rv %s", err)
 				decompressErr := d.decompressor.Close()
 				if decompressErr != nil {
 					log.Warningf("Migration decompressor close err: %s", decompressErr)
@@ -552,6 +555,8 @@ func (d *doubleReader) Close() error {
 				}
 				return nil
 			})
+		} else {
+			log.CtxTracef(d.ctx, "d.decompress is nil")
 		}
 
 		eg.Go(func() error {
@@ -569,6 +574,8 @@ func (d *doubleReader) Close() error {
 			}
 			return nil
 		})
+	} else {
+		log.CtxTracef(d.ctx, "d.dest is nil")
 	}
 
 	srcErr := d.src.Close()
@@ -603,12 +610,17 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		shouldDecompressAndVerify = (rand.Float64() <= mc.decompressPercentage)
 	}
 
+	log.CtxTracef(ctx, "double read %t decompress and verify %t", doubleRead, shouldDecompressAndVerify)
+
 	if doubleRead {
 		eg.Go(func() error {
 			destReader, dstErr = mc.dest.Reader(ctx, r, uncompressedOffset, limit)
 			if dstErr != nil {
+				log.CtxTracef(ctx, "could not create dest reader: %s", dstErr)
+				shouldDecompressAndVerify = false
 				return nil
 			}
+			log.CtxTracef(ctx, "dest reader %p err %v", destReader, dstErr)
 			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
 			if shouldDecompressAndVerify {
 				dr, err := compression.NewZstdDecompressingReader(destReader)
@@ -617,23 +629,19 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 				} else {
 					destReader = dr
 				}
+				decompressor, err = compression.NewZstdDecompressor(pw)
+				if err != nil {
+					log.Warningf("Migration failed to get source decompressor for digest %q: %s", r.GetDigest().GetHash(), err)
+				}
 			}
 			return nil
 		})
-
-		if shouldDecompressAndVerify {
-			var err error
-			decompressor, err = compression.NewZstdDecompressor(pw)
-			if err != nil {
-				log.Warningf("Migration failed to get source decompressor for digest %q: %s", r.GetDigest().GetHash(), err)
-			}
-		}
 	}
 
 	srcReader, srcErr := mc.src.Reader(ctx, r, uncompressedOffset, limit)
 	eg.Wait()
 
-	log.CtxTracef(ctx, "double read wait done")
+	log.CtxTracef(ctx, "double read wait done, destReader %v", destReader)
 
 	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
 	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
@@ -660,6 +668,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	dr := &doubleReader{
+		ctx:          ctx,
 		src:          srcReader,
 		dest:         destReader,
 		r:            r,
@@ -675,7 +684,9 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		// decompressor.
 		go func() {
 			defer close(dr.done)
+			log.CtxTracef(ctx, "copy from pr to Discard")
 			srcN, err := io.Copy(io.Discard, pr)
+			log.CtxTracef(ctx, "done from pr to Discard %d %v", srcN, err)
 			if err != nil {
 				log.Warningf("Migration failed to read from decompressor: %s", err)
 				dr.mu.Lock()
@@ -687,7 +698,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		}()
 	}
 
-	log.CtxTracef(ctx, "migration created local reader")
+	log.CtxTracef(ctx, "migration created local reader %t", shouldDecompressAndVerify)
 
 	return dr, nil
 }
