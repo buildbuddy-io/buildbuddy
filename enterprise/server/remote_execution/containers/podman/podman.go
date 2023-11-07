@@ -196,14 +196,13 @@ func runSociStore(ctx context.Context) {
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
-	v, err := getPodmanVersion(env.GetServerContext())
+	// Eagerly init podman version so we can crash the executor if it fails.
+	podmanVersion, err := getPodmanVersion()
 	if err != nil {
 		return nil, status.WrapError(err, "podman version")
 	}
-	podmanVersion = v
-
 	if podmanVersion.LessThan(transientStoreMinVersion) {
-		log.Warningf("Detected podman version %s does not support --transient-store option, which significantly improves performance. Consider upgrading podman.", v)
+		log.Warningf("Detected podman version %s does not support --transient-store option, which significantly improves performance. Consider upgrading podman.", podmanVersion)
 	}
 
 	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
@@ -275,13 +274,13 @@ graphroot = "/var/lib/containers/storage"
 	}, nil
 }
 
-func getPodmanVersion(ctx context.Context) (*semver.Version, error) {
-	b, err := exec.CommandContext(ctx, "podman", "version", "--format={{.Client.Version}}").CombinedOutput()
+var getPodmanVersion = sync.OnceValues(func() (*semver.Version, error) {
+	b, err := exec.Command("podman", "version", "--format={{.Client.Version}}").CombinedOutput()
 	if err != nil {
 		return nil, status.InternalErrorf("`podman version` failed: %s: %s", err, string(b))
 	}
 	return semver.NewVersion(strings.TrimSpace(string(b)))
-}
+})
 
 func intializeSociArtifactStoreClient(env environment.Env, target string) (socipb.SociArtifactStoreClient, error) {
 	conn, err := grpc_client.DialSimple(target)
@@ -1009,6 +1008,10 @@ func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerStat
 
 func runPodman(ctx context.Context, subCommand string, stdio *commandutil.Stdio, args ...string) *interfaces.CommandResult {
 	command := []string{"podman"}
+	podmanVersion, err := getPodmanVersion()
+	if err != nil {
+		return commandutil.ErrorResult(err)
+	}
 	if !podmanVersion.LessThan(transientStoreMinVersion) {
 		// Use transient store to reduce contention.
 		// See https://github.com/containers/podman/issues/19824
