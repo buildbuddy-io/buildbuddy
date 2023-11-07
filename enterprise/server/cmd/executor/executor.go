@@ -138,7 +138,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 		}
 	}
 
-	conn, err := grpc_client.DialInternal(realEnv, *appTarget)
+	conn, err := grpc_client.DialInsecure(*appTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to app '%s': %s", *appTarget, err)
 	}

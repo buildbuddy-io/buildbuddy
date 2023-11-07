@@ -2,16 +2,56 @@ package grpc_client
 
 import (
 	"context"
+	"crypto/tls"
 	"math"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/keepalive"
 )
+
+func DialInsecure(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	dialOptions := CommonGRPCClientOptions()
+	dialOptions = append(dialOptions, extraOptions...)
+	u, err := url.Parse(target)
+	if err == nil {
+		if u.User != nil {
+			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(newRPCCredentials(u.User.String())))
+		}
+		if u.Scheme == "grpcs" {
+			keyFile := "/tmp/tls.key"
+			log.Infof("Writing TLS key to %q", keyFile)
+			f, err := os.Create(keyFile)
+			if err != nil {
+				return nil, err
+			}
+			cnf := &tls.Config{
+				KeyLogWriter: f,
+			}
+			dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(cnf)))
+		} else {
+			dialOptions = append(dialOptions, grpc.WithInsecure())
+		}
+
+		if u.Scheme == "grpcs" && u.Port() == "" {
+			u.Host += ":443"
+		}
+
+		if u.Scheme != "unix" {
+			target = u.Host
+		}
+	}
+
+	// Connect to host/port and create a new client
+	return grpc.Dial(target, dialOptions...)
+}
 
 // DialSimple handles some of the logic around detecting the correct GRPC
 // connection type and applying relevant options when connecting.
