@@ -83,7 +83,10 @@ genrule(
 go_test(
     name = "firecracker_test",
     timeout = "long",
-    srcs = ["firecracker_test.go"],
+    srcs = [
+        "firecracker_performance_test.go",
+        "firecracker_test.go",
+    ],
     exec_properties = {
         "test.Pool": "bare",
         "test.use-self-hosted-executors": "true",
@@ -128,6 +131,7 @@ go_test(
         "//server/util/networking",
         "//server/util/status",
         "//server/util/testing/flags",
+        "//server/util/tracing",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
@@ -144,7 +148,10 @@ go_test(
 go_test(
     name = "firecracker_test_blockio",
     timeout = "long",
-    srcs = ["firecracker_test.go"],
+    srcs = [
+        "firecracker_performance_test.go",
+        "firecracker_test.go",
+    ],
     args = [
         "--executor.firecracker_enable_vbd=true",
         "--executor.firecracker_enable_merged_rootfs=true",
@@ -197,6 +204,7 @@ go_test(
         "//server/util/networking",
         "//server/util/status",
         "//server/util/testing/flags",
+        "//server/util/tracing",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

@@ -1,4 +1,4 @@
-import { HelpCircle, PlayCircle, XCircle, CheckCircle } from "lucide-react";
+import { HelpCircle, PlayCircle, XCircle, CheckCircle, Circle } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
@@ -18,6 +18,7 @@ import { formatDate } from "../format/format";
 import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
 import rpcService from "../service/rpc_service";
 import capabilities from "../capabilities/capabilities";
+import { exitCode } from "../util/exit_codes";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
@@ -556,7 +557,7 @@ export default class InvocationModel {
   getStatus() {
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
-        return this.invocation.success ? "Succeeded" : "Failed";
+        return exitCode(this.invocation.bazelExitCode);
       case InvocationStatus.PARTIAL_INVOCATION_STATUS:
         return "In progress...";
       case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
@@ -569,6 +570,9 @@ export default class InvocationModel {
   getStatusClass() {
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
+        if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
+          return "neutral";
+        }
         return this.invocation.success ? "success" : "failure";
       case InvocationStatus.PARTIAL_INVOCATION_STATUS:
         return "in-progress";
@@ -598,6 +602,9 @@ export default class InvocationModel {
     if (!this.finished) {
       return IconType.InProgress;
     }
+    if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
+      return IconType.Default;
+    }
     return this.finished.exitCode?.code == 0 ? IconType.Success : IconType.Failure;
   }
 
@@ -611,6 +618,9 @@ export default class InvocationModel {
     }
     if (!this.finished) {
       return <PlayCircle className="icon blue" />;
+    }
+    if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
+      return <Circle className="icon" />;
     }
     return this.finished.exitCode?.code == 0 ? (
       <CheckCircle className="icon green" />

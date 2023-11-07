@@ -10,10 +10,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 )
 
-func (p *pool) initContainerProviders() error {
-	providers := make(map[platform.ContainerType]container.Provider)
-	providers[platform.BareContainerType] = &bare.Provider{}
-	p.containerProviders = providers
+func (p *pool) registerContainerProviders(providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
+	if executor.SupportsIsolation(platform.BareContainerType) {
+		providers[platform.BareContainerType] = &bare.Provider{}
+	}
 
 	return nil
 }

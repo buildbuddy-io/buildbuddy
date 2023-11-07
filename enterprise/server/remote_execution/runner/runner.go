@@ -534,11 +534,17 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		buildRoot: *rootDirectory,
 		runners:   []*commandRunner{},
 	}
-	if err := p.initContainerProviders(); err != nil {
-		return nil, err
-	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
+	} else {
+		providers := map[platform.ContainerType]container.Provider{}
+		if err := p.registerContainerProviders(providers, platform.GetExecutorProperties()); err != nil {
+			return nil, err
+		}
+		if len(providers) == 0 {
+			return nil, status.FailedPreconditionErrorf("no isolation types are enabled")
+		}
+		p.containerProviders = providers
 	}
 
 	p.setLimits()

@@ -399,6 +399,7 @@ ts_library(
         "//app/favicon",
         "//app/format",
         "//app/service:rpc_service",
+        "//app/util:exit_codes",
         "//app/util:proto",
         "//proto:api_key_ts_proto",
         "//proto:build_event_stream_ts_proto",

@@ -458,10 +458,9 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
 type FirecrackerContainer struct {
-	id          string // a random GUID, unique per-run of firecracker
-	vmIdx       int    // the index of this vm on the host machine
-	loader      *snaploader.FileCacheLoader
-	snapshotKey *fcpb.SnapshotKey
+	id     string // a random GUID, unique per-run of firecracker
+	vmIdx  int    // the index of this vm on the host machine
+	loader *snaploader.FileCacheLoader
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -477,6 +476,14 @@ type FirecrackerContainer struct {
 
 	// Whether the VM was recycled.
 	recycled bool
+
+	// The following snapshot-related fields are initialized in NewContainer
+	// based on the incoming task. If there is a new task, you may want to call
+	// NewContainer again rather than directly unpausing a pre-existing container,
+	// to make sure these fields are updated and the best snapshot match is used
+	snapshotKey             *fcpb.SnapshotKey
+	createFromSnapshot      bool
+	supportsRemoteSnapshots bool
 
 	// When the VM was initialized (i.e. created or unpaused) for the command
 	// it is currently executing
@@ -508,7 +515,6 @@ type FirecrackerContainer struct {
 	machine            *fcclient.Machine // the firecracker machine object.
 	vmLog              *VMLog
 	env                environment.Env
-	createFromSnapshot bool
 	mountWorkspaceFile bool
 
 	cleanupVethPair func(context.Context) error
@@ -572,6 +578,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
+	isWorkflow := platform.FindValue(task.GetCommand().GetPlatform(), platform.WorkflowIDPropertyName) != ""
+	c.supportsRemoteSnapshots = isWorkflow && *snaputil.EnableRemoteSnapshotSharing
+
 	if opts.SavedState == nil {
 		c.vmConfig.DebugMode = *debugTerminal
 
@@ -598,7 +607,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
 		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
-			_, err := loader.GetSnapshot(ctx, c.snapshotKey)
+			_, err := loader.GetSnapshot(ctx, c.snapshotKey, c.supportsRemoteSnapshots)
 			c.createFromSnapshot = (err == nil)
 		}
 	} else {
@@ -809,6 +818,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		InitrdImagePath:     c.executorConfig.InitrdImagePath,
 		ChunkedFiles:        map[string]*copy_on_write.COWStore{},
 		Recycled:            c.recycled,
+		Remote:              c.supportsRemoteSnapshots,
 	}
 	if *enableVBD {
 		if c.rootStore != nil {
@@ -925,7 +935,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey)
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey, c.supportsRemoteSnapshots)
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
@@ -1110,7 +1120,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 		return nil, status.WrapError(err, "make chunk dir")
 	}
 	// Use vmCtx for the COW since IO may be done outside of the task ctx.
-	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName)
+	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName, c.supportsRemoteSnapshots)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
@@ -2211,10 +2221,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.rootStore = nil
 	}
 
-	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
-		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
-		lastErr = err
-	}
 	if c.uffdHandler != nil {
 		if err := c.uffdHandler.Stop(); err != nil {
 			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
@@ -2225,6 +2231,10 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if c.memoryStore != nil {
 		c.memoryStore.Close()
 		c.memoryStore = nil
+	}
+	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
+		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
+		lastErr = err
 	}
 	return lastErr
 }
