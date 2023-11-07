@@ -2,13 +2,16 @@ package cacheproxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -341,6 +344,14 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 	log.CtxTracef(stream.Context(), "done cacheproxy.Read")
+	if log.TraceEnabled(stream.Context()) {
+		go func() {
+			time.Sleep(3 * time.Second)
+			bs := &bytes.Buffer{}
+			pprof.Lookup("goroutine").WriteTo(bs, 1)
+			log.CtxDebugf(stream.Context(), "[goroutines dump]\n%s", bs.String())
+		}()
+	}
 	return err
 }
 
@@ -640,6 +651,9 @@ func (wc *streamWriteCloser) Commit() error {
 		return err
 	}
 	_, err := wc.stream.CloseAndRecv()
+	if err != nil {
+		return err
+	}
 	return err
 }
 

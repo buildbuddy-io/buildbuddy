@@ -2,6 +2,7 @@ package grpc_client
 
 import (
 	"context"
+	"crypto/tls"
 	"math"
 	"net/url"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/google"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 )
 
@@ -28,7 +29,7 @@ func DialSimple(target string, extraOptions ...grpc.DialOption) (*grpc.ClientCon
 			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(newRPCCredentials(u.User.String())))
 		}
 		if u.Scheme == "grpcs" {
-			dialOptions = append(dialOptions, grpc.WithTransportCredentials(google.NewDefaultCredentials().TransportCredentials()))
+			dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
 		} else {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
 		}

@@ -362,6 +362,11 @@ func Debugf(format string, args ...interface{}) {
 	log.Debug().Msgf(format, args...)
 }
 
+func TraceEnabled(ctx context.Context) bool {
+	_, ok := ctx.Value("x-buildbuddy-log-trace-id").(string)
+	return ok
+}
+
 // CtxDebugf logs to the DEBUG log. Arguments are handled in the manner of
 // fmt.Printf.
 // Logs are enriched with information from the context
