@@ -2211,10 +2211,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.rootStore = nil
 	}
 
-	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
-		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
-		lastErr = err
-	}
 	if c.uffdHandler != nil {
 		if err := c.uffdHandler.Stop(); err != nil {
 			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
@@ -2225,6 +2221,10 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if c.memoryStore != nil {
 		c.memoryStore.Close()
 		c.memoryStore = nil
+	}
+	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
+		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
+		lastErr = err
 	}
 	return lastErr
 }
