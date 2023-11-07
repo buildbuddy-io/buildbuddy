@@ -56,6 +56,7 @@ func makeHeader(rangeDescriptor *rfpb.RangeDescriptor, replicaIdx int, mode rfpb
 func (s *Sender) grpcAddrForReplicaDescriptor(rd *rfpb.ReplicaDescriptor) (string, error) {
 	addr, _, err := s.nodeRegistry.ResolveGRPC(rd.GetShardId(), rd.GetReplicaId())
 	if err != nil {
+		log.Errorf("Error resolving GRPC addr of c%dn%d", rd.GetShardId(), rd.GetReplicaId())
 		return "", err
 	}
 	return addr, nil

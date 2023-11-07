@@ -238,3 +238,43 @@ func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHo
 	}
 	return rspBatch.AnyError()
 }
+
+func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rfpb.TxnRequest) error {
+	// TODO(tylerw): make this durable if the coordinator restarts by writing
+	// the TxnRequest proto to durable storage with an enum state-field and
+	// building a statemachine that will run them to completion even after
+	// restart.
+	prepared := make([]*rfpb.TxnRequest_Statement, 0)
+	for _, statement := range txn.GetStatements() {
+		batch := rbuilder.NewBatchBuilder().WithRequests(statement.GetUnion())
+		batch.SetTransactionID(txn.GetTransactionId())
+
+		// Prepare each statement.
+		rsp, err := SyncProposeLocalBatch(ctx, nodehost, statement.GetShardId(), batch)
+		if err != nil {
+			log.Errorf("Error preparing txn statement: %s", err)
+			break
+		}
+		if err := rsp.AnyError(); err != nil {
+			log.Errorf("Error preparing txn statement: %s", err)
+			break
+		}
+		prepared = append(prepared, statement)
+	}
+
+	// If all statements were successfully prepared; go ahead and commit them.
+	// Otherwise, rollback anything that was prepared.
+	operation := rfpb.FinalizeOperation_ROLLBACK
+	if len(prepared) == len(txn.GetStatements()) {
+		operation = rfpb.FinalizeOperation_COMMIT
+	}
+	for _, statement := range prepared {
+		batch := rbuilder.NewBatchBuilder().SetTransactionID(txn.GetTransactionId())
+		batch.SetFinalizeOperation(operation)
+
+		if _, err := SyncProposeLocalBatch(ctx, nodehost, statement.GetShardId(), batch); err != nil {
+			return err
+		}
+	}
+	return nil
+}

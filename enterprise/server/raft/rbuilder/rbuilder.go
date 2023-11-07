@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
@@ -66,6 +67,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_SimpleSplit{
 			SimpleSplit: value,
 		}
+	case *rfpb.FindSplitPointRequest:
+		req.Value = &rfpb.RequestUnion_FindSplitPoint{
+			FindSplitPoint: value,
+		}
 	case *rfpb.GetRequest:
 		req.Value = &rfpb.RequestUnion_Get{
 			Get: value,
@@ -95,7 +100,16 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 	return bb
 }
 
-func (bb *BatchBuilder) SetTransactionId(txid []byte) *BatchBuilder {
+func (bb *BatchBuilder) WithRequests(union []*rfpb.RequestUnion) *BatchBuilder {
+	bb.cmd.Union = union
+	return bb
+}
+
+func (bb *BatchBuilder) Requests() []*rfpb.RequestUnion {
+	return bb.cmd.Union
+}
+
+func (bb *BatchBuilder) SetTransactionID(txid []byte) *BatchBuilder {
 	bb.cmd.TransactionId = txid
 	return bb
 }
@@ -166,9 +180,13 @@ func NewBatchResponse(val interface{}) *BatchResponse {
 }
 
 func NewBatchResponseFromProto(c *rfpb.BatchCmdResponse) *BatchResponse {
-	return &BatchResponse{
+	br := &BatchResponse{
 		cmd: c,
 	}
+	if err := gstatus.FromProto(br.cmd.GetStatus()).Err(); err != nil {
+		br.setErr(err)
+	}
+	return br
 }
 
 func (br *BatchResponse) checkIndex(n int) {
@@ -239,6 +257,15 @@ func (br *BatchResponse) SimpleSplitResponse(n int) (*rfpb.SimpleSplitResponse, 
 	return u.GetSimpleSplit(), br.unionError(u)
 }
 
+func (br *BatchResponse) FindSplitPointResponse(n int) (*rfpb.FindSplitPointResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetFindSplitPoint(), br.unionError(u)
+}
+
 func (br *BatchResponse) GetResponse(n int) (*rfpb.GetResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
@@ -278,4 +305,46 @@ func (br *BatchResponse) UpdateAtimeResponse(n int) (*rfpb.UpdateAtimeResponse, 
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetUpdateAtime(), br.unionError(u)
+}
+
+type txnStatement struct {
+	shardID uint64
+	union   []*rfpb.RequestUnion
+}
+
+type TxnBuilder struct {
+	statements []txnStatement
+}
+
+func NewTxn() *TxnBuilder {
+	return &TxnBuilder{
+		statements: make([]txnStatement, 0),
+	}
+}
+
+func (tb *TxnBuilder) AddStatement(shardID uint64, batch *BatchBuilder) *TxnBuilder {
+	tb.statements = append(tb.statements, txnStatement{
+		shardID: shardID,
+		union:   batch.Requests(),
+	})
+	return tb
+}
+
+func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
+	guid, err := uuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
+	txid := []byte(guid.String())
+
+	req := &rfpb.TxnRequest{
+		TransactionId: txid,
+	}
+	for _, statement := range tb.statements {
+		req.Statements = append(req.Statements, &rfpb.TxnRequest_Statement{
+			ShardId: statement.shardID,
+			Union:   statement.union,
+		})
+	}
+	return req, nil
 }
