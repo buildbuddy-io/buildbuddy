@@ -942,7 +942,7 @@ func TestBatchTransaction(t *testing.T) {
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 	}
 	{ // Prepare a transaction
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetTransactionId(txid).Add(&rfpb.DirectWriteRequest{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetTransactionID(txid).Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),
 				Value: []byte("transaction-succeeded"),
@@ -979,7 +979,7 @@ func TestBatchTransaction(t *testing.T) {
 		require.Equal(t, []byte("bar"), directRead.GetKv().GetValue())
 	}
 	{ // Commit the transaction
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetTransactionId(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
 		entries := []dbsm.Entry{entry}
 		rsp, err := repl.Update(entries)
 		require.NoError(t, err)
