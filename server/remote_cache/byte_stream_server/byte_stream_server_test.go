@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/rand"
 	"strings"
 	"testing"
 
@@ -267,14 +266,13 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
-	for _, blobSize := range []int{1, 1e2, 1e4, 1e6, 8e6} {
-		blob := compressibleBlobOfSize(blobSize)
+	for _, blobSize := range []int64{1, 1e2, 1e4, 1e6, 8e6} {
+		rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, blobSize, "" /*instanceName*/)
 		compressedBlob := compression.CompressZstd(nil, blob)
 		require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
 		// Note: Digest is of uncompressed contents
-		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-		require.NoError(t, err)
+		d := rn.GetDigest()
 
 		// ByteStream.Read should return NOT_FOUND initially.
 		resourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
@@ -343,15 +341,14 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 	// chance of exercising the scenario where the gRPC client sends a burst of
 	// write requests at once without waiting to see if the server sends back
 	// a response (this is a common scenario in client-streaming uploads).
-	for _, blobSize := range []int{1, 1e2, 1e4, 1e6, 8e6, 16e6} {
-		blob := compressibleBlobOfSize(blobSize)
+	for _, blobSize := range []int64{1, 1e2, 1e4, 1e6, 8e6, 16e6} {
+		rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, blobSize, "" /*instanceName*/)
 
 		compressedBlob := compression.CompressZstd(nil, blob)
 		require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
 		// Note: Digest is of uncompressed contents
-		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-		require.NoError(t, err)
+		d := rn.GetDigest()
 
 		// ByteStream.Read should return NOT_FOUND initially.
 		resourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
@@ -413,12 +410,11 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
-	for _, blobSize := range []int{1, 1e2, 1e4, 1e6, 8e6} {
-		blob := compressibleBlobOfSize(blobSize)
+	for _, blobSize := range []int64{1, 1e2, 1e4, 1e6, 8e6} {
+		rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, blobSize, "" /*instanceName*/)
 
 		// Note: Digest is of uncompressed contents
-		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-		require.NoError(t, err)
+		d := rn.GetDigest()
 
 		// Upload uncompressed via bytestream.
 		uploadResourceName := fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
@@ -449,13 +445,12 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 
 func Test_CacheHandlesCompression(t *testing.T) {
 	// Make blob big enough to require multiple chunks to upload
-	blob := compressibleBlobOfSize(5e6)
+	rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, 5e6, "" /*instanceName*/)
 	compressedBlob := compression.CompressZstd(nil, blob)
 	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
 	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
+	d := rn.GetDigest()
 
 	testCases := []struct {
 		name                        string
@@ -571,22 +566,6 @@ func Test_CacheHandlesCompression(t *testing.T) {
 		tc.bazelVersion = "5.1.0"
 		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
 	}
-}
-
-func compressibleBlobOfSize(sizeBytes int) []byte {
-	out := make([]byte, 0, sizeBytes)
-	for len(out) < sizeBytes {
-		runEnd := len(out) + 100 + rand.Intn(100)
-		if runEnd > sizeBytes {
-			runEnd = sizeBytes
-		}
-
-		runChar := byte(rand.Intn('Z'-'A'+1)) + 'A'
-		for len(out) < runEnd {
-			out = append(out, runChar)
-		}
-	}
-	return out
 }
 
 func withBazelVersion(t *testing.T, ctx context.Context, version string) context.Context {
