@@ -151,9 +151,9 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 
    a. `Identified (Entity ID)` should be `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`.
 
-   b. `Reply URL (Assertion Consumer Service URL)` should be `https://app.buildbuddy.io/auth/saml/acs/?slug=<org-slug>`.
+   b. `Reply URL (Assertion Consumer Service URL)` should be `https://app.buildbuddy.io/auth/saml/acs?slug=<org-slug>`.
 
-   c. `Sign on URL` should be `https://app.buildbuddy.io/login/?slug=<org-slug>`.
+   c. `Sign on URL` should be `https://app.buildbuddy.io/login?slug=<org-slug>`.
 
    d. Hit `Save` button.
 
@@ -174,9 +174,9 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 
 - Find the short name (slug) for your organization in your [BuildBuddy Organization Settings](https://app.buildbuddy.io/settings/).
 
-- **Assertion Consumer Service (ACS) URL**: `https://app.buildbuddy.io/auth/saml/acs/?slug=<org-slug>`
+- **Assertion Consumer Service (ACS) URL**: `https://app.buildbuddy.io/auth/saml/acs?slug=<org-slug>`
 
-- **Audience URL (SP Entity ID)**: `https://app.buildbuddy.io/saml/metadata/?slug=<org-slug>`
+- **Audience URL (SP Entity ID)**: `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`
 
 - Make sure the `email` attribute is mapped to `user.email` (or equivalent).
 
