@@ -518,7 +518,7 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 		return nil, err
 	}
 	defer db.Close()
-	txn := db.NewBatch()
+	txn := db.NewIndexedBatch()
 
 	// Ensure the txn is cleaned up if not prepared succesfully.
 	loaded := false
@@ -531,7 +531,11 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 	// Run all the propose commands against the txn batch.
 	batchRsp := &rfpb.BatchCmdResponse{}
 	for _, union := range batchReq.GetUnion() {
-		batchRsp.Union = append(batchRsp.Union, sm.handlePropose(txn, union))
+		rsp := sm.handlePropose(txn, union)
+		if err := gstatus.FromProto(rsp.GetStatus()).Err(); err != nil {
+			return nil, err
+		}
+		batchRsp.Union = append(batchRsp.Union, rsp)
 	}
 
 	// Check if there are any locked keys conflicting.
@@ -585,7 +589,11 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
 	txn.Delete(sm.replicaLocalKey(txKey), nil /*ignore write options*/)
 
-	return txn.Commit(pebble.Sync)
+	if err := txn.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	sm.updateInMemoryState(txn)
+	return nil
 }
 
 func (sm *Replica) RollbackTransaction(txid []byte) error {
@@ -602,7 +610,11 @@ func (sm *Replica) RollbackTransaction(txid []byte) error {
 	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
 	txn.Delete(sm.replicaLocalKey(txKey), nil /*ignore write options*/)
 
-	return txn.Commit(pebble.Sync)
+	if err := txn.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	sm.updateInMemoryState(txn)
+	return nil
 }
 
 func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
