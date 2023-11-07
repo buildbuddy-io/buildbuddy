@@ -239,15 +239,21 @@ func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHo
 	return rspBatch.AnyError()
 }
 
-func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rfpb.TxnRequest) error {
+func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rbuilder.TxnBuilder) error {
 	// TODO(tylerw): make this durable if the coordinator restarts by writing
 	// the TxnRequest proto to durable storage with an enum state-field and
 	// building a statemachine that will run them to completion even after
 	// restart.
+
+	txnProto, err := txn.ToProto()
+	if err != nil {
+		return err
+	}
+
 	prepared := make([]*rfpb.TxnRequest_Statement, 0)
-	for _, statement := range txn.GetStatements() {
+	for _, statement := range txnProto.GetStatements() {
 		batch := rbuilder.NewBatchBuilder().WithRequests(statement.GetUnion())
-		batch.SetTransactionID(txn.GetTransactionId())
+		batch.SetTransactionID(txnProto.GetTransactionId())
 
 		// Prepare each statement.
 		rsp, err := SyncProposeLocalBatch(ctx, nodehost, statement.GetShardId(), batch)
@@ -265,11 +271,11 @@ func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rfpb.TxnReq
 	// If all statements were successfully prepared; go ahead and commit them.
 	// Otherwise, rollback anything that was prepared.
 	operation := rfpb.FinalizeOperation_ROLLBACK
-	if len(prepared) == len(txn.GetStatements()) {
+	if len(prepared) == len(txnProto.GetStatements()) {
 		operation = rfpb.FinalizeOperation_COMMIT
 	}
 	for _, statement := range prepared {
-		batch := rbuilder.NewBatchBuilder().SetTransactionID(txn.GetTransactionId())
+		batch := rbuilder.NewBatchBuilder().SetTransactionID(txnProto.GetTransactionId())
 		batch.SetFinalizeOperation(operation)
 
 		if _, err := SyncProposeLocalBatch(ctx, nodehost, statement.GetShardId(), batch); err != nil {
