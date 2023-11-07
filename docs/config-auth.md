@@ -75,7 +75,7 @@ auth:
 #### Azure AD provider
 
 1. Navigate to the [Azure Portal](https://portal.azure.com/).
-   If there are multiple Azure AD tenants is available, select the tenant that will be using BuildBuddy.
+   If there are multiple Azure AD tenants available, select the tenant that will be using BuildBuddy.
 
 2. Register a BuildBuddy application:
 
