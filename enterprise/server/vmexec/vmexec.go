@@ -188,6 +188,10 @@ func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
 				// Done receiving messages; return.
 				return
 			}
+			if err != nil {
+				msgs <- &message{Err: err}
+				return
+			}
 			if msg.Start != nil {
 				if cmd != nil {
 					msgs <- &message{Err: status.InvalidArgumentError("received multiple exec start requests")}
