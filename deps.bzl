@@ -1221,8 +1221,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_crewjam_saml",
         importpath = "github.com/crewjam/saml",
-        sum = "h1:TYHggH/hwP7eArqiXSJUvtOPNzQDyQ7vwmwEqlFWhMc=",
-        version = "v0.4.13",
+        sum = "h1:g9FBNx62osKusnFzs3QTN5L9CVA/Egfgm+stJShzw/c=",
+        version = "v0.4.14",
     )
 
     go_repository(
