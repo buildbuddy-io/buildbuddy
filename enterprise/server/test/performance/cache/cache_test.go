@@ -34,7 +34,7 @@ var (
 )
 
 func init() {
-	*log.LogLevel = "error"
+	*log.LogLevel = "info"
 	*log.IncludeShortFileName = true
 	log.Configure()
 }
@@ -176,7 +176,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 }
 
 func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	var sumBytes int64
@@ -191,13 +191,14 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 	for i := 0; i < b.N; i++ {
 		_, err := c.GetMulti(ctx, digests)
 		if err != nil {
+			log.Infof("error: %s", err)
 			b.Fatal(err)
 		}
 	}
 }
 
 func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	for _, dbuf := range digestBufs {
@@ -268,7 +269,7 @@ func BenchmarkGet(b *testing.B) {
 }
 
 func BenchmarkGetMulti(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
+	sizes := []int64{10, 100, 1000, 10000, 1e5}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
@@ -283,7 +284,7 @@ func BenchmarkGetMulti(b *testing.B) {
 }
 
 func BenchmarkFindMissing(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
+	sizes := []int64{10, 100, 1000, 10000, 1e5}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
