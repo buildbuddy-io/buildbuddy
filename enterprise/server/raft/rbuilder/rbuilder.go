@@ -95,6 +95,16 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 	return bb
 }
 
+func (bb *BatchBuilder) SetTransactionId(txid []byte) *BatchBuilder {
+	bb.cmd.TransactionId = txid
+	return bb
+}
+
+func (bb *BatchBuilder) SetFinalizeOperation(op rfpb.FinalizeOperation) *BatchBuilder {
+	bb.cmd.FinalizeOperation = &op
+	return bb
+}
+
 func (bb *BatchBuilder) ToProto() (*rfpb.BatchCmdRequest, error) {
 	if bb.err != nil {
 		return nil, bb.err

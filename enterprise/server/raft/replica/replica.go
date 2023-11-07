@@ -1552,10 +1552,11 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 			for _, union := range batchReq.GetUnion() {
 				batchRsp.Union = append(batchRsp.Union, sm.handlePropose(wb, union))
 			}
+			if err := sm.checkLocks(wb, nil); err != nil {
+				batchRsp.Status = statusProto(err)
+				wb.Reset() // don't commit if conflict.
+			}
 		}
-	}
-	if err := sm.checkLocks(wb, nil); err != nil {
-		batchRsp.Status = statusProto(err)
 	}
 	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
