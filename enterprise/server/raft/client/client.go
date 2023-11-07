@@ -244,7 +244,6 @@ func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rbuilder.Tx
 	// the TxnRequest proto to durable storage with an enum state-field and
 	// building a statemachine that will run them to completion even after
 	// restart.
-
 	txnProto, err := txn.ToProto()
 	if err != nil {
 		return err
@@ -268,16 +267,17 @@ func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rbuilder.Tx
 		prepared = append(prepared, statement)
 	}
 
-	// If all statements were successfully prepared; go ahead and commit them.
-	// Otherwise, rollback anything that was prepared.
+	// Determine whether to ROLLBACK or COMMIT based on whether or not all
+	// statements in the transaction were successfully prepared.
 	operation := rfpb.FinalizeOperation_ROLLBACK
 	if len(prepared) == len(txnProto.GetStatements()) {
 		operation = rfpb.FinalizeOperation_COMMIT
 	}
+
 	for _, statement := range prepared {
+		// Finalize each statement.
 		batch := rbuilder.NewBatchBuilder().SetTransactionID(txnProto.GetTransactionId())
 		batch.SetFinalizeOperation(operation)
-
 		if _, err := SyncProposeLocalBatch(ctx, nodehost, statement.GetShardId(), batch); err != nil {
 			return err
 		}
